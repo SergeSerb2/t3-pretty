@@ -34,6 +34,7 @@ import {
   readProject,
   readThreadShell,
   readThreadShells,
+  readWritableThreadRef,
 } from "../state/entities";
 import { useUiStateStore } from "../uiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
@@ -93,9 +94,10 @@ export class ThreadSnoozeBlockedError extends Schema.TaggedError<ThreadSnoozeBlo
 /** Key that sorts before every arranged pinned thread, so a fresh pin lands
     at the top of the run. Undefined (keyless, sorts with the legacy block)
     when key math can't produce one — pinning must never fail on placement. */
-function topOfPinnedRunOrderKey(): string | undefined {
+function topOfPinnedRunOrderKey(environmentId: EnvironmentId): string | undefined {
   let firstKey: string | null = null;
   for (const shell of readThreadShells()) {
+    if (shell.environmentId !== environmentId) continue;
     if (shell.pinnedAt == null || shell.pinOrderKey == null) continue;
     if (firstKey === null || shell.pinOrderKey < firstKey) firstKey = shell.pinOrderKey;
   }
@@ -171,6 +173,18 @@ export async function navigateAfterThreadDeletion(navigate: () => Promise<void>)
       }),
     );
   }
+}
+
+/** Park the same write on the leftover catalog row so its overlay matches. */
+function mirrorLifecycleWriteIfRetargeted(
+  target: ScopedThreadRef,
+  writable: ScopedThreadRef,
+  mutate: (ref: ScopedThreadRef) => Promise<unknown>,
+) {
+  if (writable.environmentId === target.environmentId) {
+    return;
+  }
+  return mutate(target);
 }
 
 export function useThreadActions() {
@@ -500,14 +514,15 @@ export function useThreadActions() {
 
   const settleThread = useCallback(
     async (target: ScopedThreadRef) => {
+      const writable = readWritableThreadRef(target);
       // Version skew: never send the command to a server that predates it —
       // the raw protocol rejection would read as a random failure.
-      if (!readEnvironmentSupportsSettlement(target.environmentId)) {
+      if (!readEnvironmentSupportsSettlement(writable.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
             new ThreadSettlementUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
+              environmentId: writable.environmentId,
+              threadId: writable.threadId,
             }),
           ),
         );
@@ -523,8 +538,8 @@ export function useThreadActions() {
       const threadKey = scopedThreadKey(target);
       useThreadDepartureStore.getState().markDeparting(threadKey, "settle");
       const result = await settleThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId },
+        environmentId: writable.environmentId,
+        input: { threadId: writable.threadId },
       }).catch((error: unknown) => {
         // A thrown mutation (aborted request, defect in reporting) never
         // produces a Failure result, so the branch below never runs — clear
@@ -536,6 +551,12 @@ export function useThreadActions() {
         useThreadDepartureStore.getState().clearDeparting(threadKey);
         return result;
       }
+      await mirrorLifecycleWriteIfRetargeted(target, writable, (ref) =>
+        settleThreadMutation({
+          environmentId: ref.environmentId,
+          input: { threadId: ref.threadId },
+        }),
+      );
       if (wokeAt !== null) {
         markThreadVisited(scopedThreadKey(target), wokeAt);
       }
@@ -546,35 +567,46 @@ export function useThreadActions() {
 
   const unsettleThread = useCallback(
     async (target: ScopedThreadRef) => {
-      if (!readEnvironmentSupportsSettlement(target.environmentId)) {
+      const writable = readWritableThreadRef(target);
+      if (!readEnvironmentSupportsSettlement(writable.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
             new ThreadSettlementUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
+              environmentId: writable.environmentId,
+              threadId: writable.threadId,
             }),
           ),
         );
       }
       // reason "user" pins the thread active: auto-settle (closed PR /
       // inactivity) stays suppressed until real activity clears the pin.
-      return unsettleThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, reason: "user" },
+      const result = await unsettleThreadMutation({
+        environmentId: writable.environmentId,
+        input: { threadId: writable.threadId, reason: "user" },
       });
+      if (result._tag === "Success") {
+        await mirrorLifecycleWriteIfRetargeted(target, writable, (ref) =>
+          unsettleThreadMutation({
+            environmentId: ref.environmentId,
+            input: { threadId: ref.threadId, reason: "user" },
+          }),
+        );
+      }
+      return result;
     },
     [unsettleThreadMutation],
   );
 
   const pinThread = useCallback(
     async (target: ScopedThreadRef, opts: { orderKey?: string } = {}) => {
+      const writable = readWritableThreadRef(target);
       // Version skew: never send the command to a server that predates it.
-      if (!readEnvironmentSupportsPinning(target.environmentId)) {
+      if (!readEnvironmentSupportsPinning(writable.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
             new ThreadPinningUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
+              environmentId: writable.environmentId,
+              threadId: writable.threadId,
             }),
           ),
         );
@@ -585,36 +617,58 @@ export function useThreadActions() {
       // gets the default so the same action never places differently.
       // orderKey rides only to servers that decode it; pre-reorder servers
       // get the bare pin they understand and the thread stays keyless.
-      const orderKey = readEnvironmentSupportsPinReorder(target.environmentId)
-        ? (opts.orderKey ?? topOfPinnedRunOrderKey())
+      const orderKey = readEnvironmentSupportsPinReorder(writable.environmentId)
+        ? (opts.orderKey ?? topOfPinnedRunOrderKey(writable.environmentId))
         : undefined;
-      return pinThreadMutation({
-        environmentId: target.environmentId,
+      const result = await pinThreadMutation({
+        environmentId: writable.environmentId,
         input: {
-          threadId: target.threadId,
+          threadId: writable.threadId,
           ...(orderKey !== undefined ? { orderKey } : {}),
         },
       });
+      if (result._tag === "Success") {
+        await mirrorLifecycleWriteIfRetargeted(target, writable, (ref) =>
+          pinThreadMutation({
+            environmentId: ref.environmentId,
+            input: {
+              threadId: ref.threadId,
+              ...(orderKey !== undefined ? { orderKey } : {}),
+            },
+          }),
+        );
+      }
+      return result;
     },
     [pinThreadMutation],
   );
 
   const unpinThread = useCallback(
     async (target: ScopedThreadRef) => {
-      if (!readEnvironmentSupportsPinning(target.environmentId)) {
+      const writable = readWritableThreadRef(target);
+      if (!readEnvironmentSupportsPinning(writable.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
             new ThreadPinningUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
+              environmentId: writable.environmentId,
+              threadId: writable.threadId,
             }),
           ),
         );
       }
-      return unpinThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId },
+      const result = await unpinThreadMutation({
+        environmentId: writable.environmentId,
+        input: { threadId: writable.threadId },
       });
+      if (result._tag === "Success") {
+        await mirrorLifecycleWriteIfRetargeted(target, writable, (ref) =>
+          unpinThreadMutation({
+            environmentId: ref.environmentId,
+            input: { threadId: ref.threadId },
+          }),
+        );
+      }
+      return result;
     },
     [unpinThreadMutation],
   );
@@ -641,56 +695,77 @@ export function useThreadActions() {
 
   const reorderPinnedThread = useCallback(
     async (target: ScopedThreadRef, orderKey: string) => {
+      const writable = readWritableThreadRef(target);
       // Callers (the sidebar drag handler) only enable dragging on
       // reorder-capable environments; this guard covers races around
       // capability changes mid-drag.
-      if (!readEnvironmentSupportsPinReorder(target.environmentId)) {
+      if (!readEnvironmentSupportsPinReorder(writable.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
             new ThreadPinReorderUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
+              environmentId: writable.environmentId,
+              threadId: writable.threadId,
             }),
           ),
         );
       }
-      return reorderPinnedThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, orderKey },
+      const result = await reorderPinnedThreadMutation({
+        environmentId: writable.environmentId,
+        input: { threadId: writable.threadId, orderKey },
       });
+      if (result._tag === "Success") {
+        await mirrorLifecycleWriteIfRetargeted(target, writable, (ref) =>
+          reorderPinnedThreadMutation({
+            environmentId: ref.environmentId,
+            input: { threadId: ref.threadId, orderKey },
+          }),
+        );
+      }
+      return result;
     },
     [reorderPinnedThreadMutation],
   );
 
   const reorderActiveThread = useCallback(
     async (target: ScopedThreadRef, orderKey: string) => {
-      if (!readEnvironmentSupportsActiveReorder(target.environmentId)) {
+      const writable = readWritableThreadRef(target);
+      if (!readEnvironmentSupportsActiveReorder(writable.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
             new ThreadActiveReorderUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
+              environmentId: writable.environmentId,
+              threadId: writable.threadId,
             }),
           ),
         );
       }
-      return reorderActiveThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, orderKey },
+      const result = await reorderActiveThreadMutation({
+        environmentId: writable.environmentId,
+        input: { threadId: writable.threadId, orderKey },
       });
+      if (result._tag === "Success") {
+        await mirrorLifecycleWriteIfRetargeted(target, writable, (ref) =>
+          reorderActiveThreadMutation({
+            environmentId: ref.environmentId,
+            input: { threadId: ref.threadId, orderKey },
+          }),
+        );
+      }
+      return result;
     },
     [reorderActiveThreadMutation],
   );
 
   const snoozeThread = useCallback(
     async (target: ScopedThreadRef, snoozedUntil: string) => {
+      const writable = readWritableThreadRef(target);
       // Version skew: never send the command to a server that predates it.
-      if (!readEnvironmentSupportsSnooze(target.environmentId)) {
+      if (!readEnvironmentSupportsSnooze(writable.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
             new ThreadSnoozeUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
+              environmentId: writable.environmentId,
+              threadId: writable.threadId,
             }),
           ),
         );
@@ -714,8 +789,8 @@ export function useThreadActions() {
       const threadKey = scopedThreadKey(target);
       useThreadDepartureStore.getState().markDeparting(threadKey, "snooze");
       const result = await snoozeThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, snoozedUntil },
+        environmentId: writable.environmentId,
+        input: { threadId: writable.threadId, snoozedUntil },
       }).catch((error: unknown) => {
         // Same thrown-mutation contract as settle above.
         useThreadDepartureStore.getState().clearDeparting(threadKey);
@@ -723,7 +798,14 @@ export function useThreadActions() {
       });
       if (result._tag === "Failure") {
         useThreadDepartureStore.getState().clearDeparting(threadKey);
+        return result;
       }
+      await mirrorLifecycleWriteIfRetargeted(target, writable, (ref) =>
+        snoozeThreadMutation({
+          environmentId: ref.environmentId,
+          input: { threadId: ref.threadId, snoozedUntil },
+        }),
+      );
       return result;
     },
     [resolveThreadTarget, snoozeThreadMutation],
@@ -731,20 +813,30 @@ export function useThreadActions() {
 
   const unsnoozeThread = useCallback(
     async (target: ScopedThreadRef) => {
-      if (!readEnvironmentSupportsSnooze(target.environmentId)) {
+      const writable = readWritableThreadRef(target);
+      if (!readEnvironmentSupportsSnooze(writable.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
             new ThreadSnoozeUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
+              environmentId: writable.environmentId,
+              threadId: writable.threadId,
             }),
           ),
         );
       }
-      return unsnoozeThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, reason: "user" },
+      const result = await unsnoozeThreadMutation({
+        environmentId: writable.environmentId,
+        input: { threadId: writable.threadId, reason: "user" },
       });
+      if (result._tag === "Success") {
+        await mirrorLifecycleWriteIfRetargeted(target, writable, (ref) =>
+          unsnoozeThreadMutation({
+            environmentId: ref.environmentId,
+            input: { threadId: ref.threadId, reason: "user" },
+          }),
+        );
+      }
+      return result;
     },
     [unsnoozeThreadMutation],
   );

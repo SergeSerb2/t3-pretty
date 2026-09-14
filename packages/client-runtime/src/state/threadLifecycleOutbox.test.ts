@@ -117,7 +117,7 @@ function makeShell(overrides: Partial<OrchestrationThreadShell> = {}): Orchestra
 }
 
 describe("queued thread lifecycle commands", () => {
-  it("only parks settle, unsettle, snooze, and unsnooze", () => {
+  it("parks settle, snooze, pin, and reorder — not archive", () => {
     expect(
       asQueuedThreadLifecycleCommand({
         type: "thread.archive",
@@ -135,6 +135,45 @@ describe("queued thread lifecycle commands", () => {
       type: "thread.settle",
       commandId: "settle",
       threadId: THREAD_ID,
+    });
+    expect(
+      asQueuedThreadLifecycleCommand({
+        type: "thread.pin",
+        commandId: CommandId.make("pin"),
+        threadId: THREAD_ID,
+        orderKey: "a0",
+      }),
+    ).toEqual({
+      type: "thread.pin",
+      commandId: "pin",
+      threadId: THREAD_ID,
+      orderKey: "a0",
+    });
+    expect(
+      asQueuedThreadLifecycleCommand({
+        type: "thread.pin.reorder",
+        commandId: CommandId.make("pin-reorder"),
+        threadId: THREAD_ID,
+        orderKey: "a1",
+      }),
+    ).toEqual({
+      type: "thread.pin.reorder",
+      commandId: "pin-reorder",
+      threadId: THREAD_ID,
+      orderKey: "a1",
+    });
+    expect(
+      asQueuedThreadLifecycleCommand({
+        type: "thread.active.reorder",
+        commandId: CommandId.make("active-reorder"),
+        threadId: THREAD_ID,
+        orderKey: "mf",
+      }),
+    ).toEqual({
+      type: "thread.active.reorder",
+      commandId: "active-reorder",
+      threadId: THREAD_ID,
+      orderKey: "mf",
     });
   });
 
@@ -180,6 +219,36 @@ describe("queued thread lifecycle commands", () => {
       otherThread,
       settle,
     ]);
+
+    const pinReorder = entry({
+      command: {
+        type: "thread.pin.reorder",
+        commandId: CommandId.make("pin-reorder-1"),
+        threadId: THREAD_ID,
+        orderKey: "a0",
+      },
+    });
+    const pin = entry({
+      queuedAt: "2026-08-15T13:00:00.000Z",
+      command: {
+        type: "thread.pin",
+        commandId: CommandId.make("pin-1"),
+        threadId: THREAD_ID,
+        orderKey: "a1",
+      },
+    });
+    expect(coalescePendingThreadLifecycleEntries([pinReorder, otherThread], pin)).toEqual([
+      otherThread,
+      pin,
+    ]);
+    expect(coalescePendingThreadLifecycleEntries([pin, otherThread], settle)).toEqual([
+      otherThread,
+      settle,
+    ]);
+    expect(coalescePendingThreadLifecycleEntries([laterSnooze, otherThread], pin)).toEqual([
+      otherThread,
+      pin,
+    ]);
   });
 
   it("coalesces a persisted batch in one pass without reviving a removed snooze", () => {
@@ -210,6 +279,15 @@ describe("queued thread lifecycle commands", () => {
     expect(coalescePendingThreadLifecycleEntryBatch([snooze, settle, unsettle])).toEqual([
       unsettle,
     ]);
+    const parkedPin = entry({
+      command: {
+        type: "thread.pin",
+        commandId: CommandId.make("pin-after-snooze"),
+        threadId: THREAD_ID,
+        orderKey: "a0",
+      },
+    });
+    expect(coalescePendingThreadLifecycleEntryBatch([snooze, parkedPin])).toEqual([parkedPin]);
 
     let threadIdReads = 0;
     const manyThreads = Array.from({ length: 2_000 }, (_, index) => {
@@ -285,6 +363,107 @@ describe("pending thread lifecycle overlay", () => {
     expect(overlayed.snoozedUntil).toBe("2026-08-16T09:00:00.000Z");
     expect(overlayed.settledOverride).toBe("active");
     expect(overlayed.settledAt).toBeNull();
+  });
+
+  it("applies pin, unpin, and reorder overlays", () => {
+    const pinned = applyPendingThreadLifecycleToThread(
+      makeShell({
+        settledOverride: "settled",
+        settledAt: "2026-08-14T00:00:00.000Z",
+        snoozedUntil: "2026-08-16T12:00:00.000Z",
+        snoozedAt: "2026-08-15T00:00:00.000Z",
+      }),
+      [
+        entry({
+          command: {
+            type: "thread.pin",
+            commandId: CommandId.make("pin"),
+            threadId: THREAD_ID,
+            orderKey: "a0",
+          },
+        }),
+      ],
+    );
+    expect(pinned).toMatchObject({
+      pinnedAt: "2026-08-15T12:00:00.000Z",
+      pinOrderKey: "a0",
+      settledOverride: "active",
+      settledAt: null,
+      snoozedUntil: null,
+      snoozedAt: null,
+    });
+
+    const alreadyPinned = applyPendingThreadLifecycleToThread(
+      makeShell({
+        pinnedAt: "2026-08-14T00:00:00.000Z",
+        pinOrderKey: "a0",
+        updatedAt: "2026-08-14T00:00:00.000Z",
+      }),
+      [
+        entry({
+          command: {
+            type: "thread.pin",
+            commandId: CommandId.make("pin-again"),
+            threadId: THREAD_ID,
+            orderKey: "zz",
+          },
+        }),
+      ],
+    );
+    expect(alreadyPinned.pinOrderKey).toBe("a0");
+    expect(alreadyPinned.updatedAt).toBe("2026-08-14T00:00:00.000Z");
+
+    const unpinned = applyPendingThreadLifecycleToThread(pinned, [
+      entry({
+        queuedAt: "2026-08-15T13:00:00.000Z",
+        command: {
+          type: "thread.unpin",
+          commandId: CommandId.make("unpin"),
+          threadId: THREAD_ID,
+        },
+      }),
+    ]);
+    expect(unpinned.pinnedAt).toBeNull();
+    expect(unpinned.pinOrderKey).toBeNull();
+
+    const reordered = applyPendingThreadLifecycleToThread(
+      makeShell({
+        pinnedAt: "2026-08-14T00:00:00.000Z",
+        pinOrderKey: "a0",
+        updatedAt: "2026-08-14T00:00:00.000Z",
+      }),
+      [
+        entry({
+          command: {
+            type: "thread.pin.reorder",
+            commandId: CommandId.make("pin-reorder"),
+            threadId: THREAD_ID,
+            orderKey: "b0",
+          },
+        }),
+      ],
+    );
+    expect(reordered.pinOrderKey).toBe("b0");
+    expect(reordered.updatedAt).toBe("2026-08-15T12:00:00.000Z");
+
+    const activeReordered = applyPendingThreadLifecycleToThread(
+      makeShell({
+        activeOrderKey: "a0",
+        updatedAt: "2026-08-14T00:00:00.000Z",
+      }),
+      [
+        entry({
+          command: {
+            type: "thread.active.reorder",
+            commandId: CommandId.make("active-reorder"),
+            threadId: THREAD_ID,
+            orderKey: "mf",
+          },
+        }),
+      ],
+    );
+    expect(activeReordered.activeOrderKey).toBe("mf");
+    expect(activeReordered.updatedAt).toBe("2026-08-14T00:00:00.000Z");
   });
 
   it("leaves the snapshot identity unchanged when nothing is pending", () => {

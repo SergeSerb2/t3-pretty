@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type {
   EnvironmentAutomation,
   ScopedAutomationRef,
@@ -8,6 +9,10 @@ import type {
   EnvironmentThread,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
+import {
+  environmentMachineKey,
+  resolveWritableThreadEnvironmentId,
+} from "@t3tools/client-runtime/state/thread-environment-target";
 import {
   type EnvironmentThreadStatus,
   mergeEnvironmentThread,
@@ -23,6 +28,7 @@ import { Atom } from "effect/unstable/reactivity";
 import { useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { automationEnvironment } from "./automations";
+import { environmentPresentations } from "./presentation";
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom } from "./server";
 import {
@@ -281,4 +287,31 @@ export function readEnvironmentThreadRefs(
 
 export function readThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   return appAtomRegistry.get(environmentThreadShells.threadShellsAtom);
+}
+
+/** Live connection that can accept a command for this thread, if one exists. */
+export function readWritableThreadRef(target: ScopedThreadRef): ScopedThreadRef {
+  const presentations = appAtomRegistry.get(environmentPresentations.presentationsAtom);
+  const threadIdsByEnvironment = new Map<EnvironmentId, Set<ScopedThreadRef["threadId"]>>();
+  for (const shell of readThreadShells()) {
+    const threadIds = threadIdsByEnvironment.get(shell.environmentId);
+    if (threadIds === undefined) {
+      threadIdsByEnvironment.set(shell.environmentId, new Set([shell.id]));
+    } else {
+      threadIds.add(shell.id);
+    }
+  }
+  const environmentId = resolveWritableThreadEnvironmentId({
+    environmentId: target.environmentId,
+    threadId: target.threadId,
+    candidates: [...presentations.entries()].map(([id, presentation]) => ({
+      environmentId: id,
+      connected: presentation.connection.phase === "connected",
+      machineKey: environmentMachineKey(presentation.entry.target.label),
+      threadIds: threadIdsByEnvironment.get(id) ?? new Set(),
+    })),
+  });
+  return environmentId === target.environmentId
+    ? target
+    : scopeThreadRef(environmentId, target.threadId);
 }

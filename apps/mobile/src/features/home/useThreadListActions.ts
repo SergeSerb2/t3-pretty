@@ -12,7 +12,12 @@ import { clearThreadDeparting, markThreadDeparting } from "./thread-departure-st
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { refreshArchivedThreadsForEnvironment } from "../archive/useArchivedThreadSnapshots";
 import { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";
+import {
+  environmentMachineKey,
+  resolveWritableThreadEnvironmentId,
+} from "@t3tools/client-runtime/state/thread-environment-target";
 import { appAtomRegistry } from "../../state/atom-registry";
+import { environmentPresentations } from "../../state/presentation";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { terminalEnvironment } from "../../state/terminal";
 import { environmentThreadShells, threadEnvironment } from "../../state/threads";
@@ -44,6 +49,46 @@ function environmentSupportsSnooze(environmentId: EnvironmentThreadShell["enviro
     appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
       .threadSnooze === true
   );
+}
+
+async function mirrorLifecycleWriteIfRetargeted(
+  environmentId: EnvironmentThreadShell["environmentId"],
+  writableEnvironmentId: EnvironmentThreadShell["environmentId"],
+  mutate: (environmentId: EnvironmentThreadShell["environmentId"]) => Promise<unknown>,
+) {
+  if (writableEnvironmentId === environmentId) {
+    return;
+  }
+  await mutate(environmentId);
+}
+
+function writableThreadEnvironmentId(
+  environmentId: EnvironmentThreadShell["environmentId"],
+  threadId: EnvironmentThreadShell["id"],
+) {
+  const presentations = appAtomRegistry.get(environmentPresentations.presentationsAtom);
+  const threadIdsByEnvironment = new Map<
+    EnvironmentThreadShell["environmentId"],
+    Set<EnvironmentThreadShell["id"]>
+  >();
+  for (const shell of appAtomRegistry.get(environmentThreadShells.threadShellsAtom)) {
+    const threadIds = threadIdsByEnvironment.get(shell.environmentId);
+    if (threadIds === undefined) {
+      threadIdsByEnvironment.set(shell.environmentId, new Set([shell.id]));
+    } else {
+      threadIds.add(shell.id);
+    }
+  }
+  return resolveWritableThreadEnvironmentId({
+    environmentId,
+    threadId,
+    candidates: [...presentations.entries()].map(([id, presentation]) => ({
+      environmentId: id,
+      connected: presentation.connection.phase === "connected",
+      machineKey: environmentMachineKey(presentation.entry.target.label),
+      threadIds: threadIdsByEnvironment.get(id) ?? new Set(),
+    })),
+  });
 }
 
 function environmentSupportsPinning(environmentId: EnvironmentThreadShell["environmentId"]) {
@@ -126,9 +171,13 @@ function useThreadActionExecutor(
       inFlightThreadKeys.current.add(key);
       selectionHaptic();
       try {
+        const writableEnvironmentId =
+          action === "settle" || action === "unsettle"
+            ? writableThreadEnvironmentId(thread.environmentId, thread.id)
+            : thread.environmentId;
         if (
           (action === "settle" || action === "unsettle") &&
-          !environmentSupportsSettlement(thread.environmentId)
+          !environmentSupportsSettlement(writableEnvironmentId)
         ) {
           Alert.alert(
             actionFailureTitle(action),
@@ -177,7 +226,7 @@ function useThreadActionExecutor(
               ? // reason "user" pins the thread active: auto-settle stays
                 // suppressed until real activity clears the pin server-side.
                 await unsettleMutation({
-                  environmentId: thread.environmentId,
+                  environmentId: writableEnvironmentId,
                   input: { threadId: thread.id, reason: "user" },
                 })
               : await (
@@ -189,11 +238,27 @@ function useThreadActionExecutor(
                         ? unarchiveMutation
                         : deleteMutation
                 )({
-                  environmentId: thread.environmentId,
+                  environmentId: writableEnvironmentId,
                   input: { threadId: thread.id },
                 }),
           (result) => result._tag === "Success",
         );
+        if (result._tag === "Success" && (action === "settle" || action === "unsettle")) {
+          await mirrorLifecycleWriteIfRetargeted(
+            thread.environmentId,
+            writableEnvironmentId,
+            (environmentId) =>
+              action === "unsettle"
+                ? unsettleMutation({
+                    environmentId,
+                    input: { threadId: thread.id, reason: "user" },
+                  })
+                : settleMutation({
+                    environmentId,
+                    input: { threadId: thread.id },
+                  }),
+          );
+        }
         if (result._tag === "Failure") {
           if (action === "settle") clearThreadDeparting(key);
           Alert.alert(actionFailureTitle(action), actionFailureMessage(action, result.cause));
@@ -303,7 +368,8 @@ export function useThreadListActions(): {
       }
       snoozeInFlightThreadKeys.current.add(key);
       try {
-        if (!environmentSupportsSnooze(thread.environmentId)) {
+        const writableEnvironmentId = writableThreadEnvironmentId(thread.environmentId, thread.id);
+        if (!environmentSupportsSnooze(writableEnvironmentId)) {
           Alert.alert(
             "Could not snooze thread",
             "This environment's server does not support snoozing yet. Update the server to use Snooze.",
@@ -327,7 +393,7 @@ export function useThreadListActions(): {
           key,
           () =>
             snoozeMutation({
-              environmentId: thread.environmentId,
+              environmentId: writableEnvironmentId,
               input: {
                 threadId: thread.id,
                 snoozedUntil,
@@ -335,6 +401,17 @@ export function useThreadListActions(): {
             }),
           (result) => result._tag === "Success",
         );
+        if (result._tag === "Success") {
+          await mirrorLifecycleWriteIfRetargeted(
+            thread.environmentId,
+            writableEnvironmentId,
+            (environmentId) =>
+              snoozeMutation({
+                environmentId,
+                input: { threadId: thread.id, snoozedUntil },
+              }),
+          );
+        }
         if (result._tag === "Failure") {
           clearThreadDeparting(key);
           const error = Cause.squash(result.cause);
@@ -361,7 +438,8 @@ export function useThreadListActions(): {
       }
       snoozeInFlightThreadKeys.current.add(key);
       try {
-        if (!environmentSupportsSnooze(thread.environmentId)) {
+        const writableEnvironmentId = writableThreadEnvironmentId(thread.environmentId, thread.id);
+        if (!environmentSupportsSnooze(writableEnvironmentId)) {
           Alert.alert(
             "Could not wake thread",
             "This environment's server does not support snoozing yet. Update the server to wake this thread.",
@@ -374,11 +452,22 @@ export function useThreadListActions(): {
           key,
           () =>
             unsnoozeMutation({
-              environmentId: thread.environmentId,
+              environmentId: writableEnvironmentId,
               input: { threadId: thread.id, reason: "user" },
             }),
           (result) => result._tag === "Success",
         );
+        if (result._tag === "Success") {
+          await mirrorLifecycleWriteIfRetargeted(
+            thread.environmentId,
+            writableEnvironmentId,
+            (environmentId) =>
+              unsnoozeMutation({
+                environmentId,
+                input: { threadId: thread.id, reason: "user" },
+              }),
+          );
+        }
         if (result._tag === "Failure") {
           const error = Cause.squash(result.cause);
           Alert.alert(
@@ -402,7 +491,8 @@ export function useThreadListActions(): {
   );
   const pinThread = useCallback(
     async (thread: EnvironmentThreadShell) => {
-      if (!environmentSupportsPinning(thread.environmentId)) {
+      const writableEnvironmentId = writableThreadEnvironmentId(thread.environmentId, thread.id);
+      if (!environmentSupportsPinning(writableEnvironmentId)) {
         Alert.alert(
           "Could not pin thread",
           "This environment's server does not support pinning yet. Update the server to use Pin.",
@@ -413,19 +503,31 @@ export function useThreadListActions(): {
       // Same placement as web: a fresh pin takes the top of the arranged
       // run. Servers that predate reordering get the bare pin (keyless).
       let orderKey: string | undefined;
-      if (environmentSupportsPinReorder(thread.environmentId)) {
+      if (environmentSupportsPinReorder(writableEnvironmentId)) {
         const shells = appAtomRegistry.get(environmentThreadShells.threadShellsAtom);
         let firstKey: string | null = null;
         for (const shell of shells) {
+          if (shell.environmentId !== writableEnvironmentId) continue;
           if (shell.pinnedAt == null || shell.pinOrderKey == null) continue;
           if (firstKey === null || shell.pinOrderKey < firstKey) firstKey = shell.pinOrderKey;
         }
         orderKey = pinOrderKeyBetween(null, firstKey) ?? undefined;
       }
       const result = await pinMutation({
-        environmentId: thread.environmentId,
+        environmentId: writableEnvironmentId,
         input: { threadId: thread.id, ...(orderKey !== undefined ? { orderKey } : {}) },
       });
+      if (result._tag === "Success") {
+        await mirrorLifecycleWriteIfRetargeted(
+          thread.environmentId,
+          writableEnvironmentId,
+          (environmentId) =>
+            pinMutation({
+              environmentId,
+              input: { threadId: thread.id, ...(orderKey !== undefined ? { orderKey } : {}) },
+            }),
+        );
+      }
       if (result._tag === "Failure") {
         const error = Cause.squash(result.cause);
         Alert.alert(
@@ -442,7 +544,8 @@ export function useThreadListActions(): {
   );
   const unpinThread = useCallback(
     async (thread: EnvironmentThreadShell) => {
-      if (!environmentSupportsPinning(thread.environmentId)) {
+      const writableEnvironmentId = writableThreadEnvironmentId(thread.environmentId, thread.id);
+      if (!environmentSupportsPinning(writableEnvironmentId)) {
         Alert.alert(
           "Could not unpin thread",
           "This environment's server does not support pinning yet. Update the server to use Pin.",
@@ -451,9 +554,20 @@ export function useThreadListActions(): {
       }
       selectionHaptic();
       const result = await unpinMutation({
-        environmentId: thread.environmentId,
+        environmentId: writableEnvironmentId,
         input: { threadId: thread.id },
       });
+      if (result._tag === "Success") {
+        await mirrorLifecycleWriteIfRetargeted(
+          thread.environmentId,
+          writableEnvironmentId,
+          (environmentId) =>
+            unpinMutation({
+              environmentId,
+              input: { threadId: thread.id },
+            }),
+        );
+      }
       if (result._tag === "Failure") {
         const error = Cause.squash(result.cause);
         Alert.alert(
@@ -532,8 +646,9 @@ export function useThreadListActions(): {
           : thread.pinnedAt != null
             ? "pinned"
             : "active";
+      const writableEnvironmentId = writableThreadEnvironmentId(thread.environmentId, thread.id);
       if (section === "settled") {
-        if (!environmentSupportsSettlement(thread.environmentId)) return false;
+        if (!environmentSupportsSettlement(writableEnvironmentId)) return false;
         appAtomRegistry.set(threadDropBusyAtom, true);
         try {
           return await settleThread(thread);
@@ -548,7 +663,7 @@ export function useThreadListActions(): {
           ? capabilities?.threadPinReorder === true
           : capabilities?.threadActiveReorder === true;
       };
-      if (!supportsReorder(thread.environmentId)) {
+      if (!supportsReorder(writableEnvironmentId)) {
         Alert.alert(
           "Could not move thread",
           "This environment's server does not support reordering these threads. Update the server to arrange them.",
@@ -585,11 +700,11 @@ export function useThreadListActions(): {
       if (
         crossSection &&
         (((section === "pinned" || thread.pinnedAt != null) &&
-          !environmentSupportsPinning(thread.environmentId)) ||
+          !environmentSupportsPinning(writableEnvironmentId)) ||
           (thread.settledOverride === "settled" &&
-            !environmentSupportsSettlement(thread.environmentId)) ||
+            !environmentSupportsSettlement(writableEnvironmentId)) ||
           (effectiveSnoozed(thread, { now: new Date().toISOString() }) &&
-            !environmentSupportsSnooze(thread.environmentId)))
+            !environmentSupportsSnooze(writableEnvironmentId)))
       )
         return false;
       const shellByKey = new Map(
@@ -616,14 +731,24 @@ export function useThreadListActions(): {
             const orderKey = assignments.find(
               ({ id }) => id === scopedThreadKey(thread.environmentId, thread.id),
             )?.orderKey;
+            const pinEnvironmentId = writableThreadEnvironmentId(thread.environmentId, thread.id);
             const result = await pinMutation({
-              environmentId: thread.environmentId,
+              environmentId: pinEnvironmentId,
               input: { threadId: thread.id, ...(orderKey === undefined ? {} : { orderKey }) },
             });
             if (result._tag === "Failure") {
               Alert.alert("Could not pin thread", String(Cause.squash(result.cause)));
               return false;
             }
+            await mirrorLifecycleWriteIfRetargeted(
+              thread.environmentId,
+              pinEnvironmentId,
+              (environmentId) =>
+                pinMutation({
+                  environmentId,
+                  input: { threadId: thread.id, ...(orderKey === undefined ? {} : { orderKey }) },
+                }),
+            );
           } else {
             if (lifecycle.unpin && !(await unpinThread(thread))) return false;
             if (lifecycle.unsettle && !(await unsettleThread(thread))) return false;
@@ -641,10 +766,25 @@ export function useThreadListActions(): {
           if (pending !== null && !pending.isPending()) return false;
           const target = shellByKey.get(assignment.id);
           if (target === undefined) continue;
+          const writableEnvironmentId = writableThreadEnvironmentId(
+            target.environmentId,
+            target.id,
+          );
           const result = await reorder({
-            environmentId: target.environmentId,
+            environmentId: writableEnvironmentId,
             input: { threadId: target.id, orderKey: assignment.orderKey },
           });
+          if (result._tag === "Success") {
+            await mirrorLifecycleWriteIfRetargeted(
+              target.environmentId,
+              writableEnvironmentId,
+              (environmentId) =>
+                reorder({
+                  environmentId,
+                  input: { threadId: target.id, orderKey: assignment.orderKey },
+                }),
+            );
+          }
           if (result._tag === "Failure") {
             const error = Cause.squash(result.cause);
             Alert.alert(

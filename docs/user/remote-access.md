@@ -116,8 +116,8 @@ connections are shown while at least one is online, and offline duplicates colla
 cluttering the list. Saved direct LAN or Tailscale connections are no longer offered in the app —
 connect through T3 Connect instead.
 
-Settle and snooze still work when a linked machine is offline. The change is saved on this device
-and applied on that machine as soon as T3 Connect can reach it again.
+Settle, snooze, pin, and thread order still work when a linked machine is offline. The change is
+saved on this device and applied on that machine as soon as T3 Connect can reach it again.
 
 A headless server has no desktop connection list to synchronize, so it remains intentionally
 one-way: desktop apps can add it from the mesh, but it does not gain their threads. Browser-only

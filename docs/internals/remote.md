@@ -44,9 +44,10 @@ environment type. Authentication remains the environment's responsibility for
 every route. See [environment authentication](./environment-auth.md) and the
 [T3 Connect trust boundary](./t3-connect.md).
 
-Settle and snooze can be issued against a cached thread while that environment has no session. The
-client parks the command, overlays the cached shell, and dispatches it when the supervisor has a
-session again — the same path used when a Surge Connect environment comes back online.
+Settle, snooze, pin, and thread reorder can be issued against a cached thread while that
+environment has no session. The client parks the command, overlays the cached shell, and
+dispatches it when the supervisor has a session again — the same path used when a Surge Connect
+environment comes back online.
 
 SSH can launch a server as well as forward a port. Desktop main owns that
 lifecycle because it can spawn SSH and handle authentication prompts. The

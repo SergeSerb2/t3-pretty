@@ -247,6 +247,10 @@
       "types": "./src/state/threadSort.ts",
       "default": "./src/state/threadSort.ts"
     },
+    "./state/thread-environment-target": {
+      "types": "./src/state/threadEnvironmentTarget.ts",
+      "default": "./src/state/threadEnvironmentTarget.ts"
+    },
     "./state/thread-settled": {
       "types": "./src/state/threadSettled.ts",
       "default": "./src/state/threadSettled.ts"

@@ -19,8 +19,13 @@ import {
   type PreparedConnection,
 } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
-import * as RpcSession from "../rpc/session.ts";
+import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
+import * as RpcSession from "../rpc/session.ts";
+import {
+  makeThreadLifecycleOutbox,
+  ThreadLifecycleOutbox,
+} from "../state/threadLifecycleOutbox.ts";
 import {
   archiveThread,
   createProject,
@@ -74,6 +79,20 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
     retryNow: Effect.void,
   } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
 });
+
+const makeDisconnectedSupervisor = Effect.fn("TestEnvironmentCommands.makeDisconnectedSupervisor")(
+  function* () {
+    return EnvironmentSupervisor.EnvironmentSupervisor.of({
+      target: TARGET,
+      state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
+      session: yield* SubscriptionRef.make(Option.none<RpcSession.RpcSession>()),
+      prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
+      connect: Effect.void,
+      disconnect: Effect.void,
+      retryNow: Effect.void,
+    } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+  },
+);
 
 describe("environment commands", () => {
   it.effect("adds generated command metadata", () =>
@@ -209,6 +228,49 @@ describe("environment commands", () => {
         {
           type: "thread.active.reorder",
           commandId: "reorder-command",
+          threadId: "thread-1",
+          orderKey: "mf",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("fails lifecycle commands when the environment has no session and no outbox", () =>
+    Effect.gen(function* () {
+      const supervisor = yield* makeDisconnectedSupervisor();
+      const error = yield* settleThread({
+        commandId: CommandId.make("settle-offline"),
+        threadId: ThreadId.make("thread-1"),
+      }).pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.flip,
+      );
+      expect(error).toBeInstanceOf(EnvironmentRpcUnavailableError);
+      expect(error.message).toBe("Test environment is not connected.");
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("parks pin and reorder when the environment has no session", () =>
+    Effect.gen(function* () {
+      const supervisor = yield* makeDisconnectedSupervisor();
+      const outbox = yield* makeThreadLifecycleOutbox();
+      const result = yield* reorderActiveThread({
+        commandId: CommandId.make("reorder-offline"),
+        threadId: ThreadId.make("thread-1"),
+        orderKey: "mf",
+      }).pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.provideService(ThreadLifecycleOutbox, outbox),
+      );
+      expect(result).toEqual({ sequence: 0 });
+      expect(
+        (yield* SubscriptionRef.get(outbox.pending))
+          .get(TARGET.environmentId)
+          ?.map((entry) => entry.command),
+      ).toEqual([
+        {
+          type: "thread.active.reorder",
+          commandId: "reorder-offline",
           threadId: "thread-1",
           orderKey: "mf",
         },

@@ -26,6 +26,7 @@ import {
   type QueuedThreadLifecycleCommand,
   type ThreadLifecyclePendingByEnvironment,
   threadLifecycleDomain,
+  threadLifecycleDomainBit,
 } from "./threadLifecycleOutboxModel.ts";
 import { ThreadLifecycleOutboxStore } from "./threadLifecycleOutboxStore.ts";
 
@@ -85,6 +86,41 @@ export function asQueuedThreadLifecycleCommand(
         reason: cmd.reason,
       };
     }
+    case "thread.pin": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.pin" }>;
+      return {
+        type: "thread.pin",
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        ...(cmd.orderKey === undefined ? {} : { orderKey: cmd.orderKey }),
+      };
+    }
+    case "thread.unpin": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.unpin" }>;
+      return {
+        type: "thread.unpin",
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+      };
+    }
+    case "thread.pin.reorder": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.pin.reorder" }>;
+      return {
+        type: "thread.pin.reorder",
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        orderKey: cmd.orderKey,
+      };
+    }
+    case "thread.active.reorder": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.active.reorder" }>;
+      return {
+        type: "thread.active.reorder",
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        orderKey: cmd.orderKey,
+      };
+    }
     default:
       return null;
   }
@@ -102,11 +138,26 @@ export function coalescePendingThreadLifecycleEntries(
     if (threadLifecycleDomain(entry.command.type) === nextDomain) {
       return false;
     }
-    // Settling unsnoozes on the server, so a later settle replaces a parked snooze.
-    return !(
+    const domain = threadLifecycleDomain(entry.command.type);
+    // Settling unsnoozes and unpins on the server.
+    if (
       next.command.type === "thread.settle" &&
-      threadLifecycleDomain(entry.command.type) === "snooze"
-    );
+      (domain === "snooze" || domain === "pin" || domain === "pin-order")
+    ) {
+      return false;
+    }
+    // Pinning unsnoozes on the server. Unpin does not.
+    if (next.command.type === "thread.pin" && domain === "snooze") {
+      return false;
+    }
+    // Pin carries an optional slot; unpin clears it. Either replaces a parked reorder.
+    if (
+      (next.command.type === "thread.pin" || next.command.type === "thread.unpin") &&
+      domain === "pin-order"
+    ) {
+      return false;
+    }
+    return true;
   });
   return [...kept, next];
 }
@@ -116,6 +167,8 @@ export function coalescePendingThreadLifecycleEntryBatch(
 ): ReadonlyArray<PendingThreadLifecycleEntry> {
   const seenDomains = new Map<PendingThreadLifecycleEntry["command"]["threadId"], number>();
   const laterSettle = new Set<PendingThreadLifecycleEntry["command"]["threadId"]>();
+  const laterPin = new Set<PendingThreadLifecycleEntry["command"]["threadId"]>();
+  const laterPromotePin = new Set<PendingThreadLifecycleEntry["command"]["threadId"]>();
   const retainedReversed: PendingThreadLifecycleEntry[] = [];
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
@@ -126,16 +179,31 @@ export function coalescePendingThreadLifecycleEntryBatch(
     if (entry.command.type === "thread.settle") {
       laterSettle.add(threadId);
     }
+    if (entry.command.type === "thread.pin" || entry.command.type === "thread.unpin") {
+      laterPin.add(threadId);
+    }
+    if (entry.command.type === "thread.pin") {
+      laterPromotePin.add(threadId);
+    }
     const domain = threadLifecycleDomain(entry.command.type);
-    const domainBit = domain === "settle" ? 1 : 2;
+    const domainBit = threadLifecycleDomainBit(domain);
     const seen = seenDomains.get(threadId) ?? 0;
     if ((seen & domainBit) !== 0) {
       continue;
     }
-    seenDomains.set(threadId, seen | domainBit);
-    if (domain === "snooze" && laterSettle.has(threadId)) {
+    if (
+      laterSettle.has(threadId) &&
+      (domain === "snooze" || domain === "pin" || domain === "pin-order")
+    ) {
       continue;
     }
+    if (laterPromotePin.has(threadId) && domain === "snooze") {
+      continue;
+    }
+    if (domain === "pin-order" && laterPin.has(threadId)) {
+      continue;
+    }
+    seenDomains.set(threadId, seen | domainBit);
     retainedReversed.push(entry);
   }
   retainedReversed.reverse();
@@ -152,6 +220,7 @@ export function applyPendingThreadLifecycleToThread<
     | "snoozedAt"
     | "pinnedAt"
     | "pinOrderKey"
+    | "activeOrderKey"
     | "updatedAt"
   >,
 >(thread: T, pending: ReadonlyArray<PendingThreadLifecycleEntry>): T {
@@ -175,6 +244,7 @@ function applyQueuedThreadLifecycleCommand<
     | "snoozedAt"
     | "pinnedAt"
     | "pinOrderKey"
+    | "activeOrderKey"
     | "updatedAt"
   >,
 >(thread: T, entry: PendingThreadLifecycleEntry): T {
@@ -210,6 +280,42 @@ function applyQueuedThreadLifecycleCommand<
         snoozedUntil: null,
         snoozedAt: null,
         updatedAt: entry.queuedAt,
+      };
+    case "thread.pin": {
+      const alreadyPinned = thread.pinnedAt != null;
+      return {
+        ...thread,
+        pinnedAt: thread.pinnedAt ?? entry.queuedAt,
+        ...(!alreadyPinned && entry.command.orderKey !== undefined
+          ? { pinOrderKey: entry.command.orderKey }
+          : {}),
+        settledOverride:
+          thread.settledOverride === "settled" ? ("active" as const) : thread.settledOverride,
+        settledAt: thread.settledOverride === "settled" ? null : thread.settledAt,
+        snoozedUntil: null,
+        snoozedAt: null,
+        updatedAt: alreadyPinned ? thread.updatedAt : entry.queuedAt,
+      };
+    }
+    case "thread.unpin":
+      return {
+        ...thread,
+        pinnedAt: null,
+        pinOrderKey: null,
+        updatedAt: thread.pinnedAt == null ? thread.updatedAt : entry.queuedAt,
+      };
+    case "thread.pin.reorder":
+      return {
+        ...thread,
+        pinOrderKey: entry.command.orderKey,
+        updatedAt:
+          thread.pinOrderKey === entry.command.orderKey ? thread.updatedAt : entry.queuedAt,
+      };
+    case "thread.active.reorder":
+      // Arranging the list is not thread activity — same as the server decider.
+      return {
+        ...thread,
+        activeOrderKey: entry.command.orderKey,
       };
   }
 }
