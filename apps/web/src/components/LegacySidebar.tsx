@@ -113,7 +113,8 @@ import { isModelPickerOpen } from "../modelPickerVisibility";
 import { useShortcutModifierState } from "../shortcutModifierState";
 import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
-import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
 
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -190,6 +191,7 @@ import {
   resolveThreadStatusPill,
   orderItemsByPreferredIds,
   shouldClearThreadSelectionOnMouseDown,
+  shouldCreateNewThreadInCurrentProject,
   sortProjectsForSidebar,
   useSidebarRowSubscriptionLease,
   useThreadJumpHintVisibility,
@@ -3152,7 +3154,8 @@ export default function LegacySidebar() {
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const sidebarThreadPreviewCount = useClientSettings((s) => s.sidebarThreadPreviewCount);
   const updateSettings = useUpdateClientSettings();
-  const handleNewThread = useNewThreadHandler();
+  const newThreadContext = useHandleNewThread();
+  const handleNewThread = newThreadContext.handleNewThread;
   const { archiveThread, deleteThread } = useThreadActions();
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const routeTarget = useParams({
@@ -3777,6 +3780,22 @@ export default function LegacySidebar() {
     });
   }, []);
 
+  const handleNewThreadClick = useCallback(
+    (event?: React.MouseEvent) => {
+      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, sortedProjects.length)) {
+        void startNewThreadFromContext({
+          activeDraftThread: newThreadContext.activeDraftThread,
+          activeThread: newThreadContext.activeThread ?? undefined,
+          defaultProjectRef: newThreadContext.defaultProjectRef,
+          handleNewThread: newThreadContext.handleNewThread,
+        });
+        return;
+      }
+      openCommandPalette({ open: "new-thread-in" });
+    },
+    [newThreadContext, sortedProjects.length],
+  );
+
   if (!isMobile && !open) {
     return (
       <>
@@ -3784,6 +3803,7 @@ export default function LegacySidebar() {
         <SidebarCompactRail
           projects={sortedProjects}
           selectedProjectKey={activeRouteProjectKey}
+          onNewThread={handleNewThreadClick}
           onSelectProject={(project) => {
             useUiStateStore.getState().setProjectExpanded(project.projectKey, true);
             setOpen(true);

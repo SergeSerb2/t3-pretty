@@ -2848,7 +2848,7 @@ html[data-theme-token-probe] *::after {
    roles explicit prevents the thread toolbar from falling back to the default
    dark-mode whites while preserving the same theme file across clients. */
 html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
-  background-color: var(--background);
+  background-color: var(--toolbar-background);
   color: var(--contrast-toolbar-foreground);
 }
 

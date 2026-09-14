@@ -179,6 +179,12 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain("background-color: var(--toolbar-control)");
   });
 
+  it("themed headers keep the toolbar chrome fill", () => {
+    expect(indexCssSource).toMatch(
+      /html\[data-theme-id\] :is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) \{\s*background-color: var\(--toolbar-background\);/,
+    );
+  });
+
   it("the right panel still exposes the hooks the scenery glass plate targets", () => {
     expect(previewPanelShellSource).toContain("right-panel-inline-body");
     expect(previewPanelShellSource).toContain('data-right-panel=""');
