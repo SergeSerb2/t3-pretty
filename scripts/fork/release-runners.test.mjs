@@ -235,7 +235,7 @@ ${setup}
     // Pack requires what `cli.ts build` emits. The standalone
     // service-launcher entry is gone; the bin hosts `__service-launcher`.
     const cliPack = NodeFS.readFileSync(
-      NodePath.resolve(here, "../../apps/server/scripts/cli.ts"),
+      NodePath.resolve(here, "../../apps/server/scripts/cliPack.ts"),
       "utf8",
     );
     assert.match(
