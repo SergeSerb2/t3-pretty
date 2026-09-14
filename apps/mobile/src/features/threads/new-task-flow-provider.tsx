@@ -1135,30 +1135,29 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       const projectCwd = usingPendingSnapshot
         ? editingPendingTask?.creation?.projectCwd
         : selectedProject.workspaceRoot;
+      // This builder is the only mobile suffix site (send, queue, re-queue,
+      // and edit-flush). Both flags have to land here or Merge/PR+ is a no-op.
+      const createPullRequest =
+        !projectConfirmedNotGitRepo &&
+        (draft.autoCreatePullRequest ??
+          (preferencesHydrated
+            ? resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode)
+            : false));
+      const babysitPullRequest =
+        createPullRequest &&
+        (draft.autoBabysitPullRequest ??
+          (preferencesHydrated
+            ? resolveAutoBabysitPullRequest(autoBabysitPullRequestByEnvMode, mode)
+            : false));
       return {
         environmentId: selectedProject.environmentId,
         threadId: ThreadId.make(metadata.threadId),
         messageId: MessageId.make(metadata.messageId),
         commandId: CommandId.make(metadata.commandId),
-        // Queued tasks capture the auto-PR instruction at queue time so a
-        // later preference flip cannot alter an already-queued task. A
-        // draft-scoped override (hydrated from the queued text or set by the
-        // toggle mid-edit) wins over the per-mode preference; non-git
-        // projects never queue the instruction.
         text: applyCreatePullRequestSuffix({
           text,
-          autoCreatePullRequest:
-            !projectConfirmedNotGitRepo &&
-            (draft.autoCreatePullRequest ??
-              (preferencesHydrated
-                ? resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode)
-                : false)),
-          babysitPullRequest:
-            !projectConfirmedNotGitRepo &&
-            (draft.autoBabysitPullRequest ??
-              (preferencesHydrated
-                ? resolveAutoBabysitPullRequest(autoBabysitPullRequestByEnvMode, mode)
-                : false)),
+          autoCreatePullRequest: createPullRequest,
+          babysitPullRequest,
           threadHasStarted: false,
           model: draftModelSelection.model,
         }),
