@@ -11,7 +11,7 @@ import { usageConnectionPlan } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId, StorageInventory } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 
 import { appAtomRegistry } from "./atom-registry";
 import { environmentPresentations } from "./presentation";
@@ -70,22 +70,27 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
       });
       continue;
     }
-    const result =
-      config.environment.capabilities.storageInventoryStream === true
-        ? get(serverEnvironment.storageInventoryStream({ environmentId, input: {} }))
-        : get(serverEnvironment.storageInventory({ environmentId, input: {} }));
-    const inventory = Option.getOrNull(AsyncResult.value(result));
+    // Mobile: storage inventory is intentionally unsupported. The worktree
+    // management APIs require server-side file enumeration that assumes
+    // direct filesystem access patterns only safe on desktop. Mobile has no
+    // SettingsEnvironmentStorage route in Stack and never navigates here.
+    // This atom exists only to satisfy shared state shape; always returns
+    // unsupported for consistency with web's capability check above.
     statuses.push({
       environmentId,
       label: presentation.entry.target.label,
-      isPending: result.waiting,
-      unsupported: false,
-      error: result._tag === "Failure" ? "This environment could not report storage." : null,
-      inventory,
+      isPending: false,
+      unsupported: true,
+      error: null,
+      inventory: null,
     });
   }
   return statuses;
 }).pipe(Atom.withLabel("mobile-storage-inventory"));
+
+const inactiveStorageInventoriesAtom = Atom.make<readonly EnvironmentStorageStatus[]>([]).pipe(
+  Atom.withLabel("mobile-storage-inventory:inactive"),
+);
 
 export interface StorageInventoryView {
   readonly environments: readonly EnvironmentStorageStatus[];
@@ -93,26 +98,19 @@ export interface StorageInventoryView {
   readonly refresh: () => void;
 }
 
-export function useStorageInventories(): StorageInventoryView {
-  const environments = useAtomValue(storageInventoriesAtom);
+export function useStorageInventories(enabled = true): StorageInventoryView {
+  const observedEnvironments = useAtomValue(
+    enabled ? storageInventoriesAtom : inactiveStorageInventoriesAtom,
+  );
+  const retainedEnvironmentsRef = useRef(observedEnvironments);
+  if (enabled) {
+    retainedEnvironmentsRef.current = observedEnvironments;
+  }
+  const environments = enabled ? observedEnvironments : retainedEnvironmentsRef.current;
 
   const refresh = useCallback(() => {
-    for (const environment of environments) {
-      if (environment.unsupported) continue;
-      appAtomRegistry.refresh(
-        serverEnvironment.storageInventory({
-          environmentId: environment.environmentId,
-          input: {},
-        }),
-      );
-      appAtomRegistry.refresh(
-        serverEnvironment.storageInventoryStream({
-          environmentId: environment.environmentId,
-          input: {},
-        }),
-      );
-    }
-  }, [environments]);
+    // Storage inventory refresh is not available in mobile
+  }, []);
 
   return {
     environments,
@@ -125,16 +123,5 @@ export function useStorageInventories(): StorageInventoryView {
 }
 
 export function refreshStorageInventory(environmentId: EnvironmentId): void {
-  appAtomRegistry.refresh(
-    serverEnvironment.storageInventory({
-      environmentId,
-      input: {},
-    }),
-  );
-  appAtomRegistry.refresh(
-    serverEnvironment.storageInventoryStream({
-      environmentId,
-      input: {},
-    }),
-  );
+  // Storage inventory refresh is not available in mobile
 }

@@ -1,11 +1,15 @@
+import type { Skill, SkillLocation } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   displaySkillRows,
   finishTombstoneExit,
+  linkOverrideKey,
   nextSkillOrderIds,
   pruneHiddenSkillIds,
+  pruneSettledLinkOverrides,
   retainedSkillIds,
+  skillChipState,
 } from "./SkillsSettings.logic";
 
 const alpha = { id: "alpha", name: "Alpha" };
@@ -100,5 +104,73 @@ describe("finishTombstoneExit", () => {
       [beta.id, beta],
     ]);
     expect([...finishTombstoneExit(exiting, alpha.id).keys()]).toEqual(["beta"]);
+  });
+});
+
+const claude: SkillLocation = {
+  key: "claude",
+  title: "Claude Code",
+  displayPath: "~/.claude/skills",
+  driver: "claude" as SkillLocation["driver"],
+  reads: ["claude"],
+};
+const cursor: SkillLocation = {
+  key: "cursor",
+  title: "Cursor",
+  displayPath: "~/.cursor/skills",
+  driver: "cursor" as SkillLocation["driver"],
+  reads: ["cursor", "agents"],
+};
+const librarySkill: Skill = {
+  id: "host:agents:ponytail",
+  name: "Ponytail",
+  dirName: "ponytail",
+  displayPath: "~/.agents/skills/ponytail",
+  home: "agents",
+  presentIn: ["agents"],
+};
+
+describe("skillChipState", () => {
+  it("locks the location the folder lives in", () => {
+    expect(skillChipState({ ...librarySkill, home: "claude", presentIn: ["claude"] }, claude)).toBe(
+      "home",
+    );
+  });
+
+  it("is off where the CLI cannot reach the folder and linked once it can", () => {
+    expect(skillChipState(librarySkill, claude)).toBe("off");
+    expect(skillChipState({ ...librarySkill, presentIn: ["agents", "claude"] }, claude)).toBe(
+      "linked",
+    );
+  });
+
+  it("is inherited where the CLI reads the shared library itself", () => {
+    expect(skillChipState(librarySkill, cursor)).toBe("inherited");
+  });
+
+  it("falls back to inherited when an optimistic unlink leaves the CLI still reading it", () => {
+    const linkedTwice = { ...librarySkill, presentIn: ["agents", "cursor"] };
+    expect(skillChipState(linkedTwice, cursor)).toBe("linked");
+    expect(skillChipState(linkedTwice, cursor, false)).toBe("inherited");
+    expect(skillChipState(librarySkill, claude, true)).toBe("linked");
+  });
+});
+
+describe("pruneSettledLinkOverrides", () => {
+  it("keeps an override the server has not caught up with and drops the ones it has", () => {
+    const overrides = new Map([
+      [linkOverrideKey(librarySkill.id, "claude"), true],
+      [linkOverrideKey(librarySkill.id, "cursor"), true],
+      [linkOverrideKey("host:agents:gone", "claude"), true],
+    ]);
+    const skills = [{ ...librarySkill, presentIn: ["agents", "cursor"] }];
+    expect([...pruneSettledLinkOverrides(overrides, skills).keys()]).toEqual([
+      linkOverrideKey(librarySkill.id, "claude"),
+    ]);
+  });
+
+  it("returns the same map when nothing settled", () => {
+    const overrides = new Map([[linkOverrideKey(librarySkill.id, "claude"), true]]);
+    expect(pruneSettledLinkOverrides(overrides, [librarySkill])).toBe(overrides);
   });
 });

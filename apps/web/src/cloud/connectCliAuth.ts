@@ -2,6 +2,8 @@ import {
   buildConnectClerkAuthorizeUrl,
   connectCallbackUrl,
   connectLoopbackRedirectUri,
+  CONNECT_AUTH_CODE_MAX_LENGTH,
+  CONNECT_AUTH_VALUE_MAX_LENGTH,
   CONNECT_OAUTH_SCOPES,
   type ConnectAuthorizeRequest,
 } from "@t3tools/shared/connectAuth";
@@ -12,7 +14,7 @@ import { hasCloudPublicConfig, resolveCloudPublicConfig, trimNonEmpty } from "./
 
 const CONNECT_CLI_AUTH_STATE_STORAGE_KEY = "t3code-connect-cli-auth-state";
 
-export function resolveConnectCliOAuthClientId(): string | null {
+function resolveConnectCliOAuthClientId(): string | null {
   return trimNonEmpty(import.meta.env.VITE_CLERK_CLI_OAUTH_CLIENT_ID as string | undefined);
 }
 
@@ -87,7 +89,8 @@ export function rememberConnectCliAuthState(state: string): void {
     window.sessionStorage.setItem(CONNECT_CLI_AUTH_STATE_STORAGE_KEY, state);
   } catch {
     // Session storage can be unavailable (e.g. blocked). The callback page
-    // then falls back to trusting the state Clerk echoed back.
+    // then fails closed because it cannot verify that this browser initiated
+    // the request.
   }
 }
 
@@ -116,6 +119,13 @@ export function readConnectCliCallbackResult(
   const code = url.searchParams.get("code")?.trim() ?? "";
   const state = url.searchParams.get("state")?.trim() ?? "";
   if (!code || !state) {
+    return null;
+  }
+  if (
+    code.length > CONNECT_AUTH_VALUE_MAX_LENGTH ||
+    state.length > CONNECT_AUTH_VALUE_MAX_LENGTH ||
+    code.length + state.length + 1 > CONNECT_AUTH_CODE_MAX_LENGTH
+  ) {
     return null;
   }
   return { code, state };

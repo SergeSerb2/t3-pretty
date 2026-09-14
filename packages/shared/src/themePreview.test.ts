@@ -17,4 +17,12 @@ describe("theme preview", () => {
     expect(mixThemePreviewBase(STANDARD_THEME_PREVIEW_COLORS.light!, "light")).toBe("#fdfdfd");
     expect(mixThemePreviewBase(STANDARD_THEME_PREVIEW_COLORS.dark!, "dark")).toBe("#0a0a0a");
   });
+
+  it("falls back instead of producing an invalid color for malformed OKLCH", () => {
+    const malformed = {
+      ...STANDARD_THEME_PREVIEW_COLORS.light!,
+      canvas: "oklch(1.2.3 0.1 20)",
+    };
+    expect(mixThemePreviewBase(malformed, "light")).toBe(malformed.canvas);
+  });
 });

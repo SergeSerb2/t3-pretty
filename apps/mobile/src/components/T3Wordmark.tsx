@@ -1,3 +1,4 @@
+import type { ColorValue } from "react-native";
 import { Image } from "expo-image";
 
 const T3_PRETTY_MARK = require("../../assets/t3-pretty-mark.png");
@@ -10,7 +11,11 @@ const T3_PRETTY_MARK_ASPECT_RATIO = 480 / 351;
  * Sage-ink cut-out T3 on a transparent ground. "Pretty" is set in type
  * beside it by CompactBrandTitle / HomeHeader.
  */
-export function T3Wordmark(props: { readonly height: number }) {
+export function T3Wordmark(props: {
+  readonly height: number;
+  readonly color?: ColorValue;
+  readonly colorClassName?: string;
+}) {
   return (
     <Image
       accessibilityLabel="T3"

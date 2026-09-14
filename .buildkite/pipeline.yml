@@ -4,20 +4,65 @@
 # for that event. Path filters are not supported by the importer, so the
 # workflows themselves skip no-op desktop/mobile work.
 #
-# Queues:
-#   linux-small    — Buildkite hosted Linux (importer + ubuntu-latest jobs + AppImage)
-#   macos-release  — shared Mac queue. Packaging steps (DMG, iOS, relay,
-#                    sync) add os=macos so they only run on m5-dev; Origin PR
-#                    Review stays queue-wide so the review-only Linux agent
-#                    (m1-linux-t3code-fork) can take it. Do not invent a
-#                    second queue until it exists in the Buildkite cluster;
-#                    an unknown queue fails pipeline upload for every PR.
-#   windows-release — serge-pc native NSIS (importer cannot run Windows jobs)
+# Queues (hybrid: Origin gates + fork cluster secrets stay self-hosted;
+# packaging is temporarily back on self-hosted because hosted M4 /
+# linux-small jobs cancel immediately — BK #1944/#1948):
+#   linux-small     — hosted Linux (CLI, AppImage). Hosted dispatch
+#                     currently auto-cancels these jobs in ~100ms with
+#                     empty logs / waiting_failed (BK #1944/#1948/#1952).
+#                     AppImage stays here — do not send it to
+#                     macos-release + os=linux: that matches arm64
+#                     m1-linux-t3code-fork and any review-only Linux
+#                     agents, and the script requires x86_64.
+#                     linux-appimage and publish-cli soft_fail so a
+#                     hosted cancel cannot red the Mac/iOS/Android
+#                     packaging build. Imported ubuntu-latest GHA
+#                     children (Resolve, WSL, concurrency gates) are
+#                     skipped for the same reason: the github-actions
+#                     plugin uploads them without inheriting
+#                     origin-workflows soft_fail, so they still red
+#                     the build.
+#   macos-medium    — hosted MACOS_ARM64_M4_6X28 (pipeline upload). No
+#                     Origin CLI / no CURSOR_API_KEY /
+#                     no GITHUB_MIRROR_SSH_KEY / no PLANETSCALE_* . Hosted
+#                     agents cannot resolve those cluster secrets; do not
+#                     assign Origin gates or secretful Mirror/Relay here.
+#                     Android Internal used this until the same hosted
+#                     cancel (BK #1944/#1948).
+#   macos-large     — hosted MACOS_ARM64_M4_12X56. Signed DMG and iOS used
+#                     this (Apple signing imports CSC_LINK / APPLE_API_KEY
+#                     into a per-job temp keychain). Hosted M4 jobs now
+#                     auto-cancel the same way (last green hosted Mac DMG
+#                     was BK #1904).
+#   macos-release   — self-hosted Serge Mac / review-only Linux /
+#                     m1-linux-t3code-fork. Origin PR review, comments,
+#                     GHA importer, upstream sync, GitHub mirror, and
+#                     relay stay here: they need CURSOR_API_KEY, the
+#                     origin CLI, GITHUB_MIRROR_SSH_KEY, PLANETSCALE_*,
+#                     and/or the macos-release file-store fallbacks.
+#                     Hosted M4 lacks those today (BK 1876/1878/1880).
+#                     Temporary packaging also runs here: macos-dmg,
+#                     ios-mobile, and android-mobile (os=macos).
+#   windows-release — serge-pc native NSIS (cannot run on Mac)
 #
-# Do not list cluster secrets on hosted steps. Hosted agents currently 500
-# while fetching YAML `secrets:`, and the GitHub Actions importer fails the
-# job if any `secrets.*` request fails. Public values stay in `env`. Private
-# keys stay in the cluster; hosted jobs load them after checkout with
+# TODO: restore hosted queues for packaging (macos-large DMG/iOS,
+# macos-medium Android), drop soft_fail on linux-appimage /
+# publish-cli, and restore the origin-workflows GHA import
+# (fork-release.yml ubuntu-latest jobs + concurrency) once
+# Buildkite/Namespace hosted dispatch works again.
+# Target hosted Mac queues by key only when that lands — extra tags
+# like os=macos can leave hosted M4 unmatched. Until then,
+# macos-release packaging steps keep os=macos so the mixed pool
+# (Serge Mac + Linux review + m1-linux-t3code-fork) cannot take
+# Apple/Android jobs. Origin PR review and comments stay queue-wide
+# so the review-only Linux agent can take them. The Buildkite
+# default upload step is macos-medium (pipeline settings, not this
+# file); upload does not need Origin secrets.
+#
+# Do not list YAML `secrets:` on these steps. Hosted agents currently
+# 500 while fetching them; self-hosted packaging does not need that
+# path. Public values stay in `env`. Private keys stay in the cluster
+# or macos-release file-store; jobs load them after checkout with
 # scripts/fork/load-buildkite-secrets.sh.
 
 env:
@@ -46,33 +91,56 @@ steps:
     # This independent step does not gate the internal packaging steps below.
     if: 'build.branch == "main" && build.source != "schedule"'
     agents:
+      # GITHUB_MIRROR_SSH_KEY is a fork cluster secret. Hosted macos-medium
+      # cannot resolve it (BK 1878/1880: "cluster secret ... is not
+      # available on this agent"). Keep this on macos-release with os=macos
+      # so the Linux review-only agent cannot take it.
       queue: macos-release
       os: macos
+    # Buildkite interpolates ${VAR} in command: before the step runs.
+    # Check the sourced secret in mirror-github.sh, not in this block.
     command: |
       . scripts/fork/load-buildkite-secrets.sh GITHUB_MIRROR_SSH_KEY
-      test -n "${GITHUB_MIRROR_SSH_KEY:-}" || { echo "GITHUB_MIRROR_SSH_KEY secret is required for the GitHub mirror" >&2; exit 1; }
       export GITHUB_MIRROR_REPO="${GITHUB_MIRROR_REPO:-SergeSerb2/t3-pretty}"
       bash scripts/fork/mirror-github.sh
   - label: ":github: T3 Pretty Origin workflows"
     key: origin-workflows
-    # Imported GHA jobs (desktop preflight) still die in ~2s on the importer.
-    # Native DMG/NSIS/AppImage/iOS/relay are the release. Do not red the whole
-    # build when only the importer fails.
-    # Scheduled builds exist only to run upstream sync. That job is native
-    # macos-release below: imported macos GHA steps write $GITHUB_OUTPUT
-    # and die under set -u when the importer omits the file.
+    # github-actions#v0.13.0 uploads child steps that do not inherit
+    # this step's soft_fail. Hosted linux-small auto-cancels those
+    # children (gha-concurrency-start/finish, Resolve, WSL) in ~100ms
+    # with waiting_failed / canceled (BK #1944/#1948/#1952). Native
+    # macos-dmg / windows-nsis / ios / android do not depend on them.
+    # The plugin has no child soft_fail option; continue-on-error does
+    # not tolerate infrastructure cancel. Skip the importer until
+    # hosted linux-small dispatch works.
+    # TODO: drop skip and restore `if: build.source != "schedule"`
+    # (and the ubuntu jobs in fork-release.yml) once hosted
+    # linux-small works.
     soft_fail: true
-    if: build.source != "schedule"
+    # skip reason max 70 chars (BK rejected the longer #288 wording).
+    skip: "GHA children on linux-small hard-fail (BK #1952)"
+    # if: build.source != "schedule"
     # Bound the importer so a hung GHA child cannot leave this step running
     # for hours on linux-small. Native Mac/Windows/Linux steps do not depend
     # on it.
     timeout_in_minutes: 30
     agents:
-      queue: linux-small
+      # buildkite-gha uploads its generated pipeline with --reject-secrets.
+      # Hosted Agent v4 does not provide that flag and hosted M4 currently
+      # fails to compile the plugin (Go 1.26 vs 1.27). Self-hosted
+      # macos-release runs Agent v3 and a matching Go toolchain.
+      queue: macos-release
+      os: macos
     plugins:
       - github-actions#v0.13.0:
+          # Exact commit tagged v0.35.1. Source mode avoids mise's flaky
+          # GitHub release-asset/attestation lookup on cold hosted workers.
+          source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"
           workflows:
             - .github/workflows/fork-release.yml
+          # Mapping kept for the restore. Jobs in fork-release.yml are
+          # skipped until hosted linux-small dispatch works; do not
+          # retarget them to macos-release + os=linux (arm64).
           runners:
             - runs-on: ubuntu-latest
               queue: linux-small
@@ -83,16 +151,19 @@ steps:
             - runs-on: macos-14
               queue: macos-release
 
-  # Hosted linux-small cannot load CURSOR_API_KEY. macos-release has
-  # the secret files. Run review scripts from origin/main when present
-  # so a feature branch cannot swap the secret-loading script.
+  # Hosted linux-small and hosted M4 cannot load CURSOR_API_KEY.
+  # macos-release has the secret files and the origin CLI. Run review
+  # scripts from origin/main when present so a feature branch cannot
+  # swap the secret-loading script.
   - label: ":git: Upstream Sync"
     key: upstream-sync
     # The four-hour schedule is this job. Do not import
     # fork-upstream-sync.yml: macos GHA steps need GITHUB_OUTPUT
     # for discover, and the importer often leaves that file unset.
     if: 'build.branch == "main" && (build.source == "schedule" || build.source == "ui" || build.source == "api")'
-    timeout_in_minutes: 120
+    # Build 1241 finished with 26 seconds of margin at 120; a backlog merge
+    # that times out re-pays its conflicts next run, so keep headroom.
+    timeout_in_minutes: 180
     concurrency: 1
     concurrency_group: "t3-pretty/upstream-sync"
     # Ahead of Origin PR review so a feature-branch review cannot occupy
@@ -119,6 +190,8 @@ steps:
     concurrency: 1
     concurrency_group: "t3-pretty/origin-pr-review/$BUILDKITE_BRANCH"
     agents:
+      # Queue-wide: review-only Linux agents on macos-release can take this.
+      # Hosted macos-medium has neither origin nor CURSOR_API_KEY (BK 1864).
       queue: macos-release
     command: bash scripts/fork/run-trusted-origin-pr-ci.sh
 
@@ -145,7 +218,11 @@ steps:
     # stamped — remotes fetch t3-<appVersion>.tgz, so reminting 404s.
     # Skipped when DMG skips (PRs, scheduled sync). Do not promote t3.tgz
     # from a failed or non-desktop revision.
-    if: build.branch == "main"
+    # Hosted linux-small currently auto-cancels / waiting_failed
+    # (BK #1944/#1948). soft_fail so that cannot red the build while
+    # Mac/iOS/Android package on macos-release.
+    soft_fail: true
+    if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 40
     agents:
       queue: linux-small
@@ -163,13 +240,18 @@ steps:
     timeout_in_minutes: 90
     agents:
       queue: windows-release
-    command: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fork/build-windows-nsis.ps1
+    command: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/fork/build-windows-nsis.ps1
 
   - label: ":linux: Linux x64 AppImage"
     key: linux-appimage
-    # Hosted linux-small already compiles WSL node-pty. Package the AppImage
-    # there too so the public feed gets Linux without occupying macos-release.
-    # Do not list cluster secrets: hosted YAML secrets: currently 500.
+    # Stay on hosted linux-small (x86_64). Do not use macos-release +
+    # os=linux: that lands on arm64 m1-linux-t3code-fork and any
+    # review-only Linux agents; build-linux-appimage.sh requires x86_64
+    # and would red the build. Hosted linux-small currently auto-cancels
+    # / waiting_failed (BK #1944/#1948). soft_fail so that cannot red
+    # the build while Mac/iOS/Android package on macos-release.
+    # TODO: drop soft_fail once hosted dispatch works again.
+    soft_fail: true
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
     agents:
@@ -182,8 +264,14 @@ steps:
 
   - label: ":mac: macOS arm64 DMG"
     key: macos-dmg
+    # Both Apple builds replace the user keychain search list while signing.
+    concurrency: 1
+    concurrency_group: "t3-pretty/apple-signing"
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 60
+    # Temporarily on macos-release + os=macos. Hosted macos-large
+    # auto-cancels in ~100ms with empty logs (BK #1944/#1948).
+    # TODO: restore queue: macos-large (key only) once hosted dispatch works.
     agents:
       queue: macos-release
       os: macos
@@ -191,19 +279,22 @@ steps:
       T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
     command: bash scripts/fork/build-macos-dmg.sh
 
-  # Native m5-dev OTA + TestFlight. Do not import a GitHub Actions mobile
+  # Native iOS OTA + TestFlight. Do not import a GitHub Actions mobile
   # workflow: the importer cannot load EXPO_TOKEN / Apple keys and the job
   # dies in ~2s before eas update runs. Installed TestFlight binaries then
   # stay on the last JS bundle that actually published.
   - label: ":iphone: iOS OTA + TestFlight"
     key: ios-mobile
     concurrency: 1
-    concurrency_group: "t3-pretty/ios-mobile"
-    # Ahead of Origin PR review on the packaging Mac so a
-    # feature-branch review cannot sit in front of TestFlight.
+    concurrency_group: "t3-pretty/apple-signing"
+    # Ahead of Origin PR review so a feature-branch review cannot sit
+    # in front of TestFlight.
     priority: 20
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
+    # Temporarily on macos-release + os=macos. Hosted macos-large
+    # auto-cancels in ~100ms (BK #1944/#1948).
+    # TODO: restore queue: macos-large (key only) once hosted dispatch works.
     agents:
       queue: macos-release
       os: macos
@@ -216,10 +307,62 @@ steps:
       T3CODE_APPLE_TEAM_ID: "78A5P57U23"
     command: bash scripts/fork/publish-mobile-release.sh
 
+  # Android uses the same fork-owned EAS project and production OTA channel as
+  # iOS, but its native binary is built in EAS cloud and submitted to Google
+  # Play internal testing. Until the one-time Play/EAS setup is complete, the
+  # script leaves an explicit warning annotation and exits without pretending
+  # that a binary shipped.
+  - label: ":android: Android Internal"
+    key: android-mobile
+    concurrency: 1
+    concurrency_group: "t3-pretty/android-signing"
+    priority: 20
+    if: build.branch == "main" && build.source != "schedule"
+    timeout_in_minutes: 120
+    # Temporarily on macos-release + os=macos. Hosted macos-medium
+    # auto-cancels in ~100ms (BK #1944/#1948).
+    # TODO: restore queue: macos-medium (key only) once hosted dispatch works.
+    agents:
+      queue: macos-release
+      os: macos
+    env:
+      APP_VARIANT: production
+      T3CODE_ANDROID_RELEASE_FLAVOR: internal
+      NODE_OPTIONS: "--max-old-space-size=8192"
+    command: bash scripts/fork/publish-android-release.sh
+
+  # Public Android stays deliberately manual while it is in closed testing.
+  # Start a main build from the Buildkite UI with
+  # T3CODE_PUBLIC_ANDROID_RELEASE=1 to build the separate public application,
+  # connect it to official T3 Connect, and submit it to Play internal testing.
+  - label: ":android: Android public closed test"
+    key: public-android-mobile
+    concurrency: 1
+    concurrency_group: "t3-pretty/android-signing"
+    priority: 25
+    if: >-
+      build.branch == "main" && build.source == "ui" &&
+      build.env("T3CODE_PUBLIC_ANDROID_RELEASE") == "1"
+    timeout_in_minutes: 120
+    agents:
+      queue: macos-medium
+    env:
+      APP_VARIANT: production
+      T3CODE_BUILD_FLAVOR: public
+      T3CODE_ANDROID_RELEASE_FLAVOR: public
+      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsudDMuY29kZXMk
+      T3CODE_CLERK_JWT_TEMPLATE: t3-relay
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: hzxSgY2cH10sDU2r
+      T3CODE_RELAY_URL: https://relay.t3.codes
+      NODE_OPTIONS: "--max-old-space-size=8192"
+    command: bash scripts/fork/publish-android-release.sh
+
   - label: ":cloud: Relay"
     key: deploy-relay
-    # Hosted macos-latest GHA jobs do not have the Origin git store or the
-    # packaging-Mac file-store secrets. Keep production deploys on macos-release.
+    # PLANETSCALE_* / Clerk / Axiom tokens live in the macos-release
+    # cluster secret store and file-store fallbacks. Hosted macos-medium
+    # cannot resolve them (BK 1878/1880: "Missing relay secret:
+    # PLANETSCALE_API_TOKEN_ID"). Keep production deploys on macos-release.
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 20
     agents:

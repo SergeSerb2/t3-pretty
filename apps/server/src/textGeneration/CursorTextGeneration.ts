@@ -20,6 +20,9 @@ import {
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeActivityHeadline,
+  appendBoundedTextGenerationOutput,
+  decodeBoundedTextGenerationOutput,
+  makeBoundedTextGenerationOutput,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -64,7 +67,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
     modelSelection: ModelSelection;
   }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
     Effect.gen(function* () {
-      const outputRef = yield* Ref.make("");
+      const outputRef = yield* Ref.make(makeBoundedTextGenerationOutput());
       const runtime = yield* makeCursorAcpRuntime({
         cursorSettings,
         environment: resolvedEnvironment,
@@ -82,7 +85,9 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
         if (content.type !== "text") {
           return Effect.void;
         }
-        return Ref.update(outputRef, (current) => current + content.text);
+        return Ref.update(outputRef, (current) =>
+          appendBoundedTextGenerationOutput(current, content.text),
+        );
       });
 
       const promptResult = yield* Effect.gen(function* () {
@@ -131,7 +136,14 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
         ),
       );
 
-      const rawResult = (yield* Ref.get(outputRef)).trim();
+      const output = yield* Ref.get(outputRef);
+      if (output.truncated) {
+        return yield* new TextGenerationError({
+          operation,
+          detail: "Cursor Agent returned structured output above the one MiB limit.",
+        });
+      }
+      const rawResult = decodeBoundedTextGenerationOutput(output).trim();
       if (!rawResult) {
         return yield* new TextGenerationError({
           operation,

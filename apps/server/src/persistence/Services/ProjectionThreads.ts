@@ -8,17 +8,14 @@
  */
 import {
   CommandId,
-  EventId,
   IsoDateTime,
   ModelSelection,
   NonNegativeInt,
   ProjectId,
   ProviderInteractionMode,
   RuntimeMode,
-  SkillId,
+  ThreadLinkedPullRequest,
   ThreadId,
-  ThreadSubagentPolicy,
-  ThreadSceneryAssignment,
   TurnId,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
@@ -36,25 +33,21 @@ export const ProjectionThread = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(Schema.String),
-  branchEventId: Schema.optional(Schema.NullOr(EventId)),
-  branchHeadRef: Schema.optional(Schema.NullOr(Schema.String)),
-  branchHeadRepository: Schema.optional(Schema.NullOr(Schema.String)),
-  branchHeadOwner: Schema.optional(Schema.NullOr(Schema.String)),
-  branchHeadIsCrossRepository: Schema.optional(Schema.NullOr(NonNegativeInt)),
   worktreePath: Schema.NullOr(Schema.String),
+  linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+  branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurnId: Schema.NullOr(TurnId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime),
   settledOverride: Schema.NullOr(Schema.Literals(["settled", "active"])),
   settledAt: Schema.NullOr(IsoDateTime),
+  unsettledAt: Schema.NullOr(IsoDateTime),
   snoozedUntil: Schema.NullOr(IsoDateTime),
   snoozedAt: Schema.NullOr(IsoDateTime),
   pinnedAt: Schema.NullOr(IsoDateTime),
   pinOrderKey: Schema.optional(Schema.NullOr(Schema.String)),
-  scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
-  enabledSkillIds: Schema.Array(SkillId),
-  subagentPolicy: Schema.optional(Schema.NullOr(ThreadSubagentPolicy)),
+  activeOrderKey: Schema.optional(Schema.NullOr(Schema.String)),
   titleRegenerationRequestId: Schema.optional(Schema.NullOr(CommandId)),
   titleRegenerationStartedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
@@ -79,17 +72,6 @@ export const ListProjectionThreadsByProjectInput = Schema.Struct({
   projectId: ProjectId,
 });
 export type ListProjectionThreadsByProjectInput = typeof ListProjectionThreadsByProjectInput.Type;
-
-export const RecordProjectionThreadBranchHeadInput = Schema.Struct({
-  threadId: ThreadId,
-  branchEventId: EventId,
-  headRef: Schema.String,
-  repositoryNameWithOwner: Schema.NullOr(Schema.String),
-  ownerLogin: Schema.NullOr(Schema.String),
-  isCrossRepository: Schema.Boolean,
-});
-export type RecordProjectionThreadBranchHeadInput =
-  typeof RecordProjectionThreadBranchHeadInput.Type;
 
 /**
  * ProjectionThreadRepositoryShape - Service API for projected thread records.
@@ -117,11 +99,6 @@ export interface ProjectionThreadRepositoryShape {
   readonly listByProjectId: (
     input: ListProjectionThreadsByProjectInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThread>, ProjectionRepositoryError>;
-
-  /** Persist a resolved branch head only if its branch incarnation is current. */
-  readonly recordBranchHead: (
-    input: RecordProjectionThreadBranchHeadInput,
-  ) => Effect.Effect<void, ProjectionRepositoryError>;
 
   /**
    * Soft-delete a projected thread row by id.

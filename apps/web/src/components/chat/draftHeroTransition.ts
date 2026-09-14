@@ -14,6 +14,8 @@ export const DRAFT_HERO_GLIDE_MIN_PX = 0.5;
  * bounce after it has already settled.
  */
 export const DRAFT_HERO_POP_MIN_TRAVEL_PX = 120;
+const DRAFT_HERO_TRANSITION_SETTLE_TIMEOUT_MS =
+  Math.max(DRAFT_HERO_TRANSITION_DURATION_MS, SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS) + 1_000;
 
 /**
  * Composer rect handed across a ChatView remount. Thread and draft routes are
@@ -136,10 +138,23 @@ type ComposerViewTransitionDocument = Document & {
   startViewTransition?: (update: () => void | Promise<void>) => ComposerViewTransition;
 };
 
+async function waitForTransitionSettlement(transition: Promise<unknown> | null): Promise<void> {
+  if (transition === null) return;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<void>((resolve) => {
+    timeoutId = setTimeout(resolve, DRAFT_HERO_TRANSITION_SETTLE_TIMEOUT_MS);
+  });
+  try {
+    await Promise.race([transition.catch(() => undefined), timeout]);
+  } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId);
+  }
+}
+
 export async function waitForDraftHeroTransition(): Promise<void> {
   const mobileComposerTransition = activeMobileComposerTransition;
   if (typeof document === "undefined" || typeof document.getAnimations !== "function") {
-    await mobileComposerTransition;
+    await waitForTransitionSettlement(mobileComposerTransition);
     return;
   }
 
@@ -147,16 +162,11 @@ export async function waitForDraftHeroTransition(): Promise<void> {
     .getAnimations()
     .filter((animation) => animation.id === DRAFT_HERO_TRANSITION_ANIMATION_ID);
 
-  await Promise.all([
-    mobileComposerTransition,
-    ...activeTransitions.map(async (animation) => {
-      try {
-        await animation.finished;
-      } catch {
-        // A cancelled transition is already safe to hand off.
-      }
-    }),
-  ]);
+  await Promise.all(
+    [mobileComposerTransition, ...activeTransitions.map((animation) => animation.finished)].map(
+      waitForTransitionSettlement,
+    ),
+  );
 }
 
 export async function runMobileComposerTransition(
@@ -186,13 +196,10 @@ export async function runMobileComposerTransition(
   transitionDocument.documentElement.dataset.mobileComposerRouteTransition = "true";
   try {
     const transition = transitionDocument.startViewTransition(runUpdate);
-    transitionFinished = transition.finished.catch(() => undefined);
+    transitionFinished = waitForTransitionSettlement(transition.finished);
     activeMobileComposerTransition = transitionFinished;
-    try {
-      await transition.finished;
-    } catch {
-      await runUpdate();
-    }
+    await transitionFinished;
+    await runUpdate();
   } catch {
     await runUpdate();
   } finally {

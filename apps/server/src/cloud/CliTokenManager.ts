@@ -19,7 +19,6 @@ import * as Semaphore from "effect/Semaphore";
 import * as Terminal from "effect/Terminal";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -39,13 +38,17 @@ import {
   type CloudCliOAuthConfig,
 } from "./publicConfig.ts";
 import { renderLoopbackAuthorizationCompleteHtml } from "./cliAuthHtml.ts";
+import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
+import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 
 const CLOUD_CLI_OAUTH_TOKEN_SECRET = "cloud-cli-oauth-token";
 const CLOUD_CLI_OAUTH_CALLBACK_TIMEOUT = Duration.minutes(10);
 const CLOUD_CLI_OAUTH_REFRESH_EARLY_MS = Duration.toMillis(Duration.minutes(5));
+const CLOUD_CLI_TOKEN_EXCHANGE_TIMEOUT = Duration.seconds(30);
+const CLOUD_CLI_TOKEN_RESPONSE_MAX_BYTES = 64 * 1024;
 const boldTerminalText = (value: string): string => `\u001b[1m${value}\u001b[22m`;
 
-export function formatLoopbackAuthorizationPrompt(authorizationUrl: string): string {
+function formatLoopbackAuthorizationPrompt(authorizationUrl: string): string {
   return [
     `Open this URL to authorize ${SURGE_CONNECT_NAME}:`,
     `  ${authorizationUrl}`,
@@ -90,9 +93,10 @@ export const waitForLoopbackAuthorization = Effect.fn(
       while (true) {
         const result = yield* Effect.raceFirst(
           input.callback.pipe(
-            Effect.map(
-              (code): LoopbackAuthorizationResult => ({ _tag: "AuthorizationCode", code }),
-            ),
+            Effect.map((code): LoopbackAuthorizationResult => ({
+              _tag: "AuthorizationCode",
+              code,
+            })),
           ),
           readLoopbackAuthorizationAction(terminalInput),
         );
@@ -135,6 +139,9 @@ const OAuthTokenResponse = Schema.Struct({
   expires_in: Schema.Number,
   token_type: Schema.String,
 });
+const decodeOAuthTokenResponse = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(OAuthTokenResponse),
+);
 
 const OidcIdentityClaimsJson = Schema.fromJsonString(
   Schema.Struct({
@@ -164,7 +171,7 @@ function idTokenIdentity(idToken: string | undefined): string | null {
   return null;
 }
 
-export class CloudCliCredentialRemovalError extends Schema.TaggedErrorClass<CloudCliCredentialRemovalError>()(
+export class CloudCliCredentialRemovalError extends Schema.TaggedError<CloudCliCredentialRemovalError>()(
   "CloudCliCredentialRemovalError",
   { cause: Schema.Defect() },
 ) {
@@ -173,7 +180,7 @@ export class CloudCliCredentialRemovalError extends Schema.TaggedErrorClass<Clou
   }
 }
 
-export class CloudCliCredentialRefreshError extends Schema.TaggedErrorClass<CloudCliCredentialRefreshError>()(
+export class CloudCliCredentialRefreshError extends Schema.TaggedError<CloudCliCredentialRefreshError>()(
   "CloudCliCredentialRefreshError",
   { cause: Schema.Defect() },
 ) {
@@ -182,7 +189,7 @@ export class CloudCliCredentialRefreshError extends Schema.TaggedErrorClass<Clou
   }
 }
 
-export class CloudCliCredentialReadError extends Schema.TaggedErrorClass<CloudCliCredentialReadError>()(
+export class CloudCliCredentialReadError extends Schema.TaggedError<CloudCliCredentialReadError>()(
   "CloudCliCredentialReadError",
   { cause: Schema.Defect() },
 ) {
@@ -191,7 +198,7 @@ export class CloudCliCredentialReadError extends Schema.TaggedErrorClass<CloudCl
   }
 }
 
-export class CloudCliAuthorizationError extends Schema.TaggedErrorClass<CloudCliAuthorizationError>()(
+export class CloudCliAuthorizationError extends Schema.TaggedError<CloudCliAuthorizationError>()(
   "CloudCliAuthorizationError",
   { cause: Schema.Defect() },
 ) {
@@ -200,7 +207,7 @@ export class CloudCliAuthorizationError extends Schema.TaggedErrorClass<CloudCli
   }
 }
 
-export class CloudCliAuthorizationTimeoutError extends Schema.TaggedErrorClass<CloudCliAuthorizationTimeoutError>()(
+export class CloudCliAuthorizationTimeoutError extends Schema.TaggedError<CloudCliAuthorizationTimeoutError>()(
   "CloudCliAuthorizationTimeoutError",
   { cause: Schema.Defect() },
 ) {
@@ -217,6 +224,34 @@ export const CloudCliTokenManagerError = Schema.Union([
   CloudCliAuthorizationTimeoutError,
 ]);
 export type CloudCliTokenManagerError = typeof CloudCliTokenManagerError.Type;
+
+class CloudCliTokenExchangeFailure extends Schema.TaggedError<CloudCliTokenExchangeFailure>()(
+  "CloudCliTokenExchangeFailure",
+  {
+    reason: Schema.Literals([
+      "request-failed",
+      "response-too-large",
+      "response-read-failed",
+      "invalid-response",
+      "timeout",
+    ]),
+  },
+) {
+  override get message(): string {
+    switch (this.reason) {
+      case "request-failed":
+        return "The T3 Connect token endpoint rejected or could not receive the request.";
+      case "response-too-large":
+        return "The T3 Connect token endpoint returned an oversized response.";
+      case "response-read-failed":
+        return "The T3 Connect token endpoint response could not be read.";
+      case "invalid-response":
+        return "The T3 Connect token endpoint returned an invalid response.";
+      case "timeout":
+        return "The T3 Connect token exchange timed out.";
+    }
+  }
+}
 
 export class CloudCliTokenManager extends Context.Service<
   CloudCliTokenManager,
@@ -245,23 +280,55 @@ const exchangeToken = Effect.fn("cloud.cli_token.exchange")(function* (
   metadata: Pick<CloudCliOAuthConfig, "tokenEndpoint">,
   params: Record<string, string>,
 ) {
-  const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk);
-  const response = yield* HttpClientRequest.post(metadata.tokenEndpoint).pipe(
-    HttpClientRequest.bodyUrlParams(params),
-    httpClient.execute,
-    Effect.flatMap(HttpClientResponse.schemaBodyJson(OAuthTokenResponse)),
+  return yield* Effect.gen(function* () {
+    const httpClient = yield* HttpClient.HttpClient;
+    const response = yield* HttpClientRequest.post(metadata.tokenEndpoint).pipe(
+      HttpClientRequest.bodyUrlParams(params),
+      httpClient.execute,
+      // HTTP failures retain the request, whose form body can contain an authorization code or
+      // refresh token. Collapse them to a stable diagnostic before the error leaves this boundary.
+      Effect.mapError(() => new CloudCliTokenExchangeFailure({ reason: "request-failed" })),
+    );
+    if (response.status < 200 || response.status >= 300) {
+      yield* releaseHttpClientResponseBody(response);
+      return yield* new CloudCliTokenExchangeFailure({ reason: "request-failed" });
+    }
+    const declaredLength = Number(response.headers["content-length"]);
+    if (Number.isFinite(declaredLength) && declaredLength > CLOUD_CLI_TOKEN_RESPONSE_MAX_BYTES) {
+      yield* releaseHttpClientResponseBody(response);
+      return yield* new CloudCliTokenExchangeFailure({ reason: "response-too-large" });
+    }
+    const collected = yield* collectUint8StreamText({
+      stream: response.stream,
+      maxBytes: CLOUD_CLI_TOKEN_RESPONSE_MAX_BYTES,
+      drainAfterTruncation: false,
+    }).pipe(
+      Effect.mapError(() => new CloudCliTokenExchangeFailure({ reason: "response-read-failed" })),
+    );
+    if (collected.truncated) {
+      return yield* new CloudCliTokenExchangeFailure({ reason: "response-too-large" });
+    }
+    const decoded = yield* decodeOAuthTokenResponse(collected.text).pipe(
+      // Schema parse errors can retain the decoded response, including newly issued tokens.
+      Effect.mapError(() => new CloudCliTokenExchangeFailure({ reason: "invalid-response" })),
+    );
+    const now = yield* Clock.currentTimeMillis;
+    const identity = idTokenIdentity(decoded.id_token);
+    return {
+      token: {
+        accessToken: decoded.access_token,
+        refreshToken: decoded.refresh_token ?? params.refresh_token ?? "",
+        expiresAtEpochMs: now + decoded.expires_in * 1_000,
+        ...(identity === null ? {} : { identity }),
+      } satisfies PersistedToken,
+      identity,
+    };
+  }).pipe(
+    Effect.timeout(CLOUD_CLI_TOKEN_EXCHANGE_TIMEOUT),
+    Effect.catchTag("TimeoutError", () =>
+      Effect.fail(new CloudCliTokenExchangeFailure({ reason: "timeout" })),
+    ),
   );
-  const now = yield* Clock.currentTimeMillis;
-  const identity = idTokenIdentity(response.id_token);
-  return {
-    token: {
-      accessToken: response.access_token,
-      refreshToken: response.refresh_token ?? params.refresh_token ?? "",
-      expiresAtEpochMs: now + response.expires_in * 1_000,
-      ...(identity === null ? {} : { identity }),
-    } satisfies PersistedToken,
-    identity,
-  };
 });
 
 const makePkceRequest = Effect.gen(function* () {
@@ -324,6 +391,7 @@ export const outOfBandOAuthLogin = Effect.fn("cloud.cli_token.out_of_band_oauth_
   });
 });
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   // Capture exactly the services the login/refresh flows need at build time
   // (matching the behavior before the out-of-band flow captured the instances), not

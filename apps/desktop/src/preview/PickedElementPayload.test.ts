@@ -1,4 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
+import {
+  PICKED_ELEMENT_MAX_STACK_FRAMES,
+  PICKED_ELEMENT_MAX_URL_LENGTH,
+  PREVIEW_ANNOTATION_MAX_ELEMENTS,
+  PREVIEW_ANNOTATION_MAX_STROKE_POINTS,
+} from "@t3tools/contracts";
 
 import { isPickedElementPayload, isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
 
@@ -132,6 +138,26 @@ describe("isPickedElementPayload", () => {
     expect(isPickedElementPayload(validPayload({ stack: "not-an-array" }))).toBe(false);
     expect(isPickedElementPayload(validPayload({ stack: [{ bogus: true }] }))).toBe(false);
   });
+
+  it("rejects payloads that exceed string or stack budgets", () => {
+    expect(
+      isPickedElementPayload(
+        validPayload({ pageUrl: "x".repeat(PICKED_ELEMENT_MAX_URL_LENGTH + 1) }),
+      ),
+    ).toBe(false);
+    expect(
+      isPickedElementPayload(
+        validPayload({
+          stack: Array.from({ length: PICKED_ELEMENT_MAX_STACK_FRAMES + 1 }, () => ({
+            functionName: null,
+            fileName: null,
+            lineNumber: null,
+            columnNumber: null,
+          })),
+        }),
+      ),
+    ).toBe(false);
+  });
 });
 
 function validAnnotation(overrides?: Record<string, unknown>): Record<string, unknown> {
@@ -195,6 +221,44 @@ describe("isPreviewAnnotationPayload", () => {
     expect(
       isPreviewAnnotationPayload(
         validAnnotation({ elements: [{ id: "element_1", element: {}, rect: {} }] }),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects annotation collections beyond their budgets", () => {
+    const element = (validAnnotation()["elements"] as ReadonlyArray<unknown>)[0];
+    expect(
+      isPreviewAnnotationPayload(
+        validAnnotation({
+          elements: Array.from({ length: PREVIEW_ANNOTATION_MAX_ELEMENTS + 1 }, () => element),
+        }),
+      ),
+    ).toBe(false);
+
+    const stroke = (validAnnotation()["strokes"] as ReadonlyArray<Record<string, unknown>>)[0]!;
+    expect(
+      isPreviewAnnotationPayload(
+        validAnnotation({
+          strokes: [
+            {
+              ...stroke,
+              points: Array.from(
+                { length: PREVIEW_ANNOTATION_MAX_STROKE_POINTS + 1 },
+                (_, index) => ({ x: index, y: index }),
+              ),
+            },
+          ],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects negative dimensions", () => {
+    expect(
+      isPreviewAnnotationPayload(
+        validAnnotation({
+          regions: [{ id: "region_1", rect: { x: 0, y: 0, width: -1, height: 2 } }],
+        }),
       ),
     ).toBe(false);
   });

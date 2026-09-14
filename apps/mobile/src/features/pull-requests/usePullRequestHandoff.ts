@@ -1,10 +1,13 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { useNavigation } from "@react-navigation/native";
-import { useCallback } from "react";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useCallback, useEffect, useRef } from "react";
 import { Alert } from "react-native";
 
 import { useProjects } from "../../state/entities";
-import { writePullRequestHandoffDraft } from "./pullRequestHandoff";
+import {
+  requirePullRequestHandoffDraftsLoaded,
+  writePullRequestHandoffDraft,
+} from "./pullRequestHandoff";
 
 /**
  * Opens the existing new-task sheet with the hand-off prompt already in the
@@ -14,6 +17,29 @@ import { writePullRequestHandoffDraft } from "./pullRequestHandoff";
 export function usePullRequestHandoff() {
   const navigation = useNavigation();
   const projects = useProjects();
+  const mountedRef = useRef(true);
+  const focusedRef = useRef(navigation.isFocused());
+  const handoffGenerationRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      focusedRef.current = false;
+      handoffGenerationRef.current += 1;
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      focusedRef.current = true;
+      handoffGenerationRef.current += 1;
+      return () => {
+        focusedRef.current = false;
+        handoffGenerationRef.current += 1;
+      };
+    }, []),
+  );
 
   const startHandoff = useCallback(
     async (input: {
@@ -22,24 +48,51 @@ export function usePullRequestHandoff() {
       readonly url: string;
       readonly prompt: string;
     }) => {
+      const generation = handoffGenerationRef.current + 1;
+      handoffGenerationRef.current = generation;
+      const isActiveOwner = () =>
+        mountedRef.current &&
+        focusedRef.current &&
+        handoffGenerationRef.current === generation &&
+        navigation.isFocused();
       const project = projects.find(
         (candidate) =>
           candidate.environmentId === input.environmentId && candidate.id === input.projectId,
       );
       if (project === undefined) {
-        Alert.alert(
-          "Could not open a new task",
-          "The project for this pull request is not available on this environment.",
-        );
+        if (isActiveOwner()) {
+          Alert.alert(
+            "Could not open a new task",
+            "The project for this pull request is not available on this environment.",
+          );
+        }
         return false;
       }
 
-      await writePullRequestHandoffDraft({
+      try {
+        await requirePullRequestHandoffDraftsLoaded();
+      } catch (error) {
+        if (!isActiveOwner()) {
+          return false;
+        }
+        console.warn("[pull-request-handoff] failed to load composer drafts", error);
+        Alert.alert(
+          "Could not open a new task",
+          "Your saved drafts could not be loaded. Try again.",
+        );
+        return false;
+      }
+      if (!isActiveOwner()) {
+        return false;
+      }
+
+      writePullRequestHandoffDraft({
         environmentId: project.environmentId,
         projectId: project.id,
         prompt: input.prompt,
         url: input.url,
       });
+      handoffGenerationRef.current += 1;
       navigation.navigate("NewTaskSheet", {
         screen: "NewTaskDraft",
         params: {
