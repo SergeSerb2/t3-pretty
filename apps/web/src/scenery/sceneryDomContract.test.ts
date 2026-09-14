@@ -252,13 +252,19 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain("--workspace-chrome-edge-blur");
     expect(indexCssSource).toMatch(/\[data-chrome-fade-top\]::before\s*\{[^}]*z-index: 8;/s);
     expect(indexCssSource).toMatch(
+      /\[data-chrome-fade-top\]::before,[\s\S]*?\[data-slot="sidebar-inset"\]::after \{[^}]*background-color: var\(--toolbar-background\);/s,
+    );
+    expect(indexCssSource).toMatch(
       /\[data-sidebar-state="expanded"\] \[data-slot="sidebar-inset"\]::after\s*\{[^}]*z-index: 10;/s,
     );
     expect(chatViewSource).toContain('data-chrome-fade-top=""');
     expect(indexCssSource).toContain(
       '[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after',
     );
-    expect(indexCssSource).toContain("width: var(--workspace-sidebar-edge-fade)");
+    expect(indexCssSource).toContain("width: calc(var(--workspace-sidebar-edge-fade) + 1px)");
+    expect(indexCssSource).toMatch(
+      /\[data-sidebar-state="expanded"\] \[data-slot="sidebar-inset"\]::after \{[^}]*background-color: var\(--sidebar\);/s,
+    );
     expect(indexCssSource).toMatch(
       /\[data-chrome-fade-top\]\s*\{[^}]*position: relative;[^}]*isolation: isolate;/s,
     );
@@ -307,6 +313,7 @@ describe("glass contract with upstream chrome", () => {
     expect(sidebarSource).toContain("in-data-[side=left]:cursor-w-resize");
     expect(sidebarSource).not.toContain("hover:after:bg-sidebar-border");
     expect(sidebarSource).not.toContain("after:w-[2px]");
+    expect(indexCssSource).toMatch(/\[data-app-sidebar\] \{[^}]*border-color: transparent;/s);
   });
 });
 
