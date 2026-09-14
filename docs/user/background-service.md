@@ -3,9 +3,12 @@
 On Linux and macOS, T3 Code can run as a service for your user so you do not need
 to keep a terminal open.
 
-The commands below use the public GitHub build. T3 Pretty Internal operators should
-install from the [internal release path](../operations/public-release-and-github-mirror.md#internal-release-path)
-before running the same `t3 service` commands.
+The commands below install from the
+[R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/).
+GitHub Releases are not the install channel; the GitHub tag `desktop-r2-latest`
+is only a pointer. The same feed is the
+[internal release path](../operations/public-release-and-github-mirror.md#internal-release-path)
+(Surge Connect, `~/.t3`).
 
 ## Manage the service
 
@@ -14,7 +17,7 @@ Run these commands on the machine that will host T3 Code.
 Install the T3 Pretty CLI first (not `npx t3`, which is upstream T3 Code):
 
 ```sh
-curl -fsSL https://github.com/SergeSerb2/t3-pretty/releases/latest/download/install.sh | sh
+curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
 ```
 
 Then manage the service with the commands below:
@@ -23,7 +26,7 @@ Then manage the service with the commands below:
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Install and start               | `t3 service install`                                                                                            |
 | Inspect status and log location | `t3 service status`                                                                                             |
-| Update or repair                | `npx --yes --package https://github.com/SergeSerb2/t3-pretty/releases/latest/download/t3.tgz t3 service update` |
+| Update or repair                | `npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz t3 service update` |
 | Stop and remove from startup    | `t3 service uninstall`                                                                                          |
 
 `t3 service status` checks whether the service is installed and reports its log location. On Linux,
@@ -128,11 +131,13 @@ The internal flavor keeps the legacy `t3code.service` and
 
 ## Using It with T3 Connect
 
-T3 Connect may offer to install the service during setup so the host stays reachable in the
-background. This is only an onboarding shortcut: the service and T3 Connect are managed separately.
+T3 Connect (Surge Connect on this feed) may offer to install the service during
+setup so the host stays reachable in the background. This is only an onboarding
+shortcut: the service and the connect mesh are managed separately.
 
-Signing out of T3 Connect does not stop or uninstall the service. Use `t3 service uninstall` when
-you no longer want T3 Code to start in the background.
+Signing out of T3 Connect or Surge Connect does not stop or uninstall the
+service. Use `t3 service uninstall` when you no longer want T3 Code to start in
+the background.
 
 ## Troubleshooting
 
