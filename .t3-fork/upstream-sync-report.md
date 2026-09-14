@@ -14,7 +14,6 @@
 
 - `desktop-typecheck` failed on Buildkite #2014 after 4 automated repair rounds because the hybrid merge mixed upstream `assetDirectory` / `clientAssetsDir` call sites with the fork protocol type. This landing restores the fork-correct registration.
 
-
 ## Previous integration notes
 
 - Parent nightly: `v0.0.39-nightly.20260905.1284`
@@ -3321,3 +3320,24 @@
 - `patches/@legendapp__list@3.3.5.patch` — THEIRS shortened the index hashes and restored the parent-only patched output hash 93aac741d2cf77ce35996362439108176f19da7a.. Reason: That output hash does not describe the T3 Pretty patch, which contains additional fork-specific LegendList changes. Retaining it would regress the prior patch-metadata repair and leave stale metadata. The formatting-only hash abbreviation has no runtime behavior.
 - `mobile-typecheck` failed after merging `v0.0.41-nightly.20260914.1687`; repaired with `gpt-5.6-sol`: Updated the Live Activity helper color contracts to compose T3 Pretty’s progress and timer UI with the parent’s hierarchical foreground-style API.
   - edited `apps/mobile/src/widgets/AgentActivity.tsx`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260914.1707`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260914.1700`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `packages/shared/package.json` — Preserved the @t3tools/shared appMentions export used by T3 Pretty's shared app-mention behavior.
+- `packages/shared/package.json` — Preserved the @t3tools/shared activityProjection export used by T3 Pretty's shared activity projection behavior.
+
+## Parent changes integrated at conflict boundaries
+
+- `packages/shared/package.json` — Added the parent legacyCliLauncher shared-package export, including both its TypeScript types and ESM import entry points.
+
+## Parent changes intentionally omitted
+
+- None. The resolver did not omit any parent change to protect T3 Pretty.
