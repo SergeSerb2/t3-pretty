@@ -532,6 +532,15 @@ describe("buildThreadListV2Items", () => {
       childCount: 2,
       collapsedNestStatus: { kind: "pending-approval" },
     });
+
+    const searchKeepsMatches = buildThreadListV2Items({
+      threads: [parent, child],
+      environmentId: null,
+      searchQuery: "#4",
+      now: NOW,
+      isPrNestExpanded: () => false,
+    });
+    expect(searchKeepsMatches.items.map((item) => item.thread.id)).toEqual([parent.id, child.id]);
   });
 
   it("ignores the previous pull request state after a different pull request is linked", () => {

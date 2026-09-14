@@ -231,6 +231,7 @@ function flattenNestedSection(
   threads: readonly EnvironmentThreadShell[],
   isPrNestExpanded: ((pullRequestKey: string) => boolean) | undefined,
   selectedThreadKey: string | null,
+  expandAllNests = false,
 ): Array<{
   readonly thread: EnvironmentThreadShell;
   readonly nest: "parent" | "child" | null;
@@ -254,7 +255,9 @@ function flattenNestedSection(
       collapsedNestStatus: resolveHighestThreadStatus(nest.children),
     });
     const nestExpanded =
-      nest.pullRequestKey === null || (isPrNestExpanded?.(nest.pullRequestKey) ?? true);
+      expandAllNests ||
+      nest.pullRequestKey === null ||
+      (isPrNestExpanded?.(nest.pullRequestKey) ?? true);
     for (const child of nest.children) {
       const childKey = `${child.environmentId}:${child.id}`;
       if (!nestExpanded && childKey !== selectedThreadKey) continue;
@@ -526,7 +529,12 @@ export function buildThreadListV2Items(input: {
     threads: readonly EnvironmentThreadShell[],
     flags: Pick<ThreadListV2Item, "variant" | "snoozed" | "pinned" | "settled">,
   ) => {
-    for (const entry of flattenNestedSection(threads, input.isPrNestExpanded, selectedThreadKey)) {
+    for (const entry of flattenNestedSection(
+      threads,
+      input.isPrNestExpanded,
+      selectedThreadKey,
+      query.length > 0,
+    )) {
       items.push({
         ...flags,
         thread: entry.thread,
