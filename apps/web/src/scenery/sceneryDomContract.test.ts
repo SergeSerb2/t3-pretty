@@ -235,18 +235,20 @@ describe("glass contract with upstream chrome", () => {
     );
   });
 
-  it("chrome plates fade on ::before instead of painting a hard host box", () => {
+  it("chrome skirts fade on receiving surfaces instead of overflowing host plates", () => {
     expect(indexCssSource).toContain("--workspace-titlebar-scroll-fade-height");
     expect(indexCssSource).toContain("--workspace-chrome-edge-fade");
+    expect(indexCssSource).toContain(":is([data-chat-header], [data-pull-requests-header])::after");
     expect(indexCssSource).toContain(
-      ":is([data-chat-header], [data-pull-requests-header])::before",
+      '[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after',
     );
-    expect(indexCssSource).toContain('[data-app-sidebar] [data-slot="sidebar-inner"]::before');
+    expect(indexCssSource).not.toContain(":has(> [data-chat-header])");
+    expect(chatViewSource).toContain("overflow-x-clip");
     expect(sceneryCssSource).toMatch(
-      /:is\(\[data-chat-header\], \[data-pull-requests-header\]\)::before\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
+      /:is\(\[data-chat-header\], \[data-pull-requests-header\]\)\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
     );
     expect(sceneryCssSource).toMatch(
-      /\[data-slot="sidebar-inner"\]::before\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
+      /\[data-slot="sidebar-inset"\]::after\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
     );
   });
 

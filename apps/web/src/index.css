@@ -690,8 +690,8 @@ html[data-window-interacting] .chat-composer-context-strip::before {
 html[data-window-interacting] :is(.surface-glass, .dialog-glass, .dropdown-glass, .alert-glass),
 html[data-window-interacting] .chat-composer-glass-shell::before,
 html[data-window-interacting] .chat-composer-context-strip::before,
-html[data-window-interacting] :is([data-chat-header], [data-pull-requests-header])::before,
-html[data-window-interacting] [data-app-sidebar] [data-slot="sidebar-inner"]::before {
+html[data-window-interacting] :is([data-chat-header], [data-pull-requests-header])::after,
+html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -2818,28 +2818,21 @@ html[data-theme-token-probe] *::after {
    roles explicit prevents the thread toolbar from falling back to the default
    dark-mode whites while preserving the same theme file across clients. */
 html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
-  background-color: transparent;
+  background-color: var(--toolbar-background);
   color: var(--contrast-toolbar-foreground);
 }
 
-/* A parent that clips x-overflow also clips y when overflow-x is `hidden`.
-   Clip-x keeps the downward chrome skirt visible. */
-:has(> [data-chat-header]),
-:has(> [data-pull-requests-header]) {
-  overflow-x: clip;
-}
-
-/* One plate per chrome edge: the host stays transparent so the hard box
-   cannot show a seam, and the ::before extends past the box with a mask
-   fade into the next section. */
+/* Soft chrome skirts live on the receiving surface, not on overflowing
+   host plates: header menus stay unclipped, and the sidebar list keeps
+   its own overflow. The header paints its full box; the fade starts at
+   the bottom of that box so wrapping toolbars stay covered. */
 :is([data-chat-header], [data-pull-requests-header]) {
   position: relative;
   z-index: 20;
-  background-color: transparent;
 }
 
-:is([data-chat-header], [data-pull-requests-header])::before,
-[data-app-sidebar] [data-slot="sidebar-inner"]::before {
+:is([data-chat-header], [data-pull-requests-header])::after,
+[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
   content: "";
   pointer-events: none;
   position: absolute;
@@ -2849,71 +2842,47 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
   background-size: var(--surface-grain-size);
 }
 
-:is([data-chat-header], [data-pull-requests-header])::before {
-  top: 0;
+:is([data-chat-header], [data-pull-requests-header])::after {
+  top: 100%;
   right: 0;
   left: 0;
-  z-index: -1;
-  height: calc(var(--workspace-topbar-height) + var(--workspace-chrome-edge-fade));
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    black 0,
-    black var(--workspace-topbar-height),
-    rgb(0 0 0 / 72%) calc(var(--workspace-topbar-height) + var(--workspace-chrome-edge-fade) * 0.32),
-    rgb(0 0 0 / 38%) calc(var(--workspace-topbar-height) + var(--workspace-chrome-edge-fade) * 0.58),
-    rgb(0 0 0 / 12%) calc(var(--workspace-topbar-height) + var(--workspace-chrome-edge-fade) * 0.82),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    black 0,
-    black var(--workspace-topbar-height),
-    rgb(0 0 0 / 72%) calc(var(--workspace-topbar-height) + var(--workspace-chrome-edge-fade) * 0.32),
-    rgb(0 0 0 / 38%) calc(var(--workspace-topbar-height) + var(--workspace-chrome-edge-fade) * 0.58),
-    rgb(0 0 0 / 12%) calc(var(--workspace-topbar-height) + var(--workspace-chrome-edge-fade) * 0.82),
-    transparent 100%
-  );
+  height: var(--workspace-chrome-edge-fade);
+  background-image:
+    linear-gradient(
+      to bottom,
+      var(--toolbar-background) 0%,
+      color-mix(in srgb, var(--toolbar-background) 72%, transparent) 32%,
+      color-mix(in srgb, var(--toolbar-background) 38%, transparent) 58%,
+      color-mix(in srgb, var(--toolbar-background) 12%, transparent) 82%,
+      transparent 100%
+    ),
+    var(--surface-grain);
+  background-size: auto, var(--surface-grain-size);
 }
 
 [data-app-sidebar] {
-  overflow: visible;
   background-color: transparent;
   border-color: transparent;
 }
 
-[data-app-sidebar] [data-slot="sidebar-inner"] {
-  position: relative;
-  z-index: 0;
-  overflow: visible;
-  background-color: transparent;
-  background-image: none;
-}
-
-[data-app-sidebar] [data-slot="sidebar-inner"]::before {
+[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
   top: 0;
   bottom: 0;
   left: 0;
-  z-index: -1;
-  width: calc(100% + var(--workspace-chrome-edge-fade));
+  z-index: 20;
+  width: var(--workspace-chrome-edge-fade);
   background-color: var(--sidebar);
-  -webkit-mask-image: linear-gradient(
-    to right,
-    black 0,
-    black calc(100% - var(--workspace-chrome-edge-fade)),
-    rgb(0 0 0 / 72%) calc(100% - var(--workspace-chrome-edge-fade) * 0.68),
-    rgb(0 0 0 / 38%) calc(100% - var(--workspace-chrome-edge-fade) * 0.42),
-    rgb(0 0 0 / 12%) calc(100% - var(--workspace-chrome-edge-fade) * 0.18),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to right,
-    black 0,
-    black calc(100% - var(--workspace-chrome-edge-fade)),
-    rgb(0 0 0 / 72%) calc(100% - var(--workspace-chrome-edge-fade) * 0.68),
-    rgb(0 0 0 / 38%) calc(100% - var(--workspace-chrome-edge-fade) * 0.42),
-    rgb(0 0 0 / 12%) calc(100% - var(--workspace-chrome-edge-fade) * 0.18),
-    transparent 100%
-  );
+  background-image:
+    linear-gradient(
+      to right,
+      var(--sidebar) 0%,
+      color-mix(in srgb, var(--sidebar) 72%, transparent) 32%,
+      color-mix(in srgb, var(--sidebar) 38%, transparent) 58%,
+      color-mix(in srgb, var(--sidebar) 12%, transparent) 82%,
+      transparent 100%
+    ),
+    var(--surface-grain);
+  background-size: auto, var(--surface-grain-size);
 }
 
 html[data-theme-id] [data-chat-header] [data-slot="button"],
