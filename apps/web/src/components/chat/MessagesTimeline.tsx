@@ -1995,6 +1995,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         />
         {row.showAssistantMeta ? (
           <AssistantMessageMeta
+            className="mt-1.5"
             message={row.message}
             showCopyButton={row.showAssistantCopyButton}
             copyStreaming={row.assistantCopyStreaming}
@@ -2043,8 +2044,11 @@ function AssistantMessageMeta({
       className={cn(
         "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
         alwaysVisible
-          ? cn("opacity-100", className)
-          : "h-0 overflow-hidden opacity-0 pointer-coarse:mt-1.5 pointer-coarse:h-auto pointer-coarse:overflow-visible pointer-coarse:opacity-100 focus-within:mt-1.5 focus-within:h-auto focus-within:overflow-visible focus-within:opacity-100 group-hover/assistant:mt-1.5 group-hover/assistant:h-auto group-hover/assistant:overflow-visible group-hover/assistant:opacity-100",
+          ? "opacity-100"
+          : "h-0 overflow-hidden opacity-0 pointer-coarse:h-auto pointer-coarse:overflow-visible pointer-coarse:opacity-100 focus-within:h-auto focus-within:overflow-visible focus-within:opacity-100 group-hover/assistant:h-auto group-hover/assistant:overflow-visible group-hover/assistant:opacity-100",
+        className,
+        !alwaysVisible &&
+          "mt-0 pointer-coarse:mt-1.5 focus-within:mt-1.5 group-hover/assistant:mt-1.5",
       )}
     >
       <AssistantCopyButton
