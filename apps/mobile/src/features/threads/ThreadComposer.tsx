@@ -13,6 +13,7 @@ import {
   type ProviderInteractionMode,
   type RuntimeMode,
   type ServerConfig as T3ServerConfig,
+  type TurnDeliveryMode,
   type UsageLimitsReport,
 } from "@t3tools/contracts";
 import {
@@ -21,7 +22,7 @@ import {
   isUsageLimitsCommand,
 } from "@t3tools/shared/usageLimits";
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import {
   memo,
   useCallback,
@@ -74,6 +75,7 @@ import {
   ComposerInlineControl,
   ComposerToolbarRow,
 } from "../../components/ComposerToolbar";
+import { ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import {
   composerStripAttachments,
@@ -153,7 +155,7 @@ export interface ThreadComposerProps {
   readonly onNativePasteText: (paste: ComposerTextPaste) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
-  readonly onSendMessage: () => Promise<MessageId | null>;
+  readonly onSendMessage: (delivery?: TurnDeliveryMode) => Promise<MessageId | null>;
   /** `/usage-limits` resolves locally; the host decides where the report shows. Null clears it. */
   readonly onShowUsageLimits: (report: UsageLimitsReport | null) => void;
   readonly onUpdateModelSelection: (modelSelection: ModelSelection) => void;
@@ -314,10 +316,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     () => composerStripAttachments(props.draftAttachments),
     [props.draftAttachments],
   );
-  const showStopAction =
-    !hasContent &&
-    (props.selectedThread.session?.status === "running" ||
-      props.selectedThread.session?.status === "starting");
+  const turnInProgress =
+    props.selectedThread.session?.status === "running" ||
+    props.selectedThread.session?.status === "starting";
+  const showStopAction = !hasContent && turnInProgress;
 
   const uploadStates = useAtomValue(composerAttachmentUploadsAtom);
   const attachmentsUploading =
@@ -328,12 +330,21 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       serverConfig: props.serverConfig,
       states: uploadStates,
     });
-  // Every send goes through the outbox; the label says whether it leaves now
-  // or waits (for the connection, an earlier queued message, or an upload).
-  const sendLabel =
-    props.connectionState !== "connected" || props.queueCount > 0 || attachmentsUploading
-      ? "Queue"
-      : "Send";
+  // Every send goes through the outbox. What a tap delivers, and therefore
+  // what the button says, is one value so the label cannot promise one
+  // behavior and send another: offline parks the message for the next turn
+  // boundary; a connected running turn steers on tap (long-press queues); a
+  // still-draining outbox or pending upload waits behind its siblings; an
+  // idle connected send leaves the server default (steer).
+  const sendDelivery: TurnDeliveryMode | undefined =
+    props.connectionState !== "connected"
+      ? "queue"
+      : turnInProgress
+        ? "steer"
+        : props.queueCount > 0 || attachmentsUploading
+          ? "queue"
+          : undefined;
+  const sendLabel = sendDelivery === "queue" ? "Queue" : "Send";
   const currentModelSelection = props.selectedThread.modelSelection;
   const currentRuntimeMode = props.selectedThread.runtimeMode;
   const modelUnavailable =
@@ -490,51 +501,90 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
     onEditorFocusChange?.(false);
   }, [onEditorFocusChange, onExpandedChange, settingsSheetPresentation.keepsComposerExpanded]);
-  const handleSend = useCallback(async () => {
-    if (voiceInput.blocksSubmission || pendingPastedTextAttachmentCountRef.current > 0) return;
-    // Typed out in full rather than picked from the menu. Attachments mean the
-    // user is sending a prompt, so those go through as usual.
-    if (
-      usageLimitsOffered &&
-      isUsageLimitsCommand(props.draftMessage) &&
-      props.draftAttachments.length === 0
-    ) {
-      if (openUsageLimits()) onChangeDraftMessage("");
-      return;
-    }
-    const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
-    if (inFlightThreadIdsRef.current.has(threadKey)) return;
-    inFlightThreadIdsRef.current.add(threadKey);
-    try {
-      const messageId = await onSendMessage();
-      if (messageId === null) {
+  const handleSend = useCallback(
+    async (delivery?: TurnDeliveryMode) => {
+      if (voiceInput.blocksSubmission || pendingPastedTextAttachmentCountRef.current > 0) return;
+      // Typed out in full rather than picked from the menu. Attachments mean the
+      // user is sending a prompt, so those go through as usual.
+      if (
+        usageLimitsOffered &&
+        isUsageLimitsCommand(props.draftMessage) &&
+        props.draftAttachments.length === 0
+      ) {
+        if (openUsageLimits()) onChangeDraftMessage("");
         return;
       }
-      // Sending a prompt starts agent work: arm the lock-screen card while the
-      // app is foregrounded and the activity token can be registered. Armed
-      // after the send so its preference read and native Activity start don't
-      // contend with the queued-message feedback on the tap frame.
-      armAgentAwarenessLiveActivityForLocalWork({
-        environmentId: props.environmentId,
-        threadTitle: props.selectedThread.title,
-        projectTitle: props.environmentLabel ?? "T3 Code",
-      });
-    } finally {
-      inFlightThreadIdsRef.current.delete(threadKey);
-    }
-  }, [
-    props.draftMessage,
-    props.draftAttachments.length,
-    onChangeDraftMessage,
-    openUsageLimits,
-    usageLimitsOffered,
-    onSendMessage,
-    props.environmentId,
-    props.environmentLabel,
-    props.selectedThread.id,
-    props.selectedThread.title,
-    voiceInput.blocksSubmission,
-  ]);
+      const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
+      if (inFlightThreadIdsRef.current.has(threadKey)) return;
+      inFlightThreadIdsRef.current.add(threadKey);
+      try {
+        const messageId = await onSendMessage(delivery);
+        if (messageId === null) {
+          return;
+        }
+        // Sending a prompt starts agent work: arm the lock-screen card while the
+        // app is foregrounded and the activity token can be registered. Armed
+        // after the send so its preference read and native Activity start don't
+        // contend with the queued-message feedback on the tap frame.
+        armAgentAwarenessLiveActivityForLocalWork({
+          environmentId: props.environmentId,
+          threadTitle: props.selectedThread.title,
+          projectTitle: props.environmentLabel ?? "T3 Code",
+        });
+      } finally {
+        inFlightThreadIdsRef.current.delete(threadKey);
+      }
+    },
+    [
+      props.draftMessage,
+      props.draftAttachments.length,
+      onChangeDraftMessage,
+      openUsageLimits,
+      usageLimitsOffered,
+      onSendMessage,
+      props.environmentId,
+      props.environmentLabel,
+      props.selectedThread.id,
+      props.selectedThread.title,
+      voiceInput.blocksSubmission,
+    ],
+  );
+  const handleSendPress = useCallback(() => {
+    void handleSend(sendDelivery);
+  }, [handleSend, sendDelivery]);
+  const handleSendMenuAction = useCallback(
+    ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
+      if (nativeEvent.event === "queue") void handleSend("queue");
+    },
+    [handleSend],
+  );
+  const sendMenuActions = useMemo<ComponentProps<typeof ControlPillMenu>["actions"]>(
+    () => [{ id: "queue", title: "Queue for next turn", attributes: { disabled: !canSend } }],
+    [canSend],
+  );
+  const sendButton = (
+    <ComposerActionButton
+      accessibilityHint={turnInProgress ? "Long press to queue for the next turn" : undefined}
+      accessibilityLabel={sendBlockedReason ?? sendLabel}
+      icon="arrow.up"
+      variant="primary"
+      disabled={!canSend}
+      onPress={handleSendPress}
+    />
+  );
+  // Long-press queues for the next turn while a turn runs; the menu host is
+  // skipped otherwise so send keeps a plain press.
+  const sendAction = turnInProgress ? (
+    <ControlPillMenu
+      actions={sendMenuActions}
+      onPressAction={handleSendMenuAction}
+      shouldOpenOnLongPress
+    >
+      {sendButton}
+    </ControlPillMenu>
+  ) : (
+    sendButton
+  );
 
   // ── Model menu ───────────────────────────────────────────
   const modelOptions = useMemo(
@@ -877,7 +927,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 placeholder={props.placeholder}
                 onFocus={handleFocus}
                 onBlur={handleBlur}
-                onSubmit={handleSend}
+                onSubmit={handleSendPress}
                 scrollEnabled={isExpanded}
                 // Android: collapsed single line centers natively (gravity) in
                 // a pill-height box matching the send button; iOS keeps insets.
@@ -939,13 +989,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     onPress={props.onStopThread}
                   />
                 ) : (
-                  <ComposerActionButton
-                    accessibilityLabel={sendBlockedReason ?? sendLabel}
-                    icon="arrow.up"
-                    variant="primary"
-                    disabled={!canSend}
-                    onPress={handleSend}
-                  />
+                  sendAction
                 )}
               </View>
             ) : null}
@@ -1030,13 +1074,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                       onPress={props.onStopThread}
                     />
                   ) : voicePresentation.showsSend ? (
-                    <ComposerActionButton
-                      accessibilityLabel={sendBlockedReason ?? sendLabel}
-                      icon="arrow.up"
-                      variant="primary"
-                      disabled={!canSend}
-                      onPress={handleSend}
-                    />
+                    sendAction
                   ) : null}
                 </View>
               </ComposerToolbarRow>

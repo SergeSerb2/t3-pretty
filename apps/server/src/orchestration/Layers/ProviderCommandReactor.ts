@@ -10,6 +10,7 @@ import {
   ThreadId,
   type ProviderSession,
   type RuntimeMode,
+  type TurnDeliveryMode,
   type TurnId,
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
@@ -76,6 +77,7 @@ type ProviderIntentEvent = Extract<
       | "thread.approval-response-requested"
       | "thread.user-input-response-requested"
       | "thread.session-stop-requested"
+      | "thread.session-set"
       | "thread.settled";
   }
 >;
@@ -366,15 +368,20 @@ const make = Effect.gen(function* () {
   const turnsAfterCompaction = new Map<ThreadId, Array<QueuedTurnStart>>();
   // Replay command id → the queued turn start it re-requests. `sent` settles once the replay's
   // provider send finishes, which is what lets the next queued turn follow it in order.
-  const resumedTurnStarts = new Map<
-    CommandId,
-    {
-      readonly event: QueuedTurnStart;
-      readonly queued: Array<QueuedTurnStart>;
-      readonly sent: Deferred.Deferred<void>;
-    }
-  >();
+  type ResumedTurnStart = {
+    readonly event: QueuedTurnStart;
+    readonly queued: Array<QueuedTurnStart>;
+    readonly sent: Deferred.Deferred<void>;
+  };
+  const resumedTurnStarts = new Map<CommandId, ResumedTurnStart>();
   const stoppingThreadIds = new Set<ThreadId>();
+  // Turn starts sent with delivery "queue" while the thread's turn is running.
+  // Held here until the session leaves "running", then dispatched one per
+  // turn boundary in arrival order.
+  // ponytail: in-memory, lost on restart — same durability as the hot domain
+  // event stream this reactor consumes; persist alongside pending turn starts
+  // if restart-surviving queues become a requirement.
+  const queuedTurnStarts = new Map<ThreadId, Array<QueuedTurnStart>>();
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -954,6 +961,7 @@ const make = Effect.gen(function* () {
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: "default" | "plan";
+    readonly delivery?: TurnDeliveryMode;
     readonly createdAt: string;
   }) {
     const thread = yield* resolveThreadShell(input.threadId);
@@ -1005,6 +1013,7 @@ const make = Effect.gen(function* () {
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
+      ...(input.delivery !== undefined ? { delivery: input.delivery } : {}),
     };
   });
 
@@ -1391,19 +1400,33 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const processTurnStartRequested = Effect.fn("processTurnStartRequested")(function* (
-    receivedEvent: Extract<ProviderIntentEvent, { type: "thread.turn-start-requested" }>,
+  const dispatchTurnStart = Effect.fn("dispatchTurnStart")(function* (
+    event: QueuedTurnStart,
+    resumed: ResumedTurnStart | undefined,
+    placement: "tail" | "head" = "tail",
   ) {
-    const resumed =
-      receivedEvent.commandId !== null ? resumedTurnStarts.get(receivedEvent.commandId) : undefined;
-    const event = resumed ? { ...receivedEvent, payload: resumed.event.payload } : receivedEvent;
-    const key = turnStartKeyForEvent(event);
-    if (yield* hasHandledTurnStartRecently(key)) {
+    const thread = yield* resolveThreadShell(event.payload.threadId);
+    if (!thread) {
       return;
     }
 
-    const thread = yield* resolveThreadShell(event.payload.threadId);
-    if (!thread) {
+    // "starting" holds too: a flushed predecessor moves the session through
+    // starting before its turn runs, and a queued message must not jump in
+    // ahead of it. A flush re-entry that lands here (stale duplicate
+    // session-set snapshot) goes back to the HEAD so the queue keeps arrival
+    // order; only fresh arrivals append.
+    if (
+      event.payload.delivery === "queue" &&
+      (thread.session?.status === "running" || thread.session?.status === "starting")
+    ) {
+      const queue = queuedTurnStarts.get(event.payload.threadId);
+      if (!queue) {
+        queuedTurnStarts.set(event.payload.threadId, [event]);
+      } else if (placement === "head") {
+        queue.unshift(event);
+      } else {
+        queue.push(event);
+      }
       return;
     }
     const turnStart = yield* projectionSnapshotQuery.getTurnStartMessage({
@@ -1672,6 +1695,7 @@ const make = Effect.gen(function* () {
         ? { modelSelection: event.payload.modelSelection }
         : {}),
       interactionMode: event.payload.interactionMode,
+      ...(event.payload.delivery !== undefined ? { delivery: event.payload.delivery } : {}),
       createdAt: event.payload.createdAt,
     }).pipe(
       Effect.map(Option.some),
@@ -1691,6 +1715,57 @@ const make = Effect.gen(function* () {
       Effect.ensuring(resumed ? Deferred.succeed(resumed.sent, undefined) : Effect.void),
       Effect.forkScoped,
     );
+  });
+
+  // Drain while the live session is idle. One-at-a-time: after a successful
+  // dispatch, ensureSession has marked the session starting/running, so the
+  // next iteration stops. Re-read live status each pass — a stale
+  // session-set(ready) still sitting on this worker must not shift the next
+  // queued start just because its payload says ready.
+  const flushQueuedTurnStarts = Effect.fn("flushQueuedTurnStarts")(function* (threadId: ThreadId) {
+    while (true) {
+      const thread = yield* resolveThreadShell(threadId);
+      if (thread?.session?.status === "running" || thread?.session?.status === "starting") {
+        return;
+      }
+      const queue = queuedTurnStarts.get(threadId);
+      const next = queue?.shift();
+      if (queue === undefined || next === undefined) {
+        queuedTurnStarts.delete(threadId);
+        return;
+      }
+      if (queue.length === 0) {
+        queuedTurnStarts.delete(threadId);
+      }
+      // "head": if a concurrent status write re-holds this event mid-dispatch,
+      // it must go back in front of its younger siblings, not behind them.
+      yield* dispatchTurnStart(next, undefined, "head");
+    }
+  });
+
+  const processTurnStartRequested = Effect.fn("processTurnStartRequested")(function* (
+    receivedEvent: QueuedTurnStart,
+  ) {
+    const resumed =
+      receivedEvent.commandId !== null ? resumedTurnStarts.get(receivedEvent.commandId) : undefined;
+    const event = resumed ? { ...receivedEvent, payload: resumed.event.payload } : receivedEvent;
+    const key = turnStartKeyForEvent(event);
+    if (yield* hasHandledTurnStartRecently(key)) {
+      return;
+    }
+    yield* dispatchTurnStart(event, resumed);
+    // Close the wake-up race: a session-set that committed between the hold's
+    // thread snapshot and its map insert was dropped by the stream filter
+    // (the map was still empty), so no later flush is guaranteed. If the
+    // event was held but the session has already left running/starting,
+    // flush here instead of waiting for a wake-up that never comes.
+    if (queuedTurnStarts.has(event.payload.threadId)) {
+      const current = yield* resolveThreadShell(event.payload.threadId);
+      const status = current?.session?.status;
+      if (status !== "running" && status !== "starting") {
+        yield* flushQueuedTurnStarts(event.payload.threadId);
+      }
+    }
   });
 
   const processTurnInterruptRequested = Effect.fn("processTurnInterruptRequested")(function* (
@@ -1997,6 +2072,17 @@ const make = Effect.gen(function* () {
       case "thread.session-stop-requested":
         yield* processSessionStopRequested(event);
         return;
+      case "thread.session-set": {
+        // Use the projected session, not the event payload: a ready event that
+        // was queued before a flushed turn marked the session starting must
+        // not start the next queued message.
+        const thread = yield* resolveThreadShell(event.payload.threadId);
+        const status = thread?.session?.status;
+        if (status !== "running" && status !== "starting") {
+          yield* flushQueuedTurnStarts(event.payload.threadId);
+        }
+        return;
+      }
       case "thread.settled": {
         const thread = yield* projectionSnapshotQuery.getThreadShellById(event.payload.threadId);
         if (
@@ -2063,6 +2149,12 @@ const make = Effect.gen(function* () {
         event.type === "thread.approval-response-requested" ||
         event.type === "thread.user-input-response-requested" ||
         event.type === "thread.session-stop-requested" ||
+        // Session-set only matters here as a flush trigger, so skip the worker
+        // round-trip unless this thread actually holds queued starts. A
+        // session-set that races ahead of its queued turn-start is harmless:
+        // the hold check reads the already-updated projection and sends
+        // immediately instead of holding.
+        (event.type === "thread.session-set" && queuedTurnStarts.has(event.payload.threadId)) ||
         event.type === "thread.settled"
       ) {
         return yield* worker.enqueue(event);

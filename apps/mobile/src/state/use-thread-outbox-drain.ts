@@ -850,6 +850,7 @@ export function useThreadOutboxDrain(): void {
           runtimeMode: sendSettings.runtimeMode,
           interactionMode: sendSettings.interactionMode,
           createdAt: queuedMessage.createdAt,
+          ...(queuedMessage.delivery ? { delivery: queuedMessage.delivery } : {}),
         },
       });
       const failure = reportFailure(deliveryResult, "start-turn");

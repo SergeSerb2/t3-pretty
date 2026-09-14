@@ -34,6 +34,7 @@ import {
   type ScopedThreadRef,
   type ThreadId,
   type ThreadLinkedPullRequest,
+  type TurnDeliveryMode,
   type TurnId,
   type KeybindingCommand,
   OrchestrationThreadActivity,
@@ -7126,12 +7127,16 @@ export default function ChatView(props: ChatViewProps) {
   const onSend = async (
     e?: { preventDefault: () => void },
     submissionIntent: ComposerSubmissionIntent = "foreground",
-    directAnnotation?: {
-      annotation: PreviewAnnotationPayload;
-      image: ComposerImageAttachment | null;
+    options?: {
+      annotation?: PreviewAnnotationPayload;
+      image?: ComposerImageAttachment | null;
+      delivery?: TurnDeliveryMode;
     },
   ) => {
     e?.preventDefault();
+    const directAnnotation = options?.annotation
+      ? { annotation: options.annotation, image: options.image ?? null }
+      : undefined;
     // Typed out in full rather than picked from the menu. Attachments or contexts
     // mean the user is sending a prompt, so those go through as usual.
     if (
@@ -7867,6 +7872,7 @@ export default function ChatView(props: ChatViewProps) {
           titleSeed: title,
           runtimeMode,
           interactionMode: sendInteractionMode,
+          ...(options?.delivery ? { delivery: options.delivery } : {}),
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },
