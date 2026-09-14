@@ -9,23 +9,67 @@ import * as FileSystem from "effect/FileSystem";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { DEVELOPMENT_ICON_OVERRIDES } from "../../../scripts/lib/brand-assets.ts";
+import {
+  DEVELOPMENT_ICON_OVERRIDES,
+  resolveWebAssetBrandForPackageVersion,
+  resolveWebIconOverrides,
+} from "../../../scripts/lib/brand-assets.ts";
 import { findEsmImportsOfExternalPackages } from "../../../scripts/lib/cli-external-packages.ts";
+import { resolveCatalogDependencies } from "../../../scripts/lib/resolve-catalog.ts";
+import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
+import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import serverPackageJson from "../package.json" with { type: "json" };
 import {
   ServerCliBuildAssetMissingError,
   ServerCliCommandExitError,
   ServerCliDevelopmentIconSourceMissingError,
   ServerCliDevelopmentIconTargetMissingError,
   ServerCliExecutableImportError,
+  ServerCliPublishIconSourceMissingError,
+  ServerCliPublishIconTargetMissingError,
 } from "./cliErrors.ts";
+
+interface PackageJson {
+  name: string;
+  repository: {
+    type: string;
+    url: string;
+    directory: string;
+  };
+  bin: Record<string, string>;
+  type: string;
+  version: string;
+  engines: Record<string, string>;
+  files: string[];
+  dependencies: Record<string, string>;
+  overrides: Record<string, string>;
+}
+
+const PackageJsonPrettyJson = fromJsonStringPretty(Schema.Unknown);
+const encodePackageJson = Schema.encodeEffect(PackageJsonPrettyJson);
+
+const WorkspaceConfig = Schema.Struct({
+  catalog: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+});
+const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
 
 const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("../../..", import.meta.url))),
 );
+
+const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* () {
+  const path = yield* Path.Path;
+  const fs = yield* FileSystem.FileSystem;
+  const repoRoot = yield* RepoRoot;
+  const workspaceYaml = yield* fs.readFileString(path.join(repoRoot, "pnpm-workspace.yaml"));
+  return yield* decodeWorkspaceConfig(workspaceYaml);
+});
 
 const runCommand = Effect.fn("runCommand")(function* (command: ChildProcess.StandardCommand) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -40,6 +84,36 @@ const runCommand = Effect.fn("runCommand")(function* (command: ChildProcess.Stan
       exitCode,
     });
   }
+});
+
+const preparePublishIcons = Effect.fn("preparePublishIcons")(function* (
+  repoRoot: string,
+  serverDir: string,
+  version: string,
+) {
+  const path = yield* Path.Path;
+  const fs = yield* FileSystem.FileSystem;
+  const brand = resolveWebAssetBrandForPackageVersion(version);
+  const icons = resolveWebIconOverrides(brand, "dist/client").map((override) => ({
+    sourcePath: path.join(repoRoot, override.sourceRelativePath),
+    targetPath: path.join(serverDir, override.targetRelativePath),
+  }));
+
+  for (const icon of icons) {
+    if (!(yield* fs.exists(icon.sourcePath))) {
+      return yield* new ServerCliPublishIconSourceMissingError({ sourcePath: icon.sourcePath });
+    }
+    if (!(yield* fs.exists(icon.targetPath))) {
+      return yield* new ServerCliPublishIconTargetMissingError({ targetPath: icon.targetPath });
+    }
+  }
+
+  return yield* Effect.forEach(icons, (icon) =>
+    Effect.all({
+      original: fs.readFile(icon.targetPath),
+      publish: fs.readFile(icon.sourcePath),
+    }).pipe(Effect.map((contents) => ({ ...icon, ...contents }))),
+  );
 });
 
 const applyDevelopmentIconOverrides = Effect.fn("applyDevelopmentIconOverrides")(function* (
