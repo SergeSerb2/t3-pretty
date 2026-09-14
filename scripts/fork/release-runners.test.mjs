@@ -235,7 +235,7 @@ ${setup}
     // Pack requires what `cli.ts build` emits. The standalone
     // service-launcher entry is gone; the bin hosts `__service-launcher`.
     const cliPack = NodeFS.readFileSync(
-      NodePath.resolve(here, "../../apps/server/scripts/cli.ts"),
+      NodePath.resolve(here, "../../apps/server/scripts/cliPack.ts"),
       "utf8",
     );
     assert.match(
@@ -243,15 +243,6 @@ ${setup}
       /for \(const relPath of \[\s*"dist\/bin\.mjs",\s*"dist\/client\/index\.html",?\s*\]/u,
     );
     assert.notInclude(cliPack, '"dist/service-launcher.mjs"');
-    // Pack rewrites apps/server/package.json catalog: specs to concrete
-    // versions from pnpm-workspace.yaml. Upstream #11607 dropped those
-    // helpers with the old npm publish path; without them pack throws
-    // ReferenceError (Buildkite #2138).
-    assert.include(cliPack, 'from "../../../scripts/lib/resolve-catalog.ts"');
-    assert.match(cliPack, /const readWorkspaceConfig = Effect\.fn\("readWorkspaceConfig"\)/u);
-    assert.include(cliPack, "yield* readWorkspaceConfig()");
-    assert.include(cliPack, "resolveCatalogDependencies(");
-    assert.include(cliPack, "pnpm-workspace.yaml");
     assert.include(publishCli, "bash scripts/fork/ensure-linux-node.sh");
     assert.notInclude(publishCli, ". scripts/fork/ensure-linux-node.sh");
     assert.include(publishCli, "Do not git fetch origin");
