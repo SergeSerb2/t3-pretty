@@ -67,6 +67,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceContentWidth } from "../layout/workspace-content-width";
 
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { useSceneryChromeActive } from "../scenery/SceneryProvider";
 import { collectProviderUsageLimits } from "@t3tools/shared/usageLimits";
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 import type { StatusTone } from "../../components/StatusPill";
@@ -819,6 +820,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
 
   const showScrollToEndButton = contentPresentationKind === "ready" && !endFollowEnabled;
   const { themeAppearance, materialYouStyleLayoutActive } = useAppearancePreferences();
+  const sceneryChrome = useSceneryChromeActive();
   const isDarkMode = themeAppearance === "dark";
 
   const handleFeedTouchStart = useCallback((event: GestureResponderEvent) => {
@@ -866,9 +868,11 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
           <View
             pointerEvents="none"
             className={
-              materialYouStyleLayoutActive
-                ? "absolute inset-0 bg-thread-canvas"
-                : "absolute inset-0 bg-screen"
+              sceneryChrome
+                ? "absolute inset-0"
+                : materialYouStyleLayoutActive
+                  ? "absolute inset-0 bg-thread-canvas"
+                  : "absolute inset-0 bg-screen"
             }
           />
           <ThreadFeed

@@ -896,6 +896,15 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   background-color: transparent;
 }
 
+/* Upstream paints extra bg-background plates inside ChatView (header band,
+   messages column). Those sit above the photo; clear them or the wallpaper
+   never shows. Header frost is reapplied by the [data-chat-header] rule. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  main[data-slot="sidebar-inset"]
+  [data-chat-messages] {
+  background-color: transparent;
+}
+
 /* Chat header: frosted chrome band over the photo (SurgeCode .toolbar). The
    Pull Requests page header wears the same band, so both pages meet the photo
    with the same chrome. */

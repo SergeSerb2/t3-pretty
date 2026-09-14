@@ -384,8 +384,22 @@ import {
   DRAFT_HERO_TRANSITION_EASING,
   MOBILE_COMPOSER_VIEW_TRANSITION_NAME,
   MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
+  SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS,
+  SCENERY_DRAFT_HERO_TRANSITION_EASING,
+  type DraftHeroHandoff,
+  draftHeroGlideHasTravel,
+  draftHeroGlideKeyframes,
+  isDraftHeroAnimationPlaying,
+  recordDraftHeroHandoff,
   runMobileComposerTransition,
+  shouldGlideDraftHeroHandoff,
+  shouldPopDraftHeroGlide,
+  takeDraftHeroHandoff,
 } from "./chat/draftHeroTransition";
+import { useMotionStore } from "../scenery/motionStore";
+import { writeSceneryComposerPlacement } from "../scenery/sceneryArrivalLogic";
+import { bindSceneryPlaceSlot } from "../scenery/sceneryPlaceSlot";
+import { useSceneryThemeActive } from "../scenery/useHtmlAttributes";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   agentControlledBrowserCloseConfirmation,
@@ -509,12 +523,20 @@ const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_USAGE_LIMIT_SOURCES: UsageLimitSourceSnapshots = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
-function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
+function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = false) {
   const transitionGroupRef = useRef<HTMLDivElement | null>(null);
   const composerAnchorRef = useRef<HTMLDivElement | null>(null);
   const previousStateRef = useRef(isDraftHeroState);
-  const previousComposerRectRef = useRef<DOMRect | null>(null);
+  const previousComposerRectRef = useRef<Pick<DOMRect, "left" | "top"> | null>(null);
+  // undefined until the first layout pass takes (or declines) the handoff;
+  // held until its glide finishes so StrictMode's second pass replays it
+  // instead of finding it consumed.
+  const handoffRef = useRef<DraftHeroHandoff | null | undefined>(undefined);
   const animationRef = useRef<Animation | null>(null);
+  const sceneryDockRef = useRef(sceneryDock);
+  sceneryDockRef.current = sceneryDock;
+  const isDraftHeroStateRef = useRef(isDraftHeroState);
+  isDraftHeroStateRef.current = isDraftHeroState;
   const attachTransitionGroupRef = (element: HTMLDivElement | null) => {
     transitionGroupRef.current = element;
   };
@@ -525,25 +547,63 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
     previousComposerRectRef.current = composerAnchorRef.current?.getBoundingClientRect() ?? null;
   };
 
+  // Thread and draft routes are separate route components, so New thread and
+  // opening a thread from a draft remount ChatView. Layout cleanup still sees
+  // the outgoing DOM, so the composer's last rect is handed to whichever
+  // ChatView mounts next; the mount below picks it up in the same commit.
+  useLayoutEffect(
+    () => () => {
+      recordDraftHeroHandoff(
+        composerAnchorRef.current?.getBoundingClientRect() ?? null,
+        performance.now(),
+        {
+          isDraftHero: isDraftHeroStateRef.current,
+          gliding: isDraftHeroAnimationPlaying(animationRef.current),
+        },
+      );
+    },
+    [],
+  );
+
   useLayoutEffect(() => {
     const transitionGroup = transitionGroupRef.current;
     const nextComposerRect = composerAnchorRef.current?.getBoundingClientRect() ?? null;
-    const stateChanged = previousStateRef.current !== isDraftHeroState;
+    if (handoffRef.current === undefined) {
+      handoffRef.current = takeDraftHeroHandoff(performance.now());
+    }
+    const handoff = handoffRef.current ?? null;
+    const stateChangedInPlace = previousStateRef.current !== isDraftHeroState;
+    const shouldGlideHandoff = shouldGlideDraftHeroHandoff({
+      isDraftHero: isDraftHeroState,
+      handoff,
+    });
+    const stateChanged = stateChangedInPlace || shouldGlideHandoff;
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const mobileComposerTransitionActive =
       typeof document !== "undefined" &&
       document.documentElement.dataset.mobileComposerRouteTransition === "true";
+    // Fog already hides the route swap; a FLIP under it finishes during the
+    // hold and then the chrome-in 14px rise reads as a second bounce.
+    const sceneryFogCoversSwap =
+      typeof document !== "undefined" && document.documentElement.dataset.sceneryArrival === "fog";
 
     animationRef.current?.cancel();
     animationRef.current = null;
 
-    const previousComposerRect = previousComposerRectRef.current;
+    // An in-place hero↔docked switch glides from the rect captured before it;
+    // a fresh mount glides from the rect the outgoing ChatView handed off,
+    // but only when placement actually changed or a glide was still running.
+    const previousComposerRect = stateChangedInPlace
+      ? previousComposerRectRef.current
+      : (handoff?.rect ?? null);
+    let handoffGlideStarted = false;
     if (
       stateChanged &&
       !prefersReducedMotion &&
       !mobileComposerTransitionActive &&
+      !sceneryFogCoversSwap &&
       transitionGroup &&
       previousComposerRect &&
       nextComposerRect &&
@@ -551,19 +611,28 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
     ) {
       const translateX = previousComposerRect.left - nextComposerRect.left;
       const translateY = previousComposerRect.top - nextComposerRect.top;
-      if (Math.abs(translateX) >= 0.5 || Math.abs(translateY) >= 0.5) {
+      if (draftHeroGlideHasTravel(translateX, translateY)) {
+        const sceneryDockMotion = sceneryDockRef.current;
+        const pop = shouldPopDraftHeroGlide({
+          sceneryDock: sceneryDockMotion,
+          inPlace: stateChangedInPlace,
+          translateY,
+        });
         const animation = transitionGroup.animate(
-          [
-            { transform: `translate3d(${translateX}px, ${translateY}px, 0)` },
-            { transform: "translate3d(0, 0, 0)" },
-          ],
+          [...draftHeroGlideKeyframes(translateX, translateY, pop)],
           {
-            duration: DRAFT_HERO_TRANSITION_DURATION_MS,
-            easing: DRAFT_HERO_TRANSITION_EASING,
+            duration: sceneryDockMotion
+              ? SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS
+              : DRAFT_HERO_TRANSITION_DURATION_MS,
+            easing: sceneryDockMotion
+              ? SCENERY_DRAFT_HERO_TRANSITION_EASING
+              : DRAFT_HERO_TRANSITION_EASING,
+            fill: "backwards",
           },
         );
         animation.id = DRAFT_HERO_TRANSITION_ANIMATION_ID;
         animationRef.current = animation;
+        handoffGlideStarted = !stateChangedInPlace;
         void animation.finished
           .catch(() => undefined)
           .then(() => {
@@ -571,8 +640,14 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
               return;
             }
             animationRef.current = null;
+            if (!stateChangedInPlace) {
+              handoffRef.current = null;
+            }
           });
       }
+    }
+    if (!stateChangedInPlace && !handoffGlideStarted) {
+      handoffRef.current = null;
     }
 
     previousStateRef.current = isDraftHeroState;
@@ -3429,11 +3504,42 @@ export default function ChatView(props: ChatViewProps) {
     // hero headline would paint over it.
     hasWorktreeSetupCard: worktreeSetup !== null,
   });
+  const sceneryThemeActive = useSceneryThemeActive();
+  // Written during render so a sibling scenery layout effect in the same
+  // commit can read hero/docked before first paint. The layout cleanup still
+  // owns unmount.
+  writeSceneryComposerPlacement(sceneryThemeActive ? (isDraftHeroState ? "hero" : "docked") : null);
+  const sceneryMotionEnabled = useMotionStore((state) => state.enabled);
+  const sceneryDraftDock = sceneryThemeActive && sceneryMotionEnabled;
   const [
     attachDraftHeroTransitionGroupRef,
     attachDraftHeroComposerAnchorRef,
     captureDraftHeroComposerRect,
-  ] = useDraftHeroLayoutTransition(isDraftHeroState);
+  ] = useDraftHeroLayoutTransition(isDraftHeroState, sceneryDraftDock);
+  const draftHeroHeadlineRef = useRef<HTMLDivElement | null>(null);
+  const [draftHeroHeadlineGhost, setDraftHeroHeadlineGhost] = useState<{
+    readonly top: number;
+    readonly left: number;
+    readonly width: number;
+  } | null>(null);
+  useLayoutEffect(() => {
+    writeSceneryComposerPlacement(
+      sceneryThemeActive ? (isDraftHeroState ? "hero" : "docked") : null,
+    );
+    return () => {
+      writeSceneryComposerPlacement(null);
+    };
+  }, [isDraftHeroState, sceneryThemeActive]);
+  useEffect(() => {
+    if (!draftHeroHeadlineGhost) {
+      return;
+    }
+    const timeout = window.setTimeout(
+      () => setDraftHeroHeadlineGhost(null),
+      SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [draftHeroHeadlineGhost]);
 
   const gitCwd = activeProject
     ? projectScriptCwd({
@@ -7339,6 +7445,16 @@ export default function ChatView(props: ChatViewProps) {
       });
       const dockTransition = runMobileComposerTransition(() => {
         flushSync(() => {
+          if (sceneryThemeActive) {
+            const headlineBox = draftHeroHeadlineRef.current?.getBoundingClientRect();
+            if (headlineBox) {
+              setDraftHeroHeadlineGhost({
+                top: headlineBox.top,
+                left: headlineBox.left,
+                width: headlineBox.width,
+              });
+            }
+          }
           captureDraftHeroComposerRect();
           setDockedDraftHeroThreadKey(activeThreadKey);
         });
@@ -8941,8 +9057,13 @@ export default function ChatView(props: ChatViewProps) {
                 }}
               />
             </div>
-            {/* Messages Wrapper */}
-            <div className="relative flex min-h-0 flex-1 flex-col bg-background">
+            {/* Messages Wrapper. data-chat-transcript-active is the ink view-transition group. */}
+            <div
+              data-chat-messages=""
+              data-chat-transcript="true"
+              data-chat-transcript-active="true"
+              className="relative flex min-h-0 flex-1 flex-col bg-background"
+            >
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <MessagesTimeline
                 citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}
@@ -9044,20 +9165,28 @@ export default function ChatView(props: ChatViewProps) {
               )}
             </div>
 
-            {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise */}
+            {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise.
+                World Scenery new threads use a column so the place credit can sit in the lower
+                band instead of stacking on the composer. */}
             <div
               ref={setComposerOverlayElement}
               inert={isRevertingCheckpoint}
               data-chat-composer-overlay="true"
+              data-composer-placement={isDraftHeroState ? "hero" : "docked"}
               className={
-                isDraftHeroState
-                  ? "pointer-events-none absolute inset-0 z-20 flex items-center"
-                  : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
+                isDraftHeroState && sceneryThemeActive
+                  ? "pointer-events-none absolute inset-0 z-20 flex flex-col"
+                  : isDraftHeroState
+                    ? "pointer-events-none absolute inset-0 z-20 flex items-center"
+                    : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >
+              {isDraftHeroState && sceneryThemeActive ? (
+                <div aria-hidden className="min-h-0 flex-1" />
+              ) : null}
               <div
                 ref={attachDraftHeroTransitionGroupRef}
-                className="w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
+                className="w-full shrink-0 ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
               >
                 <div
                   data-chat-composer-stack="true"
@@ -9066,7 +9195,9 @@ export default function ChatView(props: ChatViewProps) {
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
+                        ref={draftHeroHeadlineRef}
                         className="pb-8 group-has-data-[composer-shoulder-tab]/composer-stack:pb-4"
+                        data-scenery-hero-chrome="headline"
                         style={
                           forceExpandedMobileComposer
                             ? {
@@ -9085,6 +9216,7 @@ export default function ChatView(props: ChatViewProps) {
                   ) : null}
                   <div
                     className="relative"
+                    data-scenery-hero-chrome="composer"
                     style={
                       forceExpandedMobileComposer
                         ? { viewTransitionName: MOBILE_COMPOSER_VIEW_TRANSITION_NAME }
@@ -9271,14 +9403,52 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
-                    <div
-                      aria-hidden
-                      className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
-                    />
+                    {!(isDraftHeroState && sceneryThemeActive) ? (
+                      <>
+                        {sceneryThemeActive ? (
+                          <div
+                            ref={bindSceneryPlaceSlot}
+                            data-scenery-place-slot=""
+                            data-scenery-place-hidden={showScrollToBottom ? "" : undefined}
+                          />
+                        ) : null}
+                        <div
+                          aria-hidden
+                          className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
+                        />
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </div>
+              {isDraftHeroState && sceneryThemeActive ? (
+                <div className="flex min-h-0 flex-1 flex-col justify-end ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] pt-10 sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]">
+                  <div ref={bindSceneryPlaceSlot} data-scenery-place-slot="" />
+                  <div
+                    aria-hidden
+                    className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
+                  />
+                </div>
+              ) : null}
             </div>
+
+            {draftHeroHeadlineGhost && sceneryThemeActive ? (
+              <div
+                aria-hidden
+                className="scenery-hero-headline-ghost"
+                style={{
+                  top: draftHeroHeadlineGhost.top,
+                  left: draftHeroHeadlineGhost.left,
+                  width: draftHeroHeadlineGhost.width,
+                }}
+              >
+                <DraftHeroHeadline
+                  draftId={draftId}
+                  activeProjectRef={activeProjectRef}
+                  activeProjectTitle={activeProject?.title ?? null}
+                />
+              </div>
+            ) : null}
 
             {activeThreadRef && activePreviewMiniPlayer && previewMiniPlayerVisible ? (
               <ThreadPreviewMiniPlayer
