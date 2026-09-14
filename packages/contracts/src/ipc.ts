@@ -1490,6 +1490,8 @@ export interface DesktopBridge {
   getLocalEnvironmentBootstraps: () =>
     | readonly DesktopEnvironmentBootstrap[]
     | Promise<readonly DesktopEnvironmentBootstrap[]>;
+  getLocalEnvironmentEnabled?: () => boolean;
+  setLocalEnvironmentEnabled?: (enabled: boolean) => Promise<void>;
   // Fires each time a desktop-managed backend becomes reachable (first boot,
   // restart, WSL swap). The window no longer waits for the backend, so this is
   // how the renderer learns to re-read the bootstrap topology right away.

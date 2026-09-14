@@ -193,17 +193,45 @@ export const stopAllPoolInstances = Effect.fn("desktop.app.stopAllPoolInstances"
 );
 
 const bootstrap = Effect.gen(function* () {
-  const pool = yield* DesktopBackendPool.DesktopBackendPool;
-  const primaryBackend = yield* pool.primary;
   const state = yield* DesktopState.DesktopState;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
-  const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
-  const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
   const snapShot = yield* DesktopSnapShot.DesktopSnapShot;
   const appActivation = yield* DesktopAppActivation.DesktopAppActivation;
   yield* logBootstrapInfo("bootstrap start");
+
+  const settings = yield* desktopSettings.get;
+  const electronProtocol = yield* ElectronProtocol.ElectronProtocol;
+
+  // Local environment can be disabled so the window still opens against
+  // remote/SSH environments. The fork protocol serves the packaged client
+  // from disk (clientDistDir) and only proxies API paths.
+  if (!settings.localEnvironmentEnabled) {
+    const rendererTarget = environment.isDevelopment
+      ? Option.getOrThrow(environment.devServerUrl)
+      : new URL(`http://127.0.0.1:${DEFAULT_DESKTOP_BACKEND_PORT}/`);
+    yield* electronProtocol.registerDesktopProtocol({
+      scheme: ElectronProtocol.getDesktopScheme(environment.isDevelopment),
+      targetOrigin: rendererTarget,
+      backendOrigin: rendererTarget,
+      clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
+      clientDistDir: environment.isDevelopment ? undefined : environment.clientDistPath,
+    });
+    yield* installDesktopIpcHandlers();
+    yield* logBootstrapInfo("bootstrap ipc handlers registered");
+    yield* snapShot.initialize;
+    yield* logBootstrapInfo("bootstrap skipping local environment (disabled in settings)");
+    if (!(yield* Ref.get(state.quitting))) {
+      yield* desktopWindow.createMainIfBackendReady;
+    }
+    return;
+  }
+
+  const pool = yield* DesktopBackendPool.DesktopBackendPool;
+  const primaryBackend = yield* pool.primary;
+  const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+  const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
 
   if (environment.isDevelopment && Option.isNone(environment.configuredBackendPort)) {
     return yield* new DesktopDevelopmentBackendPortRequiredError();
@@ -221,7 +249,6 @@ const bootstrap = Effect.gen(function* () {
     },
   );
 
-  const settings = yield* desktopSettings.get;
   if (settings.serverExposureMode !== environment.defaultDesktopSettings.serverExposureMode) {
     yield* logBootstrapInfo("bootstrap restoring persisted server exposure mode", {
       mode: settings.serverExposureMode,
@@ -229,7 +256,6 @@ const bootstrap = Effect.gen(function* () {
   }
   const serverExposureState = yield* serverExposure.configureFromSettings({ port: backendPort });
   const backendConfig = yield* serverExposure.backendConfig;
-  const electronProtocol = yield* ElectronProtocol.ElectronProtocol;
   const rendererTarget = environment.isDevelopment
     ? Option.getOrThrow(environment.devServerUrl)
     : backendConfig.httpBaseUrl;

@@ -1,8 +1,10 @@
+import * as NodeModule from "node:module";
+
 import type {
   DirItem,
   DirSearchResult,
   FileItem,
-  FileFinder,
+  FileFinder as FileFinderType,
   GrepCursor,
   MixedItem,
   MixedSearchResult,
@@ -34,6 +36,13 @@ import {
   type ProjectSearchEntriesResult,
 } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+
+// fff-node stays external to the CLI bundle because it dlopens a native
+// library. A static `import` of an external package is a hard error inside a
+// Node single-executable (only built-ins resolve there), so load it through
+// `require`, which reads from the real filesystem in every runtime.
+const requireForFff = NodeModule.createRequire(import.meta.url);
+const { FileFinder } = requireForFff("@ff-labs/fff-node") as typeof import("@ff-labs/fff-node");
 
 const WORKSPACE_INDEX_MAX_ENTRIES = PROJECT_LIST_ENTRIES_MAX;
 const WORKSPACE_INDEX_PAGE_SIZE = WORKSPACE_INDEX_MAX_ENTRIES + 2;
@@ -430,21 +439,10 @@ function boundProjectListEntries(entries: ReadonlyArray<ProjectEntry>): {
   return { entries: bounded, truncated: false };
 }
 
-const loadFffNode = () => import("@ff-labs/fff-node");
-
 const createFinder = Effect.fn("WorkspaceSearchIndex.createFinder")(function* (
   cwd: string,
   variant: WorkspaceSearchIndexVariant,
 ) {
-  const { FileFinder } = yield* Effect.tryPromise({
-    try: () => loadFffNode(),
-    catch: (cause) =>
-      new WorkspaceSearchIndexCreateFailed({
-        cwd,
-        reason: "FileFinder.create threw unexpectedly.",
-        cause,
-      }),
-  });
   const result = yield* Effect.try({
     try: () =>
       FileFinder.create({
@@ -474,7 +472,7 @@ const createFinder = Effect.fn("WorkspaceSearchIndex.createFinder")(function* (
 
 const waitForIndexReady = Effect.fn("WorkspaceSearchIndex.waitForIndexReady")(function* <E>(
   cwd: string,
-  finder: FileFinder,
+  finder: FileFinderType,
   onFailure: (input: { readonly reason: string; readonly cause?: unknown }) => E,
 ): Effect.fn.Return<void, E | WorkspaceSearchIndexScanTimedOut> {
   const result = yield* Effect.tryPromise({
