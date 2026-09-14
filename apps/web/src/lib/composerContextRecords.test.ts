@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
+import { CREATE_PULL_REQUEST_MESSAGE_SUFFIX } from "@t3tools/shared/createPullRequestPrompt";
 
 import {
   formatInlineContextReference,
@@ -617,6 +618,22 @@ describe("composerContextRecords", () => {
     });
     expect(legacy.text).toBe("hi\n\n[T line 1](t3-context://v1/terminal/legacy_terminal_1)");
     expect(legacy.recordsById.get("legacy_terminal_1")?.kind).toBe("terminal");
+  });
+
+  it("hides trailing auto-PR instructions from display text", () => {
+    const resolved = resolveUserMessageContext({
+      text: `please add steer/queue capabilities${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`,
+    });
+    expect(resolved.text).toBe("please add steer/queue capabilities");
+    expect(resolved.text).not.toContain("Guidelines:");
+  });
+
+  it("still upgrades legacy context when an auto-PR block follows it", () => {
+    const resolved = resolveUserMessageContext({
+      text: `hi\n\n<terminal_context>\n- T line 1:\n  1 | x\n</terminal_context>${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`,
+    });
+    expect(resolved.text).toBe("hi\n\n[T line 1](t3-context://v1/terminal/legacy_terminal_1)");
+    expect(resolved.recordsById.get("legacy_terminal_1")?.kind).toBe("terminal");
   });
 });
 

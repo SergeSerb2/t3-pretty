@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { MessageId } from "@t3tools/contracts";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
+import { CREATE_PULL_REQUEST_MESSAGE_SUFFIX } from "@t3tools/shared/createPullRequestPrompt";
 import { deriveTimelineMinimapItems, resolveTimelineMinimapPreview } from "./timelineMinimapItems";
 import type { ChatMessage } from "../../types";
 
@@ -77,5 +78,15 @@ describe("timeline minimap previews", () => {
       assistantText: "First second",
     });
     expect(resolveTimelineMinimapPreview(first)?.assistantText).toBe("First");
+  });
+
+  it("hides auto-PR instructions from the user preview", () => {
+    const items = deriveTimelineMinimapItems(
+      rows([["user", `please add steer/queue capabilities${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`]]),
+    );
+    expect(items[0]?.userText).toBe("please add steer/queue capabilities");
+    expect(resolveTimelineMinimapPreview(items[0]!)?.userText).toBe(
+      "please add steer/queue capabilities",
+    );
   });
 });

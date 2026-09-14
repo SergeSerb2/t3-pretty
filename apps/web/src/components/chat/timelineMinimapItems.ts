@@ -1,3 +1,5 @@
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
+
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 
 export interface TimelineMinimapItem {
@@ -21,7 +23,7 @@ export function deriveTimelineMinimapItems(
     items.push({
       id: row.id,
       rowIndex: index,
-      userText: row.message.text,
+      userText: stripHiddenInstructionSuffixes(row.message.text),
       assistantText: resolveFinalAssistantTextForTurn(rows, index),
     });
   }
