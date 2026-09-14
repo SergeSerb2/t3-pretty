@@ -4163,12 +4163,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           })
         : null;
     if (submissionIntent) {
-      // Alt+Enter queues the message for the next turn instead of steering
-      // the one that is running; outside a running turn it sends normally.
+      // Alt+Enter queues instead of steering. Session starting is phase
+      // "connecting"; the server holds "queue" in both running and starting.
       submitComposer(
         undefined,
         submissionIntent,
-        event.altKey && phase === "running" ? "queue" : undefined,
+        event.altKey && (phase === "running" || phase === "connecting") ? "queue" : undefined,
       );
       return true;
     }

@@ -339,10 +339,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const sendDelivery: TurnDeliveryMode | undefined =
     props.connectionState !== "connected"
       ? "queue"
-      : turnInProgress
-        ? "steer"
-        : props.queueCount > 0 || attachmentsUploading
-          ? "queue"
+      : props.queueCount > 0 || attachmentsUploading
+        ? "queue"
+        : turnInProgress
+          ? "steer"
           : undefined;
   const sendLabel = sendDelivery === "queue" ? "Queue" : "Send";
   const currentModelSelection = props.selectedThread.modelSelection;
