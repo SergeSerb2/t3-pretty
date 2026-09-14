@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.41-nightly.20260914.1707002055",
+    date: "2026-09-14",
+    items: [
+      {
+        kind: "new",
+        title: "Composer Create PR chip and review-and-merge option",
+      },
+      {
+        kind: "new",
+        title: "Share global environment secrets across Surge Connect",
+      },
+      {
+        kind: "fixed",
+        title: "Intercept /resume so native sessions actually resume",
+      },
+      {
+        kind: "fixed",
+        title: "Let the new-thread hero show the wallpaper",
+      },
+      {
+        kind: "fixed",
+        title: "Thread photo backgrounds after upstream sync",
+      },
+      {
+        kind: "fixed",
+        title: "Omit dead backend proxy and retry staged WSL probe timeouts",
+      },
+    ],
+  },
+  {
     version: "0.0.41-nightly.20260914.1707002042",
     date: "2026-09-14",
     items: [
