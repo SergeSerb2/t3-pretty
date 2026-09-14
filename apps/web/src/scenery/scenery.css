@@ -915,7 +915,7 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-timeli
 
 /* Chat header: frosted chrome band over the photo (SurgeCode .toolbar). The
    Pull Requests page header wears the same band, so both pages meet the photo
-   with the same chrome. The fade skirt is a separate ::after on the host. */
+   with the same chrome. The fade skirt is a ::before on the messages pane. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   :is([data-chat-header], [data-pull-requests-header]) {
   background-color: color-mix(in srgb, var(--toolbar-background) 42%, transparent);
@@ -923,8 +923,7 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   backdrop-filter: blur(24px) saturate(1.35);
 }
 
-html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-  :is([data-chat-header], [data-pull-requests-header])::after {
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-messages]::before {
   background-color: color-mix(in srgb, var(--toolbar-background) 42%, transparent);
   background-image: none;
   -webkit-backdrop-filter: blur(24px) saturate(1.35);
@@ -1185,8 +1184,7 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
     background-color: color-mix(in srgb, var(--toolbar-background) 92%, transparent);
   }
 
-  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-    :is([data-chat-header], [data-pull-requests-header])::after,
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-messages]::before,
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
     [data-sidebar-state="expanded"]
     [data-slot="sidebar-inset"]::after {
