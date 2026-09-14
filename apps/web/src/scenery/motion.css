@@ -11,8 +11,8 @@
  * - CSS does the animating (compositor thread) — the driver only tags
  *   classes, because the main thread is busy re-parsing markdown while a
  *   response streams;
- * - enters animate, exits are instant (upstream unmounts synchronously;
- *   asymmetric enter/exit is the intended feel anyway);
+ * - enters animate, exits are instant except the worktree-setup card, which
+ *   is held for one exit beat when the first turn takes over;
  * - the html.no-transitions theme-swap kill switch and reduced motion both
  *   neutralize everything here without extra wiring.
  */
@@ -24,6 +24,8 @@ html[data-scenery-motion] {
      the reduced-motion block zeroes every translate/scale in one line while
      the opacity fade (which aids comprehension) stays. */
   --sc-m: 1;
+  /* Must match WORKTREE_SETUP_EXIT_MS. Reduced motion overwrites this. */
+  --sc-worktree-setup-exit-ms: 220ms;
 }
 
 /* ------------------------------------------------------- row arrivals -- */
@@ -36,7 +38,9 @@ html[data-scenery-motion] {
    remount. animationend bubbles, so the driver can still listen on the
    wrapper. */
 
-html[data-scenery-motion] [data-timeline-root].scenery-row-enter > * {
+html[data-scenery-motion]
+  [data-timeline-root].scenery-row-enter
+  > *:not([data-worktree-setup-exiting]) {
   animation: scenery-row-rise 340ms var(--sc-ease-out) both;
   animation-delay: var(--sc-enter-delay, 0ms);
 }
@@ -49,6 +53,22 @@ html[data-scenery-motion] [data-timeline-root].scenery-row-enter > * {
   to {
     opacity: 1;
     translate: 0 0;
+  }
+}
+
+/* Worktree setup → first turn. ChatView holds the row for this beat so the
+   card can recede along the same path it entered while working/thinking
+   rows rise in. Fade-only (no height): the leftover hole collapses when
+   the row unmounts, after it is already invisible. */
+html[data-scenery-motion] [data-timeline-root] > [data-worktree-setup-exiting] {
+  animation: scenery-worktree-setup-exit var(--sc-worktree-setup-exit-ms) var(--sc-ease-out) both;
+}
+
+@keyframes scenery-worktree-setup-exit {
+  to {
+    opacity: 0;
+    translate: 0 calc(8px * var(--sc-m));
+    filter: blur(calc(4px * var(--sc-m)));
   }
 }
 
@@ -657,9 +677,13 @@ html[data-scenery-motion] [data-slot="empty-header"].max-w-none {
 @media (prefers-reduced-motion: reduce) {
   html[data-scenery-motion] {
     --sc-m: 0;
+    /* Must match WORKTREE_SETUP_EXIT_REDUCED_MS. --sc-m already drops motion. */
+    --sc-worktree-setup-exit-ms: 150ms;
   }
 
-  html[data-scenery-motion] [data-timeline-root].scenery-row-enter > * {
+  html[data-scenery-motion]
+    [data-timeline-root].scenery-row-enter
+    > *:not([data-worktree-setup-exiting]) {
     animation: scenery-row-fade 150ms ease-out both;
   }
 
