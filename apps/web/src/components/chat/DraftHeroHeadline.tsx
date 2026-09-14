@@ -253,7 +253,7 @@ export function DraftHeroHeadline({
       if (!draftId) return;
       setDraftThreadContext(draftId, {
         attachedPullRequest: next,
-        ...(next?.headBranch ? { branch: next.headBranch } : {}),
+        branch: next?.headBranch ?? null,
       });
     },
     [draftId, setDraftThreadContext],

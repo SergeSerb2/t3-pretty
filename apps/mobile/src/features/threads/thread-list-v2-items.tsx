@@ -1066,6 +1066,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           style={props.nest === "child" ? { paddingLeft: sidebarPane ? 28 : 36 } : undefined}
         >
           {nestToggle}
+          {collapsedNestMeta}
           {props.project ? (
             <View className="opacity-40">
               <ProjectFavicon
