@@ -5749,8 +5749,12 @@ export default function ChatView(props: ChatViewProps) {
   }, [autoCreatePullRequestEnvMode, babysitPullRequest, setAutoBabysitPullRequestForEnvMode]);
   // The suffix only ever rides a thread's first message, so the toggle is
   // only offered while the thread is still fresh (macOS/mobile parity).
-  const offerAutoCreatePullRequestToggle =
-    isGitRepo && (!isServerThread || (activeThread?.messages.length ?? 0) === 0);
+  // Count optimistic rows too: a local draft keeps messages: [] until
+  // promotion, and `!isServerThread` would otherwise leave the chip up
+  // after the first send.
+  const autoPrThreadHasStarted =
+    (activeThread?.messages.length ?? 0) > 0 || optimisticUserMessages.length > 0;
+  const offerAutoCreatePullRequestToggle = isGitRepo && !autoPrThreadHasStarted;
   const localCheckoutBranchMismatch = useMemo(
     () =>
       isServerThread
@@ -7413,7 +7417,7 @@ export default function ChatView(props: ChatViewProps) {
       text: applyCreatePullRequestSuffix({
         text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
         autoCreatePullRequest,
-        threadHasStarted: !isFirstMessage,
+        threadHasStarted: autoPrThreadHasStarted,
         model: ctxSelectedModel,
         babysitPullRequest,
       }),
