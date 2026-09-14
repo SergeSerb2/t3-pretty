@@ -24,6 +24,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimeCommand,
+  pinnedRuntimeDownloadSource,
   pinnedRuntimePaths,
   PinnedRuntimeInstallError,
 } from "./pinnedRuntime.ts";
@@ -776,7 +777,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       httpClient,
       platform,
       arch,
-      releaseBaseUrl,
+      ...pinnedRuntimeDownloadSource(input.cliVersion, releaseBaseUrl, platform),
       validate: (runtime) =>
         runner
           .run({
@@ -807,6 +808,19 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
             }),
           ),
     }).pipe(
+      Effect.catchIf(
+        (error): error is PinnedRuntimeInstallError =>
+          error._tag === "PinnedRuntimeInstallError" &&
+          (error.step.startsWith("downloading the t3 release checksums") ||
+            error.step.startsWith("downloading the t3 CLI tarball")) &&
+          String(error.cause).includes("404"),
+        () =>
+          Effect.fail(
+            new PinnedRuntimeInstallError({
+              step: `finding a published t3@${input.cliVersion} package`,
+            }),
+          ),
+      ),
       Effect.mapError((error) =>
         error._tag === "PinnedRuntimeInstallError"
           ? new BootServiceCommandError({

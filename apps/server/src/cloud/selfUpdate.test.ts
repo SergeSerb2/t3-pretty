@@ -1,8 +1,10 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ServerSelfUpdateError, ThreadId } from "@t3tools/contracts";
+import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -24,24 +26,26 @@ interface HarnessOptions {
   readonly preflight?: "ready" | "blocked";
   readonly requestUpdate?: ServiceLauncherClient.ServiceLauncherClient["Service"]["requestUpdate"];
   readonly desktopAppUpdate?: DesktopAppUpdate.DesktopAppUpdate["Service"];
+  /** `null` leaves the archive mirror unset so the fork CLI tarball is used. */
+  readonly releaseBaseUrl?: string | null;
 }
 
-// The staged runtime is a release archive: the fake client serves SHA256SUMS
-// and the tarball, and the fake runner stands in for tar before it answers
-// the staged preflight.
+// Default harness uses an archive mirror. The fake client serves SHA256SUMS
+// and the tarball; the fake runner stands in for tar or npm, then preflight.
 const archiveBytes = new TextEncoder().encode("not really a tarball");
-const releaseHttpClient = (order: string[]) =>
+const releaseHttpClient = (order: string[], requests: string[] = []) =>
   HttpClient.make((request) =>
     Effect.gen(function* () {
-      if (request.url.endsWith("/SHA256SUMS")) {
+      requests.push(request.url);
+      if (request.url.endsWith("/SHA256SUMS") || request.url.endsWith(".sha256")) {
         const digest = yield* Effect.promise(() => crypto.subtle.digest("SHA-256", archiveBytes));
         const hex = Array.from(new Uint8Array(digest), (byte) =>
           byte.toString(16).padStart(2, "0"),
         ).join("");
-        return HttpClientResponse.fromWeb(
-          request,
-          new Response(`${hex}  t3-1.1.0-linux-x64.tar.gz\n`),
-        );
+        const fileName = request.url.endsWith(".sha256")
+          ? request.url.slice(request.url.lastIndexOf("/") + 1, -".sha256".length)
+          : "t3-1.1.0-linux-x64.tar.gz";
+        return HttpClientResponse.fromWeb(request, new Response(`${hex}  ${fileName}\n`));
       }
       order.push("download");
       return HttpClientResponse.fromWeb(request, new Response(archiveBytes));
@@ -55,9 +59,28 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   const path = yield* Path.Path;
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-self-update-test-" });
   const order: string[] = [];
+  const requests: string[] = [];
   const runner = ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
+        if (input.command === "npm") {
+          order.push("npm");
+          const prefix = input.args[input.args.indexOf("--prefix") + 1];
+          if (prefix === undefined) return yield* Effect.die("missing npm prefix");
+          const binDir = path.join(prefix, "node_modules", ".bin");
+          yield* fs.makeDirectory(binDir, { recursive: true }).pipe(Effect.orDie);
+          yield* fs.writeFileString(path.join(binDir, "t3"), "#!/bin/sh\n").pipe(Effect.orDie);
+          return {
+            stdout: "",
+            stderr: "",
+            code: ChildProcessSpawner.ExitCode(0),
+            timedOut: false,
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            stdoutInvalidUtf8: false,
+            stderrInvalidUtf8: false,
+          };
+        }
         if (input.command === "tar") {
           order.push("extract");
           const stagingDir = input.args[input.args.indexOf("-C") + 1];
@@ -120,12 +143,25 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
         run: () => Effect.die("unexpected desktop app update run"),
       },
     ),
-    Effect.provideService(HttpClient.HttpClient, releaseHttpClient(order)),
+    Effect.provideService(HttpClient.HttpClient, releaseHttpClient(order, requests)),
     Effect.provideService(HostProcessPlatform, "linux"),
     Effect.provideService(HostProcessArchitecture, "x64"),
     Effect.provide(ServerConfig.layer({ ...config, mode: options.mode ?? "web" })),
+    Effect.provide(
+      ConfigProvider.layer(
+        ConfigProvider.fromEnv({
+          env:
+            options.releaseBaseUrl === null
+              ? {}
+              : {
+                  T3CODE_RELEASE_BASE_URL:
+                    options.releaseBaseUrl ?? "https://releases.example/download",
+                },
+        }),
+      ),
+    ),
   );
-  return { selfUpdate, order };
+  return { selfUpdate, order, requests };
 });
 
 it.layer(NodeServices.layer)("server self update", (it) => {
@@ -353,6 +389,20 @@ it.layer(NodeServices.layer)("server self update", (it) => {
         updateId: "launcher-id",
       });
       expect(order).toEqual(["download", "extract", "preflight", "accept"]);
+    }),
+  );
+
+  it.effect("installs this fork's CLI tarball when no archive mirror is set", () =>
+    Effect.gen(function* () {
+      const { selfUpdate, order, requests } = yield* makeHarness({ releaseBaseUrl: null });
+      expect(yield* selfUpdate.update({ targetVersion: "1.1.0" })).toEqual({
+        targetVersion: "1.1.0",
+        method: "boot-service",
+        updateId: "launcher-id",
+      });
+      const tarballUrl = forkCliTarballUrl("1.1.0", "internal");
+      expect(requests).toEqual([`${tarballUrl}.sha256`, tarballUrl]);
+      expect(order).toEqual(["download", "npm", "preflight", "accept"]);
     }),
   );
 

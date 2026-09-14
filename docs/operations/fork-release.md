@@ -192,10 +192,11 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    plus their `nightly` and `latest` update manifests to the generic `electron-updater` feed in
    `T3CODE_DESKTOP_UPDATE_FEED_URL`. Linux AppImage, `nightly-linux.yml`, and `latest-linux.yml`
    come from hosted `linux-small`, not that Origin tag/upload job. The same feed directory also
-   receives the headless CLI tarball (`t3.tgz`, `t3-<version>.tgz`) and `install.sh` from the
-   native linux-small `publish-cli` step after `macos-dmg` succeeds, packing that desktop
+   receives the headless CLI tarball (`t3.tgz`, `t3-<version>.tgz`), their `.sha256` sidecars, and `install.sh` from the
+   self-hosted `macos-release` `publish-cli` step after `macos-dmg` succeeds, packing that desktop
    version so remotes that request `t3-<appVersion>.tgz` do not 404 — `npx t3` is upstream and
-   must not be the remote-install path. Origin has no GitHub-style release-asset API, so that feed is an S3-compatible bucket
+   must not be the remote-install path. Hosted `linux-small` auto-cancels, so the tarball cannot
+   wait there. Origin has no GitHub-style release-asset API, so that feed is an S3-compatible bucket
    (Cloudflare R2 is the intended host; the relay already uses Cloudflare). Multi-range requests
    stay disabled. Already-installed GitHub-provider builds need one manual install of a release
    that contains this feed before later updates can be automatic. Windows ships even when Azure
@@ -219,7 +220,7 @@ without pretending that a newer upstream tag was integrated before its sync pull
   uploads those children without `soft_fail`, and hosted `linux-small`
   auto-cancels them (BK #1944/#1948/#1952). Native Mac/Windows/iOS/Android
   packaging does not depend on them. Use these agent queues:
-  `linux-small` (Buildkite hosted Linux: x64 AppImage and CLI tarball;
+  `linux-small` (Buildkite hosted Linux: x64 AppImage;
   imported ubuntu-latest jobs stay skipped until hosted dispatch works),
   `macos-medium` (hosted M4 6 vCPU: pipeline upload, Android
   orchestration),

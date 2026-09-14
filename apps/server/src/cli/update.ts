@@ -35,6 +35,7 @@ import * as BootService from "../cloud/bootService.ts";
 import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimeCommand,
+  pinnedRuntimeDownloadSource,
   PinnedRuntimeInstallError,
   pinnedRuntimePaths,
 } from "../cloud/pinnedRuntime.ts";
@@ -485,7 +486,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     httpClient,
     platform,
     arch,
-    releaseBaseUrl: environment[CLI_RELEASE_BASE_URL_ENV]?.trim() || undefined,
+    ...pinnedRuntimeDownloadSource(targetVersion, environment[CLI_RELEASE_BASE_URL_ENV], platform),
     validate: (paths) =>
       runner
         .run({
@@ -513,12 +514,13 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     Effect.catchIf(
       (error): error is PinnedRuntimeInstallError =>
         error._tag === "PinnedRuntimeInstallError" &&
-        error.step.startsWith("downloading the t3 release checksums") &&
+        (error.step.startsWith("downloading the t3 release checksums") ||
+          error.step.startsWith("downloading the t3 CLI tarball")) &&
         String(error.cause).includes("404"),
       () =>
         Effect.fail(
           new CliUpdateError({
-            reason: `No release archive was published for t3@${targetVersion}.`,
+            reason: `No t3@${targetVersion} package was published.`,
           }),
         ),
     ),

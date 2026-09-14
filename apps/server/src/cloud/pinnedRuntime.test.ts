@@ -8,10 +8,13 @@ import * as Path from "effect/Path";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
+import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
+
 import * as ProcessRunner from "../processRunner.ts";
 import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimeCommand,
+  pinnedRuntimeDownloadSource,
   pinnedRuntimePaths,
   PinnedRuntimeInstallError,
 } from "./pinnedRuntime.ts";
@@ -62,6 +65,46 @@ const extractingRunner = (fs: FileSystem.FileSystem, path: Path.Path, commands: 
   });
 
 it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
+  it.effect("selects this fork's CLI tarball unless an archive mirror is set", () =>
+    Effect.sync(() => {
+      assert.deepEqual(pinnedRuntimeDownloadSource(version, undefined, "linux"), {
+        cliTarballUrl: forkCliTarballUrl(version, "internal"),
+      });
+      assert.deepEqual(
+        pinnedRuntimeDownloadSource(version, " https://mirror.example/t3/ ", "linux"),
+        { releaseBaseUrl: "https://mirror.example/t3/" },
+      );
+      assert.deepEqual(pinnedRuntimeDownloadSource(version, undefined, "win32"), {});
+    }),
+  );
+
+  it.effect("refuses Windows without an archive mirror instead of fetching GitHub", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-win32-" });
+      const requests: string[] = [];
+      const error = yield* ensurePinnedRuntimeInstalled({
+        baseDir,
+        version,
+        fs,
+        path,
+        platform: "win32",
+        arch: "x64",
+        httpClient: HttpClient.make((request) => {
+          requests.push(request.url);
+          return Effect.die("no download expected");
+        }),
+        runner: ProcessRunner.ProcessRunner.of({
+          run: () => Effect.die("no command expected"),
+        }),
+        validate: () => Effect.die("must not validate"),
+      }).pipe(Effect.flip);
+      assert.instanceOf(error, PinnedRuntimeInstallError);
+      assert.equal(error.step, "selecting a t3 release for win32-x64");
+      assert.deepEqual(requests, []);
+    }),
+  );
   it.effect("installs the verified release archive as the runtime executable", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -243,6 +286,119 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       assert.equal(validations, 1);
       assert.deepEqual(requests, []);
       assert.equal(yield* fs.readFileString(finalPaths.entryPath), "broken\n");
+    }),
+  );
+
+  it.effect("installs this fork's CLI tarball with npm when no archive mirror is set", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-tarball-" });
+      const requests: string[] = [];
+      const commands: string[] = [];
+      const tarballUrl = forkCliTarballUrl(version, "internal");
+      const runner = ProcessRunner.ProcessRunner.of({
+        run: (input) =>
+          Effect.gen(function* () {
+            commands.push(input.command);
+            const prefix = input.args[input.args.indexOf("--prefix") + 1];
+            if (input.command !== "npm" || prefix === undefined) {
+              return yield* Effect.die(`unexpected command ${input.command}`);
+            }
+            const binDir = path.join(prefix, "node_modules", ".bin");
+            yield* fs.makeDirectory(binDir, { recursive: true }).pipe(Effect.orDie);
+            yield* fs.writeFileString(path.join(binDir, "t3"), "#!/bin/sh\n").pipe(Effect.orDie);
+            return {
+              stdout: "",
+              stderr: "",
+              code: ChildProcessSpawner.ExitCode(0),
+              timedOut: false,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdoutInvalidUtf8: false,
+              stderrInvalidUtf8: false,
+            };
+          }),
+      });
+      const paths = yield* ensurePinnedRuntimeInstalled({
+        baseDir,
+        version,
+        fs,
+        path,
+        platform: "linux",
+        arch: "arm64",
+        httpClient: HttpClient.make((request) =>
+          Effect.gen(function* () {
+            requests.push(request.url);
+            const body = request.url.endsWith(".sha256")
+              ? `${yield* archiveHex(archiveBytes)}  t3-${version}.tgz\n`
+              : archiveBytes;
+            return HttpClientResponse.fromWeb(request, new Response(body));
+          }),
+        ),
+        runner,
+        cliTarballUrl: tarballUrl,
+        validate: (staging) =>
+          fs.exists(staging.entryPath).pipe(
+            Effect.flatMap((exists) => (exists ? Effect.void : Effect.die("missing runtime"))),
+            Effect.orDie,
+          ),
+      });
+      assert.equal(paths.entryPath, path.join(paths.versionDir, "t3"));
+      assert.deepEqual(requests, [`${tarballUrl}.sha256`, tarballUrl]);
+      assert.deepEqual(commands, ["npm"]);
+      assert.equal(yield* fs.readLink(paths.entryPath), path.join("node_modules", ".bin", "t3"));
+      assert.equal(yield* fs.readFileString(paths.sentinelPath), `${version}\n`);
+    }),
+  );
+
+  it.effect("refuses a CLI tarball whose checksum does not match", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-tarball-bad-" });
+      const commands: string[] = [];
+      const error = yield* ensurePinnedRuntimeInstalled({
+        baseDir,
+        version,
+        fs,
+        path,
+        platform: "linux",
+        arch: "arm64",
+        httpClient: HttpClient.make((request) =>
+          Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response(
+                request.url.endsWith(".sha256")
+                  ? `${"0".repeat(64)}  t3-${version}.tgz\n`
+                  : archiveBytes,
+              ),
+            ),
+          ),
+        ),
+        runner: ProcessRunner.ProcessRunner.of({
+          run: (input) =>
+            Effect.sync(() => {
+              commands.push(input.command);
+              return {
+                stdout: "",
+                stderr: "",
+                code: ChildProcessSpawner.ExitCode(0),
+                timedOut: false,
+                stdoutTruncated: false,
+                stderrTruncated: false,
+                stdoutInvalidUtf8: false,
+                stderrInvalidUtf8: false,
+              };
+            }),
+        }),
+        cliTarballUrl: forkCliTarballUrl(version, "internal"),
+        validate: () => Effect.die("must not validate an unverified tarball"),
+      }).pipe(Effect.flip);
+      assert.instanceOf(error, PinnedRuntimeInstallError);
+      assert.equal(error.step, "verifying the t3 CLI tarball checksum");
+      assert.deepEqual(commands, []);
     }),
   );
 

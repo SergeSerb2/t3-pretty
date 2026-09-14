@@ -28,6 +28,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimeCommand,
+  pinnedRuntimeDownloadSource,
   PinnedRuntimeInstallError,
   PinnedRuntimePreflightBlockedError,
 } from "./pinnedRuntime.ts";
@@ -232,7 +233,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
         httpClient,
         platform,
         arch,
-        releaseBaseUrl,
+        ...pinnedRuntimeDownloadSource(targetVersion, releaseBaseUrl, platform),
         validate: (runtime) =>
           runner
             .run({
@@ -306,7 +307,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
         Effect.mapError((error) =>
           error._tag === "PinnedRuntimePreflightBlockedError"
             ? failWith(error.reason, error)
-            : failWith(`Could not prepare t3@${targetVersion}.`, error),
+            : failWith(`Could not prepare t3@${targetVersion} while ${error.step}.`, error),
         ),
       );
 

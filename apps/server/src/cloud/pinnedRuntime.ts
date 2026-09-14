@@ -16,18 +16,16 @@ import {
   cliReleaseDownloadBaseUrl,
   parseChecksums,
 } from "@t3tools/shared/cliRelease";
+import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
 
 import * as ProcessRunner from "../processRunner.ts";
 
 /**
- * A pinned runtime is an exact t3 release archive unpacked into
- * <baseDir>/runtime/versions/<version>: the self-contained executable, the
- * web client, and the native packages beside it. The boot service points its
- * unit or launch agent at the executable, and server self-update installs the
- * target version here before switching over. The runtime never depends on a
- * Node or npm on the machine; the only npm involvement in T3 Code is the `t3`
- * package for people who prefer `npx t3` or `npm install -g t3`, and even a
- * CLI installed that way pins an archive when it sets up the service.
+ * A pinned runtime is an exact t3 release unpacked into
+ * <baseDir>/runtime/versions/<version>. Upstream ships a self-contained
+ * archive (no Node on the host). This fork publishes an npm CLI tarball
+ * instead, so the default install is that tarball plus `npm install`.
+ * `T3CODE_RELEASE_BASE_URL` still selects the archive layout for mirrors.
  */
 const PINNED_RUNTIME_DIR = "runtime";
 const PINNED_RUNTIME_INSTALL_TIMEOUT = Duration.minutes(10);
@@ -119,6 +117,22 @@ interface PinnedRuntimeInstallInput {
   readonly arch: string;
   readonly httpClient: HttpClient.HttpClient;
   readonly releaseBaseUrl?: string | undefined;
+  /** This fork's `t3-<version>.tgz`. Set when no archive mirror is configured. */
+  readonly cliTarballUrl?: string | undefined;
+}
+
+/** Archive mirror when `T3CODE_RELEASE_BASE_URL` is set; otherwise this fork's CLI tarball. */
+export function pinnedRuntimeDownloadSource(
+  version: string,
+  releaseBaseUrl: string | undefined,
+  platform: NodeJS.Platform,
+): Pick<PinnedRuntimeInstallInput, "releaseBaseUrl" | "cliTarballUrl"> {
+  const trimmed = releaseBaseUrl?.trim();
+  if (trimmed) return { releaseBaseUrl: trimmed };
+  // Pretty publishes no Windows SEA. Desktop-managed updates cover Windows;
+  // a GitHub checksum 404 here would look like a transient download failure.
+  if (platform === "win32") return {};
+  return { cliTarballUrl: forkCliTarballUrl(version, "internal") };
 }
 
 const fetchReleaseAsset = Effect.fn("cloud.pinned_runtime.fetch_release_asset")(function* (
@@ -225,6 +239,107 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
   yield* fs.remove(archivePath, { force: true }).pipe(Effect.ignore);
 });
 
+/**
+ * Downloads this fork's npm CLI tarball and installs it with `npm` so `t3`
+ * is a Node bin shim. Headless backends (linux-arm64 included) publish no
+ * SEA archive; remotes already have Node from `install.sh`.
+ */
+const installFromForkCliTarball = Effect.fn("cloud.pinned_runtime.install_cli_tarball")(function* (
+  input: PinnedRuntimeInstallInput,
+  stagingDir: string,
+) {
+  const { fs, path } = input;
+  const tarballUrl = input.cliTarballUrl?.trim();
+  if (tarballUrl === undefined || tarballUrl.length === 0) {
+    return yield* new PinnedRuntimeInstallError({
+      step: "selecting the t3 CLI tarball",
+    });
+  }
+  const fileName = tarballUrl.slice(tarballUrl.lastIndexOf("/") + 1);
+  const checksums = parseChecksums(
+    new TextDecoder().decode(
+      yield* fetchReleaseAsset(
+        input.httpClient,
+        `${tarballUrl}.sha256`,
+        "downloading the t3 CLI tarball checksums",
+      ),
+    ),
+  );
+  const expected = checksums.get(fileName);
+  if (expected === undefined) {
+    return yield* new PinnedRuntimeInstallError({
+      step: `finding ${fileName} in the t3 CLI tarball checksums`,
+    });
+  }
+  const archive = yield* fetchReleaseAsset(
+    input.httpClient,
+    tarballUrl,
+    "downloading the t3 CLI tarball",
+  );
+  const digest = yield* Effect.tryPromise({
+    try: () => crypto.subtle.digest("SHA-256", archive),
+    catch: (cause) =>
+      new PinnedRuntimeInstallError({ step: "verifying the t3 CLI tarball", cause }),
+  });
+  if (Encoding.encodeHex(new Uint8Array(digest)) !== expected) {
+    return yield* new PinnedRuntimeInstallError({
+      step: "verifying the t3 CLI tarball checksum",
+    });
+  }
+  const archivePath = path.join(stagingDir, PINNED_RUNTIME_ARCHIVE_FILE);
+  yield* fs
+    .writeFile(archivePath, archive)
+    .pipe(
+      Effect.mapError(
+        (cause) => new PinnedRuntimeInstallError({ step: "writing the t3 CLI tarball", cause }),
+      ),
+    );
+  const installStep = "installing the t3 CLI tarball";
+  yield* input.runner
+    .run({
+      command: "npm",
+      args: [
+        "install",
+        "--omit=dev",
+        "--no-fund",
+        "--no-audit",
+        "--prefix",
+        stagingDir,
+        archivePath,
+      ],
+      timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
+    })
+    .pipe(
+      Effect.mapError((cause) => new PinnedRuntimeInstallError({ step: installStep, cause })),
+      Effect.filterOrFail(
+        (result) => result.code === 0,
+        (result) =>
+          new PinnedRuntimeInstallError({
+            step: installStep,
+            exitCode: Number(result.code),
+            stdoutLength: result.stdout.length,
+            stderrLength: result.stderr.length,
+          }),
+      ),
+    );
+  yield* fs.remove(archivePath, { force: true }).pipe(Effect.ignore);
+  const npmBin = path.join(stagingDir, "node_modules", ".bin", "t3");
+  if (!(yield* fs.exists(npmBin).pipe(Effect.orElseSucceed(() => false)))) {
+    return yield* new PinnedRuntimeInstallError({
+      step: "finding the installed t3 CLI",
+    });
+  }
+  yield* fs.symlink(path.join("node_modules", ".bin", "t3"), path.join(stagingDir, "t3")).pipe(
+    Effect.mapError(
+      (cause) =>
+        new PinnedRuntimeInstallError({
+          step: "linking the installed t3 CLI",
+          cause,
+        }),
+    ),
+  );
+});
+
 const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(function* (
   input: PinnedRuntimeInstallInput,
 ) {
@@ -244,6 +359,11 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
   if (alreadyPinned) {
     yield* input.validate(paths);
     return paths;
+  }
+  if (input.platform === "win32" && !input.cliTarballUrl?.trim() && !input.releaseBaseUrl?.trim()) {
+    return yield* new PinnedRuntimeInstallError({
+      step: `selecting a t3 release for ${input.platform}-${input.arch}`,
+    });
   }
   if (versionDirExists) {
     yield* fs.remove(paths.versionDir, { recursive: true, force: true }).pipe(
@@ -288,7 +408,11 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
   };
 
   return yield* Effect.gen(function* () {
-    yield* installFromArchive(input, stagingDir);
+    if (input.cliTarballUrl?.trim()) {
+      yield* installFromForkCliTarball(input, stagingDir);
+    } else {
+      yield* installFromArchive(input, stagingDir);
+    }
 
     yield* input.validate(stagingPaths);
     yield* fs
