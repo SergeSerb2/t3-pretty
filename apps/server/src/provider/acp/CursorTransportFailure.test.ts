@@ -13,6 +13,7 @@ function failureFor(chunks: string[]) {
 describe("CursorTransportFailure", () => {
   it.each([
     diagnostic,
+    "Error: RetriableError: [canceled] http/2 stream closed with error code CANCELLED (0x8)",
     "Error: ConnectError: [unavailable] transport closed",
     "Error: ConnectError: [aborted] aborted",
     "Error: ConnectError: [deadline_exceeded] timed out",
