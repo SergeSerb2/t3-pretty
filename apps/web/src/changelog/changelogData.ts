@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.41-nightly.20260914.1722002154",
+    date: "2026-09-14",
+    items: [
+      {
+        kind: "fixed",
+        title: "Hide auto-PR instructions from user-facing chat",
+      },
+      {
+        kind: "fixed",
+        title: "Wire workspace config helpers into CLI pack",
+      },
+      {
+        kind: "fixed",
+        title: "Redesign the project sidebar for compact navigation",
+      },
+      {
+        kind: "fixed",
+        title: "Bleed titlebar and sidebar chrome into the thread",
+      },
+      {
+        kind: "fixed",
+        title: "Requiring deleted service-launcher.mjs in pack",
+      },
+      {
+        kind: "fixed",
+        title: "Update headless backends from the fork CLI tarball",
+      },
+    ],
+  },
+  {
     version: "0.0.41-nightly.20260914.1722002151",
     date: "2026-09-14",
     items: [
