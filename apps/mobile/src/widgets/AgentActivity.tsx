@@ -62,15 +62,15 @@ export function AgentActivity(
 ): LiveActivityLayout {
   "widget";
 
-  // Use SwiftUI's semantic label colors rather than fixed hex keyed off the
-  // device color scheme. A Live Activity banner always renders over a dark
-  // system material regardless of the device's light/dark setting, so
-  // scheme-derived dark text read as unreadable dark-on-dark on the lock
-  // screen. Semantic colors adapt to whatever material the OS places them on:
-  // the dark LA banner, iOS 26 liquid glass, and the (light or dark)
-  // home-screen widget alike.
-  const primaryForeground = "primary";
-  const secondaryForeground = "secondary";
+  // Use SwiftUI's hierarchical foreground styles rather than fixed hex values
+  // keyed off the device color scheme. They remain readable on the dark Live
+  // Activity banner, iOS 26 liquid glass, and light or dark home-screen
+  // widgets while inheriting tinted and vibrant system presentations.
+  type Foreground = Parameters<typeof foregroundStyle>[0];
+  const primaryForeground = { type: "hierarchical", style: "primary" } as const;
+  const secondaryForeground = { type: "hierarchical", style: "secondary" } as const;
+  const monochrome =
+    environment.widgetRenderingMode === "accented" || environment.widgetRenderingMode === "vibrant";
 
   // Status tints mirror the web sidebar's pills
   // (apps/web/src/components/Sidebar.logic.ts resolveThreadStatusPill): amber
@@ -79,9 +79,12 @@ export function AgentActivity(
   // Mac notification center) renders it on a light one — so pick the web
   // palette's light (-600) or dark (-300) variant off the color scheme.
   const isLightScheme = environment.colorScheme === "light";
-  const phaseTint = (phase: AgentActivityPhase | undefined): string => {
+  const phaseTint = (phase: AgentActivityPhase | undefined): Foreground => {
     if (environment.isLuminanceReduced) {
       return secondaryForeground;
+    }
+    if (monochrome) {
+      return primaryForeground;
     }
     switch (phase) {
       case "waiting_for_approval":
@@ -218,7 +221,7 @@ export function AgentActivity(
 
   // SF Symbols, like the logo, ignore frame/foregroundStyle applied directly to
   // the image; size + tint them through a container the resizable symbol fills.
-  const renderGlyph = (systemName: SFName, size: number, color: string) => (
+  const renderGlyph = (systemName: SFName, size: number, color: Foreground) => (
     <HStack modifiers={[frame({ width: size, height: size }), foregroundStyle(color)]}>
       <Image systemName={systemName} modifiers={[resizable()]} />
     </HStack>
@@ -370,7 +373,7 @@ export function AgentActivity(
   // frame the resizable image fills and tint it through the container's
   // foreground style, which the template image inherits. The frame matches
   // the cut-out T3's aspect ratio so it never distorts.
-  const renderLogo = (height: number, color: string) => (
+  const renderLogo = (height: number, color: Foreground) => (
     <HStack modifiers={[frame({ width: height * (480 / 351), height }), foregroundStyle(color)]}>
       <Image assetName="T3Mark" modifiers={[resizable()]} />
     </HStack>
@@ -378,9 +381,8 @@ export function AgentActivity(
 
   const bannerModifiers = [
     padding({ all: 14 }),
-    // nil tint lets iOS 26 apply Liquid Glass instead of the old opaque
-    // Live Activity material. Pre-glass iOS keeps the system default.
-    activityBackgroundTint(null),
+    // A clear tint reveals iOS 26's glass material; older hosts keep the standard surface.
+    activityBackgroundTint(environment.isLiquidGlassAvailable ? "clear" : null),
     ...(deepLink ? [widgetURL(deepLink)] : []),
   ];
 
