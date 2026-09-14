@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { CONNECT_AUTH_VALUE_MAX_LENGTH } from "@t3tools/shared/connectAuth";
 
 import {
   buildConnectCliClerkAuthorizeUrl,
@@ -96,6 +97,7 @@ describe("connectCliAuth", () => {
   });
 
   it("falls back to the current URL when the authorize URL cannot be built", () => {
+    vi.stubEnv("VITE_CLERK_CLI_OAUTH_CLIENT_ID", "");
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", TEST_PUBLISHABLE_KEY);
 
     const connectUrl = "https://app.t3.codes/connect#state=state-1&challenge=challenge-1";
@@ -115,6 +117,21 @@ describe("connectCliAuth", () => {
     ).toBeNull();
     expect(
       readConnectCliCallbackResult(new URL("https://app.t3.codes/connect/callback?state=s")),
+    ).toBeNull();
+  });
+
+  it("rejects oversized callback values before displaying or encoding them", () => {
+    const oversized = "x".repeat(CONNECT_AUTH_VALUE_MAX_LENGTH + 1);
+
+    expect(
+      readConnectCliCallbackResult(
+        new URL(`https://app.t3.codes/connect/callback?code=${oversized}&state=state-1`),
+      ),
+    ).toBeNull();
+    expect(
+      readConnectCliCallbackResult(
+        new URL(`https://app.t3.codes/connect/callback?code=code-1&state=${oversized}`),
+      ),
     ).toBeNull();
   });
 });

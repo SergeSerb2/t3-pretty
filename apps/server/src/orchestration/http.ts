@@ -8,7 +8,7 @@ import * as Option from "effect/Option";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { projectThreadDetailSnapshot } from "./ActivityPayloadProjection.ts";
-import { normalizeDispatchCommand } from "./Normalizer.ts";
+import { cleanupFailedUploadedAttachments, normalizeDispatchCommand } from "./Normalizer.ts";
 import {
   annotateEnvironmentRequest,
   failEnvironmentInternal,
@@ -18,6 +18,7 @@ import {
 } from "../auth/http.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
+import { stripAutomationsFromShellSnapshot } from "./ShellStream.ts";
 
 export const orchestrationHttpApiLayer = HttpApiBuilder.group(
   EnvironmentHttpApi,
@@ -51,13 +52,18 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
         Effect.fn("environment.orchestration.shellSnapshot")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
           yield* requireEnvironmentScope(AuthOrchestrationReadScope);
-          return yield* projectionSnapshotQuery
+          const snapshot = yield* projectionSnapshotQuery
             .getShellSnapshot()
             .pipe(
               Effect.catch((cause) =>
                 failEnvironmentInternal("orchestration_snapshot_failed", cause),
               ),
             );
+          // Same legacy gate as the socket subscription: clients that predate
+          // automations must never see run threads.
+          return args.payload.acceptAutomations === "true"
+            ? snapshot
+            : stripAutomationsFromShellSnapshot(snapshot);
         }),
       )
       .handle(
@@ -96,13 +102,14 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
           const normalizedCommand = yield* normalizeDispatchCommand(args.payload).pipe(
             Effect.catch(() => failEnvironmentInvalidRequest("invalid_command")),
           );
-          return yield* orchestrationEngine
-            .dispatch(normalizedCommand)
-            .pipe(
-              Effect.catch((cause) =>
-                failEnvironmentInternal("orchestration_dispatch_failed", cause),
-              ),
-            );
+          return yield* orchestrationEngine.dispatch(normalizedCommand).pipe(
+            Effect.tapError(() =>
+              cleanupFailedUploadedAttachments(args.payload, normalizedCommand),
+            ),
+            Effect.catch((cause) =>
+              failEnvironmentInternal("orchestration_dispatch_failed", cause),
+            ),
+          );
         }),
       );
   }),

@@ -1,9 +1,14 @@
-import { DesktopSshEnvironmentTargetSchema, EnvironmentId } from "@t3tools/contracts";
+import { DesktopSshEnvironmentTargetSchema } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import {
   BearerConnectionTarget,
+  ConnectionEnvironmentId,
+  ConnectionId,
+  ConnectionLabel,
+  ConnectionSecret,
+  ConnectionUrl,
   PrimaryConnectionTarget,
   RelayConnectionTarget,
   SshConnectionTarget,
@@ -11,17 +16,17 @@ import {
 } from "./model.ts";
 
 const ConnectionProfileBase = {
-  connectionId: Schema.String,
-  environmentId: EnvironmentId,
-  label: Schema.String,
+  connectionId: ConnectionId,
+  environmentId: ConnectionEnvironmentId,
+  label: ConnectionLabel,
 };
 
 export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnectionProfile>()(
   "BearerConnectionProfile",
   {
     ...ConnectionProfileBase,
-    httpBaseUrl: Schema.String,
-    wsBaseUrl: Schema.String,
+    httpBaseUrl: ConnectionUrl,
+    wsBaseUrl: ConnectionUrl,
   },
 ) {}
 
@@ -39,12 +44,14 @@ export type ConnectionProfile = typeof ConnectionProfile.Type;
 export interface ConnectionCatalogEntry {
   readonly target: ConnectionTarget;
   readonly profile: Option.Option<ConnectionProfile>;
+  /** False when the user switched the environment off: saved, but never connects. */
+  readonly enabled: boolean;
 }
 
 export class BearerConnectionCredential extends Schema.TaggedClass<BearerConnectionCredential>()(
   "BearerConnectionCredential",
   {
-    token: Schema.String,
+    token: ConnectionSecret,
   },
 ) {}
 
@@ -104,12 +111,6 @@ export const PlatformConnectionRegistration = Schema.Union([
 ]);
 export type PlatformConnectionRegistration = typeof PlatformConnectionRegistration.Type;
 
-export function connectionRegistrationTarget(
-  registration: ConnectionRegistration | PrimaryConnectionRegistration,
-): ConnectionTarget {
-  return registration.target;
-}
-
 export function connectionRegistrationCatalogEntry(
   registration: ConnectionRegistration | PrimaryConnectionRegistration,
 ): ConnectionCatalogEntry {
@@ -119,12 +120,14 @@ export function connectionRegistrationCatalogEntry(
       return {
         target: registration.target,
         profile: Option.none(),
+        enabled: true,
       };
     case "BearerConnectionRegistration":
     case "SshConnectionRegistration":
       return {
         target: registration.target,
         profile: Option.some(registration.profile),
+        enabled: true,
       };
   }
 }

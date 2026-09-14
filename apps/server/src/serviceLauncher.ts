@@ -1,5 +1,4 @@
 // @effect-diagnostics nodeBuiltinImport:off
-// @effect-diagnostics globalDate:off
 // @effect-diagnostics globalTimers:off
 // This file is shipped as a standalone bundle and copied to a stable path by
 // `t3 service update`. Keep runtime imports limited to Node built-ins.
@@ -24,9 +23,12 @@ import {
   parseServiceState,
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
+  SERVICE_RUNTIME_SENTINEL_MAX_BYTES,
   SERVICE_STATE_FILE,
+  SERVICE_STATE_MAX_BYTES,
   SERVICE_STOP_MARKER_FILE,
 } from "./cloud/serviceProtocol.ts";
+import { isEntrypoint } from "./entrypoint.ts";
 
 const HANDOFF_DELAY_MS = 2_000;
 const PREPARED_TIMEOUT_MS = 120_000;
@@ -70,8 +72,9 @@ async function pathExists(target: string): Promise<boolean> {
   }
 }
 
+// Opened read-write: Windows refuses to flush a handle without write access.
 async function syncFile(filePath: string): Promise<void> {
-  const handle = await NodeFSP.open(filePath, "r");
+  const handle = await NodeFSP.open(filePath, "r+");
   try {
     await handle.sync();
   } finally {
@@ -79,10 +82,15 @@ async function syncFile(filePath: string): Promise<void> {
   }
 }
 
+// Flushes a directory entry so a rename into it survives power loss. Windows
+// has no directory fsync: the handle opens but sync fails with EPERM, and
+// NTFS journals the rename on its own.
 async function syncDirectory(directory: string): Promise<void> {
   const handle = await NodeFSP.open(directory, "r");
   try {
     await handle.sync();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error;
   } finally {
     await handle.close();
   }
@@ -165,9 +173,27 @@ async function discardDatabaseBackup(baseDir: string, updateId: string): Promise
   await syncDirectory(NodePath.dirname(backupDir));
 }
 
+async function readUtf8WithinLimit(filePath: string, maximumBytes: number): Promise<string> {
+  const handle = await NodeFSP.open(filePath, "r");
+  try {
+    const bytes = Buffer.allocUnsafe(maximumBytes + 1);
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      const { bytesRead } = await handle.read(bytes, offset, bytes.byteLength - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > maximumBytes) {
+      throw new Error("Launcher-owned file exceeds the supported size.");
+    }
+    return bytes.subarray(0, offset).toString("utf8");
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function readServiceState(filePath: string): Promise<ServiceState> {
-  const contents = await NodeFSP.readFile(filePath, "utf8");
-  const state = parseServiceState(contents);
+  const state = parseServiceState(await readUtf8WithinLimit(filePath, SERVICE_STATE_MAX_BYTES));
   if (state === undefined) throw new Error("Service state is invalid or unsupported.");
   return state;
 }
@@ -188,12 +214,7 @@ export async function writeServiceState(filePath: string, state: ServiceState): 
     await handle.close();
     handle = undefined;
     await NodeFSP.rename(tempPath, filePath);
-    const directoryHandle = await NodeFSP.open(directory, "r");
-    try {
-      await directoryHandle.sync();
-    } finally {
-      await directoryHandle.close();
-    }
+    await syncDirectory(directory);
   } finally {
     await handle?.close().catch(() => undefined);
     await NodeFSP.rm(tempPath, { force: true }).catch(() => undefined);
@@ -205,7 +226,7 @@ async function runtimeExists(baseDir: string, version: string): Promise<boolean>
   try {
     const [entry, sentinel] = await Promise.all([
       NodeFSP.stat(paths.entryPath),
-      NodeFSP.readFile(paths.sentinelPath, "utf8"),
+      readUtf8WithinLimit(paths.sentinelPath, SERVICE_RUNTIME_SENTINEL_MAX_BYTES),
     ]);
     return entry.isFile() && sentinel.trim() === version;
   } catch {
@@ -611,7 +632,13 @@ async function main(): Promise<void> {
   await new Launcher(baseDir, state).run();
 }
 
-if (import.meta.main) {
+if (
+  isEntrypoint({
+    moduleUrl: import.meta.url,
+    entryPath: process.argv[1],
+    runtimeMain: import.meta.main,
+  })
+) {
   main().catch((cause: unknown) => {
     const error = cause instanceof Error ? cause : new Error(String(cause));
     process.stderr.write(`[service-launcher] ${error.message}\n`);

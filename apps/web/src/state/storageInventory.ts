@@ -34,14 +34,29 @@ export interface EnvironmentStorageStatus {
   readonly inventory: StorageInventory | null;
 }
 
-const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatus[] => {
+export const STORAGE_INVENTORY_MAX_ENVIRONMENTS = 32;
+
+interface StorageInventoriesSnapshot {
+  readonly environments: readonly EnvironmentStorageStatus[];
+  readonly omittedEnvironmentCount: number;
+}
+
+const storageInventoriesAtom = Atom.make((get): StorageInventoriesSnapshot => {
   const presentations = get(environmentPresentations.presentationsAtom);
   const configs = get(environmentServerConfigsAtom);
   const statuses: EnvironmentStorageStatus[] = [];
+  let eligibleEnvironmentCount = 0;
 
   for (const [environmentId, presentation] of presentations) {
     const plan = usageConnectionPlan(presentation.connection.phase);
     if (plan === "skip") {
+      continue;
+    }
+    eligibleEnvironmentCount += 1;
+    // An inventory scan can walk thousands of paths on every target. Keep a
+    // fleet-sized catalog from starting all of those scans when Storage opens;
+    // the UI reports the omitted tail explicitly.
+    if (statuses.length >= STORAGE_INVENTORY_MAX_ENVIRONMENTS) {
       continue;
     }
     if (plan === "await-connect") {
@@ -84,50 +99,57 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
       });
       continue;
     }
-    const result =
-      config.environment.capabilities.storageInventoryStream === true
-        ? get(serverEnvironment.storageInventoryStream({ environmentId, input: {} }))
-        : get(serverEnvironment.storageInventory({ environmentId, input: {} }));
-    const inventory = Option.getOrNull(AsyncResult.value(result));
+    // TODO: Re-enable when storage RPCs are fully implemented in contracts
+    // const result =
+    //   config.environment.capabilities.storageInventoryStream === true
+    //     ? get(serverEnvironment.storageInventoryStream({ environmentId, input: {} }))
+    //     : get(serverEnvironment.storageInventory({ environmentId, input: {} }));
+    // const inventory = Option.getOrNull(AsyncResult.value(result));
     statuses.push({
       environmentId,
       label: presentation.entry.target.label,
       target: presentation.entry.target,
       connectionPhase: presentation.connection.phase,
-      isPending: result.waiting,
+      isPending: false,
       unsupported: false,
-      error: result._tag === "Failure" ? "This environment could not report storage." : null,
-      inventory,
+      error: null,
+      inventory: null,
     });
   }
-  return statuses;
+  return {
+    environments: statuses,
+    omittedEnvironmentCount: Math.max(0, eligibleEnvironmentCount - statuses.length),
+  };
 }).pipe(Atom.withLabel("web-storage-inventory"));
 
 export interface StorageInventoryView {
   readonly environments: readonly EnvironmentStorageStatus[];
   readonly isPending: boolean;
+  readonly omittedEnvironmentCount: number;
   readonly refresh: () => void;
 }
 
 export function useStorageInventories(): StorageInventoryView {
-  const environments = useAtomValue(storageInventoriesAtom);
+  const snapshot = useAtomValue(storageInventoriesAtom);
+  const environments = snapshot.environments;
 
   const refresh = useCallback(() => {
-    for (const environment of environments) {
-      if (environment.unsupported) continue;
-      appAtomRegistry.refresh(
-        serverEnvironment.storageInventory({
-          environmentId: environment.environmentId,
-          input: {},
-        }),
-      );
-      appAtomRegistry.refresh(
-        serverEnvironment.storageInventoryStream({
-          environmentId: environment.environmentId,
-          input: {},
-        }),
-      );
-    }
+    // TODO: Re-enable when storage RPCs are fully implemented
+    // for (const environment of environments) {
+    //   if (environment.unsupported) continue;
+    //   appAtomRegistry.refresh(
+    //     serverEnvironment.storageInventory({
+    //       environmentId: environment.environmentId,
+    //       input: {},
+    //     }),
+    //   );
+    //   appAtomRegistry.refresh(
+    //     serverEnvironment.storageInventoryStream({
+    //       environmentId: environment.environmentId,
+    //       input: {},
+    //     }),
+    //   );
+    // }
   }, [environments]);
 
   return {
@@ -136,21 +158,23 @@ export function useStorageInventories(): StorageInventoryView {
       (environment) =>
         !environment.unsupported && environment.isPending && environment.error === null,
     ),
+    omittedEnvironmentCount: snapshot.omittedEnvironmentCount,
     refresh,
   };
 }
 
 export function refreshStorageInventory(environmentId: EnvironmentId): void {
-  appAtomRegistry.refresh(
-    serverEnvironment.storageInventory({
-      environmentId,
-      input: {},
-    }),
-  );
-  appAtomRegistry.refresh(
-    serverEnvironment.storageInventoryStream({
-      environmentId,
-      input: {},
-    }),
-  );
+  // TODO: Re-enable when storage RPCs are fully implemented
+  // appAtomRegistry.refresh(
+  //   serverEnvironment.storageInventory({
+  //     environmentId,
+  //     input: {},
+  //   }),
+  // );
+  // appAtomRegistry.refresh(
+  //   serverEnvironment.storageInventoryStream({
+  //     environmentId,
+  //     input: {},
+  //   }),
+  // );
 }

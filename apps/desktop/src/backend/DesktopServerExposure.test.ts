@@ -2,6 +2,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import { ADVERTISED_ENDPOINTS_MAX_ITEMS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -156,6 +157,7 @@ describe("DesktopServerExposure", () => {
         const state = yield* serverExposure.configureFromSettings({ port: 4173 });
         assert.equal(state.mode, "local-only");
         assert.equal(state.endpointUrl, null);
+        assert.equal(state.advertisedHost, null);
         assert.equal((yield* settings.get).serverExposureMode, "network-accessible");
 
         const backendConfig = yield* serverExposure.backendConfig;
@@ -272,8 +274,6 @@ describe("DesktopServerExposure", () => {
           modeError,
           DesktopServerExposure.DesktopServerExposureModePersistenceError,
         );
-        assert.isTrue(DesktopServerExposure.isDesktopServerExposureSetModeError(modeError));
-        assert.isTrue(DesktopServerExposure.isDesktopServerExposureError(modeError));
         assert.equal(modeError.mode, "network-accessible");
         assert.strictEqual(modeError.cause, settingsFailure);
         assert.strictEqual(modeError.cause.cause, diskFailure);
@@ -290,7 +290,6 @@ describe("DesktopServerExposure", () => {
           tailscaleError,
           DesktopServerExposure.DesktopTailscaleServePersistenceError,
         );
-        assert.isTrue(DesktopServerExposure.isDesktopServerExposureError(tailscaleError));
         assert.equal(tailscaleError.enabled, true);
         assert.equal(tailscaleError.port, 8443);
         assert.strictEqual(tailscaleError.cause, settingsFailure);
@@ -307,9 +306,9 @@ describe("DesktopServerExposure", () => {
     );
   });
 
-  it.effect("resolves advertised endpoints from the scoped runtime state", () =>
+  it.effect("keeps LAN and Tailscale endpoints distinct when Tailscale is enumerated first", () =>
     withHarness(
-      { ...lanNetworkInterfaces, ...tailnetNetworkInterfaces },
+      { ...tailnetNetworkInterfaces, ...lanNetworkInterfaces },
       Effect.gen(function* () {
         const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
         yield* serverExposure.configureFromSettings({ port: 4173 });
@@ -320,6 +319,59 @@ describe("DesktopServerExposure", () => {
           endpoints.map((endpoint) => endpoint.httpBaseUrl),
           ["http://127.0.0.1:4173/", "http://192.168.1.20:4173/", "http://100.90.1.2:4173/"],
         );
+      }),
+    ),
+  );
+
+  it.effect("keeps Tailscale-only hosts network-accessible", () =>
+    withHarness(
+      tailnetNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        yield* settings.setServerExposureMode("network-accessible");
+
+        const state = yield* serverExposure.configureFromSettings({ port: 4173 });
+        assert.equal(state.mode, "network-accessible");
+        assert.equal(state.advertisedHost, "100.90.1.2");
+        assert.equal(state.endpointUrl, "http://100.90.1.2:4173");
+        assert.equal((yield* serverExposure.backendConfig).bindHost, "0.0.0.0");
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        assert.deepEqual(
+          endpoints.map((endpoint) => [endpoint.reachability, endpoint.httpBaseUrl]),
+          [
+            ["loopback", "http://127.0.0.1:4173/"],
+            ["private-network", "http://100.90.1.2:4173/"],
+          ],
+        );
+        // Verify Tailscale endpoint is NOT labeled as "lan"
+        const tailscaleEndpoint = endpoints.find(
+          (e) => e.httpBaseUrl === "http://100.90.1.2:4173/",
+        );
+        assert.equal(tailscaleEndpoint?.reachability, "private-network");
+        assert.equal(tailscaleEndpoint?.label, "Tailscale");
+      }),
+    ),
+  );
+
+  it.effect("classifies actual LAN hosts as lan reachability", () =>
+    withHarness(
+      lanNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        yield* settings.setServerExposureMode("network-accessible");
+
+        const state = yield* serverExposure.configureFromSettings({ port: 4173 });
+        assert.equal(state.mode, "network-accessible");
+        assert.equal(state.advertisedHost, "192.168.1.20");
+        assert.equal(state.endpointUrl, "http://192.168.1.20:4173");
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        const lanEndpoint = endpoints.find((e) => e.httpBaseUrl === "http://192.168.1.20:4173/");
+        assert.equal(lanEndpoint?.reachability, "lan");
+        assert.equal(lanEndpoint?.label, "Local network");
       }),
     ),
   );
@@ -345,7 +397,7 @@ describe("DesktopServerExposure", () => {
     ),
   );
 
-  it.effect("uses ConfigProvider desktop exposure overrides", () =>
+  it.effect("preserves explicit Tailscale exposure overrides", () =>
     withHarness(
       lanNetworkInterfaces,
       Effect.gen(function* () {
@@ -353,19 +405,146 @@ describe("DesktopServerExposure", () => {
         yield* serverExposure.configureFromSettings({ port: 4173 });
         const change = yield* serverExposure.setMode("network-accessible");
 
-        assert.equal(change.state.advertisedHost, "10.0.0.7");
-        assert.equal(change.state.endpointUrl, "http://10.0.0.7:4173");
+        assert.equal(change.state.advertisedHost, "100.90.1.2");
+        assert.equal(change.state.endpointUrl, "http://100.90.1.2:4173");
 
         const endpoints = yield* serverExposure.getAdvertisedEndpoints;
         assert.deepEqual(
           endpoints.map((endpoint) => endpoint.httpBaseUrl),
-          ["http://127.0.0.1:4173/", "http://10.0.0.7:4173/", "https://public.example.test/"],
+          ["http://127.0.0.1:4173/", "http://100.90.1.2:4173/", "https://public.example.test/"],
         );
       }),
       {
-        T3CODE_DESKTOP_LAN_HOST: "10.0.0.7",
+        T3CODE_DESKTOP_LAN_HOST: "100.90.1.2",
         T3CODE_DESKTOP_HTTPS_ENDPOINTS: "https://public.example.test",
       },
+    ),
+  );
+
+  it.effect("normalizes IPv6 LAN host overrides for advertised URLs", () =>
+    withHarness(
+      emptyNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+        const change = yield* serverExposure.setMode("network-accessible");
+
+        assert.equal(change.state.advertisedHost, "[2001:db8::7]");
+        assert.equal(change.state.endpointUrl, "http://[2001:db8::7]:4173");
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        assert.deepEqual(
+          endpoints.map((endpoint) => endpoint.httpBaseUrl),
+          ["http://127.0.0.1:4173/", "http://[2001:db8::7]:4173/"],
+        );
+      }),
+      {
+        T3CODE_DESKTOP_LAN_HOST: "2001:db8::7",
+      },
+    ),
+  );
+
+  it.effect("ignores malformed LAN host overrides and falls back to a usable interface", () =>
+    withHarness(
+      lanNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+        const change = yield* serverExposure.setMode("network-accessible");
+
+        assert.equal(change.state.advertisedHost, "192.168.1.20");
+        assert.equal(change.state.endpointUrl, "http://192.168.1.20:4173");
+      }),
+      {
+        T3CODE_DESKTOP_LAN_HOST: "alice:secret@10.0.0.7",
+      },
+    ),
+  );
+
+  it.effect("drops configured endpoints containing credentials", () =>
+    withHarness(
+      emptyNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        assert.deepEqual(
+          endpoints.map((endpoint) => endpoint.httpBaseUrl),
+          ["http://127.0.0.1:4173/", "https://public.example.test/"],
+        );
+        assert.isFalse(
+          endpoints.some(
+            (endpoint) =>
+              endpoint.id.includes("secret") ||
+              endpoint.httpBaseUrl.includes("secret") ||
+              endpoint.wsBaseUrl.includes("secret"),
+          ),
+        );
+      }),
+      {
+        T3CODE_DESKTOP_HTTPS_ENDPOINTS:
+          "https://alice:secret@private.example.test,https://public.example.test",
+      },
+    ),
+  );
+
+  it.effect("deduplicates normalized manual endpoints and recognizes secure WebSocket URLs", () =>
+    withHarness(
+      emptyNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        const manualEndpoints = endpoints.filter((endpoint) => endpoint.source === "user");
+        assert.deepEqual(manualEndpoints, [
+          {
+            id: "manual:https://duplicate.example.test",
+            label: "Custom HTTPS",
+            provider: {
+              id: "manual",
+              label: "Manual",
+              kind: "manual",
+              isAddon: false,
+            },
+            httpBaseUrl: "https://duplicate.example.test/",
+            wsBaseUrl: "wss://duplicate.example.test/",
+            reachability: "public",
+            compatibility: {
+              hostedHttpsApp: "compatible",
+              desktopApp: "compatible",
+            },
+            source: "user",
+            status: "unknown",
+            description: "User-configured HTTPS endpoint for this desktop backend.",
+          },
+        ]);
+      }),
+      {
+        T3CODE_DESKTOP_HTTPS_ENDPOINTS:
+          "https://duplicate.example.test,https://duplicate.example.test/path,wss://duplicate.example.test/socket",
+      },
+    ),
+  );
+
+  it.effect("caps the advertised endpoint result before desktop IPC encoding", () =>
+    withHarness(
+      {
+        tailscale0: Array.from({ length: ADVERTISED_ENDPOINTS_MAX_ITEMS + 8 }, (_, index) => ({
+          address: `100.64.0.${index + 1}`,
+          family: "IPv4" as const,
+          internal: false,
+        })),
+      },
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+        yield* serverExposure.setMode("network-accessible");
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        assert.equal(endpoints.length, ADVERTISED_ENDPOINTS_MAX_ITEMS);
+      }),
     ),
   );
 

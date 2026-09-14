@@ -41,7 +41,7 @@ import type { ProviderListCursor } from "./PullRequestProvider.ts";
  * Names the read that produced unusable output, so a failure reports the call it came from
  * rather than borrowing another operation's message.
  */
-export class BitbucketPullRequestReadError extends Schema.TaggedErrorClass<BitbucketPullRequestReadError>()(
+export class BitbucketPullRequestReadError extends Schema.TaggedError<BitbucketPullRequestReadError>()(
   "BitbucketPullRequestReadError",
   {
     operation: Schema.String,
@@ -58,7 +58,7 @@ export class BitbucketPullRequestReadError extends Schema.TaggedErrorClass<Bitbu
 }
 
 /** Not a decode failure: Bitbucket answered, the account it answered for just has no handle. */
-export class BitbucketViewerUnavailableError extends Schema.TaggedErrorClass<BitbucketViewerUnavailableError>()(
+export class BitbucketViewerUnavailableError extends Schema.TaggedError<BitbucketViewerUnavailableError>()(
   "BitbucketViewerUnavailableError",
   {},
 ) {
@@ -72,7 +72,7 @@ export class BitbucketViewerUnavailableError extends Schema.TaggedErrorClass<Bit
 }
 
 /** A repository that is not `workspace/slug`, which is the only form Bitbucket addresses. */
-export class BitbucketRepositoryUnsupportedError extends Schema.TaggedErrorClass<BitbucketRepositoryUnsupportedError>()(
+export class BitbucketRepositoryUnsupportedError extends Schema.TaggedError<BitbucketRepositoryUnsupportedError>()(
   "BitbucketRepositoryUnsupportedError",
   {
     repository: Schema.String,
@@ -88,7 +88,7 @@ export class BitbucketRepositoryUnsupportedError extends Schema.TaggedErrorClass
 }
 
 /** Not a decode failure: the reader named a commit that is not a sha this repository could hold. */
-export class BitbucketDiffCommitError extends Schema.TaggedErrorClass<BitbucketDiffCommitError>()(
+export class BitbucketDiffCommitError extends Schema.TaggedError<BitbucketDiffCommitError>()(
   "BitbucketDiffCommitError",
   {},
 ) {
@@ -133,6 +133,8 @@ const CONVERSATION_PAGE_SIZE = 50;
  * and an end to a walk whose only other stop is Bitbucket running out.
  */
 const CONVERSATION_PAGES = 10;
+/** Protect detail reads whose return contracts cannot represent partial pagination. */
+const MAX_DETAIL_PAGES = 20;
 /** The same ceiling the gh and glab diff reads use. */
 const DIFF_MAX_BYTES = 8 * 1024 * 1024;
 
@@ -378,6 +380,7 @@ function bitbucketReviewPosition(
   }
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const bitbucket = yield* BitbucketApi.BitbucketApi;
 
@@ -494,15 +497,23 @@ export const make = Effect.gen(function* () {
     readonly items: ReadonlyArray<A>;
     /** Commit pages are individually oldest-first, so older pages are prepended. */
     readonly prepend: boolean;
+    readonly page: number;
   }): Effect.Effect<ReadonlyArray<A>, BitbucketPullRequestApiError> =>
     readPage({ operation: input.operation, url: input.url, decode: input.decode }).pipe(
       Effect.flatMap((page) => {
         const items = input.prepend
           ? [...page.items, ...input.items]
           : [...input.items, ...page.items];
-        return page.next === null
-          ? Effect.succeed(items)
-          : itemPages({ ...input, url: page.next, items });
+        if (page.next === null) return Effect.succeed(items);
+        if (input.page >= MAX_DETAIL_PAGES) {
+          return Effect.fail(
+            new BitbucketPullRequestReadError({
+              operation: input.operation,
+              cause: new Error("Bitbucket pagination exceeded the configured page limit."),
+            }),
+          );
+        }
+        return itemPages({ ...input, url: page.next, items, page: input.page + 1 });
       }),
     );
 
@@ -510,6 +521,7 @@ export const make = Effect.gen(function* () {
   const diffStatPages = (input: {
     readonly url: string;
     readonly totals: BitbucketDiffStat;
+    readonly page: number;
   }): Effect.Effect<BitbucketDiffStat, BitbucketPullRequestApiError> =>
     readPage({ operation: "getDiffStat", url: input.url, decode: decodeDiffstatJson }).pipe(
       Effect.flatMap((page) => {
@@ -518,9 +530,16 @@ export const make = Effect.gen(function* () {
           deletions: input.totals.deletions + page.deletions,
           changedFiles: input.totals.changedFiles + page.changedFiles,
         };
-        return page.next === null
-          ? Effect.succeed(totals)
-          : diffStatPages({ url: page.next, totals });
+        if (page.next === null) return Effect.succeed(totals);
+        if (input.page >= MAX_DETAIL_PAGES) {
+          return Effect.fail(
+            new BitbucketPullRequestReadError({
+              operation: "getDiffStat",
+              cause: new Error("Bitbucket pagination exceeded the configured page limit."),
+            }),
+          );
+        }
+        return diffStatPages({ url: page.next, totals, page: input.page + 1 });
       }),
     );
 
@@ -621,6 +640,7 @@ export const make = Effect.gen(function* () {
         diffStatPages({
           url: `${path}/pullrequests/${input.number}/diffstat?pagelen=${MAX_PAGE_SIZE}`,
           totals: { additions: 0, deletions: 0, changedFiles: 0 },
+          page: 1,
         }),
       ),
 
@@ -651,6 +671,7 @@ export const make = Effect.gen(function* () {
           decode: decodeCommitsJson,
           items: [],
           prepend: true,
+          page: 1,
         }),
       ),
 
@@ -662,6 +683,7 @@ export const make = Effect.gen(function* () {
           decode: decodeStatusesJson,
           items: [],
           prepend: false,
+          page: 1,
         }),
       ),
 

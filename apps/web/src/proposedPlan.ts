@@ -70,8 +70,11 @@ function sanitizePlanFileSegment(input: string): string {
   return sanitized.length > 0 ? sanitized : "plan";
 }
 
+/** Prefix of the message the app sends when the user approves a plan. */
+export const PLAN_IMPLEMENTATION_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:\n";
+
 export function buildPlanImplementationPrompt(planMarkdown: string): string {
-  return `PLEASE IMPLEMENT THIS PLAN:\n${planMarkdown.trim()}`;
+  return `${PLAN_IMPLEMENTATION_PROMPT_PREFIX}${planMarkdown.trim()}`;
 }
 
 export function resolvePlanFollowUpSubmission(input: { draftText: string; planMarkdown: string }): {
@@ -112,11 +115,14 @@ export function normalizePlanMarkdownForExport(planMarkdown: string): string {
 export function downloadPlanAsTextFile(filename: string, contents: string): void {
   const blob = new Blob([contents], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  window.setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 0);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+  } finally {
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 0);
+  }
 }

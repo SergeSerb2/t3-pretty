@@ -3,6 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
+import { HostProcessPlatform } from "./hostProcess.ts";
 
 import {
   RotatingFileSink,
@@ -10,6 +11,7 @@ import {
   RotatingFileSinkError,
 } from "./logging.ts";
 
+const windowsHost = HostProcessPlatform.defaultValue() === "win32";
 const tempDirectories: string[] = [];
 
 const makeTempDirectory = (): string => {
@@ -53,7 +55,27 @@ describe("RotatingFileSink", () => {
       received: 0,
       minimum: 1,
     });
-    expect((thrown as Error).message).toBe(`${input.option} must be >= 1 (received 0)`);
+    expect((thrown as Error).message).toBe(
+      `${input.option} must be a safe integer >= 1 (received 0)`,
+    );
+  });
+
+  it.each([
+    { option: "maxBytes" as const, maxBytes: Number.NaN, maxFiles: 1 },
+    { option: "maxBytes" as const, maxBytes: Number.POSITIVE_INFINITY, maxFiles: 1 },
+    { option: "maxFiles" as const, maxBytes: 1, maxFiles: 1.5 },
+  ])("rejects unsafe $option configuration", (input) => {
+    const thrown = captureError(
+      () =>
+        new RotatingFileSink({
+          filePath: "/unused/log.ndjson",
+          maxBytes: input.maxBytes,
+          maxFiles: input.maxFiles,
+        }),
+    );
+
+    expect(thrown).toBeInstanceOf(RotatingFileSinkConfigurationError);
+    expect(thrown).toMatchObject({ option: input.option });
   });
 
   it("preserves directory initialization failures", () => {
@@ -69,7 +91,10 @@ describe("RotatingFileSink", () => {
     expect((thrown as RotatingFileSinkError).cause).toBeInstanceOf(Error);
   });
 
-  it("only treats a missing log file as an empty current size", () => {
+  // An over-long name is the one stat failure that is neither ENOENT nor a
+  // permission problem on posix. Windows reports it as ENOENT, so the sink
+  // correctly treats it as an absent file and there is nothing to assert.
+  it.skipIf(windowsHost)("only treats a missing log file as an empty current size", () => {
     const directory = makeTempDirectory();
     const filePath = NodePath.join(directory, "a".repeat(300));
 

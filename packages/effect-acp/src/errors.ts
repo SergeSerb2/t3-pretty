@@ -3,7 +3,7 @@ import type * as SchemaIssue from "effect/SchemaIssue";
 
 import * as AcpSchema from "./_generated/schema.gen.ts";
 
-export const AcpRequestOperation = Schema.Literals([
+const AcpRequestOperation = Schema.Literals([
   "decode-extension-request-payload",
   "encode-extension-response",
   "handle-request",
@@ -11,12 +11,12 @@ export const AcpRequestOperation = Schema.Literals([
   "receive-response",
   "receive-streaming-response",
 ]);
-export type AcpRequestOperation = typeof AcpRequestOperation.Type;
+type AcpRequestOperation = typeof AcpRequestOperation.Type;
 
 export const AcpRequestId = Schema.Union([Schema.String, Schema.Number]);
 export type AcpRequestId = typeof AcpRequestId.Type;
 
-export const AcpSchemaIssueKind = Schema.Literals([
+const AcpSchemaIssueKind = Schema.Literals([
   "Filter",
   "Encoding",
   "Pointer",
@@ -29,39 +29,50 @@ export const AcpSchemaIssueKind = Schema.Literals([
   "Forbidden",
   "OneOf",
 ]);
-export type AcpSchemaIssueKind = typeof AcpSchemaIssueKind.Type;
+type AcpSchemaIssueKind = typeof AcpSchemaIssueKind.Type;
 
-export interface AcpSchemaIssueDiagnostics {
+interface AcpSchemaIssueDiagnostics {
   readonly issueCount: number;
   readonly issueKinds: ReadonlyArray<AcpSchemaIssueKind>;
   readonly maximumPathDepth: number;
 }
 
+const ACP_SCHEMA_ISSUE_DIAGNOSTIC_NODE_CAPACITY = 4_096;
+
 const schemaIssueDiagnostics = (root: SchemaIssue.Issue): AcpSchemaIssueDiagnostics => {
   let issueCount = 0;
   let maximumPathDepth = 0;
   const issueKinds = new Set<AcpSchemaIssueKind>();
+  const pending: Array<{ readonly issue: SchemaIssue.Issue; readonly pathDepth: number }> = [
+    { issue: root, pathDepth: 0 },
+  ];
 
-  const visit = (issue: SchemaIssue.Issue, pathDepth: number): void => {
+  while (pending.length > 0 && issueCount < ACP_SCHEMA_ISSUE_DIAGNOSTIC_NODE_CAPACITY) {
+    const current = pending.pop();
+    if (!current) break;
+    const { issue, pathDepth } = current;
     issueCount += 1;
     issueKinds.add(issue._tag);
     maximumPathDepth = Math.max(maximumPathDepth, pathDepth);
     switch (issue._tag) {
       case "Filter":
       case "Encoding":
-        visit(issue.issue, pathDepth);
+        pending.push({ issue: issue.issue, pathDepth });
         break;
       case "Pointer":
-        visit(issue.issue, pathDepth + issue.path.length);
+        pending.push({ issue: issue.issue, pathDepth: pathDepth + issue.path.length });
         break;
       case "Composite":
-      case "AnyOf":
-        for (const child of issue.issues) visit(child, pathDepth);
+      case "AnyOf": {
+        const remaining = ACP_SCHEMA_ISSUE_DIAGNOSTIC_NODE_CAPACITY - issueCount - pending.length;
+        for (let index = Math.min(issue.issues.length, remaining) - 1; index >= 0; index -= 1) {
+          pending.push({ issue: issue.issues[index]!, pathDepth });
+        }
         break;
+      }
     }
-  };
+  }
 
-  visit(root, 0);
   return {
     issueCount,
     issueKinds: [...issueKinds],
@@ -79,7 +90,7 @@ export interface AcpRequestDiagnostics {
   readonly maximumPathDepth?: number;
 }
 
-export class AcpSpawnError extends Schema.TaggedErrorClass<AcpSpawnError>()("AcpSpawnError", {
+export class AcpSpawnError extends Schema.TaggedError<AcpSpawnError>()("AcpSpawnError", {
   command: Schema.optional(Schema.String),
   cause: Schema.Defect(),
 }) {
@@ -90,7 +101,7 @@ export class AcpSpawnError extends Schema.TaggedErrorClass<AcpSpawnError>()("Acp
   }
 }
 
-export class AcpProcessExitedError extends Schema.TaggedErrorClass<AcpProcessExitedError>()(
+export class AcpProcessExitedError extends Schema.TaggedError<AcpProcessExitedError>()(
   "AcpProcessExitedError",
   {
     code: Schema.optional(Schema.Number),
@@ -112,7 +123,7 @@ export const AcpProtocolParseOperation = Schema.Literals([
 ]);
 export type AcpProtocolParseOperation = typeof AcpProtocolParseOperation.Type;
 
-export class AcpProtocolParseError extends Schema.TaggedErrorClass<AcpProtocolParseError>()(
+export class AcpProtocolParseError extends Schema.TaggedError<AcpProtocolParseError>()(
   "AcpProtocolParseError",
   {
     operation: AcpProtocolParseOperation,
@@ -156,11 +167,16 @@ export class AcpProtocolParseError extends Schema.TaggedErrorClass<AcpProtocolPa
   }
 }
 
-export class AcpTransportError extends Schema.TaggedErrorClass<AcpTransportError>()(
+export class AcpTransportError extends Schema.TaggedError<AcpTransportError>()(
   "AcpTransportError",
   {
     operation: Schema.optional(
-      Schema.Literals(["call-rpc", "read-input-stream", "read-process-exit-status"]),
+      Schema.Literals([
+        "call-rpc",
+        "read-input-stream",
+        "read-process-exit-status",
+        "write-output-stream",
+      ]),
     ),
     method: Schema.optional(Schema.String),
     detail: Schema.optional(Schema.String),
@@ -176,7 +192,19 @@ export class AcpTransportError extends Schema.TaggedErrorClass<AcpTransportError
   }
 }
 
-export class AcpInputStreamEndedError extends Schema.TaggedErrorClass<AcpInputStreamEndedError>()(
+export class AcpWireLineTooLargeError extends Schema.TaggedError<AcpWireLineTooLargeError>()(
+  "AcpWireLineTooLargeError",
+  {
+    maximumBytes: Schema.Int,
+    observedBytes: Schema.Int,
+  },
+) {
+  override get message() {
+    return `ACP wire record exceeded the ${this.maximumBytes}-byte limit.`;
+  }
+}
+
+export class AcpInputStreamEndedError extends Schema.TaggedError<AcpInputStreamEndedError>()(
   "AcpInputStreamEndedError",
   {},
 ) {
@@ -185,7 +213,16 @@ export class AcpInputStreamEndedError extends Schema.TaggedErrorClass<AcpInputSt
   }
 }
 
-export class AcpRequestError extends Schema.TaggedErrorClass<AcpRequestError>()("AcpRequestError", {
+export class AcpOutputStreamEndedError extends Schema.TaggedError<AcpOutputStreamEndedError>()(
+  "AcpOutputStreamEndedError",
+  {},
+) {
+  override get message() {
+    return "ACP output stream ended.";
+  }
+}
+
+export class AcpRequestError extends Schema.TaggedError<AcpRequestError>()("AcpRequestError", {
   code: AcpSchema.ErrorCode,
   errorMessage: Schema.String,
   data: Schema.optional(Schema.Unknown),
@@ -372,7 +409,9 @@ export const AcpError = Schema.Union([
   AcpProcessExitedError,
   AcpProtocolParseError,
   AcpTransportError,
+  AcpWireLineTooLargeError,
   AcpInputStreamEndedError,
+  AcpOutputStreamEndedError,
 ]);
 
 export type AcpError = typeof AcpError.Type;

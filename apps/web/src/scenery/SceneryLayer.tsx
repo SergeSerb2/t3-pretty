@@ -30,7 +30,12 @@ import { readSceneryArrivalPhase, sceneryArrivalCoversSwap } from "./sceneryArri
 import { runSceneryInkTransition } from "./sceneryInkTransition";
 import { planScenerySwap } from "./scenerySwap";
 import { isWallpaperReady, preloadWallpaper } from "./sceneryWallpaper";
-import { UNSPLASH_UTM, wallpaperURL, type SceneryPhoto } from "./unsplash";
+import {
+  UNSPLASH_UTM,
+  unsplashProfileAttributionUrl,
+  wallpaperURL,
+  type SceneryPhoto,
+} from "./unsplash";
 
 interface DisplayedPhoto {
   readonly id: string;
@@ -102,6 +107,9 @@ export function SceneryLayer({
       return;
     }
     const url = wallpaperURL(photo, blur);
+    if (!url) {
+      return;
+    }
     const plan = planScenerySwap({
       current,
       photoId,
@@ -126,7 +134,7 @@ export function SceneryLayer({
         url,
         name: photo.name,
         photographerName: photo.photographerName,
-        photographerProfileURL: photo.photographerProfileURL,
+        photographerProfileURL: unsplashProfileAttributionUrl(photo.photographerProfileURL),
       };
       // True only while the commit runs inside a live view transition.
       // The fallbacks (no API, reduced motion, a skipped start) commit the
@@ -248,7 +256,7 @@ export function SceneryLayer({
             {credited.photographerProfileURL ? (
               <a
                 className="scenery-attribution__photographer"
-                href={`${credited.photographerProfileURL}${UNSPLASH_UTM}`}
+                href={credited.photographerProfileURL}
                 rel="noreferrer"
                 target="_blank"
               >

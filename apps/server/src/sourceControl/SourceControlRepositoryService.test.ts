@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -153,10 +154,11 @@ it.effect("preserves provider failures without deriving the repository message f
 it.effect("clones a looked-up repository into the requested destination", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const parent = yield* fs.makeTempDirectoryScoped({
       prefix: "t3-source-control-clone-parent-",
     });
-    const destinationPath = `${parent}/t3code`;
+    const destinationPath = path.join(parent, "t3code");
     const cloneCalls: Array<{ cwd: string; args: ReadonlyArray<string> }> = [];
 
     yield* Effect.gen(function* () {
@@ -192,6 +194,31 @@ it.effect("clones a looked-up repository into the requested destination", () =>
         }),
       ),
     );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("rejects an existing non-empty clone destination", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parent = yield* fs.makeTempDirectoryScoped({
+      prefix: "t3-source-control-nonempty-parent-",
+    });
+    const destinationPath = `${parent}/t3code`;
+    yield* fs.makeDirectory(destinationPath);
+    yield* fs.writeFileString(`${destinationPath}/keep.txt`, "keep\n");
+
+    const error = yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      return yield* Effect.flip(
+        service.cloneRepository({
+          remoteUrl: CLONE_URLS.sshUrl,
+          destinationPath,
+        }),
+      );
+    }).pipe(Effect.provide(makeLayer({})));
+
+    assert.strictEqual(error.operation, "cloneRepository");
+    assert.strictEqual(error.detail, "Destination path already exists and is not empty.");
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 

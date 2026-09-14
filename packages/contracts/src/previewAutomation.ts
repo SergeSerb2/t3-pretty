@@ -1,7 +1,14 @@
 import * as Schema from "effect/Schema";
 
-import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
+  EnvironmentId,
+  IsoDateTime,
+  NonNegativeInt,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
+import {
+  PREVIEW_URL_MAX_LENGTH,
   PREVIEW_VIEWPORT_MAX_AREA,
   PreviewRenderedViewportSize,
   PreviewTabId,
@@ -11,15 +18,47 @@ import {
 } from "./preview.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
+export const PREVIEW_AUTOMATION_SELECTOR_MAX_LENGTH = 8_192;
+export const PREVIEW_AUTOMATION_TYPE_TEXT_MAX_LENGTH = 64_000;
+export const PREVIEW_AUTOMATION_WAIT_TEXT_MAX_LENGTH = 20_000;
+export const PREVIEW_AUTOMATION_KEY_MAX_LENGTH = 128;
+export const PREVIEW_AUTOMATION_REQUEST_ID_MAX_LENGTH = 128;
+export const PREVIEW_AUTOMATION_ERROR_MESSAGE_MAX_LENGTH = 8_000;
+export const PREVIEW_AUTOMATION_SCREENSHOT_MAX_DIMENSION = 1_280;
+export const PREVIEW_AUTOMATION_SCREENSHOT_MAX_BASE64_LENGTH = 12 * 1024 * 1024;
+export const PREVIEW_AUTOMATION_VISIBLE_TEXT_MAX_LENGTH = 20_000;
+export const PREVIEW_AUTOMATION_INTERACTIVE_ELEMENTS_MAX_ITEMS = 200;
+export const PREVIEW_AUTOMATION_PAGE_TITLE_MAX_LENGTH = 512;
+export const PREVIEW_AUTOMATION_ELEMENT_TAG_MAX_LENGTH = 128;
+export const PREVIEW_AUTOMATION_ELEMENT_ROLE_MAX_LENGTH = 128;
+export const PREVIEW_AUTOMATION_ELEMENT_NAME_MAX_LENGTH = 1_024;
+export const PREVIEW_AUTOMATION_RESULT_SELECTOR_MAX_LENGTH = 2_048;
+export const PREVIEW_AUTOMATION_DIAGNOSTIC_ENTRIES_MAX_ITEMS = 200;
+export const PREVIEW_AUTOMATION_DIAGNOSTIC_LEVEL_MAX_LENGTH = 64;
+export const PREVIEW_AUTOMATION_DIAGNOSTIC_TEXT_MAX_LENGTH = 8_000;
+export const PREVIEW_AUTOMATION_DIAGNOSTIC_SOURCE_MAX_LENGTH = 128;
+export const PREVIEW_AUTOMATION_NETWORK_METHOD_MAX_LENGTH = 32;
+export const PREVIEW_AUTOMATION_ACTION_TIMELINE_MAX_ITEMS = 200;
+export const PREVIEW_AUTOMATION_TIMELINE_ERROR_MAX_LENGTH = 2_000;
+export const PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES = 2_048;
+export const PREVIEW_AUTOMATION_RECORDING_PATH_MAX_LENGTH = 32_768;
+
 const BoundedUrl = Schema.String.check(Schema.isTrimmed())
   .check(Schema.isNonEmpty())
-  .check(Schema.isMaxLength(2048));
+  .check(Schema.isMaxLength(PREVIEW_URL_MAX_LENGTH));
+const BoundedPath = Schema.String.check(Schema.isMaxLength(PREVIEW_URL_MAX_LENGTH));
+const PreviewAutomationRequestId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PREVIEW_AUTOMATION_REQUEST_ID_MAX_LENGTH),
+);
+const PreviewAutomationTimeoutMs = Schema.Int.check(Schema.isGreaterThan(0)).check(
+  Schema.isLessThanOrEqualTo(60_000),
+);
 const URL_GUIDANCE =
   "Absolute http(s) URL or a schemeless host such as t3.chat or localhost:5173. Schemeless public hosts use https; loopback hosts use http.";
 const OptionalTimeoutMs = Schema.optional(
-  Schema.Int.check(Schema.isGreaterThan(0))
-    .check(Schema.isLessThanOrEqualTo(60_000))
-    .annotate({ description: "Maximum wait in milliseconds. Defaults to 15000; maximum 60000." }),
+  PreviewAutomationTimeoutMs.annotate({
+    description: "Maximum wait in milliseconds. Defaults to 15000; maximum 60000.",
+  }),
 ).annotate({ description: "Maximum wait in milliseconds. Defaults to 15000; maximum 60000." });
 
 /** Operations understood by desktop hosts predating viewport resizing. */
@@ -67,8 +106,10 @@ export const PreviewAutomationStatus = Schema.Struct({
   available: Schema.Boolean,
   visible: Schema.Boolean,
   tabId: Schema.NullOr(PreviewTabId),
-  url: Schema.NullOr(Schema.String),
-  title: Schema.NullOr(Schema.String),
+  url: Schema.NullOr(BoundedUrl),
+  title: Schema.NullOr(
+    Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_PAGE_TITLE_MAX_LENGTH)),
+  ),
   loading: Schema.Boolean,
   /** Optional for compatibility with desktop hosts predating viewport sizing. */
   viewportSetting: Schema.optional(PreviewViewportSetting),
@@ -136,7 +177,7 @@ export const BrowserNavigationTarget = Schema.Union([
       }),
     ),
     path: Schema.optional(
-      Schema.String.annotate({
+      BoundedPath.annotate({
         description: "Optional path, query, and fragment, for example /settings?tab=account.",
       }),
     ),
@@ -280,12 +321,16 @@ export const PreviewAutomationSetColorSchemeResult = Schema.Struct({
 export type PreviewAutomationSetColorSchemeResult =
   typeof PreviewAutomationSetColorSchemeResult.Type;
 
-const Locator = TrimmedNonEmptyString.annotate({
+const Locator = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PREVIEW_AUTOMATION_SELECTOR_MAX_LENGTH),
+).annotate({
   description:
     "Playwright selector, preferably role/text based, for example role=button[name='Send'] or text=Continue. Use snapshot first to inspect the page.",
 });
 
-const LegacySelector = TrimmedNonEmptyString.annotate({
+const LegacySelector = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PREVIEW_AUTOMATION_SELECTOR_MAX_LENGTH),
+).annotate({
   description:
     "Legacy CSS selector such as button[type='submit']. Prefer locator for resilient role/text targeting.",
 });
@@ -331,7 +376,9 @@ export type PreviewAutomationClickInput = typeof PreviewAutomationClickInput.Typ
 
 export const PreviewAutomationTypeInput = Schema.Struct({
   ...PreviewAutomationTabTargetFields,
-  text: Schema.String.annotate({ description: "Literal text to insert." }),
+  text: Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_TYPE_TEXT_MAX_LENGTH)).annotate({
+    description: "Literal text to insert.",
+  }),
   selector: Schema.optional(LegacySelector).annotate({
     description: "Legacy CSS selector for the input. Prefer locator.",
   }),
@@ -368,14 +415,17 @@ export const PreviewAutomationPressInput = Schema.Struct({
           "Keyboard key name such as Enter, Escape, Tab, ArrowDown, Backspace, or a single character.",
       }),
     )
+    .check(Schema.isMaxLength(PREVIEW_AUTOMATION_KEY_MAX_LENGTH))
     .annotateKey({
       description:
         "Keyboard key name such as Enter, Escape, Tab, ArrowDown, Backspace, or a single character.",
     }),
   modifiers: Schema.optional(
-    Schema.Array(Schema.Literals(["Alt", "Control", "Meta", "Shift"])).annotate({
-      description: "Modifier keys held while pressing key.",
-    }),
+    Schema.Array(Schema.Literals(["Alt", "Control", "Meta", "Shift"]))
+      .check(Schema.isMaxLength(4))
+      .annotate({
+        description: "Modifier keys held while pressing key.",
+      }),
   ),
 }).annotate({ description: "Presses one keyboard key in the active browser tab." });
 export type PreviewAutomationPressInput = typeof PreviewAutomationPressInput.Type;
@@ -454,14 +504,16 @@ export const PreviewAutomationWaitForInput = Schema.Struct({
       "Playwright selector that must match an element, for example role=button[name='Send'].",
   }),
   text: Schema.optional(
-    TrimmedNonEmptyString.annotate({
+    TrimmedNonEmptyString.check(
+      Schema.isMaxLength(PREVIEW_AUTOMATION_WAIT_TEXT_MAX_LENGTH),
+    ).annotate({
       description: "Case-sensitive substring that must appear in visible document text.",
     }),
   ).annotate({
     description: "Case-sensitive substring that must appear in visible document text.",
   }),
   urlIncludes: Schema.optional(
-    TrimmedNonEmptyString.annotate({
+    TrimmedNonEmptyString.check(Schema.isMaxLength(PREVIEW_URL_MAX_LENGTH)).annotate({
       description: "Substring that must appear in the current absolute URL.",
     }),
   ).annotate({ description: "Substring that must appear in the current absolute URL." }),
@@ -488,60 +540,90 @@ export const PreviewAutomationWaitForInput = Schema.Struct({
 export type PreviewAutomationWaitForInput = typeof PreviewAutomationWaitForInput.Type;
 
 export const PreviewAutomationElement = Schema.Struct({
-  tag: Schema.String,
-  role: Schema.NullOr(Schema.String),
-  name: Schema.String,
-  selector: Schema.String,
-  x: Schema.Number,
-  y: Schema.Number,
-  width: Schema.Number,
-  height: Schema.Number,
+  tag: Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_ELEMENT_TAG_MAX_LENGTH)),
+  role: Schema.NullOr(
+    Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_ELEMENT_ROLE_MAX_LENGTH)),
+  ),
+  name: Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_ELEMENT_NAME_MAX_LENGTH)),
+  selector: Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_RESULT_SELECTOR_MAX_LENGTH)),
+  x: Schema.Finite,
+  y: Schema.Finite,
+  width: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+  height: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 export type PreviewAutomationElement = typeof PreviewAutomationElement.Type;
 
 export const PreviewAutomationConsoleEntry = Schema.Struct({
-  level: Schema.String,
-  text: Schema.String,
-  timestamp: Schema.String,
-  source: Schema.optional(Schema.String),
+  level: Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_DIAGNOSTIC_LEVEL_MAX_LENGTH)),
+  text: Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_DIAGNOSTIC_TEXT_MAX_LENGTH)),
+  timestamp: IsoDateTime,
+  source: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_DIAGNOSTIC_SOURCE_MAX_LENGTH)),
+  ),
 });
 export type PreviewAutomationConsoleEntry = typeof PreviewAutomationConsoleEntry.Type;
 
 export const PreviewAutomationNetworkEntry = Schema.Struct({
-  url: Schema.String,
-  method: Schema.String,
-  status: Schema.NullOr(Schema.Number),
+  url: Schema.String.check(Schema.isMaxLength(PREVIEW_URL_MAX_LENGTH)),
+  method: Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_NETWORK_METHOD_MAX_LENGTH)),
+  status: Schema.NullOr(Schema.Finite),
   failed: Schema.Boolean,
-  errorText: Schema.optional(Schema.String),
-  timestamp: Schema.String,
+  errorText: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_DIAGNOSTIC_TEXT_MAX_LENGTH)),
+  ),
+  timestamp: IsoDateTime,
 });
 export type PreviewAutomationNetworkEntry = typeof PreviewAutomationNetworkEntry.Type;
 
 export const PreviewAutomationActionEvent = Schema.Struct({
-  id: Schema.String,
-  action: Schema.String,
+  id: TrimmedNonEmptyString.check(Schema.isMaxLength(PREVIEW_AUTOMATION_REQUEST_ID_MAX_LENGTH)),
+  action: TrimmedNonEmptyString.check(Schema.isMaxLength(PREVIEW_AUTOMATION_REQUEST_ID_MAX_LENGTH)),
   status: Schema.Literals(["running", "succeeded", "failed", "interrupted"]),
-  startedAt: Schema.String,
-  completedAt: Schema.optional(Schema.String),
-  error: Schema.optional(Schema.String),
+  startedAt: IsoDateTime,
+  completedAt: Schema.optional(IsoDateTime),
+  error: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_TIMELINE_ERROR_MAX_LENGTH)),
+  ),
 });
 export type PreviewAutomationActionEvent = typeof PreviewAutomationActionEvent.Type;
 
 export const PreviewAutomationSnapshot = Schema.Struct({
-  url: Schema.String,
-  title: Schema.String,
+  url: Schema.String.check(Schema.isMaxLength(PREVIEW_URL_MAX_LENGTH)),
+  title: Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_PAGE_TITLE_MAX_LENGTH)),
   loading: Schema.Boolean,
-  visibleText: Schema.String,
-  interactiveElements: Schema.Array(PreviewAutomationElement),
-  accessibilityTree: Schema.Unknown,
-  consoleEntries: Schema.Array(PreviewAutomationConsoleEntry),
-  networkEntries: Schema.Array(PreviewAutomationNetworkEntry),
-  actionTimeline: Schema.Array(PreviewAutomationActionEvent),
+  visibleText: Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_VISIBLE_TEXT_MAX_LENGTH)),
+  interactiveElements: Schema.Array(PreviewAutomationElement).check(
+    Schema.isMaxLength(PREVIEW_AUTOMATION_INTERACTIVE_ELEMENTS_MAX_ITEMS),
+  ),
+  accessibilityTree: Schema.Struct({
+    nodes: Schema.Array(Schema.Unknown).check(
+      Schema.isMaxLength(PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES),
+    ),
+    t3TruncatedNodeCount: Schema.optional(NonNegativeInt),
+  }),
+  consoleEntries: Schema.Array(PreviewAutomationConsoleEntry).check(
+    Schema.isMaxLength(PREVIEW_AUTOMATION_DIAGNOSTIC_ENTRIES_MAX_ITEMS),
+  ),
+  networkEntries: Schema.Array(PreviewAutomationNetworkEntry).check(
+    Schema.isMaxLength(PREVIEW_AUTOMATION_DIAGNOSTIC_ENTRIES_MAX_ITEMS),
+  ),
+  actionTimeline: Schema.Array(PreviewAutomationActionEvent).check(
+    Schema.isMaxLength(PREVIEW_AUTOMATION_ACTION_TIMELINE_MAX_ITEMS),
+  ),
   screenshot: Schema.Struct({
     mimeType: Schema.Literal("image/png"),
-    data: Schema.String,
-    width: Schema.Int,
-    height: Schema.Int,
+    data: Schema.String.check(
+      Schema.isNonEmpty(),
+      Schema.isMaxLength(PREVIEW_AUTOMATION_SCREENSHOT_MAX_BASE64_LENGTH),
+    ),
+    width: Schema.Int.check(
+      Schema.isGreaterThanOrEqualTo(0),
+      Schema.isLessThanOrEqualTo(PREVIEW_AUTOMATION_SCREENSHOT_MAX_DIMENSION),
+    ),
+    height: Schema.Int.check(
+      Schema.isGreaterThanOrEqualTo(0),
+      Schema.isLessThanOrEqualTo(PREVIEW_AUTOMATION_SCREENSHOT_MAX_DIMENSION),
+    ),
   }),
 });
 export type PreviewAutomationSnapshot = typeof PreviewAutomationSnapshot.Type;
@@ -549,17 +631,19 @@ export type PreviewAutomationSnapshot = typeof PreviewAutomationSnapshot.Type;
 export const PreviewAutomationRecordingStatus = Schema.Struct({
   tabId: PreviewTabId,
   recording: Schema.Boolean,
-  startedAt: Schema.NullOr(Schema.String),
+  startedAt: Schema.NullOr(IsoDateTime),
 });
 export type PreviewAutomationRecordingStatus = typeof PreviewAutomationRecordingStatus.Type;
 
+export const PREVIEW_RECORDING_STOP_TIMEOUT_MS = 120_000;
+
 export const PreviewAutomationRecordingArtifact = Schema.Struct({
-  id: Schema.String,
+  id: TrimmedNonEmptyString.check(Schema.isMaxLength(PREVIEW_AUTOMATION_REQUEST_ID_MAX_LENGTH)),
   tabId: PreviewTabId,
-  path: Schema.String,
-  mimeType: Schema.String,
-  sizeBytes: Schema.Int,
-  createdAt: Schema.String,
+  path: Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_RECORDING_PATH_MAX_LENGTH)),
+  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+  sizeBytes: NonNegativeInt,
+  createdAt: IsoDateTime,
 });
 export type PreviewAutomationRecordingArtifact = typeof PreviewAutomationRecordingArtifact.Type;
 
@@ -580,7 +664,11 @@ export const PreviewAutomationHost = Schema.Struct({
    * Missing means the pre-capability-negotiation V1 operation set. This lets
    * a newer server safely coexist with an older desktop during rollout.
    */
-  supportedOperations: Schema.optional(Schema.Array(PreviewAutomationOperation)),
+  supportedOperations: Schema.optional(
+    Schema.Array(PreviewAutomationOperation).check(
+      Schema.isMaxLength(PREVIEW_AUTOMATION_OPERATIONS.length),
+    ),
+  ),
 });
 export type PreviewAutomationHost = typeof PreviewAutomationHost.Type;
 
@@ -592,13 +680,13 @@ export const PreviewAutomationHostFocus = Schema.Struct({
 export type PreviewAutomationHostFocus = typeof PreviewAutomationHostFocus.Type;
 
 export const PreviewAutomationRequest = Schema.Struct({
-  requestId: TrimmedNonEmptyString,
+  requestId: PreviewAutomationRequestId,
   threadId: ThreadId,
   tabId: Schema.optional(PreviewTabId),
   tabIdExplicit: Schema.optional(Schema.Boolean),
   operation: PreviewAutomationOperation,
   input: Schema.Unknown,
-  timeoutMs: Schema.Int.check(Schema.isGreaterThan(0)),
+  timeoutMs: PreviewAutomationTimeoutMs,
 });
 export type PreviewAutomationRequest = typeof PreviewAutomationRequest.Type;
 
@@ -618,27 +706,31 @@ export type PreviewAutomationStreamEvent = typeof PreviewAutomationStreamEvent.T
 export const PreviewAutomationResponse = Schema.Struct({
   clientId: PreviewAutomationClientId,
   connectionId: PreviewAutomationConnectionId,
-  requestId: TrimmedNonEmptyString,
+  requestId: PreviewAutomationRequestId,
   ok: Schema.Boolean,
   result: Schema.optional(Schema.Unknown),
   error: Schema.optional(
     Schema.Struct({
-      _tag: TrimmedNonEmptyString,
-      message: Schema.String,
+      _tag: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+      message: Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_ERROR_MESSAGE_MAX_LENGTH)),
       detail: Schema.optional(Schema.Unknown),
     }),
   ),
 });
 export type PreviewAutomationResponse = typeof PreviewAutomationResponse.Type;
 
-export class PreviewAutomationUnavailableError extends Schema.TaggedErrorClass<PreviewAutomationUnavailableError>()(
+const McpCapabilityErrorFields = {
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  providerSessionId: TrimmedNonEmptyString,
+  providerInstanceId: ProviderInstanceId,
+};
+
+export class PreviewAutomationUnavailableError extends Schema.TaggedError<PreviewAutomationUnavailableError>()(
   "PreviewAutomationUnavailableError",
   {
-    capability: Schema.Literals(["preview", "canvas"]),
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-    providerSessionId: TrimmedNonEmptyString,
-    providerInstanceId: ProviderInstanceId,
+    capability: Schema.Literal("preview"),
+    ...McpCapabilityErrorFields,
   },
 ) {
   override get message(): string {
@@ -646,13 +738,20 @@ export class PreviewAutomationUnavailableError extends Schema.TaggedErrorClass<P
   }
 }
 
-/**
- * The capability gate covers every MCP surface, not just preview automation.
- * The wire tag stays PreviewAutomationUnavailableError for compatibility
- * with existing clients.
- */
-export const McpCapabilityUnavailableError = PreviewAutomationUnavailableError;
-export type McpCapabilityUnavailableError = PreviewAutomationUnavailableError;
+/** A `t3-code` MCP tool was called with a credential that does not carry its capability. */
+export class McpCapabilityUnavailableError extends Schema.TaggedError<McpCapabilityUnavailableError>()(
+  "McpCapabilityUnavailableError",
+  {
+    capability: TrimmedNonEmptyString,
+    ...McpCapabilityErrorFields,
+  },
+) {
+  override get message(): string {
+    return `MCP credential does not grant the ${this.capability} capability.`;
+  }
+}
+
+
 
 const PreviewAutomationScopeErrorFields = {
   operation: PreviewAutomationOperation,
@@ -664,15 +763,15 @@ const PreviewAutomationScopeErrorFields = {
 
 const PreviewAutomationRequestErrorFields = {
   ...PreviewAutomationScopeErrorFields,
-  clientId: TrimmedNonEmptyString,
+  clientId: PreviewAutomationClientId,
   connectionId: PreviewAutomationConnectionId,
-  requestId: TrimmedNonEmptyString,
+  requestId: PreviewAutomationRequestId,
   tabId: Schema.optional(PreviewTabId),
-  timeoutMs: Schema.Int.check(Schema.isGreaterThan(0)),
+  timeoutMs: PreviewAutomationTimeoutMs,
 };
 
 const PreviewAutomationRemoteDiagnosticFields = {
-  remoteTag: TrimmedNonEmptyString,
+  remoteTag: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
   remoteMessageLength: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   remoteDetailKind: Schema.optional(
     Schema.Literals(["null", "array", "object", "string", "number", "boolean"]),
@@ -681,7 +780,7 @@ const PreviewAutomationRemoteDiagnosticFields = {
 };
 
 const PreviewAutomationOptionalRemoteDiagnosticFields = {
-  remoteTag: Schema.optional(TrimmedNonEmptyString),
+  remoteTag: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(128))),
   remoteMessageLength: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   remoteDetailKind: Schema.optional(
     Schema.Literals(["null", "array", "object", "string", "number", "boolean"]),
@@ -689,15 +788,15 @@ const PreviewAutomationOptionalRemoteDiagnosticFields = {
   cause: Schema.optional(Schema.Defect()),
 };
 
-export class PreviewAutomationNoAvailableHostError extends Schema.TaggedErrorClass<PreviewAutomationNoAvailableHostError>()(
+export class PreviewAutomationNoAvailableHostError extends Schema.TaggedError<PreviewAutomationNoAvailableHostError>()(
   "PreviewAutomationNoAvailableHostError",
   {
     ...PreviewAutomationScopeErrorFields,
-    clientId: Schema.optional(TrimmedNonEmptyString),
+    clientId: Schema.optional(PreviewAutomationClientId),
     connectionId: Schema.optional(PreviewAutomationConnectionId),
-    requestId: Schema.optional(TrimmedNonEmptyString),
+    requestId: Schema.optional(PreviewAutomationRequestId),
     tabId: Schema.optional(PreviewTabId),
-    timeoutMs: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+    timeoutMs: Schema.optional(PreviewAutomationTimeoutMs),
     ...PreviewAutomationOptionalRemoteDiagnosticFields,
   },
 ) {
@@ -707,7 +806,7 @@ export class PreviewAutomationNoAvailableHostError extends Schema.TaggedErrorCla
   }
 }
 
-export class PreviewAutomationUnsupportedClientError extends Schema.TaggedErrorClass<PreviewAutomationUnsupportedClientError>()(
+export class PreviewAutomationUnsupportedClientError extends Schema.TaggedError<PreviewAutomationUnsupportedClientError>()(
   "PreviewAutomationUnsupportedClientError",
   {
     ...PreviewAutomationRequestErrorFields,
@@ -719,7 +818,7 @@ export class PreviewAutomationUnsupportedClientError extends Schema.TaggedErrorC
   }
 }
 
-export class PreviewAutomationTabNotFoundError extends Schema.TaggedErrorClass<PreviewAutomationTabNotFoundError>()(
+export class PreviewAutomationTabNotFoundError extends Schema.TaggedError<PreviewAutomationTabNotFoundError>()(
   "PreviewAutomationTabNotFoundError",
   {
     ...PreviewAutomationRequestErrorFields,
@@ -734,7 +833,7 @@ export class PreviewAutomationTabNotFoundError extends Schema.TaggedErrorClass<P
   }
 }
 
-export class PreviewAutomationTimeoutError extends Schema.TaggedErrorClass<PreviewAutomationTimeoutError>()(
+export class PreviewAutomationTimeoutError extends Schema.TaggedError<PreviewAutomationTimeoutError>()(
   "PreviewAutomationTimeoutError",
   {
     ...PreviewAutomationRequestErrorFields,
@@ -747,7 +846,7 @@ export class PreviewAutomationTimeoutError extends Schema.TaggedErrorClass<Previ
   }
 }
 
-export class PreviewAutomationControlInterruptedError extends Schema.TaggedErrorClass<PreviewAutomationControlInterruptedError>()(
+export class PreviewAutomationControlInterruptedError extends Schema.TaggedError<PreviewAutomationControlInterruptedError>()(
   "PreviewAutomationControlInterruptedError",
   {
     ...PreviewAutomationRequestErrorFields,
@@ -759,7 +858,7 @@ export class PreviewAutomationControlInterruptedError extends Schema.TaggedError
   }
 }
 
-export class PreviewAutomationExecutionError extends Schema.TaggedErrorClass<PreviewAutomationExecutionError>()(
+export class PreviewAutomationExecutionError extends Schema.TaggedError<PreviewAutomationExecutionError>()(
   "PreviewAutomationExecutionError",
   {
     ...PreviewAutomationRequestErrorFields,
@@ -771,7 +870,7 @@ export class PreviewAutomationExecutionError extends Schema.TaggedErrorClass<Pre
   }
 }
 
-export class PreviewAutomationInvalidSelectorError extends Schema.TaggedErrorClass<PreviewAutomationInvalidSelectorError>()(
+export class PreviewAutomationInvalidSelectorError extends Schema.TaggedError<PreviewAutomationInvalidSelectorError>()(
   "PreviewAutomationInvalidSelectorError",
   {
     ...PreviewAutomationRequestErrorFields,
@@ -788,7 +887,7 @@ export class PreviewAutomationInvalidSelectorError extends Schema.TaggedErrorCla
   }
 }
 
-export class PreviewAutomationTargetNotEditableError extends Schema.TaggedErrorClass<PreviewAutomationTargetNotEditableError>()(
+export class PreviewAutomationTargetNotEditableError extends Schema.TaggedError<PreviewAutomationTargetNotEditableError>()(
   "PreviewAutomationTargetNotEditableError",
   {
     ...PreviewAutomationRequestErrorFields,
@@ -808,11 +907,11 @@ export class PreviewAutomationTargetNotEditableError extends Schema.TaggedErrorC
   }
 }
 
-export class PreviewAutomationResultTooLargeError extends Schema.TaggedErrorClass<PreviewAutomationResultTooLargeError>()(
+export class PreviewAutomationResultTooLargeError extends Schema.TaggedError<PreviewAutomationResultTooLargeError>()(
   "PreviewAutomationResultTooLargeError",
   {
     ...PreviewAutomationRequestErrorFields,
-    ...PreviewAutomationRemoteDiagnosticFields,
+    ...PreviewAutomationOptionalRemoteDiagnosticFields,
     maximumBytes: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
   },
 ) {
@@ -825,7 +924,7 @@ export class PreviewAutomationResultTooLargeError extends Schema.TaggedErrorClas
   }
 }
 
-export class PreviewAutomationClientDisconnectedError extends Schema.TaggedErrorClass<PreviewAutomationClientDisconnectedError>()(
+export class PreviewAutomationClientDisconnectedError extends Schema.TaggedError<PreviewAutomationClientDisconnectedError>()(
   "PreviewAutomationClientDisconnectedError",
   PreviewAutomationRequestErrorFields,
 ) {
@@ -834,7 +933,7 @@ export class PreviewAutomationClientDisconnectedError extends Schema.TaggedError
   }
 }
 
-export class PreviewAutomationRequestQueueClosedError extends Schema.TaggedErrorClass<PreviewAutomationRequestQueueClosedError>()(
+export class PreviewAutomationRequestQueueClosedError extends Schema.TaggedError<PreviewAutomationRequestQueueClosedError>()(
   "PreviewAutomationRequestQueueClosedError",
   PreviewAutomationRequestErrorFields,
 ) {
@@ -843,7 +942,7 @@ export class PreviewAutomationRequestQueueClosedError extends Schema.TaggedError
   }
 }
 
-export class PreviewAutomationRemoteUnavailableError extends Schema.TaggedErrorClass<PreviewAutomationRemoteUnavailableError>()(
+export class PreviewAutomationRemoteUnavailableError extends Schema.TaggedError<PreviewAutomationRemoteUnavailableError>()(
   "PreviewAutomationRemoteUnavailableError",
   {
     ...PreviewAutomationRequestErrorFields,
@@ -855,7 +954,7 @@ export class PreviewAutomationRemoteUnavailableError extends Schema.TaggedErrorC
   }
 }
 
-export class PreviewAutomationMalformedResponseError extends Schema.TaggedErrorClass<PreviewAutomationMalformedResponseError>()(
+export class PreviewAutomationMalformedResponseError extends Schema.TaggedError<PreviewAutomationMalformedResponseError>()(
   "PreviewAutomationMalformedResponseError",
   PreviewAutomationRequestErrorFields,
 ) {
@@ -864,7 +963,50 @@ export class PreviewAutomationMalformedResponseError extends Schema.TaggedErrorC
   }
 }
 
+export class PreviewAutomationRecordingTransferError extends Schema.TaggedError<PreviewAutomationRecordingTransferError>()(
+  "PreviewAutomationRecordingTransferError",
+  {
+    threadId: ThreadId,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return "Preview recording could not be saved to the agent environment. The saved copy remains on the desktop.";
+  }
+}
+
+export class PreviewAutomationRecordingDesktopUpdateRequiredError extends Schema.TaggedError<PreviewAutomationRecordingDesktopUpdateRequiredError>()(
+  "PreviewAutomationRecordingDesktopUpdateRequiredError",
+  { threadId: ThreadId, cause: Schema.optional(Schema.Defect()) },
+) {
+  override get message(): string {
+    return "Update the desktop app to transfer recordings. The recording remains on the desktop.";
+  }
+}
+
+export class PreviewAutomationRecordingTooLargeError extends Schema.TaggedError<PreviewAutomationRecordingTooLargeError>()(
+  "PreviewAutomationRecordingTooLargeError",
+  { threadId: ThreadId, cause: Schema.optional(Schema.Defect()) },
+) {
+  override get message(): string {
+    return "The recording exceeds 50 MiB. The saved copy remains on the desktop.";
+  }
+}
+
+export class PreviewAutomationRecordingDeadlineExpiredError extends Schema.TaggedError<PreviewAutomationRecordingDeadlineExpiredError>()(
+  "PreviewAutomationRecordingDeadlineExpiredError",
+  { threadId: ThreadId, cause: Schema.optional(Schema.Defect()) },
+) {
+  override get message(): string {
+    return "The recording transfer deadline expired. The saved copy remains on the desktop.";
+  }
+}
+
 export const PreviewAutomationError = Schema.Union([
+  PreviewAutomationRecordingTransferError,
+  PreviewAutomationRecordingDesktopUpdateRequiredError,
+  PreviewAutomationRecordingTooLargeError,
+  PreviewAutomationRecordingDeadlineExpiredError,
   PreviewAutomationUnavailableError,
   PreviewAutomationNoAvailableHostError,
   PreviewAutomationUnsupportedClientError,
