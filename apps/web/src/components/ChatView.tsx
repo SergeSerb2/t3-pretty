@@ -3575,6 +3575,7 @@ export default function ChatView(props: ChatViewProps) {
     readonly left: number;
     readonly width: number;
   } | null>(null);
+  // Layout owns the placement signal now that no fog overlay needs a render-time write.
   useLayoutEffect(() => {
     writeSceneryComposerPlacement(
       sceneryThemeActive ? (isDraftHeroState ? "hero" : "docked") : null,
