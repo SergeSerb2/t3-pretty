@@ -698,6 +698,8 @@ html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sideba
   backdrop-filter: none;
 }
 
+/* Wide masked plate stays. The dissolve already goes to transparent; a short
+   interacting/fallback height would restore the hard cut this skirt removes. */
 html[data-window-interacting] [data-chrome-fade-top]::before {
   background-color: var(--toolbar-background);
   -webkit-backdrop-filter: none;
