@@ -285,11 +285,11 @@ const packCmd = Command.make(
         onSome: (value) => (path.isAbsolute(value) ? value : path.join(repoRoot, value)),
       });
 
-      for (const relPath of [
-        "dist/bin.mjs",
-        "dist/service-launcher.mjs",
-        "dist/client/index.html",
-      ]) {
+      // `cli.ts build` emits bin.mjs (the `t3` bin, which hosts the hidden
+      // `__service-launcher` subcommand) and copies the web client. There is
+      // no sibling service-launcher entry: remotes install this tarball with
+      // npm and run `t3 __service-launcher` through the bin shim.
+      for (const relPath of ["dist/bin.mjs", "dist/client/index.html"]) {
         const abs = path.join(serverDir, relPath);
         if (!(yield* fs.exists(abs))) {
           return yield* new ServerCliBuildAssetMissingError({ assetPath: abs });
