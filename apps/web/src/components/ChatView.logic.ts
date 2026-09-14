@@ -344,7 +344,8 @@ export function resolveDraftHeroState(input: {
   );
 }
 
-/** One exit beat for the worktree setup card before the first turn takes over. */
+/** One exit beat for the worktree setup card before the first turn takes over.
+ * Keep in lockstep with `--sc-worktree-setup-exit-ms` in scenery/motion.css. */
 export const WORKTREE_SETUP_EXIT_MS = 220;
 export const WORKTREE_SETUP_EXIT_REDUCED_MS = 150;
 
