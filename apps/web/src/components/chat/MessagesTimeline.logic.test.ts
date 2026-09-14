@@ -1094,9 +1094,66 @@ describe("resolveAssistantMessageCopyState", () => {
 
 describe("deriveMessagesTimelineRows", () => {
   it("shows the worktree setup card instead of the working placeholder", () => {
-    const snapshot: WorktreeSetupSnapshot = {
+    const runningSnapshot: WorktreeSetupSnapshot = {
       threadId: ThreadId.make("thread-setup"),
       phase: "running",
+      startedAt: "2026-01-01T00:00:00Z",
+      endedAt: null,
+      branch: "feature",
+      baseRef: "main",
+      worktreePath: null,
+      setupScript: null,
+      stages: [],
+      error: null,
+      sequence: 3,
+    };
+    const userEntry = {
+      id: "user-entry",
+      kind: "message",
+      createdAt: "2026-01-01T00:00:00Z",
+      message: {
+        id: "user-1" as never,
+        role: "user",
+        text: "Build it",
+        turnId: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        streaming: false,
+      },
+    } as const;
+    const withoutMessages = deriveMessagesTimelineRows({
+      timelineEntries: [],
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      worktreeSetup: runningSnapshot,
+    });
+    expect(withoutMessages).toEqual([
+      {
+        kind: "worktree-setup",
+        id: WORKTREE_SETUP_ROW_ID,
+        createdAt: "2026-01-01T00:00:00Z",
+        snapshot: runningSnapshot,
+      },
+    ]);
+
+    expect(
+      deriveMessagesTimelineRows({
+        timelineEntries: [userEntry],
+        isWorking: true,
+        activeTurnStartedAt: "2026-01-01T00:00:00Z",
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+        worktreeSetup: runningSnapshot,
+      }).map((row) => row.kind),
+    ).toEqual(["message", "worktree-setup"]);
+  });
+
+  it("returns live placeholders once worktree setup is done", () => {
+    const doneSnapshot: WorktreeSetupSnapshot = {
+      threadId: ThreadId.make("thread-setup"),
+      phase: "done",
       startedAt: "2026-01-01T00:00:00Z",
       endedAt: null,
       branch: "feature",
@@ -1135,34 +1192,6 @@ describe("deriveMessagesTimelineRows", () => {
         streaming: true,
       },
     } as const;
-    const withoutMessages = deriveMessagesTimelineRows({
-      timelineEntries: [],
-      isWorking: true,
-      activeTurnStartedAt: "2026-01-01T00:00:00Z",
-      turnDiffSummaries: [],
-      supportsConversationRollback: false,
-      worktreeSetup: snapshot,
-    });
-    expect(withoutMessages).toEqual([
-      {
-        kind: "worktree-setup",
-        id: WORKTREE_SETUP_ROW_ID,
-        createdAt: "2026-01-01T00:00:00Z",
-        snapshot,
-      },
-    ]);
-
-    expect(
-      deriveMessagesTimelineRows({
-        timelineEntries: [userEntry],
-        isWorking: true,
-        activeTurnStartedAt: "2026-01-01T00:00:00Z",
-        turnDiffSummaries: [],
-        supportsConversationRollback: false,
-        worktreeSetup: snapshot,
-      }).map((row) => row.kind),
-    ).toEqual(["message", "worktree-setup"]);
-
     // Once setup is done the live placeholders return so the first turn can
     // rise in under the card. The finished card stays under the send.
     const withMessages = deriveMessagesTimelineRows({
@@ -1171,7 +1200,7 @@ describe("deriveMessagesTimelineRows", () => {
       activeTurnStartedAt: "2026-01-01T00:00:00Z",
       turnDiffSummaries: [],
       supportsConversationRollback: false,
-      worktreeSetup: { ...snapshot, phase: "done" },
+      worktreeSetup: doneSnapshot,
     });
     expect(withMessages.map((row) => row.kind)).toEqual([
       "message",
