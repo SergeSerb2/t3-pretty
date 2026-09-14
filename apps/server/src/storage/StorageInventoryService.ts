@@ -142,19 +142,25 @@ export const make = Effect.gen(function* () {
 
   const loadSnapshots: () => Effect.Effect<LoadedStorageSnapshots, StorageInventoryError> =
     Effect.fn("StorageInventoryService.loadSnapshots")(function* () {
-      const [projectRows, threadRows] = yield* Effect.all(
-        [
-          projects.listAll().pipe(
-            Effect.mapError(
-              (cause) =>
-                new StorageInventoryError({
-                  operation: "StorageInventoryService.getInventory",
-                  detail: "Failed to list projects.",
-                  cause,
-                }),
-            ),
-          ),
-          threads.listAll().pipe(
+      const projectRows = yield* projects.listAll().pipe(
+        Effect.mapError(
+          (cause) =>
+            new StorageInventoryError({
+              operation: "StorageInventoryService.getInventory",
+              detail: "Failed to list projects.",
+              cause,
+            }),
+        ),
+      );
+      const projectsById = new Map(
+        projectRows
+          .filter((project) => project.deletedAt === null)
+          .map((project) => [project.projectId, project] as const),
+      );
+      const threadRows = yield* Effect.forEach(
+        projectsById.values(),
+        (project) =>
+          threads.listByProjectId({ projectId: project.projectId }).pipe(
             Effect.mapError(
               (cause) =>
                 new StorageInventoryError({
@@ -164,14 +170,8 @@ export const make = Effect.gen(function* () {
                 }),
             ),
           ),
-        ],
         { concurrency: "unbounded" },
-      );
-      const projectsById = new Map(
-        projectRows
-          .filter((project) => project.deletedAt === null)
-          .map((project) => [project.projectId, project] as const),
-      );
+      ).pipe(Effect.map((groups) => groups.flat()));
       const snapshots: StorageThreadSnapshot[] = [];
       let activeThreadsWithoutWorktree = 0;
       let archivedThreadsWithoutWorktree = 0;

@@ -325,6 +325,18 @@ const PersistedDraftThreadState = Schema.Struct({
   worktreePath: Schema.NullOr(Schema.String),
   envMode: DraftThreadEnvModeSchema,
   startFromOrigin: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  attachedPullRequest: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        host: Schema.String,
+        repository: Schema.String,
+        number: Schema.Finite,
+        url: Schema.String,
+        title: Schema.NullOr(Schema.String),
+        headBranch: Schema.NullOr(Schema.String),
+      }),
+    ),
+  ),
   promotedTo: Schema.optionalKey(
     Schema.NullOr(
       Schema.Struct({
@@ -459,7 +471,17 @@ export interface DraftSessionState {
   worktreePath: string | null;
   envMode: DraftThreadEnvMode;
   startFromOrigin: boolean;
+  attachedPullRequest?: DraftAttachedPullRequest | null;
   promotedTo?: ScopedThreadRef | null;
+}
+
+export interface DraftAttachedPullRequest {
+  host: string;
+  repository: string;
+  number: number;
+  url: string;
+  title: string | null;
+  headBranch: string | null;
 }
 
 export type DraftThreadState = DraftSessionState;
@@ -564,6 +586,7 @@ interface ComposerDraftStoreState {
       interactionMode?: ProviderInteractionMode;
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
+      attachedPullRequest?: DraftAttachedPullRequest | null;
     },
   ) => void;
   clearProjectDraftThreadId: (projectRef: ScopedProjectRef) => void;
@@ -1527,6 +1550,7 @@ function createDraftThreadState(
     interactionMode?: ProviderInteractionMode;
     environmentSelection?: "auto" | "manual";
     loadBalancedEnvironmentId?: EnvironmentId | null;
+    attachedPullRequest?: DraftAttachedPullRequest | null;
   },
 ): DraftThreadState {
   // A project change (including switching environments within a logical
@@ -1579,6 +1603,11 @@ function createDraftThreadState(
     envMode:
       options?.envMode ?? (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local")),
     startFromOrigin: nextStartFromOrigin,
+    attachedPullRequest: projectChanged
+      ? (options?.attachedPullRequest ?? null)
+      : options?.attachedPullRequest === undefined
+        ? (existingThread?.attachedPullRequest ?? null)
+        : options.attachedPullRequest,
     promotedTo: null,
   };
 }
@@ -1613,6 +1642,7 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.worktreePath === right.worktreePath &&
     left.envMode === right.envMode &&
     left.startFromOrigin === right.startFromOrigin &&
+    (left.attachedPullRequest?.url ?? null) === (right.attachedPullRequest?.url ?? null) &&
     scopedThreadRefsEqual(left.promotedTo, right.promotedTo)
   );
 }
@@ -1649,6 +1679,30 @@ function removeDraftThreadReferences(
     draftsByThreadKey: restDraftsByThreadKey,
     draftThreadsByThreadKey: restDraftThreadsByThreadKey,
     logicalProjectDraftThreadKeyByLogicalProjectKey: nextLogicalMappings,
+  };
+}
+
+function parsePersistedAttachedPullRequest(
+  value: unknown,
+): DraftAttachedPullRequest | null | undefined {
+  if (value === null) return null;
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.host !== "string" ||
+    typeof candidate.repository !== "string" ||
+    typeof candidate.number !== "number" ||
+    typeof candidate.url !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    host: candidate.host,
+    repository: candidate.repository,
+    number: candidate.number,
+    url: candidate.url,
+    title: typeof candidate.title === "string" ? candidate.title : null,
+    headBranch: typeof candidate.headBranch === "string" ? candidate.headBranch : null,
   };
 }
 
@@ -1730,6 +1784,9 @@ function normalizePersistedDraftThreads(
               promotedToRecord.threadId as ThreadId,
             )
           : null;
+      const attachedPullRequest = parsePersistedAttachedPullRequest(
+        candidateDraftThread.attachedPullRequest,
+      );
       if (typeof projectId !== "string" || projectId.length === 0 || environmentId === undefined) {
         continue;
       }
@@ -1772,6 +1829,7 @@ function normalizePersistedDraftThreads(
             ? { loadBalancedEnvironmentId: null }
             : {}),
         promotedTo,
+        ...(attachedPullRequest !== undefined ? { attachedPullRequest } : {}),
       };
     }
   }
@@ -2506,6 +2564,9 @@ function toHydratedDraftThreadState(
     worktreePath: persistedDraftThread.worktreePath,
     envMode: persistedDraftThread.envMode,
     startFromOrigin: persistedDraftThread.startFromOrigin,
+    ...(persistedDraftThread.attachedPullRequest !== undefined
+      ? { attachedPullRequest: persistedDraftThread.attachedPullRequest }
+      : {}),
     ...(persistedDraftThread.environmentSelection
       ? { environmentSelection: persistedDraftThread.environmentSelection }
       : {}),
@@ -2798,6 +2859,12 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               envMode:
                 options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? "local")),
               startFromOrigin: nextStartFromOrigin,
+              attachedPullRequest:
+                options.attachedPullRequest !== undefined
+                  ? options.attachedPullRequest
+                  : projectChanged
+                    ? null
+                    : (existing.attachedPullRequest ?? null),
               promotedTo: existing.promotedTo ?? null,
             };
             const isUnchanged =
@@ -2813,6 +2880,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nextDraftThread.worktreePath === existing.worktreePath &&
               nextDraftThread.envMode === existing.envMode &&
               nextDraftThread.startFromOrigin === existing.startFromOrigin &&
+              (nextDraftThread.attachedPullRequest?.url ?? null) ===
+                (existing.attachedPullRequest?.url ?? null) &&
               scopedThreadRefsEqual(nextDraftThread.promotedTo, existing.promotedTo);
             if (isUnchanged) {
               return state;

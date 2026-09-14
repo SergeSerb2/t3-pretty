@@ -116,3 +116,29 @@ export function resolveThreadStatus(
 
   return null;
 }
+
+const THREAD_STATUS_PRIORITY: Record<ThreadStatusKind, number> = {
+  "pending-approval": 6,
+  "awaiting-input": 5,
+  working: 4,
+  connecting: 4,
+  error: 3,
+  "plan-ready": 2,
+};
+
+export function resolveHighestThreadStatus(
+  threads: readonly EnvironmentThreadShell[],
+): ThreadStatusPresentation | null {
+  let highest: ThreadStatusPresentation | null = null;
+  for (const thread of threads) {
+    const status = resolveThreadStatus(thread);
+    if (status === null) continue;
+    if (
+      highest === null ||
+      THREAD_STATUS_PRIORITY[status.kind] > THREAD_STATUS_PRIORITY[highest.kind]
+    ) {
+      highest = status;
+    }
+  }
+  return highest;
+}

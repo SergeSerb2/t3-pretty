@@ -107,6 +107,19 @@ On web and desktop, right-click a pull request link in a thread and choose
 same link to return to the branch PR, if one exists.
 The linked pull request participates in automatic settlement.
 
+A new thread can attach to an open PR already linked in that project. Later
+threads on the same PR nest under the first-linked thread in that sidebar
+section. Collapse the nest to hide the extra threads; the parent keeps a count
+and the strongest status from the hidden ones.
+
+## Group threads by project
+
+On web and desktop, **Pinned** and **Active** group threads into project
+folders when you are viewing all projects. A project's latest activity moves
+its folder to the top of that section. Collapse a folder to see the strongest
+status among its threads and how many are inside. **Snoozed** and **Settled**
+stay as shelves without project headers.
+
 ## Find and reference work
 
 On web and desktop, open the command palette with `Cmd/Ctrl+K` to search threads

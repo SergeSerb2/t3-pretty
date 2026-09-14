@@ -17,6 +17,8 @@ import {
   type SettledThreadTimestampInput,
   type ThreadSortInput,
 } from "../lib/threadSort";
+
+export { getThreadSortTimestamp };
 import type { SidebarThreadSummary, Thread } from "../types";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
@@ -98,6 +100,7 @@ export type SidebarSection = "pinned" | "active" | "snoozed" | "settled";
 /** Sortable ids: thread rows use their scoped key; structural items use a
     colon-free prefix: scoped thread keys always contain a colon. */
 const SIDEBAR_MARKER_PREFIX = "sidebar-marker-";
+const SIDEBAR_FOLDER_PREFIX = "sidebar-folder-";
 
 export type SidebarListMarker =
   /** The top boundary is also a landing target when there are no pins. */
@@ -114,12 +117,33 @@ export function sidebarMarkerId(marker: SidebarListMarker): string {
   return `${SIDEBAR_MARKER_PREFIX}${marker}`;
 }
 
+export type SidebarThreadNest = "parent" | "child";
+
 export type SidebarListItem =
-  | { readonly kind: "thread"; readonly key: string; readonly section: SidebarSection }
+  | {
+      readonly kind: "thread";
+      readonly key: string;
+      readonly section: SidebarSection;
+      readonly nest?: SidebarThreadNest | null;
+      readonly pullRequestKey?: string | null;
+      readonly childCount?: number;
+      readonly childKeys?: readonly string[];
+    }
+  | {
+      readonly kind: "folder";
+      readonly projectKey: string;
+      readonly section: SidebarSection;
+    }
   | { readonly kind: "marker"; readonly marker: SidebarListMarker };
 
+export function sidebarFolderListId(section: SidebarSection, projectKey: string): string {
+  return `${SIDEBAR_FOLDER_PREFIX}${section}-${projectKey}`;
+}
+
 export function sidebarListItemId(item: SidebarListItem): string {
-  return item.kind === "thread" ? item.key : sidebarMarkerId(item.marker);
+  if (item.kind === "thread") return item.key;
+  if (item.kind === "folder") return sidebarFolderListId(item.section, item.projectKey);
+  return sidebarMarkerId(item.marker);
 }
 
 /** The section a slot belongs to, read off the markers around it: from
@@ -165,8 +189,10 @@ export function resolveSidebarDropTarget(
     if (item.kind === "marker") {
       if (item.marker === "pinned-divider") currentSection = "active";
       else if (item.marker === "snoozed-header" || item.marker === "settled-header") break;
-    } else if (currentSection === "pinned") pinnedOrder.push(item.key);
-    else activeOrder.push(item.key);
+    } else if (item.kind === "thread") {
+      if (currentSection === "pinned") pinnedOrder.push(item.key);
+      else activeOrder.push(item.key);
+    }
   }
   return { section, pinnedOrder, activeOrder };
 }

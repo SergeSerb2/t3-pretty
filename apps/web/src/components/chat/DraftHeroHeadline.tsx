@@ -1,9 +1,10 @@
-import type { DraftId } from "~/composerDraftStore";
+import type { DraftAttachedPullRequest, DraftId } from "~/composerDraftStore";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { FolderPlusIcon } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { collectOpenProjectPullRequests } from "@t3tools/shared/threadPullRequestNesting";
+import { FolderPlusIcon, GitPullRequestIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -51,6 +52,15 @@ export function DraftHeroHeadline({
   const setLogicalProjectDraftThreadId = useComposerDraftStore(
     (store) => store.setLogicalProjectDraftThreadId,
   );
+  const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
+  const getDraftSession = useComposerDraftStore((store) => store.getDraftSession);
+  const attachedPullRequest = useComposerDraftStore((store) =>
+    draftId ? (store.getDraftSession(draftId)?.attachedPullRequest ?? null) : null,
+  );
+  const branchBeforeAttachRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    branchBeforeAttachRef.current = undefined;
+  }, [draftId, activeProjectRef?.environmentId, activeProjectRef?.projectId]);
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
@@ -233,15 +243,98 @@ export function DraftHeroHeadline({
     </button>
   );
 
+  const openProjectPullRequests = useMemo(() => {
+    if (!activeProjectGroup) return [];
+    const memberKeys = new Set(
+      activeProjectGroup.memberProjectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`),
+    );
+    return collectOpenProjectPullRequests(
+      threads.filter((thread) => memberKeys.has(`${thread.environmentId}:${thread.projectId}`)),
+    );
+  }, [activeProjectGroup, threads]);
+
+  const attachPullRequest = useCallback(
+    (next: DraftAttachedPullRequest | null) => {
+      if (!draftId) return;
+      const current = getDraftSession(draftId);
+      if (next == null) {
+        const previousBranch = branchBeforeAttachRef.current;
+        branchBeforeAttachRef.current = undefined;
+        setDraftThreadContext(draftId, {
+          attachedPullRequest: null,
+          ...(previousBranch !== undefined ? { branch: previousBranch } : {}),
+        });
+        return;
+      }
+      if (current?.attachedPullRequest == null) {
+        branchBeforeAttachRef.current = current?.branch ?? null;
+      }
+      setDraftThreadContext(draftId, {
+        attachedPullRequest: next,
+        ...(next.headBranch ? { branch: next.headBranch } : {}),
+      });
+    },
+    [draftId, getDraftSession, setDraftThreadContext],
+  );
+
+  const pullRequestSelector =
+    hasResolvedProject && openProjectPullRequests.length > 0 ? (
+      <Menu>
+        <MenuTrigger
+          aria-label="Attach to an existing pull request"
+          className="pointer-events-auto inline-flex max-w-80 items-center gap-1.5 truncate border-foreground/40 border-b border-dotted text-sm text-muted-foreground transition-colors hover:border-foreground/70 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <GitPullRequestIcon aria-hidden className="size-3.5 shrink-0" />
+          {attachedPullRequest
+            ? (attachedPullRequest.title ??
+              `${attachedPullRequest.repository}#${attachedPullRequest.number}`)
+            : "None — new work"}
+        </MenuTrigger>
+        <MenuPopup align="center" className="max-h-80 min-w-48! w-max max-w-80 overflow-y-auto">
+          <MenuRadioGroup
+            value={attachedPullRequest?.url ?? ""}
+            onValueChange={(value) => {
+              if (value === "") {
+                attachPullRequest(null);
+                return;
+              }
+              const selected = openProjectPullRequests.find((entry) => entry.url === value);
+              if (!selected) return;
+              attachPullRequest({
+                host: selected.host,
+                repository: selected.repository,
+                number: selected.number,
+                url: selected.url,
+                title: selected.title,
+                headBranch: selected.headBranch,
+              });
+            }}
+          >
+            <MenuRadioItem value="" closeOnClick>
+              None — new work
+            </MenuRadioItem>
+            {openProjectPullRequests.map((entry) => (
+              <MenuRadioItem key={entry.key} value={entry.url} closeOnClick>
+                {entry.title ?? `${entry.repository}#${entry.number}`}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuPopup>
+      </Menu>
+    ) : null;
+
   return (
-    <h1 className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
-      {hasResolvedProject ? (
-        <>What should we build in {projectSelector}?</>
-      ) : canChooseProject ? (
-        <>{projectSelector} to start</>
-      ) : (
-        <>Add a project to start</>
-      )}
-    </h1>
+    <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-3">
+      <h1 className="text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
+        {hasResolvedProject ? (
+          <>What should we build in {projectSelector}?</>
+        ) : canChooseProject ? (
+          <>{projectSelector} to start</>
+        ) : (
+          <>Add a project to start</>
+        )}
+      </h1>
+      {pullRequestSelector}
+    </div>
   );
 }

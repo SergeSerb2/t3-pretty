@@ -22,12 +22,12 @@ curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/
 
 Then manage the service with the commands below:
 
-| Task                            | Command                                                                                                         |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Install and start               | `t3 service install`                                                                                            |
-| Inspect status and log location | `t3 service status`                                                                                             |
+| Task                            | Command                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Install and start               | `t3 service install`                                                                                                |
+| Inspect status and log location | `t3 service status`                                                                                                 |
 | Update or repair                | `npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz t3 service update` |
-| Stop and remove from startup    | `t3 service uninstall`                                                                                          |
+| Stop and remove from startup    | `t3 service uninstall`                                                                                              |
 
 `t3 service status` checks whether the service is installed and reports its log location. On Linux,
 it also checks whether the service is running, enabled at startup, and allowed to keep running after

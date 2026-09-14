@@ -148,6 +148,7 @@ import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as StorageInventoryService from "./storage/StorageInventoryService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
@@ -642,6 +643,7 @@ const makeWsRpcLayer = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
+      const storageInventory = yield* StorageInventoryService.StorageInventoryService;
       const relayClient = yield* RelayClient.RelayClient;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -2378,6 +2380,18 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverRefreshUsageRates]: (_input) =>
           observeRpcEffect(WS_METHODS.serverRefreshUsageRates, usage.refreshRates, {
             "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.storageGetInventory]: (_input) =>
+          observeRpcEffect(WS_METHODS.storageGetInventory, storageInventory.getInventory(), {
+            "rpc.aggregate": "storage",
+          }),
+        [WS_METHODS.storageStreamInventory]: (_input) =>
+          observeRpcStream(WS_METHODS.storageStreamInventory, storageInventory.streamInventory(), {
+            "rpc.aggregate": "storage",
+          }),
+        [WS_METHODS.storageRemoveOrphan]: (input) =>
+          observeRpcEffect(WS_METHODS.storageRemoveOrphan, storageInventory.removeOrphan(input), {
+            "rpc.aggregate": "storage",
           }),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) =>
           observeRpcEffect(WS_METHODS.serverRetryResourceTelemetry, resourceTelemetry.retry, {

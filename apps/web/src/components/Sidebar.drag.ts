@@ -128,8 +128,11 @@ export function createSidebarSortingStrategy(input: {
     let slimHeight = input.slimHeight;
     let headerScale: number | undefined;
     for (const [index, item] of items.entries()) {
-      if (item.kind === "marker") {
-        if (item.marker === "settled-header" || item.marker === "snoozed-header") {
+      if (item.kind !== "thread") {
+        if (
+          item.kind === "marker" &&
+          (item.marker === "settled-header" || item.marker === "snoozed-header")
+        ) {
           const height = rects[index]?.height;
           if (height) headerScale ??= height / 32;
         }

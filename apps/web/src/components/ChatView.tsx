@@ -343,6 +343,7 @@ import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
@@ -1555,6 +1556,7 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
+  const pullRequestLinking = usePullRequestLinking(environmentId);
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
     refresh: true,
@@ -7437,6 +7439,11 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     const threadIdForSend = activeThread.id;
+    const attachedPullRequestForSend = isLocalDraftThread
+      ? draftId
+        ? (getDraftSession(draftId)?.attachedPullRequest ?? null)
+        : null
+      : null;
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
     const baseBranchForWorktree =
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath
@@ -7870,6 +7877,24 @@ export default function ChatView(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        if (isLocalDraftThread && attachedPullRequestForSend) {
+          try {
+            await pullRequestLinking.changeLink(
+              scopeThreadRef(environmentId, threadIdForSend),
+              attachedPullRequestForSend.url,
+              true,
+            );
+          } catch (error) {
+            toastManager.add(
+              stackedThreadToast({
+                type: "warning",
+                title: "Thread started without the pull request link",
+                description:
+                  error instanceof Error ? error.message : "Could not attach the pull request.",
+              }),
+            );
+          }
+        }
         // The turn is under way and will spend quota, so that thread's limits
         // snapshot is stale. Uploads may have outlasted a navigation, so only
         // the sending thread's panel clears.

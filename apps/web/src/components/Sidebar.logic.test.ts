@@ -39,6 +39,7 @@ import {
   sortLogicalProjectsForSidebar,
   sortSettledThreadsForSidebar,
   resolveSidebarDropTarget,
+  sidebarFolderListId,
   pinOrderKeyBetween,
   planPinnedReorder,
   planSidebarThreadDrop,
@@ -1340,6 +1341,31 @@ describe("resolveSidebarDropTarget", () => {
     expect(resolve("a1", "nope")).toBeNull();
     expect(resolve("nope", "a1")).toBeNull();
     expect(resolve(sidebarMarkerId("pinned-divider"), "a1")).toBeNull();
+  });
+
+  it("skips folder headers when collecting pin and active order", () => {
+    const withFolders: readonly SidebarListItem[] = [
+      marker("pinned-header"),
+      { kind: "folder", projectKey: "alpha", section: "pinned" },
+      thread("p1", "pinned"),
+      marker("pinned-divider"),
+      { kind: "folder", projectKey: "alpha", section: "active" },
+      thread("a1", "active"),
+      { kind: "folder", projectKey: "beta", section: "active" },
+      thread("a2", "active"),
+    ];
+    expect(resolveSidebarDropTarget(withFolders, "a2", "a1")).toEqual({
+      section: "active",
+      pinnedOrder: ["p1"],
+      activeOrder: ["a2", "a1"],
+    });
+    expect(
+      resolveSidebarDropTarget(withFolders, "a1", sidebarFolderListId("pinned", "alpha")),
+    ).toEqual({
+      section: "pinned",
+      pinnedOrder: ["a1", "p1"],
+      activeOrder: ["a2"],
+    });
   });
 });
 

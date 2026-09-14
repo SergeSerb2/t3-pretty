@@ -353,6 +353,15 @@ function ThreadNavigationSidebarPane(
   const [groupDisplayStates, setGroupDisplayStates] = useState<
     ReadonlyMap<string, HomeGroupDisplayState>
   >(() => new Map());
+  const [collapsedPrNests, setCollapsedPrNests] = useState<ReadonlySet<string>>(() => new Set());
+  const togglePrNest = useCallback((key: string) => {
+    setCollapsedPrNests((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const updateGroupDisplay = useCallback((key: string, action: HomeGroupDisplayAction) => {
     setGroupDisplayStates((previous) => {
       const next = new Map(previous);
@@ -372,8 +381,17 @@ function ThreadNavigationSidebarPane(
             groups,
             displayStates: groupDisplayStates,
             showAllThreads: hasSearchQuery,
+            selectedThreadKey: props.selectedThreadKey,
+            isPrNestExpanded: (key) => !collapsedPrNests.has(key),
           }),
-    [threadListV2Enabled, groups, groupDisplayStates, hasSearchQuery],
+    [
+      threadListV2Enabled,
+      groups,
+      groupDisplayStates,
+      hasSearchQuery,
+      props.selectedThreadKey,
+      collapsedPrNests,
+    ],
   );
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
@@ -554,6 +572,7 @@ function ThreadNavigationSidebarPane(
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey: props.selectedThreadKey ?? null,
+      isPrNestExpanded: (key) => !collapsedPrNests.has(key),
     });
   }, [
     pendingOrder,
@@ -572,6 +591,7 @@ function ThreadNavigationSidebarPane(
     threadListV2Enabled,
     threads,
     selectedProjectScope,
+    collapsedPrNests,
   ]);
   // Re-partition the moment the earliest snooze expires (clamped to the
   // signed-32-bit setTimeout range; far-future wakes re-arm at the clamp).
@@ -803,6 +823,7 @@ function ThreadNavigationSidebarPane(
       serverConfigs,
       snoozePresetMinute: nowMinute,
       threadSearchMatchByKey,
+      collapsedPrNests,
     }),
     [
       props.selectedThreadKey,
@@ -812,6 +833,7 @@ function ThreadNavigationSidebarPane(
       serverConfigs,
       nowMinute,
       threadSearchMatchByKey,
+      collapsedPrNests,
     ],
   );
   const sidebarItemsAreEqual = useCallback(
@@ -934,6 +956,14 @@ function ThreadNavigationSidebarPane(
               snoozeWakeLabelText={item.snoozeWakeLabelText}
               project={projectByKey.get(scopeKey) ?? null}
               projectTitle={projectTitleByProjectKey.get(scopeKey)}
+              nest={item.item.nest}
+              childCount={item.item.childCount}
+              collapsedNestStatus={item.item.collapsedNestStatus}
+              pullRequestKey={item.item.pullRequestKey}
+              nestExpanded={
+                item.item.pullRequestKey == null || !collapsedPrNests.has(item.item.pullRequestKey)
+              }
+              onToggleNest={togglePrNest}
               providerInstance={resolveThreadProviderInstance(serverConfigs, thread)}
               environmentLabel={
                 Object.keys(savedConnectionsById).length > 1
@@ -1031,6 +1061,7 @@ function ThreadNavigationSidebarPane(
               onNewThread={props.onNewThreadInProject}
               project={item.group.representative}
               threadCount={item.group.threads.length + item.group.pendingTasks.length}
+              threads={item.group.threads}
               title={item.group.title}
             />
           );
@@ -1077,6 +1108,14 @@ function ThreadNavigationSidebarPane(
               onRegenerateThreadTitle={regenerateThreadTitle}
               onRenameThread={props.onRenameThread}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
+              nest={item.nest}
+              childCount={item.childCount}
+              collapsedNestStatus={item.collapsedNestStatus}
+              pullRequestKey={item.pullRequestKey}
+              nestExpanded={
+                item.pullRequestKey == null || !collapsedPrNests.has(item.pullRequestKey)
+              }
+              onToggleNest={togglePrNest}
               onSelectThread={handleSelectThread}
               onSwipeableClose={handleSwipeableClose}
               onSwipeableWillOpen={handleSwipeableWillOpen}
@@ -1141,6 +1180,7 @@ function ThreadNavigationSidebarPane(
       unsettleThread,
       unsnoozeThread,
       updateGroupDisplay,
+      collapsedPrNests,
     ],
   );
   // v2 ignores the sort/group options, so only the environment filter can
