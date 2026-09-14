@@ -153,6 +153,10 @@ Provider commands must start the message to run. T3 Code commands such as
 Send `/compact` in an existing conversation to reduce context usage when the
 provider supports it. Web and desktop also offer compaction from the context meter.
 
+On Claude, Codex, and Grok, send `/resume <native-session-id>` in a new thread to
+attach that provider session instead of starting a fresh one. T3 handles the
+command locally; it is not forwarded to the model.
+
 ## Context in your message
 
 Context you attach lands where your cursor is, as a chip inside your text: a terminal excerpt,

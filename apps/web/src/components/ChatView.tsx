@@ -73,6 +73,7 @@ import {
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { NATIVE_RESUME_THREAD_TITLE, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 import { truncate } from "@t3tools/shared/String";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
 import {
@@ -773,6 +774,10 @@ const SCRIPT_TERMINAL_ROWS = 30;
 function isCompactCommandMessage(message: ChatMessage): boolean {
   const text = message.text.trim().toLowerCase();
   return message.role === "user" && text === "/compact" && !message.attachments?.length;
+}
+
+function isNativeResumeCommandText(text: string): boolean {
+  return parseNativeResumeCommand(text) !== null;
 }
 
 type ChatViewProps =
@@ -7548,20 +7553,22 @@ export default function ChatView(props: ChatViewProps) {
     } else {
       scrollToEnd();
     }
-    setOptimisticUserMessages((existing) => [
-      ...existing,
-      {
-        id: messageIdForSend,
-        role: "user",
-        text: outgoingMessageText,
-        ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
-        ...(outgoingMessageContext !== undefined ? { context: outgoingMessageContext } : {}),
-        turnId: null,
-        createdAt: messageCreatedAt,
-        updatedAt: messageCreatedAt,
-        streaming: false,
-      },
-    ]);
+    if (!isNativeResumeCommandText(outgoingMessageText)) {
+      setOptimisticUserMessages((existing) => [
+        ...existing,
+        {
+          id: messageIdForSend,
+          role: "user",
+          text: outgoingMessageText,
+          ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
+          ...(outgoingMessageContext !== undefined ? { context: outgoingMessageContext } : {}),
+          turnId: null,
+          createdAt: messageCreatedAt,
+          updatedAt: messageCreatedAt,
+          streaming: false,
+        },
+      ]);
+    }
     setThreadError(threadIdForSend, null);
     if (expiredTerminalContextCount > 0) {
       const toastCopy = buildExpiredTerminalContextToastCopy(
@@ -7588,6 +7595,9 @@ export default function ChatView(props: ChatViewProps) {
       }
     }
     let titleSeed = assistantCitationsToPlainText(stripInlineContextReferences(trimmed)).trim();
+    if (parseNativeResumeCommand(titleSeed)?._tag === "Resume") {
+      titleSeed = NATIVE_RESUME_THREAD_TITLE;
+    }
     if (!titleSeed) {
       if (firstComposerImageName) {
         titleSeed = `Image: ${firstComposerImageName}`;

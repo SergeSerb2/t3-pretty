@@ -120,12 +120,13 @@ describe("optimisticStartingThreadToShell", () => {
 });
 
 describe("isOptimisticStartingThreadPending", () => {
-  it("settles only failed native resume starts", () => {
+  it("settles finished native resume starts", () => {
     const resume = startingThread({
       message: { ...startingThread().message, text: "/resume native-session" },
     });
 
     expect(isOptimisticStartingThreadPending(resume, "starting")).toBe(true);
+    expect(isOptimisticStartingThreadPending(resume, "ready")).toBe(false);
     expect(isOptimisticStartingThreadPending(resume, "error")).toBe(false);
     expect(isOptimisticStartingThreadPending(startingThread(), "error")).toBe(true);
     expect(isOptimisticStartingThreadPending(null, "error")).toBe(false);
