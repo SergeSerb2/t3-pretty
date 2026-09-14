@@ -923,8 +923,7 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   backdrop-filter: blur(24px) saturate(1.35);
 }
 
-html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-  :is([data-chat-messages], [data-chrome-fade-top])::before {
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chrome-fade-top]::before {
   background-color: color-mix(in srgb, var(--toolbar-background) 42%, transparent);
   background-image: none;
   -webkit-backdrop-filter: blur(24px) saturate(1.35);
@@ -1044,7 +1043,7 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
 }
 
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on][data-window-interacting]
-  :is([data-chat-messages], [data-chrome-fade-top])::before,
+  [data-chrome-fade-top]::before,
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on][data-window-interacting]
   [data-sidebar-state="expanded"]
   [data-slot="sidebar-inset"]::after {
@@ -1196,7 +1195,7 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
   }
 
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-    :is([data-chat-messages], [data-chrome-fade-top])::before,
+    [data-chrome-fade-top]::before,
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
     [data-sidebar-state="expanded"]
     [data-slot="sidebar-inset"]::after {

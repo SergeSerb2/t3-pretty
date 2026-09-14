@@ -692,7 +692,7 @@ html[data-window-interacting] .chat-composer-context-strip::before {
 html[data-window-interacting] :is(.surface-glass, .dialog-glass, .dropdown-glass, .alert-glass),
 html[data-window-interacting] .chat-composer-glass-shell::before,
 html[data-window-interacting] .chat-composer-context-strip::before,
-html[data-window-interacting] :is([data-chat-messages], [data-chrome-fade-top])::before,
+html[data-window-interacting] [data-chrome-fade-top]::before,
 html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -2833,13 +2833,13 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
   z-index: 20;
 }
 
-:is([data-chat-messages], [data-chrome-fade-top]),
+[data-chrome-fade-top],
 [data-sidebar-state="expanded"] [data-slot="sidebar-inset"] {
   position: relative;
   isolation: isolate;
 }
 
-:is([data-chat-messages], [data-chrome-fade-top])::before,
+[data-chrome-fade-top]::before,
 [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
   content: "";
   pointer-events: none;
@@ -2850,7 +2850,7 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
   background-size: var(--surface-grain-size);
 }
 
-:is([data-chat-messages], [data-chrome-fade-top])::before {
+[data-chrome-fade-top]::before {
   top: 0;
   right: 0;
   left: 0;

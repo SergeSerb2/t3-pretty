@@ -240,7 +240,8 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain("--workspace-titlebar-scroll-fade-height");
     expect(indexCssSource).toContain("--workspace-chrome-edge-fade");
     expect(indexCssSource).toContain("--workspace-sidebar-edge-fade");
-    expect(indexCssSource).toContain(":is([data-chat-messages], [data-chrome-fade-top])::before");
+    expect(indexCssSource).toContain("[data-chrome-fade-top]::before");
+    expect(chatViewSource).toContain('data-chrome-fade-top=""');
     expect(indexCssSource).toContain(
       '[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after',
     );
@@ -257,7 +258,7 @@ describe("glass contract with upstream chrome", () => {
       /:is\(\[data-chat-header\], \[data-pull-requests-header\]\)\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
     );
     expect(sceneryCssSource).toMatch(
-      /:is\(\[data-chat-messages\], \[data-chrome-fade-top\]\)::before\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
+      /\[data-chrome-fade-top\]::before\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
     );
     expect(sceneryCssSource).toMatch(
       /\[data-slot="sidebar-inset"\]::after\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,

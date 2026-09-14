@@ -8976,7 +8976,7 @@ export default function ChatView(props: ChatViewProps) {
           data-chat-header
           electron={isElectron}
           reserveNativeControls={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
-          className="relative bg-background"
+          className="relative"
         >
           {isElectron && rightPanelControlsAtRoot ? (
             <span
@@ -9060,6 +9060,7 @@ export default function ChatView(props: ChatViewProps) {
             {/* Messages Wrapper. data-chat-transcript-active is the ink view-transition group. */}
             <div
               data-chat-messages=""
+              data-chrome-fade-top=""
               data-chat-transcript="true"
               data-chat-transcript-active="true"
               className="relative flex min-h-0 flex-1 flex-col bg-background"
