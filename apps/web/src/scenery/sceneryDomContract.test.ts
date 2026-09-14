@@ -235,6 +235,21 @@ describe("glass contract with upstream chrome", () => {
     );
   });
 
+  it("chrome plates fade on ::before instead of painting a hard host box", () => {
+    expect(indexCssSource).toContain("--workspace-titlebar-scroll-fade-height");
+    expect(indexCssSource).toContain("--workspace-chrome-edge-fade");
+    expect(indexCssSource).toContain(
+      ":is([data-chat-header], [data-pull-requests-header])::before",
+    );
+    expect(indexCssSource).toContain('[data-app-sidebar] [data-slot="sidebar-inner"]::before');
+    expect(sceneryCssSource).toMatch(
+      /:is\(\[data-chat-header\], \[data-pull-requests-header\]\)::before\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-slot="sidebar-inner"\]::before\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
+    );
+  });
+
   it("chrome glass panels meet without a painted divider", () => {
     const seamRule =
       sceneryCssSource.match(/\/\* Chrome seams:[\s\S]*?\{[^}]*border-color: transparent;/)?.[0] ??
