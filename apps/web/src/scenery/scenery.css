@@ -926,24 +926,8 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chrome-fade-top]::before {
   background-color: color-mix(in srgb, var(--toolbar-background) 42%, transparent);
   background-image: none;
-  -webkit-backdrop-filter: blur(24px) saturate(1.35);
-  backdrop-filter: blur(24px) saturate(1.35);
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    rgb(0 0 0 / 72%) 32%,
-    rgb(0 0 0 / 38%) 58%,
-    rgb(0 0 0 / 12%) 82%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    rgb(0 0 0 / 72%) 32%,
-    rgb(0 0 0 / 38%) 58%,
-    rgb(0 0 0 / 12%) 82%,
-    transparent 100%
-  );
+  -webkit-backdrop-filter: blur(var(--workspace-chrome-edge-blur)) saturate(1.35);
+  backdrop-filter: blur(var(--workspace-chrome-edge-blur)) saturate(1.35);
 }
 
 /* Header controls (Add action / Open / Commit / Initialize git…): the band
@@ -1022,24 +1006,8 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   [data-slot="sidebar-inset"]::after {
   background-color: var(--scenery-chrome-fill);
   background-image: none;
-  -webkit-backdrop-filter: blur(14px) saturate(1.1);
-  backdrop-filter: blur(14px) saturate(1.1);
-  -webkit-mask-image: linear-gradient(
-    to right,
-    black 0%,
-    rgb(0 0 0 / 72%) 32%,
-    rgb(0 0 0 / 38%) 58%,
-    rgb(0 0 0 / 12%) 82%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to right,
-    black 0%,
-    rgb(0 0 0 / 72%) 32%,
-    rgb(0 0 0 / 38%) 58%,
-    rgb(0 0 0 / 12%) 82%,
-    transparent 100%
-  );
+  -webkit-backdrop-filter: blur(var(--workspace-chrome-edge-blur)) saturate(1.2);
+  backdrop-filter: blur(var(--workspace-chrome-edge-blur)) saturate(1.2);
 }
 
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on][data-window-interacting]
@@ -1109,8 +1077,8 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on].dark
   border-color: color-mix(in srgb, var(--color-white) 9%, transparent);
 }
 
-/* Chrome seams: glass layers meet without a 1px divider. Resize handles
-   still light up on hover; that is the only remaining edge cue. */
+/* Chrome seams: glass layers meet without a 1px divider. The sidebar
+   rail stays invisible; the resize cursor is the only remaining cue. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-app-sidebar],
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] .right-panel-inline-body,
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] .right-panel-sheet,
