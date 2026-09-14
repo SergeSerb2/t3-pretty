@@ -82,7 +82,7 @@ function render(value = detail) {
       activityError={null}
       actionPending={false}
       onRefresh={() => {}}
-      onCommentAction={() => {}}
+      onCommentAction={() => Promise.resolve({ commentPosted: false })}
     />
   );
 }

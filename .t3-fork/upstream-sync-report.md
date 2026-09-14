@@ -3415,3 +3415,5 @@
 - `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The parent's generic HammerIcon Button that immediately invokes onFixFinding(finding).. Reason: T3 Pretty's callback and UX support explicit fix destinations. The generic one-click control would remove the fork's current-thread/other-thread choice and is replaced by FixFindingButton while preserving the parent's failing-check action capability.
 - `web-typecheck` failed after merging `v0.0.41-nightly.20260914.1722`; repaired with `gpt-5.6-sol`: Updated the shared PullRequestSummaryTab test renderer to provide the required action pending state and comment action callback while preserving the parent tests.
   - edited `apps/web/src/components/pullRequest/PullRequestSummaryTab.test.tsx`
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260914.1722`; repaired with `gpt-5.6-sol`: Updated the pull request summary test fixture so its no-op comment action returns the required promise and comment-posted result. Suggestion-level diagnostics were left unchanged.
+  - edited `apps/web/src/components/pullRequest/PullRequestSummaryTab.test.tsx`
