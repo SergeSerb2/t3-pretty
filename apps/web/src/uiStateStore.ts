@@ -2,7 +2,9 @@ import { Debouncer } from "@tanstack/react-pacer";
 import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import { create } from "zustand";
 import {
+  AUTO_BABYSIT_PULL_REQUEST_DEFAULTS,
   AUTO_CREATE_PULL_REQUEST_DEFAULTS,
+  resolveAutoBabysitPullRequest,
   resolveAutoCreatePullRequest,
   type AutoCreatePullRequestEnvMode,
 } from "@t3tools/shared/createPullRequestPrompt";
@@ -36,12 +38,14 @@ export interface PersistedUiState {
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   autoCreatePullRequestByEnvMode?: Partial<Record<AutoCreatePullRequestEnvMode, boolean>>;
+  autoBabysitPullRequestByEnvMode?: Partial<Record<AutoCreatePullRequestEnvMode, boolean>>;
   pullRequestMergeMethod?: string;
 }
 
 export type { AutoCreatePullRequestEnvMode };
 
 export const DEFAULT_AUTO_CREATE_PULL_REQUEST = AUTO_CREATE_PULL_REQUEST_DEFAULTS;
+export const DEFAULT_AUTO_BABYSIT_PULL_REQUEST = AUTO_BABYSIT_PULL_REQUEST_DEFAULTS;
 
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
@@ -63,6 +67,7 @@ export interface UiEndpointState {
 
 export interface UiComposerState {
   autoCreatePullRequestByEnvMode: Record<AutoCreatePullRequestEnvMode, boolean>;
+  autoBabysitPullRequestByEnvMode: Record<AutoCreatePullRequestEnvMode, boolean>;
 }
 
 export interface UiPullRequestState {
@@ -70,11 +75,7 @@ export interface UiPullRequestState {
 }
 
 export interface UiState
-  extends UiProjectState,
-    UiThreadState,
-    UiEndpointState,
-    UiComposerState,
-    UiPullRequestState {}
+  extends UiProjectState, UiThreadState, UiEndpointState, UiComposerState, UiPullRequestState {}
 
 const initialState: UiState = {
   projectExpandedById: {},
@@ -84,6 +85,7 @@ const initialState: UiState = {
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
   autoCreatePullRequestByEnvMode: DEFAULT_AUTO_CREATE_PULL_REQUEST,
+  autoBabysitPullRequestByEnvMode: DEFAULT_AUTO_BABYSIT_PULL_REQUEST,
   pullRequestMergeMethod: "merge",
 };
 
@@ -177,6 +179,9 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     autoCreatePullRequestByEnvMode: sanitizeAutoCreatePullRequest(
       parsed.autoCreatePullRequestByEnvMode,
     ),
+    autoBabysitPullRequestByEnvMode: sanitizeAutoBabysitPullRequest(
+      parsed.autoBabysitPullRequestByEnvMode,
+    ),
     pullRequestMergeMethod: isPullRequestMergeMethod(parsed.pullRequestMergeMethod)
       ? parsed.pullRequestMergeMethod
       : initialState.pullRequestMergeMethod,
@@ -189,6 +194,15 @@ function sanitizeAutoCreatePullRequest(
   return {
     local: resolveAutoCreatePullRequest(value, "local"),
     worktree: resolveAutoCreatePullRequest(value, "worktree"),
+  };
+}
+
+function sanitizeAutoBabysitPullRequest(
+  value: PersistedUiState["autoBabysitPullRequestByEnvMode"],
+): Record<AutoCreatePullRequestEnvMode, boolean> {
+  return {
+    local: resolveAutoBabysitPullRequest(value, "local"),
+    worktree: resolveAutoBabysitPullRequest(value, "worktree"),
   };
 }
 
@@ -263,6 +277,7 @@ export function persistState(state: UiState): void {
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
         autoCreatePullRequestByEnvMode: state.autoCreatePullRequestByEnvMode,
+        autoBabysitPullRequestByEnvMode: state.autoBabysitPullRequestByEnvMode,
         pullRequestMergeMethod: state.pullRequestMergeMethod,
       } satisfies PersistedUiState),
     );
@@ -374,15 +389,34 @@ export function setAutoCreatePullRequest(
   enabled: boolean,
 ): UiState {
   if (state.autoCreatePullRequestByEnvMode[envMode] === enabled) {
-    return state;
+    return enabled ? state : setAutoBabysitPullRequest(state, envMode, false);
   }
-  return {
+  const next: UiState = {
     ...state,
     autoCreatePullRequestByEnvMode: {
       ...state.autoCreatePullRequestByEnvMode,
       [envMode]: enabled,
     },
   };
+  return enabled ? next : setAutoBabysitPullRequest(next, envMode, false);
+}
+
+export function setAutoBabysitPullRequest(
+  state: UiState,
+  envMode: AutoCreatePullRequestEnvMode,
+  enabled: boolean,
+): UiState {
+  if (state.autoBabysitPullRequestByEnvMode[envMode] === enabled) {
+    return enabled ? setAutoCreatePullRequest(state, envMode, true) : state;
+  }
+  const next: UiState = {
+    ...state,
+    autoBabysitPullRequestByEnvMode: {
+      ...state.autoBabysitPullRequestByEnvMode,
+      [envMode]: enabled,
+    },
+  };
+  return enabled ? setAutoCreatePullRequest(next, envMode, true) : next;
 }
 
 export function setDefaultAdvertisedEndpointKey(state: UiState, key: string | null): UiState {
@@ -497,6 +531,7 @@ interface UiStateStore extends UiState {
   removeThread: (threadKey: string) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setAutoCreatePullRequest: (envMode: AutoCreatePullRequestEnvMode, enabled: boolean) => void;
+  setAutoBabysitPullRequest: (envMode: AutoCreatePullRequestEnvMode, enabled: boolean) => void;
   setSidebarProjectScopeKey: (projectKey: string | null) => void;
   setPullRequestMergeMethod: (method: PullRequestMergeMethod) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
@@ -520,6 +555,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setAutoCreatePullRequest: (envMode, enabled) =>
     set((state) => setAutoCreatePullRequest(state, envMode, enabled)),
+  setAutoBabysitPullRequest: (envMode, enabled) =>
+    set((state) => setAutoBabysitPullRequest(state, envMode, enabled)),
   setSidebarProjectScopeKey: (projectKey) =>
     set((state) => setSidebarProjectScopeKey(state, projectKey)),
   setPullRequestMergeMethod: (method) => set((state) => setPullRequestMergeMethod(state, method)),

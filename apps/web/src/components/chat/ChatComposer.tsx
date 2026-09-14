@@ -249,6 +249,7 @@ import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import {
   ComposerControl,
+  ComposerControlChevron,
   ComposerControlIcon,
   ComposerControlSeparator,
   ComposerSelectControl,
@@ -925,11 +926,13 @@ import {
   FileIcon,
   BotIcon,
   CircleAlertIcon,
+  GitPullRequestArrowIcon,
   PaperclipIcon,
   PencilRulerIcon,
   PlayIcon,
   XIcon,
 } from "lucide-react";
+import { Menu, MenuCheckboxItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { proposedPlanTitle } from "../../proposedPlan";
 import { hasProviderSetup } from "./ProviderStatusBanner";
 import {
@@ -1169,6 +1172,90 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   );
 });
 
+const ComposerCreatePrControl = memo(function ComposerCreatePrControl(props: {
+  size?: "sm" | "xs";
+  hidden?: boolean;
+  autoCreatePullRequest: boolean;
+  babysitPullRequest: boolean;
+  onToggleAutoCreatePullRequest: () => void;
+  onToggleBabysitPullRequest: () => void;
+}) {
+  const size = props.size ?? "sm";
+  const [open, setOpen] = useComposerMenuState(props.hidden);
+  const active = props.autoCreatePullRequest;
+  const label = props.babysitPullRequest ? "PR+" : "PR";
+  const tooltip = props.babysitPullRequest
+    ? "Create a PR, fix review comments, and auto-merge when green"
+    : props.autoCreatePullRequest
+      ? "Create a PR when done — the first message asks the agent to open a pull request after finishing"
+      : "Create a PR when done — off";
+
+  return (
+    <>
+      <ComposerControlSeparator size={size} />
+      <div className="flex items-center">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <ComposerControl
+                size={size}
+                className={cn(
+                  "shrink-0 whitespace-nowrap rounded-r-none",
+                  active
+                    ? "bg-accent text-accent-foreground hover:bg-accent/80"
+                    : size === "xs"
+                      ? undefined
+                      : "text-secondary-label hover:text-foreground",
+                )}
+                type="button"
+                aria-pressed={active}
+                onClick={props.onToggleAutoCreatePullRequest}
+                aria-label={tooltip}
+              />
+            }
+          >
+            <ComposerControlIcon
+              icon={GitPullRequestArrowIcon}
+              size={size}
+              className={cn(active && "text-current opacity-100")}
+            />
+            <span className="sr-only sm:not-sr-only">{label}</span>
+          </TooltipTrigger>
+          <TooltipPopup side="top">{tooltip}</TooltipPopup>
+        </Tooltip>
+        <Menu open={open} onOpenChange={setOpen}>
+          <MenuTrigger
+            render={
+              <ComposerControl
+                size={size}
+                className={cn(
+                  "shrink-0 rounded-l-none px-1.5",
+                  active
+                    ? "bg-accent text-accent-foreground hover:bg-accent/80"
+                    : size === "xs"
+                      ? undefined
+                      : "text-secondary-label hover:text-foreground",
+                )}
+                aria-label="PR options"
+              />
+            }
+          >
+            <ComposerControlChevron size={size} />
+          </MenuTrigger>
+          <MenuPopup align="start" side="top" {...composerFloatingLayerProps}>
+            <MenuCheckboxItem
+              checked={props.babysitPullRequest}
+              onCheckedChange={() => props.onToggleBabysitPullRequest()}
+            >
+              Fix reviews & auto-merge
+            </MenuCheckboxItem>
+          </MenuPopup>
+        </Menu>
+      </div>
+    </>
+  );
+});
+
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
   activeContextWindow: ContextWindowSnapshot | null;
@@ -1371,6 +1458,13 @@ export interface ChatComposerProps {
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
 
+  // Auto-PR
+  autoCreatePullRequest: boolean;
+  babysitPullRequest: boolean;
+  showAutoCreatePullRequestToggle: boolean;
+  onToggleAutoCreatePullRequest: () => void;
+  onToggleBabysitPullRequest: () => void;
+
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
   providerStatuses: ServerProvider[];
@@ -1495,6 +1589,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProposedPlan,
     runtimeMode,
     interactionMode: requestedInteractionMode,
+    autoCreatePullRequest,
+    babysitPullRequest,
+    showAutoCreatePullRequestToggle,
+    onToggleAutoCreatePullRequest,
+    onToggleBabysitPullRequest,
     lockedProvider,
     providerStatuses,
     providerCatalogKnown,
@@ -4965,6 +5064,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         />
       ),
     },
+    ...(showAutoCreatePullRequestToggle
+      ? [
+          {
+            id: "pr",
+            content: (
+              <ComposerCreatePrControl
+                autoCreatePullRequest={autoCreatePullRequest}
+                babysitPullRequest={babysitPullRequest}
+                size={composerControlsInStrip ? "xs" : "sm"}
+                hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+                onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
+                onToggleBabysitPullRequest={onToggleBabysitPullRequest}
+              />
+            ),
+          },
+        ]
+      : []),
   ];
   const hiddenRestingBlockIds = restingBlockDefs
     .slice(restingBlockDefs.length - restingHiddenBlockCount)
@@ -5046,9 +5162,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           interactionMode={interactionMode}
           runtimeMode={runtimeMode}
           showInteractionModeToggle={planModeUiEnabled}
+          autoCreatePullRequest={autoCreatePullRequest}
+          babysitPullRequest={babysitPullRequest}
+          showAutoCreatePullRequestToggle={showAutoCreatePullRequestToggle}
           traitsMenuContent={providerTraitsMenuContent}
           onToggleInteractionMode={toggleInteractionMode}
           onRuntimeModeChange={handleRuntimeModeChange}
+          onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
+          onToggleBabysitPullRequest={onToggleBabysitPullRequest}
         />
       ) : (
         <>
@@ -5090,11 +5211,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 showInteractionModeToggle={
                   planModeUiEnabled && hiddenRestingBlockIds.includes("mode")
                 }
+                autoCreatePullRequest={autoCreatePullRequest}
+                babysitPullRequest={babysitPullRequest}
+                showAutoCreatePullRequestToggle={
+                  showAutoCreatePullRequestToggle && hiddenRestingBlockIds.includes("pr")
+                }
                 traitsMenuContent={
                   hiddenRestingBlockIds.includes("traits") ? providerTraitsMenuContent : undefined
                 }
                 onToggleInteractionMode={toggleInteractionMode}
                 onRuntimeModeChange={handleRuntimeModeChange}
+                onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
+                onToggleBabysitPullRequest={onToggleBabysitPullRequest}
               />
             </div>
           ) : null}

@@ -3,6 +3,7 @@ import { memo, type ReactNode, useEffect } from "react";
 import { EllipsisIcon } from "lucide-react";
 import {
   Menu,
+  MenuCheckboxItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -17,6 +18,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
+  autoCreatePullRequest: boolean;
+  babysitPullRequest: boolean;
+  showAutoCreatePullRequestToggle: boolean;
   traitsMenuContent?: ReactNode;
   size?: "sm" | "xs";
   open?: boolean;
@@ -29,9 +33,11 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   hidden?: boolean;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
+  onToggleAutoCreatePullRequest: () => void;
+  onToggleBabysitPullRequest: () => void;
 }) {
   const size = props.size ?? "sm";
-  const showAutoPrDot = false;
+  const showAutoPrDot = props.showAutoCreatePullRequestToggle && props.autoCreatePullRequest;
   const [uncontrolledOpen, setUncontrolledOpen] = useComposerMenuState(props.hidden);
   const open = !props.hidden && (props.open ?? uncontrolledOpen);
   const setOpen = (nextOpen: boolean) => {
@@ -102,6 +108,23 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <MenuRadioItem value="auto-accept-edits">Auto Accept Edits</MenuRadioItem>
           <MenuRadioItem value="full-access">Full Access</MenuRadioItem>
         </MenuRadioGroup>
+        {props.showAutoCreatePullRequestToggle ? (
+          <>
+            <MenuDivider />
+            <MenuCheckboxItem
+              checked={props.autoCreatePullRequest}
+              onCheckedChange={() => props.onToggleAutoCreatePullRequest()}
+            >
+              Create PR when done
+            </MenuCheckboxItem>
+            <MenuCheckboxItem
+              checked={props.babysitPullRequest}
+              onCheckedChange={() => props.onToggleBabysitPullRequest()}
+            >
+              Fix reviews & auto-merge
+            </MenuCheckboxItem>
+          </>
+        ) : null}
       </MenuPopup>
     </Menu>
   );

@@ -2,6 +2,7 @@ import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  DEFAULT_AUTO_BABYSIT_PULL_REQUEST,
   DEFAULT_AUTO_CREATE_PULL_REQUEST,
   legacyProjectCwdPreferenceKey,
   markThreadUnread,
@@ -15,6 +16,8 @@ import {
   resolveProjectExpanded,
   setDefaultAdvertisedEndpointKey,
   setProjectExpanded,
+  setAutoBabysitPullRequest,
+  setAutoCreatePullRequest,
   setSidebarProjectScopeKey,
   setThreadChangedFilesExpanded,
   type UiState,
@@ -29,12 +32,23 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
     autoCreatePullRequestByEnvMode: DEFAULT_AUTO_CREATE_PULL_REQUEST,
+    autoBabysitPullRequestByEnvMode: DEFAULT_AUTO_BABYSIT_PULL_REQUEST,
     pullRequestMergeMethod: "merge",
     ...overrides,
   };
 }
 
 describe("uiStateStore pure functions", () => {
+  it("turns create-PR on with babysit and turns babysit off with create-PR", () => {
+    const babysitOn = setAutoBabysitPullRequest(makeUiState(), "local", true);
+    expect(babysitOn.autoCreatePullRequestByEnvMode.local).toBe(true);
+    expect(babysitOn.autoBabysitPullRequestByEnvMode.local).toBe(true);
+
+    const createOff = setAutoCreatePullRequest(babysitOn, "local", false);
+    expect(createOff.autoCreatePullRequestByEnvMode.local).toBe(false);
+    expect(createOff.autoBabysitPullRequestByEnvMode.local).toBe(false);
+  });
+
   it("stores server timestamps without moving visit state backwards", () => {
     const threadId = ThreadId.make("thread-1");
     const initialState = makeUiState();
@@ -238,6 +252,7 @@ describe("parsePersistedState", () => {
         },
       },
       autoCreatePullRequestByEnvMode: DEFAULT_AUTO_CREATE_PULL_REQUEST,
+      autoBabysitPullRequestByEnvMode: DEFAULT_AUTO_BABYSIT_PULL_REQUEST,
     });
   });
 
@@ -361,6 +376,7 @@ describe("uiStateStore persistence", () => {
         },
       },
       autoCreatePullRequestByEnvMode: DEFAULT_AUTO_CREATE_PULL_REQUEST,
+      autoBabysitPullRequestByEnvMode: DEFAULT_AUTO_BABYSIT_PULL_REQUEST,
       pullRequestMergeMethod: "merge",
     });
     expect(parsePersistedState(persisted)).toEqual({
