@@ -823,6 +823,7 @@ function ThreadNavigationSidebarPane(
       serverConfigs,
       snoozePresetMinute: nowMinute,
       threadSearchMatchByKey,
+      collapsedPrNests,
     }),
     [
       props.selectedThreadKey,
@@ -832,6 +833,7 @@ function ThreadNavigationSidebarPane(
       serverConfigs,
       nowMinute,
       threadSearchMatchByKey,
+      collapsedPrNests,
     ],
   );
   const sidebarItemsAreEqual = useCallback(
@@ -1178,6 +1180,7 @@ function ThreadNavigationSidebarPane(
       unsettleThread,
       unsnoozeThread,
       updateGroupDisplay,
+      collapsedPrNests,
     ],
   );
   // v2 ignores the sort/group options, so only the environment filter can

@@ -312,7 +312,7 @@ describe("buildHomeListLayout", () => {
         .map((item) => item.thread.id),
     ).toEqual([parent.id, child.id]);
 
-    const extras = Array.from({ length: 5 }, (_, index) =>
+    const extras = Array.from({ length: 7 }, (_, index) =>
       makeThread(`extra-${index}`, project.id),
     );
     const pagedGroup: HomeThreadGroup = {
@@ -325,9 +325,11 @@ describe("buildHomeListLayout", () => {
       displayStates: displayStates({}),
       isPrNestExpanded: () => false,
     });
-    expect(collapsedPaged.items.some((item) => item.type === "show-more")).toBe(true);
+    expect(
+      collapsedPaged.items.filter((item) => item.type === "thread").map((item) => item.thread.id),
+    ).toEqual([parent.id, ...extras.slice(0, 5).map((thread) => thread.id)]);
     expect(collapsedPaged.items.find((item) => item.type === "show-more")).toMatchObject({
-      hiddenCount: 1,
+      hiddenCount: 2,
     });
   });
 });

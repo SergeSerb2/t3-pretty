@@ -4,7 +4,7 @@ import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/c
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { collectOpenProjectPullRequests } from "@t3tools/shared/threadPullRequestNesting";
 import { FolderPlusIcon, GitPullRequestIcon } from "lucide-react";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -58,6 +58,9 @@ export function DraftHeroHeadline({
     draftId ? (store.getDraftSession(draftId)?.attachedPullRequest ?? null) : null,
   );
   const branchBeforeAttachRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    branchBeforeAttachRef.current = undefined;
+  }, [draftId, activeProjectRef?.environmentId, activeProjectRef?.projectId]);
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
