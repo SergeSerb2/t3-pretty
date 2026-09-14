@@ -1439,6 +1439,7 @@ function renderFeedEntry(
         summaryToolIcon={entry.summaryToolIcon}
         hasFailure={entry.hasFailure}
         shimmer={entry.shimmer}
+        liveActivityKey={entry.liveActivityKey}
         onToggle={() => props.onToggleWorkGroup(entry.groupId, entry.id)}
       />
     );

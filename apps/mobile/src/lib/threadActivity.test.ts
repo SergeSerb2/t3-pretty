@@ -2414,6 +2414,58 @@ describe("buildThreadFeed", () => {
     ]);
   });
 
+  it("identifies live handoffs by call, not lifecycle event or summary", () => {
+    const turnId = TurnId.make("turn-failing-calls");
+    const latestTurn = {
+      turnId,
+      state: "running" as const,
+      requestedAt: "2026-04-01T00:00:00.000Z",
+      startedAt: "2026-04-01T00:00:00.000Z",
+      completedAt: null,
+      assistantMessageId: null,
+    };
+    const call = (n: number, status: "inProgress" | "completed") =>
+      makeActivity({
+        id: EventId.make(`call-${n}-${status}`),
+        kind: status === "completed" ? "tool.completed" : "tool.updated",
+        tone: "tool",
+        summary: "Command run",
+        createdAt: `2026-04-01T00:00:${String(n * 2 + (status === "completed" ? 1 : 0)).padStart(2, "0")}.000Z`,
+        turnId,
+        payload: {
+          itemType: "command_execution",
+          toolCallId: `call-${n}`,
+          title: "Command run",
+          status,
+          detail: `Bash: ls ${n}`,
+        },
+      });
+    const liveRow = (activities: ReadonlyArray<ReturnType<typeof makeActivity>>) =>
+      deriveThreadFeedPresentation(
+        buildThreadFeed(
+          makeThread({
+            id: ThreadId.make("thread-failing-calls"),
+            projectId: ProjectId.make("project-1"),
+            title: "Failing calls",
+            latestTurn,
+            activities,
+          }),
+        ),
+        latestTurn,
+        new Set(),
+        new Set(),
+        latestTurn.startedAt,
+      ).find((row) => row.type === "work-toggle");
+
+    const running = liveRow([call(1, "inProgress")]);
+    const completed = liveRow([call(1, "inProgress"), call(1, "completed")]);
+    const next = liveRow([call(1, "inProgress"), call(1, "completed"), call(2, "inProgress")]);
+    expect(running?.liveActivityKey).toBe(JSON.stringify([turnId, "call-1"]));
+    expect(completed?.liveActivityKey).toBe(running?.liveActivityKey);
+    expect(next?.liveActivityKey).toBe(JSON.stringify([turnId, "call-2"]));
+    expect(next?.id).toBe(running?.id);
+  });
+
   it("hands a settled tool run off to Thinking once assistant text streams after it", () => {
     const turnId = TurnId.make("turn-streaming-tail");
     const latestTurn = {

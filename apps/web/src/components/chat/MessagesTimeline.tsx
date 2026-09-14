@@ -152,6 +152,7 @@ import {
 } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
 import { PierreEntryIcon } from "./PierreEntryIcon";
+import { SlidingActivity } from "./SlidingActivity";
 import { inferEntryKindFromPath } from "../../pierre-icons";
 import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
@@ -2496,31 +2497,40 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      <LiveActivityRow
-        label={
-          row.entry.questionAnswer ? (
-            <span className="flex min-w-0 gap-1.5">
-              <span className="shrink-0">{label}</span>
-              <span
-                className={cn(
-                  "truncate",
-                  !row.expanded && hasQuestionAnswer(row.entry.questionAnswer)
-                    ? "text-foreground"
-                    : "text-muted-foreground",
-                )}
-              >
-                {getQuestionAnswerPreview(row.entry.questionAnswer)}
-              </span>
-            </span>
-          ) : (
-            label
-          )
+      <SlidingActivity
+        key={ctx.routeThreadKey}
+        activityKey={
+          row.active && !row.expanded
+            ? JSON.stringify([row.entry.turnId, row.entry.toolCallId ?? row.entry.id])
+            : null
         }
-        iconName={workEntryIconName(row.entry)}
-        toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
-        failed={failed}
-        active={row.active}
-      />
+      >
+        <LiveActivityRow
+          label={
+            row.entry.questionAnswer ? (
+              <span className="flex min-w-0 gap-1.5">
+                <span className="shrink-0">{label}</span>
+                <span
+                  className={cn(
+                    "truncate",
+                    !row.expanded && hasQuestionAnswer(row.entry.questionAnswer)
+                      ? "text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {getQuestionAnswerPreview(row.entry.questionAnswer)}
+                </span>
+              </span>
+            ) : (
+              label
+            )
+          }
+          iconName={workEntryIconName(row.entry)}
+          toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
+          failed={failed}
+          active={row.active}
+        />
+      </SlidingActivity>
     </button>
   );
 }
