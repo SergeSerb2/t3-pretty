@@ -66,6 +66,7 @@ import {
   threadShellHasStarted,
   resolveDraftHeroState,
   isWorktreeSetupSubscriptionActive,
+  shouldDropWorktreeSetupOnThreadChange,
   worktreeSetupExitDurationMs,
   WORKTREE_SETUP_EXIT_MS,
   WORKTREE_SETUP_EXIT_REDUCED_MS,
@@ -627,6 +628,15 @@ describe("worktree setup card handoff", () => {
     );
     expect(worktreeSetupExitDurationMs({ motionEnabled: false, prefersReducedMotion: false })).toBe(
       0,
+    );
+  });
+
+  it("drops a leftover setup only when ChatView switches threads", () => {
+    const threadId = ThreadId.make("thread-setup");
+    expect(shouldDropWorktreeSetupOnThreadChange(null, threadId)).toBe(false);
+    expect(shouldDropWorktreeSetupOnThreadChange(threadId, threadId)).toBe(false);
+    expect(shouldDropWorktreeSetupOnThreadChange(threadId, ThreadId.make("other-thread"))).toBe(
+      true,
     );
   });
 });

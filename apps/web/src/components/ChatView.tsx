@@ -446,6 +446,7 @@ import {
   resolveComposerProviderSelection,
   resolveDraftHeroState,
   isWorktreeSetupSubscriptionActive,
+  shouldDropWorktreeSetupOnThreadChange,
   worktreeSetupExitDurationMs,
   restorePlanFollowUpComposer,
   isPaintOnlyThreadTimeline,
@@ -1737,6 +1738,14 @@ export default function ChatView(props: ChatViewProps) {
     ownerKey: string;
   } | null>(null);
   const [heldWorktreeSetup, setHeldWorktreeSetup] = useState<WorktreeSetupSnapshot | null>(null);
+  const worktreeSetupThreadIdRef = useRef(threadId);
+  useEffect(() => {
+    const previousThreadId = worktreeSetupThreadIdRef.current;
+    worktreeSetupThreadIdRef.current = threadId;
+    if (!shouldDropWorktreeSetupOnThreadChange(previousThreadId, threadId)) return;
+    setWorktreeSetupRef(null);
+    setHeldWorktreeSetup(null);
+  }, [threadId]);
   // Set by "Work locally": the draft whose restored message should be resent
   // once the cancelled dispatch has settled and the draft is in local mode.
   // Keyed by draft id so a bootstrap rotating the thread id keeps it, while
