@@ -1064,7 +1064,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             onScroll={handleScroll}
             onItemSizeChanged={reportContentOverflow}
             className={cn(
-              "scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] sm:px-5",
+              "h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden",
               topFadeEnabled && "topbar-scroll-fade",
             )}
             ListHeaderComponent={
