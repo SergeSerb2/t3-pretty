@@ -38,6 +38,7 @@ import {
   type ThreadListV2Status,
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
+import { ThreadActiveSubagentCount } from "./thread-list-items";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 /**
@@ -439,7 +440,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   const pr = useThreadPr(thread);
 
-  const { materialYouStyleLayoutActive } = useAppearancePreferences();
+  const { materialYouStyleLayoutActive, themeAppearance: colorScheme } = useAppearancePreferences();
   const theme = useUniwindTheme();
   const screenColor = theme["--color-screen"];
   const drawerColor = theme["--color-drawer"];
@@ -448,6 +449,17 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     theme[materialYouStyleLayoutActive ? "--color-thread-selected" : "--color-user-bubble"];
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected === true;
+  const subagentColor = selected
+    ? String(
+        theme[
+          materialYouStyleLayoutActive
+            ? "--color-thread-selected-foreground"
+            : "--color-user-bubble-foreground"
+        ] ?? "#0284c7",
+      )
+    : colorScheme === "dark"
+      ? "#38bdf8"
+      : "#0284c7";
   // The provider badge's border blends into the row's own surface, which
   // differs by pane and (for the sidebar pane) selection: the sidebar row
   // background becomes the selected fill or the drawer surface, while the
@@ -780,19 +792,22 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           {statusLabel?.label ?? timeLabel}
         </Text>
       </View>
-      <Text
-        className={cn(
-          "mt-1 text-base font-t3-medium",
-          selected
-            ? materialYouStyleLayoutActive
-              ? "text-thread-selected-foreground"
-              : "text-user-bubble-foreground"
-            : "text-foreground",
-        )}
-        numberOfLines={2}
-      >
-        {thread.title}
-      </Text>
+      <View className="mt-1 flex-row items-center gap-1">
+        <ThreadActiveSubagentCount color={subagentColor} count={thread.activeSubagentCount} />
+        <Text
+          className={cn(
+            "flex-1 text-base font-t3-medium",
+            selected
+              ? materialYouStyleLayoutActive
+                ? "text-thread-selected-foreground"
+                : "text-user-bubble-foreground"
+              : "text-foreground",
+          )}
+          numberOfLines={2}
+        >
+          {thread.title}
+        </Text>
+      </View>
       {props.searchMatch ? (
         <View className="mt-1">
           <ThreadSearchMatchExcerpt
@@ -935,13 +950,21 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     </>
   );
 
+  const rowAccessibilityLabel = [
+    thread.title,
+    (thread.activeSubagentCount ?? 0) > 0
+      ? `${thread.activeSubagentCount} ${thread.activeSubagentCount === 1 ? "subagent" : "subagents"} working`
+      : null,
+    props.hasQueuedMessages ? "messages queued to send" : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
   const rowContent = (close: () => void) =>
     variant === "card" ? (
       <Pressable
         accessibilityHint={swipeAccessibilityHint}
-        accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
-        }
+        accessibilityLabel={rowAccessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ selected }}
         onPress={() => {
@@ -982,9 +1005,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     ) : (
       <Pressable
         accessibilityHint={swipeAccessibilityHint}
-        accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
-        }
+        accessibilityLabel={rowAccessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ selected }}
         className={sidebarPane || materialYouStyleLayoutActive ? undefined : "bg-screen"}
@@ -1026,19 +1047,22 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </View>
           ) : null}
           <View className="min-w-0 flex-1">
-            <Text
-              className={cn(
-                "text-base",
-                selected
-                  ? materialYouStyleLayoutActive
-                    ? "text-thread-selected-foreground"
-                    : "text-user-bubble-foreground"
-                  : "text-foreground-muted",
-              )}
-              numberOfLines={1}
-            >
-              {thread.title}
-            </Text>
+            <View className="flex-row items-center gap-1">
+              <ThreadActiveSubagentCount color={subagentColor} count={thread.activeSubagentCount} />
+              <Text
+                className={cn(
+                  "min-w-0 flex-1 text-base",
+                  selected
+                    ? materialYouStyleLayoutActive
+                      ? "text-thread-selected-foreground"
+                      : "text-user-bubble-foreground"
+                    : "text-foreground-muted",
+                )}
+                numberOfLines={1}
+              >
+                {thread.title}
+              </Text>
+            </View>
             {props.searchMatch ? (
               <ThreadSearchMatchExcerpt
                 match={props.searchMatch}

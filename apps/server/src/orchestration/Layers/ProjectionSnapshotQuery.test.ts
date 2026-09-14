@@ -625,6 +625,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           hasPendingUserInput: false,
           hasActionableProposedPlan: false,
           backgroundLiveness: null,
+          activeSubagentCount: 0,
           planProgress: null,
         },
       ]);

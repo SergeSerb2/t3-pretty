@@ -921,6 +921,12 @@ export const OrchestrationThreadShell = Schema.Struct({
    */
   backgroundLiveness: Schema.optional(Schema.NullOr(Schema.Literals(["working", "monitoring"]))),
   /**
+   * Live native agent tasks (subagents, workflow members) in the in-memory
+   * liveness registry. Monitors are not counted. Optional so old
+   * servers/clients interop; absent = 0.
+   */
+  activeSubagentCount: Schema.optional(NonNegativeInt),
+  /**
    * Current plan step while a turn runs, for the Working indicators
    * (sidebar row, in-chat working line). Cleared when the turn settles —
    * never persists as stale UI. Optional so old servers/clients interop.

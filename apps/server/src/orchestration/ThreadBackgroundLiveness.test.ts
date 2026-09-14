@@ -226,4 +226,43 @@ describe("ThreadBackgroundLiveness", () => {
     a.clearThreadLiveness("t");
     expect(a.getThreadBackgroundLiveness("t")).toBeNull();
   });
+
+  it("counts live agents and ignores monitors", () => {
+    const liveness = ThreadBackgroundLiveness.make();
+    const threadId = "t-count";
+    expect(liveness.getThreadActiveSubagentCount(threadId)).toBe(0);
+    liveness.recordTaskLiveness({
+      threadId,
+      taskId: "m1",
+      taskType: "local_bash",
+      status: undefined,
+      kind: "started",
+    });
+    expect(liveness.getThreadActiveSubagentCount(threadId)).toBe(0);
+    liveness.recordTaskLiveness({
+      threadId,
+      taskId: "a1",
+      taskType: "subagent",
+      status: undefined,
+      kind: "started",
+    });
+    liveness.recordTaskLiveness({
+      threadId,
+      taskId: "a2",
+      taskType: "subagent",
+      status: undefined,
+      kind: "started",
+    });
+    expect(liveness.getThreadActiveSubagentCount(threadId)).toBe(2);
+    liveness.recordTaskLiveness({
+      threadId,
+      taskId: "a1",
+      taskType: "subagent",
+      status: "completed",
+      kind: "completed",
+    });
+    expect(liveness.getThreadActiveSubagentCount(threadId)).toBe(1);
+    liveness.clearThreadLiveness(threadId);
+    expect(liveness.getThreadActiveSubagentCount(threadId)).toBe(0);
+  });
 });

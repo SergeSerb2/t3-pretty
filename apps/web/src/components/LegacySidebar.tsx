@@ -18,6 +18,7 @@ import {
   prStatusIndicator,
   PrStatusTooltipContent,
   terminalStatusFromRunningIds,
+  ThreadActiveSubagentIndicator,
   ThreadStatusLabel,
   ThreadWorktreeIndicator,
   useLinkedThreadPullRequest,
@@ -761,6 +762,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             </a>
           ) : null}
           {threadStatus && <ThreadStatusLabel status={threadStatus} />}
+          <ThreadActiveSubagentIndicator
+            className={isHighlighted ? "text-current" : undefined}
+            count={thread.activeSubagentCount}
+          />
           {renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}
