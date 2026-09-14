@@ -96,9 +96,12 @@ export function ThreadActiveSubagentCount(props: {
 }) {
   const count = props.count ?? 0;
   if (count <= 0) return null;
-  const label = count === 1 ? "1 subagent working" : `${count} subagents working`;
   return (
-    <View className="flex-row items-center gap-0.5" accessibilityLabel={label}>
+    <View
+      accessible={false}
+      className="flex-row items-center gap-0.5"
+      importantForAccessibility="no-hide-descendants"
+    >
       <BotIcon size={props.size ?? 12} color={props.color} />
       <Text className="text-3xs font-t3-medium tabular-nums" style={{ color: props.color }}>
         {count}

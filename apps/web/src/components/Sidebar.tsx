@@ -1610,7 +1610,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {props.project ? <ProjectFavicon project={props.project} className="size-4" /> : null}
             </span>
             {draftIndicator}
-            <ThreadActiveSubagentIndicator count={thread.activeSubagentCount} />
+            <ThreadActiveSubagentIndicator
+              className={props.isActive || isSelected ? "text-current" : undefined}
+              count={thread.activeSubagentCount}
+            />
             {title}
             {pinIndicator}
             {terminalStatusIcon}
@@ -1908,7 +1911,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               )}
             </div>
             <div className="mt-1 flex min-w-0 items-center gap-1.5">
-              <ThreadActiveSubagentIndicator count={thread.activeSubagentCount} />
+              <ThreadActiveSubagentIndicator
+                className={props.isActive || isSelected ? "text-current" : undefined}
+                count={thread.activeSubagentCount}
+              />
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
@@ -2100,7 +2106,10 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
           {props.project ? (
             <ProjectFavicon project={props.project} className="size-4 shrink-0" />
           ) : null}
-          <ThreadActiveSubagentIndicator count={thread.activeSubagentCount} />
+          <ThreadActiveSubagentIndicator
+            className={props.isHighlighted || props.isRouteActive ? "text-current" : undefined}
+            count={thread.activeSubagentCount}
+          />
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
             {threadTimeLabel(thread)}

@@ -490,7 +490,13 @@ export function activeSubagentCountLabel(count: number): string | null {
   return `${count} ${count === 1 ? "subagent" : "subagents"} working`;
 }
 
-export function ThreadActiveSubagentIndicator({ count }: { count: number | undefined }) {
+export function ThreadActiveSubagentIndicator({
+  count,
+  className,
+}: {
+  count: number | undefined;
+  className?: string;
+}) {
   const n = count ?? 0;
   const label = activeSubagentCountLabel(n);
   if (label === null) return null;
@@ -502,7 +508,11 @@ export function ThreadActiveSubagentIndicator({ count }: { count: number | undef
             role="img"
             aria-label={label}
             data-testid="thread-active-subagent-count"
-            className="inline-flex shrink-0 items-center gap-0.5 text-sky-600 dark:text-sky-400"
+            className={cn(
+              "inline-flex shrink-0 items-center gap-0.5 text-sky-600 dark:text-sky-400",
+              "[[data-highlighted]_&]:text-current [[data-selected]_&]:text-current",
+              className,
+            )}
           />
         }
       >
