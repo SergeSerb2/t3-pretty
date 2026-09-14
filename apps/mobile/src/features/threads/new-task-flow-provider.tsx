@@ -516,10 +516,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       ? resolveAutoBabysitPullRequest(autoBabysitPullRequestByEnvMode, workspaceMode)
       : false);
   // Submission waits for this: sending during hydration would race the stored
-  // choice in whichever direction the fallback picks. A draft override settles
-  // it immediately; otherwise the persisted preferences must have loaded.
+  // choice in whichever direction the fallback picks. Draft overrides settle
+  // the pair only when both flags are pinned; otherwise persisted preferences
+  // must have loaded so babysit cannot default to false.
   const autoCreatePullRequestSettled =
-    selectedProjectDraft.autoCreatePullRequest !== undefined || preferencesHydrated;
+    (selectedProjectDraft.autoCreatePullRequest !== undefined &&
+      selectedProjectDraft.autoBabysitPullRequest !== undefined) ||
+    preferencesHydrated;
   const persistPullRequestPreferences = useCallback(
     (input: { readonly create?: boolean; readonly babysit?: boolean }) => {
       const create = input.create ?? autoCreatePullRequestChoice;
