@@ -4,7 +4,7 @@ import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/c
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { collectOpenProjectPullRequests } from "@t3tools/shared/threadPullRequestNesting";
 import { FolderPlusIcon, GitPullRequestIcon } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -53,9 +53,11 @@ export function DraftHeroHeadline({
     (store) => store.setLogicalProjectDraftThreadId,
   );
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
+  const getDraftSession = useComposerDraftStore((store) => store.getDraftSession);
   const attachedPullRequest = useComposerDraftStore((store) =>
     draftId ? (store.getDraftSession(draftId)?.attachedPullRequest ?? null) : null,
   );
+  const branchBeforeAttachRef = useRef<string | null | undefined>(undefined);
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
@@ -251,12 +253,25 @@ export function DraftHeroHeadline({
   const attachPullRequest = useCallback(
     (next: DraftAttachedPullRequest | null) => {
       if (!draftId) return;
+      const current = getDraftSession(draftId);
+      if (next == null) {
+        const previousBranch = branchBeforeAttachRef.current;
+        branchBeforeAttachRef.current = undefined;
+        setDraftThreadContext(draftId, {
+          attachedPullRequest: null,
+          ...(previousBranch !== undefined ? { branch: previousBranch } : {}),
+        });
+        return;
+      }
+      if (current?.attachedPullRequest == null) {
+        branchBeforeAttachRef.current = current?.branch ?? null;
+      }
       setDraftThreadContext(draftId, {
         attachedPullRequest: next,
-        branch: next?.headBranch ?? null,
+        ...(next.headBranch ? { branch: next.headBranch } : {}),
       });
     },
-    [draftId, setDraftThreadContext],
+    [draftId, getDraftSession, setDraftThreadContext],
   );
 
   const pullRequestSelector =

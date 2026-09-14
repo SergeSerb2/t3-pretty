@@ -311,5 +311,23 @@ describe("buildHomeListLayout", () => {
         .filter((item) => item.type === "thread")
         .map((item) => item.thread.id),
     ).toEqual([parent.id, child.id]);
+
+    const extras = Array.from({ length: 5 }, (_, index) =>
+      makeThread(`extra-${index}`, project.id),
+    );
+    const pagedGroup: HomeThreadGroup = {
+      ...group,
+      threads: [parent, child, ...extras],
+      recentThreads: [parent, child, ...extras],
+    };
+    const collapsedPaged = buildHomeListLayout({
+      groups: [pagedGroup],
+      displayStates: displayStates({}),
+      isPrNestExpanded: () => false,
+    });
+    expect(collapsedPaged.items.some((item) => item.type === "show-more")).toBe(true);
+    expect(collapsedPaged.items.find((item) => item.type === "show-more")).toMatchObject({
+      hiddenCount: 1,
+    });
   });
 });

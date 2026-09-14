@@ -175,13 +175,7 @@ export function buildHomeListLayout(input: {
         pullRequestKey: nest.pullRequestKey,
         collapsedNestStatus: resolveHighestThreadStatus(nest.children),
       });
-      const nestExpanded =
-        nest.pullRequestKey === null ||
-        input.showAllThreads === true ||
-        (input.isPrNestExpanded?.(nest.pullRequestKey) ?? true);
       for (const child of nest.children) {
-        const childKey = `${child.environmentId}:${child.id}`;
-        if (!nestExpanded && childKey !== input.selectedThreadKey) continue;
         nestedThreads.push({
           thread: child,
           nest: "child",
@@ -210,7 +204,15 @@ export function buildHomeListLayout(input: {
             : baselineCount,
           totalCount,
         );
-    const visibleThreads = nestedThreads.slice(0, visibleCount);
+    const visibleThreads = nestedThreads.slice(0, visibleCount).filter((entry) => {
+      if (entry.nest !== "child" || entry.pullRequestKey == null) return true;
+      const nestExpanded =
+        input.showAllThreads === true || (input.isPrNestExpanded?.(entry.pullRequestKey) ?? true);
+      return (
+        nestExpanded ||
+        `${entry.thread.environmentId}:${entry.thread.id}` === input.selectedThreadKey
+      );
+    });
     const hiddenCount = totalCount - visibleCount;
     const hasShowMoreRow = !input.showAllThreads && totalCount > baselineCount;
 
