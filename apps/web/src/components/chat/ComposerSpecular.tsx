@@ -35,9 +35,14 @@ export function ComposerSpecular() {
     let lastY = 0;
     let lastT = 0;
     let lastSpeed = 0;
+    const pointerMotion = window.matchMedia(
+      "(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)",
+    );
+    const motionEnabled = () =>
+      pointerMotion.matches && document.documentElement.hasAttribute("data-scenery-motion");
 
     const sampleVelocity = (event: PointerEvent) => {
-      if (event.pointerType !== "mouse") return;
+      if (event.pointerType !== "mouse" || !motionEnabled()) return;
       if (lastT !== 0) {
         lastSpeed = pointerSpeedPxPerMs(
           lastX,
@@ -56,7 +61,7 @@ export function ComposerSpecular() {
     const insideHost = (node: EventTarget | null) => node instanceof Node && host.contains(node);
 
     const applyHoverDuration = (event: PointerEvent) => {
-      if (event.pointerType !== "mouse") return;
+      if (event.pointerType !== "mouse" || !motionEnabled()) return;
       if (insideHost(event.target) === insideHost(event.relatedTarget)) return;
       const speed = composerHoverPointerSpeed(
         lastX,
@@ -68,21 +73,22 @@ export function ComposerSpecular() {
         event.timeStamp,
       );
       host.style.setProperty("--composer-hover-dur", String(composerHoverDurationScale(speed)));
+      if (insideHost(event.target)) onPointerMove(event);
     };
 
     const onPointerMove = (event: PointerEvent) => {
       // The Motion toggle hides the layer (index.css); skip the layout read
       // and rAF too so a disabled highlight costs nothing per move.
-      if (event.pointerType !== "mouse") return;
-      if (!document.documentElement.hasAttribute("data-scenery-motion")) return;
-      const rect = host.getBoundingClientRect();
-      x = event.clientX - rect.left;
-      y = event.clientY - rect.top;
+      if (event.pointerType !== "mouse" || !motionEnabled()) return;
+      x = event.clientX;
+      y = event.clientY;
       if (frame !== 0) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        layer.style.setProperty("--spec-x", `${x}px`);
-        layer.style.setProperty("--spec-y", `${y}px`);
+        if (!motionEnabled()) return;
+        const rect = host.getBoundingClientRect();
+        layer.style.setProperty("--spec-x", `${x - rect.left}px`);
+        layer.style.setProperty("--spec-y", `${y - rect.top}px`);
       });
     };
     document.addEventListener("pointermove", sampleVelocity, { passive: true, capture: true });

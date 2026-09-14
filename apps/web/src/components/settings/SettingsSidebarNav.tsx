@@ -234,6 +234,41 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     },
     [activeResultIndex, clearSearch, handleSearchResultClick, isSearching, results],
   );
+  if (!isMobile && !open) {
+    return (
+      <>
+        <SidebarContent className="items-center overflow-x-hidden py-2">
+          <SidebarMenuButton
+            size="icon"
+            aria-label="Search settings"
+            tooltip="Search settings"
+            onClick={() => {
+              setOpen(true);
+              requestAnimationFrame(() => searchInputRef.current?.focus());
+            }}
+          >
+            <SearchIcon />
+          </SidebarMenuButton>
+          {navItems.map(({ to, label, icon: Icon }) => (
+            <SidebarMenuButton
+              key={to}
+              size="icon"
+              aria-label={label}
+              tooltip={label}
+              isActive={pathname === to || pathname.startsWith(`${to}/`)}
+              onClick={() => handleSectionClick(to)}
+            >
+              <Icon />
+            </SidebarMenuButton>
+          ))}
+        </SidebarContent>
+        <SidebarFooter className="px-2 py-1">
+          <SidebarUtilityMenu />
+        </SidebarFooter>
+      </>
+    );
+  }
+
   return (
     <>
       <SidebarContent className="overflow-x-hidden">

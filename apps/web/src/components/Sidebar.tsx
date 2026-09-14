@@ -250,6 +250,7 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { SidebarCompactRail } from "./sidebar/SidebarCompactRail";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -2284,7 +2285,7 @@ export default function Sidebar() {
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const router = useRouter();
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
@@ -4576,6 +4577,24 @@ export default function Sidebar() {
     shortcutLabelForCommand(keybindings, "chat.new") ??
     (projectGroups.length <= 1 ? shortcutLabelForCommand(keybindings, "chat.newLocal") : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
+  if (!isMobile && !open) {
+    return (
+      <>
+        <SidebarChromeHeader isElectron={isElectron} />
+        <SidebarCompactRail
+          projects={projectGroups}
+          selectedProjectKey={projectScopeKey}
+          onNewThread={handleNewThreadClick}
+          onSelectProject={(project) => {
+            setProjectScopeKey(project.projectKey);
+            setThreadSearchQuery("");
+            setOpen(true);
+          }}
+        />
+        <SidebarChromeFooter />
+      </>
+    );
+  }
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />

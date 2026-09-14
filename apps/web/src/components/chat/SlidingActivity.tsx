@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 
-const HANDOFF_TIMING = { duration: 180, easing: "cubic-bezier(0.23, 1, 0.32, 1)" };
+const HANDOFF_TIMING = { duration: 280, easing: "cubic-bezier(0.23, 1, 0.32, 1)" };
 
 /** Keeps the live slot in place while one tool hands off to the next. */
 export function SlidingActivity({
@@ -57,7 +57,7 @@ export function SlidingActivity({
     incomingAnimation.current?.cancel();
     incomingAnimation.current = element.animate(
       [
-        { transform: "translateY(100%)", opacity: 0 },
+        { transform: "translateY(45%)", opacity: 0 },
         { transform: "translateY(0)", opacity: 1 },
       ],
       HANDOFF_TIMING,
@@ -69,7 +69,7 @@ export function SlidingActivity({
     const animation = outgoingRef.current.animate(
       [
         { transform: outgoing.transform, opacity: outgoing.opacity },
-        { transform: "translateY(-100%)", opacity: 0 },
+        { transform: "translateY(-45%)", opacity: 0 },
       ],
       { ...HANDOFF_TIMING, fill: "forwards" },
     );

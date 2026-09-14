@@ -197,6 +197,7 @@ import {
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { SidebarCompactRail } from "./sidebar/SidebarCompactRail";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { CommandDialogTrigger } from "./ui/command";
@@ -3153,7 +3154,7 @@ export default function LegacySidebar() {
   const updateSettings = useUpdateClientSettings();
   const handleNewThread = useNewThreadHandler();
   const { archiveThread, deleteThread } = useThreadActions();
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const routeTarget = useParams({
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
@@ -3775,6 +3776,23 @@ export default function LegacySidebar() {
       return next;
     });
   }, []);
+
+  if (!isMobile && !open) {
+    return (
+      <>
+        <SidebarChromeHeader isElectron={isElectron} />
+        <SidebarCompactRail
+          projects={sortedProjects}
+          selectedProjectKey={activeRouteProjectKey}
+          onSelectProject={(project) => {
+            useUiStateStore.getState().setProjectExpanded(project.projectKey, true);
+            setOpen(true);
+          }}
+        />
+        <SidebarChromeFooter />
+      </>
+    );
+  }
 
   return (
     <>
