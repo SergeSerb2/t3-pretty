@@ -15,7 +15,19 @@ import {
   workEntryIndicatesToolFailure,
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
+  workEntryHandoffKey,
 } from "./presentation.js";
+
+describe("workEntryHandoffKey", () => {
+  it("keeps a call stable across lifecycle events and separates turns and fallback entries", () => {
+    const started = { id: "started", turnId: "turn-1", toolCallId: "call-1" };
+    expect(workEntryHandoffKey({ ...started, id: "completed" })).toBe(workEntryHandoffKey(started));
+    expect(workEntryHandoffKey({ ...started, turnId: "turn-2" })).not.toBe(
+      workEntryHandoffKey(started),
+    );
+    expect(workEntryHandoffKey({ id: "first" })).not.toBe(workEntryHandoffKey({ id: "second" }));
+  });
+});
 
 describe("workEntryIndicatesToolFailure", () => {
   const base = {

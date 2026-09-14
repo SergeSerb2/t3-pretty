@@ -27,6 +27,7 @@ import {
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
+  workEntryHandoffKey,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
@@ -172,6 +173,7 @@ export type ThreadFeedEntry =
       readonly hasFailure: boolean;
       readonly live: boolean;
       readonly shimmer: boolean;
+      readonly liveActivityKey?: string;
     }
   | {
       readonly type: "turn-fold";
@@ -2085,6 +2087,7 @@ function appendToolGroupRows(
     ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
     ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
     ...(summaryToolIcon ? { summaryToolIcon } : {}),
+    ...(live ? { liveActivityKey: workEntryHandoffKey(latestActivity.workEntry) } : {}),
     hasFailure: activities.findLast((activity) => activity.toolLike)?.status === "failure",
     live,
     shimmer,
