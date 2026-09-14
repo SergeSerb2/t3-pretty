@@ -241,6 +241,10 @@ describe("glass contract with upstream chrome", () => {
   it("chrome skirts fade on receiving surfaces instead of overflowing host plates", () => {
     expect(indexCssSource).toContain("--workspace-titlebar-scroll-fade-height");
     expect(indexCssSource).toContain("--workspace-chrome-edge-fade");
+    expect(indexCssSource).toContain("height: var(--workspace-chrome-edge-fade)");
+    expect(messagesTimelineSource).toContain("h-[var(--workspace-titlebar-scroll-fade-height)]");
+    expect(messagesTimelineSource).toContain("pt-[var(--workspace-titlebar-scroll-fade-height)]");
+    expect(messagesTimelineSource).not.toContain("--workspace-chrome-edge-fade");
     expect(indexCssSource).toContain("--workspace-sidebar-edge-fade");
     expect(indexCssSource).toContain("[data-chrome-fade-top]::before");
     expect(indexCssSource).toContain(
