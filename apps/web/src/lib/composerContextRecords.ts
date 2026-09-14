@@ -19,6 +19,7 @@ import type {
 } from "@t3tools/contracts";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import {
   collectComposerContextReferences,
   sanitizeComposerContextLabel,
@@ -375,14 +376,18 @@ export function selectedMessageContextFragment(input: {
   });
 }
 
-/** A message's canonical text plus records; old messages are upgraded in memory on read. */
+/** A message's display text plus records; old messages are upgraded in memory on read. */
 export function resolveUserMessageContext(message: {
   text: string;
   context?: OrchestrationMessageContext | undefined;
 }): ResolvedUserMessageContext {
+  // Agent-only trailing blocks stay on the stored/sent text. Strip them before
+  // display (and before legacy upgrade, so older trailing context blocks are
+  // visible to the peeler again).
+  const displayText = stripHiddenInstructionSuffixes(message.text);
   const resolved = message.context
-    ? { text: message.text, records: message.context.records }
-    : upgradeLegacyContextMessage(message.text);
+    ? { text: displayText, records: message.context.records }
+    : upgradeLegacyContextMessage(displayText);
   return {
     text: resolved.text,
     records: resolved.records,

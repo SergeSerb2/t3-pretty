@@ -8,6 +8,7 @@ import {
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
+import { CREATE_PULL_REQUEST_MESSAGE_SUFFIX } from "@t3tools/shared/createPullRequestPrompt";
 import { onTestFinished, vi } from "vite-plus/test";
 
 const composerDraftFileMocks = vi.hoisted(() => {
@@ -497,6 +498,14 @@ describe("mobile composer drafts", () => {
     ).drafts;
     expect(reloaded[key]).toEqual(merged[key]);
     expect(reloaded.other).toEqual(DRAFT);
+  });
+
+  it("hides auto-PR instructions when merging message text into a draft", () => {
+    const merged = mergeComposerDraftContentState({ key: { text: "", attachments: [] } }, "key", {
+      text: `please add steer/queue capabilities${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`,
+      attachments: [],
+    });
+    expect(merged.key?.text).toBe("please add steer/queue capabilities");
   });
 
   it("prunes unreferenced context during a content merge", () => {

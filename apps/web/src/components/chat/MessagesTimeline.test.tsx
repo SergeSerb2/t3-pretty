@@ -6,6 +6,7 @@ import {
   TurnId,
   type ComposerContextRecord,
 } from "@t3tools/contracts";
+import { CREATE_PULL_REQUEST_MESSAGE_SUFFIX } from "@t3tools/shared/createPullRequestPrompt";
 import { act, createRef, useLayoutEffect, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -1111,6 +1112,24 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("Show full message");
     expect(markup).toContain('data-user-message-collapsible="false"');
     expect(markup).toContain("rounded-2xl bg-message p-3");
+  });
+
+  it("hides auto-PR instructions from the user bubble", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          buildUserTimelineEntry(
+            `please add steer/queue capabilities${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`,
+          ),
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("please add steer/queue capabilities");
+    expect(markup).not.toContain("Guidelines:");
+    expect(markup).not.toContain("create_pull_request_instructions");
+    expect(markup).toContain('data-user-message-collapsible="false"');
   });
 
   it("preserves arbitrary XML-like tags and comparisons in rendered user messages", async () => {

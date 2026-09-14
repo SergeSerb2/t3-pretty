@@ -1,4 +1,5 @@
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import { PLAN_IMPLEMENTATION_PROMPT_PREFIX } from "../../proposedPlan";
 
 /**
@@ -110,12 +111,12 @@ function stripInlineTerminalLabels(prompt: string, headers: ReadonlyArray<string
 
 /**
  * Reduce a sent message to the text the user typed. Send-time appends
- * (terminal and element context blocks, preview annotations, review
- * comments, the Claude ultrathink prefix) are stripped so a recalled prompt
- * never carries stale context from another turn.
+ * (auto-PR / automation blocks, terminal and element context blocks, preview
+ * annotations, review comments, the Claude ultrathink prefix) are stripped so
+ * a recalled prompt never carries stale context from another turn.
  */
 export function recallableComposerPrompt(messageText: string): string {
-  let prompt = messageText.trim();
+  let prompt = stripHiddenInstructionSuffixes(messageText).trim();
   if (prompt.startsWith(CLAUDE_ULTRATHINK_PREFIX)) {
     prompt = prompt.slice(CLAUDE_ULTRATHINK_PREFIX.length);
   }

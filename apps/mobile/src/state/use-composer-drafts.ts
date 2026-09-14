@@ -29,6 +29,7 @@ import {
   sanitizeComposerContextLabel,
   replaceComposerContextReferences,
 } from "@t3tools/shared/composerContextReferences";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
 import { DraftComposerAttachmentSchema } from "../lib/composer-image-schema";
@@ -1622,7 +1623,7 @@ export function mergeComposerDraftContentState(
     0,
     PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   );
-  const text = mergeComposerDraftText(existing.text, content.text);
+  const text = mergeComposerDraftText(existing.text, stripHiddenInstructionSuffixes(content.text));
   const context = mergeReferencedComposerContext(text, existing.context, content.context);
   const importedShareIds = content.sourceShareId
     ? [...(existing.importedShareIds ?? []), content.sourceShareId]

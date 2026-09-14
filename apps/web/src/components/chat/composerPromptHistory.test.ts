@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { CREATE_PULL_REQUEST_MESSAGE_SUFFIX } from "@t3tools/shared/createPullRequestPrompt";
 import { buildPlanImplementationPrompt } from "../../proposedPlan";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
@@ -90,6 +91,14 @@ describe("recallableComposerPrompt", () => {
       "Look at [Terminal](t3-context://v1/terminal/term-1) please\n    indented  code\n![image](t3-context://v1/image/img-1)";
     expect(recallableComposerPrompt(sent)).toBe("Look at please\n    indented  code");
     expect(recallableComposerPrompt("![image](t3-context://v1/image/img-1)")).toBe("");
+  });
+
+  it("strips trailing auto-PR instructions", () => {
+    expect(
+      recallableComposerPrompt(
+        `please add steer/queue capabilities${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`,
+      ),
+    ).toBe("please add steer/queue capabilities");
   });
 
   it("returns an empty string for app-composed sends", () => {
