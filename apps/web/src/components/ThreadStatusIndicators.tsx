@@ -495,7 +495,7 @@ export function ThreadActiveSubagentIndicator({
   className,
 }: {
   count: number | undefined;
-  className?: string;
+  className?: string | undefined;
 }) {
   const n = count ?? 0;
   const label = activeSubagentCountLabel(n);

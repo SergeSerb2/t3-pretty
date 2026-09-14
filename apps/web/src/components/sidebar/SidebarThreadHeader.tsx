@@ -1,15 +1,4 @@
-/**
- * The sidebar header: one row holding search, project scope and new thread.
- *
- * Search owns the row's text and spans it. Project scope collapses to an icon
- * that sits with new-project and new-thread as a segmented group at the end.
- * The scope icon swaps to the project favicon while a project is selected,
- * so the header still names the scope after the row that showed it is gone.
- *
- * The scope picker itself is passed in: its combobox state lives with the rest
- * of the sidebar's scope logic. `searchFieldRef` lands on the search field so
- * the picker's popup can anchor to that width rather than to its 28px trigger.
- */
+/** Full-width search above the project scope and creation controls. */
 import { FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
@@ -79,10 +68,10 @@ export function SidebarThreadHeader({
     : "New thread";
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <div
         ref={searchFieldRef}
-        className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+        className="flex h-8 min-w-0 items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-control-surface/40 px-2 text-sm text-sidebar-muted-foreground focus-within:border-ring focus-within:ring-1 focus-within:ring-ring"
       >
         <SearchIcon className="size-4 shrink-0 text-[var(--sidebar-icon-color)]" />
         <Input
@@ -93,7 +82,7 @@ export function SidebarThreadHeader({
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
           onKeyDown={onSearchKeyDown}
-          placeholder="Search"
+          placeholder="Search threads"
           aria-label="Search threads"
           role="combobox"
           aria-autocomplete="list"
@@ -122,9 +111,7 @@ export function SidebarThreadHeader({
           </Button>
         ) : null}
       </div>
-      {/* Segmented well: the icons read as one control instead of three loose
-          buttons competing with the search field beside them. */}
-      <div className="flex shrink-0 items-center rounded-md bg-sidebar-control-surface/60 p-px">
+      <div className="flex min-w-0 items-center gap-1">
         {hasProjects ? (
           <>
             {projectScope}
@@ -132,9 +119,14 @@ export function SidebarThreadHeader({
               <FolderPlusIcon />
             </SidebarHeaderIconButton>
           </>
-        ) : null}
+        ) : (
+          <span className="min-w-0 flex-1 px-2 text-xs text-sidebar-muted-foreground">
+            Projects
+          </span>
+        )}
         <SidebarHeaderIconButton
           label="New thread"
+          className="bg-sidebar-control-surface text-sidebar-foreground"
           tooltip={
             showNewThreadInProjectHint ? (
               <span className="flex flex-col gap-0.5">
@@ -159,7 +151,7 @@ export function SidebarThreadHeader({
 }
 
 /**
- * Icon button with a tooltip, sized for the header's segmented pair. Spreads
+ * Button with a tooltip, sized for the sidebar toolbar. Spreads
  * unknown props through so it can serve as a popup trigger's render target,
  * which injects its own handlers, ref and aria state.
  */
@@ -189,7 +181,7 @@ export function SidebarHeaderIconButton({
             aria-label={label}
             {...rest}
             className={cn(
-              "relative size-7 shrink-0 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
+              "relative size-7 shrink-0 pointer-coarse:size-9 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
               className,
             )}
           />

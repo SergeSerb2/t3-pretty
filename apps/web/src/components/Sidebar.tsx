@@ -646,7 +646,7 @@ function SidebarProjectFolderHeader(props: {
     <SortableSidebarFolder
       id={sidebarFolderListId(props.section, props.projectKey)}
       data-testid={`sidebar-project-folder-${props.section}`}
-      className="mx-0.5"
+      className="mx-0.5 mt-2 first:mt-0"
     >
       <button
         type="button"
@@ -655,44 +655,41 @@ function SidebarProjectFolderHeader(props: {
         aria-label={
           props.expanded ? `Collapse ${props.displayName}` : `Expand ${props.displayName}`
         }
-        className="flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-left text-xs font-medium text-sidebar-foreground/90 hover:bg-sidebar-row-hover"
+        className="flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-left text-xs font-semibold text-sidebar-foreground hover:bg-sidebar-row-hover outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
-        {!props.expanded && props.status ? (
-          <span
-            aria-label={props.status.label}
-            className={cn("relative inline-flex size-3.5 shrink-0 items-center justify-center")}
-          >
-            <span
-              className={cn(
-                "size-[9px] rounded-full",
-                props.status.dotClass,
-                props.status.pulse && "animate-status-pulse",
-              )}
-            />
-          </span>
-        ) : (
-          <ChevronRightIcon
-            aria-hidden
-            className={cn(
-              "size-3.5 shrink-0 text-sidebar-muted-foreground transition-transform",
-              props.expanded && "rotate-90",
-            )}
-          />
-        )}
+        <ChevronRightIcon
+          aria-hidden
+          className={cn(
+            "size-3 shrink-0 text-sidebar-muted-foreground",
+            props.expanded && "rotate-90",
+          )}
+        />
         {props.project ? (
           <ProjectFavicon project={props.project} className="size-3.5 shrink-0" />
         ) : (
           <FolderIcon className="size-3.5 shrink-0 text-sidebar-muted-foreground" />
         )}
         <span className="min-w-0 flex-1 truncate">{props.displayName}</span>
-        {!props.expanded ? (
-          <span className="flex shrink-0 items-center gap-1.5 text-sidebar-muted-foreground">
-            {props.status ? (
-              <span className={props.status.colorClass}>{props.status.label}</span>
-            ) : null}
-            <span>{props.threadCount}</span>
-          </span>
+        {!props.expanded && props.status ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  className={cn(
+                    "min-w-0 max-w-[35%] truncate text-[11px]",
+                    props.status.colorClass,
+                  )}
+                />
+              }
+            >
+              {props.status.label}
+            </TooltipTrigger>
+            <TooltipPopup>{props.status.label}</TooltipPopup>
+          </Tooltip>
         ) : null}
+        <span className="shrink-0 text-[11px] font-normal tabular-nums text-sidebar-muted-foreground">
+          {props.threadCount}
+        </span>
       </button>
     </SortableSidebarFolder>
   );
@@ -824,7 +821,7 @@ function SidebarSectionHeader(props: {
 }
 
 // One unsent draft session the user has invested content in. Two lines,
-// nothing else: project name, then the typed prompt. All the draft's
+// nothing else: the typed prompt, then the project name. All the draft's
 // settings (model, env mode, branch, worktree) still travel with it —
 // clicking is a plain navigation to /draft/$draftId, which touches nothing.
 // While the draft is open the row renders a frozen snapshot (see
@@ -840,7 +837,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   onNavigate: (draftId: DraftId) => void;
   onDiscard: (draftId: DraftId) => void;
 }) {
-  const { composer, draftId, onDiscard, onNavigate, session } = props;
+  const { composer, draftId, onDiscard, onNavigate } = props;
   const promptPreview =
     replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label)
       .trim()
@@ -886,20 +883,17 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         tabIndex={0}
         data-testid="sidebar-draft-row"
         className={cn(
-          "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left text-sidebar-foreground outline-none select-none",
+          "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left text-sidebar-foreground outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           props.isActive ? "bg-sidebar-row-active" : draftSurfaceClassName,
         )}
         onClick={handleActivate}
         onKeyDown={handleKeyDown}
       >
-        <div className="relative z-10 h-[4.875rem] px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
+        <div className="relative z-10 h-[3.25rem] px-[var(--sidebar-row-content-inset)] py-[7px]">
           <div className="flex h-5 min-w-0 items-center gap-1.5">
             <SquarePenIcon aria-hidden className={draftPenClassName} />
-            {props.project ? (
-              <ProjectFavicon project={props.project} className="size-4 shrink-0" />
-            ) : null}
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-secondary-label">
-              {props.projectDisplayName}
+            <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/90">
+              {preview}
             </span>
             <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-end">
               <Tooltip>
@@ -919,7 +913,13 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
               </Tooltip>
             </span>
           </div>
-          <div className="mt-0.5 truncate text-sm font-medium text-foreground/90">{preview}</div>
+          <div className="mt-0.5 flex h-4 min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground">
+            {props.project ? (
+              <ProjectFavicon project={props.project} className="size-3 shrink-0" />
+            ) : null}
+            <span className="min-w-0 flex-1 truncate">{props.projectDisplayName}</span>
+            <span className="shrink-0">Draft</span>
+          </div>
         </div>
       </div>
     </li>
@@ -1526,7 +1526,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // a useful hierarchy nor a reliable hover cue. Status now lives in the row
   // content; surface is reserved for interaction (hover, multi-select, route).
   const rowSurfaceClassName = cn(
-    "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none",
+    "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     variantAction === "unsettle" && "[&:not(:hover):not(:focus-within)_*]:text-secondary-label/70",
     props.isActive
       ? "bg-sidebar-row-active text-sidebar-foreground"
@@ -1901,7 +1901,34 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     );
   }
 
-  const diff = latestTurnDiff(thread);
+  const providerIndicators = (
+    <span aria-hidden className="pointer-events-none inline-flex shrink-0 items-center gap-1">
+      {isRemote ? (
+        <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
+          <EnvironmentMachineIcon
+            aria-hidden
+            kind={props.environmentMachine}
+            className="size-3.5"
+          />
+        </span>
+      ) : null}
+      {driverKind ? (
+        <span className="inline-flex shrink-0 items-center">
+          <ProviderInstanceIcon
+            driverKind={driverKind}
+            displayName={
+              providerEntry?.displayName ?? thread.session?.providerName ?? modelInstanceId
+            }
+            accentColor={providerEntry?.accentColor}
+            showBadge={showInstanceBadge}
+            // Glyph dims, badge stays saturated; offset matches the composer trigger.
+            iconClassName="size-3.5 opacity-60"
+            badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-[7px]"
+          />
+        </span>
+      ) : null}
+    </span>
+  );
 
   return (
     <li
@@ -1909,8 +1936,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
       className={cn(
-        // Matches the h-[4.875rem] content box; the py-0.5 padding is added on top.
-        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
+        // Match the two-line content box so offscreen rows keep accurate scroll geometry.
+        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_52px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1933,31 +1960,45 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         >
           <div
             className={cn(
-              "relative z-10 h-[4.875rem] px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]",
+              "relative z-10 h-[3.25rem] px-[var(--sidebar-row-content-inset)] py-[7px]",
               props.nest === "child" && "pl-6",
             )}
           >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               {nestToggle}
               {draftIndicator}
-              {!props.hideProjectLabel && props.project ? (
-                <ProjectFavicon project={props.project} className="size-4 shrink-0" />
-              ) : null}
-              {!props.hideProjectLabel && props.projectDisplayName ? (
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-secondary-label text-xs",
-                    shouldRecede ? "font-normal" : "font-medium",
-                  )}
-                >
-                  {props.projectDisplayName}
+              <ThreadActiveSubagentIndicator
+                className={props.isActive || isSelected ? "text-current" : undefined}
+                count={thread.activeSubagentCount}
+              />
+              {title}
+              {isRegeneratingTitle ? (
+                <span role="status" className="sr-only">
+                  Regenerating title
                 </span>
-              ) : (
-                <span className="flex-1" />
-              )}
+              ) : null}
               {nestCountLabel}
               {nestStatusLabel}
               {pinIndicator}
+              {providerIndicators}
+            </div>
+            <div className="mt-0.5 flex h-4 min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground">
+              <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+                {!props.hideProjectLabel && props.project ? (
+                  <ProjectFavicon project={props.project} className="size-3 shrink-0" />
+                ) : null}
+                {!props.hideProjectLabel && props.projectDisplayName ? (
+                  <span className="max-w-[50%] truncate">{props.projectDisplayName}</span>
+                ) : null}
+                {thread.branch ? (
+                  <>
+                    <ThreadWorktreeIndicator thread={thread} />
+                    <span className="min-w-0 flex-1 truncate">{thread.branch}</span>
+                  </>
+                ) : null}
+              </span>
+              {terminalStatusIcon}
+              {prBadge}
               {/* The visible state owns this slot's width: status at rest,
                   actions on hover/keyboard focus or while the popover is open. Keeping
                   the hidden state out of flow lets the project label reclaim
@@ -1992,7 +2033,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                                   topStatus.className,
                                 )}
                               >
-                                <AlarmClockIcon aria-hidden className="size-4 shrink-0" />
+                                <AlarmClockIcon aria-hidden className="size-3 shrink-0" />
                                 <span role="status">{topStatus.label}</span>
                               </button>
                             }
@@ -2000,31 +2041,26 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                         </Tooltip>
                       ) : (
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 font-medium",
-                            topStatus.className,
-                          )}
-                        >
+                        <span className={cn("inline-flex items-center gap-1", topStatus.className)}>
                           {topStatus.icon === "working" ? (
-                            <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
+                            <CircleDashedIcon aria-hidden className="size-3 shrink-0" />
                           ) : topStatus.icon === "input" ? (
-                            <MessageCircleQuestionIcon aria-hidden className="size-4 shrink-0" />
+                            <MessageCircleQuestionIcon aria-hidden className="size-3 shrink-0" />
                           ) : topStatus.icon === "approval" ? (
-                            <ShieldQuestionIcon aria-hidden className="size-4 shrink-0" />
+                            <ShieldQuestionIcon aria-hidden className="size-3 shrink-0" />
                           ) : topStatus.icon === "failed" ? (
-                            <CircleAlertIcon aria-hidden className="size-4 shrink-0" />
+                            <CircleAlertIcon aria-hidden className="size-3 shrink-0" />
                           ) : topStatus.icon === "monitoring" ? (
-                            <EyeIcon aria-hidden className="size-4 shrink-0" />
+                            <EyeIcon aria-hidden className="size-3 shrink-0" />
                           ) : topStatus.icon === "done" ? (
-                            <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
+                            <CircleCheckIcon aria-hidden className="size-3 shrink-0" />
                           ) : null}
                           {/* The label alone is the live region: a role="status"
                             wrapper around the ticking duration would make
                             screen readers announce every second. */}
                           <span role="status">{topStatus.label}</span>
                           {status === "working" ? (
-                            <span aria-hidden>
+                            <span aria-hidden className="hidden @min-[22rem]/sidebar-list:inline">
                               <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
                             </span>
                           ) : null}
@@ -2084,7 +2120,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                             }
                           >
                             <CheckIcon className="size-3.5" />
-                            Settle
+                            <span className="hidden @min-[22rem]/sidebar-list:inline">Settle</span>
                           </TooltipTrigger>
                           <TooltipPopup>Settle thread</TooltipPopup>
                         </Tooltip>
@@ -2094,72 +2130,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 </span>
               )}
             </div>
-            <div className="mt-1 flex min-w-0 items-center gap-1.5">
-              <ThreadActiveSubagentIndicator
-                className={props.isActive || isSelected ? "text-current" : undefined}
-                count={thread.activeSubagentCount}
-              />
-              {title}
-              {isRegeneratingTitle ? (
-                <span role="status" className="sr-only">
-                  Regenerating title
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-              {/* Always the branch. The plan step used to take this slot while
-                  working, but it truncated to a half-sentence and dropped the
-                  branch, so the row lost its most stable identifier. */}
-              {thread.branch ? (
-                <>
-                  <ThreadWorktreeIndicator thread={thread} />
-                  <span className="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground/40">
-                    {thread.branch}
-                  </span>
-                </>
-              ) : (
-                <span className="flex-1" />
-              )}
-              {terminalStatusIcon}
-              {prBadge}
-              {diff ? (
-                <span className="shrink-0 font-mono">
-                  <span className="text-diff-addition-foreground">+{diff.insertions}</span>{" "}
-                  <span className="text-diff-deletion-foreground">−{diff.deletions}</span>
-                </span>
-              ) : null}
-              <span
-                aria-hidden
-                className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
-              >
-                {isRemote ? (
-                  <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
-                    <EnvironmentMachineIcon
-                      aria-hidden
-                      kind={props.environmentMachine}
-                      className="size-3.5"
-                    />
-                  </span>
-                ) : null}
-                {driverKind ? (
-                  <span className="inline-flex shrink-0 items-center">
-                    <ProviderInstanceIcon
-                      driverKind={driverKind}
-                      displayName={
-                        providerEntry?.displayName ??
-                        thread.session?.providerName ??
-                        modelInstanceId
-                      }
-                      accentColor={providerEntry?.accentColor}
-                      showBadge={showInstanceBadge}
-                      // Glyph dims, badge stays saturated; offset matches the composer trigger.
-                      iconClassName="size-3.5 opacity-60"
-                      badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-[7px]"
-                    />
-                  </span>
-                ) : null}
-              </span>
-            </div>
           </div>
           {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
         </TooltipTrigger>
@@ -2168,15 +2138,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     </li>
   );
 });
-
-function latestTurnDiff(
-  thread: SidebarThreadSummary,
-): { insertions: number; deletions: number } | null {
-  // Shells don't carry checkpoint summaries; diff stats render only when the
-  // shell projection grows them. Kept as a seam so the row layout is ready.
-  void thread;
-  return null;
-}
 
 const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   thread: SidebarThreadSummary;
@@ -4655,6 +4616,7 @@ export default function Sidebar() {
                   <ComboboxTrigger
                     render={
                       <SidebarHeaderIconButton
+                        className="min-w-0 flex-1 justify-start gap-1.5 px-2 text-xs text-sidebar-foreground"
                         label={
                           scopedProjectGroup
                             ? `Filter threads by project: ${scopedProjectGroup.displayName}`
@@ -4672,6 +4634,10 @@ export default function Sidebar() {
                     ) : (
                       <FolderIcon className="size-4" />
                     )}
+                    <span className="min-w-0 flex-1 truncate text-left">
+                      {scopedProjectGroup?.displayName ?? "All projects"}
+                    </span>
+                    <ChevronDownIcon aria-hidden className="size-3 text-sidebar-muted-foreground" />
                   </ComboboxTrigger>
                   <ComboboxPopup
                     align="start"
@@ -4782,7 +4748,7 @@ export default function Sidebar() {
           </SidebarGroup>
         }
       >
-        <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0 flex-1">
+        <SidebarGroup className="@container/sidebar-list ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0 flex-1">
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
