@@ -240,7 +240,7 @@ ${setup}
     );
     assert.match(
       cliPack,
-      /for \(const relPath of \[\s*"dist\/bin\.mjs",\s*"dist\/client\/index\.html",\s*\]/u,
+      /for \(const relPath of \[\s*"dist\/bin\.mjs",\s*"dist\/client\/index\.html",?\s*\]/u,
     );
     assert.notInclude(cliPack, '"dist/service-launcher.mjs"');
     assert.include(publishCli, "bash scripts/fork/ensure-linux-node.sh");
