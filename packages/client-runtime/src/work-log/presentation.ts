@@ -176,6 +176,11 @@ function resolveT3McpToolPresentation(
   };
 }
 
+/** Shared live-slot identity so web and mobile hand off the same tool call. */
+export function liveActivityKey(turnId: string | null | undefined, callId: string): string {
+  return JSON.stringify([turnId, callId]);
+}
+
 /** Latest live activity stays present-tense unless the call itself failed, declined, or stopped. */
 export function liveActivityToolStatus(status: string | undefined, presentTense: boolean) {
   if (status === "failed" || status === "declined" || status === "stopped") return status;

@@ -5,6 +5,7 @@ import { ThreadId } from "@t3tools/contracts";
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
+  liveActivityKey,
   resolveViewedImageAsset,
   resolveWorkEntryToolPresentation,
   summarizeToolGroup,
@@ -16,6 +17,13 @@ import {
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
 } from "./presentation.js";
+
+describe("liveActivityKey", () => {
+  it("encodes turn and call identity for both presentation layers", () => {
+    expect(liveActivityKey("turn-1", "call-1")).toBe(JSON.stringify(["turn-1", "call-1"]));
+    expect(liveActivityKey(null, "call-1")).toBe(JSON.stringify([null, "call-1"]));
+  });
+});
 
 describe("workEntryIndicatesToolFailure", () => {
   const base = {

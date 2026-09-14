@@ -1,3 +1,4 @@
+import { liveActivityKey } from "@t3tools/client-runtime/work-log/presentation";
 import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
@@ -2460,9 +2461,9 @@ describe("buildThreadFeed", () => {
     const running = liveRow([call(1, "inProgress")]);
     const completed = liveRow([call(1, "inProgress"), call(1, "completed")]);
     const next = liveRow([call(1, "inProgress"), call(1, "completed"), call(2, "inProgress")]);
-    expect(running?.liveActivityKey).toBe(JSON.stringify([turnId, "call-1"]));
+    expect(running?.liveActivityKey).toBe(liveActivityKey(turnId, "call-1"));
     expect(completed?.liveActivityKey).toBe(running?.liveActivityKey);
-    expect(next?.liveActivityKey).toBe(JSON.stringify([turnId, "call-2"]));
+    expect(next?.liveActivityKey).toBe(liveActivityKey(turnId, "call-2"));
     expect(next?.id).toBe(running?.id);
   });
 

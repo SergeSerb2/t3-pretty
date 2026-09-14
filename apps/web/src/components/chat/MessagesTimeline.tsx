@@ -25,6 +25,7 @@ import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import {
+  liveActivityKey,
   resolveWorkEntryToolPresentation,
   resolveViewedImageAsset,
   workEntryViewedImagePath,
@@ -2501,7 +2502,7 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
         key={ctx.routeThreadKey}
         activityKey={
           row.active && !row.expanded
-            ? JSON.stringify([row.entry.turnId, row.entry.toolCallId ?? row.entry.id])
+            ? liveActivityKey(row.entry.turnId, row.entry.toolCallId ?? row.entry.id)
             : null
         }
       >

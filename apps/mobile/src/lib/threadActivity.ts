@@ -20,6 +20,7 @@ import {
   extractCommandOutputText,
   extractWorkLogToolLifecycleStatus,
   isWorktreeSetupActivity,
+  liveActivityKey,
   liveActivityToolStatus,
   normalizeCompactToolLabel,
   omitSupersededLifecycleMarkers,
@@ -2048,10 +2049,10 @@ function appendToolGroupRows(
     ...(summaryToolIcon ? { summaryToolIcon } : {}),
     ...(live
       ? {
-          liveActivityKey: JSON.stringify([
+          liveActivityKey: liveActivityKey(
             latestActivity.turnId,
             latestActivity.workEntry.toolCallId ?? latestActivity.id,
-          ]),
+          ),
         }
       : {}),
     hasFailure: activities.findLast((activity) => activity.toolLike)?.status === "failure",

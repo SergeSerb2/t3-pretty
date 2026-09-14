@@ -127,4 +127,26 @@ describe("SlidingActivity", () => {
     await act(() => renderer!.unmount());
     expect(animations.every((animation) => animation.cancel.mock.calls.length > 0)).toBe(true);
   });
+
+  it("animates from the last eligible call after a skipped handoff", async () => {
+    await render("call-1", "First");
+    vi.stubGlobal("document", { visibilityState: "hidden" });
+    await render("call-2", "Second");
+    expect(animations).toHaveLength(0);
+    vi.stubGlobal("document", { visibilityState: "visible" });
+    await render("call-2", "Second");
+    expect(labels()).toEqual(["First", "Second"]);
+  });
+
+  it("cancels an in-flight incoming handoff when the next key is skipped", async () => {
+    await render("call-1", "First");
+    await render("call-2", "Second");
+    expect(animations).toHaveLength(2);
+    vi.stubGlobal("document", { visibilityState: "hidden" });
+    await render("call-3", "Third");
+    expect(animations[0]!.cancel).toHaveBeenCalled();
+    vi.stubGlobal("document", { visibilityState: "visible" });
+    await render("call-3", "Third");
+    expect(labels()).toEqual(["Second", "Third"]);
+  });
 });

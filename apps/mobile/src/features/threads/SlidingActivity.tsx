@@ -1,5 +1,5 @@
 import { useIsFocused } from "@react-navigation/native";
-import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AppState, View } from "react-native";
 import Animated, {
   cancelAnimation,
@@ -26,6 +26,7 @@ export function SlidingActivity(props: {
 }) {
   const focused = useIsFocused();
   const reducedMotion = useReducedMotion();
+  const [appActive, setAppActive] = useState(() => AppState.currentState === "active");
   const previous = useRef(props);
   const generation = useRef(0);
   const [outgoing, setOutgoing] = useState<{ children: ReactNode; generation: number } | null>(
@@ -37,23 +38,28 @@ export function SlidingActivity(props: {
     setOutgoing((value) => (value?.generation === finishedGeneration ? null : value));
   }, []);
 
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      setAppActive(state === "active");
+    });
+    return () => subscription.remove();
+  }, []);
+
   useLayoutEffect(() => {
     const last = previous.current;
     previous.current = props;
-    if (
-      !focused ||
-      reducedMotion ||
-      props.activityKey === null ||
-      AppState.currentState !== "active"
-    ) {
+    if (!focused || reducedMotion || props.activityKey === null || !appActive) {
       cancelAnimation(incomingPosition);
       cancelAnimation(outgoingPosition);
       incomingPosition.set(0);
+      outgoingPosition.set(0);
       // oxlint-disable-next-line react/set-state-in-effect -- Retire the snapshot when native focus or motion eligibility changes.
       if (outgoing) setOutgoing(null);
       return;
     }
     if (last.activityKey === null || last.activityKey === props.activityKey) return;
+    cancelAnimation(incomingPosition);
+    cancelAnimation(outgoingPosition);
     const nextGeneration = ++generation.current;
     setOutgoing({ children: last.children, generation: nextGeneration });
     outgoingPosition.set(incomingPosition.get());

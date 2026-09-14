@@ -25,18 +25,29 @@ export function SlidingActivity({
 
   useLayoutEffect(() => {
     const last = previous.current;
-    previous.current = { activityKey, children };
     if (reducedMotion || activityKey === null) {
       incomingAnimation.current?.cancel();
+      previous.current = { activityKey, children };
       // oxlint-disable-next-line react/set-state-in-effect -- Retire the snapshot when external motion preferences or live-slot eligibility change.
       if (outgoing) setOutgoing(null);
       return;
     }
-    if (last.activityKey === null || last.activityKey === activityKey) return;
+    if (last.activityKey === null || last.activityKey === activityKey) {
+      previous.current = { activityKey, children };
+      return;
+    }
     const element = currentRef.current;
-    if (!element?.animate || document.visibilityState === "hidden") return;
-    const bounds = element.getBoundingClientRect();
-    if (bounds.bottom <= 0 || bounds.top >= window.innerHeight) return;
+    const bounds = element?.getBoundingClientRect();
+    if (
+      !element?.animate ||
+      document.visibilityState === "hidden" ||
+      bounds == null ||
+      bounds.bottom <= 0 ||
+      bounds.top >= window.innerHeight
+    ) {
+      incomingAnimation.current?.cancel();
+      return;
+    }
 
     // A fast follow-up departs from the incoming row's current position.
     // Keep only that row, so bursts never accumulate an animation backlog.
@@ -50,6 +61,7 @@ export function SlidingActivity({
       ],
       HANDOFF_TIMING,
     );
+    previous.current = { activityKey, children };
   });
 
   useLayoutEffect(() => {
