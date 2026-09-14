@@ -84,10 +84,14 @@ import {
   buildModelOptions,
   groupByProvider,
   isModelSelectionUnavailable,
+  type ModelOption,
 } from "../../lib/modelOptions";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import type { RemoteClientConnectionState } from "../../lib/connection";
-import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
+import {
+  applyProviderOptionSelection,
+  resolveProviderOptionDescriptors,
+} from "../../lib/providerOptions";
 import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { useComposerCommandMenu } from "./use-composer-command-menu";
 import {
@@ -100,6 +104,9 @@ import {
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
+import { buildThreadSettingsPickerModel } from "./thread-settings-picker";
+import { ThreadModelIdentityCaption } from "./ThreadModelIdentityCaption";
+import { buildThreadModelIdentity } from "./threadModelIdentity";
 import {
   type ExistingThreadSettingsRouteSession,
   useExistingThreadSettingsRoutePresentation,
@@ -110,10 +117,11 @@ import {
 } from "./use-thread-settings-sheet-presentation";
 
 /**
- * Height of the collapsed composer (pill + vertical padding, excluding safe-area inset).
- * Exported so the parent can compute feed overlap / content insets.
+ * Height of the collapsed composer (pill + model caption below it + vertical
+ * padding, excluding safe-area inset). Exported so the parent can compute
+ * feed overlap / content insets.
  */
-export const COMPOSER_COLLAPSED_CHROME = 60;
+export const COMPOSER_COLLAPSED_CHROME = 86;
 
 /**
  * Height of the expanded composer (card + toolbar + vertical padding, excluding safe-area inset).
@@ -554,6 +562,48 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       }),
     [currentModelOption?.capabilities, currentModelSelection.options],
   );
+  const modelLabel = currentModelOption?.label ?? currentModelSelection.model;
+  const modelIdentity = useMemo(
+    () =>
+      buildThreadModelIdentity({
+        modelLabel,
+        providerDriver: currentModelOption?.providerDriver ?? currentModelSelection.instanceId,
+        optionDescriptors: providerOptionDescriptors,
+      }),
+    [
+      currentModelOption?.providerDriver,
+      currentModelSelection.instanceId,
+      modelLabel,
+      providerOptionDescriptors,
+    ],
+  );
+  const settingsPicker = useMemo(
+    () =>
+      buildThreadSettingsPickerModel({
+        providerGroups: threadProviderGroups,
+        selectedModel: currentModelSelection,
+        optionDescriptors: providerOptionDescriptors,
+        runtimeMode: currentRuntimeMode,
+      }),
+    [currentModelSelection, currentRuntimeMode, providerOptionDescriptors, threadProviderGroups],
+  );
+  const onUpdateModelSelection = props.onUpdateModelSelection;
+  const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
+  const handleSelectModelOption = useCallback(
+    (option: ModelOption) => {
+      onUpdateModelSelection(option.selection);
+    },
+    [onUpdateModelSelection],
+  );
+  const handleSelectPickerOption = useCallback(
+    (id: string, value: string | boolean) => {
+      const options = applyProviderOptionSelection(providerOptionDescriptors, { id, value });
+      if (options) {
+        onUpdateModelSelection({ ...currentModelSelection, options });
+      }
+    },
+    [currentModelSelection, onUpdateModelSelection, providerOptionDescriptors],
+  );
   const settingsOwnerId = composerOwnerKey;
   const settingsRouteSession = useMemo<ExistingThreadSettingsRouteSession>(
     () => ({
@@ -993,6 +1043,17 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             </ComposerDictationToolbar>
           </Animated.View>
         </ComposerSurface>
+        {!isExpanded ? (
+          <ThreadModelIdentityCaption
+            identity={modelIdentity}
+            picker={settingsPicker}
+            onOpenAdvanced={openSettings}
+            onPressFallback={openSettings}
+            onSelectModel={handleSelectModelOption}
+            onSelectOption={handleSelectPickerOption}
+            onSelectRuntime={onUpdateRuntimeMode}
+          />
+        ) : null}
       </Animated.View>
 
       <VideoPreviewModal source={previewVideo} onRequestClose={closePreview} />

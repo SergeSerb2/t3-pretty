@@ -1,26 +1,14 @@
 import type { ProviderOptionDescriptor } from "@t3tools/contracts";
 
 function providerOptionValueLabel(descriptor: ProviderOptionDescriptor): string | null {
-  const currentValue: unknown = descriptor.currentValue;
-  const descriptorValues: readonly unknown[] = Object.values(descriptor);
+  if (descriptor.type !== "select") {
+    return null;
+  }
 
-  for (const descriptorValue of descriptorValues) {
-    if (!Array.isArray(descriptorValue)) {
-      continue;
-    }
-    const options: readonly unknown[] = descriptorValue;
-    for (const option of options) {
-      if (
-        typeof option === "object" &&
-        option !== null &&
-        "value" in option &&
-        option.value === currentValue &&
-        "label" in option &&
-        typeof option.label === "string"
-      ) {
-        return option.label;
-      }
-    }
+  const currentValue = descriptor.currentValue;
+  const selected = descriptor.options.find((option) => option.id === currentValue);
+  if (selected?.label) {
+    return selected.label;
   }
 
   return typeof currentValue === "string" && currentValue.length > 0 ? currentValue : null;

@@ -91,6 +91,8 @@ import {
   ThreadInspectorContentStack,
   type ThreadInspectorMode,
 } from "./thread-inspector-content-stack";
+import { threadChatHeaderSubtitle } from "./threadModelIdentity";
+import { useThreadModelIdentity } from "./use-thread-model-identity";
 
 interface ThreadInspectorSelection {
   readonly routeThreadIdentity: string | null;
@@ -321,12 +323,22 @@ function ThreadRouteContent(
 
   /* ─── Native header theming ──────────────────────────────────────── */
   const usesNativeHeaderGlass = NATIVE_LIQUID_GLASS_SUPPORTED;
-  const headerSubtitle = [
+  const headerLocation = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
   ]
     .filter(Boolean)
     .join(" · ");
+  const modelIdentity = useThreadModelIdentity(
+    routeEnvironmentRuntime?.serverConfig ?? null,
+    composer.modelSelection ?? selectedThread?.modelSelection ?? null,
+  );
+  // Native title + one subtitle. The compact model identity leads so
+  // truncation keeps which model this thread is running.
+  const headerSubtitle = threadChatHeaderSubtitle({
+    identity: modelIdentity,
+    location: headerLocation,
+  });
   /* ─── Git status for native header trigger ───────────────────────── */
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
@@ -987,7 +999,8 @@ function ThreadRouteContent(
             Platform.OS === "ios"
               ? () => (layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems)
               : undefined,
-          unstable_headerSubtitle: usesNativeHeaderGlass ? headerSubtitle : undefined,
+          unstable_headerSubtitle:
+            usesNativeHeaderGlass && headerSubtitle.length > 0 ? headerSubtitle : undefined,
           contentStyle:
             Platform.OS === "android" && materialYouStyleLayoutActive
               ? { backgroundColor: headerColor }
