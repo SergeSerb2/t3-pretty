@@ -905,6 +905,14 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   background-color: transparent;
 }
 
+/* New-thread hero (and thread-switch loading) hide the empty placeholder
+   behind a full-pane bg-background plate so light mode cannot flash window
+   chrome. That plate is the scenery photo's hole-cover; under World Scenery
+   the wallpaper is the plate. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-timeline-loading] {
+  background-color: transparent;
+}
+
 /* Chat header: frosted chrome band over the photo (SurgeCode .toolbar). The
    Pull Requests page header wears the same band, so both pages meet the photo
    with the same chrome. */

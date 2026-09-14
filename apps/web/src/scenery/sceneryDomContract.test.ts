@@ -12,6 +12,7 @@ import { describe, expect, it } from "vite-plus/test";
 import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
 import composerSpecularSource from "../components/chat/ComposerSpecular.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
+import messagesTimelineSource from "../components/chat/MessagesTimeline.tsx?raw";
 import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx?raw";
 import pullRequestSummaryTabSource from "../components/pullRequest/PullRequestSummaryTab.tsx?raw";
 import threadTerminalDrawerSource from "../components/ThreadTerminalDrawer.tsx?raw";
@@ -53,6 +54,10 @@ describe("scenery structural contract with upstream markup", () => {
     expect(chatViewSource).toContain('data-chat-messages=""');
     expect(sceneryCssSource).toMatch(
       /\[data-chat-messages\]\s*\{[^}]*background-color: transparent;/s,
+    );
+    expect(messagesTimelineSource).toContain('data-timeline-loading="true"');
+    expect(sceneryCssSource).toMatch(
+      /\[data-timeline-loading\]\s*\{[^}]*background-color: transparent;/s,
     );
   });
 
