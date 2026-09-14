@@ -2045,8 +2045,10 @@ function AssistantMessageMeta({
         "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
         alwaysVisible
           ? "opacity-100"
-          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
+          : "h-0 overflow-hidden opacity-0 pointer-coarse:h-auto pointer-coarse:overflow-visible pointer-coarse:opacity-100 focus-within:h-auto focus-within:overflow-visible focus-within:opacity-100 group-hover/assistant:h-auto group-hover/assistant:overflow-visible group-hover/assistant:opacity-100",
         className,
+        !alwaysVisible &&
+          "mt-0 pointer-coarse:mt-1.5 focus-within:mt-1.5 group-hover/assistant:mt-1.5",
       )}
     >
       <AssistantCopyButton
