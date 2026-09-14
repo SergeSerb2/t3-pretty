@@ -15,6 +15,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { DEVELOPMENT_ICON_OVERRIDES } from "../../../scripts/lib/brand-assets.ts";
 import { findEsmImportsOfExternalPackages } from "../../../scripts/lib/cli-external-packages.ts";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { packServerCli } from "./cliPack.ts";
 import {
   ServerCliBuildAssetMissingError,
   ServerCliCommandExitError,
@@ -275,95 +276,13 @@ const packCmd = Command.make(
   },
   (config) =>
     Effect.gen(function* () {
-      const path = yield* Path.Path;
-      const fs = yield* FileSystem.FileSystem;
       const repoRoot = yield* RepoRoot;
-      const serverDir = path.join(repoRoot, "apps/server");
-      const packageJsonPath = path.join(serverDir, "package.json");
-      const outDir = Option.match(config.outDir, {
-        onNone: () => serverDir,
-        onSome: (value) => (path.isAbsolute(value) ? value : path.join(repoRoot, value)),
+      yield* packServerCli({
+        repoRoot,
+        appVersion: config.appVersion,
+        outDir: config.outDir,
+        verbose: config.verbose,
       });
-
-      // `cli.ts build` emits bin.mjs (the `t3` bin, which hosts the hidden
-      // `__service-launcher` subcommand) and copies the web client. There is
-      // no sibling service-launcher entry: remotes install this tarball with
-      // npm and run `t3 __service-launcher` through the bin shim.
-      for (const relPath of ["dist/bin.mjs", "dist/client/index.html"]) {
-        const abs = path.join(serverDir, relPath);
-        if (!(yield* fs.exists(abs))) {
-          return yield* new ServerCliBuildAssetMissingError({ assetPath: abs });
-        }
-      }
-
-      yield* fs.makeDirectory(outDir, { recursive: true });
-
-      yield* Effect.acquireUseRelease(
-        Effect.gen(function* () {
-          const version = Option.getOrElse(config.appVersion, () => serverPackageJson.version);
-          const workspaceConfig = yield* readWorkspaceConfig();
-          const workspaceCatalog = workspaceConfig.catalog ?? {};
-          const pkg: PackageJson = {
-            name: serverPackageJson.name,
-            repository: serverPackageJson.repository,
-            bin: serverPackageJson.bin,
-            type: serverPackageJson.type,
-            version,
-            engines: serverPackageJson.engines,
-            files: serverPackageJson.files,
-            dependencies: resolveCatalogDependencies(
-              serverPackageJson.dependencies,
-              workspaceCatalog,
-              "apps/server",
-            ),
-            // pnpm override selectors (`@clerk/clerk-js>`) are not valid npm
-            // package names. The tarball only needs resolved runtime deps.
-            overrides: {},
-          };
-
-          return {
-            version,
-            packageJsonString: yield* encodePackageJson(pkg),
-            originalPackageJson: yield* fs.readFile(packageJsonPath),
-            icons: yield* preparePublishIcons(repoRoot, serverDir, version),
-          };
-        }),
-        (resource) =>
-          Effect.gen(function* () {
-            yield* fs.writeFileString(packageJsonPath, `${resource.packageJsonString}\n`);
-            for (const icon of resource.icons) {
-              yield* fs.writeFile(icon.targetPath, icon.publish);
-            }
-            const tarballName = `t3-${resource.version}.tgz`;
-            yield* Effect.log(`[cli] Packing ${tarballName} into ${outDir}`);
-            const spawnCommand = yield* resolveSpawnCommand("npm", [
-              "pack",
-              "--pack-destination",
-              outDir,
-            ]);
-            yield* runCommand(
-              ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-                cwd: serverDir,
-                stdout: config.verbose ? "inherit" : "ignore",
-                stderr: "inherit",
-                shell: spawnCommand.shell,
-              }),
-            );
-            const tarballPath = path.join(outDir, tarballName);
-            if (!(yield* fs.exists(tarballPath))) {
-              return yield* new ServerCliBuildAssetMissingError({ assetPath: tarballPath });
-            }
-            yield* Effect.log(`[cli] Packed ${tarballPath}`);
-          }),
-        (resource) =>
-          Effect.gen(function* () {
-            yield* fs.writeFile(packageJsonPath, resource.originalPackageJson);
-            for (const icon of resource.icons) {
-              yield* fs.writeFile(icon.targetPath, icon.original);
-            }
-            if (config.verbose) yield* Effect.log("[cli] Restored original pack assets");
-          }),
-      );
     }),
 ).pipe(Command.withDescription("Pack the server package as a tarball without publishing to npm."));
 
