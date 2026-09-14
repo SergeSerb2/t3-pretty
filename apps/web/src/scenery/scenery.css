@@ -1052,6 +1052,17 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on][data-window-
   backdrop-filter: none;
 }
 
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on][data-window-interacting]
+  [data-chrome-fade-top]::before {
+  height: var(--workspace-titlebar-scroll-fade-height);
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on][data-window-interacting]
+  [data-sidebar-state="expanded"]
+  [data-slot="sidebar-inset"]::after {
+  width: var(--workspace-sidebar-edge-fade-solid);
+}
+
 /* Right panel: the same glass plate as the left sidebar. One fill + blur on
    the chrome surface (inline body, sheet popup, sidebar mode); nested plates
    (embedded PreviewPanelShell, file/diff/preview roots) go clear so coverage
@@ -1199,6 +1210,17 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
     background-color: var(--scenery-chrome-fill-solid);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+    [data-chrome-fade-top]::before {
+    height: var(--workspace-titlebar-scroll-fade-height);
+  }
+
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+    [data-sidebar-state="expanded"]
+    [data-slot="sidebar-inset"]::after {
+    width: var(--workspace-sidebar-edge-fade-solid);
   }
 
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]

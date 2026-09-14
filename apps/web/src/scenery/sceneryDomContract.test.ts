@@ -240,8 +240,16 @@ describe("glass contract with upstream chrome", () => {
 
   it("chrome skirts fade on receiving surfaces instead of overflowing host plates", () => {
     expect(indexCssSource).toContain("--workspace-titlebar-scroll-fade-height");
-    expect(indexCssSource).toContain("--workspace-chrome-edge-fade");
-    expect(indexCssSource).toContain("--workspace-sidebar-edge-fade");
+    expect(indexCssSource).toContain("--workspace-chrome-edge-fade: 6.5rem");
+    expect(indexCssSource).toContain("--workspace-chrome-edge-fade: 8rem");
+    expect(indexCssSource).toContain("--workspace-sidebar-edge-fade: 4rem");
+    expect(indexCssSource).toContain("--workspace-sidebar-edge-fade-solid: 1rem");
+    expect(indexCssSource).not.toContain(
+      "--workspace-chrome-edge-fade: var(--workspace-titlebar-scroll-fade-height)",
+    );
+    expect(messagesTimelineSource).toContain(
+      "h-[var(--workspace-titlebar-scroll-fade-height)]",
+    );
     expect(indexCssSource).toContain("[data-chrome-fade-top]::before");
     expect(indexCssSource).toContain(
       "html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-requests-header])",
@@ -276,9 +284,26 @@ describe("glass contract with upstream chrome", () => {
     expect(sceneryCssSource).toMatch(
       /\[data-window-interacting\][\s\S]*?--scenery-chrome-fill-solid/,
     );
+    expect(indexCssSource).toMatch(
+      /\[data-window-interacting\] \[data-chrome-fade-top\]::before\s*\{[^}]*height: var\(--workspace-titlebar-scroll-fade-height\);/s,
+    );
+    expect(indexCssSource).toMatch(
+      /\[data-window-interacting\][\s\S]*?\[data-slot="sidebar-inset"\]::after\s*\{[^}]*width: var\(--workspace-sidebar-edge-fade-solid\);/s,
+    );
     expect(sceneryCssSource).toMatch(
       /@supports not[\s\S]*?\[data-workspace-header\][\s\S]*?\[data-chrome-fade-top\]::before[\s\S]*?--scenery-chrome-fill-solid/,
     );
+    expect(sceneryCssSource).toMatch(
+      /@supports not[\s\S]*?\[data-chrome-fade-top\]::before\s*\{[^}]*height: var\(--workspace-titlebar-scroll-fade-height\);/s,
+    );
+  });
+
+  it("the sidebar resize rail keeps the cursor and drops the painted bar", () => {
+    expect(sidebarSource).toContain('data-slot="sidebar-rail"');
+    expect(sidebarSource).toContain("in-data-[side=left]:cursor-w-resize");
+    expect(sidebarSource).toContain("after:bg-transparent");
+    expect(sidebarSource).toContain("hover:after:bg-transparent");
+    expect(sidebarSource).not.toContain("hover:after:bg-sidebar-border");
   });
 
   it("chrome glass panels meet without a painted divider", () => {

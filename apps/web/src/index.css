@@ -312,12 +312,16 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     var(--workspace-titlebar-layout-control-count) * var(--workspace-titlebar-control-size) +
       (var(--workspace-titlebar-layout-control-count) - 1) * 0.25rem
   );
-  /* Timeline spacer + titlebar plate skirt. Same length so the message-list
-     fade and the titlebar plate meet without a hole of wallpaper. */
+  /* Timeline spacer + titlebar plate hole. Overlay frost can be taller; this
+     token is layout only so widening the skirt does not push the transcript. */
   --workspace-titlebar-scroll-fade-height: 2.5rem;
-  --workspace-chrome-edge-fade: var(--workspace-titlebar-scroll-fade-height);
-  /* Sidebar seam only: the titlebar spacer is too wide for a side dissolve. */
-  --workspace-sidebar-edge-fade: 1rem;
+  /* Overlay height of the top chrome skirt. Behind in-flow chrome (z-index -1)
+     so header controls stay clickable; scenery messages are transparent and
+     the frost reads through the next section. */
+  --workspace-chrome-edge-fade: 6.5rem;
+  /* Sidebar seam overlay. The short solid width is for drag / no-blur plates. */
+  --workspace-sidebar-edge-fade: 4rem;
+  --workspace-sidebar-edge-fade-solid: 1rem;
 
   @variant dark {
     --appearance-contrast-target: white;
@@ -345,6 +349,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 @media (min-width: 40rem) {
   :root {
     --workspace-titlebar-scroll-fade-height: 3rem;
+    --workspace-chrome-edge-fade: 8rem;
   }
 }
 
@@ -696,6 +701,16 @@ html[data-window-interacting] [data-chrome-fade-top]::before,
 html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* Opaque interacting plates must not keep the 8rem / 6.5rem overlay. Shrink
+   to the reserved hole so a solid slab cannot paint over the transcript. */
+html[data-window-interacting] [data-chrome-fade-top]::before {
+  height: var(--workspace-titlebar-scroll-fade-height);
+}
+
+html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
+  width: var(--workspace-sidebar-edge-fade-solid);
 }
 
 /* AppKit inactive-window convention: when the desktop window is not key, the
@@ -2857,10 +2872,11 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   top: 0;
   right: 0;
   left: 0;
-  /* Behind in-flow transcript. Chat already reserves
-     --workspace-titlebar-scroll-fade-height (TIMELINE_LIST_FADE_HEADER) and
-     masks that band with topbar-scroll-fade; this plate only shows through
-     that hole. */
+  /* Behind in-flow transcript and header controls (header is z-index 20).
+     Chat reserves --workspace-titlebar-scroll-fade-height
+     (TIMELINE_LIST_FADE_HEADER) and masks that band with topbar-scroll-fade.
+     Under scenery the messages plate is transparent, so the taller overlay
+     frost reads through the next section without covering controls. */
   z-index: -1;
   height: var(--workspace-chrome-edge-fade);
   -webkit-mask-image: linear-gradient(
