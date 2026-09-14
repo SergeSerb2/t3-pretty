@@ -3539,6 +3539,10 @@ export default function Sidebar() {
               childKeys: item.childKeys,
             },
       );
+    // Pinned and Active both fold by project. Folder order is latest activity
+    // (or projectOrder when sidebar sort is manual), so a project's newest
+    // thread lifts the whole folder inside its section. Pin keys still order
+    // threads inside a pinned folder.
     const folderRows = (threads: readonly EnvironmentThreadShell[], section: "pinned" | "active") =>
       toListItems(
         flattenSectionFolders({
