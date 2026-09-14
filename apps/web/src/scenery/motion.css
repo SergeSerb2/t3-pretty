@@ -56,7 +56,7 @@ html[data-scenery-motion] [data-timeline-root].scenery-row-enter > * {
    card can recede along the same path it entered while working/thinking
    rows rise in. Fade-only (no height): the leftover hole collapses when
    the row unmounts, after it is already invisible. */
-html[data-scenery-motion] [data-timeline-root]:has([data-worktree-setup-exiting]) > * {
+html[data-scenery-motion] [data-timeline-root] > [data-worktree-setup-exiting] {
   animation: scenery-worktree-setup-exit 220ms var(--sc-ease-out) both;
 }
 
@@ -676,7 +676,7 @@ html[data-scenery-motion] [data-slot="empty-header"].max-w-none {
   }
 
   html[data-scenery-motion] [data-timeline-root].scenery-row-enter > *,
-  html[data-scenery-motion] [data-timeline-root]:has([data-worktree-setup-exiting]) > * {
+  html[data-scenery-motion] [data-timeline-root] > [data-worktree-setup-exiting] {
     animation: scenery-row-fade 150ms ease-out both;
   }
 
