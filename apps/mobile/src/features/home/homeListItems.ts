@@ -2,6 +2,10 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { nestThreadsByPullRequest } from "@t3tools/shared/threadPullRequestNesting";
 
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
+import {
+  resolveHighestThreadStatus,
+  type ThreadStatusPresentation,
+} from "../threads/threadPresentation";
 import type { HomeThreadGroup } from "./homeThreadList";
 
 /** Threads shown per project before the "Show more" affordance appears. */
@@ -36,6 +40,7 @@ export interface HomeThreadListItem {
   readonly nest: "parent" | "child" | null;
   readonly childCount: number;
   readonly pullRequestKey: string | null;
+  readonly collapsedNestStatus: ThreadStatusPresentation | null;
 }
 
 export interface HomePendingTaskListItem {
@@ -112,7 +117,8 @@ export function homeListItemsAreEqual(previous: HomeListItem, item: HomeListItem
         previous.thread === item.thread &&
         previous.isLast === item.isLast &&
         previous.nest === item.nest &&
-        previous.childCount === item.childCount
+        previous.childCount === item.childCount &&
+        previous.collapsedNestStatus?.kind === item.collapsedNestStatus?.kind
       );
     case "show-more":
       return (
@@ -159,6 +165,7 @@ export function buildHomeListLayout(input: {
       readonly nest: "parent" | "child" | null;
       readonly childCount: number;
       readonly pullRequestKey: string | null;
+      readonly collapsedNestStatus: ThreadStatusPresentation | null;
     }> = [];
     for (const nest of nestThreadsByPullRequest(group.threads)) {
       nestedThreads.push({
@@ -166,6 +173,7 @@ export function buildHomeListLayout(input: {
         nest: nest.children.length > 0 ? "parent" : null,
         childCount: nest.children.length,
         pullRequestKey: nest.pullRequestKey,
+        collapsedNestStatus: resolveHighestThreadStatus(nest.children),
       });
       const nestExpanded =
         nest.pullRequestKey === null ||
@@ -179,6 +187,7 @@ export function buildHomeListLayout(input: {
           nest: "child",
           childCount: 0,
           pullRequestKey: nest.pullRequestKey,
+          collapsedNestStatus: null,
         });
       }
     }
@@ -226,6 +235,7 @@ export function buildHomeListLayout(input: {
         nest: entry.nest,
         childCount: entry.childCount,
         pullRequestKey: entry.pullRequestKey,
+        collapsedNestStatus: entry.collapsedNestStatus,
         isLast: threadIndex === visibleThreads.length - 1 && !hasShowMoreRow,
       });
     }

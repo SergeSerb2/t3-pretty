@@ -507,6 +507,31 @@ describe("buildThreadListV2Items", () => {
       isPrNestExpanded: () => false,
     });
     expect(collapsed.items.map((item) => item.thread.id)).toEqual([parent.id]);
+
+    const sibling = makeThread({
+      id: ThreadId.make("sibling"),
+      title: "Sibling",
+      createdAt: "2026-03-03T00:00:00.000Z",
+      hasPendingApprovals: true,
+      pullRequests: [{ ...pullRequest, linkedAt: "2026-03-03T00:00:00.000Z" }],
+    });
+    const collapsedWithSelectedChild = buildThreadListV2Items({
+      threads: [parent, child, sibling],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      isPrNestExpanded: () => false,
+      selectedThreadKey: `${environmentId}:child`,
+    });
+    expect(collapsedWithSelectedChild.items.map((item) => item.thread.id)).toEqual([
+      parent.id,
+      child.id,
+    ]);
+    expect(collapsedWithSelectedChild.items[0]).toMatchObject({
+      nest: "parent",
+      childCount: 2,
+      collapsedNestStatus: { kind: "pending-approval" },
+    });
   });
 
   it("ignores the previous pull request state after a different pull request is linked", () => {

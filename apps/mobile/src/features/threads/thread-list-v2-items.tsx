@@ -38,6 +38,7 @@ import {
   type ThreadListV2Status,
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
+import type { ThreadStatusPresentation } from "./threadPresentation";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 /**
@@ -401,6 +402,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly nest?: "parent" | "child" | null;
   readonly childCount?: number;
   readonly nestExpanded?: boolean;
+  readonly collapsedNestStatus?: ThreadStatusPresentation | null;
   readonly pullRequestKey?: string | null;
   readonly onToggleNest?: (pullRequestKey: string) => void;
   /** Server supports reordering this card's section. */
@@ -761,10 +763,22 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         />
       </Pressable>
     ) : null;
+  const collapsedNestMeta =
+    props.nest === "parent" && props.nestExpanded === false && (props.childCount ?? 0) > 0 ? (
+      <>
+        <Text className="text-xs tabular-nums text-foreground-tertiary">+{props.childCount}</Text>
+        {props.collapsedNestStatus ? (
+          <Text className="text-xs font-t3-medium text-foreground-secondary" numberOfLines={1}>
+            {props.collapsedNestStatus.label}
+          </Text>
+        ) : null}
+      </>
+    ) : null;
   const cardContent = (
     <>
       <View className="flex-row items-center gap-1.5">
         {nestToggle}
+        {collapsedNestMeta}
         {props.project ? (
           <ProjectFavicon
             environmentId={thread.environmentId}

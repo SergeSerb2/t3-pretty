@@ -29,7 +29,11 @@ import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { THREAD_RENAME_MENU_ACTION } from "./thread-rename";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
 import { QueuedMessageIcon } from "./queued-message-icon";
-import { resolveHighestThreadStatus, resolveThreadStatus } from "./threadPresentation";
+import {
+  resolveHighestThreadStatus,
+  resolveThreadStatus,
+  type ThreadStatusPresentation,
+} from "./threadPresentation";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 /**
@@ -480,6 +484,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   readonly nest?: "parent" | "child" | null;
   readonly childCount?: number;
   readonly nestExpanded?: boolean;
+  readonly collapsedNestStatus?: ThreadStatusPresentation | null;
   readonly onToggleNest?: (pullRequestKey: string) => void;
   readonly pullRequestKey?: string | null;
   readonly titleRegenerationSupported: boolean;
@@ -516,6 +521,32 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
     onNewThreadOnBranch,
   } = props;
   const status = resolveThreadStatus(thread);
+  const collapsedNestMeta =
+    props.nest === "parent" && props.nestExpanded === false && (props.childCount ?? 0) > 0 ? (
+      <>
+        <Text
+          className={
+            compact
+              ? "text-sm tabular-nums text-foreground-tertiary"
+              : "text-xs tabular-nums text-foreground-tertiary"
+          }
+        >
+          +{props.childCount}
+        </Text>
+        {props.collapsedNestStatus ? (
+          <Text
+            className={
+              compact
+                ? "text-sm font-t3-medium text-foreground-secondary"
+                : "text-xs font-t3-medium text-foreground-secondary"
+            }
+            numberOfLines={1}
+          >
+            {props.collapsedNestStatus.label}
+          </Text>
+        ) : null}
+      </>
+    ) : null;
   const pr = useThreadPr(thread);
   const timestamp = relativeTime(
     thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
@@ -755,6 +786,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
                 {thread.title}
               </Text>
               <View className="flex-row items-center gap-2">
+                {collapsedNestMeta}
                 {props.hasQueuedMessages ? (
                   <QueuedMessageIcon selected={visuallySelected && !materialYouStyleLayoutActive} />
                 ) : null}
@@ -856,6 +888,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
               {thread.title}
             </Text>
             <View className="flex-row items-center gap-2">
+              {collapsedNestMeta}
               {props.hasQueuedMessages ? (
                 <QueuedMessageIcon selected={visuallySelected && !materialYouStyleLayoutActive} />
               ) : null}

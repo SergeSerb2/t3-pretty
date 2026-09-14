@@ -1,4 +1,5 @@
 import { nestThreadsByPullRequest } from "@t3tools/shared/threadPullRequestNesting";
+import { resolveHighestThreadStatus, type ThreadStatusPresentation } from "./threadPresentation";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import {
   effectiveSnoozed,
@@ -223,6 +224,7 @@ export interface ThreadListV2Item {
   readonly nest?: "parent" | "child" | null;
   readonly childCount?: number;
   readonly pullRequestKey?: string | null;
+  readonly collapsedNestStatus?: ThreadStatusPresentation | null;
 }
 
 function flattenNestedSection(
@@ -234,36 +236,34 @@ function flattenNestedSection(
   readonly nest: "parent" | "child" | null;
   readonly childCount: number;
   readonly pullRequestKey: string | null;
+  readonly collapsedNestStatus: ThreadStatusPresentation | null;
 }> {
   const flattened: Array<{
     readonly thread: EnvironmentThreadShell;
     readonly nest: "parent" | "child" | null;
     readonly childCount: number;
     readonly pullRequestKey: string | null;
+    readonly collapsedNestStatus: ThreadStatusPresentation | null;
   }> = [];
   for (const nest of nestThreadsByPullRequest(threads)) {
-    const parentKey = `${nest.parent.environmentId}:${nest.parent.id}`;
-    const childKeys = nest.children.map((child) => `${child.environmentId}:${child.id}`);
-    const nestContainsSelected =
-      selectedThreadKey !== null &&
-      (parentKey === selectedThreadKey || childKeys.includes(selectedThreadKey));
     flattened.push({
       thread: nest.parent,
       nest: nest.children.length > 0 ? "parent" : null,
       childCount: nest.children.length,
       pullRequestKey: nest.pullRequestKey,
+      collapsedNestStatus: resolveHighestThreadStatus(nest.children),
     });
-    const expanded =
-      nest.pullRequestKey === null ||
-      (isPrNestExpanded?.(nest.pullRequestKey) ?? true) ||
-      nestContainsSelected;
-    if (!expanded) continue;
+    const nestExpanded =
+      nest.pullRequestKey === null || (isPrNestExpanded?.(nest.pullRequestKey) ?? true);
     for (const child of nest.children) {
+      const childKey = `${child.environmentId}:${child.id}`;
+      if (!nestExpanded && childKey !== selectedThreadKey) continue;
       flattened.push({
         thread: child,
         nest: "child",
         childCount: 0,
         pullRequestKey: nest.pullRequestKey,
+        collapsedNestStatus: null,
       });
     }
   }
@@ -533,6 +533,7 @@ export function buildThreadListV2Items(input: {
         nest: entry.nest,
         childCount: entry.childCount,
         pullRequestKey: entry.pullRequestKey,
+        collapsedNestStatus: entry.collapsedNestStatus,
         isLast: false,
       });
     }

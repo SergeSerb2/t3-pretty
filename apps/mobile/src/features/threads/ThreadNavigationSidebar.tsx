@@ -956,6 +956,7 @@ function ThreadNavigationSidebarPane(
               projectTitle={projectTitleByProjectKey.get(scopeKey)}
               nest={item.item.nest}
               childCount={item.item.childCount}
+              collapsedNestStatus={item.item.collapsedNestStatus}
               pullRequestKey={item.item.pullRequestKey}
               nestExpanded={
                 item.item.pullRequestKey == null || !collapsedPrNests.has(item.item.pullRequestKey)
@@ -1107,6 +1108,7 @@ function ThreadNavigationSidebarPane(
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
               nest={item.nest}
               childCount={item.childCount}
+              collapsedNestStatus={item.collapsedNestStatus}
               pullRequestKey={item.pullRequestKey}
               nestExpanded={
                 item.pullRequestKey == null || !collapsedPrNests.has(item.pullRequestKey)
