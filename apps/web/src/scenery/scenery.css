@@ -1190,10 +1190,7 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
    over an arbitrary photo. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-    :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
-    background-color: color-mix(in srgb, var(--toolbar-background) 92%, transparent);
-  }
-
+    :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]),
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
     [data-chrome-fade-top]::before,
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]

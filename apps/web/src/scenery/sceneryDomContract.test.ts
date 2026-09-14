@@ -276,6 +276,9 @@ describe("glass contract with upstream chrome", () => {
     expect(sceneryCssSource).toMatch(
       /\[data-window-interacting\][\s\S]*?--scenery-chrome-fill-solid/,
     );
+    expect(sceneryCssSource).toMatch(
+      /@supports not[\s\S]*?\[data-workspace-header\][\s\S]*?\[data-chrome-fade-top\]::before[\s\S]*?--scenery-chrome-fill-solid/,
+    );
   });
 
   it("chrome glass panels meet without a painted divider", () => {
