@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.41-nightly.20260914.1722002100",
+    date: "2026-09-14",
+    items: [
+      {
+        kind: "new",
+        title: "Show active subagent count on sidebar thread rows",
+      },
+      {
+        kind: "new",
+        title: "Slide between live tool calls",
+      },
+      {
+        kind: "fixed",
+        title: "Retry Cursor turns after HTTP/2 transport dumps",
+      },
+      {
+        kind: "fixed",
+        title: "Generated live activity headlines",
+      },
+      {
+        kind: "fixed",
+        title: "Ease worktree setup into the first turn",
+      },
+      {
+        kind: "fixed",
+        title: "Fade titlebar and sidebar chrome into the next section",
+      },
+    ],
+  },
+  {
     version: "0.0.41-nightly.20260914.1707002090",
     date: "2026-09-14",
     items: [
