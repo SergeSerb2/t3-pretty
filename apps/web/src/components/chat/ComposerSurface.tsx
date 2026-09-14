@@ -1,11 +1,13 @@
 import type { ComponentProps } from "react";
 
 import { cn } from "~/lib/utils";
+import { ComposerSpecular } from "./ComposerSpecular";
 
 /** One glass backdrop until a top attachment needs the composer to cover its overlap. */
 function Shell({
   contextStrip = false,
   className,
+  children,
   ...props
 }: ComponentProps<"div"> & { contextStrip?: boolean }) {
   return (
@@ -32,7 +34,10 @@ function Shell({
         className,
       )}
       {...props}
-    />
+    >
+      {children}
+      <ComposerSpecular />
+    </div>
   );
 }
 

@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -117,12 +118,20 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   );
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const focusSearchAfterExpandRef = useRef(false);
   const [query, setQuery] = useState("");
   const [activeResultIndex, setActiveResultIndex] = useState(0);
   const searchableItems = useAvailableSettingsSearchItems();
   const results = useMemo(() => searchSettings(query, searchableItems), [query, searchableItems]);
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
+
+  useLayoutEffect(() => {
+    if (!focusSearchAfterExpandRef.current || !open) return;
+    focusSearchAfterExpandRef.current = false;
+    searchInputRef.current?.focus();
+    searchInputRef.current?.select();
+  }, [open]);
 
   useEffect(() => {
     setActiveResultIndex((index) => Math.min(index, Math.max(results.length - 1, 0)));
@@ -157,7 +166,9 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       if (isMobile) {
         setOpenMobile(true);
       } else if (!open) {
+        focusSearchAfterExpandRef.current = true;
         setOpen(true);
+        return;
       }
       requestAnimationFrame(() => {
         searchInputRef.current?.focus();
@@ -234,6 +245,41 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     },
     [activeResultIndex, clearSearch, handleSearchResultClick, isSearching, results],
   );
+  if (!isMobile && !open) {
+    return (
+      <>
+        <SidebarContent className="items-center overflow-x-hidden py-2">
+          <SidebarMenuButton
+            size="icon"
+            aria-label="Search settings"
+            tooltip="Search settings"
+            onClick={() => {
+              focusSearchAfterExpandRef.current = true;
+              setOpen(true);
+            }}
+          >
+            <SearchIcon />
+          </SidebarMenuButton>
+          {navItems.map(({ to, label, icon: Icon }) => (
+            <SidebarMenuButton
+              key={to}
+              size="icon"
+              aria-label={label}
+              tooltip={label}
+              isActive={pathname === to || pathname.startsWith(`${to}/`)}
+              onClick={() => handleSectionClick(to)}
+            >
+              <Icon />
+            </SidebarMenuButton>
+          ))}
+        </SidebarContent>
+        <SidebarFooter className="px-2 py-1">
+          <SidebarUtilityMenu />
+        </SidebarFooter>
+      </>
+    );
+  }
+
   return (
     <>
       <SidebarContent className="overflow-x-hidden">

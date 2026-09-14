@@ -21,7 +21,6 @@ import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
 import rightPanelLayoutSource from "../rightPanelLayout.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
-import settingsLayoutSource from "../components/settings/settingsLayout.tsx?raw";
 import pullRequestsRouteSource from "../routes/_chat.pull-requests.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
@@ -151,7 +150,7 @@ describe("glass contract with upstream chrome", () => {
         indexCssSource,
       )?.[0];
     const drawerSpecular =
-      /\.chat-composer-glass-shell:has\(\.chat-composer-top-drawer\) \.chat-composer-specular\s*\{[^}]+\}/.exec(
+      /\[data-slot="composer-shell"\]:has\(\[data-composer-banner-surface="attached"\]\)\s+\.chat-composer-specular\s*\{[^}]+\}/.exec(
         indexCssSource,
       )?.[0];
 
@@ -163,7 +162,7 @@ describe("glass contract with upstream chrome", () => {
   it("composites the faint composer glow after rendering full-range gradients", () => {
     const specularLayers = indexCssSource.slice(
       indexCssSource.indexOf(".chat-composer-specular::before"),
-      indexCssSource.indexOf(".chat-composer-glass-shell:hover .chat-composer-specular::after"),
+      indexCssSource.indexOf('[data-slot="composer-shell"]:hover .chat-composer-specular::after'),
     );
     expect(
       specularLayers.match(
@@ -178,6 +177,12 @@ describe("glass contract with upstream chrome", () => {
   it("header controls still paint from the --toolbar-control var", () => {
     expect(indexCssSource).toContain("[data-chat-header] [data-toolbar-control]");
     expect(indexCssSource).toContain("background-color: var(--toolbar-control)");
+  });
+
+  it("themed headers keep the toolbar chrome fill", () => {
+    expect(indexCssSource).toMatch(
+      /html\[data-theme-id\] :is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) \{\s*background-color: var\(--toolbar-background\);/,
+    );
   });
 
   it("the right panel still exposes the hooks the scenery glass plate targets", () => {
@@ -234,69 +239,6 @@ describe("glass contract with upstream chrome", () => {
     );
     expect(threadTerminalDrawerSource).toContain(
       'transparentBackground: document.documentElement.hasAttribute("data-scenery-on")',
-    );
-  });
-
-  it("chrome skirts fade on receiving surfaces instead of overflowing host plates", () => {
-    expect(indexCssSource).toContain("--workspace-titlebar-scroll-fade-height");
-    expect(indexCssSource).toContain("--workspace-chrome-edge-fade");
-    expect(indexCssSource).toContain("height: var(--workspace-chrome-edge-fade)");
-    expect(messagesTimelineSource).toContain("h-[var(--workspace-titlebar-scroll-fade-height)]");
-    expect(messagesTimelineSource).toContain("pt-[var(--workspace-titlebar-scroll-fade-height)]");
-    expect(messagesTimelineSource).not.toContain("--workspace-chrome-edge-fade");
-    expect(indexCssSource).toContain("--workspace-sidebar-edge-fade");
-    expect(indexCssSource).toContain("[data-chrome-fade-top]::before");
-    expect(indexCssSource).toContain(
-      "html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-requests-header])",
-    );
-    expect(indexCssSource).toContain("--workspace-chrome-edge-blur");
-    expect(indexCssSource).toMatch(/\[data-chrome-fade-top\]::before\s*\{[^}]*z-index: 8;/s);
-    expect(indexCssSource).toMatch(
-      /\[data-chrome-fade-top\]::before,[\s\S]*?\[data-slot="sidebar-inset"\]::after \{[^}]*background-color: var\(--toolbar-background\);/s,
-    );
-    expect(indexCssSource).toMatch(
-      /\[data-sidebar-state="expanded"\] \[data-slot="sidebar-inset"\]::after\s*\{[^}]*z-index: 10;/s,
-    );
-    expect(chatViewSource).toContain('data-chrome-fade-top=""');
-    expect(indexCssSource).toContain(
-      '[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after',
-    );
-    expect(indexCssSource).toContain("width: calc(var(--workspace-sidebar-edge-fade) + 1px)");
-    expect(indexCssSource).toMatch(
-      /\[data-sidebar-state="expanded"\] \[data-slot="sidebar-inset"\]::after \{[^}]*background-color: var\(--sidebar\);/s,
-    );
-    expect(indexCssSource).toMatch(
-      /\[data-chrome-fade-top\]\s*\{[^}]*position: relative;[^}]*isolation: isolate;/s,
-    );
-    expect(settingsLayoutSource).toContain("data-chrome-fade-top");
-    expect(indexCssSource).not.toContain(":has(> [data-chat-header])");
-    expect(indexCssSource).not.toContain(
-      ":is([data-chat-header], [data-pull-requests-header])::after",
-    );
-    expect(chatViewSource).not.toContain("overflow-x-clip");
-    expect(sceneryCssSource).toMatch(
-      /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\)\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
-    );
-    expect(indexCssSource).toMatch(
-      /\[data-chrome-fade-top\]::before[\s\S]*?backdrop-filter: blur\(var\(--workspace-chrome-edge-blur\)\) saturate\(1\.25\);/,
-    );
-    expect(sceneryCssSource).toMatch(
-      /\[data-chrome-fade-top\]::before\s*\{[^}]*backdrop-filter: blur\(var\(--workspace-chrome-edge-blur\)\) saturate\(1\.35\);/s,
-    );
-    expect(sceneryCssSource).toMatch(
-      /\[data-slot="sidebar-inset"\]::after\s*\{[^}]*backdrop-filter: blur\(var\(--workspace-chrome-edge-blur\)\) saturate\(1\.2\);/s,
-    );
-    expect(sceneryCssSource).toMatch(
-      /\[data-window-interacting\][\s\S]*?--scenery-chrome-fill-solid/,
-    );
-    expect(indexCssSource).toMatch(
-      /html\[data-window-interacting\] \[data-chrome-fade-top\]::before \{\s*background-color: var\(--toolbar-background\);\s*-webkit-backdrop-filter: none;\s*backdrop-filter: none;/s,
-    );
-    expect(indexCssSource).toMatch(
-      /@supports not \(\(-webkit-backdrop-filter: blur\(1px\)\) or \(backdrop-filter: blur\(1px\)\)\) \{\s*\[data-chrome-fade-top\]::before \{[^}]*background-color: var\(--toolbar-background\);/s,
-    );
-    expect(sceneryCssSource).toMatch(
-      /@supports not[\s\S]*?\[data-workspace-header\][\s\S]*?\[data-chrome-fade-top\]::before[\s\S]*?--scenery-chrome-fill-solid/,
     );
   });
 

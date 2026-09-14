@@ -113,7 +113,8 @@ import { isModelPickerOpen } from "../modelPickerVisibility";
 import { useShortcutModifierState } from "../shortcutModifierState";
 import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
-import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
 
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -190,6 +191,7 @@ import {
   resolveThreadStatusPill,
   orderItemsByPreferredIds,
   shouldClearThreadSelectionOnMouseDown,
+  shouldCreateNewThreadInCurrentProject,
   sortProjectsForSidebar,
   useSidebarRowSubscriptionLease,
   useThreadJumpHintVisibility,
@@ -197,6 +199,7 @@ import {
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { SidebarCompactRail } from "./sidebar/SidebarCompactRail";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { CommandDialogTrigger } from "./ui/command";
@@ -3151,9 +3154,10 @@ export default function LegacySidebar() {
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const sidebarThreadPreviewCount = useClientSettings((s) => s.sidebarThreadPreviewCount);
   const updateSettings = useUpdateClientSettings();
-  const handleNewThread = useNewThreadHandler();
+  const newThreadContext = useHandleNewThread();
+  const handleNewThread = newThreadContext.handleNewThread;
   const { archiveThread, deleteThread } = useThreadActions();
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const routeTarget = useParams({
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
@@ -3776,11 +3780,51 @@ export default function LegacySidebar() {
     });
   }, []);
 
+  const handleNewThreadClick = useCallback(
+    (event?: React.MouseEvent) => {
+      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, sortedProjects.length)) {
+        void startNewThreadFromContext({
+          activeDraftThread: newThreadContext.activeDraftThread,
+          activeThread: newThreadContext.activeThread ?? undefined,
+          defaultProjectRef: newThreadContext.defaultProjectRef,
+          handleNewThread: newThreadContext.handleNewThread,
+        });
+        return;
+      }
+      openCommandPalette({ open: "new-thread-in" });
+    },
+    [newThreadContext, sortedProjects.length],
+  );
+
+  const prewarmers = prewarmedSidebarThreadRefs.map((threadRef) => (
+    <SidebarThreadDetailPrewarmer key={scopedThreadKey(threadRef)} threadRef={threadRef} />
+  ));
+
+  if (!isMobile && !open) {
+    return (
+      <>
+        {prewarmers}
+        <SidebarChromeHeader isElectron={isElectron} />
+        <SidebarCompactRail
+          projects={sortedProjects}
+          selectedProjectKey={activeRouteProjectKey}
+          onNewThread={handleNewThreadClick}
+          onSelectProject={(project) => {
+            useUiStateStore
+              .getState()
+              .setProjectExpanded(projectExpansionPreferenceKeys(project), true);
+            expandThreadListForProject(project.projectKey);
+            setOpen(true);
+          }}
+        />
+        <SidebarChromeFooter />
+      </>
+    );
+  }
+
   return (
     <>
-      {prewarmedSidebarThreadRefs.map((threadRef) => (
-        <SidebarThreadDetailPrewarmer key={scopedThreadKey(threadRef)} threadRef={threadRef} />
-      ))}
+      {prewarmers}
       <SidebarChromeHeader isElectron={isElectron} />
 
       <SidebarProjectsContent

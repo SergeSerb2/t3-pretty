@@ -71,7 +71,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         // The wrapper carries the hiding: Badge's own `inline-flex` utility
         // outranks the components-layer `sidebar-brand-stage` display rules,
         // so the class has to live on an element without a display utility.
-        <span className="sidebar-brand-stage relative z-10 ml-1 items-center">
+        <span className="sidebar-brand-stage relative z-10 ml-1 items-center group-data-[collapsible=icon]:hidden">
           <Badge
             className="rounded-full px-1.5 text-muted-foreground"
             data-environment-identification="pill"
@@ -91,7 +91,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
     <Link
       aria-label="Go to threads"
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
+        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex group-data-[collapsible=icon]:hidden",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
@@ -209,12 +209,12 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   }, [canGoBack, closeMobileSidebar, navigate]);
 
   return (
-    <SidebarMenu className="flex-row items-center">
+    <SidebarMenu className="flex-row items-center group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:[&>li]:ml-0">
       {currentFooterPage ? (
         <SidebarMenuItem className="min-w-0 flex-1">
-          <SidebarMenuButton onClick={handleBackClick}>
+          <SidebarMenuButton onClick={handleBackClick} aria-label="Back" tooltip="Back">
             <ArrowLeftIcon />
-            <span>Back</span>
+            <span className="group-data-[collapsible=icon]:hidden">Back</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       ) : (
@@ -245,9 +245,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
-    <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1">
-      <SidebarProviderUpdatePill />
-      <SidebarUpdateArchitectureWarning />
+    <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1 group-data-[collapsible=icon]:px-2">
+      <div className="contents group-data-[collapsible=icon]:hidden">
+        <SidebarProviderUpdatePill />
+        <SidebarUpdateArchitectureWarning />
+      </div>
       <SidebarUtilityMenu />
     </SidebarFooter>
   );

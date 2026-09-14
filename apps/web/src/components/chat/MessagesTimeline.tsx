@@ -154,6 +154,7 @@ import {
 import { MessageCopyButton } from "./MessageCopyButton";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { SlidingActivity } from "./SlidingActivity";
+import { ActivityLabel } from "./ActivityLabel";
 import { inferEntryKindFromPath } from "../../pierre-icons";
 import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
@@ -2421,6 +2422,8 @@ function toolIconAcceptsTint(
 
 function LiveActivityRow({
   label,
+  activityKey = null,
+  headline = null,
   iconName,
   toolIcon,
   failed = false,
@@ -2428,6 +2431,8 @@ function LiveActivityRow({
   shimmer = false,
 }: {
   label: ReactNode;
+  activityKey?: string | null;
+  headline?: string | null;
   iconName?: WorkEntryIconName;
   toolIcon?: ToolActivityIcon | undefined;
   failed?: boolean;
@@ -2443,6 +2448,8 @@ function LiveActivityRow({
     >
       <LiveActivityContent
         label={label}
+        activityKey={activityKey}
+        headline={headline}
         iconName={iconName}
         toolIcon={toolIcon}
         failed={failed}
@@ -2460,6 +2467,8 @@ function LiveActivityRow({
 
 function LiveActivityContent({
   label,
+  activityKey = null,
+  headline = null,
   iconName,
   toolIcon,
   failed = false,
@@ -2468,6 +2477,8 @@ function LiveActivityContent({
   highlighted = false,
 }: {
   label: ReactNode;
+  activityKey?: string | null;
+  headline?: string | null;
   iconName: WorkEntryIconName | undefined;
   toolIcon?: ToolActivityIcon | undefined;
   failed?: boolean;
@@ -2503,7 +2514,13 @@ function LiveActivityContent({
           />
         </span>
       ) : null}
-      <span className={cn("min-w-0 flex-1 truncate", active && "live-tool-shine")}>{label}</span>
+      <ActivityLabel
+        activityKey={activityKey}
+        headline={headline}
+        className={cn("min-w-0 flex-1 truncate", active && "live-tool-shine")}
+      >
+        {label}
+      </ActivityLabel>
       {showTrailingFailureMark ? (
         <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
       ) : null}
@@ -2542,6 +2559,8 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
         activityKey={row.active && !row.expanded ? workEntryHandoffKey(row.entry) : null}
       >
         <LiveActivityRow
+          activityKey={row.active && !row.expanded ? workEntryHandoffKey(row.entry) : null}
+          headline={row.active ? activity.liveHeadline : null}
           label={
             row.entry.questionAnswer ? (
               <span className="flex min-w-0 gap-1.5">

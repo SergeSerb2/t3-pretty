@@ -312,12 +312,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     var(--workspace-titlebar-layout-control-count) * var(--workspace-titlebar-control-size) +
       (var(--workspace-titlebar-layout-control-count) - 1) * 0.25rem
   );
-  /* Timeline spacer stays short so at-rest messages sit below the header.
-     The frosted skirts are wider and overlay the receiving surface. */
+  /* Keep at-rest messages below the header. */
   --workspace-titlebar-scroll-fade-height: 2.5rem;
-  --workspace-chrome-edge-fade: 10rem;
-  --workspace-sidebar-edge-fade: 6.5rem;
-  --workspace-chrome-edge-blur: 40px;
 
   @variant dark {
     --appearance-contrast-target: white;
@@ -691,23 +687,7 @@ html[data-window-interacting] .chat-composer-context-strip::before {
 
 html[data-window-interacting] :is(.surface-glass, .dialog-glass, .dropdown-glass, .alert-glass),
 html[data-window-interacting] .chat-composer-glass-shell::before,
-html[data-window-interacting] .chat-composer-context-strip::before,
-html[data-window-interacting] [data-chrome-fade-top]::before,
-html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-/* Wide masked plate stays. The dissolve already goes to transparent; a short
-   interacting/fallback height would restore the hard cut this skirt removes. */
-html[data-window-interacting] [data-chrome-fade-top]::before {
-  background-color: var(--toolbar-background);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
-  background-color: var(--sidebar);
+html[data-window-interacting] .chat-composer-context-strip::before {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -1781,6 +1761,38 @@ html[data-window-inactive]
     }
   }
 
+  /* The current composer owns its hover feedback independently of its glass
+     geometry. Retargetable fades respond quickly and settle without a bounce. */
+  [data-slot="composer-shell"] {
+    --composer-hover-k: clamp(0.8, var(--composer-hover-dur, 1), 1.2);
+    --composer-hover-ease: ease;
+    --composer-light-t: 240ms;
+    --composer-bloom-t: 240ms;
+    --composer-light-delay: 0ms;
+  }
+
+  [data-slot="composer-host"]::after,
+  [data-slot="composer-shell"] [data-chat-composer-main-surface]::after {
+    transition: border-color 180ms ease;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    [data-slot="composer-shell"]:hover {
+      --composer-light-t: 180ms;
+      --composer-bloom-t: 180ms;
+    }
+
+    [data-slot="composer-shell"]:hover [data-slot="composer-host"]::after,
+    [data-slot="composer-shell"]:hover [data-chat-composer-main-surface]::after {
+      border-color: color-mix(in srgb, var(--ring) 16%, var(--chat-composer-outline));
+    }
+  }
+
+  [data-slot="composer-shell"]:focus-within [data-slot="composer-host"]::after,
+  [data-slot="composer-shell"]:focus-within [data-chat-composer-main-surface]::after {
+    border-color: color-mix(in srgb, var(--ring) 38%, var(--chat-composer-outline));
+  }
+
   /* Pointer-reactive specular: a fixed-size radial highlight rasterized once
      and moved with `translate` only, so every pointer update is a compositor
      transform on an existing layer. The listener (ComposerSpecular) only
@@ -1790,11 +1802,11 @@ html[data-window-inactive]
      The layer spans the whole glass shell — context strip included — clipped
      to the same joined silhouette as the shell's glass, so the glow follows
      the pointer down into the strip instead of cutting off at the composer
-     lip. A wider halo (::after) sits under the core and blooms from 72% to
+     lip. A wider halo (::after) sits under the core and gently grows to
      full size on hover; `scale` transitions independently of the per-frame
      `translate` updates, so tracking stays instant while the bloom settles.
      Enter and exit timing come from the shell's --composer-* hover vars: the
-     light arrives a beat after the rim and lingers longer on the way out.
+     light follows the rim and fades slightly longer on the way out.
      Each gradient keeps a full-range alpha ramp and applies its faintness as
      post-render opacity, avoiding the visible steps in a 2.5–6% ramp. */
   @media (hover: hover) and (pointer: fine) {
@@ -1810,9 +1822,9 @@ html[data-window-inactive]
         var(--composer-hover-ease) var(--composer-light-delay);
     }
 
-    .chat-composer-glass-shell-with-context .chat-composer-specular {
+    [data-slot="composer-shell"][data-with-context] .chat-composer-specular {
       border-radius: 0;
-      /* Same joined silhouette as .chat-composer-glass-shell-with-context::before. */
+      /* Same joined silhouette as [data-slot="composer-shell"][data-with-context]::before. */
       clip-path: shape(
         from 0 22px,
         curve to 22px 0 with 0 9.85px / 9.85px 0,
@@ -1839,11 +1851,12 @@ html[data-window-inactive]
 
     /* Top drawers are narrower than the shell and can vary in height, so the
        full-shell glow has no single correct clip while one is expanded. */
-    .chat-composer-glass-shell:has(.chat-composer-top-drawer) .chat-composer-specular {
+    [data-slot="composer-shell"]:has([data-composer-banner-surface="attached"])
+      .chat-composer-specular {
       display: none;
     }
 
-    .chat-composer-glass-shell:hover .chat-composer-specular {
+    [data-slot="composer-shell"]:hover .chat-composer-specular {
       opacity: 1;
     }
 
@@ -1858,7 +1871,7 @@ html[data-window-inactive]
       background: radial-gradient(circle closest-side, var(--foreground), transparent);
       opacity: 0.06;
       translate: var(--spec-x, -160px) var(--spec-y, -160px);
-      scale: 0.85;
+      scale: 0.97;
       will-change: translate;
       transition: scale calc(var(--composer-light-t) * var(--composer-hover-k))
         var(--composer-hover-ease) var(--composer-light-delay);
@@ -1880,10 +1893,10 @@ html[data-window-inactive]
       background: radial-gradient(circle closest-side, var(--foreground), transparent);
       opacity: 0.035;
       translate: var(--spec-x, -560px) var(--spec-y, -560px);
-      scale: 0.72;
+      scale: 0.95;
       will-change: translate;
       transition: scale calc(var(--composer-bloom-t) * var(--composer-hover-k))
-        var(--composer-bloom-ease) var(--composer-light-delay);
+        var(--composer-hover-ease) var(--composer-light-delay);
 
       @variant dark {
         background: radial-gradient(circle closest-side, white, transparent);
@@ -1891,8 +1904,8 @@ html[data-window-inactive]
       }
     }
 
-    .chat-composer-glass-shell:hover .chat-composer-specular::before,
-    .chat-composer-glass-shell:hover .chat-composer-specular::after {
+    [data-slot="composer-shell"]:hover .chat-composer-specular::before,
+    [data-slot="composer-shell"]:hover .chat-composer-specular::after {
       scale: 1;
     }
   }
@@ -2839,112 +2852,9 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   color: var(--contrast-toolbar-foreground);
 }
 
-/* Soft chrome skirts live on the receiving surface: the header and
-   sidebar stay clipped. The plates are wide frosted glass over the
-   next section, not a short opaque dissolve. */
 :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
   position: relative;
   z-index: 20;
-}
-
-[data-chrome-fade-top] {
-  position: relative;
-  isolation: isolate;
-}
-
-[data-sidebar-state="expanded"] [data-slot="sidebar-inset"] {
-  position: relative;
-}
-
-[data-chrome-fade-top]::before,
-[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
-  content: "";
-  pointer-events: none;
-  position: absolute;
-  background-color: var(--toolbar-background);
-  background-image: var(--surface-grain);
-  background-repeat: repeat;
-  background-size: var(--surface-grain-size);
-  -webkit-backdrop-filter: blur(var(--workspace-chrome-edge-blur)) saturate(1.25);
-  backdrop-filter: blur(var(--workspace-chrome-edge-blur)) saturate(1.25);
-}
-
-[data-chrome-fade-top]::before {
-  top: 0;
-  right: 0;
-  left: 0;
-  /* Over the transcript so backdrop-filter frosts the messages. Below the
-     header and banners (z-index 20). Full toolbar fill at the seam, then
-     the mask eases frost off so the titlebar does not end in a hard cut. */
-  z-index: 8;
-  height: var(--workspace-chrome-edge-fade);
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black 10%,
-    rgb(0 0 0 / 70%) 28%,
-    rgb(0 0 0 / 40%) 48%,
-    rgb(0 0 0 / 18%) 68%,
-    rgb(0 0 0 / 6%) 86%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black 10%,
-    rgb(0 0 0 / 70%) 28%,
-    rgb(0 0 0 / 40%) 48%,
-    rgb(0 0 0 / 18%) 68%,
-    rgb(0 0 0 / 6%) 86%,
-    transparent 100%
-  );
-}
-
-[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
-  top: var(--workspace-topbar-height);
-  bottom: 0;
-  /* Cover a subpixel seam so the sidebar fill and this plate meet. */
-  left: -1px;
-  /* Below the header (z-index 20) so titlebar controls stay clickable. */
-  z-index: 10;
-  width: calc(var(--workspace-sidebar-edge-fade) + 1px);
-  /* Full sidebar fill at the seam, then the mask dissolves it into chat.
-     A 38% plate next to an opaque sidebar reads as a hard vertical bar. */
-  background-color: var(--sidebar);
-  -webkit-mask-image: linear-gradient(
-    to right,
-    black 0%,
-    black 10%,
-    rgb(0 0 0 / 70%) 28%,
-    rgb(0 0 0 / 40%) 48%,
-    rgb(0 0 0 / 18%) 68%,
-    rgb(0 0 0 / 6%) 86%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to right,
-    black 0%,
-    black 10%,
-    rgb(0 0 0 / 70%) 28%,
-    rgb(0 0 0 / 40%) 48%,
-    rgb(0 0 0 / 18%) 68%,
-    rgb(0 0 0 / 6%) 86%,
-    transparent 100%
-  );
-}
-
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  [data-chrome-fade-top]::before {
-    background-color: var(--toolbar-background);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-
-  [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
-    background-color: var(--sidebar);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
 }
 
 html[data-theme-id] [data-chat-header] [data-slot="button"],
@@ -3065,14 +2975,6 @@ html[data-theme-id] [data-app-sidebar] {
   --sidebar-border: var(--app-theme-sidebar-border);
   --sidebar-stage-fade: var(--app-theme-sidebar);
   border-color: transparent;
-}
-
-/* T3 Chat's panel divider is deliberately pink, and its resize affordance
-   keeps that color while hovered. Do not neutralize this branded edge. */
-html[data-theme-id="t3-chat"] [data-app-sidebar] {
-  @variant dark {
-    border-color: var(--contrast-sidebar-border);
-  }
 }
 
 /* Recompute contrast wherever a subtree owns its own semantic color palette. */

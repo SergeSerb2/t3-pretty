@@ -13,6 +13,10 @@ can be selected separately for light and dark appearances.
 Android also offers **Material You Layout**, which changes shapes and spacing independently
 of the selected theme.
 
+On web and desktop, toggle the main sidebar to keep a compact navigation rail beside your
+thread. Select a project in the rail to reopen its threads, or toggle again to restore the full
+sidebar at its previous width. Drag the sidebar edge to resize it.
+
 ## Motion
 
 The main sidebar, right panel, and terminal drawer open and close immediately by default. Move the

@@ -262,9 +262,9 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         <ProjectProjectionRetention />
         <Sidebar
           side="left"
-          collapsible="offcanvas"
+          collapsible="icon"
           data-app-sidebar=""
-          className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
+          className="group-data-[side=left]:border-r-0 bg-sidebar text-sidebar-foreground"
           resizable={sidebarResizable}
         >
           {isOnSettings ? (

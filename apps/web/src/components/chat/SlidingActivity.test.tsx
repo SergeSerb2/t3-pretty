@@ -114,7 +114,7 @@ describe("SlidingActivity", () => {
     expect(animations[3]!.cancel).not.toHaveBeenCalled();
     expect(animate.mock.calls.at(-1)?.[0]).toEqual([
       { transform, opacity: "1" },
-      { transform: "translateY(-100%)", opacity: 0 },
+      { transform: "translateY(-45%)", opacity: 0 },
     ]);
     await act(() => animations[1]!.finish());
     expect(labels()).toEqual(["Second", "Third"]);
