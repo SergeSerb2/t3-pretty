@@ -312,6 +312,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     var(--workspace-titlebar-layout-control-count) * var(--workspace-titlebar-control-size) +
       (var(--workspace-titlebar-layout-control-count) - 1) * 0.25rem
   );
+  /* Timeline spacer + titlebar plate skirt. Same length so the message-list
+     fade and the titlebar plate meet without a hole of wallpaper. */
+  --workspace-titlebar-scroll-fade-height: 2.5rem;
+  --workspace-chrome-edge-fade: var(--workspace-titlebar-scroll-fade-height);
+  /* Sidebar seam only: the titlebar spacer is too wide for a side dissolve. */
+  --workspace-sidebar-edge-fade: 1rem;
 
   @variant dark {
     --appearance-contrast-target: white;
@@ -334,6 +340,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --workspace-native-controls-inset: calc(
     100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 0.75rem
   );
+}
+
+@media (min-width: 40rem) {
+  :root {
+    --workspace-titlebar-scroll-fade-height: 3rem;
+  }
 }
 
 /* The font tokens are declared outside the inline theme so utilities reference
@@ -679,7 +691,9 @@ html[data-window-interacting] .chat-composer-context-strip::before {
 
 html[data-window-interacting] :is(.surface-glass, .dialog-glass, .dropdown-glass, .alert-glass),
 html[data-window-interacting] .chat-composer-glass-shell::before,
-html[data-window-interacting] .chat-composer-context-strip::before {
+html[data-window-interacting] .chat-composer-context-strip::before,
+html[data-window-interacting] [data-chrome-fade-top]::before,
+html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -712,7 +726,7 @@ html[data-window-inactive]
 }
 
 @utility topbar-scroll-fade {
-  --topbar-scroll-fade-height: 2.5rem;
+  --topbar-scroll-fade-height: var(--workspace-titlebar-scroll-fade-height);
   -webkit-mask-image:
     linear-gradient(
       to bottom,
@@ -749,10 +763,6 @@ html[data-window-inactive]
     100% calc(var(--topbar-scroll-fade-height) + 1px),
     100% calc(100% - var(--topbar-scroll-fade-height)),
     var(--app-scrollbar-width) 100%;
-
-  @variant sm {
-    --topbar-scroll-fade-height: 3rem;
-  }
 }
 
 /* Virtualizers own their native scroll element, so they cannot use ScrollArea's
@@ -2809,9 +2819,92 @@ html[data-theme-token-probe] *::after {
 /* Workspace actions use a small, separate chrome hierarchy. Keeping these
    roles explicit prevents the thread toolbar from falling back to the default
    dark-mode whites while preserving the same theme file across clients. */
-html[data-theme-id] [data-chat-header] {
+html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
   background-color: var(--toolbar-background);
   color: var(--contrast-toolbar-foreground);
+}
+
+/* Soft chrome skirts live on the receiving surface: the header and
+   sidebar stay clipped, and the fade never hangs out of those hosts.
+   Mask the whole plate so grain and fill dissolve; a transparent-stop
+   gradient over an opaque background-color would stay a hard rectangle. */
+:is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
+  position: relative;
+  z-index: 20;
+}
+
+[data-chrome-fade-top] {
+  position: relative;
+  isolation: isolate;
+}
+
+[data-sidebar-state="expanded"] [data-slot="sidebar-inset"] {
+  position: relative;
+}
+
+[data-chrome-fade-top]::before,
+[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  background-color: var(--toolbar-background);
+  background-image: var(--surface-grain);
+  background-repeat: repeat;
+  background-size: var(--surface-grain-size);
+}
+
+[data-chrome-fade-top]::before {
+  top: 0;
+  right: 0;
+  left: 0;
+  /* Behind in-flow transcript. Chat already reserves
+     --workspace-titlebar-scroll-fade-height (TIMELINE_LIST_FADE_HEADER) and
+     masks that band with topbar-scroll-fade; this plate only shows through
+     that hole. */
+  z-index: -1;
+  height: var(--workspace-chrome-edge-fade);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
+}
+
+[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  /* Below the header (z-index 20) so the left 1rem of the titlebar stays clickable. */
+  z-index: 10;
+  width: var(--workspace-sidebar-edge-fade);
+  background-color: var(--sidebar);
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
 }
 
 html[data-theme-id] [data-chat-header] [data-slot="button"],
@@ -2931,11 +3024,7 @@ html[data-theme-id] [data-app-sidebar] {
   --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
   --sidebar-border: var(--app-theme-sidebar-border);
   --sidebar-stage-fade: var(--app-theme-sidebar);
-  border-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 10%, transparent);
-
-  @variant dark {
-    border-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 8%, transparent);
-  }
+  border-color: transparent;
 }
 
 /* T3 Chat's panel divider is deliberately pink, and its resize affordance

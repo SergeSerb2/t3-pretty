@@ -23,6 +23,7 @@ export function WorkspacePageHeader({
         className,
       )}
       {...props}
+      data-workspace-header=""
     />
   );
 }

@@ -10,6 +10,7 @@ describe("WorkspacePageHeader", () => {
     );
 
     expect(html.startsWith("<header")).toBe(true);
+    expect(html).toContain('data-workspace-header=""');
     expect(html).toContain("data-pull-requests-header");
     expect(html).toContain("data-chat-header");
   });
