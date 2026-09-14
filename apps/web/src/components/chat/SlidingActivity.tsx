@@ -28,7 +28,6 @@ export function SlidingActivity({
     if (reducedMotion || activityKey === null) {
       incomingAnimation.current?.cancel();
       previous.current = { activityKey, children };
-      // oxlint-disable-next-line react/set-state-in-effect -- Retire the snapshot when external motion preferences or live-slot eligibility change.
       if (outgoing) setOutgoing(null);
       return;
     }

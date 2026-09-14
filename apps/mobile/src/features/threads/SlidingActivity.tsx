@@ -53,7 +53,6 @@ export function SlidingActivity(props: {
       cancelAnimation(outgoingPosition);
       incomingPosition.set(0);
       outgoingPosition.set(0);
-      // oxlint-disable-next-line react/set-state-in-effect -- Retire the snapshot when native focus or motion eligibility changes.
       if (outgoing) setOutgoing(null);
       return;
     }
