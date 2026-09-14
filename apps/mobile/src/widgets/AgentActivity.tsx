@@ -230,12 +230,12 @@ export function AgentActivity(
   // Live Activities cannot run JS timers. A circular ProgressView is the
   // system-native in-flight mark — the SF Symbol it replaced was a still
   // frame, which is why the island looked frozen.
-  const renderPhaseMark = (phase: AgentActivityPhase, size: number, color: string) =>
+  const renderPhaseMark = (phase: AgentActivityPhase, size: number, color: Foreground) =>
     inFlightPhase(phase) && allowMotion ? (
       <ProgressView
         modifiers={[
           progressViewStyle("circular"),
-          tint(color),
+          ...(typeof color === "string" ? [tint(color)] : [foregroundStyle(color)]),
           frame({ width: size, height: size }),
         ]}
       />
@@ -244,7 +244,7 @@ export function AgentActivity(
     );
 
   // Relative dates keep ticking on the lock screen without a push update.
-  const renderClock = (size: number, color: string) =>
+  const renderClock = (size: number, color: Foreground) =>
     clockDate ? (
       <Text
         date={clockDate}
@@ -261,7 +261,7 @@ export function AgentActivity(
   // Per-row live time: an elapsed timer for in-flight work (ticks every
   // second without a push — the card never looks frozen), a relative age for
   // everything else (how long an approval sat, how long ago work finished).
-  const renderRowTime = (row: AgentActivityRowProps, size: number, color: string) => {
+  const renderRowTime = (row: AgentActivityRowProps, size: number, color: Foreground) => {
     const timerDate = inFlightPhase(row.phase) ? parseDate(row.startedAt) : null;
     const relativeDate = timerDate ?? parseDate(row.updatedAt);
     return relativeDate ? (
@@ -278,11 +278,14 @@ export function AgentActivity(
     ) : null;
   };
 
-  const renderProgressBar = (row: AgentActivityRowProps | undefined, color: string) =>
+  const renderProgressBar = (row: AgentActivityRowProps | undefined, color: Foreground) =>
     typeof row?.progress === "number" ? (
       <ProgressView
         value={Math.max(0, Math.min(1, row.progress))}
-        modifiers={[progressViewStyle("linear"), tint(color)]}
+        modifiers={[
+          progressViewStyle("linear"),
+          ...(typeof color === "string" ? [tint(color)] : [foregroundStyle(color)]),
+        ]}
       />
     ) : null;
 
