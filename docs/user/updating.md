@@ -5,9 +5,10 @@ When a server is behind your web or desktop app, an update notice appears in the
 conversation and **Settings → Connections**. Update the machine named in that
 notice.
 
-The explicit URLs below are for the public GitHub build. T3 Pretty Internal uses
-the [internal R2 release path](../operations/public-release-and-github-mirror.md#internal-release-path),
-and its in-app update action selects that feed automatically.
+The explicit URLs below are on the
+[R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/).
+GitHub Releases are not the update channel; the GitHub tag `desktop-r2-latest`
+is only a pointer. In-app update actions select that feed automatically.
 
 ## Before you update
 
@@ -49,14 +50,18 @@ For a T3 Pretty background service, run the matching version's CLI on the host
 to update the service and pin it to that version:
 
 ```sh
-npx --yes --package https://github.com/SergeSerb2/t3-pretty/releases/download/public-v<client-version>/t3-<client-version>.tgz t3 service update
+npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-<client-version>.tgz t3 service update
 ```
 
-Replace `<client-version>` with the version shown in the notice. `service update`
-installs the version of the CLI that invoked it, so updating from `t3.tgz`
-(latest) only resolves the mismatch when your client is on the latest release.
-The exact version from the notice always works. An older service launcher may
-require this local update before it supports remote updates and rollback.
+Replace `<client-version>` with the version shown in the notice. The feed
+publishes [`t3.tgz`](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz)
+as latest, and `t3-<version>.tgz` when that CLI build was uploaded. `service update`
+installs the version of the CLI that invoked it, so `t3.tgz` only resolves the
+mismatch when your client is on the latest release. If the exact tarball is not
+on the feed, install from
+[`install.sh`](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh)
+and then run `t3 service update`. An older service launcher may require this
+local update before it supports remote updates and rollback.
 
 See [Running T3 Code in the Background](./background-service.md) for install,
 status, and removal commands.

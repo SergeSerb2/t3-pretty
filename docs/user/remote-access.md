@@ -183,10 +183,12 @@ T3 Pretty and T3 Pretty Internal can be installed side by side, but both product
 register `t3code://`. The app installed most recently receives pairing and deep links; open the
 other app and use **Add Environment** when you need to target it explicitly.
 
-Install the T3 Pretty CLI on the remote machine first — `npx t3` is upstream T3 Code:
+Install the T3 Pretty CLI on the remote machine first from the
+[R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/)
+(`npx t3` is upstream T3 Code):
 
 ```bash
-curl -fsSL https://github.com/SergeSerb2/t3-pretty/releases/latest/download/install.sh | sh
+curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
 ```
 
 For a command-line host, replace `<private-ip>` with the host's LAN or tailnet
