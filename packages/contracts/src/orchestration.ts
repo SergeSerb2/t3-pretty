@@ -1962,6 +1962,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
 export const ThreadNativeResumeRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   nativeSessionId: ProviderNativeSessionId,
+  modelSelection: Schema.optional(ModelSelection),
   createdAt: IsoDateTime,
 });
 

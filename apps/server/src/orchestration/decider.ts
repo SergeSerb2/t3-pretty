@@ -21,6 +21,7 @@ import {
   threadPullRequestKeysEqual,
 } from "@t3tools/shared/threadPullRequests";
 import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
+import { parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -1305,6 +1306,113 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Proposed plan '${sourceProposedPlan?.planId}' belongs to thread '${sourceThread.id}' in a different project.`,
         });
       }
+      const nativeResume =
+        command.message.attachments.length === 0
+          ? parseNativeResumeCommand(command.message.text)
+          : null;
+      if (nativeResume !== null) {
+        if (
+          targetThread.session?.status === "starting" ||
+          targetThread.session?.status === "running"
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `Thread '${command.threadId}' is already starting or running a provider session.`,
+          });
+        }
+        if (nativeResume._tag === "Invalid") {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "Usage: /resume <native-session-id>",
+          });
+        }
+      }
+      // Real activity resets ANY override: it wakes an explicitly settled
+      // thread, and it clears a keep-active pin back to neutral so the
+      // thread can auto-settle again after this burst of work goes stale.
+      // A snooze clears the same way — sending a message to a snoozed
+      // thread is the user re-engaging, so the return ticket is spent.
+      const lifecycleResetEvents: Array<Omit<OrchestrationEvent, "sequence">> = [];
+      if (targetThread.settledOverride !== null) {
+        lifecycleResetEvents.push({
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.unsettled",
+          payload: {
+            threadId: command.threadId,
+            reason: "activity",
+            updatedAt: command.createdAt,
+          },
+        });
+      }
+      if (targetThread.snoozedUntil != null) {
+        lifecycleResetEvents.push({
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.unsnoozed",
+          payload: {
+            threadId: command.threadId,
+            reason: "activity",
+            updatedAt: command.createdAt,
+          },
+        });
+      }
+      if (nativeResume?._tag === "Resume") {
+        return [
+          ...lifecycleResetEvents,
+          {
+            ...(yield* withEventBase({
+              aggregateKind: "thread",
+              aggregateId: command.threadId,
+              occurredAt: command.createdAt,
+              commandId: command.commandId,
+              metadata: {},
+            })),
+            type: "thread.session-set" as const,
+            payload: {
+              threadId: command.threadId,
+              session: {
+                threadId: command.threadId,
+                status: "starting" as const,
+                providerName: targetThread.session?.providerName ?? null,
+                providerInstanceId:
+                  command.modelSelection?.instanceId ??
+                  targetThread.session?.providerInstanceId ??
+                  targetThread.modelSelection.instanceId,
+                runtimeMode: targetThread.runtimeMode,
+                activeTurnId: null,
+                lastError: null,
+                updatedAt: command.createdAt,
+              },
+            },
+          },
+          {
+            ...(yield* withEventBase({
+              aggregateKind: "thread",
+              aggregateId: command.threadId,
+              occurredAt: command.createdAt,
+              commandId: command.commandId,
+            })),
+            type: "thread.native-resume-requested" as const,
+            payload: {
+              threadId: command.threadId,
+              nativeSessionId: nativeResume.sessionId,
+              ...(command.modelSelection !== undefined
+                ? { modelSelection: command.modelSelection }
+                : {}),
+              createdAt: command.createdAt,
+            },
+          },
+        ];
+      }
       const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -1348,44 +1456,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           createdAt: command.createdAt,
         },
       };
-      // Real activity resets ANY override: it wakes an explicitly settled
-      // thread, and it clears a keep-active pin back to neutral so the
-      // thread can auto-settle again after this burst of work goes stale.
-      // A snooze clears the same way — sending a message to a snoozed
-      // thread is the user re-engaging, so the return ticket is spent.
-      const lifecycleResetEvents: Array<Omit<OrchestrationEvent, "sequence">> = [];
-      if (targetThread.settledOverride !== null) {
-        lifecycleResetEvents.push({
-          ...(yield* withEventBase({
-            aggregateKind: "thread",
-            aggregateId: command.threadId,
-            occurredAt: command.createdAt,
-            commandId: command.commandId,
-          })),
-          type: "thread.unsettled",
-          payload: {
-            threadId: command.threadId,
-            reason: "activity",
-            updatedAt: command.createdAt,
-          },
-        });
-      }
-      if (targetThread.snoozedUntil != null) {
-        lifecycleResetEvents.push({
-          ...(yield* withEventBase({
-            aggregateKind: "thread",
-            aggregateId: command.threadId,
-            occurredAt: command.createdAt,
-            commandId: command.commandId,
-          })),
-          type: "thread.unsnoozed",
-          payload: {
-            threadId: command.threadId,
-            reason: "activity",
-            updatedAt: command.createdAt,
-          },
-        });
-      }
       return [...lifecycleResetEvents, userMessageEvent, turnStartRequestedEvent];
     }
 

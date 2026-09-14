@@ -100,7 +100,8 @@ export function isOptimisticStartingThreadPending(
 ): boolean {
   return !(
     thread === null ||
-    (sessionStatus === "error" && parseNativeResumeCommand(thread.message.text)?._tag === "Resume")
+    (parseNativeResumeCommand(thread.message.text)?._tag === "Resume" &&
+      (sessionStatus === "error" || sessionStatus === "ready"))
   );
 }
 
