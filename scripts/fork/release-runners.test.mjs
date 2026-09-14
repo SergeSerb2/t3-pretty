@@ -232,6 +232,17 @@ ${setup}
     assert.match(pipeline, /key: publish-cli[\s\S]*?build\.source != "schedule"/u);
     const publishCli = NodeFS.readFileSync(NodePath.resolve(here, "publish-cli.sh"), "utf8");
     assert.include(publishCli, "cli.ts pack");
+    // Pack requires what `cli.ts build` emits. The standalone
+    // service-launcher entry is gone; the bin hosts `__service-launcher`.
+    const cliPack = NodeFS.readFileSync(
+      NodePath.resolve(here, "../../apps/server/scripts/cli.ts"),
+      "utf8",
+    );
+    assert.match(
+      cliPack,
+      /for \(const relPath of \[\s*"dist\/bin\.mjs",\s*"dist\/client\/index\.html",?\s*\]/u,
+    );
+    assert.notInclude(cliPack, '"dist/service-launcher.mjs"');
     assert.include(publishCli, "bash scripts/fork/ensure-linux-node.sh");
     assert.notInclude(publishCli, ". scripts/fork/ensure-linux-node.sh");
     assert.include(publishCli, "Do not git fetch origin");
