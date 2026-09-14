@@ -69,6 +69,10 @@ describe("ActivityLabel", () => {
     expect(animate).not.toHaveBeenCalled();
     await render("call-1", "Checking the sidebar layout");
     expect(animate).not.toHaveBeenCalled();
+    await act(() => {
+      onIntersection([{ isIntersecting: false }]);
+    });
+    expect(animate).not.toHaveBeenCalled();
     await becomeVisible();
     expect(animate).toHaveBeenCalledTimes(1);
     expect(renderer!.root.findByType("span").children).toEqual(["Checking the sidebar layout"]);

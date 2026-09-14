@@ -49,7 +49,7 @@ export function ActivityLabel({
     };
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) {
-        retire();
+        if (animation) retire();
         return;
       }
       if (animation) return;

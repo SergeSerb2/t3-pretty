@@ -3796,9 +3796,14 @@ export default function LegacySidebar() {
     [newThreadContext, sortedProjects.length],
   );
 
+  const prewarmers = prewarmedSidebarThreadRefs.map((threadRef) => (
+    <SidebarThreadDetailPrewarmer key={scopedThreadKey(threadRef)} threadRef={threadRef} />
+  ));
+
   if (!isMobile && !open) {
     return (
       <>
+        {prewarmers}
         <SidebarChromeHeader isElectron={isElectron} />
         <SidebarCompactRail
           projects={sortedProjects}
@@ -3819,9 +3824,7 @@ export default function LegacySidebar() {
 
   return (
     <>
-      {prewarmedSidebarThreadRefs.map((threadRef) => (
-        <SidebarThreadDetailPrewarmer key={scopedThreadKey(threadRef)} threadRef={threadRef} />
-      ))}
+      {prewarmers}
       <SidebarChromeHeader isElectron={isElectron} />
 
       <SidebarProjectsContent
