@@ -49,7 +49,10 @@ import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
-import { mergeProviderInstanceEnvironment } from "../provider/ProviderInstanceEnvironment.ts";
+import {
+  mergeProviderInstanceEnvironment,
+  prependGlobalEnvironment,
+} from "../provider/ProviderInstanceEnvironment.ts";
 import { isValidUsageTimeZone, UsageAggregator } from "./usageAggregation.ts";
 import { createOverrideRateTable, parseRateTable, type RateTable } from "./usagePricing.ts";
 import {
@@ -301,7 +304,10 @@ export const make = Effect.gen(function* () {
         instances.push({ config: settings.providers[driver] });
       }
       for (const instance of instances) {
-        const environment = mergeProviderInstanceEnvironment(instance.environment, hostEnvironment);
+        const environment = mergeProviderInstanceEnvironment(
+          prependGlobalEnvironment(settings.globalEnvironment, instance.environment),
+          hostEnvironment,
+        );
         const provider = driver === "claudeAgent" ? "claude" : driver;
         let home: string;
         if (driver === "codex") {

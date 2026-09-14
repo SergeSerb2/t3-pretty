@@ -602,6 +602,7 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
+    expect(DEFAULT_SERVER_SETTINGS.globalEnvironment).toEqual([]);
   });
 
   it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {
@@ -742,6 +743,17 @@ describe("ServerSettings.sourceControlWritingStyle", () => {
       mode: "custom",
       customInstructions: "Prefer concise wording.",
     });
+  });
+});
+
+describe("ServerSettingsPatch.globalEnvironment", () => {
+  it("accepts a shared environment list", () => {
+    const patch = decodeServerSettingsPatch({
+      globalEnvironment: [{ name: "OPENAI_API_KEY", value: "sk-test", sensitive: true }],
+    });
+    expect(patch.globalEnvironment).toEqual([
+      { name: "OPENAI_API_KEY", value: "sk-test", sensitive: true },
+    ]);
   });
 });
 

@@ -1098,6 +1098,12 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    exportGlobalEnvironment: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:export-global-environment",
+      tag: WS_METHODS.serverExportGlobalEnvironment,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
     // Apps (external services over remote MCP). Results land in
     // `settings.apps` through the ordinary settings stream.
     appsUpsert: createEnvironmentRpcCommand(runtime, {

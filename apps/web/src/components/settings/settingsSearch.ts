@@ -576,6 +576,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "global-environment",
+    title: "Global environment variables",
+    to: "/settings/providers",
+    searchTerms: [
+      "secrets api keys env vars shared surge connect t3 connect remote machines agents",
+    ],
+    scope: "environment",
+    providerSettingsOnly: true,
+  },
+  {
     id: "usage-providers",
     title: "Usage providers",
     to: "/settings/providers",

@@ -118,6 +118,13 @@ describe("searchSettings", () => {
     },
   );
 
+  it("finds global environment variables from the providers page", () => {
+    expect(searchSettings("global environment variables")[0]).toMatchObject({
+      id: "global-environment",
+      to: "/settings/providers",
+    });
+  });
+
   it("returns no results for an empty query", () => {
     expect(searchSettings("   ", ITEMS)).toEqual([]);
   });

@@ -5,7 +5,28 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 
-import { mergeProviderInstanceEnvironment } from "./ProviderInstanceEnvironment.ts";
+import {
+  mergeProviderInstanceEnvironment,
+  prependGlobalEnvironment,
+} from "./ProviderInstanceEnvironment.ts";
+
+describe("prependGlobalEnvironment", () => {
+  it("lets instance values win after the shared list", () => {
+    expect(
+      prependGlobalEnvironment(
+        [
+          { name: "SHARED", value: "global", sensitive: true },
+          { name: "OVERRIDE", value: "global", sensitive: false },
+        ],
+        [{ name: "OVERRIDE", value: "instance", sensitive: false }],
+      ),
+    ).toEqual([
+      { name: "SHARED", value: "global", sensitive: true },
+      { name: "OVERRIDE", value: "global", sensitive: false },
+      { name: "OVERRIDE", value: "instance", sensitive: false },
+    ]);
+  });
+});
 
 describe("mergeProviderInstanceEnvironment", () => {
   it.effect.each([
