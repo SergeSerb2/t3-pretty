@@ -70,19 +70,18 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
       });
       continue;
     }
-    // Mobile: storage inventory is intentionally unsupported. The worktree
-    // management APIs require server-side file enumeration that assumes
-    // direct filesystem access patterns only safe on desktop. Mobile has no
-    // SettingsEnvironmentStorage route in Stack and never navigates here.
-    // This atom exists only to satisfy shared state shape; always returns
-    // unsupported for consistency with web's capability check above.
+    const result =
+      config.environment.capabilities.storageInventoryStream === true
+        ? get(serverEnvironment.storageInventoryStream({ environmentId, input: {} }))
+        : get(serverEnvironment.storageInventory({ environmentId, input: {} }));
+    const inventory = Option.getOrNull(AsyncResult.value(result));
     statuses.push({
       environmentId,
       label: presentation.entry.target.label,
-      isPending: false,
-      unsupported: true,
-      error: null,
-      inventory: null,
+      isPending: result.waiting,
+      unsupported: false,
+      error: result._tag === "Failure" ? "This environment could not report storage." : null,
+      inventory,
     });
   }
   return statuses;
@@ -109,8 +108,22 @@ export function useStorageInventories(enabled = true): StorageInventoryView {
   const environments = enabled ? observedEnvironments : retainedEnvironmentsRef.current;
 
   const refresh = useCallback(() => {
-    // Storage inventory refresh is not available in mobile
-  }, []);
+    for (const environment of environments) {
+      if (environment.unsupported) continue;
+      appAtomRegistry.refresh(
+        serverEnvironment.storageInventory({
+          environmentId: environment.environmentId,
+          input: {},
+        }),
+      );
+      appAtomRegistry.refresh(
+        serverEnvironment.storageInventoryStream({
+          environmentId: environment.environmentId,
+          input: {},
+        }),
+      );
+    }
+  }, [environments]);
 
   return {
     environments,
@@ -123,5 +136,16 @@ export function useStorageInventories(enabled = true): StorageInventoryView {
 }
 
 export function refreshStorageInventory(environmentId: EnvironmentId): void {
-  // Storage inventory refresh is not available in mobile
+  appAtomRegistry.refresh(
+    serverEnvironment.storageInventory({
+      environmentId,
+      input: {},
+    }),
+  );
+  appAtomRegistry.refresh(
+    serverEnvironment.storageInventoryStream({
+      environmentId,
+      input: {},
+    }),
+  );
 }
