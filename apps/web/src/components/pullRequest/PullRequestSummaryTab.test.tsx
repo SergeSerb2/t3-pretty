@@ -80,7 +80,9 @@ function render(value = detail) {
       detail={value}
       activityPending={false}
       activityError={null}
+      actionPending={false}
       onRefresh={() => {}}
+      onCommentAction={() => {}}
     />
   );
 }
