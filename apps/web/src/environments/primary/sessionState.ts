@@ -11,7 +11,9 @@ import { fetchSessionState } from "./auth";
 
 const primarySessionStateAtom = Atom.make(
   Effect.suspend(() =>
-    isLocalEnvironmentDisabled() ? Effect.succeed(null) : Effect.promise(fetchSessionState),
+    isLocalEnvironmentDisabled()
+      ? Effect.succeed(null)
+      : Effect.promise(() => fetchSessionState()),
   ),
 ).pipe(
   Atom.swr({ staleTime: 5_000, revalidateOnMount: true }),

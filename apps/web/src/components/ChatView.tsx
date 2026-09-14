@@ -2644,7 +2644,6 @@ export default function ChatView(props: ChatViewProps) {
             threadContinuation={versionMismatchThreadContinuation}
             targetVersion={versionMismatch.clientVersion}
             label={updateFailed ? "Retry" : "Update"}
-            variant="ghost"
           />
         ),
         ...(updateInProgress || (!updateFailed && !versionMismatchDismissKey)

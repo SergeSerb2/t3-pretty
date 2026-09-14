@@ -10,6 +10,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import * as Socket from "effect/unstable/socket/Socket";
@@ -1678,7 +1679,7 @@ describe("RpcSessionFactory", () => {
       });
       expect((yield* Fiber.join(configFiber))._tag).toBe("RpcClientError");
       expect((yield* Fiber.join(customConfigFiber))._tag).toBe("RpcClientError");
-    }),
+    }).pipe(Effect.scoped),
   );
 
   it.effect("tolerates two missed pong windows before closing the session", () =>

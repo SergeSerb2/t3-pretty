@@ -1,4 +1,5 @@
 import { ChevronsLeftRightEllipsisIcon, EllipsisIcon, PlusIcon, QrCodeIcon } from "lucide-react";
+import { useLocation } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/unstable/reactivity";
 import {
@@ -165,7 +166,7 @@ import {
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "~/state/server";
-import { ConnectionStatusDot } from "../ConnectionStatusDot";
+import { ConnectionStatusDot, connectionPhaseDotClassName } from "../ConnectionStatusDot";
 import {
   ServerUpdateAction,
   ServerUpdateProgress,
@@ -3741,15 +3742,6 @@ export function ConnectionsSettings() {
                     />
                   </SettingsSection>
                 )}
-                {selectedEnvironment.entry.enabled && loadBalancingEnvironments.length > 1 ? (
-                  <SettingsSection title="Thread placement">
-                    <LoadBalancingPreference environment={selectedEnvironment} />
-                  </SettingsSection>
-                ) : null}
-                <GitHubRoutingSettings
-                  environments={environments}
-                  selectedEnvironmentId={selectedEnvironment.environmentId}
-                />
               </div>
             ) : null}
           </ScrollArea>
