@@ -1000,7 +1000,7 @@ function ThreadRouteContent(
               ? () => (layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems)
               : undefined,
           unstable_headerSubtitle:
-            Platform.OS === "ios" && headerSubtitle.length > 0 ? headerSubtitle : undefined,
+            usesNativeHeaderGlass && headerSubtitle.length > 0 ? headerSubtitle : undefined,
           contentStyle:
             Platform.OS === "android" && materialYouStyleLayoutActive
               ? { backgroundColor: headerColor }
