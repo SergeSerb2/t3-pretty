@@ -3417,3 +3417,5 @@
   - edited `apps/web/src/components/pullRequest/PullRequestSummaryTab.test.tsx`
 - `web-typecheck` failed after merging `v0.0.41-nightly.20260914.1722`; repaired with `gpt-5.6-sol`: Updated the pull request summary test fixture so its no-op comment action returns the required promise and comment-posted result. Suggestion-level diagnostics were left unchanged.
   - edited `apps/web/src/components/pullRequest/PullRequestSummaryTab.test.tsx`
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260914.1722`; repaired with `gpt-5.6-sol`: Updated live headline derivation to use the non-nullable running turn source exposed by the merged parent API, resolving TS2871 without weakening T3 Pretty behavior.
+  - edited `apps/mobile/src/state/use-thread-composer-state.ts`

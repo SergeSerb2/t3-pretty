@@ -271,10 +271,7 @@ export function useThreadComposerState() {
 
   const liveTurnHeadline = useMemo(() => {
     const runningTurnId =
-      (selectedThread?.session?.status === "running"
-        ? (selectedThread.session.activeTurnId ?? null)
-        : null) ??
-      (selectedThread?.latestTurn?.state === "running" ? selectedThread.latestTurn.turnId : null);
+      selectedThread?.latestTurn?.state === "running" ? selectedThread.latestTurn.turnId : null;
     return deriveLiveTurnHeadline(
       selectedThreadActivities ?? [],
       runningTurnId,
