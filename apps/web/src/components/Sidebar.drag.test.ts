@@ -62,9 +62,10 @@ function preview(
   active: string,
   over: string,
   scale = 1,
+  cardHeight = 82,
 ) {
   const strategy = createSidebarSortingStrategy(input);
-  const args = layout(input.items, active, over, scale);
+  const args = layout(input.items, active, over, scale, cardHeight);
   return new Map(
     input.items.map((item, index) => [sidebarListItemId(item), strategy({ ...args, index })]),
   );
@@ -478,8 +479,9 @@ describe("sidebar drag projection", () => {
       "a1",
       "p",
       2,
+      56,
     );
-    expect(result.get(sidebarMarkerId("pinned-divider"))?.y).toBe(32 + 165);
+    expect(result.get(sidebarMarkerId("pinned-divider"))?.y).toBe(32 + 113);
   });
 
   it("keeps the pinned header above the first arriving pin", () => {
@@ -623,24 +625,27 @@ describe("sidebar drag projection", () => {
     expect(result.get(sidebarMarkerId("snoozed-header"))).toEqual({ ...stationary, y: -46 });
   });
 
-  it("derives missing card geometry from the measured root scale", () => {
-    const items = [
-      pinnedHeader,
-      divider,
-      marker("active-placeholder"),
-      settledHeader,
-      thread("s", "settled"),
-    ];
-    const result = preview(
-      { items, settledOrder: [], settledExpanded: true },
-      "s",
-      sidebarMarkerId("pinned-header"),
-      0.75,
-    );
-    expect(result.get(sidebarMarkerId("pinned-header"))).toEqual(stationary);
-    expect(result.get(sidebarMarkerId("pinned-divider"))?.y).toBe(62.5);
-    expect(result.get(sidebarMarkerId("active-placeholder"))?.y).toBe(62.5);
-  });
+  it.each([0.75, 1, 1.5, 2])(
+    "derives compact card geometry at %sx scale with no active rows",
+    (scale) => {
+      const items = [
+        pinnedHeader,
+        divider,
+        marker("active-placeholder"),
+        settledHeader,
+        thread("s", "settled"),
+      ];
+      const result = preview(
+        { items, settledOrder: [], settledExpanded: true },
+        "s",
+        sidebarMarkerId("pinned-header"),
+        scale,
+      );
+      expect(result.get(sidebarMarkerId("pinned-header"))).toEqual(stationary);
+      expect(result.get(sidebarMarkerId("pinned-divider"))?.y).toBe(56 * scale + 1);
+      expect(result.get(sidebarMarkerId("active-placeholder"))?.y).toBe(56 * scale + 1);
+    },
+  );
 
   it("updates the projection when the target or measured geometry changes", () => {
     const strategy = createSidebarSortingStrategy({

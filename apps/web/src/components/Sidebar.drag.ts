@@ -143,10 +143,10 @@ export function createSidebarSortingStrategy(input: {
       else slimHeight ??= rects[index]?.height;
       if (item.key !== active.key) groups[item.section].push(item);
     }
-    // Cards are 4.875rem + 0.25rem padding; slim rows/placeholders are h-9.
+    // Cards are 3.25rem + 0.25rem padding; slim rows/placeholders are h-9.
     const scale =
-      slimHeight !== undefined ? slimHeight / 36 : (headerScale ?? (cardHeight ?? 82) / 82);
-    cardHeight ??= 82 * scale;
+      slimHeight !== undefined ? slimHeight / 36 : (headerScale ?? (cardHeight ?? 56) / 56);
+    cardHeight ??= 56 * scale;
     slimHeight ??= 36 * scale;
     const labelHeight = (input.boundaryLabelHeight ?? 0) * scale;
     const group = groups[target.section];
