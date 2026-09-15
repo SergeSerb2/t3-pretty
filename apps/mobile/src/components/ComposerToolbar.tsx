@@ -219,20 +219,27 @@ export function ComposerToolbarScroller(props: {
 }
 
 export function ComposerActionButton(props: {
+  readonly accessibilityHint?: string;
   readonly accessibilityLabel: string;
   readonly disabled?: boolean;
   readonly icon: ComponentProps<typeof SymbolView>["name"];
   readonly onPress: () => void;
+  /** Injected by ControlPillMenu when the button hosts a long-press menu. */
+  readonly onLongPress?: () => void;
+  readonly onTouchStart?: ComponentProps<typeof Pressable>["onTouchStart"];
   readonly variant?: "primary" | "danger";
 }) {
   return (
     <Pressable
+      accessibilityHint={props.accessibilityHint}
       accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"
       accessibilityState={{ disabled: props.disabled }}
       className="size-[44px] shrink-0 items-center justify-center active:opacity-70"
       disabled={props.disabled}
+      onLongPress={props.onLongPress}
       onPress={props.onPress}
+      onTouchStart={props.onTouchStart}
     >
       <View
         className={cn(

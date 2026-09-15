@@ -12,6 +12,21 @@ becomes an attachment when inserting it would exceed the message limit. On a
 hardware keyboard, use `Cmd+Shift+V` on Apple devices or `Ctrl+Shift+V` elsewhere
 to keep a large paste editable in the composer instead.
 
+## Sending while the agent is working
+
+While a turn is running, the composer keeps a send button next to stop, and every provider
+behaves the same way:
+
+- **Send now** (the send button, or **Enter** on desktop) steers the running turn: the message
+  is delivered into the work in progress as soon as the agent can accept it.
+- **Queue for next turn** (the menu next to the send button, or **Option+Enter** /
+  **Alt+Enter**) holds the message until the current turn finishes, then starts a new turn
+  with it. Queued messages are held by the server, so they still send if you close the app
+  or disconnect; restarting the server clears the queue. Several queued messages start one
+  turn each, in order.
+
+On mobile, type while the agent works and tap send to steer, or long-press send to queue.
+
 ## Dictate a message
 
 In T3 Pretty Internal, click the microphone to speak into the composer. On web

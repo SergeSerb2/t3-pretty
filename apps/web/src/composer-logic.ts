@@ -7,6 +7,7 @@ import {
   splitPromptIntoComposerSegments,
   type ComposerPromptSegment,
 } from "./composer-editor-mentions";
+import type { SessionPhase } from "./types";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
 /**
@@ -45,6 +46,11 @@ export function composerSubmissionIntentForEnter(input: {
     return null;
   }
   return input.modifierKey && input.isDraftThread ? "background" : "foreground";
+}
+
+/** Session starting is phase "connecting"; the server holds "queue" in both. */
+export function composerTurnIsInProgress(phase: SessionPhase): boolean {
+  return phase === "running" || phase === "connecting";
 }
 
 const isInlineTokenSegment = (segment: ComposerPromptSegment): boolean => segment.type !== "text";

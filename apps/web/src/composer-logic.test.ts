@@ -11,6 +11,7 @@ import {
   clampCollapsedComposerCursor,
   collapseExpandedComposerCursor,
   composerSubmissionIntentForEnter,
+  composerTurnIsInProgress,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   formatAssistantCitationForComposer,
@@ -114,6 +115,18 @@ describe("composerSubmissionIntentForEnter", () => {
         isDraftThread: false,
       }),
     ).toBe("foreground");
+  });
+});
+
+describe("composerTurnIsInProgress", () => {
+  it("treats running and session starting as an in-progress turn", () => {
+    expect(composerTurnIsInProgress("running")).toBe(true);
+    expect(composerTurnIsInProgress("connecting")).toBe(true);
+  });
+
+  it("treats idle and disconnected phases as settled", () => {
+    expect(composerTurnIsInProgress("ready")).toBe(false);
+    expect(composerTurnIsInProgress("disconnected")).toBe(false);
   });
 });
 
