@@ -11,7 +11,6 @@ import {
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/unstable/reactivity";
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
 import {
   effectiveSnoozed,
@@ -1010,24 +1009,19 @@ type ThreadAttentionInput = Pick<
 >;
 
 /**
- * Count threads awaiting user action (approval/input) or with unseen completions.
- * Compatibility shim for fork tests.
+ * Count threads awaiting user action (approval or input). Compatibility shim
+ * for fork tests — finished/merged rows are not "needs you".
  */
 export function countThreadsAwaitingUser(
   threads: readonly ThreadAttentionInput[],
-  lastVisitedAtByThreadKey: Readonly<Record<string, string | undefined>>,
+  _lastVisitedAtByThreadKey: Readonly<Record<string, string | undefined>>,
 ): number {
   let count = 0;
   for (const thread of threads) {
     const status = resolveSidebarThreadStatus(thread);
     if (status === "approval" || status === "input") {
       count += 1;
-      continue;
     }
-    if (status === "working" || status === "monitoring") continue;
-    const lastVisitedAt =
-      lastVisitedAtByThreadKey[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))];
-    if (hasUnseenCompletion({ ...thread, lastVisitedAt })) count += 1;
   }
   return count;
 }
@@ -1222,12 +1216,15 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
-  // Merged PRs outrank a leftover babysit watch: the work is finished.
-  if (threadChangeRequestIsMerged(thread)) {
+  // Merged PRs outrank a leftover babysit watch, but only while unseen (or
+  // never visited). After a visit the row can still say Done; the rail must
+  // not keep a running total of historical merges.
+  const changeRequestMerged = threadChangeRequestIsMerged(thread);
+  if (changeRequestMerged && (hasUnseenCompletion(thread) || !thread.lastVisitedAt)) {
     return COMPLETED_STATUS_PILL;
   }
 
-  if (thread.backgroundLiveness === "monitoring") {
+  if (thread.backgroundLiveness === "monitoring" && !changeRequestMerged) {
     return {
       label: "Monitoring",
       colorClass: "text-sky-600 dark:text-sky-300/80",

@@ -1167,7 +1167,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarThreadStatus(thread);
   const changeRequestMerged = threadChangeRequestIsMerged(thread) || pr?.state === "merged";
-  const isFinished = isUnread || changeRequestMerged;
   // A woken thread reappears at its original position (the sort is
   // deliberately static), so the pill has to carry the weight. Snoozing is
   // an explicit act, so the pill clears only when the user re-engages:
@@ -1184,10 +1183,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Background work always recedes when it is not selected: an unread parent
   // completion must not pull a still-working thread back into the foreground.
   // Ready and action-required rows keep their unread and wake prominence.
+  // Merged leftover babysit still says Done, but recede uses the real unread
+  // flag so a visit can dim the row like any other ready thread.
   const displayStatus = changeRequestMerged && status === "monitoring" ? "ready" : status;
   const shouldRecede = shouldRecedeSidebarThread({
     status: displayStatus,
-    isUnread: isFinished,
+    isUnread,
     isWoke,
     isActive: props.isActive,
     isSelected,
@@ -1737,14 +1738,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       />
                       <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                     </Tooltip>
+                  ) : variantAction === "unsettle" ? (
+                    <span className="text-xs">{settledTimeLabel(thread)}</span>
                   ) : topStatus ? (
                     <SidebarThreadTopStatusMark status={topStatus} />
                   ) : (
-                    <span className="text-xs">
-                      {variantAction === "unsettle"
-                        ? settledTimeLabel(thread)
-                        : threadTimeLabel(thread)}
-                    </span>
+                    <span className="text-xs">{threadTimeLabel(thread)}</span>
                   )}
                 </span>
                 {variantAction === "unsnooze" ? (

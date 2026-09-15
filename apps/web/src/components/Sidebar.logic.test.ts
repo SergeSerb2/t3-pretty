@@ -416,7 +416,7 @@ describe("countThreadsAwaitingUser", () => {
   const threadKey = (id: string) =>
     scopedThreadKey(scopeThreadRef(localEnvironmentId, ThreadId.make(id)));
 
-  it("counts approvals, questions, and unread completions exactly once each", () => {
+  it("counts approvals and questions exactly once each", () => {
     const count = countThreadsAwaitingUser(
       [
         { ...base, id: ThreadId.make("approval"), hasPendingApprovals: true },
@@ -435,7 +435,7 @@ describe("countThreadsAwaitingUser", () => {
         [threadKey("both")]: "2026-03-09T10:04:00.000Z",
       },
     );
-    expect(count).toBe(4);
+    expect(count).toBe(3);
   });
 
   it("ignores threads that are merely working, read, or never visited", () => {
@@ -2206,11 +2206,10 @@ describe("resolveThreadStatusPill", () => {
     ).toMatchObject({ label: "Completed", pulse: false });
   });
 
-  it("shows completed for a merged pull request even after a visit or leftover monitor", () => {
+  it("shows completed for an unseen or never-visited merged pull request", () => {
     const mergedThread = {
       ...baseThread,
       interactionMode: "default" as const,
-      lastVisitedAt: "2026-03-09T10:06:00.000Z",
       latestTurn: makeLatestTurn(),
       backgroundLiveness: "monitoring" as const,
       session: {
@@ -2244,6 +2243,51 @@ describe("resolveThreadStatusPill", () => {
       label: "Completed",
       pulse: false,
     });
+    expect(
+      resolveThreadStatusPill({
+        thread: { ...mergedThread, lastVisitedAt: "2026-03-09T10:04:00.000Z" },
+      }),
+    ).toMatchObject({ label: "Completed", pulse: false });
+  });
+
+  it("drops the completed pill after a visit so the rail count can clear", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          interactionMode: "default",
+          lastVisitedAt: "2026-03-09T10:06:00.000Z",
+          latestTurn: makeLatestTurn(),
+          backgroundLiveness: "monitoring",
+          session: {
+            ...baseThread.session,
+            status: "ready",
+            activeTurnId: null,
+          },
+          pullRequests: [
+            {
+              host: "github.com",
+              repository: "acme/app",
+              number: 42,
+              url: "https://github.com/acme/app/pull/42",
+              source: "agent" as const,
+              linkedAt: "2026-03-09T10:01:00.000Z",
+              stack: null,
+              snapshot: {
+                state: "merged" as const,
+                title: "Fix",
+                headBranch: "fix",
+                baseBranch: "main",
+                isDraft: false,
+                updatedAt: "2026-03-09T10:05:00.000Z",
+                syncedAt: "2026-03-09T10:05:00.000Z",
+                mergedAt: "2026-03-09T10:05:00.000Z",
+              },
+            },
+          ],
+        },
+      }),
+    ).toBeNull();
   });
 });
 
@@ -2309,6 +2353,46 @@ describe("addProjectRailAttention", () => {
     const next = addProjectRailAttention(first, approval);
     expect(first).toMatchObject({ label: "Completed", count: 1 });
     expect(next).toMatchObject({ label: "Pending Approval", count: 2 });
+  });
+
+  it("does not count a visited merged thread", () => {
+    expect(
+      addProjectRailAttention(
+        { label: "Pending Approval", colorClass: "", dotClass: "", pulse: false, count: 1 },
+        resolveThreadStatusPill({
+          thread: {
+            hasActionableProposedPlan: false,
+            hasPendingApprovals: false,
+            hasPendingUserInput: false,
+            interactionMode: "default",
+            lastVisitedAt: "2026-03-09T10:06:00.000Z",
+            latestTurn: makeLatestTurn(),
+            session: null,
+            pullRequests: [
+              {
+                host: "github.com",
+                repository: "acme/app",
+                number: 42,
+                url: "https://github.com/acme/app/pull/42",
+                source: "agent",
+                linkedAt: "2026-03-09T10:01:00.000Z",
+                stack: null,
+                snapshot: {
+                  state: "merged",
+                  title: "Fix",
+                  headBranch: "fix",
+                  baseBranch: "main",
+                  isDraft: false,
+                  updatedAt: "2026-03-09T10:05:00.000Z",
+                  syncedAt: "2026-03-09T10:05:00.000Z",
+                  mergedAt: "2026-03-09T10:05:00.000Z",
+                },
+              },
+            ],
+          },
+        }),
+      ),
+    ).toMatchObject({ label: "Pending Approval", count: 1 });
   });
 });
 
