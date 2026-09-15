@@ -2865,6 +2865,8 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   background: transparent;
 }
 
+/* Flex items honor z-index. Keep breadcrumb, git, scripts, and the Electron
+   no-drag hole above the frosted ::after so the plate cannot steal clicks. */
 :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) > * {
   z-index: 1;
 }

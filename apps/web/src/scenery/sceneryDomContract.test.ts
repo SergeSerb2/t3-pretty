@@ -194,7 +194,7 @@ describe("glass contract with upstream chrome", () => {
       /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) > \* \{\s*z-index: 1;/,
     );
     expect(indexCssSource).toMatch(
-      /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]*z-index: 0;[^}]*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturation\)\);/s,
+      /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]*z-index: 0;[^}]*pointer-events: none;[^}]*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturation\)\);/s,
     );
     expect(chatViewSource).toContain("overflow-clip bg-background");
     expect(chatViewSource).toContain("overflow-x-clip");
