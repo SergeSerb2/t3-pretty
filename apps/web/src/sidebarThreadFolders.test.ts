@@ -9,9 +9,11 @@ function thread(
     number: number;
     linkedAt: string;
   }> = [],
+  project = "alpha",
 ) {
   return {
     id,
+    project,
     createdAt: updatedAt,
     updatedAt,
     pullRequests: pullRequests.map((entry) => ({
@@ -35,6 +37,22 @@ function thread(
   };
 }
 
+type Thread = ReturnType<typeof thread>;
+
+function flatten(
+  threads: Thread[],
+  options: { isPrNestExpanded?: boolean; activeThreadKey?: string | null } = {},
+) {
+  return flattenNestedThreads({
+    threads,
+    section: "active",
+    projectKeyOf: (entry) => entry.project,
+    isPrNestExpanded: () => options.isPrNestExpanded ?? true,
+    activeThreadKey: options.activeThreadKey ?? null,
+    threadKeyOf: (entry) => entry.id,
+  });
+}
+
 describe("flattenNestedThreads", () => {
   const main = thread("main", "2026-03-01T00:00:00.000Z", [
     { number: 4, linkedAt: "2026-03-01T00:00:00.000Z" },
@@ -43,17 +61,9 @@ describe("flattenNestedThreads", () => {
     { number: 4, linkedAt: "2026-03-02T00:00:00.000Z" },
   ]);
   const other = thread("other", "2026-03-03T00:00:00.000Z");
-  const flatten = (isPrNestExpanded: boolean, activeThreadKey: string | null = null) =>
-    flattenNestedThreads({
-      threads: [main, review, other],
-      section: "active",
-      isPrNestExpanded: () => isPrNestExpanded,
-      activeThreadKey,
-      threadKeyOf: (entry) => entry.id,
-    });
 
   it("nests later PR threads under the first-linked parent", () => {
-    const items = flatten(true);
+    const items = flatten([main, review, other]);
     expect(items.map((item) => [item.thread.id, item.nest])).toEqual([
       ["main", "parent"],
       ["review", "child"],
@@ -62,15 +72,39 @@ describe("flattenNestedThreads", () => {
     expect(items[0]?.childKeys).toEqual(["review"]);
   });
 
+  it("keeps the section order and moves a child under a parent listed later", () => {
+    expect(flatten([review, other, main]).map((item) => item.thread.id)).toEqual([
+      "other",
+      "main",
+      "review",
+    ]);
+  });
+
   it("hides children when the PR nest is collapsed", () => {
-    expect(flatten(false).map((item) => item.thread.id)).toEqual(["main", "other"]);
+    expect(
+      flatten([main, review, other], { isPrNestExpanded: false }).map((item) => item.thread.id),
+    ).toEqual(["main", "other"]);
   });
 
   it("keeps an active child visible when its nest is collapsed", () => {
-    expect(flatten(false, "review").map((item) => item.thread.id)).toEqual([
-      "main",
-      "review",
-      "other",
+    expect(
+      flatten([main, review, other], { isPrNestExpanded: false, activeThreadKey: "review" }).map(
+        (item) => item.thread.id,
+      ),
+    ).toEqual(["main", "review", "other"]);
+  });
+
+  it("does not nest across projects that share a pull request", () => {
+    const elsewhere = thread(
+      "elsewhere",
+      "2026-03-04T00:00:00.000Z",
+      [{ number: 4, linkedAt: "2026-03-04T00:00:00.000Z" }],
+      "beta",
+    );
+    const items = flatten([main, review, elsewhere], { isPrNestExpanded: false });
+    expect(items.map((item) => [item.thread.id, item.nest])).toEqual([
+      ["main", "parent"],
+      ["elsewhere", null],
     ]);
   });
 });

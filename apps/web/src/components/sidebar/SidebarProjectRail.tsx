@@ -48,18 +48,7 @@ export function SidebarProjectRail({
         docked ? "w-12 shrink-0 border-r border-sidebar-border/60" : "flex-1",
       )}
     >
-      {docked ? (
-        <SidebarMenuButton
-          size="icon"
-          aria-label="All projects"
-          tooltip="All projects"
-          isActive={selectedProjectKey === null}
-          aria-pressed={selectedProjectKey === null}
-          onClick={onSelectAll}
-        >
-          <LayersIcon />
-        </SidebarMenuButton>
-      ) : (
+      {docked ? null : (
         <>
           <SidebarMenuButton
             size="icon"
@@ -80,6 +69,18 @@ export function SidebarProjectRail({
           </SidebarMenuButton>
         </>
       )}
+      {onSelectAll ? (
+        <SidebarMenuButton
+          size="icon"
+          aria-label="All projects"
+          tooltip="All projects"
+          isActive={selectedProjectKey === null}
+          aria-pressed={selectedProjectKey === null}
+          onClick={onSelectAll}
+        >
+          <LayersIcon />
+        </SidebarMenuButton>
+      ) : null}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden py-1">
         {projects.map((project) => {
           const label = [project.displayName, ...project.remoteEnvironmentLabels].join(" · ");

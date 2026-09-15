@@ -1,5 +1,6 @@
 import {
   nestThreadsByPullRequest,
+  type ThreadPullRequestNest,
   type ThreadPullRequestNestInput,
 } from "@t3tools/shared/threadPullRequestNesting";
 
@@ -17,18 +18,39 @@ export interface SidebarNestedListItem<T> {
 
 /**
  * Flatten one sidebar section into rows, nesting later threads on the same
- * pull request under the first-linked one. A collapsed nest still shows the
- * child that is open, so the route never points at a hidden row.
+ * pull request under the first-linked one. Nests never cross projects: two
+ * project entries can point at the same repository, and a thread must not
+ * disappear under another project's parent. Row order follows the section's
+ * own order; a child only moves to sit under its parent. A collapsed nest
+ * still shows the child that is open, so the route never points at a hidden
+ * row.
  */
 export function flattenNestedThreads<T extends ThreadPullRequestNestInput>(input: {
   readonly threads: readonly T[];
   readonly section: NestSection;
+  readonly projectKeyOf: (thread: T) => string;
   readonly isPrNestExpanded: (pullRequestKey: string) => boolean;
   readonly activeThreadKey: string | null;
   readonly threadKeyOf: (thread: T) => string;
 }): SidebarNestedListItem<T>[] {
+  const threadsByProject = new Map<string, T[]>();
+  for (const thread of input.threads) {
+    const projectKey = input.projectKeyOf(thread);
+    const group = threadsByProject.get(projectKey);
+    if (group) group.push(thread);
+    else threadsByProject.set(projectKey, [thread]);
+  }
+  const nestByParentId = new Map<string, ThreadPullRequestNest<T>>();
+  for (const group of threadsByProject.values()) {
+    for (const nest of nestThreadsByPullRequest(group)) {
+      nestByParentId.set(nest.parent.id, nest);
+    }
+  }
+
   const items: SidebarNestedListItem<T>[] = [];
-  for (const nest of nestThreadsByPullRequest(input.threads)) {
+  for (const thread of input.threads) {
+    const nest = nestByParentId.get(thread.id);
+    if (!nest) continue;
     const childKeys = nest.children.map((child) => input.threadKeyOf(child));
     items.push({
       kind: "thread",

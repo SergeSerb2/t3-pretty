@@ -3388,6 +3388,9 @@ export default function Sidebar() {
       flattenNestedThreads({
         threads,
         section,
+        projectKeyOf: (thread) =>
+          logicalProjectKeyByMember.get(`${thread.environmentId}:${thread.projectId}`) ??
+          `${thread.environmentId}:${thread.projectId}`,
         isPrNestExpanded,
         activeThreadKey: routeThreadKey,
         threadKeyOf,
@@ -4602,6 +4605,11 @@ export default function Sidebar() {
           onNewThread={handleNewThreadClick}
           onNewThreadInProject={startNewThreadInProject}
           onProjectContextMenu={handleProjectContextMenu}
+          onSelectAll={() => {
+            setProjectScopeKey(null);
+            setThreadSearchQuery("");
+            setOpen(true);
+          }}
           onSelectProject={(project) => {
             setProjectScopeKey(project.projectKey);
             setThreadSearchQuery("");

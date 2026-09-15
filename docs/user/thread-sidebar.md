@@ -131,8 +131,8 @@ project picker. Right-click an icon for **New thread**, **Settle idle threads**,
 threads parks every active thread in that project that is not running, waiting,
 or holding an unseen response.
 
-When the sidebar is collapsed, the strip stays, and picking a project reopens
-the sidebar scoped to it.
+When the sidebar is collapsed, the strip stays. Picking a project reopens the sidebar scoped
+to it, and the top entry reopens it with every project.
 
 ## Find and reference work
 
