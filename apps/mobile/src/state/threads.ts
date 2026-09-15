@@ -20,9 +20,10 @@ import { environmentSnapshotAtom } from "./shell";
 // stream and full event history for the shared five-minute desktop TTL.
 export const MOBILE_THREAD_STATE_IDLE_TTL_MS = 15_000;
 
-export const threadEnvironment = createThreadEnvironmentAtoms(connectionAtomRuntime);
-// createEnvironmentThreadStateAtoms no longer accepts idleTtlMs (API removed
-// the options parameter). TTL is applied at the detail layer below instead.
+export const threadEnvironment = createThreadEnvironmentAtoms(
+  connectionAtomRuntime,
+  environmentSnapshotAtom,
+);
 export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
 export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
   environmentThreads.stateAtom,
@@ -30,7 +31,7 @@ export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
 );
 export const environmentThreadShells = createEnvironmentThreadShellAtoms({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
-  snapshotAtom: environmentSnapshotAtom,
+  snapshotAtom: threadEnvironment.snapshotAtom,
   automationIndexAtom: automationEnvironment.automationIndexAtom,
 });
 

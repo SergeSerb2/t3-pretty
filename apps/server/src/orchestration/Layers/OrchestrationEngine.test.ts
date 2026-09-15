@@ -456,6 +456,7 @@ describe("OrchestrationEngine", () => {
           listAutomationShells: () => Effect.die("unused"),
           listAutomationRuns: () => Effect.die("unused"),
           getAutomationRunById: () => Effect.die("unused"),
+          listActivitiesByKind: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.succeed(commandReadModel),
           getSnapshot: () =>
             Effect.sync(() => {

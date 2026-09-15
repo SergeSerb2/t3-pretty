@@ -1,5 +1,36 @@
 # T3 Pretty upstream integration report
 
+- Parent nightly: `v0.0.41-nightly.20260915.1752`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260915.1735`
+- Conflict resolver: manual composition after Buildkite #2175 (exit 75). The scheduled AI resolver finished the mobile files, then failed validation on `CheckpointDiffQuery.test.ts` (the same stub block appears five times). Remaining files were hand-merged.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.ts` — kept T3 Pretty's deletion
+- `apps/mobile/src/Stack.tsx` — kept pull-request screens and added upstream `HardwareKeyboardCommandOverlay`
+- `apps/mobile/src/features/keyboard/hardwareKeyboardCommands.ts` — kept `ENTITY_ID_MAX_LENGTH` route-length safeguards and added upstream `ThreadJumpKeybindingCommand`
+- `apps/mobile/src/features/layout/AdaptiveWorkspaceLayout.tsx` — kept bounded mobile search and added upstream overlay-state helper
+- `apps/mobile/src/features/settings/components/settings-sheet-targets.ts` — kept `SettingsApps` and added `SettingsKeyboard`
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — kept nested-child row indentation on the cleaned-up wrapper
+- `apps/mobile/src/native/T3ComposerEditor.ios.tsx` — kept both token and enter-behavior imports
+- `apps/mobile/src/state/threads.ts` and `apps/web/src/state/threads.ts` — took upstream snapshot-atom wiring and kept T3 Pretty automation-index / exported `environmentThreads` / mobile idle TTL
+- `apps/server/src/checkpointing/CheckpointDiffQuery.test.ts` (and the same ProjectionSnapshotQuery stubs in engine/reaper/setup tests) — kept automation stubs and added `listActivitiesByKind`
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts` — kept Origin CLI mock and took upstream GitHub/GitLab input passthrough
+- `apps/server/src/persistence/Migrations.ts` — kept remapped T3 Pretty slots and assigned `052_ProjectionThreadTitleState` to slot 63
+- `packages/contracts/src/orchestration.ts` — kept scenery / enabledSkillIds and added `titleState`
+- `apps/server/src/orchestration/decider.ts` — kept `/resume` native-session handling and `delivery` on turn start; took upstream persisted-message skip and `thread.message.user.append`
+- `apps/server/src/vcs/GitVcsDriverCore.ts` — kept unborn-HEAD probe and stale-worktree prune; took upstream `checkout.workers`
+- `apps/web/src/components/chat/ComposerPrimaryActions.tsx` — kept Send now + queue-for-next-turn split
+- `apps/web/src/components/ChatView.tsx` — kept owner-key worktree-setup bookkeeping and exit animation; took recorded/visible setup resolution and `worktreeSetupBlocksSend`
+
+## Post-merge repairs
+
+- `apps/web/src/components/ChatView.logic.ts` — upstream draft promotion now inspects persisted user messages; T3 Pretty's draft route may only have a shell, so `messages` is optional and missing bodies mean "not yet persisted"
+- `apps/web/src/routes/-threadRouteView.tsx` — pass thread detail when the promoted server thread has one, otherwise the shell
+- `packages/client-runtime/src/state/threadCommands.test.ts` — fixture includes `enabledSkillIds` after the shell schema merge
+
+## Previous integration notes
+
 - Parent nightly: `v0.0.41-nightly.20260914.1700`
 - Previously integrated parent nightly: `v0.0.41-nightly.20260914.1687`
 - Conflict resolver: manual repair of the blocked Buildkite #2014 merge (desktop protocol kept on the fork API)

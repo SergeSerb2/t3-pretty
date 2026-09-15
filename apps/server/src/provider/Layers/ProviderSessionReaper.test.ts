@@ -239,6 +239,7 @@ describe("ProviderSessionReaper", () => {
           listAutomationShells: () => Effect.die("unused"),
           listAutomationRuns: () => Effect.die("unused"),
           getAutomationRunById: () => Effect.die("unused"),
+          listActivitiesByKind: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.die("unused"),
           getSnapshot: () => Effect.die("unused"),
           getShellSnapshot: () => Effect.die("unused"),
