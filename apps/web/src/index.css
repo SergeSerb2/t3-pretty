@@ -2856,13 +2856,21 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   --workspace-glass-radius: 0 0 1rem 1rem;
   --workspace-glass-shadow: 0 10px 24px -16px rgb(0 0 0 / 32%);
   position: relative;
+  isolation: isolate;
   z-index: 20;
   background: transparent;
 }
 
+/* Flex items honor z-index. Keep breadcrumb, git, scripts, and the Electron
+   no-drag hole above the frosted ::after so the plate cannot steal clicks. */
+:is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) > * {
+  z-index: 1;
+}
+
 /* The material sits behind the controls in their existing stacking context.
-   Only this plate samples the backdrop: text stays sharp, and fixed titlebar
-   controls keep the viewport as their containing block. */
+   Only this plate samples the backdrop: text stays sharp. Parked titlebar
+   controls stay on the workspace root (absolute) so this header context
+   cannot become their containing block. */
 :root {
   --workspace-glass-sheen: rgb(255 255 255 / 34%);
   --workspace-glass-rim: rgb(255 255 255 / 48%);

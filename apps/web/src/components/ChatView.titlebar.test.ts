@@ -31,17 +31,26 @@ describe("thread titlebar layout controls", () => {
     expect(source).toContain(
       "const parkTitlebarLayoutControls = !(shouldUseRightPanelSheet && rightPanelOpen)",
     );
+    expect(source.slice(rootStart - 280, rootStart)).toContain(
+      "Containing block for the parked titlebar cluster",
+    );
   });
 
   it("lets clicks reach the cluster through the header drag region", () => {
     const clusterStart = source.indexOf("const panelLayoutControls = (");
-    const cluster = source.slice(clusterStart, clusterStart + 900);
+    const cluster = source.slice(clusterStart, clusterStart + 2200);
     const headerSlice = source.slice(headerStart, headerClose);
     const holeIndex = source.indexOf("TitlebarLayoutControlsDragHole", headerStart);
 
     expect(clusterStart).toBeGreaterThanOrEqual(0);
     expect(cluster).toContain("pointer-events-none");
     expect(cluster).toContain("pointer-events-auto");
+    expect(cluster).toContain("pointer-events-none absolute");
+    expect(cluster).not.toContain("pointer-events-none fixed");
+    expect(cluster).toContain(
+      'rightPanelOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"',
+    );
+    expect(cluster).not.toContain("pointer-events-auto flex h-full items-center gap-1");
     expect(headerSlice).toContain("TitlebarLayoutControlsDragHole");
     expect(headerSlice).toContain(
       "isElectron && parkTitlebarLayoutControls && !inlineRightPanelOwnsTitleBar",
@@ -52,7 +61,13 @@ describe("thread titlebar layout controls", () => {
     expect(workspacePageHeaderSource).toContain('electron && "drag-region"');
     expect(holeIndex).toBeGreaterThan(headerEnd);
     expect(holeIndex).toBeLessThan(headerClose);
-    expect(headerSlice).toContain("controlCount={2}");
+    expect(headerSlice).toContain("controlCount={shouldUseRightPanelSheet ? 2 : 3}");
+    const maximizeIndex = source.indexOf("RightPanelMaximizeControl", clusterStart);
+    const togglesIndex = source.indexOf("{panelToggleControls}", clusterStart);
+    expect(maximizeIndex).toBeGreaterThan(clusterStart);
+    expect(togglesIndex).toBeGreaterThan(maximizeIndex);
+    expect(cluster).toContain("the `relative` workspace root is the");
+    expect(cluster).toContain("containing block");
   });
 
   it("punches the open-panel titlebar instead of the chat/panel seam", () => {
