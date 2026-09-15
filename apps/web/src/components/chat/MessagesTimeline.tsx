@@ -1449,16 +1449,18 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
             ? "pb-0"
             : row.kind === "turn-fold" || row.kind === "working"
               ? "pb-1.5"
-              : (row.kind === "message" &&
-                    row.message.role === "assistant" &&
-                    !row.showAssistantMeta) ||
-                  row.kind === "work" ||
-                  row.kind === "work-live" ||
-                  row.kind === "work-toggle" ||
-                  row.kind === "thinking" ||
-                  row.kind === "worktree-setup"
-                ? "pb-2"
-                : "pb-4",
+              : row.kind === "message" && row.message.role === "assistant" && row.showAssistantMeta
+                ? "pb-8"
+                : (row.kind === "message" &&
+                      row.message.role === "assistant" &&
+                      !row.showAssistantMeta) ||
+                    row.kind === "work" ||
+                    row.kind === "work-live" ||
+                    row.kind === "work-toggle" ||
+                    row.kind === "thinking" ||
+                    row.kind === "worktree-setup"
+                  ? "pb-2"
+                  : "pb-4",
         (row.kind === "message" && row.message.role === "assistant") ||
           row.kind === "assistant-meta"
           ? "group/assistant"
@@ -2116,7 +2118,6 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         />
         {row.showAssistantMeta ? (
           <AssistantMessageMeta
-            className="mt-1.5"
             message={row.message}
             showCopyButton={row.showAssistantCopyButton}
             copyStreaming={row.assistantCopyStreaming}
@@ -2145,6 +2146,9 @@ function AssistantMetaTimelineRow({
   );
 }
 
+// Hover copy/timestamp sit out of flow so revealing them cannot grow the row
+// and shove the thread. The row already keeps a gap; hover and touch only fade
+// the controls in.
 function AssistantMessageMeta({
   className,
   message,
@@ -2162,14 +2166,13 @@ function AssistantMessageMeta({
 
   return (
     <div
+      data-assistant-meta={alwaysVisible ? "visible" : "overlay"}
       className={cn(
-        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
+        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200 motion-reduce:transition-none",
         alwaysVisible
           ? "opacity-100"
-          : "h-0 overflow-hidden opacity-0 pointer-coarse:h-auto pointer-coarse:overflow-visible pointer-coarse:opacity-100 focus-within:h-auto focus-within:overflow-visible focus-within:opacity-100 group-hover/assistant:h-auto group-hover/assistant:overflow-visible group-hover/assistant:opacity-100",
+          : "pointer-events-none absolute start-0 top-full z-10 mt-1 opacity-0 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
         className,
-        !alwaysVisible &&
-          "mt-0 pointer-coarse:mt-1.5 focus-within:mt-1.5 group-hover/assistant:mt-1.5",
       )}
     >
       <AssistantCopyButton
