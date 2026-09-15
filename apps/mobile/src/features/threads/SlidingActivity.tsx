@@ -36,7 +36,11 @@ const getAppState = () => AppState.currentState;
  * Animate tool replacement within the mounted live slot, never list remounts.
  * `text` is the rendered label: a new call with unchanged text swaps in place.
  */
-export function SlidingActivity(props: {
+export function SlidingActivity({
+  activityKey,
+  text,
+  children,
+}: {
   readonly activityKey: string | null;
   readonly text: string;
   readonly children: ReactNode;
@@ -44,7 +48,7 @@ export function SlidingActivity(props: {
   const focused = useIsFocused();
   const appState = useSyncExternalStore(subscribeAppState, getAppState);
   const reducedMotion = useReducedMotion();
-  const previous = useRef(props);
+  const previous = useRef({ activityKey, text, children });
   const generation = useRef(0);
   const [outgoing, setOutgoing] = useState<{ children: ReactNode; generation: number } | null>(
     null,
@@ -58,8 +62,9 @@ export function SlidingActivity(props: {
 
   useLayoutEffect(() => {
     const last = previous.current;
-    previous.current = props;
-    if (!focused || reducedMotion || props.activityKey === null || appState !== "active") {
+    // Skipped calls are still current content; never replay an older tool on return.
+    previous.current = { activityKey, text, children };
+    if (!focused || reducedMotion || activityKey === null || appState !== "active") {
       cancelAnimation(incomingPosition);
       cancelAnimation(outgoingPosition);
       incomingPosition.set(0);
@@ -68,12 +73,7 @@ export function SlidingActivity(props: {
       if (outgoing) setOutgoing(null);
       return;
     }
-    if (
-      last.activityKey === null ||
-      last.activityKey === props.activityKey ||
-      last.text === props.text
-    )
-      return;
+    if (last.activityKey === null || last.activityKey === activityKey || last.text === text) return;
     const nextGeneration = ++generation.current;
     setOutgoing({ children: last.children, generation: nextGeneration });
     const departingPosition = incomingPosition.get();
@@ -97,11 +97,12 @@ export function SlidingActivity(props: {
     [incomingPosition, outgoingPosition],
   );
 
-  // Fade completes at 60% of the travel, matching web, so rows read as
-  // replaced rather than scrolled.
+  // Incoming travels 1→0, so fade-in uses travel-from-start and hits 1 at
+  // |pos| 0.4 (web offset 0.6). Outgoing travels 0→-1 and already fades out
+  // over the first 60%. Both finish before the slide settles.
   const incomingStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: incomingPosition.get() * height.get() }],
-    opacity: Math.max(0, 1 - Math.abs(incomingPosition.get()) / 0.6),
+    opacity: Math.min(1, (1 - Math.abs(incomingPosition.get())) / 0.6),
   }));
   const outgoingStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: outgoingPosition.get() * height.get() }],
@@ -125,7 +126,7 @@ export function SlidingActivity(props: {
         </Animated.View>
       ) : null}
       <Animated.View className="flex-row items-center gap-1.5" style={incomingStyle}>
-        {props.children}
+        {children}
       </Animated.View>
     </View>
   );
