@@ -1468,6 +1468,11 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       )}
       data-timeline-row-id={row.id}
       data-timeline-row-kind={row.kind}
+      data-assistant-meta-gap={
+        row.kind === "message" && row.message.role === "assistant" && row.showAssistantMeta
+          ? "true"
+          : undefined
+      }
       data-worktree-setup-exiting={
         row.kind === "worktree-setup" && worktreeSetupExiting ? "" : undefined
       }

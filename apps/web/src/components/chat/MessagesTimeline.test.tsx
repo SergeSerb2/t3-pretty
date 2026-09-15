@@ -1343,6 +1343,7 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain('aria-label="Copy message"');
     expect(markup).toContain('data-assistant-meta="overlay"');
+    expect(markup).toContain('data-assistant-meta-gap="true"');
     expect(markup).not.toContain("group-hover/assistant:h-auto");
   });
 
