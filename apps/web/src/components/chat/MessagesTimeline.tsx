@@ -1449,18 +1449,16 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
             ? "pb-0"
             : row.kind === "turn-fold" || row.kind === "working"
               ? "pb-1.5"
-              : row.kind === "message" && row.message.role === "assistant" && row.showAssistantMeta
-                ? "pb-8"
-                : (row.kind === "message" &&
-                      row.message.role === "assistant" &&
-                      !row.showAssistantMeta) ||
-                    row.kind === "work" ||
-                    row.kind === "work-live" ||
-                    row.kind === "work-toggle" ||
-                    row.kind === "thinking" ||
-                    row.kind === "worktree-setup"
-                  ? "pb-2"
-                  : "pb-4",
+              : (row.kind === "message" &&
+                    row.message.role === "assistant" &&
+                    !row.showAssistantMeta) ||
+                  row.kind === "work" ||
+                  row.kind === "work-live" ||
+                  row.kind === "work-toggle" ||
+                  row.kind === "thinking" ||
+                  row.kind === "worktree-setup"
+                ? "pb-2"
+                : "pb-4",
         (row.kind === "message" && row.message.role === "assistant") ||
           row.kind === "assistant-meta"
           ? "group/assistant"
@@ -1468,11 +1466,6 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       )}
       data-timeline-row-id={row.id}
       data-timeline-row-kind={row.kind}
-      data-assistant-meta-gap={
-        row.kind === "message" && row.message.role === "assistant" && row.showAssistantMeta
-          ? "true"
-          : undefined
-      }
       data-worktree-setup-exiting={
         row.kind === "worktree-setup" && worktreeSetupExiting ? "" : undefined
       }
@@ -2122,11 +2115,14 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
         {row.showAssistantMeta ? (
-          <AssistantMessageOverlay
-            message={row.message}
-            showCopyButton={row.showAssistantCopyButton}
-            copyStreaming={row.assistantCopyStreaming}
-          />
+          <>
+            <div aria-hidden="true" className="h-8" data-assistant-meta-gap="true" />
+            <AssistantMessageOverlay
+              message={row.message}
+              showCopyButton={row.showAssistantCopyButton}
+              copyStreaming={row.assistantCopyStreaming}
+            />
+          </>
         ) : null}
       </div>
     </>
@@ -2154,9 +2150,9 @@ const assistantMetaActionsClassName =
   "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200 motion-reduce:transition-none";
 
 // Hover copy/timestamp sit out of flow so revealing them cannot grow the row
-// and shove the thread. Positioned against AssistantTimelineRow's inner
-// relative wrapper; the outer pb-8 is the gap they fade into. Trailing
-// assistant-meta rows use AssistantMessageMeta instead and stay in flow.
+// and shove the thread. They pin to the bottom of the in-flow h-8 spacer in
+// AssistantTimelineRow. Trailing assistant-meta rows use AssistantMessageMeta
+// instead and stay in flow.
 function AssistantMessageOverlay({
   message,
   showCopyButton,
@@ -2171,7 +2167,7 @@ function AssistantMessageOverlay({
       data-assistant-meta="overlay"
       className={cn(
         assistantMetaActionsClassName,
-        "pointer-events-none absolute start-0 top-full z-10 mt-1 opacity-0 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
+        "pointer-events-none absolute inset-x-0 bottom-0 z-10 opacity-0 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
       )}
     >
       <AssistantMessageActions
