@@ -167,10 +167,12 @@ import {
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
   type SidebarDropVerb,
+  resolveProjectAttentionIndicator,
   resolveProjectStatusIndicator,
   resolveSidebarThreadStatus,
   resolveThreadStatusPill,
   searchSidebarThreads,
+  nextSidebarProjectScopeKey,
   shouldCreateNewThreadInCurrentProject,
   shouldNavigateAfterThreadPark,
   shouldRecedeSidebarThread,
@@ -584,15 +586,6 @@ function SortableSidebarMarker(props: {
     </li>
   );
 }
-
-// Rail dots only for states that wait on the user. Working and Monitoring
-// would light every busy project and say nothing.
-const PROJECT_ATTENTION_LABELS: ReadonlySet<ThreadStatusPill["label"]> = new Set([
-  "Pending Approval",
-  "Awaiting Input",
-  "Plan Ready",
-  "Completed",
-]);
 
 function threadStatusPillFor(
   thread: EnvironmentThreadShell,
@@ -3440,8 +3433,8 @@ export default function Sidebar() {
         thread,
         threadLastVisitedAtById[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
       );
-      if (pill === null || !PROJECT_ATTENTION_LABELS.has(pill.label)) continue;
-      const strongest = resolveProjectStatusIndicator([map.get(projectKey) ?? null, pill]);
+      if (pill === null) continue;
+      const strongest = resolveProjectAttentionIndicator([map.get(projectKey) ?? null, pill]);
       if (strongest) map.set(projectKey, strongest);
     }
     return map;
@@ -4613,7 +4606,7 @@ export default function Sidebar() {
             setOpen(true);
           }}
           onSelectProject={(project) => {
-            setProjectScopeKey(project.projectKey);
+            setProjectScopeKey(nextSidebarProjectScopeKey(projectScopeKey, project.projectKey));
             setThreadSearchQuery("");
             setOpen(true);
           }}
@@ -4639,7 +4632,7 @@ export default function Sidebar() {
           }}
           // Clicking the selected project again is the way back to all projects.
           onSelectProject={(project) => {
-            setProjectScopeKey(projectScopeKey === project.projectKey ? null : project.projectKey);
+            setProjectScopeKey(nextSidebarProjectScopeKey(projectScopeKey, project.projectKey));
             setThreadSearchQuery("");
           }}
         />

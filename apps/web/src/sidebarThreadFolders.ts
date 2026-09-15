@@ -41,16 +41,23 @@ export function flattenNestedThreads<T extends ThreadPullRequestNestInput>(input
     else threadsByProject.set(projectKey, [thread]);
   }
   const nestByParentId = new Map<string, ThreadPullRequestNest<T>>();
+  const nestedChildIds = new Set<string>();
   for (const group of threadsByProject.values()) {
     for (const nest of nestThreadsByPullRequest(group)) {
       nestByParentId.set(nest.parent.id, nest);
+      for (const child of nest.children) nestedChildIds.add(child.id);
     }
   }
 
   const items: SidebarNestedListItem<T>[] = [];
   for (const thread of input.threads) {
-    const nest = nestByParentId.get(thread.id);
-    if (!nest) continue;
+    if (nestedChildIds.has(thread.id)) continue;
+    // A thread the nest helper never attached still gets a row.
+    const nest = nestByParentId.get(thread.id) ?? {
+      parent: thread,
+      children: [],
+      pullRequestKey: null,
+    };
     const childKeys = nest.children.map((child) => input.threadKeyOf(child));
     items.push({
       kind: "thread",
