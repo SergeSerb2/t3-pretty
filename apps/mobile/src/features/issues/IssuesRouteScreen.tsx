@@ -140,7 +140,8 @@ export function IssuesRouteScreen() {
   const selectedCatalog = catalog.find((item) => item.environmentId === environmentId);
   const issuesCapable =
     selectedCatalog?.serverConfig?.environment.capabilities.issues === true ||
-    (environmentId !== null && configs.get(environmentId)?.environment.capabilities.issues === true);
+    (environmentId !== null &&
+      configs.get(environmentId)?.environment.capabilities.issues === true);
   return (
     <ScrollView
       className="flex-1 bg-screen"

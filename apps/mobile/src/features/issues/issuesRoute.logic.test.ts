@@ -20,10 +20,9 @@ const sentryIssue = {
 describe("mergeIssueEnvironments", () => {
   it("includes a catalog local environment even when no remotes are saved", () => {
     expect(
-      mergeIssueEnvironments(
-        [{ environmentId: localId, label: "This Mac" }],
-        [],
-      ).map((environment) => environment.environmentId),
+      mergeIssueEnvironments([{ environmentId: localId, label: "This Mac" }], []).map(
+        (environment) => environment.environmentId,
+      ),
     ).toEqual([localId]);
   });
 
@@ -51,9 +50,9 @@ describe("mergeIssueEnvironments", () => {
 describe("shouldShowLinearCreateEditor", () => {
   it("keeps a Sentry follow-up pending until Linear is connected", () => {
     expect(shouldShowLinearCreateEditor({ source: sentryIssue }, [])).toBe(false);
-    expect(
-      shouldShowLinearCreateEditor({ source: sentryIssue }, [{ provider: "sentry" }]),
-    ).toBe(false);
+    expect(shouldShowLinearCreateEditor({ source: sentryIssue }, [{ provider: "sentry" }])).toBe(
+      false,
+    );
   });
 
   it("opens Linear create once Linear is connected, including after a blank new issue", () => {
