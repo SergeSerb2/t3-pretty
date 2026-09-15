@@ -2087,7 +2087,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
 
   return (
     <>
-      <div className="relative min-w-0 px-1 py-0.5" data-assistant-meta-anchor="true">
+      <div className="relative min-w-0 px-1 py-0.5">
         <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
         <AssistantCitationSource
           messageId={row.message.id}
@@ -2164,7 +2164,7 @@ function AssistantMessageOverlay({
       data-assistant-meta-gap="true"
       className={cn(
         assistantMetaActionsClassName,
-        "h-8 opacity-0 pointer-events-none pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
+        "h-8 overflow-hidden opacity-0 pointer-events-none pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
       )}
     >
       <AssistantMessageActions

@@ -1344,12 +1344,8 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('aria-label="Copy message"');
     expect(markup).toContain('data-assistant-meta="overlay"');
     expect(markup).toContain('data-assistant-meta-gap="true"');
+    expect(markup).toContain("h-8 overflow-hidden");
     expect(markup).not.toContain("group-hover/assistant:h-auto");
-    expect(markup).toMatch(/class="[^"]*relative[^"]*"[^>]*data-assistant-meta-anchor="true"/u);
-    const anchorIndex = markup.indexOf('data-assistant-meta-anchor="true"');
-    const overlayIndex = markup.indexOf('data-assistant-meta="overlay"');
-    expect(anchorIndex).toBeGreaterThanOrEqual(0);
-    expect(overlayIndex).toBeGreaterThan(anchorIndex);
   });
 
   it("renders context compaction entries in the normal work log", () => {
