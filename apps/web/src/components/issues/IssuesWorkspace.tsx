@@ -764,7 +764,7 @@ function SentryEditor({
       <label className="grid gap-1 text-sm">
         Assignee
         <Input
-          placeholder="Email or team:ID; empty to unassign"
+          placeholder="user:ID or team:ID; empty to unassign"
           value={assignee}
           onChange={(event) => setAssignee(event.target.value)}
         />

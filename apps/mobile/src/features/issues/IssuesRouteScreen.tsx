@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as Clipboard from "expo-clipboard";
 import { Alert, Linking, Pressable, ScrollView, View } from "react-native";
 import type { EnvironmentId, Issue, IssueMetadata, IssueProvider } from "@t3tools/contracts";
@@ -12,7 +12,13 @@ import { serverEnvironment } from "../../state/server";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useServerConfigs } from "../../state/entities";
+import { useEnvironments } from "../../state/environments";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import {
+  mergeIssueEnvironments,
+  sentryAssigneeHint,
+  shouldShowLinearCreateEditor,
+} from "./issuesRoute.logic";
 
 const names = { linear: "Linear", sentry: "Sentry" };
 const emptyMetadata: IssueMetadata = { scopes: [], states: [], assignees: [] };
@@ -48,12 +54,14 @@ function Field({
   onChange,
   secure = false,
   multiline = false,
+  placeholder,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   secure?: boolean;
   multiline?: boolean;
+  placeholder?: string;
 }) {
   return (
     <View className="gap-1">
@@ -67,6 +75,7 @@ function Field({
         multiline={multiline}
         autoCapitalize="none"
         autoCorrect={!secure}
+        placeholder={placeholder}
       />
     </View>
   );
@@ -108,14 +117,30 @@ function Choose({
 }
 
 export function IssuesRouteScreen() {
+  const { environments: catalog } = useEnvironments();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const configs = useServerConfigs();
-  const environments = Object.values(savedConnectionsById);
+  const environments = useMemo(
+    () =>
+      mergeIssueEnvironments(
+        catalog.map((item) => ({
+          environmentId: item.environmentId,
+          label: item.label,
+        })),
+        Object.values(savedConnectionsById),
+      ),
+    [catalog, savedConnectionsById],
+  );
   const [selected, setSelected] = useState<string>("");
   const environmentId =
     environments.find((item) => item.environmentId === selected)?.environmentId ??
+    catalog.find((item) => item.connection.phase === "connected")?.environmentId ??
     environments[0]?.environmentId ??
     null;
+  const selectedCatalog = catalog.find((item) => item.environmentId === environmentId);
+  const issuesCapable =
+    selectedCatalog?.serverConfig?.environment.capabilities.issues === true ||
+    (environmentId !== null && configs.get(environmentId)?.environment.capabilities.issues === true);
   return (
     <ScrollView
       className="flex-1 bg-screen"
@@ -128,11 +153,11 @@ export function IssuesRouteScreen() {
         value={environmentId ?? ""}
         options={environments.map((item) => ({
           id: item.environmentId,
-          name: item.environmentLabel,
+          name: item.label,
         }))}
         onChange={setSelected}
       />
-      {environmentId && configs.get(environmentId)?.environment.capabilities.issues ? (
+      {environmentId && issuesCapable ? (
         <IssuesEnvironment key={environmentId} environmentId={environmentId} />
       ) : (
         <Text className="text-muted-foreground">
@@ -152,9 +177,9 @@ function IssuesEnvironment({ environmentId }: { environmentId: EnvironmentId }) 
   const [provider, setProvider] = useState<IssueProvider>("linear");
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
-  const [creating, setCreating] = useState(false);
-  const [source, setSource] = useState<Issue | undefined>();
+  const [create, setCreate] = useState<{ source?: Issue } | null>(null);
   const account = accounts?.find((item) => item.provider === provider);
+  const showLinearCreate = shouldShowLinearCreateEditor(create, accounts);
   return (
     <View className="gap-4">
       <View className="flex-row gap-2">
@@ -165,7 +190,7 @@ function IssuesEnvironment({ environmentId }: { environmentId: EnvironmentId }) 
             accessibilityState={{ selected: provider === item }}
             onPress={() => {
               setProvider(item);
-              setCreating(false);
+              setCreate(null);
             }}
             className="min-h-11 justify-center rounded-xl bg-surface px-5"
           >
@@ -182,50 +207,33 @@ function IssuesEnvironment({ environmentId }: { environmentId: EnvironmentId }) 
           {error ?? connectionQuery.error}
         </Text>
       ) : null}
+      {account ? <Text className="text-muted-foreground">{account.account}</Text> : null}
       {accounts === null ? (
         connectionQuery.error ? (
           <Action title="Retry connection" onPress={connectionQuery.refresh} />
         ) : (
           <Text>Loading connections…</Text>
         )
+      ) : showLinearCreate ? (
+        <IssueEditor
+          environmentId={environmentId}
+          issue={undefined}
+          source={create?.source}
+          onBack={() => {
+            setCreate(null);
+            setRevision((value) => value + 1);
+          }}
+        />
       ) : account ? (
-        <>
-          <Text className="text-muted-foreground">{account.account}</Text>
-          {creating ? (
-            <IssueEditor
-              environmentId={environmentId}
-              issue={undefined}
-              source={source}
-              onBack={() => {
-                setCreating(false);
-                setRevision((value) => value + 1);
-              }}
-            />
-          ) : (
-            <IssueBrowser
-              key={`${provider}:${revision}`}
-              environmentId={environmentId}
-              provider={provider}
-              onCreate={(issue) => {
-                setSource(issue);
-                setCreating(true);
-                setProvider("linear");
-              }}
-            />
-          )}
-          <Action
-            title={`Disconnect ${names[provider]}`}
-            onPress={() => {
-              void disconnect({ environmentId, input: { provider } }).then((result) => {
-                setError(message(result));
-                if (result._tag === "Success") {
-                  connectionQuery.refresh();
-                  setRevision((value) => value + 1);
-                }
-              });
-            }}
-          />
-        </>
+        <IssueBrowser
+          key={`${provider}:${revision}`}
+          environmentId={environmentId}
+          provider={provider}
+          onCreate={(issue) => {
+            setProvider("linear");
+            setCreate(issue ? { source: issue } : {});
+          }}
+        />
       ) : (
         <ConnectionForm
           key={provider}
@@ -237,6 +245,21 @@ function IssuesEnvironment({ environmentId }: { environmentId: EnvironmentId }) 
           }}
         />
       )}
+      {account ? (
+        <Action
+          title={`Disconnect ${names[provider]}`}
+          onPress={() => {
+            void disconnect({ environmentId, input: { provider } }).then((result) => {
+              setError(message(result));
+              if (result._tag === "Success") {
+                setCreate(null);
+                connectionQuery.refresh();
+                setRevision((value) => value + 1);
+              }
+            });
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -658,7 +681,8 @@ function IssueEditor({
             onChange={setPriority}
           />
           <Field
-            label="Assignee (email or team:ID; empty to unassign)"
+            label={`Assignee (${sentryAssigneeHint})`}
+            placeholder={sentryAssigneeHint}
             value={assignee}
             onChange={setAssignee}
           />
