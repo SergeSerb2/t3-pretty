@@ -9707,9 +9707,7 @@ export default function ChatView(props: ChatViewProps) {
               slot (opacity-0 / inert, not unmounted) plus both toggles.
               The sheet omits maximize, so that hole stays two controls. */}
           {isElectron && parkTitlebarLayoutControls && !inlineRightPanelOwnsTitleBar ? (
-            <TitlebarLayoutControlsDragHole
-              controlCount={shouldUseRightPanelSheet ? 2 : 3}
-            />
+            <TitlebarLayoutControlsDragHole controlCount={shouldUseRightPanelSheet ? 2 : 3} />
           ) : null}
         </WorkspacePageHeader>
 
