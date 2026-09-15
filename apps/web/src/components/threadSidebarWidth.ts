@@ -1,4 +1,6 @@
-export const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
+// v2: the rail joined the sidebar, so a width saved for the old layout would leave the
+// list column 3rem too narrow. A fresh key restores the default once.
+export const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width_v2";
 // Includes the 3rem project rail; the list column keeps its former 13rem default.
 export const THREAD_SIDEBAR_DEFAULT_WIDTH = 19 * 16;
 export const THREAD_SIDEBAR_MIN_WIDTH = 16 * 16;
