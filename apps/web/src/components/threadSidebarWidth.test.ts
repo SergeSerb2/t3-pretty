@@ -59,7 +59,7 @@ describe("thread sidebar width", () => {
     expect(sidebarSource).toContain('className="inline-flex min-w-0 items-center gap-1"');
     expect(sidebarSource).toContain("md:flex");
     expect(sidebarSource).toContain('src="/t3-pretty-mark.png"');
-    expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(13 * 16);
+    expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(16 * 16);
   });
 
   it("puts the environment identification pill behind the stage-label container query", () => {

@@ -12,10 +12,8 @@ import {
   countThreadsAwaitingUser,
   createThreadJumpHintVisibilityController,
   deleteSelectedThreadEntries,
-  filterSidebarProjectScopeItems,
   getSidebarThreadIdsToPrewarm,
   resolveAdjacentThreadId,
-  reduceSidebarProjectScopeMenuState,
   getFallbackThreadIdAfterDelete,
   getProjectSortTimestamp,
   hasUnseenCompletion,
@@ -39,7 +37,6 @@ import {
   sortLogicalProjectsForSidebar,
   sortSettledThreadsForSidebar,
   resolveSidebarDropTarget,
-  sidebarFolderListId,
   pinOrderKeyBetween,
   planPinnedReorder,
   planSidebarThreadDrop,
@@ -980,65 +977,6 @@ describe("searchSidebarThreads", () => {
   });
 });
 
-describe("filterSidebarProjectScopeItems", () => {
-  const items = [
-    { value: "all", label: "All projects" },
-    { value: "alpha", label: "Alpha workspace" },
-    { value: "beta", label: "Beta tools" },
-  ] as const;
-  const filter = (query: string) =>
-    filterSidebarProjectScopeItems({
-      items,
-      query,
-      matches: (item, candidate) =>
-        item.label.toLocaleLowerCase().includes(candidate.toLocaleLowerCase()),
-    });
-
-  it("shows the default row first while the query is empty", () => {
-    expect(filter("")).toEqual(items);
-    expect(filter("   ")).toEqual(items);
-  });
-
-  it("hides the default row while filtering", () => {
-    expect(filter("all")).toEqual([]);
-  });
-
-  it("returns matching projects in source order and supports no-match results", () => {
-    expect(filter("WORK")).toEqual([items[1]]);
-    expect(filter("missing")).toEqual([]);
-  });
-});
-
-describe("reduceSidebarProjectScopeMenuState", () => {
-  const queriedOpenState = { open: true, query: "alpha" };
-
-  it("clears the query when the combobox closes through onOpenChange", () => {
-    expect(
-      reduceSidebarProjectScopeMenuState(queriedOpenState, {
-        type: "open-changed",
-        open: false,
-      }),
-    ).toEqual({ open: false, query: "" });
-  });
-
-  it("clears the query when project settings closes the combobox", () => {
-    expect(
-      reduceSidebarProjectScopeMenuState(queriedOpenState, {
-        type: "project-settings-opened",
-      }),
-    ).toEqual({ open: false, query: "" });
-  });
-
-  it("keeps the popup open while the query changes", () => {
-    expect(
-      reduceSidebarProjectScopeMenuState(
-        { open: true, query: "" },
-        { type: "query-changed", query: "beta" },
-      ),
-    ).toEqual({ open: true, query: "beta" });
-  });
-});
-
 describe("sortThreadsForSidebar", () => {
   const sortable = (input: { id: string; createdAt: string }) => ({
     id: input.id,
@@ -1342,31 +1280,6 @@ describe("resolveSidebarDropTarget", () => {
     expect(resolve("a1", "nope")).toBeNull();
     expect(resolve("nope", "a1")).toBeNull();
     expect(resolve(sidebarMarkerId("pinned-divider"), "a1")).toBeNull();
-  });
-
-  it("skips folder headers when collecting pin and active order", () => {
-    const withFolders: readonly SidebarListItem[] = [
-      marker("pinned-header"),
-      { kind: "folder", projectKey: "alpha", section: "pinned" },
-      thread("p1", "pinned"),
-      marker("pinned-divider"),
-      { kind: "folder", projectKey: "alpha", section: "active" },
-      thread("a1", "active"),
-      { kind: "folder", projectKey: "beta", section: "active" },
-      thread("a2", "active"),
-    ];
-    expect(resolveSidebarDropTarget(withFolders, "a2", "a1")).toEqual({
-      section: "active",
-      pinnedOrder: ["p1"],
-      activeOrder: ["a2", "a1"],
-    });
-    expect(
-      resolveSidebarDropTarget(withFolders, "a1", sidebarFolderListId("pinned", "alpha")),
-    ).toEqual({
-      section: "pinned",
-      pinnedOrder: ["a1", "p1"],
-      activeOrder: ["a2"],
-    });
   });
 });
 

@@ -114,13 +114,25 @@ threads on the same PR nest under the first-linked thread in that sidebar
 section. Collapse the nest to hide the extra threads; the parent keeps a count
 and the strongest status from the hidden ones.
 
-## Group threads by project
+## Pick a project
 
-On web and desktop, **Pinned** and **Active** group threads into project
-folders when you are viewing all projects. A project's latest activity moves
-its folder to the top of that section. Collapse a folder to see the strongest
-status among its threads and how many are inside. **Snoozed** and **Settled**
-stay as shelves without project headers.
+On web and desktop, the strip of project icons on the left edge of the sidebar
+chooses what the thread list shows. The top entry shows every project, with each
+row naming its project. Pick an icon to see only that project's threads; pick it
+again, or the top entry, to go back to all projects. The choice survives
+restarts and stays while you visit Settings.
+
+A dot on a project icon means one of its threads is waiting on you: an approval,
+a question, a plan to review, or a finished response you have not seen yet.
+
+Hover a project icon and use its **+** to start a thread there without the
+project picker. Right-click an icon for **New thread**, **Settle idle threads**,
+**Project settings**, **Copy path**, and **Remove project**. Settling idle
+threads parks every active thread in that project that is not running, waiting,
+or holding an unseen response.
+
+When the sidebar is collapsed, the strip stays. Picking a project reopens the sidebar scoped
+to it, and the top entry reopens it with every project.
 
 ## Find and reference work
 

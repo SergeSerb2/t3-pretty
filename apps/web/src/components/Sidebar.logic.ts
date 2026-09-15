@@ -120,7 +120,6 @@ export type SidebarSection = "pinned" | "active" | "snoozed" | "settled";
 /** Sortable ids: thread rows use their scoped key; structural items use a
     colon-free prefix: scoped thread keys always contain a colon. */
 const SIDEBAR_MARKER_PREFIX = "sidebar-marker-";
-const SIDEBAR_FOLDER_PREFIX = "sidebar-folder-";
 
 export type SidebarListMarker =
   /** The top boundary is also a landing target when there are no pins. */
@@ -149,20 +148,10 @@ export type SidebarListItem =
       readonly childCount?: number;
       readonly childKeys?: readonly string[];
     }
-  | {
-      readonly kind: "folder";
-      readonly projectKey: string;
-      readonly section: SidebarSection;
-    }
   | { readonly kind: "marker"; readonly marker: SidebarListMarker };
-
-export function sidebarFolderListId(section: SidebarSection, projectKey: string): string {
-  return `${SIDEBAR_FOLDER_PREFIX}${section}-${projectKey}`;
-}
 
 export function sidebarListItemId(item: SidebarListItem): string {
   if (item.kind === "thread") return item.key;
-  if (item.kind === "folder") return sidebarFolderListId(item.section, item.projectKey);
   return sidebarMarkerId(item.marker);
 }
 
@@ -1026,40 +1015,6 @@ export function searchSidebarThreads<
       term.toLowerCase().includes(normalizedQuery),
     ),
   );
-}
-
-export function filterSidebarProjectScopeItems<TItem extends { readonly value: string }>(input: {
-  items: readonly TItem[];
-  query: string;
-  matches: (item: TItem, query: string) => boolean;
-}): readonly TItem[] {
-  const query = input.query.trim();
-  if (query.length === 0) return input.items;
-  return input.items.filter((item) => item.value !== "all" && input.matches(item, query));
-}
-
-export interface SidebarProjectScopeMenuState {
-  readonly open: boolean;
-  readonly query: string;
-}
-
-export type SidebarProjectScopeMenuAction =
-  | { readonly type: "query-changed"; readonly query: string }
-  | { readonly type: "open-changed"; readonly open: boolean }
-  | { readonly type: "project-settings-opened" };
-
-export function reduceSidebarProjectScopeMenuState(
-  state: SidebarProjectScopeMenuState,
-  action: SidebarProjectScopeMenuAction,
-): SidebarProjectScopeMenuState {
-  switch (action.type) {
-    case "query-changed":
-      return { ...state, query: action.query };
-    case "open-changed":
-      return { open: action.open, query: "" };
-    case "project-settings-opened":
-      return { open: false, query: "" };
-  }
 }
 
 // Settled rows are history, so they order by when the work ENDED, not when
