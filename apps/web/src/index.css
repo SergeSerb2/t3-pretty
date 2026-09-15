@@ -2855,14 +2855,20 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   --workspace-glass-surface: var(--toolbar-background);
   --workspace-glass-radius: 0 0 1rem 1rem;
   --workspace-glass-shadow: 0 10px 24px -16px rgb(0 0 0 / 32%);
+  /* Stacking context so ::after (z-0) stays behind chrome (z-1) without
+     becoming a Backdrop Root. isolation: isolate would trap the plate's
+     backdrop-filter in an empty group, so the bar reads as a solid slab.
+     The plate stays a pseudo so backdrop-filter does not make this host a
+     containing block for fixed titlebar controls. */
   position: relative;
   z-index: 20;
   background: transparent;
 }
 
-/* The material sits behind the controls in their existing stacking context.
-   Only this plate samples the backdrop: text stays sharp, and fixed titlebar
-   controls keep the viewport as their containing block. */
+:is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) > * {
+  z-index: 1;
+}
+
 :root {
   --workspace-glass-sheen: rgb(255 255 255 / 34%);
   --workspace-glass-rim: rgb(255 255 255 / 48%);
@@ -2879,11 +2885,14 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   --workspace-glass-shadow:
     10px 4px 24px -16px rgb(0 0 0 / 32%), 20px 8px 48px -24px rgb(0 0 0 / 18%);
   position: relative;
-  isolation: isolate;
   z-index: 30;
   /* Solid host fill if ::after never paints; the plate overlays this. */
   background-color: var(--sidebar);
   border-color: transparent;
+}
+
+.workspace-sidebar-glass > * {
+  z-index: 1;
 }
 
 .workspace-sidebar-glass [data-slot="sidebar-inner"] {
@@ -2899,7 +2908,7 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   pointer-events: none;
   border-radius: var(--workspace-glass-radius);
   background:

@@ -35,7 +35,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
 
 const SIDEBAR_INSET_CLASS =
-  "h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh";
+  "h-svh min-h-0 overflow-clip overscroll-y-none bg-background text-foreground md:h-dvh";
 
 /**
  * Shared view for both thread routes: `/draft/$draftId` and

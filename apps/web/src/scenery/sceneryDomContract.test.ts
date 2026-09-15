@@ -47,7 +47,7 @@ describe("scenery structural contract with upstream markup", () => {
 
   it("ChatView root is still the direct bg-background child the CSS clears", () => {
     expect(chatViewSource).toContain(
-      '"relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"',
+      '"relative flex min-h-0 min-w-0 flex-1 overflow-clip bg-background"',
     );
     expect(chatViewSource).toContain("data-chat-header");
     expect(chatViewSource).toContain('data-chat-messages=""');
@@ -183,6 +183,23 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toMatch(
       /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) \{\s*--workspace-glass-surface: var\(--toolbar-background\);/,
     );
+  });
+
+  it("chrome glass stacks without trapping backdrop-filter in a Backdrop Root", () => {
+    const sidebarRule = indexCssSource.match(/\.workspace-sidebar-glass \{[^}]+\}/)?.[0] ?? "";
+    expect(sidebarRule).toContain("z-index: 30;");
+    expect(sidebarRule).not.toContain("isolation: isolate");
+    expect(indexCssSource).toContain(".workspace-sidebar-glass > * {\n  z-index: 1;");
+    expect(indexCssSource).toMatch(
+      /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) > \* \{\s*z-index: 1;/,
+    );
+    expect(indexCssSource).toMatch(
+      /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]*z-index: 0;[^}]*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturation\)\);/s,
+    );
+    expect(chatViewSource).toContain("overflow-clip bg-background");
+    expect(chatViewSource).toContain("overflow-x-clip");
+    expect(threadRouteViewSource).toContain("overflow-clip overscroll-y-none");
+    expect(threadRouteViewSource).not.toContain("overflow-hidden overscroll-y-none");
   });
 
   it("the right panel still exposes the hooks the scenery glass plate targets", () => {
