@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.41-nightly.20260915.1766002246",
+    date: "2026-09-15",
+    items: [
+      {
+        kind: "fixed",
+        title: "Saved issues open and omit Linear create nulls",
+      },
+      {
+        kind: "new",
+        title: "Native Linear and Sentry management",
+      },
+      {
+        kind: "fixed",
+        title: "Sidebar and top-bar glass from randomly going solid",
+      },
+      {
+        kind: "fixed",
+        title: "Fillet the inner corner where the sidebar meets the top bar",
+      },
+      {
+        kind: "fixed",
+        title: "Show Done when PR+ threads auto-merge",
+      },
+      {
+        kind: "fixed",
+        title: "Rewrite remote agent-task headlines when Codex text gen is missing or expired",
+      },
+    ],
+  },
+  {
     version: "0.0.41-nightly.20260915.1766002236",
     date: "2026-09-15",
     items: [
