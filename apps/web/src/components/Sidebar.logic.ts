@@ -1,6 +1,7 @@
 import {
   resolveThreadPullRequestBadge,
   threadPullRequestSearchTerms,
+  visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
 import * as React from "react";
 import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit/sortable";
@@ -587,6 +588,31 @@ export function threadChangeRequestIsMerged(
   thread: Pick<ThreadStatusInput, "pullRequests">,
 ): boolean {
   return resolveThreadPullRequestBadge(thread.pullRequests)?.state === "merged";
+}
+
+function latestMergedChangeRequestAtMs(
+  pullRequests: ThreadStatusInput["pullRequests"],
+): number | null {
+  let latest: number | null = null;
+  for (const link of visibleThreadPullRequests(pullRequests ?? [])) {
+    if (link.snapshot?.state !== "merged") continue;
+    const parsed = Date.parse(link.snapshot.mergedAt ?? link.snapshot.updatedAt ?? "");
+    if (Number.isNaN(parsed)) continue;
+    if (latest === null || parsed > latest) latest = parsed;
+  }
+  return latest;
+}
+
+/** True until the user visits after the PR snapshot merge time. */
+export function hasUnseenMergedChangeRequest(
+  thread: Pick<ThreadStatusInput, "pullRequests"> & { lastVisitedAt?: string | undefined },
+): boolean {
+  if (!threadChangeRequestIsMerged(thread)) return false;
+  if (!thread.lastVisitedAt) return true;
+  const lastVisitedAt = Date.parse(thread.lastVisitedAt);
+  if (Number.isNaN(lastVisitedAt)) return true;
+  const mergedAt = latestMergedChangeRequestAtMs(thread.pullRequests);
+  return mergedAt !== null && lastVisitedAt < mergedAt;
 }
 
 export interface ThreadJumpHintVisibilityController {
@@ -1216,11 +1242,11 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
-  // Merged PRs outrank a leftover babysit watch, but only while unseen (or
-  // never visited). After a visit the row can still say Done; the rail must
-  // not keep a running total of historical merges.
+  // Merged PRs outrank a leftover babysit watch until the user visits after
+  // merge time. The row can still say Done after that; the rail must not keep
+  // a running total of historical merges.
   const changeRequestMerged = threadChangeRequestIsMerged(thread);
-  if (changeRequestMerged && (hasUnseenCompletion(thread) || !thread.lastVisitedAt)) {
+  if (hasUnseenMergedChangeRequest(thread)) {
     return COMPLETED_STATUS_PILL;
   }
 

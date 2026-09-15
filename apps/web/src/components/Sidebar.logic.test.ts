@@ -2250,6 +2250,46 @@ describe("resolveThreadStatusPill", () => {
     ).toMatchObject({ label: "Completed", pulse: false });
   });
 
+  it("shows completed when the user visited before GitHub merge", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          interactionMode: "default",
+          lastVisitedAt: "2026-03-09T10:06:00.000Z",
+          latestTurn: makeLatestTurn(),
+          backgroundLiveness: "monitoring",
+          session: {
+            ...baseThread.session,
+            status: "ready",
+            activeTurnId: null,
+          },
+          pullRequests: [
+            {
+              host: "github.com",
+              repository: "acme/app",
+              number: 42,
+              url: "https://github.com/acme/app/pull/42",
+              source: "agent" as const,
+              linkedAt: "2026-03-09T10:01:00.000Z",
+              stack: null,
+              snapshot: {
+                state: "merged" as const,
+                title: "Fix",
+                headBranch: "fix",
+                baseBranch: "main",
+                isDraft: false,
+                updatedAt: "2026-03-09T10:07:00.000Z",
+                syncedAt: "2026-03-09T10:07:00.000Z",
+                mergedAt: "2026-03-09T10:07:00.000Z",
+              },
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ label: "Completed", pulse: false });
+  });
+
   it("drops the completed pill after a visit so the rail count can clear", () => {
     expect(
       resolveThreadStatusPill({
