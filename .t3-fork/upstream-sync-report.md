@@ -3585,3 +3585,25 @@
   - edited `apps/web/src/cloud/connectCliAuth.test.ts`
   - edited `apps/web/src/components/chat/MessagesTimeline.logic.test.ts`
   - edited `apps/web/src/components/LegacySidebar.tsx`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260915.1766`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260915.1752`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — Preserved T3 Pretty's shared `ThreadRouteView` architecture introduced to maintain component continuity and prevent the screen flash when a draft is promoted to a new thread.
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — Avoided restoring a duplicated inline draft route implementation that would bypass the fork's consolidated transition behavior.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — The parent draft route remains connected to the existing `createFileRoute` declaration through the shared `ThreadRouteView`, which supersedes the duplicated inline implementation while retaining the route's chat-view responsibilities.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — The parent's inline `DraftChatThreadRouteView` implementation form.. Reason: T3 Pretty intentionally extracted this behavior into the shared `ThreadRouteView` to preserve view continuity during draft promotion. Restoring the inline component would regress the fork's no-screen-flash fix; its route behavior is represented by the shared implementation instead.
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — The new `key={draftId}` remount behavior on the inline `ChatView`.. Reason: That element no longer exists in this route after T3 Pretty's shared-view refactor. Reintroducing it here would require an inline or keyed wrapper around `ThreadRouteView`, undermining the stable shared component identity used by the fork's no-flash transition. Applying it inside the shared component cannot be done safely without that file's context.
