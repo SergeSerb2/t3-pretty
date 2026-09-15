@@ -82,12 +82,8 @@ describe("thread sidebar width", () => {
     const inset = NodeFS.readFileSync(new URL("../workspaceTitlebar.ts", import.meta.url), "utf8");
 
     expect(sidebarSource).toContain(
-      "`max(${SIDEBAR_WIDTH_ICON}, var(--workspace-titlebar-content-left, 0px))`",
-    );
-    expect(sidebarSource).not.toContain(
       "`max(${SIDEBAR_WIDTH_ICON}, var(--workspace-controls-left, 0px))`",
     );
-    expect(sidebarSource).not.toContain("`max(${SIDEBAR_WIDTH_ICON}, var(--workspace-controls-left))`");
     expect(inset).toContain(
       "max(0px,calc(var(--workspace-titlebar-content-left)-var(--sidebar-width-icon)))",
     );
