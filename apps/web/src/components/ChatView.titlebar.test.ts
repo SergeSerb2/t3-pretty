@@ -91,4 +91,14 @@ describe("thread titlebar layout controls", () => {
     expect(hole).toContain("data-titlebar-layout-control-count={controlCount}");
     expect(hole).toContain("[-webkit-app-region:no-drag]");
   });
+
+  it("does not double-count the collapsed icon rail in the titlebar inset", () => {
+    const inset = NodeFS.readFileSync(new URL("../workspaceTitlebar.ts", import.meta.url), "utf8");
+    expect(inset).toContain(
+      "max(0px,calc(var(--workspace-titlebar-content-left)-var(--sidebar-width-icon)))",
+    );
+    expect(inset).not.toContain(
+      "[[data-sidebar-state=collapsed]_&]:pl-[var(--workspace-titlebar-content-left)]",
+    );
+  });
 });
