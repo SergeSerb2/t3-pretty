@@ -9426,26 +9426,24 @@ export default function ChatView(props: ChatViewProps) {
       )}
       data-workspace-titlebar-controls
     >
-      <div className="pointer-events-auto flex h-full items-center gap-1">
-        {!shouldUseRightPanelSheet ? (
-          <span
-            aria-hidden={!rightPanelOpen}
-            className={cn(
-              "flex shrink-0",
-              panelAnimationsActive &&
-                "motion-safe:transition-opacity motion-safe:[transition-duration:var(--panel-animation-duration)] motion-safe:ease-out",
-              rightPanelOpen ? "opacity-100" : "pointer-events-none opacity-0",
-            )}
-            inert={!rightPanelOpen}
-          >
-            <RightPanelMaximizeControl
-              maximized={rightPanelMaximized}
-              onToggle={toggleRightPanelMaximized}
-            />
-          </span>
-        ) : null}
-        {panelToggleControls}
-      </div>
+      {!shouldUseRightPanelSheet ? (
+        <span
+          aria-hidden={!rightPanelOpen}
+          className={cn(
+            "flex shrink-0",
+            panelAnimationsActive &&
+              "motion-safe:transition-opacity motion-safe:[transition-duration:var(--panel-animation-duration)] motion-safe:ease-out",
+            rightPanelOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+          )}
+          inert={!rightPanelOpen}
+        >
+          <RightPanelMaximizeControl
+            maximized={rightPanelMaximized}
+            onToggle={toggleRightPanelMaximized}
+          />
+        </span>
+      ) : null}
+      <div className="pointer-events-auto flex h-full items-center">{panelToggleControls}</div>
     </div>
   );
   const parkTitlebarLayoutControls = !(shouldUseRightPanelSheet && rightPanelOpen);

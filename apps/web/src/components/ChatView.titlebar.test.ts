@@ -44,6 +44,10 @@ describe("thread titlebar layout controls", () => {
     expect(cluster).toContain("pointer-events-auto");
     expect(cluster).toContain("pointer-events-none absolute");
     expect(cluster).not.toContain("pointer-events-none fixed");
+    expect(cluster).toContain(
+      'rightPanelOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"',
+    );
+    expect(cluster).not.toContain("pointer-events-auto flex h-full items-center gap-1");
     expect(headerSlice).toContain("TitlebarLayoutControlsDragHole");
     expect(headerSlice).toContain(
       "isElectron && parkTitlebarLayoutControls && !inlineRightPanelOwnsTitleBar",
