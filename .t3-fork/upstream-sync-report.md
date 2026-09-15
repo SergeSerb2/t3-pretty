@@ -3419,3 +3419,138 @@
   - edited `apps/web/src/components/pullRequest/PullRequestSummaryTab.test.tsx`
 - `mobile-typecheck` failed after merging `v0.0.41-nightly.20260914.1722`; repaired with `gpt-5.6-sol`: Updated live headline derivation to use the non-nullable running turn source exposed by the merged parent API, resolving TS2871 without weakening T3 Pretty behavior.
   - edited `apps/mobile/src/state/use-thread-composer-state.ts`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260915.1735`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260914.1722`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `pnpm-lock.yaml` — fork-only dependency entries are re-derived by lockfile regeneration against the merged package manifests
+- `apps/mobile/app.config.ts` — T3 Pretty mobile versions continue to derive from the fork release train through resolveMobileAppVersion(), rather than adopting the parent application's independent version number.
+- `apps/mobile/app.config.ts` — T3 Pretty's explicitly pinned native runtime fingerprint remains authoritative, protecting the fork's OTA compatibility boundary.
+- `apps/mobile/app.config.ts` — The development/preview/production runtime policy remains available as the fallback when no pinned runtime version is configured.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved the World Scenery daily-photo place display when scenery chrome is active and the keyboard is hidden.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved T3 Pretty's NewTaskGlassChip presentation around the workspace controls, including scenery-aware activation.
+- `apps/server/src/cloud/CliTokenManager.ts` — Surge Connect branding remains available through SURGE_CONNECT_NAME for the loopback authorization prompt.
+- `apps/server/src/cloud/CliTokenManager.ts` — Cloud CLI token exchanges retain the 30-second timeout safeguard.
+- `apps/server/src/cloud/CliTokenManager.ts` — Cloud CLI token responses retain the 64 KiB maximum-size safeguard.
+- `apps/server/src/cloud/CliTokenManager.ts` — T3 Connect token responses remain size-bounded using both Content-Length checks and capped stream collection.
+- `apps/server/src/cloud/CliTokenManager.ts` — OAuth authorization codes, refresh tokens, newly issued tokens, and decoded response data are prevented from escaping through raw HTTP or schema errors.
+- `apps/server/src/cloud/CliTokenManager.ts` — Non-success response bodies are released before returning a stable request-failed diagnostic.
+- `apps/server/src/cloud/CliTokenManager.ts` — Token exchanges retain explicit timeout, oversized-response, read-failure, invalid-response, and request-failure diagnostics.
+- `apps/server/src/cloud/CliTokenManager.ts` — Persisted token construction retains refresh-token fallback, expiry calculation, and optional identity extraction.
+- `apps/server/src/sourceControl/SourceControlRepositoryService.test.ts` — Preserved T3 Pretty's regression test requiring cloneRepository to reject an existing non-empty destination rather than overwrite user data, including its cloneRepository operation and diagnostic detail assertions.
+- `apps/server/src/sourceControl/SourceControlRepositoryService.ts` — Preserved T3 Pretty's current clone destination/path-handling architecture by not reintroducing the removed expandHomePathWith dependency.
+- `apps/web/package.json` — Retained the complete CodeMirror dependency set used by T3 Pretty's web editing functionality, including commands, Markdown language support, language primitives, editor state, and editor view.
+- `apps/web/src/cloud/connectCliAuth.test.ts` — Preserved T3 Pretty's ability to disable CLI OAuth routes with VITE_CONNECT_CLI_AUTH_ENABLED for the pairing-only GitHub Pages deployment at the fork-owned /t3-pretty/connect path.
+- `apps/web/src/cloud/connectCliAuth.ts` — T3 Pretty's hosted-static-app, public-config, and explicit feature-flag gating for the /connect CLI authentication route remains intact.
+- `apps/web/src/cloud/connectCliAuth.ts` — T3 Pretty's Pages-off-callback behavior remains intact: Clerk returns the authorization code directly to the CLI's 127.0.0.1 loopback listener.
+- `apps/web/src/cloud/connectCliAuth.ts` — The existing sign-in redirect behavior, including falling back to the current URL when CLI OAuth configuration is unavailable, remains unchanged.
+- `apps/web/src/components/ChatView.tsx` — Preserved T3 Pretty's `worktreeSetupExiting` state so a completed setup card recedes through the existing scenery/reduced-motion-aware exit beat instead of disappearing immediately.
+- `apps/web/src/components/ChatView.tsx` — Preserved the downstream cleanup effect that honors both the scenery motion setting and the user's `prefers-reduced-motion` preference.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Running worktree setup remains distinct from completed setup and suppresses the live working placeholder while retaining the setup card after the user's first message.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Completed worktree setup still restores working and thinking placeholders so the first turn can rise in beneath the finished setup card.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — The fork's explicit runningSnapshot and doneSnapshot fixtures remain intact, including the later asynchronous setup-script coverage attached to the completed case.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — The worktree setup card remains directly beneath the first user send, with `embedded: false`, rather than being removed or relocated when the agent starts.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Finished and failed setup outcomes and their actions remain visible while the first turn rises into the timeline.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — A non-finished setup continues to reserve working/thinking placeholders before handoff, and the exported `worktreeSetupReservesLivePlaceholders` compatibility surface is retained.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Preserved T3 Pretty's `worktreeSetupExiting` state propagation to `WorktreeSetupCard`, retaining the eased worktree-setup exit transition.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — T3 Pretty's exit-transition behavior remains intact: an exiting setup section is hidden from accessibility APIs and cannot receive pointer interaction.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — The first-turn embedded mode remains integrated into the worklog: it omits the standalone setup header and uses the already-filtered setup-script stage list.
+- `apps/web/src/components/cloud/ConnectCliAuthSurface.tsx` — Preserved Surge Connect branding through SURGE_CODE_ACCOUNT_NAME and SURGE_CONNECT_NAME.
+- `apps/web/src/components/cloud/ConnectCliAuthSurface.tsx` — Preserved hardened cross-surface request handling based on TanStack Router's current location hash and React useMemo, so authorization requests can be recomputed when the route changes.
+- `apps/web/src/components/cloud/ConnectCliAuthSurface.tsx` — T3 Pretty's Surge Connect branding remains applied to the parent authorization surface through SURGE_CONNECT_NAME.
+- `apps/web/src/components/cloud/ConnectCliAuthSurface.tsx` — T3 Pretty's account identity remains applied to sign-in through SURGE_CODE_ACCOUNT_NAME.
+- `apps/web/src/components/cloud/ConnectCliAuthSurface.tsx` — The fork's branded AuthSurfaceShell presentation remains around the replacement parent flow.
+- `apps/web/src/components/threadActionMenu.logic.ts` — Sidebar thread menus continue to omit Settle and Snooze because those actions are already exposed by T3 Pretty's hover-row affordances; the chat header retains them.
+- `apps/web/src/components/threadActionMenu.logic.ts` — T3 Pretty's lifecycle presentation remains intact, including distinct settle/unsettle and wake icons.
+- `apps/web/src/components/threadActionMenu.logic.ts` — The fork's explicit lifecycle/edit grouping remains controlled by joinGroups rather than restoring the parent's inline rename separator, preserving the menu danger and grouping boundaries.
+- `apps/web/src/routes/__root.tsx` — T3 Pretty's SceneryHost remains active on the welcome route, preserving World Scenery backgrounds and presentation during onboarding.
+- `docs/internals/t3-connect.md` — Preserved T3 Pretty's operational guidance that Clerk sign-up allowlists do not revoke existing cloud access and that existing users must be banned to end sessions and reject future sign-ins.
+- `docs/user/remote-access.md` — Preserved T3 Pretty's detailed T3 Connect troubleshooting, relay diagnostics, service recovery, retry behavior, and secret-reporting safeguards.
+- `docs/user/remote-access.md` — Preserved fork-aware `t3 pair` behavior, including public/internal state-directory boundaries, worktree targeting, one-time QR pairing, and Tailscale Serve support.
+- `docs/user/remote-access.md` — Preserved T3 Connect and Surge Connect branding and mesh behavior, including desktop synchronization, globally shared provider secrets, duplicate-connection collapsing, offline thread changes, and headless/browser limitations.
+- `docs/user/remote-access.md` — Preserved relay migration and host-registration repair guidance, public-build relay isolation for managed SSH backends, account management, and T3 Pretty mobile Live Activity behavior.
+- `docs/user/remote-access.md` — Preserved T3 Pretty's cross-environment thread copy/move workflow and its transfer, repository, size, online-state, and provider-session safeguards.
+- `packages/shared/src/connectAuth.test.ts` — Preserved test coverage ensuring T3 Pretty Connect authorization and callback URLs retain the GitHub Pages-style `/t3-pretty` hosted base path.
+- `packages/shared/src/connectAuth.test.ts` — Preserved use of T3 Pretty's hosted project URL and imported `connectCallbackUrl` so the fork-specific publication-path safeguard remains executable.
+- `packages/shared/src/connectAuth.ts` — Retains T3 Pretty's maximum-length validation for Connect authorization state and PKCE challenge values, preventing oversized cross-surface authentication payloads.
+- `packages/shared/src/connectAuth.ts` — Keeps T3 Pretty's project-site base-path-safe `hostedAppRouteUrl` behavior for the active hosted `/connect` authorization route.
+- `packages/shared/src/connectAuth.ts` — Surge Connect branding remains dynamic through SURGE_CONNECT_NAME rather than reverting to the parent-facing T3 Connect name.
+- `packages/shared/src/connectAuth.ts` — The out-of-band authorization-code encoding, parsing, and request-state validation required by T3 Pretty's Connect flow remain available.
+- `packages/shared/src/connectAuth.ts` — CONNECT_AUTH_CODE_MAX_LENGTH validation remains in place to harden Connect code parsing against oversized input.
+
+## Parent changes integrated at conflict boundaries
+
+- `pnpm-lock.yaml` — took the parent nightly's generated lockfile wholesale instead of AI-splicing it
+- `apps/mobile/app.config.ts` — Preserved the parent runtime-version policy behavior as the fallback beneath T3 Pretty's pinned runtime version.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent project-clone banner above the workspace controls for active clone operations.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated clone cancellation, retry, and cloned-project removal actions with the parent error-handling callbacks.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved the parent's layout intent of keeping transient clone status above the controls so the controls remain adjacent to the composer area.
+- `apps/server/src/cloud/CliTokenManager.ts` — Narrowed the connectAuth import to buildConnectAuthorizeRequestUrl, incorporating the parent’s removal of obsolete callback-helper dependencies.
+- `apps/server/src/cloud/CliTokenManager.ts` — Added the RFC 8628 device-code grant type used by the parent’s first-party device authorization flow.
+- `apps/server/src/cloud/CliTokenManager.ts` — Added the parent’s five-second default device polling interval when Clerk omits one.
+- `apps/server/src/cloud/CliTokenManager.ts` — Added the parent’s RFC 8628 slow_down handling constant, which increases the polling interval by five seconds.
+- `apps/server/src/cloud/CliTokenManager.ts` — The parent refactor separating HTTP request execution from response decoding is preserved.
+- `apps/server/src/cloud/CliTokenManager.ts` — readTokenResponse now consumes the supplied HttpClientResponse, allowing the same implementation to be reused by normal token exchange and the parent's device-authorization polling flow.
+- `apps/server/src/cloud/CliTokenManager.ts` — exchangeToken continues to delegate response processing to readTokenResponse rather than duplicating token construction.
+- `apps/server/src/sourceControl/SourceControlRepositoryService.test.ts` — Integrated the parent test for parsing clone progress from Git stderr while retaining sanitized Git failure details.
+- `apps/server/src/sourceControl/SourceControlRepositoryService.test.ts` — Integrated the parent test that redacts embedded credentials from the reported remote URL while preserving the credential-bearing clone URL passed to Git.
+- `apps/server/src/sourceControl/SourceControlRepositoryService.test.ts` — Integrated the parent discardClone safety test covering partial Git directories, unrelated directories, replacement files, and missing destinations.
+- `apps/server/src/sourceControl/SourceControlRepositoryService.test.ts` — Integrated the parent URL-sanitization test for query access tokens and userinfo passwords containing '@'.
+- `apps/server/src/sourceControl/SourceControlRepositoryService.ts` — Integrated parseGitCloneProgressLine and GitCloneProgressLine imports for the parent's tracked clone-progress behavior.
+- `apps/web/package.json` — Added the parent web package's @daypicker/react dependency at version ^10.0.1.
+- `apps/web/src/cloud/connectCliAuth.test.ts` — Accepted upstream's test deduplication by removing the standalone loopback-listener redirect test; the stronger PKCE authorize-URL test above already verifies the loopback redirect URI, state, challenge, and S256 method.
+- `apps/web/src/cloud/connectCliAuth.test.ts` — Made the callback value-length hardening test compile and execute by importing readConnectCliCallbackResult.
+- `apps/web/src/cloud/connectCliAuth.ts` — Removed the obsolete sessionStorage-based CLI OAuth state helpers and browser callback-result parser now that the web application is no longer the OAuth callback target.
+- `apps/web/src/cloud/connectCliAuth.ts` — Removed the now-unused callback code/state length-limit imports as part of the parent callback cleanup.
+- `apps/web/src/components/ChatView.tsx` — Integrated upstream handling for asynchronous setup scripts that remain active after the agent turn becomes visible.
+- `apps/web/src/components/ChatView.tsx` — Integrated upstream failed-stage behavior: a failed setup card remains reachable for the rest of an active turn so its exit code and terminal can still be inspected, then exits after the turn stops working.
+- `apps/web/src/components/ChatView.tsx` — Integrated cleanup of settled setup handoff entries so a later thread mount cannot adopt a setup that has already finished or failed.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Worktree setup timeline row expectations now include the upstream embedded: false field.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Added upstream coverage for failed setup remaining under the user's send while live working and thinking rows are present.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Handoff is recognized only when the agent stage is done and the latest turn has a timeline `startedAt`, avoiding a premature transition in the server-dispatch gap.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Once the turn is genuinely live, an asynchronous setup snapshot no longer blocks the agent's working and thinking rows, so setup-script progress can coexist with first-turn activity.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — The upstream `worktreeSetupAgentStarted` stage-based helper is incorporated.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Integrated the upstream `embedded` state into `WorktreeSetupCard`.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Integrated upstream behavior that hides cancel and work-locally actions for embedded worktree setup cards while retaining the existing running-phase requirement.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Adopted the parent's reusable SetupHeaderRow rendering for non-embedded setup cards.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Integrated rendering of all selected setup stages through StageRow, including setup-script output tails while running or failed.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Integrated the parent's embedded-aware spacing and simplified section presentation, avoiding the legacy bordered card shell in the normal rendered state.
+- `apps/web/src/components/cloud/ConnectCliAuthSurface.tsx` — Integrated the parent refactor that no longer requires Clerk's useUser hook.
+- `apps/web/src/components/cloud/ConnectCliAuthSurface.tsx` — Integrated the parent refactor that no longer requires encodeConnectAuthCode.
+- `apps/web/src/components/cloud/ConnectCliAuthSurface.tsx` — Adopted the parent first-party PKCE loopback flow in which Clerk returns the authorization code directly to the waiting CLI.
+- `apps/web/src/components/cloud/ConnectCliAuthSurface.tsx` — Removed the superseded /connect/callback manual one-time-code handoff component, matching the parent implementation.
+- `apps/web/src/components/threadActionMenu.logic.ts` — Added the parent-provided “Custom…” snooze child after the data-driven presets, including its separator and snooze:custom action ID.
+- `apps/web/src/routes/__root.tsx` — Mounted CustomSnoozeDialogHost in the welcome-route provider tree so the parent's custom snooze dialog behavior is available during onboarding.
+- `docs/internals/t3-connect.md` — Integrated the clarified loopback CLI flow through the hosted `/connect` page, including preservation of PKCE and state for the loopback callback.
+- `docs/internals/t3-connect.md` — Integrated the new Clerk OAuth device authorization grant for SSH and headless sessions, including direct token polling, hosted device-code approval, the absence of redirect URI/PKCE requirements, and the need to enable the grant on the CLI OAuth application.
+- `docs/user/remote-access.md` — Updated the SSH authorization documentation to the parent's current device-style flow: the CLI displays a browser link and short code, the user confirms and approves that code on any device, and the CLI resumes automatically without an OAuth callback port.
+- `packages/shared/src/connectAuth.test.ts` — Adopted the parent test description stating that state, challenge, and loopback port are all required; the surrounding parent assertion for a missing port remains intact.
+- `packages/shared/src/connectAuth.ts` — Requires every hosted Connect authorization request to contain a valid loopback callback port, matching the updated `ConnectAuthorizeRequest` contract and preventing fallback to the retired out-of-band flow.
+- `packages/shared/src/connectAuth.ts` — Removes the obsolete `connectCallbackUrl` hosted-callback helper as part of the parent's loopback-only authorization refactor.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/app.config.ts` — Change the mobile app version from 1.1.1 to the parent release version 1.2.0.. Reason: T3 Pretty intentionally derives its mobile version from its own release train. Adopting the parent's independent version would regress the fork's release identity and changelog/versioning behavior.
+- `apps/server/src/cloud/CliTokenManager.ts` — Direct unbounded decoding with HttpClientResponse.schemaBodyJson(OAuthTokenResponse).. Reason: It would remove T3 Pretty's response-size limit and could retain sensitive decoded OAuth token data in schema failures; the equivalent successful-token behavior is preserved through the hardened decoder.
+- `apps/server/src/cloud/CliTokenManager.ts` — HttpClient.filterStatusOk's native HTTP failure propagation in exchangeToken.. Reason: Native HTTP errors can retain the form request containing an authorization code or refresh token. Manual status handling preserves success/failure semantics while returning a stable sanitized error and releasing the response body.
+- `apps/web/src/components/ChatView.tsx` — Immediately clear `worktreeSetupRef` and `heldWorktreeSetup` as soon as the upstream completion predicate becomes true.. Reason: Immediate teardown conflicts with T3 Pretty's authoritative setup-card exit animation. The same cleanup still occurs through the existing timed effect, with immediate cleanup only when motion is disabled or reduced motion is requested.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Remove the ordinary setup card after a successful agent handoff when no running or failed setup script needs an embedded row.. Reason: T3 Pretty intentionally keeps the finished setup card attached to the originating send so outcomes and failure actions remain visible during the first-turn transition.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Relocate a running or failed post-handoff setup-script snapshot beneath the live turn header with `embedded: true`.. Reason: That placement directly conflicts with T3 Pretty's authoritative send-attached setup-card ownership. Duplicating the same snapshot in both positions would be incoherent; the standalone card still shows script state while the upstream handoff gate allows agent activity to proceed.
+- `apps/web/src/components/threadActionMenu.logic.ts` — The parent-side placement would expose Snooze, including the new Custom… choice, in the sidebar context menu as well as the header.. Reason: T3 Pretty intentionally removes lifecycle actions from the sidebar context menu because Settle and Snooze are supplied by its hover-row UI; duplicating them would regress the fork's established navigation behavior.
+- `packages/shared/src/connectAuth.ts` — Remove ConnectAuthCode and the encodeConnectAuthCode, checkConnectAuthCode, and parseConnectAuthCode helpers.. Reason: The shown parent side deletes these helpers without providing a first-party replacement at this conflict boundary. T3 Pretty's Surge Connect flow still relies on this fork-specific behavior, so applying the deletion would regress authoritative fork functionality.
+- `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/desktop-macos-preview-publish.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/desktop-macos-preview.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/release-desktop.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260915.1735`; repaired with `gpt-5.6-sol`: Restore the connect-code separator, adapt obsolete call sites and tests to the fork's current hook and the parent's direct-loopback auth API, and repair the renamed worktree fixture. The edits retain T3 Pretty's auth limits and sidebar architecture while resolving all six reported errors.
+  - edited `packages/shared/src/connectAuth.ts`
+  - edited `apps/web/src/cloud/connectCliAuth.test.ts`
+  - edited `apps/web/src/components/chat/MessagesTimeline.logic.test.ts`
+  - edited `apps/web/src/components/LegacySidebar.tsx`

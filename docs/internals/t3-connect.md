@@ -409,3 +409,16 @@ Do not enable an empty allowlist: it blocks all new sign-ups.
 Clerk allowlists control who can sign up. They do not revoke an existing user's active cloud
 access. To remove an already-created user's access, ban that user in Clerk so their active
 sessions are ended and future sign-ins are rejected.
+
+Loopback CLI authorization starts on the hosted `/connect` page so sign-in
+completes before entering Clerk's authorize endpoint. Sending a signed-out
+browser straight to that endpoint loses the authorize parameters during the
+sign-in redirect. The [shared flow](../../packages/shared/src/connectAuth.ts)
+preserves PKCE and state for the loopback callback.
+
+SSH and headless sessions use Clerk's OAuth device authorization grant because
+the browser cannot ordinarily reach a listener on the remote machine. The CLI
+polls Clerk's token endpoint directly while the user approves a short code on
+Clerk's hosted device page; the hosted app plays no part and there is no
+redirect URI or PKCE. The grant must be enabled on the CLI OAuth application
+or the device endpoint returns an error before any prompt is shown.

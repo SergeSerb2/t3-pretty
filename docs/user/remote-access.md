@@ -100,8 +100,9 @@ On a new device:
 1. Open **Settings** → **Connections** and sign in to the same T3 account.
 2. Find the host under **Remote Environments** and select **Connect**.
 
-Over SSH, the CLI prints a browser link and accepts the returned authorization code, so you do not
-need to forward an OAuth callback port.
+Over SSH, the CLI prints a browser link and a short code. Open the link on any device, confirm the
+code matches, and approve. The CLI continues on its own, so you do not need to forward an OAuth
+callback port.
 
 In the desktop app, selecting **Connect** also makes the new device available through T3
 Connect. Once both desktops participate, each app automatically keeps the full account mesh in its

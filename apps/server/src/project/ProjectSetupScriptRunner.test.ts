@@ -208,6 +208,7 @@ describe("ProjectSetupScriptRunner", () => {
           scriptCommand: "bun install",
           terminalId: "setup-setup",
           cwd: "/repo/worktrees/a",
+          async: true,
         });
         expect(open).toHaveBeenCalledWith({
           threadId: "thread-1",
