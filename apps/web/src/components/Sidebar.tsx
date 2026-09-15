@@ -3418,6 +3418,7 @@ export default function Sidebar() {
     return items;
   }, [
     activeThreads,
+    logicalProjectKeyByMember,
     pinnedThreads,
     projectExpandedById,
     renderedSettledThreads,
@@ -3433,6 +3434,7 @@ export default function Sidebar() {
       const projectKey = logicalProjectKeyByMember.get(
         `${thread.environmentId}:${thread.projectId}`,
       );
+      // No logical key means no rail icon to carry the dot.
       if (projectKey === undefined) continue;
       const pill = threadStatusPillFor(
         thread,
