@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.41-nightly.20260914.1722002165",
+    date: "2026-09-15",
+    items: [
+      {
+        kind: "new",
+        title: "Raise navigation with soft frosted glass",
+      },
+      {
+        kind: "new",
+        title: "Queue/steer delivery for messages sent mid-turn",
+      },
+      {
+        kind: "fixed",
+        title: "Hide auto-PR instructions from user-facing chat",
+      },
+      {
+        kind: "fixed",
+        title: "Wire workspace config helpers into CLI pack",
+      },
+      {
+        kind: "fixed",
+        title: "Redesign the project sidebar for compact navigation",
+      },
+      {
+        kind: "fixed",
+        title: "Bleed titlebar and sidebar chrome into the thread",
+      },
+    ],
+  },
+  {
     version: "0.0.41-nightly.20260914.1722002163",
     date: "2026-09-15",
     items: [
