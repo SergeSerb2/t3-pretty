@@ -79,11 +79,12 @@ export function ThreadRouteView() {
   const draftServerThreadRef = draftSession?.promotedTo ?? inferredThreadRef;
 
   const serverThreadShell = useThreadShell(routeThreadRef ?? draftServerThreadRef);
+  const promotionThreadDetail = useThreadDetail(draftServerThreadRef);
   const backgroundSubmissionPending = useBackgroundDraftSubmissionPending(draftServerThreadRef);
   const canonicalThreadRef = draftId
     ? resolveDraftPromotionNavigationTarget({
         serverThreadRef: draftServerThreadRef,
-        serverThread: serverThreadShell,
+        serverThread: promotionThreadDetail ?? serverThreadShell,
         backgroundSubmissionPending,
       })
     : null;

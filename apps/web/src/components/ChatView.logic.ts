@@ -557,7 +557,15 @@ export function resolveThreadSwitchTimeline<T extends readonly unknown[]>(input:
 
 export function resolveDraftPromotionNavigationTarget(input: {
   serverThreadRef: ScopedThreadRef | null;
-  serverThread: Pick<Thread, "latestTurn" | "session" | "messages"> | null | undefined;
+  // T3 Pretty's draft route may only have a shell (no message bodies).
+  // Upstream promotes once a user message is persisted during worktree
+  // setup; treat missing `messages` as "not yet persisted".
+  serverThread:
+    | (Pick<Thread, "latestTurn" | "session"> & {
+        readonly messages?: Thread["messages"];
+      })
+    | null
+    | undefined;
   backgroundSubmissionPending: boolean;
 }): ScopedThreadRef | null {
   if (input.backgroundSubmissionPending) {
@@ -572,7 +580,7 @@ export function resolveDraftPromotionNavigationTarget(input: {
   // keep the draft mounted until the server can render the running turn or
   // its startup error.
   const messagePersisted =
-    input.serverThread?.messages.some((message) => message.role === "user") ?? false;
+    input.serverThread?.messages?.some((message) => message.role === "user") ?? false;
   return turnStarted || startupStopped || messagePersisted ? input.serverThreadRef : null;
 }
 

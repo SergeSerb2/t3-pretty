@@ -23,6 +23,12 @@
 - `apps/web/src/components/chat/ComposerPrimaryActions.tsx` — kept Send now + queue-for-next-turn split
 - `apps/web/src/components/ChatView.tsx` — kept owner-key worktree-setup bookkeeping and exit animation; took recorded/visible setup resolution and `worktreeSetupBlocksSend`
 
+## Post-merge repairs
+
+- `apps/web/src/components/ChatView.logic.ts` — upstream draft promotion now inspects persisted user messages; T3 Pretty's draft route may only have a shell, so `messages` is optional and missing bodies mean "not yet persisted"
+- `apps/web/src/routes/-threadRouteView.tsx` — pass thread detail when the promoted server thread has one, otherwise the shell
+- `packages/client-runtime/src/state/threadCommands.test.ts` — fixture includes `enabledSkillIds` after the shell schema merge
+
 ## Previous integration notes
 
 - Parent nightly: `v0.0.41-nightly.20260914.1700`
