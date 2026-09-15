@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.41-nightly.20260915.1766002206",
+    date: "2026-09-15",
+    items: [
+      {
+        kind: "fixed",
+        title: "Agent message hover from shifting the thread",
+      },
+      {
+        kind: "fixed",
+        title: "Make live activity handoffs slower and skip same-text slides",
+      },
+      {
+        kind: "fixed",
+        title: "Sidebar rail scope clear, nest leftovers, legacy parity",
+      },
+      {
+        kind: "new",
+        title: "Replace sidebar project folders with a project rail",
+      },
+      {
+        kind: "fixed",
+        title: "Sidebar rows without a branch give the title two lines",
+      },
+      {
+        kind: "fixed",
+        title: "Isolate sidebar glass and restore opaque fallbacks",
+      },
+    ],
+  },
+  {
     version: "0.0.41-nightly.20260915.1766002203",
     date: "2026-09-15",
     items: [
