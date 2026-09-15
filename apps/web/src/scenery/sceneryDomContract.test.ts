@@ -179,9 +179,9 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain("background-color: var(--toolbar-control)");
   });
 
-  it("themed headers keep the toolbar chrome fill", () => {
+  it("headers use the toolbar palette for their raised glass material", () => {
     expect(indexCssSource).toMatch(
-      /html\[data-theme-id\] :is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) \{\s*background-color: var\(--toolbar-background\);/,
+      /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) \{\s*--workspace-glass-surface: var\(--toolbar-background\);/,
     );
   });
 

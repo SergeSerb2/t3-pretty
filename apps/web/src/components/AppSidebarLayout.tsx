@@ -264,7 +264,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           side="left"
           collapsible="icon"
           data-app-sidebar=""
-          className="group-data-[side=left]:border-r-0 bg-sidebar text-sidebar-foreground"
+          className="workspace-sidebar-glass group-data-[side=left]:border-r-0 text-sidebar-foreground"
           resizable={sidebarResizable}
         >
           {isOnSettings ? (

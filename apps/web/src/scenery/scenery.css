@@ -518,6 +518,7 @@ html:not(.dark) .scenery-attribution:hover {
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] {
   --scenery-chrome-fill: color-mix(in srgb, var(--sidebar) 42%, transparent);
   --scenery-chrome-fill-solid: color-mix(in srgb, var(--sidebar) 92%, transparent);
+  --workspace-glass-opacity: 42%;
 }
 
 /* The routed <main> and the thread view root paint the whole chat column.
@@ -551,7 +552,7 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-timeli
   background-color: transparent;
 }
 
-/* Navigation shares the transcript's scenery plane; no blur spills over text. */
+/* The navigation's raised glass is painted by its pseudo-element in index.css. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
   background-color: transparent;
@@ -613,7 +614,7 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]:has([data-sc
   padding-block: 0;
 }
 
-/* The sidebar uses the same backdrop as the chat, with controls providing contrast. */
+/* Keep nested fills clear so the sidebar's raised glass samples the scenery once. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-app-sidebar] {
   background-color: transparent;
 }
