@@ -185,6 +185,24 @@ describe("glass contract with upstream chrome", () => {
     );
   });
 
+  it("header glass stays behind controls and cannot steal clicks", () => {
+    const plateStart = indexCssSource.indexOf(".workspace-sidebar-glass,");
+    const plate = indexCssSource.slice(
+      plateStart,
+      indexCssSource.indexOf("html[data-window-interacting]", plateStart),
+    );
+    expect(plate).toContain("::after");
+    expect(plate).toContain("z-index: -1");
+    expect(plate).toContain("pointer-events: none");
+    const childrenRule = indexCssSource.slice(
+      indexCssSource.indexOf(
+        ":is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) > *",
+      ),
+      indexCssSource.indexOf("/* The material sits behind the controls"),
+    );
+    expect(childrenRule).toContain("z-index: 1;");
+  });
+
   it("the right panel still exposes the hooks the scenery glass plate targets", () => {
     expect(previewPanelShellSource).toContain("right-panel-inline-body");
     expect(previewPanelShellSource).toContain('data-right-panel=""');

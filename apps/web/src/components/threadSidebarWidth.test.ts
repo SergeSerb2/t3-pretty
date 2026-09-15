@@ -76,4 +76,16 @@ describe("thread sidebar width", () => {
       /className="sidebar-brand-stage[^"]*"[^>]*>\s*<Badge[^>]*data-environment-identification="pill"/s,
     );
   });
+
+  it("grows the collapsed icon rail to the traffic-light inset", () => {
+    const sidebarSource = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
+    const inset = NodeFS.readFileSync(new URL("../workspaceTitlebar.ts", import.meta.url), "utf8");
+
+    expect(sidebarSource).toContain(
+      "`max(${SIDEBAR_WIDTH_ICON}, var(--workspace-controls-left, 0px))`",
+    );
+    expect(inset).toContain(
+      "max(0px,calc(var(--workspace-titlebar-content-left)-var(--sidebar-width-icon)))",
+    );
+  });
 });
