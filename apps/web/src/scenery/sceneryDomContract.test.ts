@@ -189,6 +189,13 @@ describe("glass contract with upstream chrome", () => {
     const sidebarRule = indexCssSource.match(/\.workspace-sidebar-glass \{[^}]+\}/)?.[0] ?? "";
     expect(sidebarRule).toContain("z-index: 30;");
     expect(sidebarRule).not.toContain("isolation: isolate");
+    const headerRule =
+      indexCssSource.match(
+        /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) \{\s*--workspace-glass-surface:[^}]+\}/,
+      )?.[0] ?? "";
+    expect(headerRule).toContain("position: relative;");
+    expect(headerRule).toContain("z-index: 20;");
+    expect(headerRule).not.toContain("isolation: isolate");
     expect(indexCssSource).toContain(".workspace-sidebar-glass > * {\n  z-index: 1;");
     expect(indexCssSource).toMatch(
       /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) > \* \{\s*z-index: 1;/,

@@ -2856,7 +2856,7 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   --workspace-glass-radius: 0 0 1rem 1rem;
   --workspace-glass-shadow: 0 10px 24px -16px rgb(0 0 0 / 32%);
   /* Stacking context so ::after (z-0) stays behind chrome (z-1) without
-     becoming a Backdrop Root. isolation: isolate would trap the plate's
+     becoming a Backdrop Root. Isolating the host would trap the plate's
      backdrop-filter in an empty group, so the bar reads as a solid slab.
      The plate stays a pseudo so backdrop-filter does not make this host a
      containing block for fixed titlebar controls. */
