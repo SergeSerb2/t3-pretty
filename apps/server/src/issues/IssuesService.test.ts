@@ -29,7 +29,7 @@ const sentryIssue = {
   permalink: "https://acme.sentry.io/issues/123/",
   project: { id: "project-1", name: "Web" },
   status: "unresolved",
-  assignedTo: { id: "user-1", name: "Serge", type: "user" },
+  assignedTo: { id: "42", name: "Serge", type: "user" },
   priority: "high",
   lastSeen: "2026-09-15T00:00:00Z",
   count: "7",
@@ -340,14 +340,14 @@ it.effect(
       expect(f.requests.at(-1)?.url.pathname).toBe(
         "/api/0/organizations/acme/issues/123/events/latest/",
       );
-      expect(page.issues[0]?.assignee?.id).toBe("user:user-1");
+      expect(page.issues[0]?.assignee?.id).toBe("user:42");
       yield* issues.update({
         provider: "sentry",
         id: "123",
         assignedTo: page.issues[0]!.assignee!.id,
       });
       expect(f.requests.at(-1)?.url.pathname).toBe("/api/0/organizations/acme/issues/123/");
-      expect(f.requests.at(-1)?.body.assignedTo).toBe("user:user-1");
+      expect(f.requests.at(-1)?.body.assignedTo).toBe("user:42");
       yield* issues.list({ provider: "sentry", query: "", cursor: page.nextCursor! });
       expect(f.requests.at(-1)?.url.origin).toBe("https://de.sentry.io");
       expect(f.requests.at(-1)?.url.searchParams.get("cursor")).toBe("next-page");

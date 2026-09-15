@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   EnvironmentId,
   Issue,
@@ -289,6 +289,7 @@ function IssueBrowser({
   provider: IssueProvider;
   onCreate: (source?: Issue) => void;
 }) {
+  const listGeneration = useRef(0);
   const list = useAtomCommand(serverEnvironment.issuesList, { reportFailure: false });
   const metadata = useAtomCommand(serverEnvironment.issuesMetadata, { reportFailure: false });
   const [options, setOptions] = useState<IssueMetadata>(emptyMetadata);
@@ -314,6 +315,7 @@ function IssueBrowser({
   }, [metadata, environmentId, provider]);
   useEffect(() => {
     let cancelled = false;
+    listGeneration.current += 1;
     setPending(true);
     setIssues([]);
     setCursor(null);
@@ -332,6 +334,7 @@ function IssueBrowser({
     });
     return () => {
       cancelled = true;
+      listGeneration.current += 1;
     };
   }, [list, environmentId, provider, scopeId, search, revision]);
   return (
@@ -428,11 +431,13 @@ function IssueBrowser({
               variant="outline"
               disabled={pending}
               onClick={async () => {
+                const generation = listGeneration.current;
                 setPending(true);
                 const result = await list({
                   environmentId,
                   input: { provider, query: search, cursor, ...(scopeId ? { scopeId } : {}) },
                 });
+                if (generation !== listGeneration.current) return;
                 setPending(false);
                 setError(failure(result));
                 if (result._tag === "Success") {

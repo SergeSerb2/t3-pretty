@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Clipboard from "expo-clipboard";
 import { Alert, Linking, Pressable, ScrollView, View } from "react-native";
 import type { EnvironmentId, Issue, IssueMetadata, IssueProvider } from "@t3tools/contracts";
@@ -334,6 +334,7 @@ function IssueBrowser({
   provider: IssueProvider;
   onCreate: (source?: Issue) => void;
 }) {
+  const listGeneration = useRef(0);
   const list = useAtomCommand(serverEnvironment.issuesList, { reportFailure: false });
   const metadata = useAtomCommand(serverEnvironment.issuesMetadata, { reportFailure: false });
   const [query, setQuery] = useState(provider === "sentry" ? "is:unresolved" : "");
@@ -360,6 +361,7 @@ function IssueBrowser({
   }, [environmentId, provider, metadata]);
   useEffect(() => {
     let cancelled = false;
+    listGeneration.current += 1;
     setPending(true);
     setIssues([]);
     setCursor(null);
@@ -378,6 +380,7 @@ function IssueBrowser({
     });
     return () => {
       cancelled = true;
+      listGeneration.current += 1;
     };
   }, [environmentId, provider, list, scope, search, revision]);
   if (selected)
@@ -446,11 +449,13 @@ function IssueBrowser({
           title="Load more"
           disabled={pending}
           onPress={() => {
+            const generation = listGeneration.current;
             setPending(true);
             void list({
               environmentId,
               input: { provider, query: search, cursor, ...(scope ? { scopeId: scope } : {}) },
             }).then((result) => {
+              if (generation !== listGeneration.current) return;
               setPending(false);
               setError(message(result));
               if (result._tag === "Success") {
@@ -694,7 +699,7 @@ function IssueEditor({
       ) : null}
       <Action
         title={pending ? "Saving…" : issue ? "Save changes" : "Create issue"}
-        disabled={pending || loading || !title.trim() || !team}
+        disabled={pending || loading || (provider === "linear" && (!title.trim() || !team))}
         onPress={() => {
           setPending(true);
           const fields = {
