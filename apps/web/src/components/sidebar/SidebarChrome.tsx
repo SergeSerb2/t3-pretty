@@ -1,5 +1,6 @@
 import {
   ArrowLeftIcon,
+  CircleDotIcon,
   ChartNoAxesColumnIcon,
   GitPullRequestIcon,
   SettingsIcon,
@@ -231,6 +232,14 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               onClick={handlePullRequestsClick}
             />
           ) : null}
+          <SidebarUtilityItem
+            icon={<CircleDotIcon />}
+            label="Issues"
+            onClick={() => {
+              closeMobileSidebar();
+              void navigate({ to: "/issues" });
+            }}
+          />
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"

@@ -1,3 +1,4 @@
+import { IssuesRouteScreen } from "./features/issues/IssuesRouteScreen";
 import {
   createPathConfigForStaticNavigation,
   getPathFromState,
@@ -571,6 +572,11 @@ export const RootStack = createNativeStackNavigator({
       screen: AutomationDetailScreen,
       linking: "automations/:environmentId/:automationId",
       options: GLASS_HEADER_OPTIONS,
+    }),
+    Issues: createNativeStackScreen({
+      screen: IssuesRouteScreen,
+      linking: "issues",
+      options: { ...GLASS_HEADER_OPTIONS, title: "Issues" },
     }),
     PullRequests: createNativeStackScreen({
       screen: PullRequestsRouteScreen,
