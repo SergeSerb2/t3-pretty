@@ -94,6 +94,21 @@ describe("flattenNestedThreads", () => {
     ).toEqual(["main", "review", "other"]);
   });
 
+  it("accounts for every input thread as a parent, listed child, or nest childKey", () => {
+    const items = flatten([main, review, other], { isPrNestExpanded: false });
+    const accounted = new Set<string>();
+    for (const item of items) {
+      accounted.add(item.thread.id);
+      for (const childKey of item.childKeys) accounted.add(childKey);
+    }
+    expect([...accounted].sort()).toEqual(["main", "other", "review"]);
+  });
+
+  it("still lists a standalone thread that is not a nest parent or child", () => {
+    const ghost = thread("ghost", "2026-03-05T00:00:00.000Z");
+    expect(flatten([other, ghost]).map((item) => item.thread.id)).toEqual(["other", "ghost"]);
+  });
+
   it("does not nest across projects that share a pull request", () => {
     const elsewhere = thread(
       "elsewhere",

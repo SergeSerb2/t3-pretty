@@ -186,6 +186,8 @@ import {
   isContextMenuPointerDown,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
+  nextSidebarProjectScopeKey,
+  resolveProjectAttentionIndicator,
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
   resolveThreadStatusPill,
@@ -3146,6 +3148,7 @@ export default function LegacySidebar() {
   const projects = useProjects();
   const sidebarThreads = useThreadShells();
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
+  const threadLastVisitedAtById = useUiStateStore((store) => store.threadLastVisitedAtById);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);
   const navigate = useNavigate();
@@ -3320,6 +3323,28 @@ export default function LegacySidebar() {
     }
     return next;
   }, [sidebarThreads, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
+  const attentionByProjectKey = useMemo(() => {
+    const map = new Map<string, ThreadStatusPill>();
+    for (const [projectKey, threads] of threadsByProjectKey) {
+      const strongest = resolveProjectAttentionIndicator(
+        threads
+          .filter((thread) => thread.archivedAt === null)
+          .map((thread) =>
+            resolveThreadStatusPill({
+              thread: {
+                ...thread,
+                lastVisitedAt:
+                  threadLastVisitedAtById[
+                    scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
+                  ],
+              },
+            }),
+          ),
+      );
+      if (strongest) map.set(projectKey, strongest);
+    }
+    return map;
+  }, [threadLastVisitedAtById, threadsByProjectKey]);
   const getCurrentSidebarShortcutContext = useCallback(
     () => ({
       terminalFocus: isTerminalFocused(),
@@ -3795,6 +3820,84 @@ export default function LegacySidebar() {
     },
     [newThreadContext, sortedProjects.length],
   );
+  const startNewThreadInProject = useCallback(
+    (project: SidebarProjectSnapshot) => {
+      const member = project.memberProjects[0];
+      if (!member) return;
+      if (isMobile) setOpenMobile(false);
+      setOpen(true);
+      void handleNewThread(scopeProjectRef(member.environmentId, member.id));
+    },
+    [handleNewThread, isMobile, setOpen, setOpenMobile],
+  );
+  const { copyToClipboard: copyRailPathToClipboard } = useCopyToClipboard<{ path: string }>({
+    onCopy: (ctx) => {
+      toastManager.add({
+        type: "success",
+        title: "Path copied",
+        description: ctx.path,
+      });
+    },
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to copy path",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    },
+  });
+  const handleProjectRailContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLElement>, project: SidebarProjectSnapshot) => {
+      event.preventDefault();
+      void (async () => {
+        const api = readLocalApi();
+        if (!api) return;
+        const clicked = await settlePromise(() =>
+          api.contextMenu.show(
+            [
+              { id: "new-thread", label: "New thread" },
+              { id: "project-settings", label: "Project settings", icon: "settings" },
+              { id: "copy-path", label: "Copy path" },
+            ],
+            { x: event.clientX, y: event.clientY },
+          ),
+        );
+        if (clicked._tag === "Failure") return;
+        switch (clicked.value) {
+          case "new-thread":
+            startNewThreadInProject(project);
+            return;
+          case "project-settings":
+            if (isMobile) setOpenMobile(false);
+            setOpen(true);
+            void navigate({
+              to: "/projects/$projectKey",
+              params: { projectKey: project.projectKey },
+            });
+            return;
+          case "copy-path":
+            copyRailPathToClipboard(project.workspaceRoot, { path: project.workspaceRoot });
+            return;
+        }
+      })();
+    },
+    [copyRailPathToClipboard, isMobile, navigate, setOpen, setOpenMobile, startNewThreadInProject],
+  );
+  const selectCollapsedRailProject = useCallback(
+    (project: SidebarProjectSnapshot) => {
+      // Re-clicking the selected icon expands without pinning that project open.
+      if (nextSidebarProjectScopeKey(activeRouteProjectKey, project.projectKey) !== null) {
+        useUiStateStore
+          .getState()
+          .setProjectExpanded(projectExpansionPreferenceKeys(project), true);
+        expandThreadListForProject(project.projectKey);
+      }
+      setOpen(true);
+    },
+    [activeRouteProjectKey, expandThreadListForProject, setOpen],
+  );
 
   const prewarmers = prewarmedSidebarThreadRefs.map((threadRef) => (
     <SidebarThreadDetailPrewarmer key={scopedThreadKey(threadRef)} threadRef={threadRef} />
@@ -3808,14 +3911,14 @@ export default function LegacySidebar() {
         <SidebarProjectRail
           projects={sortedProjects}
           selectedProjectKey={activeRouteProjectKey}
+          attentionByProjectKey={attentionByProjectKey}
           onNewThread={handleNewThreadClick}
-          onSelectProject={(project) => {
-            useUiStateStore
-              .getState()
-              .setProjectExpanded(projectExpansionPreferenceKeys(project), true);
-            expandThreadListForProject(project.projectKey);
+          onNewThreadInProject={startNewThreadInProject}
+          onProjectContextMenu={handleProjectRailContextMenu}
+          onSelectAll={() => {
             setOpen(true);
           }}
+          onSelectProject={selectCollapsedRailProject}
         />
         <SidebarChromeFooter />
       </>

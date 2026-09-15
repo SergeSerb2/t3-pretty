@@ -689,6 +689,14 @@ export function isSidebarNestedLinkClick(target: EventTarget | null): boolean {
   return nodeClosest(parent, "a[href]") !== null;
 }
 
+/** Clicking the selected project icon again returns to all projects. */
+export function nextSidebarProjectScopeKey(
+  currentKey: string | null,
+  selectedKey: string,
+): string | null {
+  return currentKey === selectedKey ? null : selectedKey;
+}
+
 // Shift+click on the new thread button creates directly in the current
 // project, skipping the command palette's project picker. With a single
 // project there is nothing to pick, so a plain click already creates
@@ -1142,6 +1150,23 @@ export function resolveThreadStatusPill(input: {
   }
 
   return null;
+}
+
+export const PROJECT_ATTENTION_LABELS: ReadonlySet<ThreadStatusPill["label"]> = new Set([
+  "Pending Approval",
+  "Awaiting Input",
+  "Plan Ready",
+  "Completed",
+]);
+
+export function resolveProjectAttentionIndicator(
+  statuses: ReadonlyArray<ThreadStatusPill | null>,
+): ThreadStatusPill | null {
+  return resolveProjectStatusIndicator(
+    statuses.map((status) =>
+      status !== null && PROJECT_ATTENTION_LABELS.has(status.label) ? status : null,
+    ),
+  );
 }
 
 export function resolveProjectStatusIndicator(

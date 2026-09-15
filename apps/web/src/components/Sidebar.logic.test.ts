@@ -21,6 +21,8 @@ import {
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
+  nextSidebarProjectScopeKey,
+  resolveProjectAttentionIndicator,
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
@@ -2222,6 +2224,66 @@ describe("resolveThreadRowClassName", () => {
     const className = resolveThreadRowClassName({ isActive: true, isSelected: false });
     expect(className).toContain("bg-sidebar-row-active");
     expect(className).toContain("hover:bg-sidebar-row-active");
+  });
+});
+
+describe("nextSidebarProjectScopeKey", () => {
+  it("selects a project when none is scoped", () => {
+    expect(nextSidebarProjectScopeKey(null, "alpha")).toBe("alpha");
+  });
+
+  it("switches to a different project", () => {
+    expect(nextSidebarProjectScopeKey("alpha", "beta")).toBe("beta");
+  });
+
+  it("clears the scope when the selected project is clicked again", () => {
+    expect(nextSidebarProjectScopeKey("alpha", "alpha")).toBeNull();
+  });
+});
+
+describe("resolveProjectAttentionIndicator", () => {
+  it("ignores working and monitoring so rail dots only wait on the user", () => {
+    expect(
+      resolveProjectAttentionIndicator([
+        {
+          label: "Working",
+          colorClass: "text-sky-600",
+          dotClass: "bg-sky-500",
+          pulse: true,
+        },
+        {
+          label: "Monitoring",
+          colorClass: "text-sky-600",
+          dotClass: "bg-sky-500",
+          pulse: false,
+        },
+      ]),
+    ).toBeNull();
+  });
+
+  it("keeps the strongest waiting-on-you status", () => {
+    expect(
+      resolveProjectAttentionIndicator([
+        {
+          label: "Completed",
+          colorClass: "text-emerald-600",
+          dotClass: "bg-emerald-500",
+          pulse: false,
+        },
+        {
+          label: "Awaiting Input",
+          colorClass: "text-indigo-600",
+          dotClass: "bg-indigo-500",
+          pulse: false,
+        },
+        {
+          label: "Working",
+          colorClass: "text-sky-600",
+          dotClass: "bg-sky-500",
+          pulse: true,
+        },
+      ]),
+    ).toMatchObject({ label: "Awaiting Input" });
   });
 });
 
