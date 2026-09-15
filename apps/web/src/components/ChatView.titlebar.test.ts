@@ -35,13 +35,15 @@ describe("thread titlebar layout controls", () => {
 
   it("lets clicks reach the cluster through the header drag region", () => {
     const clusterStart = source.indexOf("const panelLayoutControls = (");
-    const cluster = source.slice(clusterStart, clusterStart + 900);
+    const cluster = source.slice(clusterStart, clusterStart + 1600);
     const headerSlice = source.slice(headerStart, headerClose);
     const holeIndex = source.indexOf("TitlebarLayoutControlsDragHole", headerStart);
 
     expect(clusterStart).toBeGreaterThanOrEqual(0);
     expect(cluster).toContain("pointer-events-none");
     expect(cluster).toContain("pointer-events-auto");
+    expect(cluster).toContain("pointer-events-none absolute");
+    expect(cluster).not.toContain("pointer-events-none fixed");
     expect(headerSlice).toContain("TitlebarLayoutControlsDragHole");
     expect(headerSlice).toContain(
       "isElectron && parkTitlebarLayoutControls && !inlineRightPanelOwnsTitleBar",

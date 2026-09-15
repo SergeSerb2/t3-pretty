@@ -365,7 +365,11 @@ import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import { resolveTimelineIsAtEnd, worktreeSetupAgentStarted } from "./chat/MessagesTimeline.logic";
 import { resolveComposerTimelineInset, resolveScrollToEndClearance } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
-import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
+import {
+  PanelLayoutControls,
+  RightPanelMaximizeControl,
+  TitlebarLayoutControlsDragHole,
+} from "./chat/PanelLayoutControls";
 import { expandedImageKey, type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
@@ -2125,8 +2129,6 @@ export default function ChatView(props: ChatViewProps) {
     panelAnimationDurationMs,
   );
   const rightPanelPresent = rightPanelPresence.present;
-  const rightPanelControlsInPanel = shouldUseRightPanelSheet && rightPanelPresent && rightPanelOpen;
-  const rightPanelControlsAtRoot = rightPanelPresent && !shouldUseRightPanelSheet;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
   const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
@@ -9411,32 +9413,42 @@ export default function ChatView(props: ChatViewProps) {
   const panelLayoutControls = (
     <div
       className={cn(
-        // Keep one viewport anchor inside the header's no-drag region. The
-        // header can shrink behind the right panel without moving the controls.
-        "pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        // Parked on the workspace root in both states, same inset as the
+        // sidebar trigger. Remounting into the shrinking chat header made the
+        // cluster jump to the panel seam on close, and the rest of the top bar
+        // jittered against buttons that stayed put.
+        // pointer-events-none on the strip, auto on the buttons: same as the
+        // left sidebar trigger. A later sibling than the chat header, so the
+        // header's frost/drag-region cannot sit on top of the cluster.
+        // absolute (not fixed): the workspace root is the containing block, so
+        // the header's raised stacking context cannot swallow the clicks.
+        "pointer-events-none absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
       )}
       data-workspace-titlebar-controls
     >
-      {!shouldUseRightPanelSheet ? (
-        <span
-          aria-hidden={!rightPanelOpen}
-          className={cn(
-            "flex shrink-0",
-            panelAnimationsActive &&
-              "motion-safe:transition-opacity motion-safe:[transition-duration:var(--panel-animation-duration)] motion-safe:ease-out",
-            rightPanelOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
-          )}
-          inert={!rightPanelOpen}
-        >
-          <RightPanelMaximizeControl
-            maximized={rightPanelMaximized}
-            onToggle={toggleRightPanelMaximized}
-          />
-        </span>
-      ) : null}
-      <div className="pointer-events-auto flex h-full items-center">{panelToggleControls}</div>
+      <div className="pointer-events-auto flex h-full items-center gap-1">
+        {!shouldUseRightPanelSheet ? (
+          <span
+            aria-hidden={!rightPanelOpen}
+            className={cn(
+              "flex shrink-0",
+              panelAnimationsActive &&
+                "motion-safe:transition-opacity motion-safe:[transition-duration:var(--panel-animation-duration)] motion-safe:ease-out",
+              rightPanelOpen ? "opacity-100" : "pointer-events-none opacity-0",
+            )}
+            inert={!rightPanelOpen}
+          >
+            <RightPanelMaximizeControl
+              maximized={rightPanelMaximized}
+              onToggle={toggleRightPanelMaximized}
+            />
+          </span>
+        ) : null}
+        {panelToggleControls}
+      </div>
     </div>
   );
+  const parkTitlebarLayoutControls = !(shouldUseRightPanelSheet && rightPanelOpen);
   const rightPanelContent = activeThreadRef ? (
     renderedRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
@@ -9638,7 +9650,6 @@ export default function ChatView(props: ChatViewProps) {
           ) : null}
         </WizardPopup>
       </Dialog>
-      {rightPanelControlsAtRoot ? panelLayoutControls : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
@@ -9653,13 +9664,6 @@ export default function ChatView(props: ChatViewProps) {
           reserveNativeControls={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
           className="relative bg-background"
         >
-          {isElectron && rightPanelControlsAtRoot ? (
-            <span
-              aria-hidden
-              className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
-            />
-          ) : null}
-          {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
           <ChatHeader
             {...(!supportsPullRequests || activeProjectRepository === null
               ? {}
@@ -9689,6 +9693,13 @@ export default function ChatView(props: ChatViewProps) {
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
           />
+          {/* no-drag only punches descendants of a drag node. The parked
+              cluster sits on the workspace root; this header covers it while
+              the right panel is closed. The open inline panel's tab bar
+              mounts the matching hole. */}
+          {isElectron && parkTitlebarLayoutControls && !inlineRightPanelOwnsTitleBar ? (
+            <TitlebarLayoutControlsDragHole controlCount={2} />
+          ) : null}
         </WorkspacePageHeader>
 
         {/* Main content area with optional plan sidebar */}
@@ -10325,6 +10336,8 @@ export default function ChatView(props: ChatViewProps) {
           </RightPanelTabs>
         </RightPanelSheet>
       ) : null}
+
+      {parkTitlebarLayoutControls ? panelLayoutControls : null}
 
       <AlertDialog
         open={pendingRevert !== null && pendingRevert.routeThreadKey === routeThreadKey}
