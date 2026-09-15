@@ -34,3 +34,7 @@ export function shouldShowLinearCreateEditor(
 ): boolean {
   return create !== null && (accounts?.some((item) => item.provider === "linear") ?? false);
 }
+
+export function isIssueDetailLoading(detail: Issue | null, error: string | null): boolean {
+  return detail === null && error === null;
+}

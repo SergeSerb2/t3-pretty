@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as Clipboard from "expo-clipboard";
 import { Alert, Linking, Pressable, ScrollView, View } from "react-native";
-import type { EnvironmentId, Issue, IssueMetadata, IssueProvider } from "@t3tools/contracts";
+import {
+  linearIssueMutationFields,
+  type EnvironmentId,
+  type Issue,
+  type IssueMetadata,
+  type IssueProvider,
+} from "@t3tools/contracts";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
@@ -15,6 +21,7 @@ import { useServerConfigs } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import {
+  isIssueDetailLoading,
   mergeIssueEnvironments,
   sentryAssigneeHint,
   shouldShowLinearCreateEditor,
@@ -516,7 +523,6 @@ function IssueDetail({
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    setError(null);
     void load({ environmentId, input: { provider: issue.provider, id: issue.id } }).then(
       (result) => {
         if (cancelled) return;
@@ -530,14 +536,6 @@ function IssueDetail({
   }, [environmentId, issue, load, revision]);
   return (
     <View className="gap-4">
-      {error ? (
-        <>
-          <Text accessibilityRole="alert" className="text-destructive">
-            {error}
-          </Text>
-          <Action title="Retry" onPress={() => setRevision((value) => value + 1)} />
-        </>
-      ) : null}
       {detail ? (
         <IssueEditor
           environmentId={environmentId}
@@ -549,7 +547,22 @@ function IssueDetail({
       ) : (
         <>
           <Action title="Back to issues" onPress={onBack} />
-          {!error ? <Text>Loading issue…</Text> : null}
+          {isIssueDetailLoading(detail, error) ? (
+            <Text>Loading issue…</Text>
+          ) : (
+            <>
+              <Text accessibilityRole="alert" className="text-destructive">
+                {error}
+              </Text>
+              <Action
+                title="Retry"
+                onPress={() => {
+                  setError(null);
+                  setRevision((value) => value + 1);
+                }}
+              />
+            </>
+          )}
         </>
       )}
     </View>
@@ -728,13 +741,14 @@ function IssueEditor({
         disabled={pending || loading || (provider === "linear" && (!title.trim() || !team))}
         onPress={() => {
           setPending(true);
-          const fields = {
+          const fields = linearIssueMutationFields({
             title: title.trim(),
             description,
-            ...(state ? { stateId: state } : {}),
-            assigneeId: assignee || null,
-            priority: Number(priority),
-          };
+            stateId: state,
+            assigneeId: assignee,
+            priority,
+            create: !issue,
+          });
           const request = issue
             ? update({
                 environmentId,

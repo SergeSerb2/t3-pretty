@@ -1,7 +1,8 @@
-import { EnvironmentId, type Issue } from "@t3tools/contracts";
+import { EnvironmentId, linearIssueMutationFields, type Issue } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  isIssueDetailLoading,
   mergeIssueEnvironments,
   sentryAssigneeHint,
   shouldShowLinearCreateEditor,
@@ -76,5 +77,48 @@ describe("sentryAssigneeHint", () => {
     expect(sentryAssigneeHint).toContain("user:ID");
     expect(sentryAssigneeHint).toContain("team:ID");
     expect(sentryAssigneeHint).not.toContain("email");
+  });
+});
+
+describe("isIssueDetailLoading", () => {
+  it("is only true before a result arrives", () => {
+    expect(isIssueDetailLoading(null, null)).toBe(true);
+    expect(isIssueDetailLoading(null, "The request failed.")).toBe(false);
+    expect(isIssueDetailLoading(sentryIssue, null)).toBe(false);
+    expect(isIssueDetailLoading(sentryIssue, "The request failed.")).toBe(false);
+  });
+});
+
+describe("linearIssueMutationFields", () => {
+  it("omits unset Linear create fields instead of sending null", () => {
+    expect(
+      linearIssueMutationFields({
+        title: "Fix login",
+        description: "Steps",
+        stateId: "",
+        assigneeId: "",
+        priority: "0",
+        create: true,
+      }),
+    ).toEqual({ title: "Fix login", description: "Steps" });
+  });
+
+  it("keeps null assigneeId on update so Linear can unassign", () => {
+    expect(
+      linearIssueMutationFields({
+        title: "Fix login",
+        description: "Steps",
+        stateId: "state-2",
+        assigneeId: "",
+        priority: "2",
+        create: false,
+      }),
+    ).toEqual({
+      title: "Fix login",
+      description: "Steps",
+      stateId: "state-2",
+      assigneeId: null,
+      priority: 2,
+    });
   });
 });

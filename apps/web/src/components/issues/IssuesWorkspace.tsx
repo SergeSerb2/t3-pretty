@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type {
-  EnvironmentId,
-  Issue,
-  IssueConnection,
-  IssueMetadata,
-  IssueProvider,
+import {
+  linearIssueMutationFields,
+  type EnvironmentId,
+  type Issue,
+  type IssueConnection,
+  type IssueMetadata,
+  type IssueProvider,
 } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
@@ -464,7 +465,11 @@ function IssueBrowser({
             onCreate={onCreate}
             onSaved={(issue) => {
               setSelected(issue);
-              setRevision((value) => value + 1);
+              setIssues((current) =>
+                current.some((item) => item.id === issue.id)
+                  ? current.map((item) => (item.id === issue.id ? issue : item))
+                  : [issue, ...current],
+              );
             }}
           />
         ) : (
@@ -835,13 +840,14 @@ function LinearEditor({
       onSubmit={async (event) => {
         event.preventDefault();
         setPending(true);
-        const fields = {
+        const fields = linearIssueMutationFields({
           title: title.trim(),
           description,
-          ...(state ? { stateId: state } : {}),
-          assigneeId: assignee || null,
-          priority: Number(priority),
-        };
+          stateId: state,
+          assigneeId: assignee,
+          priority,
+          create: !issue,
+        });
         const result = issue
           ? await update({ environmentId, input: { provider: "linear", id: issue.id, ...fields } })
           : await create({ environmentId, input: { teamId: team, ...fields } });

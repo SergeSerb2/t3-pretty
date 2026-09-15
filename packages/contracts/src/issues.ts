@@ -90,6 +90,34 @@ export const IssueCommentInput = Schema.Struct({
   body: TrimmedNonEmptyString.check(Schema.isMaxLength(100_000)),
 });
 export type IssueCommentInput = typeof IssueCommentInput.Type;
+
+/** Linear create rejects explicit nulls; updates use null to unassign. */
+export function linearIssueMutationFields(input: {
+  readonly title: string;
+  readonly description: string;
+  readonly stateId: string;
+  readonly assigneeId: string;
+  readonly priority: string | number;
+  readonly create: boolean;
+}) {
+  const priority = Number(input.priority);
+  if (input.create) {
+    return {
+      title: input.title,
+      description: input.description,
+      ...(input.stateId ? { stateId: input.stateId } : {}),
+      ...(input.assigneeId ? { assigneeId: input.assigneeId } : {}),
+      ...(priority > 0 ? { priority } : {}),
+    };
+  }
+  return {
+    title: input.title,
+    description: input.description,
+    ...(input.stateId ? { stateId: input.stateId } : {}),
+    assigneeId: input.assigneeId || null,
+    priority,
+  };
+}
 export class IssuesError extends Schema.TaggedError<IssuesError>()("IssuesError", {
   message: Schema.String,
 }) {}
