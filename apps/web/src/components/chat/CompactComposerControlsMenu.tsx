@@ -11,7 +11,7 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
-import { composerFloatingLayerProps } from "./composerEventScope";
+import { useComposerMenuProps } from "./composerEventScope";
 import { useComposerMenuState } from "./useComposerMenuState";
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
@@ -36,6 +36,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   onToggleAutoCreatePullRequest: () => void;
   onToggleBabysitPullRequest: () => void;
 }) {
+  const composerFloatingLayerProps = useComposerMenuProps();
   const size = props.size ?? "sm";
   const showAutoPrDot = props.showAutoCreatePullRequestToggle && props.autoCreatePullRequest;
   const [uncontrolledOpen, setUncontrolledOpen] = useComposerMenuState(props.hidden);
