@@ -774,15 +774,14 @@ function SidebarMenuButton({
     };
   }
 
+  // Icon buttons never show a text label, so their tooltip stays available
+  // while the sidebar is expanded. Labelled rows only need it when collapsed.
+  const hideTooltip = size === "icon" ? isMobile : state !== "collapsed" || isMobile;
+
   return (
     <Tooltip>
       <TooltipTrigger render={buttonElement as React.ReactElement<Record<string, unknown>>} />
-      <TooltipPopup
-        align="center"
-        hidden={state !== "collapsed" || isMobile}
-        side="right"
-        {...tooltip}
-      />
+      <TooltipPopup align="center" hidden={hideTooltip} side="right" {...tooltip} />
     </Tooltip>
   );
 }
