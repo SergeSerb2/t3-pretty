@@ -4,6 +4,7 @@ import { SURGE_CONNECT_NAME } from "./connectBranding.ts";
 const CONNECT_AUTH_STATE_PARAM = "state";
 const CONNECT_AUTH_CHALLENGE_PARAM = "challenge";
 const CONNECT_AUTH_PORT_PARAM = "port";
+const CONNECT_AUTH_CODE_SEPARATOR = ".";
 const CONNECT_LOOPBACK_CALLBACK_PATH = "/callback";
 export const CONNECT_AUTH_VALUE_MAX_LENGTH = 8_192;
 export const CONNECT_AUTH_CODE_MAX_LENGTH = 16_384;

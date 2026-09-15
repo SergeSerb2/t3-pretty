@@ -3549,3 +3549,8 @@
 - `.github/workflows/desktop-macos-preview-publish.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `.github/workflows/desktop-macos-preview.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `.github/workflows/release-desktop.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260915.1735`; repaired with `gpt-5.6-sol`: Restore the connect-code separator, adapt obsolete call sites and tests to the fork's current hook and the parent's direct-loopback auth API, and repair the renamed worktree fixture. The edits retain T3 Pretty's auth limits and sidebar architecture while resolving all six reported errors.
+  - edited `packages/shared/src/connectAuth.ts`
+  - edited `apps/web/src/cloud/connectCliAuth.test.ts`
+  - edited `apps/web/src/components/chat/MessagesTimeline.logic.test.ts`
+  - edited `apps/web/src/components/LegacySidebar.tsx`

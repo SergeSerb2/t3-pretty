@@ -1241,7 +1241,8 @@ describe("deriveMessagesTimelineRows", () => {
         tail: [],
       }) as const;
     const asyncSnapshot: WorktreeSetupSnapshot = {
-      ...snapshot,
+      ...doneSnapshot,
+      phase: "running",
       stages: [stage("setup-script", "running"), stage("agent", "done")],
     };
     const liveTurn = {

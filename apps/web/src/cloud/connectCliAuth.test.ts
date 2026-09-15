@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { CONNECT_AUTH_VALUE_MAX_LENGTH } from "@t3tools/shared/connectAuth";
+import {
+  CONNECT_AUTH_VALUE_MAX_LENGTH,
+  readConnectAuthorizeRequest,
+} from "@t3tools/shared/connectAuth";
 
 import {
   buildConnectCliClerkAuthorizeUrl,
   connectCliAuthRoutesEnabled,
   connectCliSignInRedirectUrl,
   hasConnectCliAuthConfig,
-  readConnectCliCallbackResult,
 } from "./connectCliAuth";
 
 // Any pk_test_* key decodes to <base64 hostname>.clerk.accounts.dev.
@@ -97,17 +99,17 @@ describe("connectCliAuth", () => {
     ).toBe(connectUrl);
   });
 
-  it("rejects oversized callback values before displaying or encoding them", () => {
+  it("rejects oversized authorize request values before forwarding them", () => {
     const oversized = "x".repeat(CONNECT_AUTH_VALUE_MAX_LENGTH + 1);
 
     expect(
-      readConnectCliCallbackResult(
-        new URL(`https://app.t3.codes/connect/callback?code=${oversized}&state=state-1`),
+      readConnectAuthorizeRequest(
+        new URL(`https://app.t3.codes/connect#state=${oversized}&challenge=challenge-1&port=34338`),
       ),
     ).toBeNull();
     expect(
-      readConnectCliCallbackResult(
-        new URL(`https://app.t3.codes/connect/callback?code=code-1&state=${oversized}`),
+      readConnectAuthorizeRequest(
+        new URL(`https://app.t3.codes/connect#state=state-1&challenge=${oversized}&port=34338`),
       ),
     ).toBeNull();
   });
