@@ -97,13 +97,15 @@ export function SlidingActivity(props: {
     [incomingPosition, outgoingPosition],
   );
 
+  // Fade completes at 60% of the travel, matching web, so rows read as
+  // replaced rather than scrolled.
   const incomingStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: incomingPosition.get() * height.get() }],
-    opacity: 1 - Math.abs(incomingPosition.get()),
+    opacity: Math.max(0, 1 - Math.abs(incomingPosition.get()) / 0.6),
   }));
   const outgoingStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: outgoingPosition.get() * height.get() }],
-    opacity: 1 - Math.abs(outgoingPosition.get()),
+    opacity: Math.max(0, 1 - Math.abs(outgoingPosition.get()) / 0.6),
   }));
 
   return (
