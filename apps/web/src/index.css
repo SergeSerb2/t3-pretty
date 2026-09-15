@@ -2853,7 +2853,6 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
 
 :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
   --workspace-glass-surface: var(--toolbar-background);
-  --workspace-glass-radius: 0 0 1rem 1rem;
   --workspace-glass-shadow: 0 10px 24px -16px rgb(0 0 0 / 32%);
   position: relative;
   z-index: 20;
@@ -2875,7 +2874,6 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
 
 .workspace-sidebar-glass {
   --workspace-glass-surface: var(--sidebar);
-  --workspace-glass-radius: 0 0 1.25rem 0;
   --workspace-glass-shadow:
     10px 4px 24px -16px rgb(0 0 0 / 32%), 20px 8px 48px -24px rgb(0 0 0 / 18%);
   position: relative;
@@ -2901,7 +2899,6 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  border-radius: var(--workspace-glass-radius);
   background:
     linear-gradient(155deg, var(--workspace-glass-sheen), transparent 48%),
     color-mix(
@@ -2917,6 +2914,82 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
 }
 
+/* The sidebar and the top bar meet as one L-shaped frame around the content,
+   so neither plate rounds a corner that touches the other or the window edge:
+   a convex corner there only exposes a wedge of the canvas behind it. The
+   frame's inner corner is filleted instead, so the content reads as a rounded
+   inset. The header plate extends one fillet below the bar and is masked to
+   the bar plus the region outside the content's corner arc, keeping the
+   material and its edge highlight continuous around the corner. A mask clips
+   box-shadow, so the drop shadow moves to ::before. Below md the sidebar is
+   off-canvas and the bar starts at the window edge, so there is no inner
+   corner to fill. */
+:root {
+  --workspace-frame-fillet: 0.875rem;
+}
+
+@media (min-width: 48rem) {
+  [data-workspace-header]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    box-shadow: var(--workspace-glass-shadow);
+  }
+
+  [data-workspace-header]::after {
+    --workspace-glass-edge: color-mix(in srgb, var(--workspace-glass-rim) 35%, transparent);
+    bottom: calc(-1 * var(--workspace-frame-fillet));
+    box-shadow: inset 0 1px 2px var(--workspace-glass-rim);
+    background:
+      radial-gradient(
+          circle at 100% 100%,
+          transparent calc(var(--workspace-frame-fillet) - 3.5px),
+          var(--workspace-glass-edge) calc(var(--workspace-frame-fillet) - 0.5px)
+        )
+        left 0 bottom 0 / var(--workspace-frame-fillet) var(--workspace-frame-fillet) no-repeat,
+      linear-gradient(to top, var(--workspace-glass-edge), transparent) right 0 bottom
+        var(--workspace-frame-fillet) / calc(100% - var(--workspace-frame-fillet)) 3px no-repeat,
+      linear-gradient(to left, var(--workspace-glass-edge), transparent) right 0 top 0 / 3px
+        calc(100% - var(--workspace-frame-fillet)) no-repeat,
+      linear-gradient(155deg, var(--workspace-glass-sheen), transparent 48%),
+      color-mix(
+        in srgb,
+        var(--workspace-glass-surface) var(--workspace-glass-opacity, var(--glass-opacity)),
+        transparent
+      );
+    -webkit-mask-image:
+      linear-gradient(black, black),
+      radial-gradient(
+        circle at 100% 100%,
+        transparent calc(var(--workspace-frame-fillet) - 0.75px),
+        black calc(var(--workspace-frame-fillet) + 0.25px)
+      );
+    -webkit-mask-position:
+      0 0,
+      0 100%;
+    -webkit-mask-size:
+      100% calc(100% - var(--workspace-frame-fillet)),
+      var(--workspace-frame-fillet) var(--workspace-frame-fillet);
+    -webkit-mask-repeat: no-repeat;
+    mask-image:
+      linear-gradient(black, black),
+      radial-gradient(
+        circle at 100% 100%,
+        transparent calc(var(--workspace-frame-fillet) - 0.75px),
+        black calc(var(--workspace-frame-fillet) + 0.25px)
+      );
+    mask-position:
+      0 0,
+      0 100%;
+    mask-size:
+      100% calc(100% - var(--workspace-frame-fillet)),
+      var(--workspace-frame-fillet) var(--workspace-frame-fillet);
+    mask-repeat: no-repeat;
+  }
+}
+
 /* Freeze the material during native window moves/resizes. These are static
    surfaces at rest; no extra animation or pointer tracking is needed. */
 html[data-window-interacting]
@@ -2925,7 +2998,8 @@ html[data-window-interacting]
     [data-workspace-header],
     [data-chat-header],
     [data-pull-requests-header]
-  )::after {
+  )::after,
+html[data-window-interacting] [data-workspace-header]::before {
   background: var(--workspace-glass-surface);
   box-shadow: none;
   -webkit-backdrop-filter: none;
@@ -2938,7 +3012,8 @@ html[data-window-interacting]
     [data-workspace-header],
     [data-chat-header],
     [data-pull-requests-header]
-  )::after {
+  )::after,
+  [data-workspace-header]::before {
     background: var(--workspace-glass-surface);
     box-shadow: none;
     -webkit-backdrop-filter: none;
@@ -2952,7 +3027,8 @@ html[data-window-interacting]
     [data-workspace-header],
     [data-chat-header],
     [data-pull-requests-header]
-  )::after {
+  )::after,
+  [data-workspace-header]::before {
     background: var(--workspace-glass-surface);
     box-shadow: none;
   }
