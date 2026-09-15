@@ -29,7 +29,7 @@ const sentryIssue = {
   permalink: "https://acme.sentry.io/issues/123/",
   project: { id: "project-1", name: "Web" },
   status: "unresolved",
-  assignedTo: null,
+  assignedTo: { id: "user-1", name: "Serge", type: "user" },
   priority: "high",
   lastSeen: "2026-09-15T00:00:00Z",
   count: "7",
@@ -337,6 +337,17 @@ it.effect(
       );
       expect(page.nextCursor).toBe("next-page");
       expect(page.issues[0]?.description).toContain("7 events · 3 users");
+      expect(f.requests.at(-1)?.url.pathname).toBe(
+        "/api/0/organizations/acme/issues/123/events/latest/",
+      );
+      expect(page.issues[0]?.assignee?.id).toBe("user:user-1");
+      yield* issues.update({
+        provider: "sentry",
+        id: "123",
+        assignedTo: page.issues[0]!.assignee!.id,
+      });
+      expect(f.requests.at(-1)?.url.pathname).toBe("/api/0/organizations/acme/issues/123/");
+      expect(f.requests.at(-1)?.body.assignedTo).toBe("user:user-1");
       yield* issues.list({ provider: "sentry", query: "", cursor: page.nextCursor! });
       expect(f.requests.at(-1)?.url.origin).toBe("https://de.sentry.io");
       expect(f.requests.at(-1)?.url.searchParams.get("cursor")).toBe("next-page");
@@ -385,5 +396,28 @@ it.effect("loads later team members without duplicating completed state pages", 
     expect(metadata.states).toEqual([linearIssue.state]);
     expect(metadata.assignees.map((item) => item.id)).toEqual(["user-1", "user-2"]);
     expect(f.requests.at(-1)?.body.variables?.membersAfter).toBe("members-next");
+  }).pipe(Effect.provide(f.layer));
+});
+
+it.effect("isolates malformed credentials and lets the disconnected provider reconnect", () => {
+  const f = fixture();
+  return Effect.gen(function* () {
+    const issues = yield* Issues.IssuesService;
+    yield* issues.connect({
+      provider: "sentry",
+      token: "sentry-secret",
+      organization: "acme",
+      region: "us",
+    });
+    f.secrets.set("native-issues-linear", new TextEncoder().encode("{broken-json"));
+    expect(yield* issues.connections).toEqual([{ provider: "sentry", account: "Acme" }]);
+    const before = f.requests.length;
+    expect((yield* issues.list({ provider: "linear", query: "" }).pipe(Effect.result))._tag).toBe(
+      "Failure",
+    );
+    expect(f.requests).toHaveLength(before);
+    expect((yield* issues.list({ provider: "sentry", query: "" })).issues).toHaveLength(1);
+    yield* issues.connect({ provider: "linear", token: "replacement" });
+    expect(yield* issues.connections).toHaveLength(2);
   }).pipe(Effect.provide(f.layer));
 });

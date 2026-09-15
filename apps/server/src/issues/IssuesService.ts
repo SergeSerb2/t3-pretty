@@ -65,10 +65,9 @@ export const layer = Layer.effect(
         );
       if (Option.isNone(bytes)) return null;
       return yield* decodeStored(decoder.decode(bytes.value)).pipe(
-        Effect.mapError(
-          () =>
-            new IssuesError({ message: "The saved issue connection is invalid. Reconnect it." }),
-        ),
+        // A malformed credential should offer reconnect, not hide the other provider.
+        Effect.orElseSucceed(() => null),
+        Effect.map((stored) => (stored?.connection.provider === provider ? stored : null)),
       );
     });
     const requireConnection = Effect.fn("issues.requireConnection")(function* (

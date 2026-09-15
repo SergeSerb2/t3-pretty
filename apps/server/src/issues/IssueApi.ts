@@ -197,6 +197,8 @@ export const makeIssueApi = (client: HttpClient.HttpClient) => {
     options?: { query?: Record<string, string>; body?: unknown },
   ) => {
     const host = connection.region === "de" ? "de.sentry.io" : "sentry.io";
+    // Issue detail, update and event APIs are organization-scoped too:
+    // https://docs.sentry.io/api/events/update-an-issue/
     const url = `https://${host}/api/0/organizations/${encodeURIComponent(connection.organization)}/${path}`;
     const base =
       options?.body === undefined
