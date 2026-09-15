@@ -279,7 +279,10 @@ function getWindowTitleBarOptions(
 ): WindowTitleBarOptions {
   if (platform === "darwin") {
     return {
-      titleBarStyle: "hiddenInset",
+      // `hidden` plus an explicit traffic-light position. `hiddenInset` still
+      // paints the native app/document title next to the lights on current
+      // macOS, which lands on the collapsed project-icon rail.
+      titleBarStyle: "hidden",
       trafficLightPosition: { x: 16, y: 18 },
     };
   }
@@ -567,9 +570,7 @@ export const make = Effect.gen(function* () {
         // the host renderer when the user right-clicks inside a browser guest.
         contents.focus();
 
-        const hasSafeLink = Option.isSome(
-          ElectronShell.parseSafeExternalUrl(params.linkURL),
-        );
+        const hasSafeLink = Option.isSome(ElectronShell.parseSafeExternalUrl(params.linkURL));
         if (
           !shouldOfferEditContextMenu({
             isEditable: params.isEditable,
@@ -599,10 +600,7 @@ export const make = Effect.gen(function* () {
             registerEditContextMenuWaiter(requestId, (itemId) => {
               resume(Effect.succeed(itemId));
             });
-            if (
-              ownerWindow.isDestroyed() ||
-              ownerWindow.webContents.isDestroyed()
-            ) {
+            if (ownerWindow.isDestroyed() || ownerWindow.webContents.isDestroyed()) {
               completeEditContextMenuRequest(requestId, null);
               return;
             }
