@@ -1482,6 +1482,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       </span>
     ) : null;
 
+  // Card rows without a branch or project label leave line 2's left side
+  // empty; hand that room to the title instead of truncating it.
+  const twoLineTitle =
+    variant === "card" &&
+    !thread.branch &&
+    (props.hideProjectLabel === true || (!props.project && !props.projectDisplayName));
+
   const title = isRenaming ? (
     <input
       autoFocus
@@ -1502,7 +1509,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         shouldRecede ? "font-normal" : "font-medium",
         variant === "card"
           ? cn(
-              "truncate",
+              twoLineTitle ? "line-clamp-2 leading-[1.1875rem]" : "truncate",
               shouldRecede
                 ? "text-secondary-label"
                 : isUnread || isWoke || status === "input"
@@ -1867,42 +1874,65 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           <div
             className={cn(
               "relative z-10 h-[3.25rem] px-[var(--sidebar-row-content-inset)] py-[7px]",
+              // Two-line titles: title spans both rows on the left, provider
+              // icons sit above the status slot on the right.
+              twoLineTitle &&
+                "grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[1.25rem_1rem] gap-x-1.5 gap-y-0.5",
               props.nest === "child" && "pl-6",
             )}
           >
-            <div className="flex h-5 min-w-0 items-center gap-1.5">
-              {nestToggle}
-              {draftIndicator}
-              <ThreadActiveSubagentIndicator
-                className={props.isActive || isSelected ? "text-current" : undefined}
-                count={thread.activeSubagentCount}
-              />
+            <div
+              className={cn(
+                "flex min-w-0 gap-1.5",
+                twoLineTitle ? "row-span-2 items-start" : "h-5 items-center",
+              )}
+            >
+              <span className="flex h-5 shrink-0 items-center gap-1.5 empty:hidden">
+                {nestToggle}
+                {draftIndicator}
+                <ThreadActiveSubagentIndicator
+                  className={props.isActive || isSelected ? "text-current" : undefined}
+                  count={thread.activeSubagentCount}
+                />
+              </span>
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title
                 </span>
               ) : null}
-              {nestCountLabel}
-              {nestStatusLabel}
-              {pinIndicator}
-              {providerIndicators}
-            </div>
-            <div className="mt-0.5 flex h-4 min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground">
-              <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-                {!props.hideProjectLabel && props.project ? (
-                  <ProjectFavicon project={props.project} className="size-3 shrink-0" />
-                ) : null}
-                {!props.hideProjectLabel && props.projectDisplayName ? (
-                  <span className="max-w-[50%] truncate">{props.projectDisplayName}</span>
-                ) : null}
-                {thread.branch ? (
-                  <>
-                    <ThreadWorktreeIndicator thread={thread} />
-                    <span className="min-w-0 flex-1 truncate">{thread.branch}</span>
-                  </>
-                ) : null}
+              <span className="flex h-5 shrink-0 items-center gap-1.5 empty:hidden">
+                {nestCountLabel}
+                {nestStatusLabel}
+                {pinIndicator}
+                {twoLineTitle ? null : providerIndicators}
               </span>
+            </div>
+            {twoLineTitle ? (
+              <div className="flex h-5 items-center justify-end">{providerIndicators}</div>
+            ) : null}
+            <div
+              className={cn(
+                "flex h-4 min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground",
+                !twoLineTitle && "mt-0.5",
+              )}
+            >
+              {twoLineTitle ? null : (
+                <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+                  {!props.hideProjectLabel && props.project ? (
+                    <ProjectFavicon project={props.project} className="size-3 shrink-0" />
+                  ) : null}
+                  {!props.hideProjectLabel && props.projectDisplayName ? (
+                    <span className="max-w-[50%] truncate">{props.projectDisplayName}</span>
+                  ) : null}
+                  {thread.branch ? (
+                    <>
+                      <ThreadWorktreeIndicator thread={thread} />
+                      <span className="min-w-0 flex-1 truncate">{thread.branch}</span>
+                    </>
+                  ) : null}
+                </span>
+              )}
               {terminalStatusIcon}
               {prBadge}
               {/* The visible state owns this slot's width: status at rest,
@@ -1912,7 +1942,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {sortable?.isDragging ? (
                 dragDestination
               ) : (
-                <span className="group/sidebar-status-slot relative ml-auto flex h-5 min-w-8 shrink-0 items-stretch justify-end text-xs">
+                <span
+                  className={cn(
+                    "group/sidebar-status-slot relative ml-auto flex h-5 min-w-8 shrink-0 items-stretch justify-end text-xs",
+                    // With a two-line title the slot sizes the grid column, so
+                    // both states share one cell: a hover must not re-wrap the title.
+                    twoLineTitle &&
+                      "grid [&>*]:static! [&>*]:col-start-1 [&>*]:row-start-1 [&>*]:justify-self-end",
+                  )}
+                >
                   {/* Read-only status labels yield to the hover actions. Woke is
                     itself an action, so it stays pointer-enabled and visible
                     while the other controls appear beside it. */}
