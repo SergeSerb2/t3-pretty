@@ -55,6 +55,10 @@ describe("thread titlebar layout controls", () => {
     expect(holeIndex).toBeGreaterThan(headerEnd);
     expect(holeIndex).toBeLessThan(headerClose);
     expect(headerSlice).toContain("controlCount={2}");
+    const maximizeIndex = source.indexOf("RightPanelMaximizeControl", clusterStart);
+    const togglesIndex = source.indexOf("{panelToggleControls}", clusterStart);
+    expect(maximizeIndex).toBeGreaterThan(clusterStart);
+    expect(togglesIndex).toBeGreaterThan(maximizeIndex);
   });
 
   it("punches the open-panel titlebar instead of the chat/panel seam", () => {

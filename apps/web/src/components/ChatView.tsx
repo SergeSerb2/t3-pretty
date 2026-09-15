@@ -9696,7 +9696,11 @@ export default function ChatView(props: ChatViewProps) {
           {/* no-drag only punches descendants of a drag node. The parked
               cluster sits on the workspace root; this header covers it while
               the right panel is closed. The open inline panel's tab bar
-              mounts the matching hole. */}
+              mounts the matching hole.
+              Count is 2: maximize stays mounted on the left (opacity-0 /
+              inert) so the cluster does not jump, and the hole is measured
+              from the right over the two live toggles. The open-panel tab
+              bar uses 3 because maximize is then visible. */}
           {isElectron && parkTitlebarLayoutControls && !inlineRightPanelOwnsTitleBar ? (
             <TitlebarLayoutControlsDragHole controlCount={2} />
           ) : null}
