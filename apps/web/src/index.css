@@ -2848,13 +2848,108 @@ html[data-theme-token-probe] *::after {
    roles explicit prevents the thread toolbar from falling back to the default
    dark-mode whites while preserving the same theme file across clients. */
 html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
-  background-color: var(--toolbar-background);
   color: var(--contrast-toolbar-foreground);
 }
 
 :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
+  --workspace-glass-surface: var(--toolbar-background);
+  --workspace-glass-radius: 0 0 1rem 1rem;
+  --workspace-glass-shadow: 0 10px 24px -16px rgb(0 0 0 / 32%);
   position: relative;
   z-index: 20;
+  background: transparent;
+}
+
+/* The material sits behind the controls in their existing stacking context.
+   Only this plate samples the backdrop: text stays sharp, and fixed titlebar
+   controls keep the viewport as their containing block. */
+:root {
+  --workspace-glass-sheen: rgb(255 255 255 / 34%);
+  --workspace-glass-rim: rgb(255 255 255 / 48%);
+
+  @variant dark {
+    --workspace-glass-sheen: rgb(255 255 255 / 7%);
+    --workspace-glass-rim: rgb(255 255 255 / 12%);
+  }
+}
+
+.workspace-sidebar-glass {
+  --workspace-glass-surface: var(--sidebar);
+  --workspace-glass-radius: 0 0 1.25rem 0;
+  --workspace-glass-shadow:
+    10px 4px 24px -16px rgb(0 0 0 / 32%), 20px 8px 48px -24px rgb(0 0 0 / 18%);
+  z-index: 30;
+  background: transparent;
+  border-color: transparent;
+}
+
+.workspace-sidebar-glass [data-slot="sidebar-inner"] {
+  background: transparent;
+}
+
+:is(
+  .workspace-sidebar-glass,
+  [data-workspace-header],
+  [data-chat-header],
+  [data-pull-requests-header]
+)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: var(--workspace-glass-radius);
+  background:
+    linear-gradient(155deg, var(--workspace-glass-sheen), transparent 48%),
+    color-mix(
+      in srgb,
+      var(--workspace-glass-surface) var(--workspace-glass-opacity, var(--glass-opacity)),
+      transparent
+    );
+  box-shadow:
+    inset 0 1px 2px var(--workspace-glass-rim),
+    inset -1px -1px 3px color-mix(in srgb, var(--workspace-glass-rim) 35%, transparent),
+    var(--workspace-glass-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+}
+
+/* Freeze the material during native window moves/resizes. These are static
+   surfaces at rest; no extra animation or pointer tracking is needed. */
+html[data-window-interacting]
+  :is(
+    .workspace-sidebar-glass,
+    [data-workspace-header],
+    [data-chat-header],
+    [data-pull-requests-header]
+  )::after {
+  background: var(--workspace-glass-surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :is(
+    .workspace-sidebar-glass,
+    [data-workspace-header],
+    [data-chat-header],
+    [data-pull-requests-header]
+  )::after {
+    background: var(--workspace-glass-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :is(
+    .workspace-sidebar-glass,
+    [data-workspace-header],
+    [data-chat-header],
+    [data-pull-requests-header]
+  )::after {
+    background: var(--workspace-glass-surface);
+  }
 }
 
 html[data-theme-id] [data-chat-header] [data-slot="button"],
