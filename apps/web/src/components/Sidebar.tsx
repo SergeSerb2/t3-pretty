@@ -137,7 +137,7 @@ import {
 } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
-import { threadEnvironment } from "../state/threads";
+import { threadEnvironment, useEnvironmentThread } from "../state/threads";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
@@ -161,6 +161,7 @@ import {
   filterSidebarProjectScopeItems,
   formatWorkingDurationLabel,
   firstValidTimestampMs,
+  getSidebarThreadIdsToPrewarm,
   hasUnseenCompletion,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
@@ -270,6 +271,11 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 // Fresh keys deliberately reset both shelves to collapsed for existing users.
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
+
+function SidebarThreadDetailPrewarmer({ threadRef }: { readonly threadRef: ScopedThreadRef }) {
+  useEnvironmentThread(threadRef.environmentId, threadRef.threadId);
+  return null;
+}
 
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
@@ -2906,6 +2912,21 @@ export default function Sidebar() {
       ),
     [orderedThreads],
   );
+  const prewarmedSidebarThreadKeys = useMemo(
+    () => getSidebarThreadIdsToPrewarm(orderedThreadKeys),
+    [orderedThreadKeys],
+  );
+  const prewarmedSidebarThreadRefs = useMemo(
+    () =>
+      prewarmedSidebarThreadKeys.flatMap((threadKey) => {
+        const ref = parseScopedThreadKey(threadKey);
+        return ref ? [ref] : [];
+      }),
+    [prewarmedSidebarThreadKeys],
+  );
+  const prewarmers = prewarmedSidebarThreadRefs.map((threadRef) => (
+    <SidebarThreadDetailPrewarmer key={scopedThreadKey(threadRef)} threadRef={threadRef} />
+  ));
   // Rows call back into the click handler without carrying the ordered list as
   // a prop — a fresh array identity per shell update would defeat every row's
   // memoization. The ref keeps shift-range-select working against the list as
@@ -4580,6 +4601,7 @@ export default function Sidebar() {
   if (!isMobile && !open) {
     return (
       <>
+        {prewarmers}
         <SidebarChromeHeader isElectron={isElectron} />
         <SidebarCompactRail
           projects={projectGroups}
@@ -4597,6 +4619,7 @@ export default function Sidebar() {
   }
   return (
     <>
+      {prewarmers}
       <SidebarChromeHeader isElectron={isElectron} />
       <SidebarContent
         className="gap-0 min-h-full"
