@@ -59,3 +59,28 @@ its tools out of new sessions, or remove it to forget it entirely.
 Tokens stay on the environment that runs your agents, in the server's secret store next to
 the other server secrets. Providers never see them: each session talks to your apps through
 the environment's own MCP proxy with the short-lived credential it already holds.
+
+## Manage Linear and Sentry issues
+
+Open **Issues** from the sidebar or command palette on web and desktop. On mobile,
+open **Settings → Apps → Manage issues**. Choose the environment that should own the
+connection, then connect Linear, Sentry, or both.
+
+Native issue management uses separate API credentials from the agent-facing MCP apps:
+
+- **Linear:** create a personal API key with access to the teams you need and permission
+  to read, create, and update issues.
+- **Sentry:** use an auth token with `org:read`, `project:read`, and `event:write`, enter
+  the organization slug, and choose its US or EU data region.
+
+You can search and filter issues, edit Linear titles and descriptions, set status,
+assignee and priority, and read or add Linear comments. Sentry issues include event
+counts and the latest exception stack; you can resolve, reopen, archive, reassign, or
+change their priority. Sentry creates issues from incoming events. To track follow-up
+work, create a Linear issue from a Sentry issue with its link and error context included.
+
+On web and desktop, **Start thread** puts the issue context in a new thread's composer
+for you to review and send. On mobile, copy the context and paste it into a thread.
+Tokens stay in the selected environment's secret store, so the same connection works
+from local, remote, and mobile clients. **Disconnect** forgets the stored token; revoke
+it in Linear or Sentry if you also want to invalidate it at the source.

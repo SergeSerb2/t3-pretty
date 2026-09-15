@@ -1,3 +1,17 @@
+import {
+  Issue,
+  IssueProvider,
+  IssueConnectionInput,
+  IssueConnection,
+  IssueListInput,
+  IssueListResult,
+  IssueMetadata,
+  IssueRef,
+  IssueCreateInput,
+  IssueUpdateInput,
+  IssueCommentInput,
+  IssuesError,
+} from "./issues.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -357,6 +371,15 @@ export const WS_METHODS = {
   skillsListMarketplace: "skills.listMarketplace",
   skillsRefreshMarketplace: "skills.refreshMarketplace",
   skillsSetLocationEnabled: "skills.setLocationEnabled",
+  issuesConnections: "issues.connections",
+  issuesConnect: "issues.connect",
+  issuesDisconnect: "issues.disconnect",
+  issuesMetadata: "issues.metadata",
+  issuesList: "issues.list",
+  issuesDetail: "issues.detail",
+  issuesCreate: "issues.create",
+  issuesUpdate: "issues.update",
+  issuesComment: "issues.comment",
   appsUpsert: "apps.upsert",
   appsRemove: "apps.remove",
   appsAuthorize: "apps.authorize",
@@ -1109,6 +1132,60 @@ const WsSkillsSetLocationEnabledRpc = Rpc.make(WS_METHODS.skillsSetLocationEnabl
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
+const WsIssuesConnectionsRpc = Rpc.make(WS_METHODS.issuesConnections, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(IssueConnection),
+  error: Schema.Union([IssuesError, EnvironmentAuthorizationError]),
+});
+
+const WsIssuesConnectRpc = Rpc.make(WS_METHODS.issuesConnect, {
+  payload: IssueConnectionInput,
+  success: IssueConnection,
+  error: Schema.Union([IssuesError, EnvironmentAuthorizationError]),
+});
+
+const WsIssuesDisconnectRpc = Rpc.make(WS_METHODS.issuesDisconnect, {
+  payload: Schema.Struct({ provider: IssueProvider }),
+  success: Schema.Void,
+  error: Schema.Union([IssuesError, EnvironmentAuthorizationError]),
+});
+
+const WsIssuesMetadataRpc = Rpc.make(WS_METHODS.issuesMetadata, {
+  payload: Schema.Struct({ provider: IssueProvider, scopeId: Schema.optional(Schema.String) }),
+  success: IssueMetadata,
+  error: Schema.Union([IssuesError, EnvironmentAuthorizationError]),
+});
+
+const WsIssuesListRpc = Rpc.make(WS_METHODS.issuesList, {
+  payload: IssueListInput,
+  success: IssueListResult,
+  error: Schema.Union([IssuesError, EnvironmentAuthorizationError]),
+});
+
+const WsIssuesDetailRpc = Rpc.make(WS_METHODS.issuesDetail, {
+  payload: IssueRef,
+  success: Issue,
+  error: Schema.Union([IssuesError, EnvironmentAuthorizationError]),
+});
+
+const WsIssuesCreateRpc = Rpc.make(WS_METHODS.issuesCreate, {
+  payload: IssueCreateInput,
+  success: Issue,
+  error: Schema.Union([IssuesError, EnvironmentAuthorizationError]),
+});
+
+const WsIssuesUpdateRpc = Rpc.make(WS_METHODS.issuesUpdate, {
+  payload: IssueUpdateInput,
+  success: Issue,
+  error: Schema.Union([IssuesError, EnvironmentAuthorizationError]),
+});
+
+const WsIssuesCommentRpc = Rpc.make(WS_METHODS.issuesComment, {
+  payload: IssueCommentInput,
+  success: Schema.Void,
+  error: Schema.Union([IssuesError, EnvironmentAuthorizationError]),
+});
+
 const WsAppsUpsertRpc = Rpc.make(WS_METHODS.appsUpsert, {
   payload: AppsUpsertInput,
   success: Schema.Void,
@@ -1701,6 +1778,15 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillsListMarketplaceRpc,
   WsSkillsRefreshMarketplaceRpc,
   WsSkillsSetLocationEnabledRpc,
+  WsIssuesConnectionsRpc,
+  WsIssuesConnectRpc,
+  WsIssuesDisconnectRpc,
+  WsIssuesMetadataRpc,
+  WsIssuesListRpc,
+  WsIssuesDetailRpc,
+  WsIssuesCreateRpc,
+  WsIssuesUpdateRpc,
+  WsIssuesCommentRpc,
   WsAppsUpsertRpc,
   WsAppsRemoveRpc,
   WsAppsAuthorizeRpc,

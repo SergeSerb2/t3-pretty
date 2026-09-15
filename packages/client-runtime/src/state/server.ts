@@ -1117,6 +1117,44 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    issuesConnections: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:issues-connections",
+      tag: WS_METHODS.issuesConnections,
+      staleTimeMs: 0,
+      idleTtlMs: 0,
+    }),
+    issuesConnect: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:issues-connect",
+      tag: WS_METHODS.issuesConnect,
+    }),
+    issuesDisconnect: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:issues-disconnect",
+      tag: WS_METHODS.issuesDisconnect,
+    }),
+    issuesMetadata: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:issues-metadata",
+      tag: WS_METHODS.issuesMetadata,
+    }),
+    issuesList: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:issues-list",
+      tag: WS_METHODS.issuesList,
+    }),
+    issuesDetail: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:issues-detail",
+      tag: WS_METHODS.issuesDetail,
+    }),
+    issuesCreate: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:issues-create",
+      tag: WS_METHODS.issuesCreate,
+    }),
+    issuesUpdate: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:issues-update",
+      tag: WS_METHODS.issuesUpdate,
+    }),
+    issuesComment: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:issues-comment",
+      tag: WS_METHODS.issuesComment,
+    }),
     // Apps (external services over remote MCP). Results land in
     // `settings.apps` through the ordinary settings stream.
     appsUpsert: createEnvironmentRpcCommand(runtime, {
