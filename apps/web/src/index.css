@@ -2854,8 +2854,12 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
 :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
   --workspace-glass-surface: var(--toolbar-background);
   --workspace-glass-shadow: 0 10px 24px -16px rgb(0 0 0 / 32%);
+  /* Stacking context so ::after (z-0) stays behind chrome (z-1) without
+     becoming a Backdrop Root. Isolating the host would trap the plate's
+     backdrop-filter in an empty group, so the bar reads as a solid slab.
+     The plate stays a pseudo so backdrop-filter does not make this host a
+     containing block for fixed titlebar controls. */
   position: relative;
-  isolation: isolate;
   z-index: 20;
   background: transparent;
 }
@@ -2866,10 +2870,6 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   z-index: 1;
 }
 
-/* The material sits behind the controls in their existing stacking context.
-   Only this plate samples the backdrop: text stays sharp. Parked titlebar
-   controls stay on the workspace root (absolute) so this header context
-   cannot become their containing block. */
 :root {
   --workspace-glass-sheen: rgb(255 255 255 / 34%);
   --workspace-glass-rim: rgb(255 255 255 / 48%);
@@ -2885,11 +2885,14 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   --workspace-glass-shadow:
     10px 4px 24px -16px rgb(0 0 0 / 32%), 20px 8px 48px -24px rgb(0 0 0 / 18%);
   position: relative;
-  isolation: isolate;
   z-index: 30;
   /* Solid host fill if ::after never paints; the plate overlays this. */
   background-color: var(--sidebar);
   border-color: transparent;
+}
+
+.workspace-sidebar-glass > * {
+  z-index: 1;
 }
 
 .workspace-sidebar-glass [data-slot="sidebar-inner"] {
@@ -2905,7 +2908,7 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   pointer-events: none;
   background:
     linear-gradient(155deg, var(--workspace-glass-sheen), transparent 48%),

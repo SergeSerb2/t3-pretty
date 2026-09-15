@@ -9632,7 +9632,7 @@ export default function ChatView(props: ChatViewProps) {
     // Containing block for the parked titlebar cluster (`absolute` +
     // --workspace-controls-* insets). Keep `relative` on this node; do not
     // wrap only the chat column in transform/filter/isolation.
-    <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+    <div className="relative flex min-h-0 min-w-0 flex-1 overflow-clip bg-background">
       <Dialog
         open={
           deviceSetupThread !== null &&
@@ -9658,7 +9658,7 @@ export default function ChatView(props: ChatViewProps) {
       </Dialog>
       <div
         className={cn(
-          "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
+          "flex min-h-0 min-w-0 flex-col overflow-x-clip",
           rightPanelMaximized ? "w-0 flex-none" : "flex-1",
         )}
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}

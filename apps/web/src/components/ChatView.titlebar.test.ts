@@ -10,7 +10,7 @@ describe("thread titlebar layout controls", () => {
     "utf8",
   );
   const rootStart = source.indexOf(
-    '"relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"',
+    '"relative flex min-h-0 min-w-0 flex-1 overflow-clip bg-background"',
   );
   const headerStart = source.indexOf("data-chat-header", rootStart);
   const headerEnd = source.indexOf("<ChatHeader", headerStart);

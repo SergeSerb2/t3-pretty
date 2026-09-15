@@ -10,8 +10,8 @@ export function NoProjectsHero() {
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
+    <SidebarInset className="h-dvh min-h-0 overflow-clip overscroll-y-none bg-background text-foreground">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-clip bg-background">
         <Empty className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">
             <EmptyHeader className="max-w-none">
