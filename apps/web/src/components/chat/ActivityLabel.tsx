@@ -33,9 +33,12 @@ export function ActivityLabel({
     )
       return;
 
+    // Wide feather (about half the row) so the headline settles in like a
+    // sentence being read rather than a hard wipe. Mask is 260% wide so the
+    // solid 40% still covers the whole row at the resting position.
     const mask = {
-      maskImage: "linear-gradient(90deg, #000 0% 45%, transparent 55% 100%)",
-      maskSize: "220% 100%",
+      maskImage: "linear-gradient(90deg, #000 0% 40%, transparent 60% 100%)",
+      maskSize: "260% 100%",
       maskRepeat: "no-repeat",
     };
     let animation: Animation | undefined;
@@ -55,10 +58,10 @@ export function ActivityLabel({
       if (animation) return;
       animation = element.animate(
         [
-          { ...mask, maskPosition: "100% 0%", opacity: 0.45 },
+          { ...mask, maskPosition: "100% 0%", opacity: 0.35 },
           { ...mask, maskPosition: "0% 0%", opacity: 1 },
         ],
-        { duration: 480, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+        { duration: 820, easing: "cubic-bezier(0.45, 0.05, 0.25, 1)" },
       );
       void animation.finished.then(retire, () => {});
     });

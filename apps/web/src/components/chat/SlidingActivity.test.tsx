@@ -35,7 +35,7 @@ const animate = vi.fn((_frames: Keyframe[], _options: KeyframeAnimationOptions) 
 async function render(activityKey: string | null, label: string) {
   await act(() => {
     const content = (
-      <SlidingActivity activityKey={activityKey}>
+      <SlidingActivity activityKey={activityKey} text={label}>
         <span>{label}</span>
       </SlidingActivity>
     );
@@ -100,6 +100,15 @@ describe("SlidingActivity", () => {
     expect(labels()).toEqual(["Reading file"]);
   });
 
+  it("swaps in place when a new call keeps the same text", async () => {
+    await render("call-1", "Checking the sidebar layout");
+    await render("call-2", "Checking the sidebar layout");
+    expect(animations).toHaveLength(0);
+    expect(labels()).toEqual(["Checking the sidebar layout"]);
+    await render("call-3", "Reading styles");
+    expect(labels()).toEqual(["Checking the sidebar layout", "Reading styles"]);
+  });
+
   it("replaces a rapid handoff from its current position without retaining older rows", async () => {
     await render("call-1", "First");
     await render("call-2", "Second");
@@ -114,7 +123,8 @@ describe("SlidingActivity", () => {
     expect(animations[3]!.cancel).not.toHaveBeenCalled();
     expect(animate.mock.calls.at(-1)?.[0]).toEqual([
       { transform, opacity: "1" },
-      { transform: "translateY(-45%)", opacity: 0 },
+      { opacity: 0, offset: 0.6 },
+      { transform: "translateY(-55%)", opacity: 0 },
     ]);
     await act(() => animations[1]!.finish());
     expect(labels()).toEqual(["Second", "Third"]);

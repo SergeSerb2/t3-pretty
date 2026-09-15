@@ -954,7 +954,10 @@ export function ThreadWorkGroupToggle(props: {
         className="min-h-8 flex-row items-center gap-1.5 rounded-md px-0.5 py-0 active:bg-subtle"
         style={{ minHeight: props.rowSizing.estimatedRowHeight }}
       >
-        <SlidingActivity activityKey={props.expanded ? null : (props.liveActivityKey ?? null)}>
+        <SlidingActivity
+          activityKey={props.expanded ? null : (props.liveActivityKey ?? null)}
+          text={props.summary}
+        >
           {props.shimmer ? (
             <ShimmeringWorkContent
               key={props.rowSizing.textSizeKey}
