@@ -2677,6 +2677,7 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
       <SlidingActivity
         key={ctx.routeThreadKey}
         activityKey={row.active && !row.expanded ? workEntryHandoffKey(row.entry) : null}
+        text={label}
       >
         <LiveActivityRow
           activityKey={row.active && !row.expanded ? workEntryHandoffKey(row.entry) : null}

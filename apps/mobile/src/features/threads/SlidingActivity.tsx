@@ -20,8 +20,8 @@ import Animated, {
 import { scheduleOnRN } from "react-native-worklets";
 
 const HANDOFF_TIMING = {
-  duration: 180,
-  easing: Easing.bezier(0.23, 1, 0.32, 1),
+  duration: 260,
+  easing: Easing.bezier(0.32, 0.72, 0, 1),
   reduceMotion: ReduceMotion.System,
 };
 
@@ -32,9 +32,13 @@ function subscribeAppState(onChange: () => void) {
 
 const getAppState = () => AppState.currentState;
 
-/** Animate tool replacement within the mounted live slot, never list remounts. */
+/**
+ * Animate tool replacement within the mounted live slot, never list remounts.
+ * `text` is the rendered label: a new call with unchanged text swaps in place.
+ */
 export function SlidingActivity(props: {
   readonly activityKey: string | null;
+  readonly text: string;
   readonly children: ReactNode;
 }) {
   const focused = useIsFocused();
@@ -64,7 +68,12 @@ export function SlidingActivity(props: {
       if (outgoing) setOutgoing(null);
       return;
     }
-    if (last.activityKey === null || last.activityKey === props.activityKey) return;
+    if (
+      last.activityKey === null ||
+      last.activityKey === props.activityKey ||
+      last.text === props.text
+    )
+      return;
     const nextGeneration = ++generation.current;
     setOutgoing({ children: last.children, generation: nextGeneration });
     const departingPosition = incomingPosition.get();

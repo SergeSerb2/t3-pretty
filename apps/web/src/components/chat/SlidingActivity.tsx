@@ -2,14 +2,20 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 
-const HANDOFF_TIMING = { duration: 280, easing: "cubic-bezier(0.23, 1, 0.32, 1)" };
+const HANDOFF_TIMING = { duration: 380, easing: "cubic-bezier(0.32, 0.72, 0, 1)" };
 
-/** Keeps the live slot in place while one tool hands off to the next. */
+/**
+ * Keeps the live slot in place while one tool hands off to the next. `text`
+ * is the rendered label: a new call that keeps the same text (a headline
+ * spanning several calls) swaps in place instead of sliding.
+ */
 export function SlidingActivity({
   activityKey,
+  text,
   children,
 }: {
   activityKey: string | null;
+  text: string;
   children: ReactNode;
 }) {
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
@@ -17,7 +23,7 @@ export function SlidingActivity({
   const currentRef = useRef<HTMLDivElement>(null);
   const outgoingRef = useRef<HTMLDivElement>(null);
   const incomingAnimation = useRef<Animation | null>(null);
-  const previous = useRef({ activityKey, children });
+  const previous = useRef({ activityKey, text, children });
   const [outgoing, setOutgoing] = useState<{
     children: ReactNode;
     transform: string;
@@ -27,7 +33,7 @@ export function SlidingActivity({
   useLayoutEffect(() => {
     const last = previous.current;
     // Skipped calls are still current content; never replay an older tool on return.
-    previous.current = { activityKey, children };
+    previous.current = { activityKey, text, children };
     const retire = () => {
       incomingAnimation.current?.cancel();
       incomingAnimation.current = null;
@@ -43,7 +49,7 @@ export function SlidingActivity({
       retire();
       return;
     }
-    if (last.activityKey === null || last.activityKey === activityKey) return;
+    if (last.activityKey === null || last.activityKey === activityKey || last.text === text) return;
     const bounds = element.getBoundingClientRect();
     if (bounds.bottom <= 0 || bounds.top >= window.innerHeight) {
       retire();
@@ -55,9 +61,12 @@ export function SlidingActivity({
     const style = getComputedStyle(element);
     setOutgoing({ children: last.children, transform: style.transform, opacity: style.opacity });
     incomingAnimation.current?.cancel();
+    // Fade completes before the motion settles, so rows read as replaced
+    // rather than scrolled.
     incomingAnimation.current = element.animate(
       [
-        { transform: "translateY(45%)", opacity: 0 },
+        { transform: "translateY(55%)", opacity: 0 },
+        { opacity: 1, offset: 0.6 },
         { transform: "translateY(0)", opacity: 1 },
       ],
       HANDOFF_TIMING,
@@ -69,7 +78,8 @@ export function SlidingActivity({
     const animation = outgoingRef.current.animate(
       [
         { transform: outgoing.transform, opacity: outgoing.opacity },
-        { transform: "translateY(-45%)", opacity: 0 },
+        { opacity: 0, offset: 0.6 },
+        { transform: "translateY(-55%)", opacity: 0 },
       ],
       { ...HANDOFF_TIMING, fill: "forwards" },
     );
