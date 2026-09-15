@@ -2115,8 +2115,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
         {row.showAssistantMeta ? (
-          <AssistantMessageMeta
-            className="mt-1.5"
+          <AssistantMessageOverlay
             message={row.message}
             showCopyButton={row.showAssistantCopyButton}
             copyStreaming={row.assistantCopyStreaming}
@@ -2139,7 +2138,39 @@ function AssistantMetaTimelineRow({
         message={row.message}
         showCopyButton={row.showAssistantCopyButton}
         copyStreaming={row.assistantCopyStreaming}
-        alwaysVisible
+      />
+    </div>
+  );
+}
+
+const assistantMetaActionsClassName =
+  "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200 motion-reduce:transition-none";
+
+// Reserved h-8 slot so revealing copy/timestamp only fades opacity and cannot
+// grow the row or paint into the next one. Trailing assistant-meta rows use
+// AssistantMessageMeta instead and stay fully visible.
+function AssistantMessageOverlay({
+  message,
+  showCopyButton,
+  copyStreaming,
+}: {
+  message: ChatMessage;
+  showCopyButton: boolean;
+  copyStreaming: boolean;
+}) {
+  return (
+    <div
+      data-assistant-meta="overlay"
+      data-assistant-meta-gap="true"
+      className={cn(
+        assistantMetaActionsClassName,
+        "h-8 overflow-hidden opacity-0 pointer-events-none pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
+      )}
+    >
+      <AssistantMessageActions
+        message={message}
+        showCopyButton={showCopyButton}
+        copyStreaming={copyStreaming}
       />
     </div>
   );
@@ -2150,28 +2181,39 @@ function AssistantMessageMeta({
   message,
   showCopyButton,
   copyStreaming,
-  alwaysVisible = false,
 }: {
   className?: string;
   message: ChatMessage;
   showCopyButton: boolean;
   copyStreaming: boolean;
-  alwaysVisible?: boolean;
+}) {
+  return (
+    <div
+      data-assistant-meta="visible"
+      className={cn(assistantMetaActionsClassName, "opacity-100", className)}
+    >
+      <AssistantMessageActions
+        message={message}
+        showCopyButton={showCopyButton}
+        copyStreaming={copyStreaming}
+      />
+    </div>
+  );
+}
+
+function AssistantMessageActions({
+  message,
+  showCopyButton,
+  copyStreaming,
+}: {
+  message: ChatMessage;
+  showCopyButton: boolean;
+  copyStreaming: boolean;
 }) {
   const ctx = use(TimelineRowCtx);
 
   return (
-    <div
-      className={cn(
-        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
-        alwaysVisible
-          ? "opacity-100"
-          : "h-0 overflow-hidden opacity-0 pointer-coarse:h-auto pointer-coarse:overflow-visible pointer-coarse:opacity-100 focus-within:h-auto focus-within:overflow-visible focus-within:opacity-100 group-hover/assistant:h-auto group-hover/assistant:overflow-visible group-hover/assistant:opacity-100",
-        className,
-        !alwaysVisible &&
-          "mt-0 pointer-coarse:mt-1.5 focus-within:mt-1.5 group-hover/assistant:mt-1.5",
-      )}
-    >
+    <>
       <AssistantCopyButton
         message={message}
         showCopyButton={showCopyButton}
@@ -2187,7 +2229,7 @@ function AssistantMessageMeta({
           </TooltipPopup>
         </Tooltip>
       )}
-    </div>
+    </>
   );
 }
 

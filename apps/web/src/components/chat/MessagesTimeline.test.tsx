@@ -1333,6 +1333,21 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('data-user-message-footer="true"');
   });
 
+  it("overlays assistant copy controls so hover does not grow the row", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[buildAssistantTimelineEntry("Here is the answer.")]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Copy message"');
+    expect(markup).toContain('data-assistant-meta="overlay"');
+    expect(markup).toContain('data-assistant-meta-gap="true"');
+    expect(markup).toContain("h-8 overflow-hidden");
+    expect(markup).not.toContain("group-hover/assistant:h-auto");
+  });
+
   it("renders context compaction entries in the normal work log", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -1518,6 +1533,8 @@ describe("MessagesTimeline", () => {
     expect(toolIndex).toBeGreaterThan(messageIndex);
     expect(metaIndex).toBeGreaterThan(toolIndex);
     expect(markup.match(/I’ll search for it now\./gu)).toHaveLength(1);
+    expect(markup).toContain('data-assistant-meta="visible"');
+    expect(markup).not.toContain('data-assistant-meta="overlay"');
   });
 
   it("keeps mixed work logs neutral after a later tool call succeeds", () => {
