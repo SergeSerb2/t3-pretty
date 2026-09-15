@@ -25,7 +25,9 @@ import {
   resolveProjectAttentionIndicator,
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
+  addProjectRailAttention,
   resolveSidebarThreadStatus,
+  resolveSidebarThreadTopStatus,
   isSettledThreadPastArchiveAge,
   reserveSettledArchiveAttempts,
   reserveUndonePastArchiveAgeAttempts,
@@ -2202,6 +2204,111 @@ describe("resolveThreadStatusPill", () => {
         },
       }),
     ).toMatchObject({ label: "Completed", pulse: false });
+  });
+
+  it("shows completed for a merged pull request even after a visit or leftover monitor", () => {
+    const mergedThread = {
+      ...baseThread,
+      interactionMode: "default" as const,
+      lastVisitedAt: "2026-03-09T10:06:00.000Z",
+      latestTurn: makeLatestTurn(),
+      backgroundLiveness: "monitoring" as const,
+      session: {
+        ...baseThread.session,
+        status: "ready" as const,
+        activeTurnId: null,
+      },
+      pullRequests: [
+        {
+          host: "github.com",
+          repository: "acme/app",
+          number: 42,
+          url: "https://github.com/acme/app/pull/42",
+          source: "agent" as const,
+          linkedAt: "2026-03-09T10:01:00.000Z",
+          stack: null,
+          snapshot: {
+            state: "merged" as const,
+            title: "Fix",
+            headBranch: "fix",
+            baseBranch: "main",
+            isDraft: false,
+            updatedAt: "2026-03-09T10:05:00.000Z",
+            syncedAt: "2026-03-09T10:05:00.000Z",
+            mergedAt: "2026-03-09T10:05:00.000Z",
+          },
+        },
+      ],
+    };
+    expect(resolveThreadStatusPill({ thread: mergedThread })).toMatchObject({
+      label: "Completed",
+      pulse: false,
+    });
+  });
+});
+
+describe("resolveSidebarThreadTopStatus", () => {
+  it("labels a merged ready thread Done after the user has already visited", () => {
+    expect(
+      resolveSidebarThreadTopStatus({
+        status: "ready",
+        isWoke: false,
+        isUnread: false,
+        changeRequestMerged: true,
+      }),
+    ).toMatchObject({ label: "Done", icon: "done" });
+  });
+
+  it("labels a merged monitoring thread Done instead of Monitoring", () => {
+    expect(
+      resolveSidebarThreadTopStatus({
+        status: "monitoring",
+        isWoke: false,
+        isUnread: false,
+        changeRequestMerged: true,
+      }),
+    ).toMatchObject({ label: "Done", icon: "done" });
+  });
+
+  it("keeps Working while the session is still running after a merge", () => {
+    expect(
+      resolveSidebarThreadTopStatus({
+        status: "working",
+        isWoke: false,
+        isUnread: false,
+        changeRequestMerged: true,
+      }),
+    ).toMatchObject({ label: "Working", icon: "working" });
+  });
+});
+
+describe("addProjectRailAttention", () => {
+  it("counts completed threads and keeps the strongest attention label", () => {
+    const completed = resolveThreadStatusPill({
+      thread: {
+        hasActionableProposedPlan: false,
+        hasPendingApprovals: false,
+        hasPendingUserInput: false,
+        interactionMode: "default",
+        latestTurn: makeLatestTurn(),
+        lastVisitedAt: "2026-03-09T10:04:00.000Z",
+        session: null,
+      },
+    });
+    const approval = resolveThreadStatusPill({
+      thread: {
+        hasActionableProposedPlan: false,
+        hasPendingApprovals: true,
+        hasPendingUserInput: false,
+        interactionMode: "default",
+        latestTurn: null,
+        session: null,
+      },
+    });
+    const first = addProjectRailAttention(undefined, completed);
+    const next = addProjectRailAttention(first, approval);
+    expect(first).toMatchObject({ label: "Completed", count: 1 });
+    expect(next).toMatchObject({ label: "Pending Approval", count: 2 });
   });
 });
 

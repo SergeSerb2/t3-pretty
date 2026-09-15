@@ -1,4 +1,7 @@
-import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
+import {
+  resolveThreadPullRequestBadge,
+  threadPullRequestSearchTerms,
+} from "@t3tools/shared/threadPullRequests";
 import * as React from "react";
 import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit/sortable";
 import {
@@ -8,6 +11,7 @@ import {
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/unstable/reactivity";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
 import {
   effectiveSnoozed,
@@ -535,6 +539,24 @@ export interface ThreadStatusPill {
   pulse: boolean;
 }
 
+/** Rail badge: strongest waiting-on-you / finished-PR status plus how many rows carry one. */
+export type ProjectRailAttention = ThreadStatusPill & { count: number };
+
+export type SidebarThreadTopStatusIcon =
+  | "working"
+  | "monitoring"
+  | "approval"
+  | "input"
+  | "failed"
+  | "woke"
+  | "done";
+
+export interface SidebarThreadTopStatus {
+  label: string;
+  icon: SidebarThreadTopStatusIcon;
+  className: string;
+}
+
 // Rollup order mirrors the per-thread resolver exactly: attention states,
 // then active work, then the actionable plan prompt, then passive
 // monitoring. A Monitoring sibling must never hide a Plan Ready thread.
@@ -559,7 +581,14 @@ type ThreadStatusInput = Pick<
   | "backgroundLiveness"
 > & {
   lastVisitedAt?: string | undefined;
+  pullRequests?: SidebarThreadSummary["pullRequests"];
 };
+
+export function threadChangeRequestIsMerged(
+  thread: Pick<ThreadStatusInput, "pullRequests">,
+): boolean {
+  return resolveThreadPullRequestBadge(thread.pullRequests)?.state === "merged";
+}
 
 export interface ThreadJumpHintVisibilityController {
   sync: (shouldShow: boolean) => void;
@@ -646,7 +675,9 @@ export function useThreadJumpHintVisibility(): {
   };
 }
 
-export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
+export function hasUnseenCompletion(
+  thread: Pick<ThreadStatusInput, "latestTurn"> & { lastVisitedAt?: string | undefined },
+): boolean {
   if (!thread.latestTurn?.completedAt) return false;
   const completedAt = Date.parse(thread.latestTurn.completedAt);
   if (Number.isNaN(completedAt)) return false;
@@ -885,6 +916,54 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
   return "ready";
 }
 
+const TOP_STATUS_VISUALS: Record<SidebarThreadTopStatusIcon, { label: string; className: string }> =
+  {
+    working: { label: "Working", className: "text-sky-600 dark:text-sky-400" },
+    // Monitoring is calm background presence, not active progress
+    // (monitoring-pill D6), so it keeps the label at full strength.
+    monitoring: { label: "Monitoring", className: "text-foreground dark:text-white" },
+    approval: { label: "Approval", className: "text-amber-700 dark:text-amber-300" },
+    input: { label: "Input", className: "text-indigo-600 dark:text-indigo-300" },
+    failed: { label: "Failed", className: "text-red-700 dark:text-red-300" },
+    woke: { label: "Woke", className: "text-amber-700 dark:text-amber-300" },
+    done: { label: "Done", className: "text-emerald-700 dark:text-emerald-300" },
+  };
+
+/**
+ * Card/slim trailing label. A merged change request is finished work even
+ * when the babysit watch loop is still classified as monitoring, and even
+ * when the user already visited — T3 Pretty keeps merged threads active, so
+ * the row has to say Done or they look idle.
+ */
+export function resolveSidebarThreadTopStatus(input: {
+  status: SidebarThreadStatus;
+  isWoke: boolean;
+  isUnread: boolean;
+  changeRequestMerged?: boolean;
+}): SidebarThreadTopStatus | null {
+  const icon: SidebarThreadTopStatusIcon | null =
+    input.status === "approval"
+      ? "approval"
+      : input.status === "input"
+        ? "input"
+        : input.status === "failed"
+          ? "failed"
+          : input.status === "working"
+            ? "working"
+            : input.changeRequestMerged === true &&
+                (input.status === "ready" || input.status === "monitoring")
+              ? "done"
+              : input.status === "monitoring"
+                ? "monitoring"
+                : input.isWoke
+                  ? "woke"
+                  : input.isUnread
+                    ? "done"
+                    : null;
+  if (icon === null) return null;
+  return { icon, ...TOP_STATUS_VISUALS[icon] };
+}
+
 /** First VALID timestamp wins: `a ?? b` falls through on null, but a present-
     yet-malformed string must also fall through to the next candidate rather
     than sink the row to the epoch. */
@@ -936,14 +1015,19 @@ type ThreadAttentionInput = Pick<
  */
 export function countThreadsAwaitingUser(
   threads: readonly ThreadAttentionInput[],
-  _lastVisitedAtByThreadKey: Readonly<Record<string, string | undefined>>,
+  lastVisitedAtByThreadKey: Readonly<Record<string, string | undefined>>,
 ): number {
   let count = 0;
   for (const thread of threads) {
     const status = resolveSidebarThreadStatus(thread);
     if (status === "approval" || status === "input") {
       count += 1;
+      continue;
     }
+    if (status === "working" || status === "monitoring") continue;
+    const lastVisitedAt =
+      lastVisitedAtByThreadKey[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))];
+    if (hasUnseenCompletion({ ...thread, lastVisitedAt })) count += 1;
   }
   return count;
 }
@@ -1061,6 +1145,13 @@ export function formatWorkingDurationLabel(elapsedMs: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+const COMPLETED_STATUS_PILL: ThreadStatusPill = {
+  label: "Completed",
+  colorClass: "text-emerald-600 dark:text-emerald-300/90",
+  dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
+  pulse: false,
+};
+
 export function resolveThreadStatusPill(input: {
   thread: ThreadStatusInput;
 }): ThreadStatusPill | null {
@@ -1131,6 +1222,11 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
+  // Merged PRs outrank a leftover babysit watch: the work is finished.
+  if (threadChangeRequestIsMerged(thread)) {
+    return COMPLETED_STATUS_PILL;
+  }
+
   if (thread.backgroundLiveness === "monitoring") {
     return {
       label: "Monitoring",
@@ -1141,15 +1237,20 @@ export function resolveThreadStatusPill(input: {
   }
 
   if (hasUnseenCompletion(thread)) {
-    return {
-      label: "Completed",
-      colorClass: "text-emerald-600 dark:text-emerald-300/90",
-      dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
-      pulse: false,
-    };
+    return COMPLETED_STATUS_PILL;
   }
 
   return null;
+}
+
+export function addProjectRailAttention(
+  current: ProjectRailAttention | undefined,
+  pill: ThreadStatusPill | null,
+): ProjectRailAttention | undefined {
+  if (pill === null || !PROJECT_ATTENTION_LABELS.has(pill.label)) return current;
+  if (current === undefined) return { ...pill, count: 1 };
+  const strongest = resolveProjectStatusIndicator([current, pill]) ?? pill;
+  return { ...strongest, count: current.count + 1 };
 }
 
 export const PROJECT_ATTENTION_LABELS: ReadonlySet<ThreadStatusPill["label"]> = new Set([

@@ -5,7 +5,7 @@ import { openCommandPalette } from "../../commandPaletteBus";
 import { cn } from "../../lib/utils";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { ProjectFavicon } from "../ProjectFavicon";
-import type { ThreadStatusPill } from "../Sidebar.logic";
+import type { ProjectRailAttention } from "../Sidebar.logic";
 import { SidebarMenuButton } from "../ui/sidebar";
 
 const openNewThreadPicker = () => openCommandPalette({ open: "new-thread-in" });
@@ -33,8 +33,8 @@ export function SidebarProjectRail({
   selectedProjectKey: string | null;
   onSelectProject: (project: SidebarProjectSnapshot) => void;
   onSelectAll?: () => void;
-  /** Strongest status that still needs the user, per logical project key. */
-  attentionByProjectKey?: ReadonlyMap<string, ThreadStatusPill>;
+  /** Strongest waiting-on-you / finished-PR status, plus a count, per project. */
+  attentionByProjectKey?: ReadonlyMap<string, ProjectRailAttention>;
   onNewThreadInProject?: (project: SidebarProjectSnapshot) => void;
   onProjectContextMenu?: (event: MouseEvent<HTMLElement>, project: SidebarProjectSnapshot) => void;
   onNewThread?: (event: MouseEvent) => void;
@@ -82,16 +82,21 @@ export function SidebarProjectRail({
         </SidebarMenuButton>
       ) : null}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden py-1">
-        {projects.map((project) => {
+        {projects.map((project, index) => {
           const label = [project.displayName, ...project.remoteEnvironmentLabels].join(" · ");
           const attention = attentionByProjectKey?.get(project.projectKey) ?? null;
           const selected = selectedProjectKey === project.projectKey;
+          const jumpNumber = index < 9 ? index + 1 : null;
           return (
             <div key={project.projectKey} className="group/rail-item relative shrink-0">
               <SidebarMenuButton
                 size="icon"
                 aria-label={`Show ${label} threads`}
-                tooltip={attention ? `${label} · ${attention.label}` : label}
+                tooltip={
+                  attention
+                    ? `${label} · ${attention.label}${attention.count > 1 ? ` (${attention.count})` : ""}`
+                    : label
+                }
                 isActive={selected}
                 aria-pressed={selected}
                 onClick={() => onSelectProject(project)}
@@ -101,14 +106,24 @@ export function SidebarProjectRail({
               >
                 <ProjectFavicon project={project} className="size-4 shrink-0" />
               </SidebarMenuButton>
+              {jumpNumber !== null ? (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute -bottom-0.5 -left-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-sm border border-border/80 bg-background/95 px-0.5 font-mono text-[9px] font-semibold tabular-nums text-foreground shadow-sm"
+                >
+                  {jumpNumber}
+                </span>
+              ) : null}
               {attention ? (
                 <span
                   aria-hidden
                   className={cn(
-                    "pointer-events-none absolute -right-0.5 -top-0.5 size-2 rounded-full ring-2 ring-sidebar",
+                    "pointer-events-none absolute -right-0.5 -top-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[9px] font-semibold tabular-nums text-white ring-2 ring-sidebar",
                     attention.dotClass,
                   )}
-                />
+                >
+                  {attention.count}
+                </span>
               ) : null}
               {onNewThreadInProject ? (
                 <button

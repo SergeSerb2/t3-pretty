@@ -187,7 +187,7 @@ import {
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
   nextSidebarProjectScopeKey,
-  resolveProjectAttentionIndicator,
+  addProjectRailAttention,
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
   resolveThreadStatusPill,
@@ -197,6 +197,7 @@ import {
   sortProjectsForSidebar,
   useSidebarRowSubscriptionLease,
   useThreadJumpHintVisibility,
+  type ProjectRailAttention,
   ThreadStatusPill,
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
@@ -3324,24 +3325,25 @@ export default function LegacySidebar() {
     return next;
   }, [sidebarThreads, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
   const attentionByProjectKey = useMemo(() => {
-    const map = new Map<string, ThreadStatusPill>();
+    const map = new Map<string, ProjectRailAttention>();
     for (const [projectKey, threads] of threadsByProjectKey) {
-      const strongest = resolveProjectAttentionIndicator(
-        threads
-          .filter((thread) => thread.archivedAt === null)
-          .map((thread) =>
-            resolveThreadStatusPill({
-              thread: {
-                ...thread,
-                lastVisitedAt:
-                  threadLastVisitedAtById[
-                    scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
-                  ],
-              },
-            }),
-          ),
-      );
-      if (strongest) map.set(projectKey, strongest);
+      let attention: ProjectRailAttention | undefined;
+      for (const thread of threads) {
+        if (thread.archivedAt !== null) continue;
+        attention = addProjectRailAttention(
+          attention,
+          resolveThreadStatusPill({
+            thread: {
+              ...thread,
+              lastVisitedAt:
+                threadLastVisitedAtById[
+                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
+                ],
+            },
+          }),
+        );
+      }
+      if (attention) map.set(projectKey, attention);
     }
     return map;
   }, [threadLastVisitedAtById, threadsByProjectKey]);
