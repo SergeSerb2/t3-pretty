@@ -31,9 +31,9 @@ function ProjectRailTooltip({
 }): ReactNode {
   const environmentLine = projectRailEnvironmentLine(project);
   return (
-    <span className="flex flex-col gap-0.5 py-0.5 text-left">
-      <span className="font-medium">{project.displayName}</span>
-      <span className="truncate text-muted-foreground">{project.workspaceRoot}</span>
+    <span className="flex min-w-0 w-full flex-col gap-0.5 py-0.5 text-left">
+      <span className="min-w-0 w-full font-medium">{project.displayName}</span>
+      <span className="min-w-0 w-full truncate text-muted-foreground">{project.workspaceRoot}</span>
       {environmentLine ? <span className="text-muted-foreground">{environmentLine}</span> : null}
       {project.groupedProjectCount > 1 ? (
         <span className="text-muted-foreground">{project.groupedProjectCount} projects</span>
