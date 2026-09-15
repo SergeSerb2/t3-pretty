@@ -21,6 +21,7 @@ export interface TarEntry {
 }
 
 const BLOCK_SIZE = 512;
+const MAX_TAR_ENTRIES = 50_000;
 const textDecoder = new TextDecoder();
 
 function readString(block: Uint8Array, start: number, length: number): string {
@@ -32,7 +33,7 @@ function readString(block: Uint8Array, start: number, length: number): string {
 function readOctal(block: Uint8Array, start: number, length: number): number {
   const field = readString(block, start, length).trim();
   const value = Number.parseInt(field, 8);
-  if (Number.isNaN(value)) {
+  if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error("Malformed tar header: non-octal numeric field.");
   }
   return value;
@@ -54,7 +55,7 @@ function parsePaxRecords(data: Uint8Array): ReadonlyArray<readonly [string, stri
     if (spaceIndex === -1) break;
     const lengthText = textDecoder.decode(data.subarray(offset, spaceIndex));
     const length = Number.parseInt(lengthText, 10);
-    if (Number.isNaN(length) || length <= 0 || offset + length > data.byteLength) {
+    if (!Number.isSafeInteger(length) || length <= 0 || offset + length > data.byteLength) {
       break;
     }
     const record = textDecoder.decode(data.subarray(spaceIndex + 1, offset + length - 1));
@@ -74,6 +75,7 @@ function parsePaxRecords(data: Uint8Array): ReadonlyArray<readonly [string, stri
  */
 export function* iterateTarEntries(bytes: Uint8Array): Generator<TarEntry> {
   let offset = 0;
+  let entryCount = 0;
   // Name overrides carried by metadata entries that precede the entry they
   // describe (pax `path=` wins over a GNU longname when both appear).
   let pendingName: string | undefined;
@@ -82,6 +84,10 @@ export function* iterateTarEntries(bytes: Uint8Array): Generator<TarEntry> {
     const header = bytes.subarray(offset, offset + BLOCK_SIZE);
     if (isZeroBlock(header)) {
       return;
+    }
+    entryCount += 1;
+    if (entryCount > MAX_TAR_ENTRIES) {
+      throw new Error(`Tar archive exceeds the ${MAX_TAR_ENTRIES}-entry limit.`);
     }
 
     const size = readOctal(header, 124, 12);

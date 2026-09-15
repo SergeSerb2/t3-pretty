@@ -4,8 +4,17 @@ import {
   DESKTOP_CLERK_ALLOWED_ORIGINS,
   mergeClerkAllowedOrigins,
   reconcileClerkAllowedOrigins,
+  resolveClerkSecretKey,
   type ClerkInstanceClient,
 } from "./configure-clerk.ts";
+
+describe("resolveClerkSecretKey", () => {
+  it("accepts a bounded key and rejects controls or oversized values", () => {
+    expect(resolveClerkSecretKey("  sk_live_example  ")).toBe("sk_live_example");
+    expect(resolveClerkSecretKey("sk_live_example\nforged")).toBeUndefined();
+    expect(resolveClerkSecretKey("x".repeat(8193))).toBeUndefined();
+  });
+});
 
 describe("mergeClerkAllowedOrigins", () => {
   it("adds both desktop renderer origins without replacing existing origins", () => {

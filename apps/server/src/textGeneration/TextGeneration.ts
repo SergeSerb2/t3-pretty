@@ -6,9 +6,11 @@ import { TextGenerationError } from "@t3tools/contracts";
 
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
+import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
+import * as ThreadTitleLinks from "./ThreadTitleLinks.ts";
 import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
 
-export type TextGenerationProvider = "codex" | "claudeAgent" | "cursor" | "grok" | "kimi";
+export type TextGenerationProvider = "codex" | "claudeAgent" | "cursor" | "grok";
 
 export interface CommitMessageGenerationInput {
   cwd: string;
@@ -60,6 +62,7 @@ export interface BranchNameGenerationResult {
 }
 
 export interface ThreadTitleGenerationInput {
+  linkedContext?: string | undefined;
   cwd: string;
   message: string;
   /** Present when replacing an existing title from the current thread history. */
@@ -71,6 +74,7 @@ export interface ThreadTitleGenerationInput {
 
 export interface ThreadTitleGenerationResult {
   title: string;
+  needsRefinement?: boolean | undefined;
 }
 
 export interface ActivityHeadlineGenerationInput {
@@ -99,19 +103,6 @@ export interface ProjectIconGenerationInput {
 
 export interface ProjectIconGenerationResult {
   path: string;
-}
-
-export interface TextGenerationService {
-  generateCommitMessage(
-    input: CommitMessageGenerationInput,
-  ): Promise<CommitMessageGenerationResult>;
-  generatePrContent(input: PrContentGenerationInput): Promise<PrContentGenerationResult>;
-  generateBranchName(input: BranchNameGenerationInput): Promise<BranchNameGenerationResult>;
-  generateThreadTitle(input: ThreadTitleGenerationInput): Promise<ThreadTitleGenerationResult>;
-  generateActivityHeadline(
-    input: ActivityHeadlineGenerationInput,
-  ): Promise<ActivityHeadlineGenerationResult>;
-  generateProjectIcon(input: ProjectIconGenerationInput): Promise<ProjectIconGenerationResult>;
 }
 
 /**
@@ -168,8 +159,28 @@ export const unsupportedProjectIconGeneration = (providerLabel: string) =>
     });
   });
 
-/** @deprecated Use `TextGeneration["Service"]`. */
-export type TextGenerationShape = TextGeneration["Service"];
+/**
+ * Text generation for providers that only run conversational agents (Grok
+ * Bot). Every operation fails with a clear message so the UI can steer the
+ * user to another provider for commit messages and titles.
+ */
+export const makeUnsupportedTextGeneration = (providerLabel: string): TextGeneration["Service"] => {
+  const unsupported = (operation: TextGenerationOp) =>
+    Effect.fail(
+      new TextGenerationError({
+        operation,
+        detail: `${providerLabel} does not generate text outside of a thread.`,
+      }),
+    );
+  return {
+    generateCommitMessage: () => unsupported("generateCommitMessage"),
+    generatePrContent: () => unsupported("generatePrContent"),
+    generateBranchName: () => unsupported("generateBranchName"),
+    generateThreadTitle: () => unsupported("generateThreadTitle"),
+    generateActivityHeadline: () => unsupported("generateActivityHeadline"),
+    generateProjectIcon: () => unsupported("generateProjectIcon"),
+  };
+};
 
 type TextGenerationOp =
   | "generateCommitMessage"
@@ -197,10 +208,11 @@ const resolveInstance = (
     ),
   );
 
-export const makeTextGenerationFromRegistry = (
-  registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
-): TextGeneration["Service"] =>
-  TextGeneration.of({
+/** @public Service construction is part of the canonical Effect module API. */
+export const make = Effect.gen(function* () {
+  const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+  const sourceControl = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+  return TextGeneration.of({
     generateCommitMessage: (input) =>
       resolveInstance(registry, "generateCommitMessage", input.modelSelection.instanceId).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateCommitMessage(input)),
@@ -215,7 +227,19 @@ export const makeTextGenerationFromRegistry = (
       ),
     generateThreadTitle: (input) =>
       resolveInstance(registry, "generateThreadTitle", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generateThreadTitle(input)),
+        Effect.flatMap((textGeneration) =>
+          Effect.gen(function* () {
+            const linkedContext =
+              input.linkedContext ??
+              (yield* ThreadTitleLinks.resolveThreadTitleLinks(input).pipe(
+                Effect.provideService(
+                  SourceControlProviderRegistry.SourceControlProviderRegistry,
+                  sourceControl,
+                ),
+              ));
+            return yield* textGeneration.generateThreadTitle({ ...input, linkedContext });
+          }),
+        ),
       ),
     generateActivityHeadline: (input) =>
       resolveInstance(registry, "generateActivityHeadline", input.modelSelection.instanceId).pipe(
@@ -226,10 +250,6 @@ export const makeTextGenerationFromRegistry = (
         Effect.flatMap((textGeneration) => textGeneration.generateProjectIcon(input)),
       ),
   });
-
-export const make = Effect.gen(function* () {
-  const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
-  return makeTextGenerationFromRegistry(registry);
 });
 
 export const layer = Layer.effect(TextGeneration, make);

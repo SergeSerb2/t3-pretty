@@ -80,7 +80,10 @@ export const THEME_PREVIEW_RENDER_SPECS: Readonly<Record<ThemeAppearance, ThemeP
 
 type Oklab = Readonly<{ l: number; a: number; b: number }>;
 
-const OKLCH_PATTERN = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+(-?[\d.]+)/;
+const OKLCH_COMPONENT = String.raw`(?:\d+(?:\.\d*)?|\.\d+)`;
+const OKLCH_PATTERN = new RegExp(
+  String.raw`^oklch\(\s*(${OKLCH_COMPONENT})\s+(${OKLCH_COMPONENT})\s+(-?${OKLCH_COMPONENT})`,
+);
 const HEX_PATTERN = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i;
 
 function srgbToLinear(value: number): number {
@@ -97,7 +100,11 @@ function parseOklab(value: string): Oklab | null {
   if (oklch) {
     const lightness = Number(oklch[1]);
     const chroma = Number(oklch[2]);
-    const hue = (Number(oklch[3]) * Math.PI) / 180;
+    const hueDegrees = Number(oklch[3]);
+    if (![lightness, chroma, hueDegrees].every(Number.isFinite)) {
+      return null;
+    }
+    const hue = (hueDegrees * Math.PI) / 180;
     return { l: lightness, a: chroma * Math.cos(hue), b: chroma * Math.sin(hue) };
   }
 

@@ -24,9 +24,23 @@ const ELECTRON_LIBSECRET_DESKTOPS = new Set([
 const ELECTRON_KDE_DESKTOP = "KDE";
 // Chromium recognizes LXQt and still selects basic text for it, so it does need a forced backend.
 const ELECTRON_UNPROTECTED_DESKTOPS = new Set(["LXQt"]);
-
-const KDE_NAME_PREFIXES = ["kde", "plasma"];
+const KDE_NAME_PREFIXES = ["kde", "plasma"] as const;
 const NEGATIVE_FLAG_VALUES = new Set(["0", "false", "no", "off"]);
+
+function normalizeSelectedStorageBackend(value: string | null): LinuxPasswordStoreSwitch | null {
+  const normalized = value?.trim().toLowerCase().replaceAll("_", "-");
+  return normalized === "gnome-libsecret" ||
+    normalized === "kwallet" ||
+    normalized === "kwallet5" ||
+    normalized === "kwallet6"
+    ? normalized
+    : null;
+}
+
+function normalizeDesktopName(value: string | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : null;
+}
 
 export function normalizeLinuxPasswordStorePreference(
   value: unknown,
@@ -119,9 +133,6 @@ function getKWalletRemediationMessage(): string {
   return "T3 Pretty could not access KWallet to save this environment credential. Enable the KDE wallet subsystem in System Settings, then restart T3 Pretty.";
 }
 
-// Advisory only: this picks between the GNOME Keyring and KWallet wording in the failure notice. It
-// never decides which backend to select, so a loose match costs a user slightly wrong instructions
-// rather than an unprotected credential store.
 function looksLikeKdeSession(env: NodeJS.ProcessEnv): boolean {
   const currentDesktopNames = nonEmptyDesktopNames(env.XDG_CURRENT_DESKTOP);
   if (currentDesktopNames.length > 0) {
@@ -165,14 +176,4 @@ function isAffirmativeFlag(value: string | undefined): boolean {
 
 function splitDesktopNameList(value: string | undefined): string[] {
   return value?.split(":") ?? [];
-}
-
-function normalizeDesktopName(value: string | undefined): string | null {
-  const normalized = value?.trim().toLowerCase();
-  return normalized && normalized.length > 0 ? normalized : null;
-}
-
-function normalizeSelectedStorageBackend(value: string | null): string | null {
-  const normalized = value?.trim().toLowerCase().replace(/_/gu, "-");
-  return normalized && normalized.length > 0 ? normalized : null;
 }

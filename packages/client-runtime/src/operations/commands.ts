@@ -2,8 +2,6 @@ import {
   CommandId,
   ORCHESTRATION_WS_METHODS,
   type ClientOrchestrationCommand,
-  type SkillId,
-  type ThreadTurnStartBootstrap,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -11,7 +9,6 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
-import { isThreadAlreadyExistsError } from "../errors/orchestration.ts";
 import {
   type EnvironmentRpcFailure,
   type EnvironmentRpcSuccess,
@@ -39,13 +36,7 @@ type CommandInput<T extends CommandType> = Omit<
 export type CreateProjectInput = CommandInput<"project.create">;
 export type UpdateProjectInput = CommandInput<"project.meta.update">;
 export type DeleteProjectInput = CommandInput<"project.delete">;
-// Per-thread skill picks are optional on the creation payloads: callers
-// may omit them, and dispatch fills `[]`. RPC encode requires the key
-// (`withDecodingDefault` only applies on decode), so we never leave it
-// off the wire.
-export type CreateThreadInput = Omit<CommandInput<"thread.create">, "enabledSkillIds"> & {
-  readonly enabledSkillIds?: ReadonlyArray<SkillId>;
-};
+export type CreateThreadInput = CommandInput<"thread.create">;
 export type DeleteThreadInput = CommandInput<"thread.delete">;
 export type ArchiveThreadInput = CommandInput<"thread.archive">;
 export type UnarchiveThreadInput = CommandInput<"thread.unarchive">;
@@ -56,31 +47,20 @@ export type UnsnoozeThreadInput = CommandInput<"thread.unsnooze">;
 export type PinThreadInput = CommandInput<"thread.pin">;
 export type UnpinThreadInput = CommandInput<"thread.unpin">;
 export type ReorderPinnedThreadInput = CommandInput<"thread.pin.reorder">;
-export type AssignThreadSceneryInput = CommandInput<"thread.scenery.assign">;
-export type SetThreadSkillsInput = CommandInput<"thread.skills.set">;
-export type SetThreadSubagentPolicyInput = CommandInput<"thread.subagent-policy.set">;
+export type ReorderActiveThreadInput = CommandInput<"thread.active.reorder">;
 export type UpdateThreadMetadataInput = CommandInput<"thread.meta.update">;
+export type LinkThreadPullRequestInput = CommandInput<"thread.pull-request.link">;
+export type UnlinkThreadPullRequestInput = CommandInput<"thread.pull-request.unlink">;
 export type SetThreadRuntimeModeInput = CommandInput<"thread.runtime-mode.set">;
 export type SetThreadInteractionModeInput = CommandInput<"thread.interaction-mode.set">;
-type ThreadTurnStartBootstrapCreateThreadInput = Omit<
-  NonNullable<ThreadTurnStartBootstrap["createThread"]>,
-  "enabledSkillIds"
-> & {
-  readonly enabledSkillIds?: ReadonlyArray<SkillId>;
-};
-// Same optional skill passthrough as CreateThreadInput, one level down
-// inside the turn-start bootstrap. Dispatch fills `[]` when omitted.
-export type StartThreadTurnInput = Omit<CommandInput<"thread.turn.start">, "bootstrap"> & {
-  readonly bootstrap?:
-    | (Omit<ThreadTurnStartBootstrap, "createThread"> & {
-        readonly createThread?: ThreadTurnStartBootstrapCreateThreadInput | undefined;
-      })
-    | undefined;
-};
+export type StartThreadTurnInput = CommandInput<"thread.turn.start">;
 export type InterruptThreadTurnInput = CommandInput<"thread.turn.interrupt">;
 export type RespondToThreadApprovalInput = CommandInput<"thread.approval.respond">;
 export type RespondToThreadUserInputInput = CommandInput<"thread.user-input.respond">;
-export type RevertThreadCheckpointInput = CommandInput<"thread.checkpoint.revert">;
+export type DismissThreadUserInputInput = CommandInput<"thread.user-input.dismiss">;
+export type RevertThreadCheckpointInput = CommandInput<"thread.checkpoint.revert"> & {
+  readonly restoreFiles?: boolean;
+};
 export type StopThreadSessionInput = CommandInput<"thread.session.stop">;
 
 type DispatchTag = typeof ORCHESTRATION_WS_METHODS.dispatchCommand;
@@ -117,7 +97,7 @@ function dispatch(command: ClientOrchestrationCommand) {
   return request(ORCHESTRATION_WS_METHODS.dispatchCommand, command);
 }
 
-/** Settle/snooze while the environment has no session; reconnect drains the queue. */
+/** Park settle/snooze/pin/reorder when the environment has no session; reconnect drains. */
 function dispatchOrEnqueue(command: ClientOrchestrationCommand) {
   return dispatch(command).pipe(
     Effect.catchTag("EnvironmentRpcUnavailableError", (error) =>
@@ -135,30 +115,6 @@ function dispatchOrEnqueue(command: ClientOrchestrationCommand) {
       }),
     ),
   );
-}
-
-const EMPTY_ENABLED_SKILL_IDS: ReadonlyArray<SkillId> = [];
-
-function enabledSkillIdsOrEmpty(
-  enabledSkillIds: ReadonlyArray<SkillId> | undefined,
-): ReadonlyArray<SkillId> {
-  return enabledSkillIds ?? EMPTY_ENABLED_SKILL_IDS;
-}
-
-function withDefaultBootstrapCreateThreadSkillIds(
-  bootstrap: NonNullable<StartThreadTurnInput["bootstrap"]>,
-): ThreadTurnStartBootstrap {
-  const createThread = bootstrap.createThread;
-  if (createThread === undefined) {
-    return bootstrap as ThreadTurnStartBootstrap;
-  }
-  return {
-    ...bootstrap,
-    createThread: {
-      ...createThread,
-      enabledSkillIds: enabledSkillIdsOrEmpty(createThread.enabledSkillIds),
-    },
-  };
 }
 
 export const createProject: (input: CreateProjectInput) => CommandEffect = Effect.fn(
@@ -202,7 +158,6 @@ export const createThread: (input: CreateThreadInput) => CommandEffect = Effect.
     type: "thread.create",
     commandId: metadata.commandId,
     createdAt: metadata.createdAt,
-    enabledSkillIds: enabledSkillIdsOrEmpty(input.enabledSkillIds),
   });
 });
 
@@ -279,7 +234,7 @@ export const unsnoozeThread: (input: UnsnoozeThreadInput) => CommandEffect = Eff
 export const pinThread: (input: PinThreadInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.pinThread",
 )(function* (input) {
-  return yield* dispatch({
+  return yield* dispatchOrEnqueue({
     ...input,
     type: "thread.pin",
     commandId: yield* commandId(input),
@@ -289,7 +244,7 @@ export const pinThread: (input: PinThreadInput) => CommandEffect = Effect.fn(
 export const unpinThread: (input: UnpinThreadInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.unpinThread",
 )(function* (input) {
-  return yield* dispatch({
+  return yield* dispatchOrEnqueue({
     ...input,
     type: "thread.unpin",
     commandId: yield* commandId(input),
@@ -299,45 +254,22 @@ export const unpinThread: (input: UnpinThreadInput) => CommandEffect = Effect.fn
 export const reorderPinnedThread: (input: ReorderPinnedThreadInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.reorderPinnedThread",
 )(function* (input) {
-  return yield* dispatch({
+  return yield* dispatchOrEnqueue({
     ...input,
     type: "thread.pin.reorder",
     commandId: yield* commandId(input),
   });
 });
 
-export const assignThreadScenery: (input: AssignThreadSceneryInput) => CommandEffect = Effect.fn(
-  "EnvironmentCommands.assignThreadScenery",
+export const reorderActiveThread: (input: ReorderActiveThreadInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.reorderActiveThread",
 )(function* (input) {
-  return yield* dispatch({
+  return yield* dispatchOrEnqueue({
     ...input,
-    type: "thread.scenery.assign",
+    type: "thread.active.reorder",
     commandId: yield* commandId(input),
   });
 });
-
-export const setThreadSkills: (input: SetThreadSkillsInput) => CommandEffect = Effect.fn(
-  "EnvironmentCommands.setThreadSkills",
-)(function* (input) {
-  const metadata = yield* timestampedCommandMetadata(input);
-  return yield* dispatch({
-    ...input,
-    type: "thread.skills.set",
-    commandId: metadata.commandId,
-    createdAt: metadata.createdAt,
-  });
-});
-
-export const setThreadSubagentPolicy: (input: SetThreadSubagentPolicyInput) => CommandEffect =
-  Effect.fn("EnvironmentCommands.setThreadSubagentPolicy")(function* (input) {
-    const metadata = yield* timestampedCommandMetadata(input);
-    return yield* dispatch({
-      ...input,
-      type: "thread.subagent-policy.set",
-      commandId: metadata.commandId,
-      createdAt: metadata.createdAt,
-    });
-  });
 
 export const updateThreadMetadata: (input: UpdateThreadMetadataInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.updateThreadMetadata",
@@ -348,6 +280,24 @@ export const updateThreadMetadata: (input: UpdateThreadMetadataInput) => Command
     commandId: yield* commandId(input),
   });
 });
+
+export const linkThreadPullRequest: (input: LinkThreadPullRequestInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.linkThreadPullRequest")(function* (input) {
+    return yield* dispatch({
+      ...input,
+      type: "thread.pull-request.link",
+      commandId: yield* commandId(input),
+    });
+  });
+
+export const unlinkThreadPullRequest: (input: UnlinkThreadPullRequestInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.unlinkThreadPullRequest")(function* (input) {
+    return yield* dispatch({
+      ...input,
+      type: "thread.pull-request.unlink",
+      commandId: yield* commandId(input),
+    });
+  });
 
 export const setThreadRuntimeMode: (input: SetThreadRuntimeModeInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.setThreadRuntimeMode",
@@ -376,31 +326,12 @@ export const startThreadTurn: (input: StartThreadTurnInput) => CommandEffect = E
   "EnvironmentCommands.startThreadTurn",
 )(function* (input) {
   const metadata = yield* timestampedCommandMetadata(input);
-  const { bootstrap, ...rest } = input;
-  const normalizedBootstrap =
-    bootstrap === undefined ? undefined : withDefaultBootstrapCreateThreadSkillIds(bootstrap);
-  const command = {
-    ...rest,
-    type: "thread.turn.start" as const,
+  return yield* dispatch({
+    ...input,
+    type: "thread.turn.start",
     commandId: metadata.commandId,
     createdAt: metadata.createdAt,
-    ...(normalizedBootstrap === undefined ? {} : { bootstrap: normalizedBootstrap }),
-  };
-  // Older remotes still reject a reused draft id at create. Retry a bare
-  // turn.start so we do not run prepareWorktree/setup a second time.
-  return yield* dispatch(command).pipe(
-    Effect.catchIf(
-      (error) =>
-        normalizedBootstrap?.createThread !== undefined && isThreadAlreadyExistsError(error),
-      () =>
-        dispatch({
-          ...rest,
-          type: "thread.turn.start",
-          commandId: metadata.commandId,
-          createdAt: metadata.createdAt,
-        }),
-    ),
-  );
+  });
 });
 
 export const interruptThreadTurn: (input: InterruptThreadTurnInput) => CommandEffect = Effect.fn(
@@ -437,12 +368,24 @@ export const respondToThreadUserInput: (input: RespondToThreadUserInputInput) =>
     });
   });
 
-export const revertThreadCheckpoint: (input: RevertThreadCheckpointInput) => CommandEffect =
-  Effect.fn("EnvironmentCommands.revertThreadCheckpoint")(function* (input) {
+export const dismissThreadUserInput: (input: DismissThreadUserInputInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.dismissThreadUserInput")(function* (input) {
     const metadata = yield* timestampedCommandMetadata(input);
     return yield* dispatch({
       ...input,
-      type: "thread.checkpoint.revert",
+      type: "thread.user-input.dismiss",
+      commandId: metadata.commandId,
+      createdAt: metadata.createdAt,
+    });
+  });
+
+export const revertThreadCheckpoint: (input: RevertThreadCheckpointInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.revertThreadCheckpoint")(function* (input) {
+    const metadata = yield* timestampedCommandMetadata(input);
+    const { restoreFiles, ...command } = input;
+    return yield* dispatch({
+      ...command,
+      type: restoreFiles === false ? "thread.conversation.revert" : "thread.checkpoint.revert",
       commandId: metadata.commandId,
       createdAt: metadata.createdAt,
     });
@@ -459,3 +402,42 @@ export const stopThreadSession: (input: StopThreadSessionInput) => CommandEffect
     createdAt: metadata.createdAt,
   });
 });
+
+export type AssignThreadSceneryInput = CommandInput<"thread.scenery.assign">;
+export type SetThreadSkillsInput = CommandInput<"thread.skills.set">;
+export type SetThreadSubagentPolicyInput = CommandInput<"thread.subagent-policy.set">;
+
+export const assignThreadScenery: (input: AssignThreadSceneryInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.assignThreadScenery",
+)(function* (input) {
+  const metadata = yield* timestampedCommandMetadata(input);
+  return yield* dispatch({
+    ...input,
+    type: "thread.scenery.assign",
+    commandId: metadata.commandId,
+    createdAt: metadata.createdAt,
+  });
+});
+
+export const setThreadSkills: (input: SetThreadSkillsInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.setThreadSkills",
+)(function* (input) {
+  const metadata = yield* timestampedCommandMetadata(input);
+  return yield* dispatch({
+    ...input,
+    type: "thread.skills.set",
+    commandId: metadata.commandId,
+    createdAt: metadata.createdAt,
+  });
+});
+
+export const setThreadSubagentPolicy: (input: SetThreadSubagentPolicyInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.setThreadSubagentPolicy")(function* (input) {
+    const metadata = yield* timestampedCommandMetadata(input);
+    return yield* dispatch({
+      ...input,
+      type: "thread.subagent-policy.set",
+      commandId: metadata.commandId,
+      createdAt: metadata.createdAt,
+    });
+  });

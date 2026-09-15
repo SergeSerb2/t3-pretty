@@ -11,10 +11,10 @@ import * as String from "effect/String";
 import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-const ReleaseChannel = Schema.Literals(["stable", "nightly"]);
+const ReleaseChannel = Schema.Literals(["stable", "nightly", "preview"]);
 type ReleaseChannel = typeof ReleaseChannel.Type;
 
-export class InvalidReleaseTagError extends Schema.TaggedErrorClass<InvalidReleaseTagError>()(
+export class InvalidReleaseTagError extends Schema.TaggedError<InvalidReleaseTagError>()(
   "InvalidReleaseTagError",
   {
     channel: ReleaseChannel,
@@ -34,7 +34,7 @@ const releaseTagListProcessContext = {
   cwd: Schema.String,
 };
 
-export class ReleaseTagListProcessError extends Schema.TaggedErrorClass<ReleaseTagListProcessError>()(
+export class ReleaseTagListProcessError extends Schema.TaggedError<ReleaseTagListProcessError>()(
   "ReleaseTagListProcessError",
   {
     ...releaseTagListProcessContext,
@@ -47,7 +47,7 @@ export class ReleaseTagListProcessError extends Schema.TaggedErrorClass<ReleaseT
   }
 }
 
-export class ReleaseTagListProcessExitError extends Schema.TaggedErrorClass<ReleaseTagListProcessExitError>()(
+export class ReleaseTagListProcessExitError extends Schema.TaggedError<ReleaseTagListProcessExitError>()(
   "ReleaseTagListProcessExitError",
   {
     ...releaseTagListProcessContext,
@@ -61,7 +61,20 @@ export class ReleaseTagListProcessExitError extends Schema.TaggedErrorClass<Rele
   }
 }
 
-export class PreviousReleaseTagGitHubOutputConfigError extends Schema.TaggedErrorClass<PreviousReleaseTagGitHubOutputConfigError>()(
+export class ReleaseTagListOutputTooLargeError extends Schema.TaggedError<ReleaseTagListOutputTooLargeError>()(
+  "ReleaseTagListOutputTooLargeError",
+  {
+    ...releaseTagListProcessContext,
+    stream: Schema.Literals(["stdout", "stderr"]),
+    maxOutputBytes: NonNegativeInt,
+  },
+) {
+  override get message(): string {
+    return `Git tag listing ${this.stream} exceeded the ${this.maxOutputBytes}-byte safety limit.`;
+  }
+}
+
+export class PreviousReleaseTagGitHubOutputConfigError extends Schema.TaggedError<PreviousReleaseTagGitHubOutputConfigError>()(
   "PreviousReleaseTagGitHubOutputConfigError",
   {
     cause: Schema.Defect(),
@@ -72,7 +85,7 @@ export class PreviousReleaseTagGitHubOutputConfigError extends Schema.TaggedErro
   }
 }
 
-export class PreviousReleaseTagGitHubOutputAppendError extends Schema.TaggedErrorClass<PreviousReleaseTagGitHubOutputAppendError>()(
+export class PreviousReleaseTagGitHubOutputAppendError extends Schema.TaggedError<PreviousReleaseTagGitHubOutputAppendError>()(
   "PreviousReleaseTagGitHubOutputAppendError",
   {
     outputPath: Schema.String,
@@ -151,10 +164,12 @@ const parseStableTag = (tag: string): StableVersion | undefined => {
   if (!major || !minor || !patch) return undefined;
 
   const prereleaseIdentifiers = prerelease ? prerelease.split(".") : [];
-  // Nightly tags also start with `v` and carry a `nightly.*` prerelease
-  // identifier. They must not be considered stable candidates when resolving
-  // the previous stable tag.
-  if (prereleaseIdentifiers[0] === "nightly") return undefined;
+  // Nightly and preview tags also start with `v` and carry their channel as
+  // the prerelease identifier. They must not be considered stable candidates
+  // when resolving the previous stable tag.
+  if (prereleaseIdentifiers[0] === "nightly" || prereleaseIdentifiers[0] === "preview") {
+    return undefined;
+  }
 
   return {
     major: Number(major),
@@ -172,10 +187,15 @@ const compareNightlyVersions = (left: NightlyVersion, right: NightlyVersion): nu
   return left.runNumber - right.runNumber;
 };
 
-const parseNightlyTag = (tag: string): NightlyVersion | undefined => {
+const parseNightlyTag = (
+  tag: string,
+  channel: "nightly" | "preview" = "nightly",
+): NightlyVersion | undefined => {
   // Accept both the current `v<semver>` format and the legacy `nightly-v<semver>`
   // format so release note diffs keep working across the tag-format transition.
-  const match = /^(?:nightly-)?v(\d+)\.(\d+)\.(\d+)-nightly\.(\d{8})\.(\d+)$/.exec(tag);
+  const match = new RegExp(
+    `^(?:nightly-)?v(\\d+)\\.(\\d+)\\.(\\d+)-${channel}\\.(\\d{8})\\.(\\d+)$`,
+  ).exec(tag);
   if (!match) return undefined;
 
   const [, major, minor, patch, date, runNumber] = match;
@@ -202,24 +222,27 @@ export const resolvePreviousReleaseTag = (
         return yield* new InvalidReleaseTagError({ channel, currentTag });
       }
 
-      const candidates = tags
-        .map((tag) => ({ tag, parsed: parseStableTag(tag) }))
-        .filter(
-          (entry): entry is { tag: string; parsed: StableVersion } => entry.parsed !== undefined,
-        )
-        .filter((entry) => compareStableVersions(entry.parsed, current) < 0)
-        .toSorted((left, right) => compareStableVersions(right.parsed, left.parsed));
-
-      return candidates[0]?.tag;
+      let previous: { readonly tag: string; readonly parsed: StableVersion } | undefined;
+      for (const tag of tags) {
+        const parsed = parseStableTag(tag);
+        if (
+          parsed &&
+          compareStableVersions(parsed, current) < 0 &&
+          (!previous || compareStableVersions(parsed, previous.parsed) > 0)
+        ) {
+          previous = { tag, parsed };
+        }
+      }
+      return previous?.tag;
     }
 
-    const current = parseNightlyTag(currentTag);
+    const current = parseNightlyTag(currentTag, channel);
     if (!current) {
       return yield* new InvalidReleaseTagError({ channel, currentTag });
     }
 
     const candidates = tags
-      .map((tag) => ({ tag, parsed: parseNightlyTag(tag) }))
+      .map((tag) => ({ tag, parsed: parseNightlyTag(tag, channel) }))
       .filter(
         (entry): entry is { tag: string; parsed: NightlyVersion } => entry.parsed !== undefined,
       )
@@ -229,16 +252,57 @@ export const resolvePreviousReleaseTag = (
     return candidates[0]?.tag;
   });
 
-const collectStreamAsString = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
+const RELEASE_TAG_LIST_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
+
+interface BoundedStreamText {
+  readonly text: string;
+  readonly truncated: boolean;
+}
+
+const collectStreamAsString = <E>(
+  stream: Stream.Stream<Uint8Array, E>,
+  maxOutputBytes: number,
+): Effect.Effect<BoundedStreamText, E> =>
   stream.pipe(
-    Stream.decodeText(),
     Stream.runFold(
-      () => "",
-      (acc, chunk) => acc + chunk,
+      () => ({ chunks: [] as Array<Uint8Array>, retainedBytes: 0, truncated: false }),
+      (state, chunk) => {
+        if (state.truncated) return state;
+        const remaining = maxOutputBytes - state.retainedBytes;
+        if (chunk.byteLength <= remaining) {
+          state.chunks.push(chunk);
+          return {
+            chunks: state.chunks,
+            retainedBytes: state.retainedBytes + chunk.byteLength,
+            truncated: false,
+          };
+        }
+        if (remaining > 0) state.chunks.push(chunk.slice(0, remaining));
+        return {
+          chunks: state.chunks,
+          retainedBytes: maxOutputBytes,
+          truncated: true,
+        };
+      },
     ),
+    Effect.map((state) => {
+      const bytes = new Uint8Array(state.retainedBytes);
+      let offset = 0;
+      for (const chunk of state.chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return {
+        text: new TextDecoder().decode(bytes),
+        truncated: state.truncated,
+      };
+    }),
   );
 
-export const listGitTags = Effect.fn("listGitTags")(function* (cwd = process.cwd()) {
+export const listGitTags = Effect.fn("listGitTags")(function* (
+  cwd = process.cwd(),
+  maxOutputBytes = RELEASE_TAG_LIST_MAX_OUTPUT_BYTES,
+) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const args = ["tag", "--list"] as const;
   const context = {
@@ -258,7 +322,7 @@ export const listGitTags = Effect.fn("listGitTags")(function* (cwd = process.cwd
   );
   const [stdout, stderr, exitCode] = yield* Effect.all(
     [
-      collectStreamAsString(child.stdout).pipe(
+      collectStreamAsString(child.stdout, maxOutputBytes).pipe(
         Effect.mapError(
           (cause) =>
             new ReleaseTagListProcessError({
@@ -268,7 +332,7 @@ export const listGitTags = Effect.fn("listGitTags")(function* (cwd = process.cwd
             }),
         ),
       ),
-      collectStreamAsString(child.stderr).pipe(
+      collectStreamAsString(child.stderr, maxOutputBytes).pipe(
         Effect.mapError(
           (cause) =>
             new ReleaseTagListProcessError({
@@ -293,16 +357,24 @@ export const listGitTags = Effect.fn("listGitTags")(function* (cwd = process.cwd
     { concurrency: "unbounded" },
   );
 
+  if (stdout.truncated || stderr.truncated) {
+    return yield* new ReleaseTagListOutputTooLargeError({
+      ...context,
+      stream: stdout.truncated ? "stdout" : "stderr",
+      maxOutputBytes,
+    });
+  }
+
   if (exitCode !== 0) {
     return yield* new ReleaseTagListProcessExitError({
       ...context,
       exitCode,
-      stdoutLength: stdout.length,
-      stderrLength: stderr.length,
+      stdoutLength: stdout.text.length,
+      stderrLength: stderr.text.length,
     });
   }
 
-  return stdout.split(/\r?\n/).map(String.trim).filter(String.isNonEmpty);
+  return stdout.text.split(/\r?\n/).map(String.trim).filter(String.isNonEmpty);
 });
 
 export const writePreviousReleaseTagOutput = Effect.fn("writePreviousReleaseTagOutput")(function* (

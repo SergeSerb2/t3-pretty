@@ -10,6 +10,7 @@ export interface NormalizedBitbucketPullRequestRecord {
   readonly baseRefName: string;
   readonly headRefName: string;
   readonly state: "open" | "closed" | "merged";
+  readonly isDraft?: boolean;
   readonly updatedAt: Option.Option<DateTime.Utc>;
   readonly mergedAt: Option.Option<DateTime.Utc>;
   readonly isCrossRepository?: boolean;
@@ -39,6 +40,7 @@ export const BitbucketPullRequestSchema = Schema.Struct({
   id: PositiveInt,
   title: TrimmedNonEmptyString,
   state: Schema.optional(Schema.NullOr(Schema.String)),
+  draft: Schema.optional(Schema.Boolean),
   updated_on: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
   closed_on: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
   links: Schema.Struct({
@@ -101,6 +103,7 @@ export function normalizeBitbucketPullRequestRecord(
     baseRefName: raw.destination.branch.name,
     headRefName: raw.source.branch.name,
     state,
+    ...(raw.draft === true ? { isDraft: true } : {}),
     updatedAt: raw.updated_on ?? Option.none(),
     mergedAt: state === "merged" ? (raw.closed_on ?? Option.none()) : Option.none(),
     ...(isCrossRepository ? { isCrossRepository: true } : {}),
