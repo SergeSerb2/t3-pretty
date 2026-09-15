@@ -248,6 +248,7 @@ export interface GitFastForwardBranchResult {
 export interface GitFetchRemoteInput {
   cwd: string;
   remoteName: string;
+  refName?: string;
 }
 
 export interface GitRemoteExistsInput {

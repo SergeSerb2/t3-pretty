@@ -80,6 +80,7 @@ describe("CheckpointDiffQuery.layer", () => {
             listAutomationShells: () => Effect.die("unused"),
             listAutomationRuns: () => Effect.die("unused"),
             getAutomationRunById: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>
@@ -201,6 +202,7 @@ describe("CheckpointDiffQuery.layer", () => {
             listAutomationShells: () => Effect.die("unused"),
             listAutomationRuns: () => Effect.die("unused"),
             getAutomationRunById: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>
@@ -297,6 +299,7 @@ describe("CheckpointDiffQuery.layer", () => {
             listAutomationShells: () => Effect.die("unused"),
             listAutomationRuns: () => Effect.die("unused"),
             getAutomationRunById: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>
@@ -378,6 +381,7 @@ describe("CheckpointDiffQuery.layer", () => {
             listAutomationShells: () => Effect.die("unused"),
             listAutomationRuns: () => Effect.die("unused"),
             getAutomationRunById: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>
@@ -444,6 +448,7 @@ describe("CheckpointDiffQuery.layer", () => {
             listAutomationShells: () => Effect.die("unused"),
             listAutomationRuns: () => Effect.die("unused"),
             getAutomationRunById: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getSnapshot: () =>

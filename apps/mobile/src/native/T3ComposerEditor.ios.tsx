@@ -34,6 +34,7 @@ import {
   resolveComposerControlledEventCount,
   type ComposerNativeEventSnapshot,
 } from "./composerEditorRevision";
+import { DEFAULT_COMPOSER_ENTER_BEHAVIOR } from "../lib/composerEnterBehavior";
 import { collectNativeComposerInlineTokens } from "./composerEditorTokens";
 import type { ComposerEditorProps, ComposerEditorSelection } from "./T3ComposerEditor.types";
 
@@ -81,6 +82,7 @@ interface NativeComposerEditorProps extends ViewProps {
   readonly contentInsetVertical: number;
   readonly editable: boolean;
   readonly readOnly: boolean;
+  readonly enterBehavior: string;
   readonly scrollEnabled: boolean;
   readonly autoFocus: boolean;
   readonly autoCorrect: boolean;
@@ -312,6 +314,7 @@ export function ComposerEditor({
       contentInsetVertical={contentInsetVertical}
       editable={props.editable ?? true}
       readOnly={props.readOnly ?? false}
+      enterBehavior={props.enterBehavior ?? DEFAULT_COMPOSER_ENTER_BEHAVIOR}
       scrollEnabled={props.scrollEnabled ?? true}
       autoFocus={props.autoFocus ?? false}
       autoCorrect={props.autoCorrect ?? true}
