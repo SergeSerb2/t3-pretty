@@ -168,7 +168,7 @@ function SidebarProvider({
             // On macOS the traffic-light inset is wider than the default 3rem
             // rail. Grow the collapsed rail so project icons sit beside the
             // lights, not under them.
-            "--sidebar-width-icon": `max(${SIDEBAR_WIDTH_ICON}, var(--workspace-controls-left))`,
+            "--sidebar-width-icon": `max(${SIDEBAR_WIDTH_ICON}, var(--workspace-controls-left, 0px))`,
             "--workspace-titlebar-content-left":
               "calc(var(--workspace-controls-left) + var(--workspace-titlebar-control-size) + var(--workspace-titlebar-control-gap))",
             ...style,
