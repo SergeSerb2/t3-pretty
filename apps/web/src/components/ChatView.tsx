@@ -9420,8 +9420,13 @@ export default function ChatView(props: ChatViewProps) {
         // pointer-events-none on the strip, auto on the buttons: same as the
         // left sidebar trigger. A later sibling than the chat header, so the
         // header's frost/drag-region cannot sit on top of the cluster.
-        // absolute (not fixed): the workspace root is the containing block, so
-        // the header's raised stacking context cannot swallow the clicks.
+        // absolute (not fixed): the `relative` workspace root is the
+        // containing block. --workspace-controls-top/right are insets against
+        // that box. This node is a later sibling of the chat column (no
+        // transform/filter/isolation wraps only that column), so header
+        // isolation cannot become the containing block. The sidebar is a
+        // sibling of SidebarInset, so the root's right edge is the viewport
+        // right edge.
         "pointer-events-none absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
       )}
       data-workspace-titlebar-controls
@@ -9624,6 +9629,9 @@ export default function ChatView(props: ChatViewProps) {
   });
 
   return (
+    // Containing block for the parked titlebar cluster (`absolute` +
+    // --workspace-controls-* insets). Keep `relative` on this node; do not
+    // wrap only the chat column in transform/filter/isolation.
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
       <Dialog
         open={
@@ -9695,12 +9703,13 @@ export default function ChatView(props: ChatViewProps) {
               cluster sits on the workspace root; this header covers it while
               the right panel is closed. The open inline panel's tab bar
               mounts the matching hole.
-              Count is 2: maximize stays mounted on the left (opacity-0 /
-              inert) so the cluster does not jump, and the hole is measured
-              from the right over the two live toggles. The open-panel tab
-              bar uses 3 because maximize is then visible. */}
+              Size to the real cluster: desktop still reserves the maximize
+              slot (opacity-0 / inert, not unmounted) plus both toggles.
+              The sheet omits maximize, so that hole stays two controls. */}
           {isElectron && parkTitlebarLayoutControls && !inlineRightPanelOwnsTitleBar ? (
-            <TitlebarLayoutControlsDragHole controlCount={2} />
+            <TitlebarLayoutControlsDragHole
+              controlCount={shouldUseRightPanelSheet ? 2 : 3}
+            />
           ) : null}
         </WorkspacePageHeader>
 
