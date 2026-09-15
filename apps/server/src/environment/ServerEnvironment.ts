@@ -240,6 +240,7 @@ export const make = Effect.gen(function* () {
       storageInventory: true,
       storageInventoryStream: true,
       environmentIcon: true,
+      projectCloneTracking: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? {

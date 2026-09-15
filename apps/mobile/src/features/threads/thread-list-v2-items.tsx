@@ -1,3 +1,4 @@
+import { CustomSnoozeSheet } from "./CustomSnoozeSheet";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { threadArrangementOpenAtom } from "../../state/thread-order";
@@ -494,6 +495,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   const handleRename = useCallback(() => onRenameThread(thread), [onRenameThread, thread]);
   const handleSettle = useCallback(() => onSettleThread(thread), [onSettleThread, thread]);
+  const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
   const handleSnooze = useCallback(
     (snoozedUntil: string) => onSnoozeThread(thread, snoozedUntil),
     [onSnoozeThread, thread],
@@ -531,12 +533,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     [props.snoozePresetMinute, swipeActions.secondary],
   );
   const snoozePresetActions = useMemo<MenuAction[]>(
-    () =>
-      snoozePresets.map((preset) => ({
+    () => [
+      ...snoozePresets.map((preset) => ({
         id: `snooze:${preset.id}`,
         title: preset.label,
         subtitle: preset.whenLabel,
       })),
+      { id: "snooze:custom", title: "Custom…" },
+    ],
     [snoozePresets],
   );
   // Pinned cards keep the full lifecycle menu; only the pin item flips to
@@ -658,6 +662,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "delete") handleDelete();
+      if (nativeEvent.event === "snooze:custom") {
+        setCustomSnoozeOpen(true);
+        return;
+      }
       const snoozeSelection = resolveThreadListV2SnoozeMenuSelection({
         event: nativeEvent.event,
         displayedPresets: snoozePresets,
@@ -1148,6 +1156,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   return (
     <>
+      {customSnoozeOpen && (
+        <CustomSnoozeSheet onClose={() => setCustomSnoozeOpen(false)} onSnooze={handleSnooze} />
+      )}
       <ThreadSwipeable
         threadKey={`${thread.environmentId}:${thread.id}`}
         backgroundColor={sidebarPane ? drawerColor : screenColor}
