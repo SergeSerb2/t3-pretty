@@ -66,7 +66,9 @@ const STATUS_LABEL_BY_STATUS: Partial<
   approval: { label: "Approval", className: "text-warning-foreground" },
   input: { label: "Input", className: "text-foreground-secondary" },
   working: { label: "Working", className: "text-adaptive-sky-600-400" },
+  monitoring: { label: "Monitoring", className: "text-foreground" },
   failed: { label: "Failed", className: "text-danger-foreground" },
+  done: { label: "Done", className: "text-adaptive-emerald-700-300" },
 };
 
 function threadTimeLabel(thread: EnvironmentThreadShell): string {
