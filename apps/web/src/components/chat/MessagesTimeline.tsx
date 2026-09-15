@@ -2115,14 +2115,11 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
         {row.showAssistantMeta ? (
-          <>
-            <div aria-hidden="true" className="h-8" data-assistant-meta-gap="true" />
-            <AssistantMessageOverlay
-              message={row.message}
-              showCopyButton={row.showAssistantCopyButton}
-              copyStreaming={row.assistantCopyStreaming}
-            />
-          </>
+          <AssistantMessageOverlay
+            message={row.message}
+            showCopyButton={row.showAssistantCopyButton}
+            copyStreaming={row.assistantCopyStreaming}
+          />
         ) : null}
       </div>
     </>
@@ -2149,10 +2146,9 @@ function AssistantMetaTimelineRow({
 const assistantMetaActionsClassName =
   "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200 motion-reduce:transition-none";
 
-// Hover copy/timestamp sit out of flow so revealing them cannot grow the row
-// and shove the thread. They pin to the bottom of the in-flow h-8 spacer in
-// AssistantTimelineRow. Trailing assistant-meta rows use AssistantMessageMeta
-// instead and stay in flow.
+// Reserved h-8 slot so revealing copy/timestamp only fades opacity and cannot
+// grow the row or paint into the next one. Trailing assistant-meta rows use
+// AssistantMessageMeta instead and stay fully visible.
 function AssistantMessageOverlay({
   message,
   showCopyButton,
@@ -2165,9 +2161,10 @@ function AssistantMessageOverlay({
   return (
     <div
       data-assistant-meta="overlay"
+      data-assistant-meta-gap="true"
       className={cn(
         assistantMetaActionsClassName,
-        "pointer-events-none absolute inset-x-0 bottom-0 z-10 opacity-0 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
+        "h-8 opacity-0 pointer-events-none pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
       )}
     >
       <AssistantMessageActions
