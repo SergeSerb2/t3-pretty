@@ -516,6 +516,7 @@ function IssueDetail({
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    setError(null);
     void load({ environmentId, input: { provider: issue.provider, id: issue.id } }).then(
       (result) => {
         if (cancelled) return;
@@ -548,7 +549,7 @@ function IssueDetail({
       ) : (
         <>
           <Action title="Back to issues" onPress={onBack} />
-          <Text>Loading issue…</Text>
+          {!error ? <Text>Loading issue…</Text> : null}
         </>
       )}
     </View>

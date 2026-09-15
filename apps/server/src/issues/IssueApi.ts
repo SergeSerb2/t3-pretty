@@ -63,6 +63,7 @@ const Exception = Schema.Struct({
                 filename: Schema.optional(Schema.NullOr(Schema.String)),
                 function: Schema.optional(Schema.NullOr(Schema.String)),
                 lineNo: Schema.optional(Schema.NullOr(Schema.Finite)),
+                lineno: Schema.optional(Schema.NullOr(Schema.Finite)),
               }),
             ),
           }),
@@ -87,7 +88,7 @@ function eventDetails(entries: ReadonlyArray<{ type: string; data: unknown }>): 
             .slice(-60)
             .map(
               (frame) =>
-                `  ${frame.function ?? "<anonymous>"} (${frame.filename ?? "unknown"}${frame.lineNo == null ? "" : `:${frame.lineNo}`})`,
+                `  ${frame.function ?? "<anonymous>"} (${frame.filename ?? "unknown"}${(frame.lineNo ?? frame.lineno) == null ? "" : `:${frame.lineNo ?? frame.lineno}`})`,
             ),
         ].join("\n"),
       );
@@ -398,10 +399,11 @@ export const makeIssueApi = (client: HttpClient.HttpClient) => {
     };
   });
   const create = Effect.fn("issues.create")(function* (token: string, input: IssueCreateInput) {
+    const { assigneeId, ...fields } = input;
     const data = yield* graphql(
       token,
       `mutation($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { ${linearFields} } } }`,
-      { input },
+      { input: { ...fields, ...(assigneeId ? { assigneeId } : {}) } },
       Schema.Struct({
         issueCreate: Schema.Struct({ success: Schema.Boolean, issue: Schema.NullOr(LinearIssue) }),
       }),

@@ -150,7 +150,12 @@ function fixture() {
                 {
                   type: "TypeError",
                   value: "Failed to fetch",
-                  stacktrace: { frames: [{ filename: "login.ts", function: "login", lineNo: 42 }] },
+                  stacktrace: {
+                    frames: [
+                      { filename: "login.ts", function: "login", lineNo: 42 },
+                      { filename: "submit.ts", function: "submit", lineno: 7 },
+                    ],
+                  },
                 },
               ],
             },
@@ -266,8 +271,12 @@ it.effect(
           teamId: "team-1",
           title: "Fix login",
           description: "Steps to reproduce",
+          assigneeId: null,
         })).id,
       ).toBe("issue-1");
+      expect(f.requests.at(-1)?.body.variables).toEqual({
+        input: { teamId: "team-1", title: "Fix login", description: "Steps to reproduce" },
+      });
       yield* issues.update({
         provider: "linear",
         id: "issue-1",
@@ -327,6 +336,9 @@ it.effect(
         organization: "acme",
         region: "de",
       });
+      expect((yield* issues.detail({ provider: "sentry", id: "123" })).details).toContain(
+        "submit (submit.ts:7)",
+      );
       const page = yield* issues.list({
         provider: "sentry",
         query: "is:unresolved",
