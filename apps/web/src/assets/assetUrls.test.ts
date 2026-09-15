@@ -12,6 +12,15 @@ describe("resolveAssetUrl", () => {
   it("rejects an invalid environment base URL", () => {
     expect(resolveAssetUrl("not a URL", "/api/assets/signed-token/favicon.png")).toBeNull();
   });
+
+  it("rejects asset URLs that escape the environment origin", () => {
+    expect(
+      resolveAssetUrl("https://environment.example/base/", "//attacker.example/image.png"),
+    ).toBeNull();
+    expect(
+      resolveAssetUrl("https://environment.example/base/", "https://attacker.example/image.png"),
+    ).toBeNull();
+  });
 });
 
 describe("queryable asset resources", () => {

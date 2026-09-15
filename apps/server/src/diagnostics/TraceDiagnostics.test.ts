@@ -1,13 +1,19 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
-import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as References from "effect/References";
 
+import {
+  SERVER_TRACE_DIAGNOSTIC_PATH_MAX_LENGTH,
+  SERVER_TRACE_DIAGNOSTIC_SCANNED_FILE_MAX_COUNT,
+  SERVER_TRACE_DIAGNOSTIC_TEXT_MAX_LENGTH,
+} from "@t3tools/contracts";
 import * as TraceDiagnostics from "./TraceDiagnostics.ts";
 
 function ns(ms: number): string {
@@ -151,6 +157,34 @@ describe("TraceDiagnostics", () => {
     }),
   );
 
+  it.effect("bounds trace diagnostic paths, errors, and scanned-file metadata", () =>
+    Effect.sync(() => {
+      const diagnostics = TraceDiagnostics.aggregateTraceDiagnostics({
+        traceFilePath: `/${"p".repeat(SERVER_TRACE_DIAGNOSTIC_PATH_MAX_LENGTH + 10)}`,
+        scannedFilePaths: Array.from(
+          { length: SERVER_TRACE_DIAGNOSTIC_SCANNED_FILE_MAX_COUNT + 1 },
+          (_, index) => `/tmp/server.trace.ndjson.${index}`,
+        ),
+        readAt: DateTime.makeUnsafe("2026-05-05T10:00:00.000Z"),
+        files: [],
+        error: {
+          kind: "trace-file-read-failed",
+          message: "e".repeat(SERVER_TRACE_DIAGNOSTIC_TEXT_MAX_LENGTH + 1),
+        },
+      });
+
+      assert.equal(diagnostics.traceFilePath.length, SERVER_TRACE_DIAGNOSTIC_PATH_MAX_LENGTH);
+      assert.equal(
+        diagnostics.scannedFilePaths.length,
+        SERVER_TRACE_DIAGNOSTIC_SCANNED_FILE_MAX_COUNT,
+      );
+      assert.equal(
+        Option.getOrUndefined(diagnostics.error)?.message.length,
+        SERVER_TRACE_DIAGNOSTIC_TEXT_MAX_LENGTH,
+      );
+    }),
+  );
+
   it.effect("preserves full failure causes and log messages", () =>
     Effect.sync(() => {
       const longCause = `VcsProcessSpawnError: ${"missing executable ".repeat(80)}`.trim();
@@ -187,68 +221,79 @@ describe("TraceDiagnostics", () => {
   );
 
   it.effect("keeps loaded trace data when one rotated trace file fails to read", () =>
-    Effect.gen(function* () {
-      const traceFilePath = "/tmp/server.trace.ndjson";
-      const readFailure = PlatformError.systemError({
-        _tag: "PermissionDenied",
-        module: "FileSystem",
-        method: "readFileString",
-        description: "permission denied",
-        pathOrDescriptor: `${traceFilePath}.1`,
-      });
-      const fileSystemLayer = FileSystem.layerNoop({
-        readFileString: (path) =>
-          path === `${traceFilePath}.1`
-            ? Effect.fail(readFailure)
-            : Effect.succeed(
-                record({
-                  name: "server.getConfig",
-                  traceId: "trace-a",
-                  spanId: "span-a",
-                  startMs: 1_000,
-                  durationMs: 50,
-                }),
-              ),
-      });
-      const logAnnotations: Array<Record<string, unknown>> = [];
-      const logger = Logger.make<unknown, void>((options) => {
-        logAnnotations.push({ ...options.fiber.getRef(References.CurrentLogAnnotations) });
-      });
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directory = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-trace-diagnostics-",
+        });
+        const traceFilePath = path.join(directory, "server.trace.ndjson");
+        const rotatedTraceFilePath = `${traceFilePath}.1`;
+        yield* fileSystem.writeFileString(
+          traceFilePath,
+          record({
+            name: "server.getConfig",
+            traceId: "trace-a",
+            spanId: "span-a",
+            startMs: 1_000,
+            durationMs: 50,
+          }),
+        );
+        yield* fileSystem.writeFileString(rotatedTraceFilePath, "unread");
 
-      const diagnostics = yield* TraceDiagnostics.readTraceDiagnostics({
-        traceFilePath,
-        maxFiles: 1,
-        readAt: DateTime.makeUnsafe("2026-05-05T10:00:00.000Z"),
-      }).pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            TraceDiagnostics.layer.pipe(Layer.provide(fileSystemLayer)),
-            Logger.layer([logger], { mergeWithExisting: false }),
-          ),
-        ),
-      );
+        const readFailure = PlatformError.systemError({
+          _tag: "PermissionDenied",
+          module: "FileSystem",
+          method: "open",
+          description: "permission denied",
+          pathOrDescriptor: rotatedTraceFilePath,
+        });
+        const failingFileSystem = FileSystem.FileSystem.of({
+          ...fileSystem,
+          open: (filePath, options) =>
+            filePath === rotatedTraceFilePath
+              ? Effect.fail(readFailure)
+              : fileSystem.open(filePath, options),
+        });
+        const traceDiagnostics = yield* TraceDiagnostics.make.pipe(
+          Effect.provideService(FileSystem.FileSystem, failingFileSystem),
+        );
+        const logAnnotations: Array<Record<string, unknown>> = [];
+        const logger = Logger.make<unknown, void>((options) => {
+          logAnnotations.push({ ...options.fiber.getRef(References.CurrentLogAnnotations) });
+        });
 
-      assert.equal(diagnostics.recordCount, 1);
-      assert.equal(
-        Option.getOrElse(diagnostics.partialFailure, () => false),
-        true,
-      );
-      assert.deepStrictEqual(Option.getOrUndefined(diagnostics.error), {
-        kind: "trace-file-read-failed",
-        message: `Failed to read local trace file '${traceFilePath}.1'.`,
-      });
-      assert.deepStrictEqual(diagnostics.scannedFilePaths, [`${traceFilePath}.1`, traceFilePath]);
+        const diagnostics = yield* traceDiagnostics
+          .read({
+            traceFilePath,
+            maxFiles: 1,
+            readAt: DateTime.makeUnsafe("2026-05-05T10:00:00.000Z"),
+          })
+          .pipe(Effect.provide(Logger.layer([logger], { mergeWithExisting: false })));
 
-      const failureLog = logAnnotations.find(
-        (annotations) => annotations.traceFilePath === `${traceFilePath}.1`,
-      );
-      assert.exists(failureLog);
-      assert.deepStrictEqual(failureLog, {
-        traceFilePath: `${traceFilePath}.1`,
-        errorTag: "TraceFileReadError",
-        causeTag: "PermissionDenied",
-      });
-    }),
+        assert.equal(diagnostics.recordCount, 1);
+        assert.equal(
+          Option.getOrElse(diagnostics.partialFailure, () => false),
+          true,
+        );
+        assert.deepStrictEqual(Option.getOrUndefined(diagnostics.error), {
+          kind: "trace-file-read-failed",
+          message: `Failed to read local trace file '${rotatedTraceFilePath}'.`,
+        });
+        assert.deepStrictEqual(diagnostics.scannedFilePaths, [rotatedTraceFilePath, traceFilePath]);
+
+        const failureLog = logAnnotations.find(
+          (annotations) => annotations.traceFilePath === rotatedTraceFilePath,
+        );
+        assert.exists(failureLog);
+        assert.deepStrictEqual(failureLog, {
+          traceFilePath: rotatedTraceFilePath,
+          errorTag: "TraceFileReadError",
+          causeTag: "PermissionDenied",
+        });
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("keeps only the slowest span occurrences while aggregating large inputs", () =>
@@ -278,6 +323,51 @@ describe("TraceDiagnostics", () => {
         diagnostics.slowestSpans.map((span) => span.durationMs),
         [24, 23, 22, 21, 20, 19, 18, 17, 16, 15],
       );
+    }),
+  );
+
+  it.effect("bounds recent details and safely counts arbitrary log-level keys", () =>
+    Effect.sync(() => {
+      const diagnostics = TraceDiagnostics.aggregateTraceDiagnostics({
+        traceFilePath: "/tmp/server.trace.ndjson",
+        readAt: DateTime.makeUnsafe("2026-05-05T10:00:00.000Z"),
+        files: [
+          {
+            path: "/tmp/server.trace.ndjson",
+            text: Array.from({ length: 50 }, (_, index) =>
+              record({
+                name: `span-${index}`,
+                traceId: `trace-${index}`,
+                spanId: `span-${index}`,
+                startMs: index * 1_000,
+                durationMs: 25,
+                exit: { _tag: "Failure", cause: `failure-${index}` },
+                events: [
+                  {
+                    name: `warning-${index}`,
+                    timeUnixNano: ns(index * 1_000 + 10),
+                    attributes: { "effect.logLevel": "Warning" },
+                  },
+                  {
+                    name: "arbitrary level",
+                    timeUnixNano: ns(index * 1_000 + 11),
+                    attributes: { "effect.logLevel": "__proto__" },
+                  },
+                ],
+              }),
+            ).join("\n"),
+          },
+        ],
+      });
+
+      assert.equal(diagnostics.latestFailures.length, 20);
+      assert.equal(diagnostics.latestFailures[0]?.traceId, "trace-49");
+      assert.equal(diagnostics.latestFailures.at(-1)?.traceId, "trace-30");
+      assert.equal(diagnostics.latestWarningAndErrorLogs.length, 20);
+      assert.equal(diagnostics.latestWarningAndErrorLogs[0]?.message, "warning-49");
+      assert.equal(diagnostics.logLevelCounts.Warning, 50);
+      assert.equal(diagnostics.logLevelCounts.__proto__, 50);
+      assert.equal(Object.hasOwn(diagnostics.logLevelCounts, "__proto__"), true);
     }),
   );
 });

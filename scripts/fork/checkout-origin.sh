@@ -25,10 +25,12 @@ if [[ -z "$store" ]]; then
   exit 1
 fi
 
+# get-only: a 401 must not make git erase the shared store (see macos-origin-git.sh).
+store_helper="!f() { if [ \"\$1\" = get ]; then git credential-store --file=$store get; else cat >/dev/null; fi; }; f"
 git_auth=(
   -c credential.helper=
-  -c credential.https://origin.cursor.com.helper="store --file=$store"
-  -c credential.https://origin.cursor.com/git.helper="store --file=$store"
+  -c credential.https://origin.cursor.com.helper="$store_helper"
+  -c credential.https://origin.cursor.com/git.helper="$store_helper"
 )
 export GIT_TERMINAL_PROMPT=0
 url="https://origin.cursor.com/serbinenko/t3-pretty.git"

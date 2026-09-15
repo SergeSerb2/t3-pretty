@@ -106,6 +106,14 @@ export const ClearCheckpointTurnConflictInput = Schema.Struct({
 });
 export type ClearCheckpointTurnConflictInput = typeof ClearCheckpointTurnConflictInput.Type;
 
+export const SettleRunningProjectionTurnsInput = Schema.Struct({
+  threadId: ThreadId,
+  state: Schema.Literals(["completed", "interrupted", "error"]),
+  completedAt: IsoDateTime,
+  excludedTurnId: Schema.NullOr(TurnId),
+});
+export type SettleRunningProjectionTurnsInput = typeof SettleRunningProjectionTurnsInput.Type;
+
 export interface ProjectionTurnRepositoryShape {
   /**
    * Inserts or updates the canonical row for a concrete `{threadId, turnId}` turn lifecycle state.
@@ -148,6 +156,11 @@ export interface ProjectionTurnRepositoryShape {
   readonly getByTurnId: (
     input: GetProjectionTurnByTurnIdInput,
   ) => Effect.Effect<Option.Option<ProjectionTurnById>, ProjectionRepositoryError>;
+
+  /** Atomically settle running turns without decoding historical turn rows. */
+  readonly settleRunningByThreadId: (
+    input: SettleRunningProjectionTurnsInput,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
 
   /**
    * Clears checkpoint fields on conflicting rows that reuse the same checkpoint turn count in a thread, excluding the provided turn.

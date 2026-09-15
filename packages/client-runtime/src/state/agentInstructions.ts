@@ -9,6 +9,8 @@ import {
   createEnvironmentRpcQueryAtomFamily,
 } from "./runtime.ts";
 
+export const AGENT_INSTRUCTION_CONTENT_IDLE_TTL_MS = 60_000;
+
 /**
  * Atoms for the agent-instruction markdown files (`AGENTS.md`, `CLAUDE.md`,
  * …). Files are addressed by server-minted ids, never by paths — see
@@ -29,7 +31,7 @@ export function createAgentInstructionAtoms<R, E>(
       label: "environment-data:agent-instructions:read",
       tag: WS_METHODS.agentInstructionsRead,
       staleTimeMs: 30_000,
-      idleTtlMs: 5 * 60_000,
+      idleTtlMs: AGENT_INSTRUCTION_CONTENT_IDLE_TTL_MS,
     }),
     write: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:agent-instructions:write",

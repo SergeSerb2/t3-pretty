@@ -11,8 +11,7 @@
  * load gap (that hold read as a glitchy flash of the thread being left). The
  * incoming photo fades in over whatever remains: a direct crossfade when the
  * CDN cache is warm, a dissolve through the new thread's gradient when it is
- * not. New-thread arrival is the exception: fog covers the swap, so a
- * pre-decoded photo mounts settled underneath and the veil is the reveal. Blur-only swaps (same photo, new CDN variant) keep the hold — the old
+ * not. Blur-only swaps (same photo, new CDN variant) keep the hold — the old
  * variant stays put until the decoded one crossfades in, or slider drags
  * would pulse the photo toward the gradient. Under reduced motion nothing
  * fades: swaps commit as hard cuts once the image is ready. When the new
@@ -26,11 +25,15 @@ import { flushSync } from "react-dom";
 
 import { useMotionStore } from "./motionStore";
 import { gradientCss } from "./palette";
-import { readSceneryArrivalPhase, sceneryArrivalCoversSwap } from "./sceneryArrivalLogic";
 import { runSceneryInkTransition } from "./sceneryInkTransition";
 import { planScenerySwap } from "./scenerySwap";
 import { isWallpaperReady, preloadWallpaper } from "./sceneryWallpaper";
-import { UNSPLASH_UTM, wallpaperURL, type SceneryPhoto } from "./unsplash";
+import {
+  UNSPLASH_UTM,
+  unsplashProfileAttributionUrl,
+  wallpaperURL,
+  type SceneryPhoto,
+} from "./unsplash";
 
 interface DisplayedPhoto {
   readonly id: string;
@@ -42,7 +45,7 @@ interface DisplayedPhoto {
 }
 
 /** Fade-out of the outgoing photo; mirrors --scenery-swap-out in scenery.css. */
-const SCENERY_SWAP_OUT_MS = 600;
+const SCENERY_SWAP_OUT_MS = 240;
 
 function displayedPhotoKey(photo: DisplayedPhoto): string {
   return `${photo.id}@${photo.blur}`;
@@ -102,6 +105,9 @@ export function SceneryLayer({
       return;
     }
     const url = wallpaperURL(photo, blur);
+    if (!url) {
+      return;
+    }
     const plan = planScenerySwap({
       current,
       photoId,
@@ -126,23 +132,17 @@ export function SceneryLayer({
         url,
         name: photo.name,
         photographerName: photo.photographerName,
-        photographerProfileURL: photo.photographerProfileURL,
+        photographerProfileURL: unsplashProfileAttributionUrl(photo.photographerProfileURL),
       };
       // True only while the commit runs inside a live view transition.
       // The fallbacks (no API, reduced motion, a skipped start) commit the
       // same way a normal swap does, keeping the CSS dissolve.
       let inkAnimating = false;
-      const covered = sceneryArrivalCoversSwap(readSceneryArrivalPhase());
       const commit = () => {
         if (inkAnimating) {
           // The snapshot is the crossfade: park the CSS layers so they do
           // not re-animate when the view transition hands back the live DOM.
           setOutgoing(null);
-          setSettledKey(displayedPhotoKey(next));
-        } else if (covered) {
-          // Fog is the reveal. Mount the photo at full opacity underneath
-          // so a CSS fade does not fight the veil — and skip the ink view
-          // transition, which snapshots the fog and reads as a hitch.
           setSettledKey(displayedPhotoKey(next));
         } else {
           // Blur-only swaps held the old variant through the download;
@@ -159,7 +159,7 @@ export function SceneryLayer({
         setDisplayed(next);
         onPhotoDisplayedRef.current?.(photo);
       };
-      if (appearanceCrossfadeRef.current && !covered) {
+      if (appearanceCrossfadeRef.current) {
         // The view-transition callback must mutate the DOM before it
         // returns, so React's photo + ink state have to flush together.
         runSceneryInkTransition((animating) => {
@@ -248,7 +248,7 @@ export function SceneryLayer({
             {credited.photographerProfileURL ? (
               <a
                 className="scenery-attribution__photographer"
-                href={`${credited.photographerProfileURL}${UNSPLASH_UTM}`}
+                href={credited.photographerProfileURL}
                 rel="noreferrer"
                 target="_blank"
               >

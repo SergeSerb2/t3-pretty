@@ -113,6 +113,14 @@ describe("LocalApi", () => {
     await expect(createLocalApi().dialogs.confirm("Delete this thread?")).resolves.toBe(false);
   });
 
+  it("rejects opening System Settings when the desktop bridge is unavailable", async () => {
+    const { createLocalApi } = await import("./localApi");
+
+    await expect(createLocalApi().shell.openSystemSettings("full-disk-access")).rejects.toThrow(
+      "Unable to open System Settings.",
+    );
+  });
+
   it("paints context menus in-app even when a desktop bridge is present", async () => {
     const showContextMenu = vi.fn().mockResolvedValue("native");
     showContextMenuFallbackMock.mockResolvedValue("delete");

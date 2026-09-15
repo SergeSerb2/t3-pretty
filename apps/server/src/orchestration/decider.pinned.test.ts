@@ -25,6 +25,7 @@ function makeReadModel(input: {
 }): OrchestrationReadModel {
   return {
     snapshotSequence: 0,
+    automations: [],
     projects: [],
     threads: [
       {
@@ -37,6 +38,7 @@ function makeReadModel(input: {
         branch: null,
         worktreePath: null,
         enabledSkillIds: [],
+        pullRequests: [],
         latestTurn: null,
         createdAt: NOW,
         updatedAt: NOW,

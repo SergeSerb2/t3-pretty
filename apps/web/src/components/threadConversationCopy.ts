@@ -1,5 +1,6 @@
 import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/threads";
 import type { OrchestrationMessage, ScopedThreadRef } from "@t3tools/contracts";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -19,7 +20,9 @@ export function formatThreadConversation(
   }
   for (const message of messages) {
     if (message.role !== "user" && message.role !== "assistant") continue;
-    const text = message.text.trim();
+    const text = (
+      message.role === "user" ? stripHiddenInstructionSuffixes(message.text) : message.text
+    ).trim();
     if (text.length === 0) continue;
     body.push(`${message.role === "user" ? "User" : "Assistant"}:\n${text}`);
   }

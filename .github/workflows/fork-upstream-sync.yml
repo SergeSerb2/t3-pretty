@@ -24,9 +24,9 @@ permissions:
 jobs:
   sync:
     name: Sync newest upstream nightly
-    if: github.repository != 'SergeSerb2/t3-pretty'
-    # macos-release can resolve CURSOR_API_KEY and CLI_PROXY_API_KEY.
-    # Hosted Linux cannot resolve CURSOR_API_KEY.
+    if: github.repository == 'SergeSerb2/t3-pretty'
+    # Self-hosted macos-release can resolve CURSOR_API_KEY and
+    # CLI_PROXY_API_KEY. Hosted Linux and hosted M4 cannot.
     runs-on: macos-latest
     # A backlog merge resolves dozens of conflicts in sequential model
     # batches; 45 minutes hard-killed those runs mid-resolution, which

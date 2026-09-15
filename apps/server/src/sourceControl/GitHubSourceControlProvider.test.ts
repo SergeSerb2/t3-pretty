@@ -60,54 +60,13 @@ it.effect("maps GitHub PR summaries into provider-neutral change requests", () =
       baseRefName: "main",
       headRefName: "feature/source-control",
       state: "open",
+      closedAt: null,
+      mergedAt: null,
       updatedAt: Option.none(),
-      mergedAt: Option.none(),
       isCrossRepository: true,
       headRepositoryNameWithOwner: "fork/t3code",
       headRepositoryOwnerLogin: "fork",
     });
-  }),
-);
-
-it.effect("maps a github.com PR URL to its public Codex review signal", () =>
-  Effect.gen(function* () {
-    let reviewInput: Parameters<GitHubCli.GitHubCli["Service"]["getCodexReview"]>[0] | null = null;
-    const provider = yield* makeProvider({
-      getCodexReview: (input) => {
-        reviewInput = input;
-        return Effect.succeed({ provider: "codex", state: "passed" });
-      },
-    });
-    if (!provider.getAutomatedReview) throw new Error("Expected automated review support");
-
-    const signal = yield* provider.getAutomatedReview({
-      cwd: "/repo",
-      reference: "https://github.com/pingdotgg/t3code/pull/42",
-    });
-
-    assert.deepStrictEqual(reviewInput, {
-      cwd: "/repo",
-      owner: "pingdotgg",
-      repository: "t3code",
-      number: 42,
-    });
-    assert.deepStrictEqual(signal, { provider: "codex", state: "passed" });
-  }),
-);
-
-it.effect("does not claim Codex visibility for a non-github.com PR URL", () =>
-  Effect.gen(function* () {
-    const provider = yield* makeProvider({});
-    if (!provider.getAutomatedReview) throw new Error("Expected automated review support");
-    const error = yield* provider
-      .getAutomatedReview({
-        cwd: "/repo",
-        reference: "https://github.example.test/pingdotgg/t3code/pull/42",
-      })
-      .pipe(Effect.flip);
-
-    assert.equal(error?._tag, "SourceControlProviderError");
-    assert.equal(error?.operation, "getAutomatedReview");
   }),
 );
 
@@ -168,7 +127,7 @@ it.effect("uses gh json listing for non-open change request state queries", () =
                 baseRefName: "main",
                 headRefName: "feature/merged",
                 state: "merged",
-                mergedAt: "2026-01-01T12:00:00.000Z",
+                mergedAt: "2026-01-01T00:00:00Z",
                 updatedAt: "2026-01-02T00:00:00.000Z",
               },
             ]),
@@ -194,17 +153,14 @@ it.effect("uses gh json listing for non-open change request state queries", () =
       "--limit",
       "10",
       "--json",
-      "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+      "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
     ]);
     assert.strictEqual(changeRequests[0]?.provider, "github");
     assert.strictEqual(changeRequests[0]?.state, "merged");
+    assert.strictEqual(changeRequests[0]?.mergedAt, "2026-01-01T00:00:00Z");
     assert.deepStrictEqual(
       changeRequests[0]?.updatedAt,
       Option.some(DateTime.makeUnsafe("2026-01-02T00:00:00.000Z")),
-    );
-    assert.deepStrictEqual(
-      changeRequests[0]?.mergedAt,
-      Option.some(DateTime.makeUnsafe("2026-01-01T12:00:00.000Z")),
     );
   }),
 );

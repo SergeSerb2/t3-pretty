@@ -1,4 +1,6 @@
 import type {
+  AutomationId,
+  AutomationShell,
   OrchestrationCommand,
   OrchestrationProject,
   OrchestrationReadModel,
@@ -18,14 +20,14 @@ function invariantError(commandType: string, detail: string): OrchestrationComma
   });
 }
 
-export function findThreadById(
+function findThreadById(
   readModel: OrchestrationReadModel,
   threadId: ThreadId,
 ): OrchestrationThread | undefined {
   return readModel.threads.find((thread) => thread.id === threadId);
 }
 
-export function findProjectById(
+function findProjectById(
   readModel: OrchestrationReadModel,
   projectId: ProjectId,
 ): OrchestrationProject | undefined {
@@ -37,6 +39,53 @@ export function listThreadsByProjectId(
   projectId: ProjectId,
 ): ReadonlyArray<OrchestrationThread> {
   return readModel.threads.filter((thread) => thread.projectId === projectId);
+}
+
+export function findAutomationById(
+  readModel: OrchestrationReadModel,
+  automationId: AutomationId,
+): AutomationShell | undefined {
+  return readModel.automations.find((automation) => automation.id === automationId);
+}
+
+export function listAutomationsByProjectId(
+  readModel: OrchestrationReadModel,
+  projectId: ProjectId,
+): ReadonlyArray<AutomationShell> {
+  return readModel.automations.filter((automation) => automation.projectId === projectId);
+}
+
+export function requireAutomation(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly automationId: AutomationId;
+}): Effect.Effect<AutomationShell, OrchestrationCommandInvariantError> {
+  const automation = findAutomationById(input.readModel, input.automationId);
+  if (automation) {
+    return Effect.succeed(automation);
+  }
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      `Automation '${input.automationId}' does not exist for command '${input.command.type}'.`,
+    ),
+  );
+}
+
+export function requireAutomationAbsent(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly automationId: AutomationId;
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  if (!findAutomationById(input.readModel, input.automationId)) {
+    return Effect.void;
+  }
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      `Automation '${input.automationId}' already exists and cannot be created twice.`,
+    ),
+  );
 }
 
 export function requireProject(input: {
@@ -156,29 +205,17 @@ export function requireThreadAbsent(input: {
   readonly command: OrchestrationCommand;
   readonly threadId: ThreadId;
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
-  if (!findThreadById(input.readModel, input.threadId)) {
+  // Thread deletion is a soft delete and a draft keeps its client-minted id
+  // across retries, so only a live row blocks creation. Projectors reset the
+  // thread's rows when the id is created again.
+  const existing = findThreadById(input.readModel, input.threadId);
+  if (existing === undefined || existing.deletedAt !== null) {
     return Effect.void;
   }
   return Effect.fail(
     invariantError(
       input.command.type,
       `Thread '${input.threadId}' already exists and cannot be created twice.`,
-    ),
-  );
-}
-
-export function requireNonNegativeInteger(input: {
-  readonly commandType: OrchestrationCommand["type"];
-  readonly field: string;
-  readonly value: number;
-}): Effect.Effect<void, OrchestrationCommandInvariantError> {
-  if (Number.isInteger(input.value) && input.value >= 0) {
-    return Effect.void;
-  }
-  return Effect.fail(
-    invariantError(
-      input.commandType,
-      `${input.field} must be an integer greater than or equal to 0.`,
     ),
   );
 }

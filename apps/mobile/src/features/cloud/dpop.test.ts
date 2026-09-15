@@ -7,6 +7,10 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import { verifyDpopProof } from "@t3tools/shared/dpop";
+import {
+  DPOP_ACCESS_TOKEN_MAX_LENGTH,
+  DPOP_JWK_COORDINATE_MAX_LENGTH,
+} from "@t3tools/shared/dpopCommon";
 
 import {
   createDpopProof,
@@ -99,6 +103,25 @@ describe("mobile DPoP", () => {
     }).pipe(Effect.provide(cryptoLayer)),
   );
 
+  it.effect("rejects oversized persisted private coordinates before decoding them", () =>
+    Effect.gen(function* () {
+      secureStore.set(
+        "t3code.cloud.dpop-proof-key",
+        JSON.stringify({
+          kty: "EC",
+          crv: "P-256",
+          x: "AA",
+          y: "AA",
+          d: "A".repeat(DPOP_JWK_COORDINATE_MAX_LENGTH + 1),
+        }),
+      );
+
+      const error = yield* loadOrCreateDpopProofKeyPair().pipe(Effect.flip);
+
+      expect(error.message).toBe("Stored DPoP proof key is invalid.");
+    }).pipe(Effect.provide(cryptoLayer)),
+  );
+
   it.effect("signs connect and bootstrap proofs with the same ephemeral proof key", () =>
     Effect.gen(function* () {
       const proofKey = yield* generateDpopProofKeyPair();
@@ -136,6 +159,18 @@ describe("mobile DPoP", () => {
         }),
       ).toMatchObject({ ok: true, thumbprint: proofKey.thumbprint });
     }).pipe(Effect.provide(cryptoLayer)),
+  );
+
+  it.effect("rejects an oversized access token before hashing or signing it", () =>
+    createDpopProof({
+      method: "POST",
+      url: "https://relay.example.test/v1/environments/env-1/connect",
+      accessToken: "a".repeat(DPOP_ACCESS_TOKEN_MAX_LENGTH + 1),
+    }).pipe(
+      Effect.flip,
+      Effect.tap((error) => Effect.sync(() => expect(error.message).toContain("access token"))),
+      Effect.provide(cryptoLayer),
+    ),
   );
 
   it.effect("signs DPoP proofs with RFC 9449 htu normalization", () =>
