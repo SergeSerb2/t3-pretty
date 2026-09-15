@@ -183,6 +183,39 @@ describe("resolveThreadListV2Status", () => {
     ).toBe("monitoring");
   });
 
+  it("labels a merged pull request Done after babysit monitoring", () => {
+    expect(
+      resolveThreadListV2Status(
+        makeThread({
+          id: ThreadId.make("t"),
+          title: "t",
+          backgroundLiveness: "monitoring",
+          pullRequests: [
+            {
+              host: "github.com",
+              repository: "acme/app",
+              number: 42,
+              url: "https://github.com/acme/app/pull/42",
+              source: "agent",
+              linkedAt: NOW,
+              stack: null,
+              snapshot: {
+                state: "merged",
+                title: "Fix",
+                headBranch: "fix",
+                baseBranch: "main",
+                isDraft: false,
+                updatedAt: NOW,
+                syncedAt: NOW,
+                mergedAt: NOW,
+              },
+            },
+          ],
+        }),
+      ),
+    ).toBe("done");
+  });
+
   it("keeps a failed session ahead of lingering background liveness", () => {
     const thread = makeThread({
       id: ThreadId.make("t"),
