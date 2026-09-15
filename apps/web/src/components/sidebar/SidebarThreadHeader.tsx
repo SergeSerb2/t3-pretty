@@ -1,5 +1,5 @@
-/** Full-width search above the project scope and creation controls. */
-import { FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+/** Full-width search above the scope title and the new-thread control. */
+import { SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -15,13 +15,8 @@ import { SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface SidebarThreadHeaderProps {
-  /** Lands on the search field so a popup can anchor to its width. */
-  searchFieldRef?: RefObject<HTMLDivElement | null>;
-  /** Without projects there is nothing to scope, so those controls stay out. */
-  hasProjects: boolean;
-  /** The project scope combobox, rendered as the first icon of the group. */
-  projectScope: ReactNode;
-  onNewProject: () => void;
+  /** What the list is scoped to: the project the rail selected, or all of them. */
+  scopeTitle: ReactNode;
   /** Receives the click so Shift+click can skip the project picker. */
   onNewThread: (event: ReactMouseEvent) => void;
   newThreadDisabled: boolean;
@@ -40,10 +35,7 @@ export interface SidebarThreadHeaderProps {
 }
 
 export function SidebarThreadHeader({
-  searchFieldRef,
-  hasProjects,
-  projectScope,
-  onNewProject,
+  scopeTitle,
   onNewThread,
   newThreadDisabled,
   newThreadShortcutLabel,
@@ -69,10 +61,7 @@ export function SidebarThreadHeader({
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <div
-        ref={searchFieldRef}
-        className="flex h-8 min-w-0 items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-control-surface/40 px-2 text-sm text-sidebar-muted-foreground focus-within:border-ring focus-within:ring-1 focus-within:ring-ring"
-      >
+      <div className="flex h-8 min-w-0 items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-control-surface/40 px-2 text-sm text-sidebar-muted-foreground focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
         <SearchIcon className="size-4 shrink-0 text-[var(--sidebar-icon-color)]" />
         <Input
           ref={searchInputRef}
@@ -112,18 +101,9 @@ export function SidebarThreadHeader({
         ) : null}
       </div>
       <div className="flex min-w-0 items-center gap-1">
-        {hasProjects ? (
-          <>
-            {projectScope}
-            <SidebarHeaderIconButton label="New project" onClick={onNewProject}>
-              <FolderPlusIcon />
-            </SidebarHeaderIconButton>
-          </>
-        ) : (
-          <span className="min-w-0 flex-1 px-2 text-xs text-sidebar-muted-foreground">
-            Projects
-          </span>
-        )}
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 text-xs font-medium text-sidebar-foreground">
+          {scopeTitle}
+        </div>
         <SidebarHeaderIconButton
           label="New thread"
           className="bg-sidebar-control-surface text-sidebar-foreground"
