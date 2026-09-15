@@ -167,10 +167,12 @@ import {
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
   type SidebarDropVerb,
-  resolveProjectAttentionIndicator,
+  addProjectRailAttention,
   resolveProjectStatusIndicator,
   resolveSidebarThreadStatus,
+  resolveSidebarThreadTopStatus,
   resolveThreadStatusPill,
+  threadChangeRequestIsMerged,
   searchSidebarThreads,
   nextSidebarProjectScopeKey,
   shouldCreateNewThreadInCurrentProject,
@@ -189,7 +191,9 @@ import {
   type SidebarListItem,
   type SidebarListMarker,
   type SidebarSection,
+  type ProjectRailAttention,
   type SidebarThreadNest,
+  type SidebarThreadTopStatus,
   type ThreadStatusPill,
 } from "./Sidebar.logic";
 import { flattenNestedThreads, prNestExpansionKey } from "../sidebarThreadFolders";
@@ -286,6 +290,35 @@ function JumpHintBadge(props: { label: string }) {
       className="pointer-events-none absolute right-1.5 top-1/2 z-10 inline-flex h-5 -translate-y-1/2 items-center rounded-full border border-border/80 bg-background/95 px-1.5 font-mono text-[10px] font-medium tracking-tight text-foreground shadow-sm"
     >
       {props.label}
+    </span>
+  );
+}
+
+function SidebarThreadTopStatusMark(props: {
+  status: SidebarThreadTopStatus;
+  workingStartedAt?: string | null;
+}) {
+  return (
+    <span className={cn("inline-flex items-center gap-1", props.status.className)}>
+      {props.status.icon === "working" ? (
+        <CircleDashedIcon aria-hidden className="size-3 shrink-0" />
+      ) : props.status.icon === "input" ? (
+        <MessageCircleQuestionIcon aria-hidden className="size-3 shrink-0" />
+      ) : props.status.icon === "approval" ? (
+        <ShieldQuestionIcon aria-hidden className="size-3 shrink-0" />
+      ) : props.status.icon === "failed" ? (
+        <CircleAlertIcon aria-hidden className="size-3 shrink-0" />
+      ) : props.status.icon === "monitoring" ? (
+        <EyeIcon aria-hidden className="size-3 shrink-0" />
+      ) : props.status.icon === "done" ? (
+        <CircleCheckIcon aria-hidden className="size-3 shrink-0" />
+      ) : null}
+      <span role="status">{props.status.label}</span>
+      {props.status.icon === "working" && props.workingStartedAt !== undefined ? (
+        <span aria-hidden className="hidden @min-[22rem]/sidebar-list:inline">
+          <WorkingDuration startedAt={props.workingStartedAt} />
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -1133,6 +1166,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // switching sidebars must not light up every historical thread as unread.
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarThreadStatus(thread);
+  const changeRequestMerged = threadChangeRequestIsMerged(thread) || pr?.state === "merged";
   // A woken thread reappears at its original position (the sort is
   // deliberately static), so the pill has to carry the weight. Snoozing is
   // an explicit act, so the pill clears only when the user re-engages:
@@ -1149,8 +1183,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Background work always recedes when it is not selected: an unread parent
   // completion must not pull a still-working thread back into the foreground.
   // Ready and action-required rows keep their unread and wake prominence.
+  // Merged leftover babysit still says Done, but recede uses the real unread
+  // flag so a visit can dim the row like any other ready thread.
+  const displayStatus = changeRequestMerged && status === "monitoring" ? "ready" : status;
   const shouldRecede = shouldRecedeSidebarThread({
-    status,
+    status: displayStatus,
     isUnread,
     isWoke,
     isActive: props.isActive,
@@ -1159,54 +1196,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Status hues follow the system-wide convention set by sidebar v1 and the
   // mobile Live Activity/widgets (amber approval, indigo input, sky working)
   // so a thread reads the same color everywhere it surfaces.
-  const topStatus =
-    status === "working"
-      ? {
-          label: "Working",
-          icon: "working" as const,
-          // No shimmer: a label that animates forever is noise in a sidebar
-          // full of them (and repaints every vsync on high-refresh displays).
-          className: "text-sky-600 dark:text-sky-400",
-        }
-      : status === "monitoring"
-        ? {
-            // Monitoring is calm background presence, not active progress
-            // (monitoring-pill D6), so it keeps the label at full strength.
-            label: "Monitoring",
-            icon: "monitoring" as const,
-            className: "text-foreground dark:text-white",
-          }
-        : status === "approval"
-          ? {
-              label: "Approval",
-              icon: "approval" as const,
-              className: "text-amber-700 dark:text-amber-300",
-            }
-          : status === "input"
-            ? {
-                label: "Input",
-                icon: "input" as const,
-                className: "text-indigo-600 dark:text-indigo-300",
-              }
-            : status === "failed"
-              ? {
-                  label: "Failed",
-                  icon: "failed" as const,
-                  className: "text-red-700 dark:text-red-300",
-                }
-              : isWoke
-                ? {
-                    label: "Woke",
-                    icon: "woke" as const,
-                    className: "text-amber-700 dark:text-amber-300",
-                  }
-                : isUnread
-                  ? {
-                      label: "Done",
-                      icon: "done" as const,
-                      className: "text-emerald-700 dark:text-emerald-300",
-                    }
-                  : null;
+  const topStatus = resolveSidebarThreadTopStatus({
+    status,
+    isWoke,
+    isUnread,
+    changeRequestMerged,
+  });
   const isWokeStatus = topStatus?.icon === "woke";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
@@ -1743,12 +1738,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       />
                       <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                     </Tooltip>
+                  ) : variantAction === "unsettle" ? (
+                    <span className="text-xs">{settledTimeLabel(thread)}</span>
+                  ) : topStatus ? (
+                    <SidebarThreadTopStatusMark status={topStatus} />
                   ) : (
-                    <span className="text-xs">
-                      {variantAction === "unsettle"
-                        ? settledTimeLabel(thread)
-                        : threadTimeLabel(thread)}
-                    </span>
+                    <span className="text-xs">{threadTimeLabel(thread)}</span>
                   )}
                 </span>
                 {variantAction === "unsnooze" ? (
@@ -1978,30 +1973,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                         </Tooltip>
                       ) : (
-                        <span className={cn("inline-flex items-center gap-1", topStatus.className)}>
-                          {topStatus.icon === "working" ? (
-                            <CircleDashedIcon aria-hidden className="size-3 shrink-0" />
-                          ) : topStatus.icon === "input" ? (
-                            <MessageCircleQuestionIcon aria-hidden className="size-3 shrink-0" />
-                          ) : topStatus.icon === "approval" ? (
-                            <ShieldQuestionIcon aria-hidden className="size-3 shrink-0" />
-                          ) : topStatus.icon === "failed" ? (
-                            <CircleAlertIcon aria-hidden className="size-3 shrink-0" />
-                          ) : topStatus.icon === "monitoring" ? (
-                            <EyeIcon aria-hidden className="size-3 shrink-0" />
-                          ) : topStatus.icon === "done" ? (
-                            <CircleCheckIcon aria-hidden className="size-3 shrink-0" />
-                          ) : null}
-                          {/* The label alone is the live region: a role="status"
-                            wrapper around the ticking duration would make
-                            screen readers announce every second. */}
-                          <span role="status">{topStatus.label}</span>
-                          {status === "working" ? (
-                            <span aria-hidden className="hidden @min-[22rem]/sidebar-list:inline">
-                              <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
-                            </span>
-                          ) : null}
-                        </span>
+                        <SidebarThreadTopStatusMark
+                          status={topStatus}
+                          workingStartedAt={
+                            status === "working" ? resolveWorkingStartedAt(thread) : undefined
+                          }
+                        />
                       )
                     ) : (
                       threadTimeLabel(thread)
@@ -3420,22 +3397,24 @@ export default function Sidebar() {
     snoozedThreads.length,
     visibleSnoozedThreads,
   ]);
-  // Strongest waiting-on-you status per project, for the rail dot.
+  // Strongest waiting-on-you / finished-PR status per project, plus a count
+  // for the rail number badge.
   const attentionByProjectKey = useMemo(() => {
-    const map = new Map<string, ThreadStatusPill>();
+    const map = new Map<string, ProjectRailAttention>();
     for (const thread of [...pinnedThreads, ...activeThreads]) {
       const projectKey = logicalProjectKeyByMember.get(
         `${thread.environmentId}:${thread.projectId}`,
       );
-      // No logical key means no rail icon to carry the dot.
+      // No logical key means no rail icon to carry the badge.
       if (projectKey === undefined) continue;
-      const pill = threadStatusPillFor(
-        thread,
-        threadLastVisitedAtById[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
+      const next = addProjectRailAttention(
+        map.get(projectKey),
+        threadStatusPillFor(
+          thread,
+          threadLastVisitedAtById[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
+        ),
       );
-      if (pill === null) continue;
-      const strongest = resolveProjectAttentionIndicator([map.get(projectKey) ?? null, pill]);
-      if (strongest) map.set(projectKey, strongest);
+      if (next) map.set(projectKey, next);
     }
     return map;
   }, [activeThreads, logicalProjectKeyByMember, pinnedThreads, threadLastVisitedAtById]);

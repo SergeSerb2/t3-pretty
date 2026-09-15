@@ -122,8 +122,10 @@ row naming its project. Pick an icon to see only that project's threads; pick it
 again, or the top entry, to go back to all projects. The choice survives
 restarts and stays while you visit Settings.
 
-A dot on a project icon means one of its threads is waiting on you: an approval,
-a question, a plan to review, or a finished response you have not seen yet.
+A number on a project icon is how many of its threads are waiting on you or
+already finished: an approval, a question, a plan to review, a finished response
+you have not seen yet, or a pull request that has merged. The first nine project
+icons also show 1–9 so the rail is easy to scan.
 
 Hover a project icon and use its **+** to start a thread there without the
 project picker. Right-click an icon for **New thread**, **Settle idle threads**,
