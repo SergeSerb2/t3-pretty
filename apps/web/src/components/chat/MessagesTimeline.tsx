@@ -2147,8 +2147,9 @@ function AssistantMetaTimelineRow({
 }
 
 // Hover copy/timestamp sit out of flow so revealing them cannot grow the row
-// and shove the thread. The row already keeps a gap; hover and touch only fade
-// the controls in.
+// and shove the thread. Positioned against this row's inner relative wrapper,
+// so top-full is the bottom of the message content and the outer pb-8 is the
+// gap they fade into. Trailing assistant-meta rows stay in flow instead.
 function AssistantMessageMeta({
   className,
   message,

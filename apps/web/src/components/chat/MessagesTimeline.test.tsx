@@ -1531,6 +1531,8 @@ describe("MessagesTimeline", () => {
     expect(toolIndex).toBeGreaterThan(messageIndex);
     expect(metaIndex).toBeGreaterThan(toolIndex);
     expect(markup.match(/I’ll search for it now\./gu)).toHaveLength(1);
+    expect(markup).toContain('data-assistant-meta="visible"');
+    expect(markup).not.toContain('data-assistant-meta="overlay"');
   });
 
   it("keeps mixed work logs neutral after a later tool call succeeds", () => {
