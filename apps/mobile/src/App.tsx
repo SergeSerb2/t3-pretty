@@ -20,6 +20,7 @@ const SCENERY_NAV_LIGHT = {
 };
 
 import { RegistryContext } from "@effect/atom-react";
+import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";
 import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { AppMenuHost } from "./components/AppMenuHost";
 import { WhatsNewHost } from "./features/whats-new/WhatsNewHost";
@@ -36,9 +37,11 @@ import { RootStack } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
 import { OverlayPortalHost } from "./components/OverlayPortal";
 import { appBlurTargetRef } from "./lib/appBlurTarget";
+import { shouldHandleAppLink } from "./lib/appLinking";
 import { isBoringMobileTheme } from "./lib/mobileTheme";
-import { useThemeColor } from "./lib/useThemeColor";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
+
+import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
 
 import "../global.css";
 
@@ -52,14 +55,9 @@ void SplashScreen.preventAutoHideAsync().catch(() => {
 
 const appLinking = {
   prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
-  // The Expo dev client launches the app via
-  // <scheme>://expo-development-client/?url=<packager> — that URL addresses
-  // the launcher, not app navigation. Without this filter it falls through
-  // to the NotFound wildcard route on every dev launch.
-  // expo-sharing uses a private lifecycle URL only to wake the app. The
-  // persisted share inbox below owns navigation once the payload is durable.
-  filter: (url: string) =>
-    !url.includes("expo-development-client") && !url.includes("://expo-sharing"),
+  // Keep the compact thread list available beneath a directly opened thread.
+  config: { initialRouteName: "Home" },
+  filter: shouldHandleAppLink,
 };
 
 const Navigation = createStaticNavigation(RootStack);
@@ -90,8 +88,7 @@ export default function App() {
 
 function AppContent() {
   const { themeAppearance, themeId } = useAppearancePreferences();
-  const statusBarBg = useThemeColor("--color-status-bar");
-  const baseNavigationTheme = useMobileNavigationTheme(themeAppearance);
+  const baseNavigationTheme = useMobileNavigationTheme();
   const sceneryNavigationTheme = themeAppearance === "dark" ? SCENERY_NAV_DARK : SCENERY_NAV_LIGHT;
   const navigationTheme = useMemo(() => {
     if (isBoringMobileTheme(themeId)) {
@@ -111,12 +108,12 @@ function AppContent() {
   return (
     <>
       <SplashScreenCoordinator />
+      <SubscriptionUsageCoordinator />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>
           <SafeAreaProvider>
             <StatusBar
               barStyle={themeAppearance === "dark" ? "light-content" : "dark-content"}
-              backgroundColor={statusBarBg}
               translucent
             />
             {/* The navigation theme drives the NATIVE header appearance: native-stack
@@ -133,6 +130,7 @@ function AppContent() {
               <ConfirmDialogHost />
               <WhatsNewHost />
               <AppMenuHost />
+              <ThreadArrangementHost />
             </BlurTargetView>
             {/* Anchored-menu overlays render here — in-window, so the
                 keyboard stays up while a dropdown is open. */}

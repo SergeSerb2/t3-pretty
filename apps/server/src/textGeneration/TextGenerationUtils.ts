@@ -1,11 +1,80 @@
 import { TextGenerationError } from "@t3tools/contracts";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
+const decodeJsonThreadTitle = Schema.decodeOption(
+  Schema.fromJsonString(Schema.Struct({ title: Schema.String })),
+);
+
+export const TEXT_GENERATION_RESULT_MAX_BYTES = 1024 * 1024;
+export const TEXT_GENERATION_DIAGNOSTIC_MAX_BYTES = 64 * 1024;
+const TEXT_GENERATION_ERROR_DETAIL_MAX_CHARS = 4_000;
+const TEXT_GENERATION_OUTPUT_CHUNK_COMPACTION_THRESHOLD = 4_096;
+const textGenerationOutputEncoder = new TextEncoder();
+const textGenerationOutputDecoder = new TextDecoder("utf-8");
+
+export interface BoundedTextGenerationOutput {
+  chunks: Uint8Array[];
+  byteLength: number;
+  truncated: boolean;
+}
+
+export const makeBoundedTextGenerationOutput = (): BoundedTextGenerationOutput => ({
+  chunks: [],
+  byteLength: 0,
+  truncated: false,
+});
+
+export const appendBoundedTextGenerationOutput = (
+  state: BoundedTextGenerationOutput,
+  value: string,
+): BoundedTextGenerationOutput => {
+  if (state.truncated || value.length === 0) return state;
+
+  const remainingBytes = TEXT_GENERATION_RESULT_MAX_BYTES - state.byteLength;
+  if (remainingBytes <= 0) return { ...state, truncated: true };
+
+  const candidate = value.length > remainingBytes ? value.slice(0, remainingBytes) : value;
+  const encoded = textGenerationOutputEncoder.encode(candidate);
+  const retained = encoded.byteLength > remainingBytes ? encoded.slice(0, remainingBytes) : encoded;
+  state.chunks.push(retained);
+  const truncated = candidate.length < value.length || encoded.byteLength > remainingBytes;
+
+  if (state.chunks.length >= TEXT_GENERATION_OUTPUT_CHUNK_COMPACTION_THRESHOLD) {
+    const compacted = new Uint8Array(state.byteLength + retained.byteLength);
+    let offset = 0;
+    for (const chunk of state.chunks) {
+      compacted.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return {
+      chunks: [compacted],
+      byteLength: compacted.byteLength,
+      truncated,
+    };
+  }
+
+  return {
+    chunks: state.chunks,
+    byteLength: state.byteLength + retained.byteLength,
+    truncated,
+  };
+};
+
+export const decodeBoundedTextGenerationOutput = (state: BoundedTextGenerationOutput): string => {
+  const bytes = new Uint8Array(state.byteLength);
+  let offset = 0;
+  for (const chunk of state.chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return textGenerationOutputDecoder.decode(bytes);
+};
 
 /** Convert an Effect Schema to a flat JSON Schema object, inlining `$defs` when present. */
 export function toJsonSchemaObject(schema: Schema.Top): unknown {
-  const document = Schema.toJsonSchemaDocument(schema);
+  const document = Schema.toJsonSchemaDocument(Schema.toType(schema));
   if (document.definitions && Object.keys(document.definitions).length > 0) {
     return { ...document.schema, $defs: document.definitions };
   }
@@ -18,6 +87,9 @@ export function limitSection(value: string, maxChars: number): string {
   const truncated = value.slice(0, maxChars);
   return `${truncated}\n\n[truncated]`;
 }
+
+export const limitTextGenerationErrorDetail = (value: string): string =>
+  limitSection(value, TEXT_GENERATION_ERROR_DETAIL_MAX_CHARS);
 
 /** Normalise a raw commit subject to imperative-mood, ≤72 chars, no trailing period. */
 export function sanitizeCommitSubject(raw: string): string {
@@ -42,9 +114,16 @@ export function sanitizePrTitle(raw: string): string {
   return "Update project changes";
 }
 
-/** Normalise a raw thread title to a compact single-line sidebar-safe label. */
+// Prompts ask for under 40 characters. This cap only stops a runaway model
+// from pushing a paragraph into the sidebar, header, and window title.
+const MAX_THREAD_TITLE_CHARS = 120;
+
+/** Normalise a raw thread title to a single line. Clients truncate for display. */
 export function sanitizeThreadTitle(raw: string): string {
-  const normalized = raw
+  // Unwrap a JSON-formatted title before truncation can cut off the closing brace.
+  const decoded = decodeJsonThreadTitle(raw);
+  const title = Option.isSome(decoded) ? decoded.value.title : raw;
+  const normalized = title
     .trim()
     .split(/\r?\n/g)[0]
     ?.trim()
@@ -56,11 +135,11 @@ export function sanitizeThreadTitle(raw: string): string {
     return "New thread";
   }
 
-  if (normalized.length <= 50) {
+  if (normalized.length <= MAX_THREAD_TITLE_CHARS) {
     return normalized;
   }
 
-  return `${normalized.slice(0, 47).trimEnd()}...`;
+  return `${normalized.slice(0, MAX_THREAD_TITLE_CHARS - 3).trimEnd()}...`;
 }
 
 /**

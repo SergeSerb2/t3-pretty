@@ -9,24 +9,34 @@ import * as Order from "effect/Order";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../../lib/searchQuery";
 import { useProjects, useServerConfigs } from "../../state/entities";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useWorkspaceState } from "../../state/workspace";
 import { useHomeListOptions } from "../home/home-list-options";
 import { PullRequestsScreen, type PullRequestListEnvironment } from "./PullRequestsScreen";
+import {
+  nextPullRequestEnvironmentId,
+  readPersistedPullRequestListFilters,
+  restorePullRequestListFilters,
+  writePersistedPullRequestListFilters,
+} from "./pullRequestListFiltersPersistence";
 import { usePullRequestList } from "./usePullRequestList";
 
 export function PullRequestsRouteScreen() {
   const navigation = useNavigation();
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
-  const { savedConnectionsById } = useSavedRemoteConnections();
+  const { savedConnectionsById, isLoadingSavedConnection } = useSavedRemoteConnections();
   const { environments: workspaceEnvironments } = useWorkspaceState();
+  const savedFilters = useRef(readPersistedPullRequestListFilters()).current;
   const [searchQuery, setSearchQuery] = useState("");
-  const [involvement, setInvolvement] = useState<PullRequestInvolvement>("all");
-  const [state, setState] = useState<PullRequestListState>("open");
-  const [selectedProjectId, setSelectedProjectId] = useState<ProjectId | undefined>(undefined);
-  const [selectedHost, setSelectedHost] = useState<string | undefined>(undefined);
+  const [involvement, setInvolvement] = useState<PullRequestInvolvement>(savedFilters.involvement);
+  const [state, setState] = useState<PullRequestListState>(savedFilters.state);
+  const [selectedProjectId, setSelectedProjectId] = useState<ProjectId | undefined>(
+    savedFilters.projectId,
+  );
+  const [selectedHost, setSelectedHost] = useState<string | undefined>(savedFilters.host);
 
   const environments = useMemo<ReadonlyArray<PullRequestListEnvironment>>(
     () =>
@@ -67,23 +77,54 @@ export function PullRequestsRouteScreen() {
       ? options.selectedEnvironmentId
       : (connectedCapable[0]?.environmentId ?? capable[0]?.environmentId ?? null);
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
-    preferredEnvironmentId,
+    savedFilters.environmentId ?? preferredEnvironmentId,
   );
+  const [scopeRestored, setScopeRestored] = useState(false);
+  const commitScope = () => {
+    setScopeRestored(true);
+  };
   useEffect(() => {
-    if (
-      selectedEnvironmentId === null ||
-      !environments.some((environment) => environment.environmentId === selectedEnvironmentId)
-    ) {
-      setSelectedEnvironmentId(preferredEnvironmentId);
+    if (isLoadingSavedConnection) return;
+    if (!scopeRestored) {
+      const restored = restorePullRequestListFilters(
+        savedFilters,
+        preferredEnvironmentId,
+        environments,
+      );
+      setSelectedEnvironmentId(restored.environmentId);
+      setSelectedProjectId(restored.projectId);
+      setSelectedHost(restored.host);
+      setScopeRestored(true);
+      return;
     }
-  }, [environments, preferredEnvironmentId, selectedEnvironmentId]);
-  const previousEnvironmentId = useRef(selectedEnvironmentId);
+    const next = nextPullRequestEnvironmentId(
+      selectedEnvironmentId,
+      preferredEnvironmentId,
+      environments,
+    );
+    if (next !== selectedEnvironmentId) {
+      setSelectedEnvironmentId(next);
+      setSelectedProjectId(undefined);
+      setSelectedHost(undefined);
+    }
+  }, [
+    environments,
+    isLoadingSavedConnection,
+    preferredEnvironmentId,
+    savedFilters,
+    scopeRestored,
+    selectedEnvironmentId,
+  ]);
   useEffect(() => {
-    if (previousEnvironmentId.current === selectedEnvironmentId) return;
-    previousEnvironmentId.current = selectedEnvironmentId;
-    setSelectedProjectId(undefined);
-    setSelectedHost(undefined);
-  }, [selectedEnvironmentId]);
+    if (!scopeRestored) return;
+    writePersistedPullRequestListFilters({
+      involvement,
+      state,
+      environmentId: selectedEnvironmentId,
+      projectId: selectedProjectId,
+      host: selectedHost,
+    });
+  }, [involvement, scopeRestored, selectedEnvironmentId, selectedHost, selectedProjectId, state]);
 
   const selected = environments.find(
     (environment) => environment.environmentId === selectedEnvironmentId,
@@ -141,14 +182,21 @@ export function PullRequestsRouteScreen() {
         })
       }
       onEnvironmentChange={(environmentId) => {
+        commitScope();
         setSelectedEnvironmentId(environmentId);
         setSelectedProjectId(undefined);
         setSelectedHost(undefined);
       }}
-      onHostChange={setSelectedHost}
+      onHostChange={(host) => {
+        commitScope();
+        setSelectedHost(host);
+      }}
       onInvolvementChange={setInvolvement}
       onLoadMore={list.loadMore}
-      onProjectChange={setSelectedProjectId}
+      onProjectChange={(projectId) => {
+        commitScope();
+        setSelectedProjectId(projectId);
+      }}
       onRefresh={() => void list.refreshFromHost()}
       onSearchQueryChange={setSearchQuery}
       onSelect={(entry) => {
@@ -161,10 +209,21 @@ export function PullRequestsRouteScreen() {
         });
       }}
       onStateChange={setState}
+      onClearFilters={() => {
+        commitScope();
+        setInvolvement("all");
+        setState("open");
+        setSelectedEnvironmentId(
+          nextPullRequestEnvironmentId(null, preferredEnvironmentId, environments),
+        );
+        setSelectedProjectId(undefined);
+        setSelectedHost(undefined);
+      }}
       projects={scopedProjects}
       querySettled={list.querySettled}
       refreshing={list.refreshing}
       searchQuery={searchQuery}
+      preferredEnvironmentId={preferredEnvironmentId}
       selectedEnvironmentId={selectedEnvironmentId}
       selectedHost={selectedHost}
       selectedProjectId={selectedProjectId}

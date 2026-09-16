@@ -8,13 +8,51 @@ import {
   saveRecentThreadShortcuts,
   type RecentThreadShortcut,
 } from "../../persistence/imperative";
+import { LatestOnlyAsyncQueue } from "../../lib/serialized-async-queue";
 import { useThreadShell } from "../../state/entities";
 import {
   activeThreadRef,
   buildShortcutActions,
+  normalizeRecentThreadShortcuts,
   shortcutHref,
   withRecentThreadShortcut,
 } from "./appShortcuts";
+
+const RECENT_THREAD_SHORTCUTS_LOAD_TIMEOUT_MS = 10_000;
+
+// Keep presentation/storage writes ordered across root-navigation remounts.
+// A hook-owned queue can finish after its replacement and overwrite newer
+// launcher items during development remounts or navigation resets.
+const recentThreadShortcutSaveQueue = new LatestOnlyAsyncQueue<ReadonlyArray<RecentThreadShortcut>>(
+  saveRecentThreadShortcuts,
+  (error) => console.warn("[app-shortcuts] failed to persist recent threads", error),
+);
+const launcherShortcutQueue = new LatestOnlyAsyncQueue<ReadonlyArray<RecentThreadShortcut>>(
+  (threads) => QuickActions.setItems(buildShortcutActions(threads)),
+  (error) => console.warn("[app-shortcuts] failed to update launcher shortcuts", error),
+);
+let hasHandledInitialShortcutAction = false;
+
+async function loadRecentThreadShortcutsWithDeadline(): Promise<
+  ReadonlyArray<RecentThreadShortcut>
+> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      loadRecentThreadShortcuts(),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Recent thread shortcut load timed out.")),
+          RECENT_THREAD_SHORTCUTS_LOAD_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+    }
+  }
+}
 
 /**
  * Owns the launcher app shortcuts (Android long-press menu): keeps the
@@ -29,24 +67,34 @@ export function useAppShortcuts(state: NavigationState): void {
 
 function useShortcutNavigation(): void {
   const linkTo = useLinkTo();
-  const handledInitialAction = useRef(false);
 
   useEffect(() => {
     // Cold start: the tapped shortcut arrives as the launch action, before
     // any listener can fire. Navigating from here pushes the target over the
     // initial Home route, so back returns home instead of exiting the app.
-    if (!handledInitialAction.current) {
-      handledInitialAction.current = true;
+    if (!hasHandledInitialShortcutAction) {
       const initialHref = QuickActions.initial ? shortcutHref(QuickActions.initial) : null;
-      if (initialHref !== null) {
-        linkTo(initialHref);
+      try {
+        if (initialHref !== null) {
+          linkTo(initialHref);
+        }
+        // Commit only after routing succeeds. If the navigation root is
+        // replaced while mounting, a later remount can still retry the launch
+        // action instead of treating a failed attempt as handled forever.
+        hasHandledInitialShortcutAction = true;
+      } catch (error) {
+        console.warn("[app-shortcuts] failed to route launch action", error);
       }
     }
 
     const subscription = QuickActions.addListener((action) => {
       const href = shortcutHref(action);
       if (href !== null) {
-        linkTo(href);
+        try {
+          linkTo(href);
+        } catch (error) {
+          console.warn("[app-shortcuts] failed to route shortcut action", error);
+        }
       }
     });
     return () => subscription.remove();
@@ -71,9 +119,6 @@ function useRecentThreadShortcutSync(state: NavigationState): void {
   // that fallback would erase valid history over a transient read error.
   // Real thread opens flip this on — by then the list is the new truth.
   const persistableRef = useRef(false);
-  // Saves are fire-and-forget; chaining them keeps an older list from
-  // finishing after (and overwriting) a newer one.
-  const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
     if (Platform.OS !== "android") {
@@ -81,11 +126,11 @@ function useRecentThreadShortcutSync(state: NavigationState): void {
     }
 
     let cancelled = false;
-    void loadRecentThreadShortcuts()
+    void loadRecentThreadShortcutsWithDeadline()
       .then((threads) => {
         if (!cancelled) {
           persistableRef.current = true;
-          setRecents(threads);
+          setRecents(normalizeRecentThreadShortcuts(threads));
         }
       })
       .catch((error) => {
@@ -128,16 +173,8 @@ function useRecentThreadShortcutSync(state: NavigationState): void {
     }
 
     if (persistableRef.current) {
-      saveQueueRef.current = saveQueueRef.current.then(
-        () =>
-          saveRecentThreadShortcuts(recents).catch((error) => {
-            console.warn("[app-shortcuts] failed to persist recent threads", error);
-          }),
-        () => undefined,
-      );
+      recentThreadShortcutSaveQueue.enqueue(recents);
     }
-    void QuickActions.setItems(buildShortcutActions(recents)).catch((error) => {
-      console.warn("[app-shortcuts] failed to update launcher shortcuts", error);
-    });
+    launcherShortcutQueue.enqueue(recents);
   }, [recents]);
 }

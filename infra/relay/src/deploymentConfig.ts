@@ -6,7 +6,7 @@ const MANAGED_ENDPOINT_HASH_LENGTH = 16;
 const MANAGED_ENDPOINT_TUNNEL_PREFIX = "t3coderelay-managedendpoint";
 export const MANAGED_ENDPOINT_ZONE_OWNER_STAGE = "prod";
 
-export class RelayPublicDomainLabelTooLongError extends Schema.TaggedErrorClass<RelayPublicDomainLabelTooLongError>()(
+export class RelayPublicDomainLabelTooLongError extends Schema.TaggedError<RelayPublicDomainLabelTooLongError>()(
   "RelayPublicDomainLabelTooLongError",
   {
     stage: Schema.String,
@@ -19,11 +19,24 @@ export class RelayPublicDomainLabelTooLongError extends Schema.TaggedErrorClass<
   }
 }
 
-function normalizeZoneName(zoneName: string): string {
-  return zoneName
+export class RelayInvalidDnsNameError extends Schema.TaggedError<RelayInvalidDnsNameError>()(
+  "RelayInvalidDnsNameError",
+  {
+    field: Schema.String,
+    value: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Relay ${this.field} '${this.value}' is not a valid DNS name.`;
+  }
+}
+
+export function normalizeDnsName(name: string): string | null {
+  const normalized = name
     .trim()
     .toLowerCase()
     .replace(/^\.+|\.+$/g, "");
+  return isDnsName(normalized) ? normalized : null;
 }
 
 function isDnsName(name: string): boolean {
@@ -45,6 +58,14 @@ function stableSuffix(hash: string): string {
   return hash.toLowerCase().slice(0, MANAGED_ENDPOINT_HASH_LENGTH);
 }
 
+function requireDnsName(value: string, field: string): string {
+  const normalized = normalizeDnsName(value);
+  if (normalized === null) {
+    throw new RelayInvalidDnsNameError({ field, value });
+  }
+  return normalized;
+}
+
 function appendDnsSafeSuffix(prefix: string, suffix: string): string {
   const truncatedPrefix = prefix
     .slice(0, DNS_LABEL_MAX_LENGTH - suffix.length - 1)
@@ -56,7 +77,7 @@ function appendDnsSafeSuffix(prefix: string, suffix: string): string {
  * Alchemy's physical-name helper sanitizes resource names after adding the
  * stage. Keep custom domains and runtime-created resources aligned with it.
  */
-export function relayStageSlug(stage: string): string {
+function relayStageSlug(stage: string): string {
   return stage
     .toLowerCase()
     .replaceAll(/[^a-z0-9-]/g, "-")
@@ -82,7 +103,7 @@ export function relayPublicDomainForStage(stage: string, zoneName: string): stri
       maxLength: DNS_LABEL_MAX_LENGTH,
     });
   }
-  return `${relayLabel}.${normalizeZoneName(zoneName)}`;
+  return `${relayLabel}.${requireDnsName(zoneName, "API zone")}`;
 }
 
 export function managedEndpointDigestInput(
@@ -95,24 +116,25 @@ export function managedEndpointDigestInput(
 
 export function managedEndpointHostname(stage: string, baseDomain: string, hash: string): string {
   const label = appendDnsSafeSuffix(relayStageSlug(stage), stableSuffix(hash));
-  return `${label}.${normalizeZoneName(baseDomain)}`;
+  return `${label}.${requireDnsName(baseDomain, "managed-endpoint base domain")}`;
 }
 
 export function isManagedEndpointHostname(hostname: string, baseDomain: string): boolean {
-  const normalizedHostname = normalizeZoneName(hostname);
-  const normalizedBaseDomain = normalizeZoneName(baseDomain);
+  const normalizedHostname = normalizeDnsName(hostname);
+  const normalizedBaseDomain = normalizeDnsName(baseDomain);
   return (
+    normalizedHostname !== null &&
+    normalizedBaseDomain !== null &&
     hostname === normalizedHostname &&
-    isDnsName(normalizedHostname) &&
-    isDnsName(normalizedBaseDomain) &&
     normalizedHostname.endsWith(`.${normalizedBaseDomain}`)
   );
 }
 
 export function managedEndpointForHostname(hostname: string): RelayManagedEndpoint {
+  const normalizedHostname = requireDnsName(hostname, "managed-endpoint hostname");
   return {
-    httpBaseUrl: `https://${hostname}/`,
-    wsBaseUrl: `wss://${hostname}/ws`,
+    httpBaseUrl: `https://${normalizedHostname}/`,
+    wsBaseUrl: `wss://${normalizedHostname}/ws`,
     providerKind: "cloudflare_tunnel",
   };
 }

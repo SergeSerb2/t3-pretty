@@ -21,6 +21,9 @@ import {
   settledWorktrees,
   sortStorageEnvironments,
   storageDeviceStatusText,
+  STORAGE_SETTINGS_ROW_BATCH_SIZE,
+  storageInventoryCoverageWarning,
+  storageSettingsRowWindow,
   summaryCaption,
   uniqueWorktreeBytes,
   worktreeRowDescription,
@@ -87,6 +90,21 @@ const inventory: StorageInventory = {
 };
 
 describe("storage settings helpers", () => {
+  it("reveals high-cardinality inventory rows in bounded batches", () => {
+    expect(storageSettingsRowWindow(4_096, STORAGE_SETTINGS_ROW_BATCH_SIZE)).toEqual({
+      visibleCount: STORAGE_SETTINGS_ROW_BATCH_SIZE,
+      remainingCount: 4_096 - STORAGE_SETTINGS_ROW_BATCH_SIZE,
+    });
+    expect(storageSettingsRowWindow(4_096, STORAGE_SETTINGS_ROW_BATCH_SIZE * 2)).toEqual({
+      visibleCount: STORAGE_SETTINGS_ROW_BATCH_SIZE * 2,
+      remainingCount: 4_096 - STORAGE_SETTINGS_ROW_BATCH_SIZE * 2,
+    });
+    expect(storageSettingsRowWindow(12, Number.POSITIVE_INFINITY)).toEqual({
+      visibleCount: 12,
+      remainingCount: 0,
+    });
+  });
+
   it("formats byte sizes", () => {
     expect(formatStorageBytes(512)).toBe("512 B");
     expect(formatStorageBytes(2048)).toBe("2.00 KB");
@@ -113,6 +131,23 @@ describe("storage settings helpers", () => {
     expect(scanProgressCaption(scanning)).toBe("Found 2.00 KB so far · 3 of 12 paths");
     expect(summaryCaption(scanning)).toBe("Found 2.00 KB so far · 3 of 12 paths");
     expect(summaryCaption(inventory)).toBe("4 worktrees measured");
+  });
+
+  it("explains incomplete discovery so bulk totals are not presented as exact", () => {
+    const incomplete: StorageInventory = {
+      ...inventory,
+      scan: {
+        status: "complete",
+        measuredCount: 4,
+        totalCount: 4,
+        truncated: true,
+        unreadableDirectories: 2,
+      },
+    };
+
+    expect(storageInventoryCoverageWarning(incomplete)).toBe(
+      "Inventory is incomplete: discovery reached a safety limit and 2 directories could not be read. Bulk cleanup is disabled; listed paths can still be removed individually.",
+    );
   });
 
   it("treats unread git status as unsafe, never clean", () => {

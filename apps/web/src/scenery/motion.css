@@ -11,8 +11,8 @@
  * - CSS does the animating (compositor thread) — the driver only tags
  *   classes, because the main thread is busy re-parsing markdown while a
  *   response streams;
- * - enters animate, exits are instant (upstream unmounts synchronously;
- *   asymmetric enter/exit is the intended feel anyway);
+ * - enters animate, exits are instant except the worktree-setup card, which
+ *   is held for one exit beat when the first turn takes over;
  * - the html.no-transitions theme-swap kill switch and reduced motion both
  *   neutralize everything here without extra wiring.
  */
@@ -24,6 +24,8 @@ html[data-scenery-motion] {
      the reduced-motion block zeroes every translate/scale in one line while
      the opacity fade (which aids comprehension) stays. */
   --sc-m: 1;
+  /* Must match WORKTREE_SETUP_EXIT_MS. Reduced motion overwrites this. */
+  --sc-worktree-setup-exit-ms: 220ms;
 }
 
 /* ------------------------------------------------------- row arrivals -- */
@@ -36,7 +38,9 @@ html[data-scenery-motion] {
    remount. animationend bubbles, so the driver can still listen on the
    wrapper. */
 
-html[data-scenery-motion] [data-timeline-root].scenery-row-enter > * {
+html[data-scenery-motion]
+  [data-timeline-root].scenery-row-enter
+  > *:not([data-worktree-setup-exiting]) {
   animation: scenery-row-rise 340ms var(--sc-ease-out) both;
   animation-delay: var(--sc-enter-delay, 0ms);
 }
@@ -49,6 +53,22 @@ html[data-scenery-motion] [data-timeline-root].scenery-row-enter > * {
   to {
     opacity: 1;
     translate: 0 0;
+  }
+}
+
+/* Worktree setup → first turn. ChatView holds the row for this beat so the
+   card can recede along the same path it entered while working/thinking
+   rows rise in. Fade-only (no height): the leftover hole collapses when
+   the row unmounts, after it is already invisible. */
+html[data-scenery-motion] [data-timeline-root] > [data-worktree-setup-exiting] {
+  animation: scenery-worktree-setup-exit var(--sc-worktree-setup-exit-ms) var(--sc-ease-out) both;
+}
+
+@keyframes scenery-worktree-setup-exit {
+  to {
+    opacity: 0;
+    translate: 0 calc(8px * var(--sc-m));
+    filter: blur(calc(4px * var(--sc-m)));
   }
 }
 
@@ -152,11 +172,11 @@ html[data-scenery-motion] main[data-slot="sidebar-inset"] [role="alert"] {
 }
 
 /* Approval, agent-question and Plan Ready panels rise out of the editor as
-   one block (the `rounded-t-[19px]` wrapper is unique to these five hosts,
+   one block (the top-drawer data attribute identifies this host,
    pinned by the contract test). Animating the wrapper — not the inner
    `[data-approval-detail]` pre — keeps the header line, question card and
    badge on the same beat instead of only the detail rising. */
-html[data-scenery-motion] [data-chat-composer-form] [class*="rounded-t-[19px]"] {
+html[data-scenery-motion] [data-chat-composer-form] [data-chat-composer-top-drawer] {
   transition:
     opacity 220ms var(--sc-ease-out),
     translate 220ms var(--sc-ease-out);
@@ -491,9 +511,9 @@ html[data-scenery-motion]
 }
 
 /* What's New (fork-owned dialog): the one recurring "you got new stuff"
-   moment. Sparkle tile pops, changelog items rise on a 35ms stagger keyed
+   moment. Sparkle mark pops, changelog items rise on a 35ms stagger keyed
    by the --sc-i index the dialog sets inline (capped at 5 so below-the-fold
-   rows never wait). Never blocks — "Got it" is clickable from frame 0. */
+   rows never wait). Never blocks — "Continue" is clickable from frame 0. */
 html[data-scenery-motion] [data-slot="dialog-popup"][aria-label="What's new"] svg.lucide-sparkles {
   transition:
     scale 280ms var(--sc-ease-out) 40ms,
@@ -657,9 +677,13 @@ html[data-scenery-motion] [data-slot="empty-header"].max-w-none {
 @media (prefers-reduced-motion: reduce) {
   html[data-scenery-motion] {
     --sc-m: 0;
+    /* Must match WORKTREE_SETUP_EXIT_REDUCED_MS. --sc-m already drops motion. */
+    --sc-worktree-setup-exit-ms: 150ms;
   }
 
-  html[data-scenery-motion] [data-timeline-root].scenery-row-enter > * {
+  html[data-scenery-motion]
+    [data-timeline-root].scenery-row-enter
+    > *:not([data-worktree-setup-exiting]) {
     animation: scenery-row-fade 150ms ease-out both;
   }
 

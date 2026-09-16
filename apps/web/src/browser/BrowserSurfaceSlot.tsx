@@ -4,10 +4,43 @@ import { useLayoutEffect, useRef } from "react";
 
 import { acquireBrowserSurface } from "./browserSurfaceStore";
 
+const windowGeometryListeners = new Set<() => void>();
+let windowGeometryFrameId = 0;
+
+const scheduleWindowGeometryUpdate = () => {
+  if (windowGeometryFrameId !== 0) return;
+  windowGeometryFrameId = window.requestAnimationFrame(() => {
+    windowGeometryFrameId = 0;
+    for (const listener of windowGeometryListeners) listener();
+  });
+};
+
+function subscribeWindowGeometry(listener: () => void): () => void {
+  windowGeometryListeners.add(listener);
+  if (windowGeometryListeners.size === 1) {
+    window.addEventListener("resize", scheduleWindowGeometryUpdate);
+    window.addEventListener("scroll", scheduleWindowGeometryUpdate, {
+      capture: true,
+      passive: true,
+    });
+  }
+  return () => {
+    windowGeometryListeners.delete(listener);
+    if (windowGeometryListeners.size > 0) return;
+    window.removeEventListener("resize", scheduleWindowGeometryUpdate);
+    window.removeEventListener("scroll", scheduleWindowGeometryUpdate, true);
+    if (windowGeometryFrameId !== 0) {
+      window.cancelAnimationFrame(windowGeometryFrameId);
+      windowGeometryFrameId = 0;
+    }
+  };
+}
+
 export function BrowserSurfaceSlot(props: {
   readonly tabId: string;
   readonly visible: boolean;
   readonly cornerRadius?: number;
+  readonly zIndex?: number;
   readonly layoutVersion?: string | number;
   readonly className?: string;
   readonly fitSourceContent?: boolean;
@@ -16,12 +49,13 @@ export function BrowserSurfaceSlot(props: {
     tabId,
     visible,
     cornerRadius = 0,
+    zIndex = 30,
     layoutVersion,
     className,
     fitSourceContent = false,
   } = props;
   const elementRef = useRef<HTMLDivElement | null>(null);
-  const presentationRef = useRef({ visible, cornerRadius });
+  const presentationRef = useRef({ visible, cornerRadius, zIndex });
   const updateRef = useRef<(() => void) | null>(null);
 
   useLayoutEffect(() => {
@@ -40,6 +74,7 @@ export function BrowserSurfaceSlot(props: {
         },
         presentation.visible && rect.width > 0 && rect.height > 0,
         presentation.cornerRadius,
+        presentation.zIndex,
       );
       if (presentation.visible && !presented) {
         lease.release();
@@ -53,6 +88,7 @@ export function BrowserSurfaceSlot(props: {
           },
           rect.width > 0 && rect.height > 0,
           presentation.cornerRadius,
+          presentation.zIndex,
         );
       }
     };
@@ -60,21 +96,19 @@ export function BrowserSurfaceSlot(props: {
     update();
     const observer = new ResizeObserver(update);
     observer.observe(element);
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
+    const unsubscribeWindowGeometry = subscribeWindowGeometry(update);
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
+      unsubscribeWindowGeometry();
       if (updateRef.current === update) updateRef.current = null;
       lease.release();
     };
   }, [fitSourceContent, tabId]);
 
   useLayoutEffect(() => {
-    presentationRef.current = { visible, cornerRadius };
+    presentationRef.current = { visible, cornerRadius, zIndex };
     updateRef.current?.();
-  }, [cornerRadius, layoutVersion, visible]);
+  }, [cornerRadius, layoutVersion, visible, zIndex]);
 
   return <div ref={elementRef} className={className} data-browser-surface-slot={tabId} />;
 }

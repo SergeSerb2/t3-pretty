@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import {
+  escapeGithubWorkflowCommandData,
   hasDeployChanges,
   missingRelayPublicConfigFields,
   publicConfigFromOutput,
@@ -154,6 +155,16 @@ describe("serializeGithubOutput", () => {
       }),
     ).toBe("changed=false\nresult=noop\nrelay_url=https://relay.example.test\n");
   });
+
+  it("rejects output values that could create another workflow record", () => {
+    expect(() => serializeGithubOutput({ result: "noop\nforged=true" })).toThrow(
+      /safety boundary/u,
+    );
+  });
+
+  it("escapes mask-command data", () => {
+    expect(escapeGithubWorkflowCommandData("token%0A\nnext")).toBe("token%250A%0Anext");
+  });
 });
 
 describe("serializeRelayClientTracingEnvironment", () => {
@@ -193,7 +204,9 @@ describe("release workflow tracing config propagation", () => {
       expect(workflow).not.toContain("needs.relay_public_config.outputs.client_tracing_token");
       expect(workflow).toContain('--github-env-file "$RUNNER_TEMP/relay-client-tracing.env"');
       expect(workflow).toContain("name: relay-client-tracing-config");
-      expect(workflow).toContain('cat "$config_path" >> "$GITHUB_ENV"');
+      expect(workflow).toContain(
+        'node scripts/load-release-tracing-env.mjs "$config_path" "$GITHUB_ENV"',
+      );
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });
@@ -219,6 +232,31 @@ describe("publicConfigFromOutput", () => {
       clientTracingDataset: "relay",
       clientTracingToken: "client-token",
     });
+  });
+
+  it("rejects credential-bearing URLs and control-bearing tokens from relay state", () => {
+    const base = {
+      url: "https://relay.example.test",
+      mobileTracingUrl: "https://api.axiom.co/v1/traces",
+      mobileTracingDataset: "mobile",
+      mobileTracingToken: "mobile-token",
+      clientTracingUrl: "https://api.axiom.co/v1/traces",
+      clientTracingDataset: "relay",
+      clientTracingToken: "client-token",
+    };
+
+    expect(
+      publicConfigFromOutput({
+        ...base,
+        clientTracingUrl: "https://token@api.axiom.co/v1/traces",
+      }),
+    ).toBeNull();
+    expect(
+      publicConfigFromOutput({
+        ...base,
+        clientTracingToken: "client-token\n::error::forged",
+      }),
+    ).toBeNull();
   });
 
   it("rejects incomplete stack output", () => {
