@@ -21,8 +21,9 @@ export const relayMobileDevices = pgTable(
     userId: varchar("user_id", { length: 255 }).notNull(),
     deviceId: varchar("device_id", { length: 255 }).notNull(),
     label: text("label").notNull().default("iOS device"),
-    platform: varchar("platform", { length: 16 }).notNull().$type<"ios">(),
-    iosMajorVersion: integer("ios_major_version").notNull(),
+    platform: varchar("platform", { length: 16 }).notNull().$type<"ios" | "android">(),
+    iosMajorVersion: integer("ios_major_version"),
+    androidApiLevel: integer("android_api_level"),
     appVersion: varchar("app_version", { length: 64 }),
     bundleId: varchar("bundle_id", { length: 255 }),
     apsEnvironment: varchar("aps_environment", { length: 16 }).$type<"sandbox" | "production">(),
@@ -123,6 +124,7 @@ export const relayEnvironmentCredentials = pgTable(
   },
   (table) => [
     uniqueIndex("idx_relay_environment_credentials_hash").on(table.credentialHash),
+    index("idx_relay_environment_credentials_revoked_at").on(table.revokedAt),
     index("idx_relay_environment_credentials_environment").on(table.environmentId, table.revokedAt),
     index("idx_relay_environment_credentials_environment_key").on(
       table.environmentId,
@@ -166,6 +168,7 @@ export const relayDeliveryAttempts = pgTable(
     transportError: text("transport_error"),
   },
   (table) => [
+    index("idx_relay_delivery_attempts_created_at").on(table.createdAt),
     index("idx_relay_delivery_attempts_environment").on(
       table.environmentId,
       table.threadId,

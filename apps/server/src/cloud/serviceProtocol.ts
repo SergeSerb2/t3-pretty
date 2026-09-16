@@ -3,12 +3,18 @@ import type { ServerSelfUpdateOutcome } from "@t3tools/contracts";
 /** Protocol 2 snapshots SQLite before trials so migrations can be rolled back safely. */
 export const SERVICE_LAUNCHER_PROTOCOL = 2 as const;
 export const SERVICE_LAUNCHER_CONTEXT_ENV = "T3_SERVICE_LAUNCHER_CONTEXT";
-export const SERVICE_LAUNCHER_FILE = "service-launcher.mjs";
 export const SERVICE_STATE_FILE = "service-state.json";
+export const SERVICE_STATE_MAX_BYTES = 64 * 1024;
+export const SERVICE_RUNTIME_SENTINEL_MAX_BYTES = 1024;
 /** Written by the launcher just before an explicit stop kills its child, so
     the child can tell "the service is going away" from "the launcher is about
     to start my replacement" while a pending update is recorded. */
 export const SERVICE_STOP_MARKER_FILE = ".service-stopping";
+/** Written by `t3 update` when the unit was repointed at a new version but the
+    running service was deliberately left on the old one. The launcher removes
+    it when it starts (whoever restarted the service), so while it exists the
+    service is known to be behind its unit and status reports it that way. */
+export const SERVICE_RESTART_PENDING_FILE = ".restart-pending";
 
 export interface PendingServiceUpdate {
   readonly id: string;
@@ -71,7 +77,7 @@ export const isExactServiceVersion = (version: string): boolean =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-export function decodeServiceUpdate(value: unknown): ServiceUpdateRecord | undefined {
+function decodeServiceUpdate(value: unknown): ServiceUpdateRecord | undefined {
   if (!isRecord(value)) return undefined;
   const { id, fromVersion, targetVersion, status } = value;
   if (
@@ -181,6 +187,20 @@ export function serviceStateHasPendingUpdate(value: string): boolean {
     return isRecord(parsed) && isRecord(parsed.update) && parsed.update.status === "pending";
   } catch {
     return false;
+  }
+}
+
+/** Reads the active version across launcher protocol revisions for downgrade protection. */
+export function serviceStateActiveVersion(value: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) &&
+      typeof parsed.activeVersion === "string" &&
+      isExactServiceVersion(parsed.activeVersion)
+      ? parsed.activeVersion
+      : undefined;
+  } catch {
+    return undefined;
   }
 }
 

@@ -8,6 +8,7 @@
  * @module KeyedCoalescingWorker
  */
 import * as Scope from "effect/Scope";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as TxQueue from "effect/TxQueue";
 import * as TxRef from "effect/TxRef";
@@ -40,7 +41,7 @@ export const makeKeyedCoalescingWorker = <K, V, E, R>(options: {
         Effect.flatMap(() =>
           TxRef.modify(stateRef, (state) => {
             const nextValue = state.latestByKey.get(key);
-            if (nextValue === undefined) {
+            if (!state.latestByKey.has(key)) {
               const activeKeys = new Set(state.activeKeys);
               activeKeys.delete(key);
               return [null, { ...state, activeKeys }] as const;
@@ -48,11 +49,11 @@ export const makeKeyedCoalescingWorker = <K, V, E, R>(options: {
 
             const latestByKey = new Map(state.latestByKey);
             latestByKey.delete(key);
-            return [nextValue, { ...state, latestByKey }] as const;
+            return [{ value: nextValue as V }, { ...state, latestByKey }] as const;
           }).pipe(Effect.tx),
         ),
         Effect.flatMap((nextValue) =>
-          nextValue === null ? Effect.void : processKey(key, nextValue),
+          nextValue === null ? Effect.void : processKey(key, nextValue.value),
         ),
       );
 
@@ -82,7 +83,7 @@ export const makeKeyedCoalescingWorker = <K, V, E, R>(options: {
           queuedKeys.delete(key);
 
           const value = state.latestByKey.get(key);
-          if (value === undefined) {
+          if (!state.latestByKey.has(key)) {
             return [null, { ...state, queuedKeys }] as const;
           }
 
@@ -92,7 +93,7 @@ export const makeKeyedCoalescingWorker = <K, V, E, R>(options: {
           activeKeys.add(key);
 
           return [
-            { key, value } as const,
+            { key, value: value as V } as const,
             { ...state, latestByKey, queuedKeys, activeKeys },
           ] as const;
         }).pipe(Effect.tx),
@@ -101,7 +102,11 @@ export const makeKeyedCoalescingWorker = <K, V, E, R>(options: {
         item === null
           ? Effect.void
           : processKey(item.key, item.value).pipe(
-              Effect.catchCause(() => cleanupFailedKey(item.key)),
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.failCause(cause)
+                  : cleanupFailedKey(item.key),
+              ),
             ),
       ),
       Effect.forever,
@@ -112,7 +117,10 @@ export const makeKeyedCoalescingWorker = <K, V, E, R>(options: {
       TxRef.modify(stateRef, (state) => {
         const latestByKey = new Map(state.latestByKey);
         const existing = latestByKey.get(key);
-        latestByKey.set(key, existing === undefined ? value : options.merge(existing, value));
+        latestByKey.set(
+          key,
+          state.latestByKey.has(key) ? options.merge(existing as V, value) : value,
+        );
 
         if (state.queuedKeys.has(key) || state.activeKeys.has(key)) {
           return [false, { ...state, latestByKey }] as const;

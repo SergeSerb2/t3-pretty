@@ -9,6 +9,10 @@ export type ThreadContentPresentation =
       readonly detail: string;
     };
 
+export function threadLoadingPhase(presentation: ThreadContentPresentation): "loading" | null {
+  return presentation.kind === "loading" ? "loading" : null;
+}
+
 export function projectThreadContentPresentation(input: {
   readonly hasDetail: boolean;
   readonly detailError: string | null;
@@ -75,6 +79,24 @@ export function shouldShowThreadFeedLoadingOverlay(input: {
     return true;
   }
   return input.feedLength > 0 && !input.listReady;
+}
+
+/**
+ * Delays mounting a transient loading indicator with a cancellable JS timer.
+ * Delaying a native entrance animation can let it start after React removed
+ * the indicator, which leaves stale loading copy on screen.
+ */
+export function scheduleThreadLoadingVisibility(
+  requested: boolean,
+  delayMs: number,
+  setVisible: (visible: boolean) => void,
+): (() => void) | undefined {
+  if (!requested) {
+    setVisible(false);
+    return undefined;
+  }
+  const timer = setTimeout(() => setVisible(true), delayMs);
+  return () => clearTimeout(timer);
 }
 
 /**

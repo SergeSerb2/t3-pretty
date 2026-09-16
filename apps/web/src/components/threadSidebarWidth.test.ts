@@ -53,10 +53,13 @@ describe("thread sidebar width", () => {
       "utf8",
     );
 
-    expect(sidebarSource).toContain("hidden h-7 w-fit min-w-0 shrink-0 items-center gap-1");
+    expect(sidebarSource).toContain(
+      "hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden",
+    );
+    expect(sidebarSource).toContain('className="inline-flex min-w-0 items-center gap-1"');
     expect(sidebarSource).toContain("md:flex");
     expect(sidebarSource).toContain('src="/t3-pretty-mark.png"');
-    expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(13 * 16);
+    expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(16 * 16);
   });
 
   it("puts the environment identification pill behind the stage-label container query", () => {
@@ -71,6 +74,18 @@ describe("thread sidebar width", () => {
 
     expect(sidebarChrome).toMatch(
       /className="sidebar-brand-stage[^"]*"[^>]*>\s*<Badge[^>]*data-environment-identification="pill"/s,
+    );
+  });
+
+  it("grows the collapsed icon rail to the traffic-light inset", () => {
+    const sidebarSource = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
+    const inset = NodeFS.readFileSync(new URL("../workspaceTitlebar.ts", import.meta.url), "utf8");
+
+    expect(sidebarSource).toContain(
+      "`max(${SIDEBAR_WIDTH_ICON}, var(--workspace-controls-left, 0px))`",
+    );
+    expect(inset).toContain(
+      "max(0px,calc(var(--workspace-titlebar-content-left)-var(--sidebar-width-icon)))",
     );
   });
 });
