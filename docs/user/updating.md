@@ -36,41 +36,45 @@ The offered action depends on how the server runs:
 | **Update the desktop app** | Update the desktop app on the machine running the server, then reopen it if needed.                                                                                                             |
 | **Copy update command**    | Stop the command-line server on its host and relaunch with the copied command, keeping your usual startup options.                                                                              |
 
-An older background-service launcher may ask you to run the exact
-`service update` command below on the server machine. That one local update
-installs the rollback support needed for later remote updates, including
-versions that change the database.
+For an installed T3 Pretty CLI, run the update on the host:
 
-**Copy update command** gives you an `npx --yes --package <tarball> t3` command
-for this fork, which relaunches the server directly at the matching version.
-Do not use `npx t3@<version>` — that installs upstream T3 Code. Add whatever
-startup options you normally use.
+```sh
+t3 update <client-version>
+```
 
-For a T3 Pretty background service, run the matching version's CLI on the host
-to update the service and pin it to that version:
+Replace `<client-version>` with the version shown in the notice. The command
+asks before restarting the background service; if you decline, run
+`t3 service restart` when you are ready. For a server you started by hand,
+stop it and start it again afterwards with your usual subcommand and options,
+such as `--host` or `--tailscale-serve`.
+
+An older installed CLI or background-service launcher may instead require one
+local update using the matching version's T3 Pretty CLI:
 
 ```sh
 npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-<client-version>.tgz t3 service update
 ```
 
-Replace `<client-version>` with the version shown in the notice. The feed
-publishes [`t3.tgz`](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz)
-as latest, and `t3-<version>.tgz` when that CLI build was uploaded. `service update`
-installs the version of the CLI that invoked it, so `t3.tgz` only resolves the
-mismatch when your client is on the latest release. If the exact tarball is not
-on the feed, install from
+That local update installs the rollback support needed for later remote
+updates, including versions that change the database. `service update` installs
+the version of the CLI that invoked it.
+
+The feed publishes
+[`t3.tgz`](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz)
+as latest, and `t3-<version>.tgz` when that CLI build was uploaded. `t3.tgz`
+only resolves a version mismatch when your client is on the latest release. If
+the exact tarball is not on the feed, install from
 [`install.sh`](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh)
-and then run `t3 service update`. An older service launcher may require this
-local update before it supports remote updates and rollback.
+and then run `t3 service update`.
 
 See [Running T3 Code in the Background](./background-service.md) for install,
 status, and removal commands.
 
-For a foreground server, use the copied
-`npx --yes --package <tarball> t3` command for `<client-version>`. Add `serve` if
-you normally run without a browser, and preserve options such as `--host` or
-`--tailscale-serve`. See [background services](./background-service.md) for
-service management.
+If you run the server with `npx` rather than an installed `t3`, there is nothing
+to update on the host. Stop the server and relaunch it with the copied
+`npx --yes --package <tarball> t3` command for `<client-version>`, preserving
+the same subcommand and options. Add `serve` if you normally run without a
+browser. Do not use `npx t3@<version>` — that installs upstream T3 Code.
 
 ## If an update fails
 

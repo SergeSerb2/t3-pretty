@@ -3744,3 +3744,107 @@
   - edited `packages/client-runtime/src/connection/registry.test.ts`
 - `web-typecheck` failed after merging `v0.0.41-nightly.20260916.1795`; repaired with `gpt-5.6-sol`: Made T3 Pretty's connection grouping exhaustive for the parent's expanded phase API while preserving its existing working-phase behavior.
   - edited `apps/web/src/connection/environmentGrouping.ts`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260916.1811`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260916.1795`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `README.md` — T3 Pretty branding and its statement that World Scenery and visual changes must not regress capabilities, protocols, data paths, or existing state.
+- `README.md` — Fork-owned desktop and headless delivery through the T3 Pretty R2 feed, including the warning that upstream npm, Homebrew, winget, and t3.codes channels install upstream T3 Code rather than this fork.
+- `README.md` — World Scenery, frosted-glass styling, Boring personalization, per-thread scenery, appearance controls, and reduced-motion behavior.
+- `README.md` — T3 Pretty desktop, web, and mobile surface descriptions, along with tailnet pairing and the fork-specific Surge Connect account mesh.
+- `README.md` — The fork's provider guidance, provider handoff, MCP Apps, Skills, automatic pull requests, permission modes, source-control support, terminal behavior, subagents, and other preserved T3 Code capabilities.
+- `README.md` — The documented four-hour upstream synchronization cadence and explicit policy of retaining Pretty-specific behavior at conflict boundaries.
+- `README.md` — T3 Pretty desktop builds remain documented as publishing from the fork’s R2 feed.
+- `README.md` — The R2 feed remains the authoritative T3 Pretty installation channel rather than stale GitHub Release assets.
+- `README.md` — The `desktop-r2-latest` GitHub tag remains clearly identified as a pointer rather than an installer source.
+- `README.md` — Users are not incorrectly directed to `npx t3@latest`, which installs upstream T3 Code rather than T3 Pretty.
+- `apps/mobile/src/features/connection/CloudEnvironmentRows.tsx` — Preserved T3 Pretty's guarded Surge Connect refresh behavior, which prevents duplicate refresh operations and reliably clears its local pending guard after either success or failure.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Preserved T3 Pretty’s distinction between the running setup snapshot and the separate done/failed setup test cases.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Preserved the fork behavior that a running worktree setup card replaces the standalone working placeholder.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Running worktree setup remains eased into the first turn: the setup card is shown without an additional working placeholder, including when a queued follow-up exists.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Completed setup still hands off to the live turn by placing the setup card beneath the initiating user message and restoring working/thinking rows.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Failed setup remains beneath the initiating send while subsequent live assistant, working, and thinking rows retain their established T3 Pretty ordering.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — The worktree setup card remains the sole working/thinking placeholder while T3 Pretty's setup reservation is active.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — The setup card remains attached directly beneath the initiating user message after handoff, including while setup work is still running, so its status and failure actions remain reachable.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Handoff still requires the agent-started state and a turn that is actually present in the timeline; server dispatch alone does not collapse the setup state.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Once the setup releases its reservation or hands off, normal working and thinking rows can return so the first turn rises in beneath the setup card.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Preserved T3 Pretty's generated live activity headline state, including its activity-scoped placement that avoids re-rendering every timeline row when the headline changes.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Preserved T3 Pretty's `liveHeadline` in `TimelineRowActivityState`, maintaining generated live activity headlines and the fork's live tool-call presentation behavior.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Preserved correct memo invalidation when `liveHeadline` changes.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Preserved the T3 Pretty exit lifecycle behavior by marking an exiting setup card aria-hidden.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Preserved disabling pointer interaction while the card is exiting, preventing controls from being used during its transition.
+- `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` — Preserved T3 Pretty's no-flash thread transition architecture: the route remains a null component while the shared `_chat` layout owns `ThreadRouteView`, keeping the mounted chat view stable during draft promotion.
+- `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` — No active T3 Pretty pending-drop or thread-rendering behavior is removed; the deleted `ChatThreadRouteView` was unreachable because the route component is already `() =&gt; null`.
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — Preserved T3 Pretty’s no-screen-flash behavior during draft-to-thread promotion: the draft leaf renders no competing view, allowing the shared `_chat` layout’s ThreadRouteView and ChatView instance to remain mounted across the URL replacement.
+- `docs/user/background-service.md` — T3 Pretty remains installed from the fork-owned R2 feed rather than through the upstream `npx t3` package path.
+- `docs/user/background-service.md` — The documentation continues to identify the installed command as the T3 Pretty CLI while leaving the surrounding Pretty-specific service identifiers, Surge Connect wording, and platform guidance intact.
+- `docs/user/install.md` — All CLI installation links remain inside T3 Pretty's R2 release boundary rather than directing users to the upstream T3 Code installer.
+- `docs/user/install.md` — T3 Pretty branding is retained around the parent CLI workflow and update command.
+- `docs/user/install.md` — The background-service pairing flow and Surge Connect setup under Settings → Connections are preserved.
+- `docs/user/install.md` — The WSL runtime remains at `~/.t3/wsl-runtime`, with Linux-local reuse to avoid `/mnt/c` startup costs, current-plus-previous rollback retention, automatic cache cleanup, application-file fallback, and automatic reinstallation.
+- `docs/user/install.md` — Kept T3 Pretty's expanded explanation that `t3 app` adds the project when needed, focuses the desktop app, and opens a new thread.
+- `docs/user/install.md` — Kept the fork's explicit lifecycle and remote-session safeguards: the command does not launch the app, browser, or server; a background server is insufficient; and SSH sessions are rejected.
+- `docs/user/install.md` — Kept the compatibility guidance requiring both the CLI package and running desktop app to support `t3 app`, along with the start-or-update recovery advice.
+- `docs/user/install.md` — Preserved T3 Pretty CLI identity by documenting its installed `t3` executable rather than directing users to the upstream `npx t3` package.
+- `docs/user/updating.md` — T3 Pretty updates continue to use the fork-owned R2 feed and versioned CLI tarballs rather than upstream npm packages or GitHub Releases.
+- `docs/user/updating.md` — The documentation continues to warn that `npx t3@&lt;version&gt;` installs upstream T3 Code and directs foreground/npx servers to the copied T3 Pretty tarball command instead.
+- `docs/user/updating.md` — Older T3 Pretty CLIs and background-service launchers retain the exact `service update` fallback needed to install rollback and database-migration support.
+- `docs/user/updating.md` — The fork's `install.sh` fallback, latest-versus-versioned tarball guidance, and normal foreground server options are retained.
+
+## Parent changes integrated at conflict boundaries
+
+- `README.md` — Added the parent's new Command line documentation flow instead of restoring the old install-free npx instructions.
+- `README.md` — Integrated shell-based CLI installation using the fork-owned T3 Pretty R2 installer rather than the upstream distribution endpoint.
+- `README.md` — Integrated the new `t3` startup guidance and documentation for `t3 service install`, `t3 update`, and `t3 --help`.
+- `apps/mobile/src/features/connection/CloudEnvironmentRows.tsx` — Integrated relay health-probe descriptors for discovered environments so connected environment rows can display the detected machine glyph before the device has connected to that server.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Integrated the parent’s clarified test intent that the worktree setup card is led by the working header.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Added regression coverage that queued follow-up messages remain at the end of the timeline when worktree setup fails.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Added compatible queued-message coverage for a still-running worktree setup, adapted to the fork's placeholder behavior.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Preserved the upstream assertion that failed setup does not remove the live working/thinking rows or disturb the assistant message.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Retained the parent timeline's working-row deduplication and active-turn-header placement after the setup reservation is released.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Adapted to the parent's possibility of a provisionally emitted bootstrap working row by removing that row only while T3 Pretty's setup card owns the live-placeholder slot.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Retained the parent's outcome accessibility intent: failed or cancelled setup state remains visible under the initiating send, while post-handoff turns regain their normal live rows.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added the parent backgroundWorktreeSetup activity state so a setup script continuing after agent takeover can be represented by the working-header chip and popover.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added the parent `backgroundWorktreeSetup` value to `TimelineRowActivityState` so timeline rows can represent an eligible background worktree setup.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added `backgroundWorktreeSetup` to the `useMemo` dependency list so the activity context updates when upstream worktree setup state changes.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Integrated the conditional setup header handoff so running or embedded cards do not duplicate the timeline's working header.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Integrated the compact CollapsedSummaryRow for settled embedded setup outcomes.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Integrated rendering directly from snapshot.stages and the shared showTail condition for running or failed setup-script output.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Integrated header-aware stage-list spacing so the card does not retain unnecessary top padding when no header is shown.
+- `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` — Integrated the parent refactor that reduces this leaf route to its `createFileRoute` declaration and removes the obsolete, unreachable route-local view implementation and imports.
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — Adopted the parent’s first-party shared-layout implementation for draft routes by making this route component return null.
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — Removed the obsolete leaf-level ThreadRouteView import and the superseded route-local draft promotion/navigation implementation.
+- `docs/user/background-service.md` — Adopted the parent's first-party `t3 update` workflow in place of the fork's older package-driven `service update` instructions.
+- `docs/user/background-service.md` — Added the parent's `t3 service restart` command and documented that rerunning `t3 service install` repairs a broken installation.
+- `docs/user/background-service.md` — Integrated update confirmation behavior, `--yes` scripting support, deferred service restarts, handling for manually started servers, and coordination with remote updates.
+- `docs/user/install.md` — The parent's first-party installed `t3` CLI replaces the fork-only Node-based/headless installation workflow: `t3` opens the web app and `t3 serve` runs without a browser.
+- `docs/user/install.md` — The native Windows PowerShell installer flow is included and adapted to the T3 Pretty R2 feed.
+- `docs/user/install.md` — The `~/.local/bin` PATH guidance and command table for starting, serving, installing a background service, updating, and uninstalling are integrated.
+- `docs/user/install.md` — The background-service documentation link and Intel Mac source-build section heading are integrated.
+- `docs/user/install.md` — WSL users no longer receive a blanket requirement to install Node.js because the desktop app installs its own server runtime.
+- `docs/user/install.md` — Adopted the parent documentation correction from `npx t3 app ../my-project` to `t3 app ../my-project`.
+- `docs/user/updating.md` — The installed CLI now uses the parent's `t3 update &lt;client-version&gt;` command as the primary host update workflow.
+- `docs/user/updating.md` — The documentation explains that `t3 update` asks before restarting a background service and provides `t3 service restart` when restart is deferred.
+- `docs/user/updating.md` — Manually started servers are explicitly stopped and restarted with their existing subcommand and options after an installed-CLI update.
+- `docs/user/updating.md` — For npx-based servers, the documentation incorporates the parent's clarification that no installed host CLI needs updating; the server is stopped and relaunched at the matching version.
+
+## Parent changes intentionally omitted
+
+- `README.md` — The literal Unix installer endpoint `https://t3.codes/install.sh`.. Reason: That endpoint distributes upstream T3 Code. The same installer flow is retained with T3 Pretty's authoritative R2 headless installer so the fork's identity and release boundary are not silently replaced.
+- `README.md` — The Windows PowerShell command `irm https://t3.codes/install.ps1 | iex`.. Reason: The supplied conflict provides no fork-owned PowerShell installer, and the t3.codes endpoint installs upstream T3 Code. Advertising it as a T3 Pretty installation path would violate the fork's delivery identity; the existing T3 Pretty Windows EXE remains documented instead.
+- `README.md` — Recommend running `npx t3@latest` to try the product once without installing it.. Reason: The README explicitly establishes that `npx t3@latest` launches upstream T3 Code, not this fork. Including that recommendation in T3 Pretty’s download section would redirect users away from the fork and conflict with its authoritative R2 delivery guidance.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Show a working-indicator row while worktree bootstrap is still running, both before any message and immediately after the initiating user message ahead of the setup card.. Reason: This conflicts with T3 Pretty's intentional worktree-setup easing behavior, evidenced by the split running/done tests and the fork commits: live placeholders are suppressed during running setup and return only after setup is done or failed.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Show a working header above the setup card during pre-handoff setup and swap that header's label in place at handoff.. Reason: This directly conflicts with T3 Pretty's authoritative visual transition in which the setup card replaces both working and thinking placeholders while setup reserves the slot.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Remove the running setup stage card once the turn is live and represent the still-running setup script only through the working header.. Reason: T3 Pretty intentionally keeps the setup card attached beneath the send through handoff so status, transition, and failure actions remain available.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Replace the fork's worktreeSetupReservesLivePlaceholders-based early return with the parent's phase-only setupRunning tail guard.. Reason: The fork helper captures T3 Pretty's custom setup lifecycle and is required to reserve all applicable live-placeholder states, not only snapshots whose top-level phase equals running.
+- `docs/user/background-service.md` — The parent-facing `Install T3 Code` documentation link as the CLI installation route.. Reason: The fork must direct users to the T3 Pretty CLI on its fork-owned R2 feed and must not risk installing upstream T3 Code. The parent's underlying requirement to install the CLI first is preserved.
+- `docs/user/install.md` — The `https://t3.codes/install.sh` and `https://t3.codes/install.ps1` installer URLs.. Reason: Those URLs install upstream T3 Code and would cross T3 Pretty's authoritative R2 release boundary. The same parent installation flows are retained using the fork-owned R2 endpoints.
+- `docs/user/install.md` — The `T3CODE_CHANNEL=nightly` and `T3CODE_VERSION` installer-selection guidance.. Reason: The documented T3 Pretty delivery contract is the fork's R2 `latest` feed; the supplied context does not establish parent channel or exact-version selectors within that feed, and documenting them could redirect or promise artifacts outside the fork release boundary.
+- `docs/user/install.md` — The one-shot `npx t3@latest` recommendation.. Reason: That command runs upstream T3 Code rather than T3 Pretty, as the fork-specific warning immediately above explicitly states.
