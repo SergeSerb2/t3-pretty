@@ -46,6 +46,18 @@ afterEach(() => {
   mockRun.mockReset();
 });
 
+it.effect("constructs GitHubCli.make with the packaged-backend GitHub API quota helper", () =>
+  Effect.gen(function* () {
+    const gh = yield* GitHubCli.make.pipe(
+      Effect.provideService(VcsProcess.VcsProcess, {
+        run: () => Effect.succeed(processOutput("ok")),
+      }),
+    );
+    const result = yield* gh.execute({ cwd: "/repo", args: ["api", "user"] });
+    expect(result.stdout).toBe("ok");
+  }).pipe(Effect.provide(Layer.merge(GitHubGraphQlBudget.layer, SourceControlRateLimit.layer))),
+);
+
 it.effect("shares quota checks, preserves the reserve, and resumes after reset", () =>
   Effect.gen(function* () {
     let probes = 0;
