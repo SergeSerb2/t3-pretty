@@ -3671,3 +3671,6 @@
 
 - `apps/web/src/components/sidebar/SidebarChrome.tsx` — Replace the fork image mark with `T3Wordmark` sized to `h-[1cap]` and align the lockup with `items-baseline`.. Reason: That would overwrite T3 Pretty’s authoritative generated icon-family branding. The raster/image mark also requires center alignment rather than the parent wordmark’s font-cap/baseline sizing.
 - `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — The parent hunk's legacy inline `hasProjects`/`projectScope` selector and `New project` button.. Reason: T3 Pretty intentionally replaced sidebar project-folder controls with a project rail. Restoring these legacy inline controls would regress that fork-specific navigation architecture, and the corresponding props are no longer part of this component.
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260915.1780`; repaired with `gpt-5.6-sol`: Aligned the unread-completion test fixtures with the narrowed parent API and made the fork's status marker prop compatible with explicit undefined values. These targeted type fixes address all three reported errors without changing sidebar behavior.
+  - edited `apps/web/src/components/Sidebar.logic.test.ts`
+  - edited `apps/web/src/components/Sidebar.tsx`

@@ -296,7 +296,7 @@ function JumpHintBadge(props: { label: string }) {
 
 function SidebarThreadTopStatusMark(props: {
   status: SidebarThreadTopStatus;
-  workingStartedAt?: string | null;
+  workingStartedAt?: string | null | undefined;
 }) {
   return (
     <span className={cn("inline-flex items-center gap-1", props.status.className)}>
