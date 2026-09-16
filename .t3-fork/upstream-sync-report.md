@@ -3739,3 +3739,6 @@
 - `apps/mobile/src/lib/appLinking.ts` — Broad substring rejection of well-formed URLs containing "expo-development-client" or "://expo-sharing" anywhere in the URL.. Reason: That broad matching would regress T3 Pretty's reliability hardening by dropping real app routes whose path, query, or payload merely contains lifecycle text. Exact hostname matching retains the intended upstream lifecycle filtering without the false positives; broad matching remains only as the existing malformed-input fail-safe.
 - `.github/workflows/mobile-eas-production.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `shared-typecheck` failed after merging `v0.0.41-nightly.20260916.1795`; repaired with `gpt-5.6-sol`: Complete the usage-plan switch for unsupported environments and update the relay discovery test provider for the new refreshCatalog API.
+  - edited `packages/client-runtime/src/connection/presentation.ts`
+  - edited `packages/client-runtime/src/connection/registry.test.ts`

@@ -766,6 +766,7 @@ describe("EnvironmentRegistry", () => {
             RelayEnvironmentDiscovery.RelayEnvironmentDiscovery.of({
               state: discoveryState,
               refresh: Effect.void,
+              refreshCatalog: Effect.void,
             }),
           ),
           Effect.forkScoped,

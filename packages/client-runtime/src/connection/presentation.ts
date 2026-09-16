@@ -119,6 +119,7 @@ export function usageConnectionPlan(phase: EnvironmentConnectionPhase): UsageCon
     case "offline":
     case "reconnecting":
     case "error":
+    case "unsupported":
       return "skip";
   }
 }
