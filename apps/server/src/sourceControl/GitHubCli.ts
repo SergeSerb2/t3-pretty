@@ -285,17 +285,15 @@ export interface GitHubPullRequestSummary {
   readonly closedAt?: string | null;
   readonly mergedAt?: string | null;
   readonly updatedAt?: string;
-  readonly mergedAt?: string;
   readonly isCrossRepository?: boolean;
   readonly headRepositoryNameWithOwner?: string | null;
   readonly headRepositoryOwnerLogin?: string | null;
 }
 
 function pullRequestSummary(input: NormalizedGitHubPullRequestRecord): GitHubPullRequestSummary {
-  const { updatedAt, mergedAt, ...summary } = input;
+  const { updatedAt, ...summary } = input;
   return {
     ...summary,
-    ...(Option.isSome(mergedAt) ? { mergedAt: DateTime.formatIso(mergedAt.value) } : {}),
     ...(Option.isSome(updatedAt) ? { updatedAt: DateTime.formatIso(updatedAt.value) } : {}),
   };
 }
