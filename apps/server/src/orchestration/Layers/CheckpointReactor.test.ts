@@ -349,7 +349,7 @@ describe("CheckpointReactor", () => {
       workingTree: { files: [], insertions: 0, deletions: 0 },
     };
     const pullRequestRefreshes: number[] = [];
-    const refreshAfterTurn = Effect.sync(() => void pullRequestRefreshes.push(1));
+    const refreshAfterTurn = () => Effect.sync(() => void pullRequestRefreshes.push(1));
     const vcsStatusBroadcasterLayer = Layer.succeed(VcsStatusBroadcaster, {
       getStatus: () => Effect.die("getStatus should not be called in this test"),
       peekStatus: () => Effect.succeed(null),

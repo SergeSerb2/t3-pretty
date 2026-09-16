@@ -12,6 +12,7 @@ export function connectionPhaseDotClassName(phase: EnvironmentConnectionPhase): 
     case "connecting":
     case "reconnecting":
       return "bg-warning";
+    case "unsupported":
     case "error":
       return "bg-destructive";
     default:

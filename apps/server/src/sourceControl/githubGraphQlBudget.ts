@@ -87,8 +87,8 @@ export const make = Effect.gen(function* () {
     function* (host, document, options) {
       if (!isReadOperation(document)) return document;
       const now = yield* Clock.currentTimeMillis;
+      const key = `${hostKey(host)}\0${yield* SourceControlRateLimit.CredentialScope}`;
       const retryAt = yield* Ref.modify(snapshots, (current) => {
-        const key = hostKey(host);
         const snapshot = current.get(key);
         if (snapshot === undefined) return [null, current] as const;
         if (snapshot.resetAtMs <= now) {
@@ -96,8 +96,11 @@ export const make = Effect.gen(function* () {
           next.delete(key);
           return [null, next] as const;
         }
-        const remaining = Math.max(0, snapshot.remaining - Math.max(1, snapshot.cost));
-        if (options?.allowReserve !== true && remaining < snapshot.limit * GRAPHQL_RESERVE_RATIO) {
+        const remaining = snapshot.remaining - Math.max(1, snapshot.cost);
+        if (
+          remaining < 0 ||
+          (options?.allowReserve !== true && remaining < snapshot.limit * GRAPHQL_RESERVE_RATIO)
+        ) {
           return [snapshot.resetAtMs, current] as const;
         }
         const next = new Map(current);
@@ -122,8 +125,8 @@ export const make = Effect.gen(function* () {
     const snapshot = snapshotFrom(raw);
     if (snapshot === null) return;
     const now = yield* Clock.currentTimeMillis;
+    const key = `${hostKey(host)}\0${yield* SourceControlRateLimit.CredentialScope}`;
     yield* Ref.update(snapshots, (current) => {
-      const key = hostKey(host);
       const next = new Map(current);
       for (const [heldKey, held] of next) {
         if (held.resetAtMs <= now) next.delete(heldKey);

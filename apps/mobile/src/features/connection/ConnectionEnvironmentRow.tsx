@@ -29,7 +29,7 @@ import { serverEnvironment } from "../../state/server";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 
 function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string | null {
-  if (!environment.isEnabled) {
+  if (!environment.isEnabled && environment.connectionState !== "unsupported") {
     return "Off";
   }
   return connectionStatusText({
@@ -56,10 +56,12 @@ export function ConnectionEnvironmentRow(props: {
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(props.environment.environmentId),
   );
-  const enabled = props.environment.isEnabled;
+  const unsupported = props.environment.connectionState === "unsupported";
+  const enabled = props.environment.isEnabled && !unsupported;
   const statusLabel = connectionStatusLabel(props.environment);
   const statusTraceId = enabled ? props.environment.connectionErrorTraceId : null;
-  const hasConnectionFailure = enabled && props.environment.connectionError !== null;
+  const hasConnectionFailure =
+    (enabled || unsupported) && props.environment.connectionError !== null;
   const isRetrying =
     enabled &&
     (props.environment.connectionState === "connecting" ||
@@ -101,7 +103,7 @@ export function ConnectionEnvironmentRow(props: {
         onPress={props.onToggle}
       >
         <ConnectionStatusDot
-          state={enabled ? props.environment.connectionState : "available"}
+          state={enabled || unsupported ? props.environment.connectionState : "available"}
           pulse={isRetrying}
           size={8}
         />
@@ -157,6 +159,7 @@ export function ConnectionEnvironmentRow(props: {
         </View>
 
         <ThemedSwitch
+          disabled={unsupported}
           onValueChange={(next) => props.onSetEnabled(props.environment.environmentId, next)}
           value={enabled}
         />
