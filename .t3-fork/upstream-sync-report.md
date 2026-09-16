@@ -3742,3 +3742,5 @@
 - `shared-typecheck` failed after merging `v0.0.41-nightly.20260916.1795`; repaired with `gpt-5.6-sol`: Complete the usage-plan switch for unsupported environments and update the relay discovery test provider for the new refreshCatalog API.
   - edited `packages/client-runtime/src/connection/presentation.ts`
   - edited `packages/client-runtime/src/connection/registry.test.ts`
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260916.1795`; repaired with `gpt-5.6-sol`: Made T3 Pretty's connection grouping exhaustive for the parent's expanded phase API while preserving its existing working-phase behavior.
+  - edited `apps/web/src/connection/environmentGrouping.ts`
