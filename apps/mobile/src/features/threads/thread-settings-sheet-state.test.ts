@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  EnvironmentId,
   ProviderInstanceId,
   ServerProvider,
+  type ModelCapabilities,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
 } from "@t3tools/contracts";
@@ -10,6 +12,7 @@ import * as Schema from "effect/Schema";
 
 import type { ModelOption } from "../../lib/modelOptions";
 import {
+  buildNewTaskThreadSettingsSession,
   canCommitPendingModel,
   effectiveProviderFilter,
   initialProviderFilter,
@@ -296,6 +299,61 @@ describe("threadSettingsSheetPageForRoute", () => {
     expect(threadSettingsSheetPageForRoute("ThreadSettingsHome")).toBe("home");
     expect(threadSettingsSheetPageForRoute("ThreadSettingsCatalog")).toBe("catalog");
     expect(threadSettingsSheetPageForRoute("ThreadSettingsChoice")).toBeNull();
+  });
+});
+
+describe("buildNewTaskThreadSettingsSession", () => {
+  it("builds a picker session without a thread or selected model", () => {
+    const session = buildNewTaskThreadSettingsSession({
+      environmentId: null,
+      selectedModel: null,
+      selectedModelOption: null,
+      providerGroups: [],
+      runtimeMode: "auto",
+    });
+
+    expect(session.selectedModel).toBeNull();
+    expect(session.providerInstanceId).toBeUndefined();
+    expect(session.providerGroups).toEqual([]);
+    expect(session.optionDescriptors).toEqual([]);
+    expect(session.environmentId).toBeNull();
+    expect(session).not.toHaveProperty("checkpointsThreadRef");
+  });
+
+  it("maps a draft model pick into option descriptors without a thread ref", () => {
+    const capabilities: ModelCapabilities = {
+      optionDescriptors: [
+        {
+          id: "reasoningEffort",
+          label: "Reasoning",
+          type: "select",
+          options: [
+            { id: "medium", label: "Medium", isDefault: true },
+            { id: "high", label: "High" },
+          ],
+          currentValue: "medium",
+        },
+      ],
+    };
+    const option = modelOption("gpt-next", [{ id: "reasoningEffort", value: "high" }]);
+    const selected = { ...option, capabilities };
+    const environmentId = EnvironmentId.make("env-draft");
+    const session = buildNewTaskThreadSettingsSession({
+      environmentId,
+      selectedModel: selected.selection,
+      selectedModelOption: selected,
+      providerGroups: [{ providerKey: "codex", providerLabel: "Codex", models: [selected] }],
+      runtimeMode: "auto",
+    });
+
+    expect(session.environmentId).toBe(environmentId);
+    expect(session.providerInstanceId).toBe(selected.selection.instanceId);
+    expect(session.selectedModel).toEqual(selected.selection);
+    expect(session.optionDescriptors.map((descriptor) => descriptor.id)).toEqual([
+      "reasoningEffort",
+    ]);
+    expect(session.optionDescriptors[0]).toMatchObject({ currentValue: "high" });
+    expect(session).not.toHaveProperty("checkpointsThreadRef");
   });
 });
 

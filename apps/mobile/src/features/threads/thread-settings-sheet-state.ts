@@ -1,11 +1,14 @@
 import type {
+  EnvironmentId,
   ModelSelection,
   ProviderInstanceId,
   ProviderOptionDescriptor,
+  RuntimeMode,
   ServerProvider,
 } from "@t3tools/contracts";
 
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
+import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 const providerNeedsSetup = (provider: ServerProvider) =>
   !provider.installed || provider.auth.status === "unauthenticated";
 import { selectableChoices } from "./thread-settings-options";
@@ -157,4 +160,35 @@ export function effectiveProviderFilter(input: {
   readonly searchQuery: string;
 }): string | null {
   return input.searchQuery.trim().length > 0 ? null : input.providerFilter;
+}
+
+/**
+ * Draft compose has no thread yet. The settings sheet still needs a session:
+ * model catalog, option rows, and runtime — never a checkpoints thread ref.
+ */
+export function buildNewTaskThreadSettingsSession(input: {
+  readonly environmentId: EnvironmentId | null;
+  readonly selectedModel: ModelSelection | null;
+  readonly selectedModelOption: ModelOption | null;
+  readonly providerGroups: ReadonlyArray<ProviderGroup>;
+  readonly runtimeMode: RuntimeMode;
+}): {
+  readonly environmentId: EnvironmentId | null;
+  readonly providerInstanceId: ProviderInstanceId | undefined;
+  readonly providerGroups: ReadonlyArray<ProviderGroup>;
+  readonly selectedModel: ModelSelection | null;
+  readonly optionDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
+  readonly runtimeMode: RuntimeMode;
+} {
+  return {
+    environmentId: input.environmentId,
+    providerInstanceId: input.selectedModel?.instanceId,
+    providerGroups: input.providerGroups,
+    selectedModel: input.selectedModel,
+    optionDescriptors: resolveProviderOptionDescriptors({
+      capabilities: input.selectedModelOption?.capabilities,
+      selections: input.selectedModel?.options,
+    }),
+    runtimeMode: input.runtimeMode,
+  };
 }
