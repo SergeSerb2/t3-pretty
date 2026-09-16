@@ -492,11 +492,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     settledTimestamp !== null ? relativeTime(settledTimestamp) : threadTimeLabel(thread);
 
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
+  const handleRename = useCallback(() => onRenameThread(thread), [onRenameThread, thread]);
   const handleRegenerateTitle = useCallback(
     () => onRegenerateThreadTitle(thread),
     [onRegenerateThreadTitle, thread],
   );
-  const handleRename = useCallback(() => onRenameThread(thread), [onRenameThread, thread]);
   const handleSettle = useCallback(() => onSettleThread(thread), [onSettleThread, thread]);
   const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
   const handleSnooze = useCallback(
@@ -585,12 +585,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       variant,
     ],
   );
-  const titleRegenerationMenuItems = useMemo<MenuAction[]>(
-    () =>
-      buildThreadTitleRegenerationMenuItems({
+  const titleMenuItems = useMemo<MenuAction[]>(
+    () => [
+      { id: "rename", title: "Rename", image: "square.and.pencil" },
+      ...buildThreadTitleRegenerationMenuItems({
         supported: props.titleRegenerationSupported,
         isRegenerating: thread.titleRegeneration != null,
       }),
+    ],
     [props.titleRegenerationSupported, thread.titleRegeneration],
   );
   const snoozableCardMenuActions = useMemo<MenuAction[]>(
@@ -603,21 +605,19 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         subactions: snoozePresetActions,
       },
       ...arrangementMenuItems,
-      THREAD_RENAME_MENU_ACTION,
-      ...titleRegenerationMenuItems,
+      ...titleMenuItems,
       { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
     ],
-    [arrangementMenuItems, snoozePresetActions, titleRegenerationMenuItems],
+    [arrangementMenuItems, snoozePresetActions, titleMenuItems],
   );
   const cardMenuActions = useMemo<MenuAction[]>(
     () => [
       CARD_MENU_ACTIONS[0]!,
       ...arrangementMenuItems,
-      THREAD_RENAME_MENU_ACTION,
-      ...titleRegenerationMenuItems,
+      ...titleMenuItems,
       ...CARD_MENU_ACTIONS.slice(1),
     ],
-    [arrangementMenuItems, titleRegenerationMenuItems],
+    [arrangementMenuItems, titleMenuItems],
   );
   const slimMenuActions = useMemo<MenuAction[]>(
     () => [
@@ -625,30 +625,23 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ...arrangementMenuItems.filter(
         (action) => action.id !== "move-up" && action.id !== "move-down",
       ),
-      THREAD_RENAME_MENU_ACTION,
-      ...titleRegenerationMenuItems,
+      ...titleMenuItems,
       SLIM_MENU_ACTIONS[1]!,
     ],
-    [arrangementMenuItems, titleRegenerationMenuItems],
+    [arrangementMenuItems, titleMenuItems],
   );
   const snoozedMenuActions = useMemo<MenuAction[]>(
-    () => [
-      SNOOZED_MENU_ACTIONS[0]!,
-      THREAD_RENAME_MENU_ACTION,
-      ...titleRegenerationMenuItems,
-      SNOOZED_MENU_ACTIONS[1]!,
-    ],
-    [titleRegenerationMenuItems],
+    () => [SNOOZED_MENU_ACTIONS[0]!, ...titleMenuItems, SNOOZED_MENU_ACTIONS[1]!],
+    [titleMenuItems],
   );
   const legacyMenuActions = useMemo<MenuAction[]>(
     () => [
       LEGACY_MENU_ACTIONS[0]!,
       ...arrangementMenuItems,
-      THREAD_RENAME_MENU_ACTION,
-      ...titleRegenerationMenuItems,
+      ...titleMenuItems,
       LEGACY_MENU_ACTIONS[1]!,
     ],
-    [arrangementMenuItems, titleRegenerationMenuItems],
+    [arrangementMenuItems, titleMenuItems],
   );
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
@@ -662,8 +655,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "move-up") handleMoveUp();
       if (nativeEvent.event === "move-down") handleMoveDown();
       if (nativeEvent.event === "archive") handleArchive();
-      if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "rename") handleRename();
+      if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "delete") handleDelete();
       if (nativeEvent.event === "snooze:custom") {
         setCustomSnoozeOpen(true);

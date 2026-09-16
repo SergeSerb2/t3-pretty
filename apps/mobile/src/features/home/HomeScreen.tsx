@@ -556,9 +556,7 @@ export function HomeScreen(props: HomeScreenProps) {
     [props.onRegenerateThreadTitle],
   );
   const handleRenameThread = useCallback(
-    (thread: EnvironmentThreadShell) => {
-      props.onRenameThread(thread);
-    },
+    (thread: EnvironmentThreadShell) => props.onRenameThread(thread),
     [props.onRenameThread],
   );
   const handleDeleteThread = props.onDeleteThread;

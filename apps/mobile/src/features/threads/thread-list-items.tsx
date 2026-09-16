@@ -500,6 +500,7 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
 
 const THREAD_ROW_MENU_ACTIONS: MenuAction[] = [
   { id: "archive", title: "Archive", image: "archivebox" },
+  { id: "rename", title: "Rename", image: "square.and.pencil" },
   { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
 ];
 
@@ -646,12 +647,12 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
           ]
         : []),
       THREAD_ROW_MENU_ACTIONS[0]!,
-      THREAD_RENAME_MENU_ACTION,
+      THREAD_ROW_MENU_ACTIONS[1]!,
       ...buildThreadTitleRegenerationMenuItems({
         supported: props.titleRegenerationSupported,
         isRegenerating: thread.titleRegeneration != null,
       }),
-      THREAD_ROW_MENU_ACTIONS[1]!,
+      THREAD_ROW_MENU_ACTIONS[2]!,
     ],
     [props.titleRegenerationSupported, thread.branch, thread.titleRegeneration],
   );

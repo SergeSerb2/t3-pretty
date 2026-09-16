@@ -3607,3 +3607,77 @@
 
 - `apps/web/src/routes/_chat.draft.$draftId.tsx` — The parent's inline `DraftChatThreadRouteView` implementation form.. Reason: T3 Pretty intentionally extracted this behavior into the shared `ThreadRouteView` to preserve view continuity during draft promotion. Restoring the inline component would regress the fork's no-screen-flash fix; its route behavior is represented by the shared implementation instead.
 - `apps/web/src/routes/_chat.draft.$draftId.tsx` — The new `key={draftId}` remount behavior on the inline `ChatView`.. Reason: That element no longer exists in this route after T3 Pretty's shared-view refactor. Reintroducing it here would require an inline or keyed wrapper around `ThreadRouteView`, undermining the stable shared component identity used by the fork's no-flash transition. Applying it inside the shared component cannot be done safely without that file's context.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260915.1780`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260915.1766`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `pnpm-lock.yaml` — fork-only dependency entries are re-derived by lockfile regeneration against the merged package manifests
+- `apps/desktop/src/preload.ts` — Preserved the webUtils import used by T3 Pretty's desktop file-path resolution through Electron's supported preload API.
+- `apps/desktop/src/window/DesktopWindow.ts` — Preserved T3 Pretty's `hidden` macOS title-bar style instead of `hiddenInset`, preventing the native app/document title from overlapping the collapsed project-icon rail.
+- `apps/desktop/src/window/DesktopWindow.ts` — Preserved the explicit custom traffic-light placement and horizontal inset used by T3 Pretty's macOS window design.
+- `apps/desktop/src/window/DesktopWindow.ts` — Re-pushes the current main-window focus/key state after each successful renderer load, including first load and crash-recovery reloads, so the renderer receives the correct active/inactive state even if the initial IPC seed was sent before it was live.
+- `apps/mobile/src/components/ConfirmDialogHost.tsx` — Preserved the guarded presenter cleanup: an unmounting stale host only clears the global presenter when it still owns that exact callback, avoiding cross-surface lifecycle races.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Preserved T3 Pretty mobile thread rename parity by retaining the memoized handleRenameThread callback and forwarding the selected EnvironmentThreadShell to props.onRenameThread.
+- `apps/mobile/src/features/home/useThreadListActions.ts` — Preserved T3 Pretty's thread-departure lifecycle integration through clearThreadDeparting and markThreadDeparting.
+- `apps/mobile/src/features/threads/ThreadRouteScreen.tsx` — Preserved T3 Pretty's live thread model identity and model subtitle support, including the glass-header presentation backed by threadChatHeaderSubtitle and useThreadModelIdentity.
+- `apps/mobile/src/features/threads/thread-list-items.tsx` — Mobile thread-renaming parity remains intact through the existing onRenameThread integration; only the fork-only implementation is replaced.
+- `apps/mobile/src/features/threads/thread-list-items.tsx` — Adjacent T3 Pretty menu behavior, including branch-thread creation and title regeneration, remains unchanged.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Mobile thread renaming remains available from snoozable, card, slim, snoozed, and legacy thread-row menus and continues to invoke the fork’s existing rename handler.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — T3 Pretty’s lifecycle, pinning, and thread-arrangement menu actions retain their existing ordering around the title actions.
+- `apps/mobile/src/state/shell.ts` — Preserved T3 Pretty's thread lifecycle pending projection, which allows environment snapshots to reflect snoozed and settling threads on offline remotes.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts` — Retained the T3 Pretty/T3 Connect project-transfer import regression test, including idempotent dispatch by thread receipt and verification that only the transfer's two orchestration events are stored.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — The sidebar continues to use the generated `/t3-pretty-mark.png` T3 Pretty brand mark instead of the parent T3 wordmark.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — The sage mark remains unchanged on plain chrome and is converted to a white glyph over World Scenery/backdrop imagery.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — The visible `Pretty` fork identity remains in the sidebar lockup.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Center alignment is retained because it correctly aligns the image-based Pretty mark with the trimmed label.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — Preserved T3 Pretty's project-rail architecture by displaying the selected rail scope through `scopeTitle`.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — Preserved the compact, flexible sidebar thread-header layout introduced by T3 Pretty's sidebar redesign.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — Kept the existing Pretty new-thread control, including its project-aware Shift+click behavior and tooltip, in the shared code following the resolved block.
+- `packages/client-runtime/src/state/threads-sync.test.ts` — Preserved the ephemeral tool-progress event fixture and payload-detail extractor used to verify live, sequence-zero tool progress behavior.
+- `packages/client-runtime/src/state/threads-sync.test.ts` — Preserved the WarmBlob fixture and generation/sequence-aware warmBlob constructor used by T3 Pretty’s warm thread snapshot and cache reliability tests.
+- `packages/shared/src/keybindings.ts` — Kept the internal-build-only `composer.dictation` default keybinding on `mod+shift+space`, including its `!terminalFocus` guard.
+
+## Parent changes integrated at conflict boundaries
+
+- `pnpm-lock.yaml` — took the parent nightly's generated lockfile wholesale instead of AI-splicing it
+- `apps/desktop/src/preload.ts` — Integrated the parent's webFrame import, supporting zoom-aware synchronization of the macOS native window-controls inset.
+- `apps/desktop/src/window/DesktopWindow.ts` — Integrated upstream's vertical traffic-light position calculation based on `MACOS_WORKSPACE_TOPBAR_HEIGHT` and `MACOS_WINDOW_BUTTON_RADIUS`, keeping the controls centered as workspace top-bar dimensions evolve.
+- `apps/desktop/src/window/DesktopWindow.ts` — Synchronizes macOS window buttons after the renderer finishes loading, guarded to run only on Darwin.
+- `apps/mobile/src/components/ConfirmDialogHost.tsx` — Integrated the parent presenter implementation that initializes text-input dialogs from initialValue and stores the incoming dialog in presented state.
+- `apps/mobile/src/components/ConfirmDialogHost.tsx` — Adapted the parent callback to a local typed reference so it works with the fork's guarded cleanup logic.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Integrated the parent’s concise expression-bodied handleRenameThread callback refactor without changing rename behavior or callback dependencies.
+- `apps/mobile/src/features/home/useThreadListActions.ts` — Integrated the parent showTextInputDialog import used by the mobile thread action flow, alongside the existing confirmation dialog API.
+- `apps/mobile/src/features/threads/ThreadRouteScreen.tsx` — Integrated the parent's threadRouteIsHydrating helper used to distinguish an actively hydrating thread route from a terminal unavailable state.
+- `apps/mobile/src/features/threads/thread-list-items.tsx` — Adopted the parent-provided thread rename action from THREAD_ROW_MENU_ACTIONS.
+- `apps/mobile/src/features/threads/thread-list-items.tsx` — Retained the parent's props.onRenameThread callback wiring and removed the equivalent duplicate fork handler.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Adopted the parent’s unified `titleMenuItems` implementation, which supplies its first-party Rename action together with title-regeneration actions across all menu variants, replacing the fork’s separately composed rename menu item.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Kept the parent implementation’s shared dependency usage for title-menu memoization and eliminated the duplicate merged rename dispatch.
+- `apps/mobile/src/state/shell.ts` — Integrated the parent's EnvironmentShellState type used by the typed empty shell state and per-environment shell projection hook.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts` — Added the parent test verifying that a lucide project icon monogram is serialized into project_icon_json and that a subsequent project.meta.update with projectIcon: null clears it.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Applied the parent’s `text-sm`, `font-medium`, and `tracking-tight` lockup typography.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Integrated the parent’s intent to align the lockup around visible capital bounds, adapted to the fork’s image-based mark and existing trimmed text box.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — Integrated the upstream visual refinement that removes the segmented background well from the toolbar container; the resolved row remains unfilled and lets its controls provide their own styling.
+- `packages/client-runtime/src/state/threads-sync.test.ts` — Added the parent sessionSet fixture for ready/running thread session events, including provider/runtime metadata and active-turn handling through TurnId.
+- `packages/shared/src/keybindings.ts` — Added the parent default `mod+shift+enter` keybinding for `thread.steerQueuedMessage`, guarded by `!terminalFocus`.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Replace the fork image mark with `T3Wordmark` sized to `h-[1cap]` and align the lockup with `items-baseline`.. Reason: That would overwrite T3 Pretty’s authoritative generated icon-family branding. The raster/image mark also requires center alignment rather than the parent wordmark’s font-cap/baseline sizing.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — The parent hunk's legacy inline `hasProjects`/`projectScope` selector and `New project` button.. Reason: T3 Pretty intentionally replaced sidebar project-folder controls with a project rail. Restoring these legacy inline controls would regress that fork-specific navigation architecture, and the corresponding props are no longer part of this component.
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260915.1780`; repaired with `gpt-5.6-sol`: Aligned the unread-completion test fixtures with the narrowed parent API and made the fork's status marker prop compatible with explicit undefined values. These targeted type fixes address all three reported errors without changing sidebar behavior.
+  - edited `apps/web/src/components/Sidebar.logic.test.ts`
+  - edited `apps/web/src/components/Sidebar.tsx`
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260915.1780`; repaired with `gpt-5.6-sol`: Removed all duplicate onRenameThread declarations, destructuring entries, and JSX attributes while preserving T3 Pretty's route-based rename behavior. The conflicting parent direct-handler wiring was removed from the affected call sites.
+  - edited `apps/mobile/src/features/home/HomeRouteScreen.tsx`
+  - edited `apps/mobile/src/features/home/HomeScreen.tsx`
+  - edited `apps/mobile/src/features/threads/thread-list-items.tsx`
+  - edited `apps/mobile/src/features/threads/thread-list-v2-items.tsx`
+  - edited `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx`
+  - omitted parent change: Direct wiring of the parent's useThreadListActions().renameThread callback into HomeScreen and sidebar thread rows.. Reason: A row can accept only one onRenameThread handler, and T3 Pretty's authoritative flow navigates through its existing ThreadRename callback. Keeping both causes duplicate JSX attributes and invoking both would duplicate or replace the fork's rename experience.
