@@ -3674,3 +3674,10 @@
 - `web-typecheck` failed after merging `v0.0.41-nightly.20260915.1780`; repaired with `gpt-5.6-sol`: Aligned the unread-completion test fixtures with the narrowed parent API and made the fork's status marker prop compatible with explicit undefined values. These targeted type fixes address all three reported errors without changing sidebar behavior.
   - edited `apps/web/src/components/Sidebar.logic.test.ts`
   - edited `apps/web/src/components/Sidebar.tsx`
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260915.1780`; repaired with `gpt-5.6-sol`: Removed all duplicate onRenameThread declarations, destructuring entries, and JSX attributes while preserving T3 Pretty's route-based rename behavior. The conflicting parent direct-handler wiring was removed from the affected call sites.
+  - edited `apps/mobile/src/features/home/HomeRouteScreen.tsx`
+  - edited `apps/mobile/src/features/home/HomeScreen.tsx`
+  - edited `apps/mobile/src/features/threads/thread-list-items.tsx`
+  - edited `apps/mobile/src/features/threads/thread-list-v2-items.tsx`
+  - edited `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx`
+  - omitted parent change: Direct wiring of the parent's useThreadListActions().renameThread callback into HomeScreen and sidebar thread rows.. Reason: A row can accept only one onRenameThread handler, and T3 Pretty's authoritative flow navigates through its existing ThreadRename callback. Keeping both causes duplicate JSX attributes and invoking both would duplicate or replace the fork's rename experience.
