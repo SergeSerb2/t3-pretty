@@ -342,9 +342,7 @@ describe("buildNewTaskThreadSettingsSession", () => {
       environmentId,
       selectedModel: selected.selection,
       selectedModelOption: selected,
-      providerGroups: [
-        { providerKey: "codex", providerLabel: "Codex", models: [selected] },
-      ],
+      providerGroups: [{ providerKey: "codex", providerLabel: "Codex", models: [selected] }],
       runtimeMode: "auto",
     });
 
