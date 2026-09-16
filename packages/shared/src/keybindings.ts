@@ -44,6 +44,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   ...(T3CODE_BUILD_FLAVOR === "internal"
     ? [{ key: "mod+shift+space", command: "composer.dictation" as const, when: "!terminalFocus" }]
     : []),
+  { key: "mod+shift+enter", command: "thread.steerQueuedMessage", when: "!terminalFocus" },
   { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+n", command: "chat.newLocal", when: "!terminalFocus" },
