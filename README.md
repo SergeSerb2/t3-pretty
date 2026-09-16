@@ -61,8 +61,17 @@ Visual changes are not allowed to trade away capability or existing state.
 > [macOS DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002073-arm64.dmg)
 > or
 > [Windows EXE](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002055-x64.exe),
-> run from source (below), or install the headless server with
-> `curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh`.
+> run from source (below), or use the T3 Pretty command-line installer below.
+
+### Command line
+
+Install T3 Pretty's headless server and CLI on macOS or Linux:
+
+```bash
+curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
+```
+
+Then run `t3` to start the server and open the local web app. `t3 service install` keeps it running in the background, `t3 update` moves to a newer T3 Pretty release, and `t3 --help` has the full reference.
 
 ---
 

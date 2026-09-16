@@ -401,7 +401,11 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string | null;
       snapshot: WorktreeSetupSnapshot;
-      /** The agent already started; render only the script row under the turn header. */
+      /**
+       * The agent's turn is live and owns the "Working for" header, so the
+       * card drops its own header and settle-time actions. The stage list
+       * stays put so nothing jumps when the handoff happens.
+       */
       embedded: boolean;
     }
   | {
@@ -1287,30 +1291,38 @@ export function deriveMessagesTimelineRows(input: {
     worktreeSetupAgentStarted(input.worktreeSetup) &&
     input.latestTurn?.startedAt != null;
   if (input.worktreeSetup) {
+    const setupReservesLivePlaceholders =
+      !setupHandedOff && worktreeSetupReservesLivePlaceholders(input.worktreeSetup);
+    // A bootstrap can provisionally add the working row before setup state is
+    // considered. While setup reserves the live rows, the card replaces it.
+    if (setupReservesLivePlaceholders) {
+      const workingRowIndex = nextRows.findIndex((row) => row.kind === "working");
+      if (workingRowIndex >= 0) {
+        nextRows.splice(workingRowIndex, 1);
+      }
+    }
     const setupRow = {
       kind: "worktree-setup",
       id: WORKTREE_SETUP_ROW_ID,
       createdAt: input.worktreeSetup.startedAt,
       snapshot: input.worktreeSetup,
-      embedded: false,
+      embedded: setupHandedOff,
     } as const;
-    // Sit directly under the first user message: a finished snapshot can
-    // outlive the first assistant reply, and it belongs to the send, not the
-    // end of the thread.
     const firstUserRowIndex = nextRows.findIndex(
       (row) => row.kind === "message" && row.message.role === "user",
     );
-    if (firstUserRowIndex >= 0) {
-      nextRows.splice(firstUserRowIndex + 1, 0, setupRow);
-    } else {
-      nextRows.push(setupRow);
-    }
-    if (!setupHandedOff && worktreeSetupReservesLivePlaceholders(input.worktreeSetup)) {
+    const insertAt = firstUserRowIndex >= 0 ? firstUserRowIndex + 1 : nextRows.length;
+    nextRows.splice(insertAt, 0, setupRow);
+    if (setupReservesLivePlaceholders) {
       return attachTrailingToolGroupsToAssistant(nextRows);
     }
   }
 
-  if (input.isWorking && activeTurnHeaderIndex === input.timelineEntries.length) {
+  // A setup that still reserves the live placeholders returns above. After
+  // the slot is released, avoid duplicating a working row already emitted for
+  // the live turn.
+  const hasWorkingRow = nextRows.some((row) => row.kind === "working");
+  if (input.isWorking && !hasWorkingRow && activeTurnHeaderIndex === input.timelineEntries.length) {
     appendWorkingRow();
   }
 

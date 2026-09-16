@@ -22,92 +22,37 @@ curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/
 
 Then manage the service with the commands below:
 
-| Task                            | Command                                                                                                             |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Install and start               | `t3 service install`                                                                                                |
-| Inspect status and log location | `t3 service status`                                                                                                 |
-| Update or repair                | `npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz t3 service update` |
-| Stop and remove from startup    | `t3 service uninstall`                                                                                              |
-
-`t3 service status` checks whether the service is installed and reports its log location. On Linux,
-it also checks whether the service is running, enabled at startup, and allowed to keep running after
-logout.
-
-The service uses the same T3 Code version as the CLI you run. To install a nightly or an exact
-version, use that version of the CLI:
-
-```sh
-npx t3@nightly service update
-npx t3@1.2.3 service update
-```
-
-The install and update commands refuse to replace a newer service with an older version. Setup
-through T3 Connect leaves a newer service unchanged. To downgrade, select the exact older version
-and pass `--allow-downgrade`:
-
-```sh
-npx t3@1.2.3 service update --allow-downgrade
-```
-
-Stop it and remove it from startup:
-
-```sh
-t3 service uninstall
-```
+| Task                            | Command                |
+| ------------------------------- | ---------------------- |
+| Install and start               | `t3 service install`   |
+| Inspect status and log location | `t3 service status`    |
+| Move to a newer release         | `t3 update`            |
+| Restart                         | `t3 service restart`   |
+| Stop and remove from startup    | `t3 service uninstall` |
 
 Uninstalling the service leaves your projects, threads, and settings intact.
+Running `t3 service install` again repairs a service that `t3 service status`
+reports as broken.
 
-Updating restarts T3 Code briefly. Let active agent work and terminal commands finish first.
-If a remote update is already in progress, wait for it to finish before retrying a local update.
-
-The service runs a small stable launcher. Exact T3 Code versions are installed separately, so a
-failed remote candidate can return to the previous version without rewriting the service
-definition. The launcher snapshots the database before a remote candidate starts, so database
-updates roll back with the server version. An older launcher may require one local
-`service update` before this is available.
-
-To match a remote client's version, follow
+`t3 update` downloads the newest release on your channel and switches `t3`
+and the service to it. Restarting interrupts running agent turns, terminals,
+and remote clients, so it asks first; answer no and the service keeps running
+the old version until you run `t3 service restart`. Pass `--yes` from a
+script. A server you started by hand is left running; stop and start it again
+to pick up the new version. Wait for any remote update already in progress
+before updating; to match a remote client's version, follow
 [Updating T3 Code](./updating.md).
 
-Self-contained builds install as a download from the T3 Code GitHub release
-instead of through npm, so the machine running the service does not need
-Node.js or npm once the CLI is on it. To get the CLI onto a machine without
-Node, run the install script:
+Pass an exact version (`t3 update 0.0.42`) to pin one, `--channel nightly` to
+switch trains, or `--allow-downgrade` to move backwards. `preview` is a
+maintainers' test train: its builds can be broken and are never offered as
+updates, so the installer and `t3 update` ask for confirmation before
+installing one.
 
-```sh
-curl -fsSL https://t3.codes/install.sh | sh
-```
-
-On Windows, run `irm https://t3.codes/install.ps1 | iex` in PowerShell instead.
-
-It places `t3` in `~/.local/bin` and reuses the same download when you later
-run `t3 service install`. It follows the stable train by default; set
-`T3CODE_CHANNEL=nightly` for nightlies, `T3CODE_VERSION` to pin an exact
-version, or `T3CODE_RELEASE_BASE_URL` to download from a mirror.
-
-`preview` is a third train that maintainers cut from unreleased branches to
-exercise the release pipeline. Those builds can be broken, receive no fixes,
-and are never offered as updates; the installer and `t3 update` only take you
-there when you ask for the channel explicitly, and warn you when they do.
-
-Once a self-contained `t3` is installed, `t3 update` moves the machine to a
-newer one without npm: it downloads the newest release on the channel the
-running `t3` came from, verifies it, and points the `t3` launcher at it. When
-a background service is installed for the same T3 home it asks before
-restarting it, since a restart interrupts running agent turns, terminals, and
-remote clients; answer no and the service keeps the old version until you run
-`t3 service update`. From a script there is no prompt, so pass `--yes` to
-restart the service. A server you started by hand is never touched; the
-command tells you it is still on the old version so you can restart it
-yourself. Pass an exact version (`t3 update 0.0.41-preview.20260912.1595`) to
-pin one, `--channel` to follow a different release train (moving onto preview from stable or nightly asks for confirmation), or
-`--allow-downgrade` to move backwards.
-
-`t3 uninstall` reverses the install script: it shows what it found (the
-background service, the `t3` launcher, every downloaded version under
-`~/.t3/runtime`), asks once, and removes them. Your projects, threads, and
-settings under `~/.t3/userdata` are kept; delete that directory yourself if
-you want them gone too. Pass `--yes` from a script.
+`t3 uninstall` removes the background service, the `t3` launcher, and the
+downloaded versions after showing you the list and asking once. Your projects,
+threads, and settings under `~/.t3/userdata` are kept. Pass `--yes` from a
+script.
 
 ## Platform support
 
@@ -172,7 +117,7 @@ that session open.
 
 On macOS, check **System Settings → General → Login Items** if the service no
 longer starts at login. If agent work cannot access Desktop, Documents, or
-Downloads, it may need Full Disk Access for the Node executable listed in
+Downloads, it may need Full Disk Access for the `t3` executable listed in
 `ProgramArguments` in
 `~/Library/LaunchAgents/com.t3tools.t3code.service.plist`.
 

@@ -12,40 +12,54 @@ is only a pointer. The same feed is the
 
 ## Requirements
 
-`npx t3` needs Node.js only to run npm itself; the CLI it installs is a
-self-contained executable. SSH hosts and WSL backends need Node.js 22.16+
-(22.x), 23.11+ (23.x), or 24.10 and later. The native desktop app includes its
-server runtime.
-
 You need an installed, authenticated provider before starting a thread. You can
 launch T3 Code and configure providers afterwards.
 
-## Run without installing
+## Command line
 
 T3 Pretty's CLI is not `npx t3`; that command installs upstream T3 Code.
 
-Install the T3 Pretty server (Node.js 22.16+ or 24.10+):
+Install the T3 Pretty CLI on macOS or Linux:
 
 ```bash
 curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
 ```
 
+On Windows, install it from the same T3 Pretty R2 feed in PowerShell:
+
+```powershell
+irm https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.ps1 | iex
+```
+
 Then start it:
 
 ```bash
-t3 serve
+t3
 ```
 
-This starts the server and opens the local web app. Run `t3 --help` for
-command-line options. On a machine that should stay reachable after logout, run
+On macOS and Linux, this puts `t3` in `~/.local/bin`. If your shell reports
+`command not found` afterwards, that directory is not on your `PATH` yet; the
+installer prints the line to add.
+
+| Task                                             | Command                                                   |
+| ------------------------------------------------ | --------------------------------------------------------- |
+| Start the server and open the web app            | `t3`                                                      |
+| Start the server without a browser               | `t3 serve`                                                |
+| Keep it running in the background (macOS, Linux) | `t3 service install` ([details](./background-service.md)) |
+| Move to the newest T3 Pretty release             | `t3 update`                                               |
+| Remove it again                                  | `t3 uninstall`                                            |
+
+Run `t3 --help` for the full reference.
+
+On a macOS or Linux machine that should stay reachable after logout, run
 `t3 service install` and pair from another device, then turn on **Surge Connect**
 under **Settings** → **Connections**.
 
-The executable is built for Apple Silicon Macs, Linux, and Windows. There is
-no Intel Mac build of it, because Node cannot produce a single executable for
-that platform; the Intel desktop app is unaffected. To run a standalone server
-on an Intel Mac, build it from source. You need Node.js 24 and `vp` (see
-[Install vp](https://github.com/pingdotgg/t3code#install-vp)):
+### Intel Macs
+
+There is no `t3` executable for Intel Macs (the desktop app is available). To
+run a server there, build it from source with Node.js 24 and `vp`
+([Install vp](https://github.com/pingdotgg/t3code#install-vp)):
 
 ```bash
 git clone https://github.com/pingdotgg/t3code
@@ -53,9 +67,8 @@ cd t3code && vp i && vp run build:desktop
 node apps/server/dist/bin.mjs
 ```
 
-A server run this way is a plain Node program: `t3 update` and the background
-service do not apply, so update it with `git pull` and a rebuild, and start it
-however you run other Node processes.
+`t3 update` and the background service do not apply to a server run this way;
+update it with `git pull` and a rebuild.
 
 ## Desktop app
 
@@ -78,8 +91,8 @@ the same feed.
 ### Windows Subsystem for Linux
 
 Choose a WSL distro in **Settings → Connections** to run agents and projects
-there. Install Node.js and provider CLIs inside that distro. When the desktop app
-runs the WSL backend, it installs the matching server runtime into
+there. Install the provider CLIs inside that distro. When the desktop app runs
+the WSL backend, T3 Pretty installs its own matching server runtime into
 `~/.t3/wsl-runtime` inside the selected distro. The first launch after installing
 or updating T3 Pretty may take a little longer while that release's runtime is
 extracted. Later launches reuse the Linux-local copy so startup does not depend
@@ -94,13 +107,13 @@ runtime on the next launch.
 With the desktop app already running on the same machine:
 
 ```bash
-npx t3 app
+t3 app
 ```
 
 Pass a path to open another directory:
 
 ```bash
-npx t3 app ../my-project
+t3 app ../my-project
 ```
 
 The command adds the directory as a project when needed, focuses the desktop
