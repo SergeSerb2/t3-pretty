@@ -73,10 +73,12 @@ import {
   selectableChoices,
   selectedModelProviderDriver,
 } from "./thread-settings-options";
+import { useNewTaskFlow } from "./new-task-flow-provider";
 import { buildThreadModelIdentity } from "./threadModelIdentity";
 import { ThreadCheckpointsSection } from "./ThreadCheckpointsSection";
 import { useProjectTransferAction } from "./use-project-transfer";
 import {
+  buildNewTaskThreadSettingsSession,
   canCommitPendingModel,
   effectiveProviderFilter,
   initialProviderFilter,
@@ -1603,10 +1605,47 @@ export function ExistingThreadSettingsRouteScreen() {
 /** New-task model picker hosted by the root RNS form-sheet route. */
 export function NewTaskThreadSettingsRouteScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
+  const flow = useNewTaskFlow();
+  const settings = useMemo(
+    () =>
+      buildNewTaskThreadSettingsSession({
+        environmentId: flow.selectedEnvironmentId,
+        selectedModel: flow.selectedModel,
+        selectedModelOption: flow.selectedModelOption,
+        providerGroups: flow.providerGroups,
+        runtimeMode: flow.runtimeMode,
+      }),
+    [
+      flow.providerGroups,
+      flow.runtimeMode,
+      flow.selectedEnvironmentId,
+      flow.selectedModel,
+      flow.selectedModelOption,
+    ],
+  );
+  const handleSelectModel = useCallback(
+    (option: ModelOption) => {
+      flow.setSelectedModelKey(option.key, option.selection.options);
+    },
+    [flow.setSelectedModelKey],
+  );
+
   return (
-    <ThreadSettingsPickerNavigator
-      onClose={() => navigation.goBack()}
-      onActivePageChange={() => {}}
-    />
+    <ThreadSettingsSessionProvider
+      environmentId={settings.environmentId}
+      providerInstanceId={settings.providerInstanceId}
+      providerGroups={settings.providerGroups}
+      selectedModel={settings.selectedModel}
+      onSelectModel={handleSelectModel}
+      optionDescriptors={settings.optionDescriptors}
+      onUpdateOptionSelections={flow.setSelectedModelOptions}
+      runtimeMode={settings.runtimeMode}
+      onUpdateRuntimeMode={flow.setRuntimeMode}
+    >
+      <ThreadSettingsPickerNavigator
+        onClose={() => navigation.goBack()}
+        onActivePageChange={() => {}}
+      />
+    </ThreadSettingsSessionProvider>
   );
 }
