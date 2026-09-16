@@ -3681,3 +3681,66 @@
   - edited `apps/mobile/src/features/threads/thread-list-v2-items.tsx`
   - edited `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx`
   - omitted parent change: Direct wiring of the parent's useThreadListActions().renameThread callback into HomeScreen and sidebar thread rows.. Reason: A row can accept only one onRenameThread handler, and T3 Pretty's authoritative flow navigates through its existing ThreadRename callback. Keeping both causes duplicate JSX attributes and invoking both would duplicate or replace the fork's rename experience.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260916.1795`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260915.1780`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/App.tsx` — Preserved T3 Pretty's Boring-versus-World-Scenery navigation-theme selection through `isBoringMobileTheme`, including the custom scenery navigation palette behavior.
+- `apps/mobile/src/lib/appLinking.test.ts` — Preserved T3 Pretty's tests that private Expo lifecycle filtering applies to the exact lifecycle host, including the development-client URL under the t3code-dev scheme.
+- `apps/mobile/src/lib/appLinking.test.ts` — Preserved regression coverage ensuring legitimate thread routes containing lifecycle text remain handleable.
+- `apps/mobile/src/lib/appLinking.test.ts` — Preserved coverage ensuring lookalike hosts such as expo-development-client-copy and expo-sharing-notification are not incorrectly filtered.
+- `apps/mobile/src/lib/appLinking.ts` — Preserved T3 Pretty's exact-host filtering for valid lifecycle URLs, preventing ordinary app routes containing lifecycle text from being silently discarded.
+- `apps/mobile/src/lib/appLinking.ts` — Preserved the malformed-input fail-safe while continuing to let unrelated malformed links reach React Navigation's NotFound handling.
+- `apps/mobile/src/lib/appLinking.ts` — Preserved support for the compatible t3code, t3code-dev, and t3code-preview mobile URL-scheme identities.
+- `apps/server/src/sourceControl/GitHubCli.ts` — The T3 Pretty safeguard against GitHub listings exhausting API quota is retained through the parent's first-party rate-limit and GraphQL-budget implementation rather than the superseded fork helper.
+- `apps/server/src/sourceControl/GitHubCli.ts` — The existing pinned-credential scope, reserve opt-in, and verified-host protections remain unchanged.
+- `apps/server/src/sourceControl/GitHubCli.ts` — T3 Pretty's host-scoped GitHub API cooldown safeguard remains active before raw GitHub CLI requests.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Successful requests and rate-limit errors continue updating the fork's in-memory quota state, preventing repeated requests while a host is cooling down.
+- `apps/server/src/sourceControl/GitHubCli.ts` — The fork quota tracker is renamed locally to avoid conflicting with the parent's GraphQL quota cache; its behavior is otherwise unchanged.
+- `apps/server/src/sourceControl/GitHubSourceControlProvider.ts` — GitHub pull requests retain T3 Pretty's Codex automated-review status lookup through github.getCodexReview.
+- `apps/server/src/sourceControl/GitHubSourceControlProvider.ts` — Automated-review lookups continue to reject unsupported or malformed references and report transport-safe references through SourceControlProviderError.
+- `apps/server/src/sourceControl/GitHubSourceControlProvider.ts` — GitHub CLI review failures continue to preserve command, detail, cause, and working-directory diagnostics.
+- `apps/server/src/sourceControl/SourceControlRateLimit.ts` — Host values remain trimmed, lowercased, and capped at SOURCE_CONTROL_HOST_MAX_LENGTH before use in keys and pause errors.
+- `apps/server/src/sourceControl/SourceControlRateLimit.ts` — The rate-limit entry map remains bounded by SOURCE_CONTROL_RATE_LIMIT_CAPACITY, with existing keys refreshed and the oldest key evicted at capacity.
+- `apps/server/src/sourceControl/githubGraphQlBudget.ts` — Preserved T3 Pretty's observe-time pruning of expired GitHub GraphQL budget snapshots before applying an observation.
+- `apps/server/src/sourceControl/githubGraphQlBudget.ts` — Preserved immutable snapshot-map updates through a copied Map, allowing the existing capacity and conservative quota logic to operate on the cleaned state.
+- `packages/contracts/src/environment.ts` — Preserved T3 Pretty's environment-label maximum length.
+- `packages/contracts/src/environment.ts` — Preserved all T3 Pretty repository-identity limits for remote counts, names, URLs, canonical keys, paths, display names, providers, owners, and repository names.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/App.tsx` — Integrated the parent `shouldHandleAppLink` filter used by `appLinking` to validate which incoming links the mobile app handles.
+- `apps/mobile/src/lib/appLinking.test.ts` — Integrated upstream coverage that scheme-only t3code, t3code-dev, and t3code-preview URLs are ignored.
+- `apps/mobile/src/lib/appLinking.test.ts` — Integrated upstream coverage for valid thread, pairing, and settings URLs, including query-bearing routes.
+- `apps/mobile/src/lib/appLinking.test.ts` — Integrated upstream lifecycle coverage for the production t3code expo-development-client host and for paths beneath the expo-sharing host.
+- `apps/mobile/src/lib/appLinking.ts` — Added upstream handling for scheme-only t3code, t3code-dev, and t3code-preview URLs so native wake-ups such as iOS dictation returns do not reset navigation to Home.
+- `apps/mobile/src/lib/appLinking.ts` — Integrated upstream documentation explaining Expo development-client launches, persisted share-inbox ownership, and scheme-only wake links.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Adopted the parent's first-party SourceControlRateLimit implementation as the replacement for the fork-only GitHub API quota helper.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Adopted the parent's GitHubGraphQlBudget support for GraphQL budget tracking.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Integrated the Effect Cache, Duration, and Exit dependencies used by the parent implementation.
+- `apps/server/src/sourceControl/GitHubCli.ts` — The parent GitHubGraphQlBudget service is acquired and remains available to observe and budget GraphQL requests.
+- `apps/server/src/sourceControl/GitHubCli.ts` — The parent SourceControlRateLimit service is acquired for the downstream rate-limit-aware execution path.
+- `apps/server/src/sourceControl/GitHubCli.ts` — The parent's later `quota` cache can retain its existing name and behavior without a duplicate declaration.
+- `apps/server/src/sourceControl/GitHubSourceControlProvider.ts` — Removed the obsolete duplicate closing token at the getChangeRequest/getAutomatedReview boundary, matching the parent's refactored getChangeRequest pipeline structure.
+- `apps/server/src/sourceControl/SourceControlRateLimit.ts` — Rate-limit keys now include CredentialScope, isolating cooldown state for different credentials that use the same provider and host.
+- `apps/server/src/sourceControl/githubGraphQlBudget.ts` — Integrated the parent change that scopes observed GitHub GraphQL budget snapshots by both normalized host and SourceControlRateLimit.CredentialScope, matching the query reservation key and preventing credentials from sharing quota state.
+- `packages/contracts/src/environment.ts` — Added the parent orchestration protocol version constant with version 1.
+- `packages/contracts/src/environment.ts` — Added the parent orchestration protocol query-parameter name used by snapshots, streams, commands, and RPC payloads.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/lib/appLinking.ts` — Broad substring rejection of well-formed URLs containing "expo-development-client" or "://expo-sharing" anywhere in the URL.. Reason: That broad matching would regress T3 Pretty's reliability hardening by dropping real app routes whose path, query, or payload merely contains lifecycle text. Exact hostname matching retains the intended upstream lifecycle filtering without the false positives; broad matching remains only as the existing malformed-input fail-safe.
+- `.github/workflows/mobile-eas-production.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `shared-typecheck` failed after merging `v0.0.41-nightly.20260916.1795`; repaired with `gpt-5.6-sol`: Complete the usage-plan switch for unsupported environments and update the relay discovery test provider for the new refreshCatalog API.
+  - edited `packages/client-runtime/src/connection/presentation.ts`
+  - edited `packages/client-runtime/src/connection/registry.test.ts`
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260916.1795`; repaired with `gpt-5.6-sol`: Made T3 Pretty's connection grouping exhaustive for the parent's expanded phase API while preserving its existing working-phase behavior.
+  - edited `apps/web/src/connection/environmentGrouping.ts`

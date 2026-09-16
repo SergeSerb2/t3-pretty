@@ -184,6 +184,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
     reconcileRelayEnvironments: () => Effect.die("Unexpected environment reconciliation"),
     retryNow: () => Effect.void,
     setEnabled: () => Effect.die("Unexpected environment toggle"),
+    setCompatibility: () => Effect.die("Unexpected compatibility update"),
     state: () => SubscriptionRef.get(supervisor.state),
     stateChanges: () => SubscriptionRef.changes(supervisor.state),
     run: (_environmentId, effect) =>

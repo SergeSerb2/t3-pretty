@@ -20,6 +20,10 @@ export const REPOSITORY_IDENTITY_PROVIDER_MAX_LENGTH = 128;
 export const REPOSITORY_IDENTITY_OWNER_MAX_LENGTH = 4_096;
 export const REPOSITORY_IDENTITY_NAME_MAX_LENGTH = 4_096;
 
+/** Wire version for orchestration snapshots, streams, commands, and RPC payloads. */
+export const ORCHESTRATION_PROTOCOL_VERSION = 1;
+export const ORCHESTRATION_PROTOCOL_QUERY_PARAM = "orchestrationProtocol";
+
 export const ExecutionEnvironmentPlatformOs = Schema.Literals([
   "darwin",
   "linux",
@@ -213,6 +217,8 @@ export const ExecutionEnvironmentDescriptor = Schema.Struct({
   label: TrimmedNonEmptyString,
   platform: ExecutionEnvironmentPlatform,
   serverVersion: TrimmedNonEmptyString,
+  /** Missing metadata denotes protocol 1. Bump this for breaking wire changes. */
+  orchestrationProtocolVersion: Schema.optionalKey(Schema.Int),
   capabilities: ExecutionEnvironmentCapabilities,
 });
 export type ExecutionEnvironmentDescriptor = typeof ExecutionEnvironmentDescriptor.Type;
