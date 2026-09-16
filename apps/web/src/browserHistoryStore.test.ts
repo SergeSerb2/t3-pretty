@@ -19,6 +19,7 @@ import {
   normalizeHistoryUrl,
   recordVisitForThread,
   removeUrlForThread,
+  removeThreadBrowserHistoryState,
   resetBrowserHistoryForTests,
   setTitleForThreadUrl,
   upsertHistoryEntry,
@@ -343,6 +344,33 @@ describe("useBrowserHistoryStore", () => {
     expect(useBrowserHistoryStore.getState().byProjectKey["proj-a"]?.map((e) => e.url)).toEqual([
       "http://b.test/",
     ]);
+  });
+
+  it("forgets deleted thread routing without deleting project history", () => {
+    useBrowserHistoryStore.getState().registerThreadProject(threadRef, "proj-a");
+    recordVisitForThread(threadRef, "http://a.test/", 1);
+
+    removeThreadBrowserHistoryState(threadRef);
+
+    expect(useBrowserHistoryStore.getState().projectKeyByThreadKey).toEqual({});
+    expect(useBrowserHistoryStore.getState().byProjectKey["proj-a"]).toHaveLength(1);
+  });
+
+  it("bounds the persisted thread-to-project routing index", () => {
+    for (let index = 0; index < 105; index++) {
+      useBrowserHistoryStore.getState().registerThreadProject(
+        {
+          environmentId: EnvironmentId.make("env-1"),
+          threadId: ThreadId.make(`thread-${index}`),
+        },
+        "proj-a",
+      );
+    }
+
+    const keys = Object.keys(useBrowserHistoryStore.getState().projectKeyByThreadKey);
+    expect(keys).toHaveLength(100);
+    expect(keys).not.toContain("env-1:thread-0");
+    expect(keys).toContain("env-1:thread-104");
   });
 });
 

@@ -11,6 +11,7 @@ describe("directory size", () => {
     expect(parseDuKilobytes("12\t/tmp/worktrees/app\n")).toBe(12 * 1024);
     expect(parseDuKilobytes("0\t.\n")).toBe(0);
     expect(parseDuKilobytes("not-a-number\n")).toBeNull();
+    expect(parseDuKilobytes(`${Number.MAX_SAFE_INTEGER}\t/tmp\n`)).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it("walks a small tree and counts file bytes", async () => {

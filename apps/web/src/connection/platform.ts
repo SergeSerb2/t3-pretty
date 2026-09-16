@@ -53,6 +53,7 @@ import {
 } from "../environments/primary/target";
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
 import { isHostedStaticApp } from "../hostedPairing";
+import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { acknowledgeRpcRequest, trackRpcRequestSent } from "../rpc/requestLatencyState";
 import {
@@ -61,6 +62,7 @@ import {
   type DesktopSecondaryBootstrapsRead,
 } from "./desktopLocal";
 import { connectionStorageLayer } from "./storage";
+import { clientPresentationMetadata } from "./clientMetadata";
 
 let nextObservedRpcRequestId = 0;
 
@@ -117,15 +119,19 @@ const wakeupsLayer = Wakeups.layer({
 });
 
 function clientMetadata() {
-  const desktop = window.desktopBridge !== undefined;
-  const platform = navigator.platform.trim();
-  return {
-    label: desktop ? "T3 Pretty Desktop" : "T3 Pretty Web",
-    deviceType: "desktop" as const,
-    ...(platform === "" ? {} : { os: platform }),
-    surface: desktop ? ("desktop" as const) : ("web" as const),
-    ...(APP_VERSION === "0.0.0" ? {} : { appVersion: APP_VERSION }),
-  };
+  const metadata = clientPresentationMetadata({
+    appVersion: APP_VERSION,
+    hosted: isHostedStaticApp(),
+    identity: {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      maxTouchPoints: navigator.maxTouchPoints,
+    },
+    desktopBridge: window.desktopBridge,
+  });
+  return metadata.label === undefined
+    ? metadata
+    : { ...metadata, label: metadata.label.replace("T3 Code", "T3 Pretty") };
 }
 
 function sshPreparationError(cause: unknown) {
@@ -182,6 +188,9 @@ const capabilitiesLayer = Layer.effectContext(
       scopes: AuthStandardClientScopes,
     });
     const cloudSession = CloudSession.of({
+      identity: Effect.sync(() =>
+        Option.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)),
+      ),
       clerkToken: Effect.gen(function* () {
         const session = appAtomRegistry.get(managedRelaySessionAtom);
         if (session === null) {
@@ -461,7 +470,7 @@ export function secondaryRegistrationsToRetainAfterTopologyRead(
 const platformConnectionSourceLayer = Layer.effect(
   PlatformConnectionSource,
   Effect.gen(function* () {
-    if (isHostedStaticApp()) {
+    if (isHostedStaticApp() || isLocalEnvironmentDisabled()) {
       return PlatformConnectionSource.of({
         registrations: Stream.empty,
       });
@@ -517,7 +526,7 @@ const platformConnectionSourceLayer = Layer.effect(
         }
       }
 
-      const topologyRead = readDesktopSecondaryBootstrapsResult();
+      const topologyRead = yield* Effect.promise(readDesktopSecondaryBootstrapsResult);
       for (const [id, cached] of secondaryRegistrationsToRetainAfterTopologyRead(
         previous,
         topologyRead,

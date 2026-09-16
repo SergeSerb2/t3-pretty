@@ -21,14 +21,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
 import * as Schema from "effect/Schema";
-import * as Terminal from "effect/Terminal";
 import { Command, Flag, GlobalFlag, Prompt } from "effect/unstable/cli";
-import {
-  FetchHttpClient,
-  HttpClient,
-  HttpClientRequest,
-  HttpClientResponse,
-} from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
@@ -36,6 +30,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as BootService from "../cloud/bootService.ts";
 import * as CliState from "../cloud/CliState.ts";
 import * as CliTokenManager from "../cloud/CliTokenManager.ts";
+import { filterRelayResponse } from "../cloud/relayResponse.ts";
 import {
   CLOUD_LINKED_USER_ID,
   isAgentActivityPublishingEnabledValue,
@@ -48,6 +43,8 @@ import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ExternalLauncher from "../process/externalLauncher.ts";
 import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
+import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
+import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import { resolveCliCommand } from "./invocation.ts";
 import {
@@ -64,13 +61,14 @@ const jsonFlag = Flag.boolean("json").pipe(
 const isCloudCliTokenManagerError = Schema.is(CliTokenManager.CloudCliTokenManagerError);
 
 const headlessFlag = Flag.boolean("headless").pipe(
-  Flag.withDescription("Authorize without a local browser using out-of-band OAuth."),
+  Flag.withDescription("Authorize without a local browser using the OAuth device flow."),
   Flag.withDefault(false),
 );
 
 /**
  * Inside an SSH session there is no local browser to complete the loopback
- * OAuth callback, so out-of-band OAuth is the only flow that can work.
+ * OAuth callback, so the device authorization grant is the only flow that
+ * can work.
  */
 export const headlessSessionConfig = Config.all({
   sshConnection: Config.string("SSH_CONNECTION").pipe(Config.option),
@@ -79,20 +77,21 @@ export const headlessSessionConfig = Config.all({
   Config.map(({ sshConnection, sshTty }) => Option.isSome(sshConnection) || Option.isSome(sshTty)),
 );
 
-const promptForOutOfBandOAuthCode = Effect.fn("cloud.cli.prompt_for_out_of_band_oauth_code")(
-  function* ({ authorizeUrl, validate }: CliTokenManager.OutOfBandOAuthPromptInput) {
-    yield* Console.log(formatHeadlessAuthorizationPrompt(authorizeUrl));
-    return yield* Prompt.run(Prompt.text({ message: "Authorization code", validate }));
-  },
-);
+const showDeviceAuthorizationPrompt = (prompt: CliTokenManager.DeviceAuthorizationPrompt) =>
+  Console.log(formatDeviceAuthorizationPrompt(prompt));
 
-export function formatHeadlessAuthorizationPrompt(authorizeUrl: string): string {
+function formatDeviceAuthorizationPrompt(
+  prompt: CliTokenManager.DeviceAuthorizationPrompt,
+): string {
+  const minutes = Math.max(1, Math.round(Duration.toMinutes(prompt.expiresIn)));
   return [
     "Headless authorization",
     "Open this URL on a device with a browser:",
-    `  ${authorizeUrl}`,
+    `  ${prompt.verificationUriComplete ?? prompt.verificationUri}`,
     "",
-    "After signing in, return here and enter the code shown in your browser.",
+    `Confirm this code when asked: ${prompt.userCode}`,
+    "",
+    `Waiting for approval (expires in ${minutes} min). Press Ctrl+C to cancel.`,
   ].join("\n");
 }
 
@@ -110,7 +109,7 @@ const authorizeCli = Effect.fn("cloud.cli.authorize")(function* (options: {
     yield* Console.log("\nHeadless mode enabled. A new authorization link is ready below.");
   }
   // A stored credential whose refresh fails (revoked, expired grant) must
-  // fall through to a fresh out-of-band authorization, not dead-end the command.
+  // fall through to a fresh device authorization, not dead-end the command.
   const existing = yield* tokens.getExisting.pipe(
     Effect.catchTag("CloudCliCredentialRefreshError", () =>
       Console.log(
@@ -121,13 +120,11 @@ const authorizeCli = Effect.fn("cloud.cli.authorize")(function* (options: {
   if (Option.isSome(existing)) {
     return existing.value.identity ?? null;
   }
-  const { token, identity } = yield* CliTokenManager.outOfBandOAuthLogin(
-    promptForOutOfBandOAuthCode,
+  const { token, identity } = yield* CliTokenManager.deviceAuthorizationLogin(
+    showDeviceAuthorizationPrompt,
   ).pipe(
     Effect.mapError((cause) =>
-      // Ctrl-C / EOF at the prompt is a QuitError; let it propagate so the CLI
-      // cancels quietly instead of dumping an authorization error.
-      Terminal.isQuitError(cause) || isCloudCliTokenManagerError(cause)
+      isCloudCliTokenManagerError(cause)
         ? cause
         : new CliTokenManager.CloudCliAuthorizationError({ cause }),
     ),
@@ -142,10 +139,6 @@ function bytesToString(value: Uint8Array): string {
 
 function stringToBytes(value: string): Uint8Array {
   return new TextEncoder().encode(value);
-}
-
-export function isPublishAgentActivityEnabledValue(value: string | null): boolean {
-  return isAgentActivityPublishingEnabledValue(value);
 }
 
 interface CloudCliStatus {
@@ -209,11 +202,18 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
     `  Relay: ${status.relayUrl ?? "not provisioned"}`,
     `  Publish agent activity: ${status.publishAgentActivity ? "enabled" : "disabled"}`,
     ...formatRelayClientStatus(status.relayClient),
+    "",
+    "This is saved setup, not a live connection check. Check the background service with `t3 service status`.",
     ...(nextStep ? ["", `Next: ${nextStep}`] : []),
   ].join("\n");
 }
 
 const CLOUD_CLI_LIVE_SERVER_TIMEOUT = Duration.seconds(5);
+const CLOUD_CLI_RELAY_REQUEST_TIMEOUT = Duration.seconds(15);
+const CLOUD_CLI_RELAY_RESPONSE_MAX_BYTES = 64 * 1024;
+const decodeRelayOkResponseJson = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(RelayOkResponse),
+);
 
 const confirmRelayClientInstall = (version: string) =>
   Prompt.run(
@@ -318,16 +318,22 @@ type RelayUnlinkResult =
 
 type CloudDisconnectOperation = "live-server-unlink" | "relay-environment-unlink";
 
+class CloudRelayUnlinkError extends Schema.TaggedError<CloudRelayUnlinkError>()(
+  "CloudRelayUnlinkError",
+  {
+    reason: Schema.Literals(["request-failed", "response-too-large"]),
+  },
+) {}
+const isCloudRelayUnlinkError = Schema.is(CloudRelayUnlinkError);
+
 const logCloudDisconnectFailure = (
   operation: CloudDisconnectOperation,
   clearAuthorization: boolean,
-  cause: Cause.Cause<unknown>,
 ) =>
   Effect.logWarning(`${SURGE_CONNECT_NAME} disconnect operation failed.`).pipe(
     Effect.annotateLogs({
       operation,
       clearAuthorization,
-      cause: Cause.pretty(cause),
     }),
   );
 
@@ -338,18 +344,38 @@ const unlinkRelayEnvironment = Effect.fn("cloud.cli.unlink_relay_environment")(f
     return { status: "not-authenticated" } satisfies RelayUnlinkResult;
   }
 
-  const environment = yield* ServerEnvironment.ServerEnvironment;
+  const environment = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const environmentId = yield* environment.getEnvironmentId;
   const relayUrl = yield* relayUrlConfig;
   const httpClient = yield* HttpClient.HttpClient;
-  const response = yield* HttpClientRequest.delete(
-    `${relayUrl}/v1/client/environment-links/${encodeURIComponent(environmentId)}`,
-  ).pipe(
-    HttpClientRequest.bearerToken(token.value.accessToken),
-    httpClient.execute,
-    Effect.flatMap(HttpClientResponse.filterStatusOk),
-    Effect.flatMap(HttpClientResponse.schemaBodyJson(RelayOkResponse)),
+  const response = yield* Effect.gen(function* () {
+    const httpResponse = yield* HttpClientRequest.delete(
+      `${relayUrl}/v1/client/environment-links/${encodeURIComponent(environmentId)}`,
+    ).pipe(HttpClientRequest.bearerToken(token.value.accessToken), httpClient.execute);
+    yield* filterRelayResponse(httpResponse);
+    const declaredLength = Number(httpResponse.headers["content-length"]);
+    if (Number.isFinite(declaredLength) && declaredLength > CLOUD_CLI_RELAY_RESPONSE_MAX_BYTES) {
+      yield* releaseHttpClientResponseBody(httpResponse);
+      return yield* new CloudRelayUnlinkError({ reason: "response-too-large" });
+    }
+    const collected = yield* collectUint8StreamText({
+      stream: httpResponse.stream,
+      maxBytes: CLOUD_CLI_RELAY_RESPONSE_MAX_BYTES,
+      drainAfterTruncation: false,
+    });
+    if (collected.truncated) {
+      return yield* new CloudRelayUnlinkError({ reason: "response-too-large" });
+    }
+    return yield* decodeRelayOkResponseJson(collected.text);
+  }).pipe(
+    Effect.timeout(CLOUD_CLI_RELAY_REQUEST_TIMEOUT),
     withRelayClientTracing,
+    // The HTTP error retains the bearer token-bearing request and schema errors retain bodies.
+    Effect.mapError((cause) =>
+      isCloudRelayUnlinkError(cause)
+        ? cause
+        : new CloudRelayUnlinkError({ reason: "request-failed" }),
+    ),
   );
   return response.ok
     ? ({ status: "revoked" } satisfies RelayUnlinkResult)
@@ -363,11 +389,7 @@ export const reportCloudDisconnectResults = Effect.fn("cloud.cli.report_disconne
     readonly relayResult: Exit.Exit<RelayUnlinkResult, unknown>;
   }) {
     if (input.liveResult.status === "failed") {
-      yield* logCloudDisconnectFailure(
-        "live-server-unlink",
-        input.clearAuthorization,
-        input.liveResult.cause,
-      );
+      yield* logCloudDisconnectFailure("live-server-unlink", input.clearAuthorization);
       yield* Console.warn(
         `${SURGE_CONNECT_NAME} is disabled, but the running server could not stop its tunnel.\nRestart that server to stop the connector.`,
       );
@@ -376,11 +398,7 @@ export const reportCloudDisconnectResults = Effect.fn("cloud.cli.report_disconne
     }
 
     if (Exit.isFailure(input.relayResult)) {
-      yield* logCloudDisconnectFailure(
-        "relay-environment-unlink",
-        input.clearAuthorization,
-        input.relayResult.cause,
-      );
+      yield* logCloudDisconnectFailure("relay-environment-unlink", input.clearAuthorization);
       yield* Console.warn(
         input.clearAuthorization
           ? "Could not revoke the relay-side environment record before signing out.\nThe stored CLI authorization was still removed locally."
@@ -433,7 +451,7 @@ const runCloudCommand = Effect.fn("cloud.cli.run_cloud_command")(function* <A, E
     | HttpClient.HttpClient
     | Prompt.Environment
     | ServerConfig.ServerConfig
-    | ServerEnvironment.ServerEnvironment
+    | ServerEnvironment.ServerEnvironmentIdentity
   >,
   options?: {
     readonly quietLogs?: boolean;
@@ -450,7 +468,6 @@ const runCloudCommand = Effect.fn("cloud.cli.run_cloud_command")(function* <A, E
     ),
     RelayClient.layerCloudflared({ baseDir: config.baseDir }),
     EnvironmentAuth.runtimeLayer,
-    ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer)),
     bootServiceLayer(config),
     headlessRelayClientTracingLayer,
   ).pipe(
@@ -463,7 +480,7 @@ const runCloudCommand = Effect.fn("cloud.cli.run_cloud_command")(function* <A, E
 
 const connectedAs = (identity: string | null): string => (identity ? ` as ${identity}` : "");
 
-export function formatRelayClientReady(version: string): string {
+function formatRelayClientReady(version: string): string {
   return `✓ Relay client ready · cloudflared ${version}`;
 }
 
@@ -576,7 +593,7 @@ const connectStatusCommand = Command.make("status", {
           linked: Option.isSome(cloudUserId),
           cloudUserId: Option.isSome(cloudUserId) ? bytesToString(cloudUserId.value) : null,
           relayUrl: Option.isSome(relayUrl) ? bytesToString(relayUrl.value) : null,
-          publishAgentActivity: isPublishAgentActivityEnabledValue(
+          publishAgentActivity: isAgentActivityPublishingEnabledValue(
             Option.isSome(publishAgentActivity) ? bytesToString(publishAgentActivity.value) : null,
           ),
           relayClient: executable,
@@ -697,17 +714,17 @@ export const connectCommand = Command.make("connect", {
         // Show which account was linked so an unexpected identity (an
         // authorization code for a different account) is visible before the
         // machine is brought online.
-        yield* Console.log(`✓ Connected${connectedAs(linked.identity)}`);
+        yield* Console.log(`✓ Authorized${connectedAs(linked.identity)}`);
 
-        // Connect itself already succeeded; a boot-service failure must not
-        // fail the command, just tell the user what happened and move on.
+        // Authorization is stored. If service setup fails, preserve it and
+        // show how to run the server manually.
         const background = yield* recoverServiceOnboardingOffer(offerServiceDuringOnboarding);
         if (background) {
           const platform = yield* HostProcessPlatform;
           yield* Console.log(
             platform === "darwin"
-              ? "\n✓ Background service ready\n\nT3 Code will stay reachable while you are logged in to this Mac."
-              : "\n✓ Background service ready\n\nT3 Code will stay reachable after you log out.",
+              ? "\n✓ Background service ready\n\nT3 Code is set to run while you are logged in to this Mac. The server establishes the T3 Connect link on startup."
+              : "\n✓ Background service ready\n\nT3 Code is set to keep running after you log out. The server establishes the T3 Connect link on startup.",
           );
           return;
         }

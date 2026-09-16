@@ -37,9 +37,9 @@ export interface AcquiredDesktopTab {
 }
 
 export function acquireDesktopTab(tabId: string): AcquiredDesktopTab {
-  const current =
-    leases.get(tabId) ??
-    ({
+  let current = leases.get(tabId);
+  if (!current) {
+    current = {
       references: 0,
       closeTimer: null,
       // Zoom/appearance defaults travel with creation so the guest never
@@ -47,7 +47,12 @@ export function acquireDesktopTab(tabId: string): AcquiredDesktopTab {
       ready: enqueueDesktopTabOperation(tabId, async () =>
         previewBridge?.createTab(tabId, browserDefaultTabState(await resolveBrowserDefaults())),
       ),
-    } satisfies DesktopTabLease);
+    } satisfies DesktopTabLease;
+    const created = current;
+    void created.ready.catch(() => {
+      if (leases.get(tabId) === created) leases.delete(tabId);
+    });
+  }
   if (current.closeTimer !== null) window.clearTimeout(current.closeTimer);
   current.references += 1;
   current.closeTimer = null;
@@ -57,7 +62,7 @@ export function acquireDesktopTab(tabId: string): AcquiredDesktopTab {
     ready: current.ready,
     release: () => {
       const lease = leases.get(tabId);
-      if (!lease) return;
+      if (lease !== current) return;
       lease.references = Math.max(0, lease.references - 1);
       if (lease.references > 0) return;
       lease.closeTimer = window.setTimeout(() => {

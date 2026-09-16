@@ -1,6 +1,6 @@
 import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
@@ -44,6 +44,7 @@ function ChatRouteGlobalShortcuts() {
       }).length,
     [primaryEnvironmentId, projectGroupingSettings, projects],
   );
+  const newDraftShortcutPendingRef = useRef(false);
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
@@ -58,6 +59,24 @@ function ChatRouteGlobalShortcuts() {
       : false,
   );
   useEffect(() => {
+    const runNewDraftShortcut = (label: "thread" | "canvas", action: () => Promise<boolean>) => {
+      if (newDraftShortcutPendingRef.current) return;
+      newDraftShortcutPendingRef.current = true;
+      void action()
+        .catch((error: unknown) => {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: `Could not start a new ${label}`,
+              description: error instanceof Error ? error.message : "The new draft was not opened.",
+            }),
+          );
+        })
+        .finally(() => {
+          newDraftShortcutPendingRef.current = false;
+        });
+    };
+
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, {
@@ -82,12 +101,14 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.newLocal") {
         event.preventDefault();
         event.stopPropagation();
-        void startNewThreadFromContext({
-          activeDraftThread,
-          activeThread: activeThread ?? undefined,
-          defaultProjectRef,
-          handleNewThread,
-        });
+        runNewDraftShortcut("thread", () =>
+          startNewThreadFromContext({
+            activeDraftThread,
+            activeThread: activeThread ?? undefined,
+            defaultProjectRef,
+            handleNewThread,
+          }),
+        );
         return;
       }
 
@@ -101,12 +122,14 @@ function ChatRouteGlobalShortcuts() {
           openCommandPalette({ open: "new-thread-in" });
           return;
         }
-        void startNewThreadFromContext({
-          activeDraftThread,
-          activeThread: activeThread ?? undefined,
-          defaultProjectRef,
-          handleNewThread,
-        });
+        runNewDraftShortcut("thread", () =>
+          startNewThreadFromContext({
+            activeDraftThread,
+            activeThread: activeThread ?? undefined,
+            defaultProjectRef,
+            handleNewThread,
+          }),
+        );
         return;
       }
 

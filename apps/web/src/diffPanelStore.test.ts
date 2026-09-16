@@ -1,8 +1,12 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId, TurnId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { selectThreadDiffPanelSelection, useDiffPanelStore } from "./diffPanelStore";
+import {
+  migratePersistedDiffPanelState,
+  selectThreadDiffPanelSelection,
+  useDiffPanelStore,
+} from "./diffPanelStore";
 
 const THREAD_REF = scopeThreadRef(EnvironmentId.make("environment-1"), ThreadId.make("thread-1"));
 
@@ -33,6 +37,41 @@ describe("diffPanelStore", () => {
     await useDiffPanelStore.persist.rehydrate();
 
     expect(useDiffPanelStore.getState().diffRenderMode).toBe("split");
+  });
+
+  it("sanitizes malformed persisted selections before hydration", () => {
+    const threadKey = scopedThreadKey(THREAD_REF);
+
+    expect(
+      migratePersistedDiffPanelState({
+        byThreadKey: {
+          [threadKey]: {
+            kind: "turn",
+            turnId: "turn-1",
+            filePath: "  src/app.ts  ",
+            revealRequestId: -3,
+          },
+          "legacy-thread": { kind: "unstaged" },
+          malformed: null,
+        },
+        branchBaseRefByThreadKey: {
+          [threadKey]: "  origin/main  ",
+          "legacy-thread": "origin/old",
+        },
+        diffRenderMode: "sideways",
+      }),
+    ).toEqual({
+      byThreadKey: {
+        [threadKey]: {
+          kind: "turn",
+          turnId: TurnId.make("turn-1"),
+          filePath: "src/app.ts",
+          revealRequestId: 0,
+        },
+      },
+      branchBaseRefByThreadKey: { [threadKey]: "origin/main" },
+      diffRenderMode: "stacked",
+    });
   });
 
   it("defaults each thread to branch changes when the working tree is clean", () => {

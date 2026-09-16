@@ -2,7 +2,12 @@ import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { ThreadEnvMode } from "./environment.ts";
-import { ProjectScriptIcon } from "./orchestration.ts";
+import {
+  PROJECT_SCRIPT_COMMAND_MAX_LENGTH,
+  PROJECT_SCRIPT_NAME_MAX_LENGTH,
+  PROJECT_SCRIPT_PREVIEW_URL_MAX_LENGTH,
+  ProjectScriptIcon,
+} from "./orchestration.ts";
 
 /** File name of the checked-in T3 project file, resolved at the workspace root. */
 export const T3_PROJECT_FILE_NAME = "t3.json";
@@ -25,12 +30,18 @@ const trimmedNonEmpty = (annotations: { readonly description: string }, maxLengt
 };
 
 export const T3ProjectFileScript = Schema.Struct({
-  name: trimmedNonEmpty({
-    description: "Display name for the script, shown in the T3 Code scripts menu.",
-  }),
-  command: trimmedNonEmpty({
-    description: "Shell command executed in a T3 Code terminal at the project root.",
-  }),
+  name: trimmedNonEmpty(
+    {
+      description: "Display name for the script, shown in the T3 Code scripts menu.",
+    },
+    PROJECT_SCRIPT_NAME_MAX_LENGTH,
+  ),
+  command: trimmedNonEmpty(
+    {
+      description: "Shell command executed in a T3 Code terminal at the project root.",
+    },
+    PROJECT_SCRIPT_COMMAND_MAX_LENGTH,
+  ),
   icon: Schema.optionalKey(
     ProjectScriptIcon.annotate({
       description: 'Icon shown next to the script in the scripts menu. Defaults to "play".',
@@ -42,11 +53,20 @@ export const T3ProjectFileScript = Schema.Struct({
         "When true, the script runs automatically after a worktree is created for a new thread.",
     }),
   ),
-  previewUrl: Schema.optionalKey(
-    trimmedNonEmpty({
+  async: Schema.optionalKey(
+    Schema.Boolean.annotate({
       description:
-        "URL opened in the in-app browser preview when this script runs. Only honored on the desktop build.",
+        "Only for runOnWorktreeCreate scripts. When true (the default), the agent starts while the script is still running. Set false to hold the agent until the script exits.",
     }),
+  ),
+  previewUrl: Schema.optionalKey(
+    trimmedNonEmpty(
+      {
+        description:
+          "URL opened in the in-app browser preview when this script runs. Only honored on the desktop build.",
+      },
+      PROJECT_SCRIPT_PREVIEW_URL_MAX_LENGTH,
+    ),
   ),
   autoOpenPreview: Schema.optionalKey(
     Schema.Boolean.annotate({

@@ -15,6 +15,7 @@ import {
 // lock-screen state). Reuse each signed JWT for most of its 60-minute
 // validity.
 export const APNS_JWT_REUSE_SECONDS = 45 * 60;
+export const APNS_PROVIDER_TOKEN_CACHE_MAX_ENTRIES = 8;
 
 export class ApnsProviderTokens extends Context.Service<
   ApnsProviderTokens,
@@ -38,6 +39,22 @@ export function __resetApnsProviderTokenCacheForTest(): void {
   isolateTokenCache.clear();
 }
 
+export function __apnsProviderTokenCacheSizeForTest(): number {
+  return isolateTokenCache.size;
+}
+
+function cacheProviderToken(cacheKey: string, token: CachedProviderToken): void {
+  isolateTokenCache.delete(cacheKey);
+  isolateTokenCache.set(cacheKey, token);
+  while (isolateTokenCache.size > APNS_PROVIDER_TOKEN_CACHE_MAX_ENTRIES) {
+    const oldestKey = isolateTokenCache.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    isolateTokenCache.delete(oldestKey);
+  }
+}
+
 // Quantize iat to the reuse window so all isolates agree on it. The token's
 // age stays under APNs' 60-minute limit, and the whole fleet rolls to the
 // next token at the same instant — one provider-token update per window.
@@ -52,10 +69,11 @@ export const make = () =>
       const cacheKey = apnsProviderTokenCacheKey(input);
       const cached = isolateTokenCache.get(cacheKey);
       if (cached && cached.issuedAtUnixSeconds === issuedAtUnixSeconds) {
+        cacheProviderToken(cacheKey, cached);
         return cached.jwt;
       }
       const jwt = yield* makeApnsJwt({ ...input, issuedAtUnixSeconds });
-      isolateTokenCache.set(cacheKey, { jwt, issuedAtUnixSeconds });
+      cacheProviderToken(cacheKey, { jwt, issuedAtUnixSeconds });
       return jwt;
     }),
   });

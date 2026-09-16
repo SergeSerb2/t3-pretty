@@ -3,7 +3,7 @@ import { resolveAutoFeatureBranchName } from "@t3tools/shared/git";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { Platform, View } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,7 +11,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AndroidSheetHeader } from "../../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../../components/AppText";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
-import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
 import { SheetActionButton } from "./gitSheetComponents";
 
 type GitConfirmSheetProps = StaticScreenProps<{
@@ -27,8 +26,8 @@ type GitConfirmSheetProps = StaticScreenProps<{
 export function GitConfirmSheet(props: GitConfirmSheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
+  const actionPendingRef = useRef(false);
 
   const params = props.route.params;
 
@@ -56,50 +55,49 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   );
 
   const continuePendingAction = useCallback(async () => {
-    if (!confirmAction) return;
+    if (!confirmAction || actionPendingRef.current) return;
+    actionPendingRef.current = true;
     navigation.dispatch(StackActions.replace("Thread", { environmentId, threadId }));
-    await gitActions.onRunSelectedThreadGitAction({
-      action: confirmAction,
-      ...(params.commitMessage ? { commitMessage: params.commitMessage } : {}),
-      ...(params.filePaths ? { filePaths: params.filePaths.split(",") } : {}),
-    });
-  }, [confirmAction, environmentId, gitActions, params, navigation, threadId]);
-
-  const movePendingActionToFeatureBranch = useCallback(async () => {
-    if (!confirmAction) return;
-    navigation.dispatch(StackActions.replace("Thread", { environmentId, threadId }));
-
-    if (includesCommit) {
+    try {
       await gitActions.onRunSelectedThreadGitAction({
         action: confirmAction,
-        featureBranch: true,
         ...(params.commitMessage ? { commitMessage: params.commitMessage } : {}),
         ...(params.filePaths ? { filePaths: params.filePaths.split(",") } : {}),
       });
-      return;
+    } finally {
+      actionPendingRef.current = false;
     }
+  }, [confirmAction, environmentId, gitActions, params, navigation, threadId]);
 
-    const branches =
-      gitState.selectedThreadBranches.length > 0
-        ? gitState.selectedThreadBranches
-        : await gitActions.refreshSelectedThreadBranches();
-    const newBranchName = resolveAutoFeatureBranchName(
-      Arr.filterMap(branches, (branch) =>
-        branch.isRemote ? Result.failVoid : Result.succeed(branch.name),
-      ),
-    );
-    await gitActions.onCreateSelectedThreadBranch(newBranchName);
-    await gitActions.onRunSelectedThreadGitAction({ action: confirmAction });
-  }, [
-    confirmAction,
-    gitActions,
-    gitState.selectedThreadBranches,
-    includesCommit,
-    params,
-    navigation,
-    environmentId,
-    threadId,
-  ]);
+  const movePendingActionToFeatureBranch = useCallback(async () => {
+    if (!confirmAction || actionPendingRef.current) return;
+    actionPendingRef.current = true;
+    navigation.dispatch(StackActions.replace("Thread", { environmentId, threadId }));
+
+    try {
+      if (includesCommit) {
+        await gitActions.onRunSelectedThreadGitAction({
+          action: confirmAction,
+          featureBranch: true,
+          ...(params.commitMessage ? { commitMessage: params.commitMessage } : {}),
+          ...(params.filePaths ? { filePaths: params.filePaths.split(",") } : {}),
+        });
+        return;
+      }
+
+      const branches = await gitActions.refreshSelectedThreadBranches();
+      const newBranchName = resolveAutoFeatureBranchName(
+        Arr.filterMap(branches, (branch) =>
+          branch.isRemote ? Result.failVoid : Result.succeed(branch.name),
+        ),
+      );
+      const created = await gitActions.onCreateSelectedThreadBranch(newBranchName);
+      if (!created) return;
+      await gitActions.onRunSelectedThreadGitAction({ action: confirmAction });
+    } finally {
+      actionPendingRef.current = false;
+    }
+  }, [confirmAction, gitActions, includesCommit, params, navigation, environmentId, threadId]);
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
