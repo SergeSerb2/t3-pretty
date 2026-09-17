@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260917.1866002493",
+    date: "2026-09-17",
+    items: [
+      {
+        kind: "fixed",
+        title: "Collapsed sidebar keeps one rail and animates its hover peek",
+      },
+      {
+        kind: "fixed",
+        title: "EAS iOS cloud builds no longer die installing pnpm",
+      },
+      {
+        kind: "fixed",
+        title: "Packaged Mac backend no longer crashes on GitHubCli",
+      },
+      {
+        kind: "fixed",
+        title: "Animate collapsed sidebar peek and tighten the rail",
+      },
+      {
+        kind: "fixed",
+        title: "Desktop and iOS tip builds after #585",
+      },
+      {
+        kind: "fixed",
+        title: "Square the sidebar and titlebar inner corner",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260917.1866002491",
     date: "2026-09-17",
     items: [
