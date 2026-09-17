@@ -283,6 +283,9 @@ export function applyServerSettingsPatch(
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
     projectAutoPullOverrides: _legacyAutoPull,
     projectScriptOverrides: _legacyScripts,
+    // Whole-value replacement: deepMerge would keep unassigned projects.
+    sidebarProjectFolders: sidebarProjectFoldersPatch,
+    sidebarProjectFolderAssignments: sidebarProjectFolderAssignmentsPatch,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -373,6 +376,12 @@ export function applyServerSettingsPatch(
       : {}),
     ...(patch.defaultProjectScripts !== undefined
       ? { defaultProjectScripts: patch.defaultProjectScripts }
+      : {}),
+    ...(sidebarProjectFoldersPatch !== undefined
+      ? { sidebarProjectFolders: sidebarProjectFoldersPatch }
+      : {}),
+    ...(sidebarProjectFolderAssignmentsPatch !== undefined
+      ? { sidebarProjectFolderAssignments: sidebarProjectFolderAssignmentsPatch }
       : {}),
     ...(usageLimitSourcesPatch !== undefined
       ? {

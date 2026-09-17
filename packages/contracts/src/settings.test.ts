@@ -612,6 +612,27 @@ describe("ClientSettings sidebar", () => {
   });
 });
 
+describe("ServerSettings project rail folders", () => {
+  it("defaults empty and round-trips a named folder for shared-settings sync", () => {
+    expect(decodeServerSettings({}).sidebarProjectFolders).toEqual([]);
+    expect(decodeServerSettings({}).sidebarProjectFolderAssignments).toEqual({});
+    const stored = {
+      sidebarProjectFolders: [{ id: "work", name: " Work ", collapsed: true }],
+      sidebarProjectFolderAssignments: { "env:/repo": "work" },
+    };
+    expect(decodeServerSettings(stored).sidebarProjectFolders).toEqual([
+      { id: "work", name: "Work", collapsed: true },
+    ]);
+    expect(decodeServerSettings(stored).sidebarProjectFolderAssignments).toEqual({
+      "env:/repo": "work",
+    });
+    expect(decodeServerSettingsPatch(stored)).toEqual({
+      sidebarProjectFolders: [{ id: "work", name: "Work", collapsed: true }],
+      sidebarProjectFolderAssignments: { "env:/repo": "work" },
+    });
+  });
+});
+
 describe("ClientSettings context window meter", () => {
   it("defaults off and preserves an explicit legacy opt-in", () => {
     expect(decodeClientSettings({}).contextWindowMeterEnabled).toBe(false);

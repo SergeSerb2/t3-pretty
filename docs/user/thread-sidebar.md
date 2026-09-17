@@ -138,7 +138,12 @@ Use **Move to folder** to group projects such as personal and work, then click
 the folder to collapse or expand it. Drag a project onto a folder to file it,
 or onto **All projects** / the ungrouped list to take it out. Drag a folder to
 move it among the other folders. Right-click the folder to change its icon,
-rename, reorder, or delete it; deleting a folder does not remove the projects. Settling idle threads parks every active thread in that project that
+rename, reorder, or delete it; deleting a folder does not remove the projects.
+Folders, their icons, and which projects they hold are saved on the server and
+copied to connected environments that support shared settings, the same way
+settlement rules are.
+
+Settling idle threads parks every active thread in that project that
 is not running, waiting, or holding an unseen response.
 
 When the sidebar is collapsed, the strip stays as a single column of projects.

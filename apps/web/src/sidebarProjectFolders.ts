@@ -26,6 +26,75 @@ export function selectProjectFolderSettings(settings: {
   };
 }
 
+export function projectFolderSettingsPatch(settings: SidebarProjectFolderSettings): {
+  readonly sidebarProjectFolders: SidebarProjectFolder[];
+  readonly sidebarProjectFolderAssignments: Record<string, string>;
+} {
+  return {
+    sidebarProjectFolders: [...settings.folders],
+    sidebarProjectFolderAssignments: { ...settings.assignments },
+  };
+}
+
+export function projectFolderSettingsHaveEntries(settings: SidebarProjectFolderSettings): boolean {
+  return settings.folders.length > 0 || Object.keys(settings.assignments).length > 0;
+}
+
+export function folderSettingsEqual(
+  left: SidebarProjectFolderSettings,
+  right: SidebarProjectFolderSettings,
+): boolean {
+  return (
+    JSON.stringify(projectFolderSettingsPatch(left)) ===
+    JSON.stringify(projectFolderSettingsPatch(right))
+  );
+}
+
+export type ProjectFolderSettingsSource =
+  | {
+      readonly sidebarProjectFolders?: readonly SidebarProjectFolder[];
+      readonly sidebarProjectFolderAssignments?: Readonly<Record<string, string>>;
+    }
+  | null
+  | undefined;
+
+function sourceToFolderSettings(
+  source: ProjectFolderSettingsSource,
+): SidebarProjectFolderSettings | null {
+  if (source == null) return null;
+  return selectProjectFolderSettings({
+    sidebarProjectFolders: source.sidebarProjectFolders ?? [],
+    sidebarProjectFolderAssignments: source.sidebarProjectFolderAssignments ?? {},
+  });
+}
+
+/** First source that already has folders wins; later local copies are leftovers. */
+export function resolveProjectFolderSettings(
+  sources: readonly ProjectFolderSettingsSource[],
+): SidebarProjectFolderSettings {
+  for (const source of sources) {
+    const settings = sourceToFolderSettings(source);
+    if (settings !== null && projectFolderSettingsHaveEntries(settings)) return settings;
+  }
+  return { folders: [], assignments: {} };
+}
+
+/** Client-only folders should be written once every loaded server is still empty. */
+export function shouldLiftProjectFolderSettings(input: {
+  readonly client: SidebarProjectFolderSettings;
+  readonly servers: readonly ProjectFolderSettingsSource[];
+}): boolean {
+  if (!projectFolderSettingsHaveEntries(input.client)) return false;
+  const loaded = input.servers.filter((server) => server != null);
+  return (
+    loaded.length > 0 &&
+    loaded.every((server) => {
+      const settings = sourceToFolderSettings(server);
+      return settings === null || !projectFolderSettingsHaveEntries(settings);
+    })
+  );
+}
+
 export function buildProjectRailItems<T extends { projectKey: string }>(
   projects: readonly T[],
   settings: SidebarProjectFolderSettings,

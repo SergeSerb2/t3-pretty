@@ -18,6 +18,8 @@ import {
   toggleProjectFolderCollapsed,
   unassignProjectFromFolder,
   folderDropBeforeId,
+  resolveProjectFolderSettings,
+  shouldLiftProjectFolderSettings,
   type SidebarProjectFolderSettings,
 } from "./sidebarProjectFolders";
 
@@ -168,6 +170,57 @@ describe("project folder mutations", () => {
       name: "Work",
       collapsed: false,
     });
+  });
+});
+
+describe("shared folder settings", () => {
+  const stored = {
+    sidebarProjectFolders: [{ id: "work", name: "Work", collapsed: false }],
+    sidebarProjectFolderAssignments: { a: "work" },
+  };
+
+  it("prefers the first server that already has folders over a local leftover", () => {
+    expect(
+      resolveProjectFolderSettings([
+        { sidebarProjectFolders: [], sidebarProjectFolderAssignments: {} },
+        stored,
+        {
+          sidebarProjectFolders: [{ id: "home", name: "Home", collapsed: true }],
+          sidebarProjectFolderAssignments: { b: "home" },
+        },
+      ]),
+    ).toEqual({
+      folders: stored.sidebarProjectFolders,
+      assignments: stored.sidebarProjectFolderAssignments,
+    });
+  });
+
+  it("falls back to client folders when every server is still empty", () => {
+    expect(
+      resolveProjectFolderSettings([
+        { sidebarProjectFolders: [], sidebarProjectFolderAssignments: {} },
+        stored,
+      ]),
+    ).toEqual({
+      folders: stored.sidebarProjectFolders,
+      assignments: stored.sidebarProjectFolderAssignments,
+    });
+  });
+
+  it("lifts client folders only after a server has loaded and none of them have folders yet", () => {
+    const client = {
+      folders: stored.sidebarProjectFolders,
+      assignments: stored.sidebarProjectFolderAssignments,
+    };
+    expect(shouldLiftProjectFolderSettings({ client, servers: [] })).toBe(false);
+    expect(
+      shouldLiftProjectFolderSettings({
+        client,
+        servers: [{ sidebarProjectFolders: [], sidebarProjectFolderAssignments: {} }],
+      }),
+    ).toBe(true);
+    expect(shouldLiftProjectFolderSettings({ client, servers: [stored] })).toBe(false);
+    expect(shouldLiftProjectFolderSettings({ client: empty, servers: [stored] })).toBe(false);
   });
 });
 
