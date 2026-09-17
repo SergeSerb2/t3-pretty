@@ -1061,6 +1061,12 @@ export const ServerSettings = Schema.Struct({
   projectAgentBrowserAccessOverrides: Schema.Record(ProjectId, Schema.Boolean).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  /**
+   * Whether agents may drive the macOS host (screenshots, mouse, keyboard).
+   * Gates the `computer-use` MCP capability the same way
+   * `enableAgentBrowserAccess` gates the browser: server-authoritative, applied
+   * when the provider session is prepared. The user's own screen is unaffected.
+   */
   enableComputerUse: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /**
    * When on, the server chooses a project icon at project creation (agent mode
