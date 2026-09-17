@@ -1045,13 +1045,15 @@ html[data-window-inactive]
     translate: 0;
   }
 
-  [data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-sidebar-peek="pane"] {
+  [data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-sidebar-peek="pane"],
+  [data-slot="sidebar"][data-opening]:not([data-opening-ready]) [data-sidebar-peek="pane"] {
     opacity: 0;
     pointer-events: none;
     translate: calc(var(--sidebar-peek-shift) * -1) 0;
   }
 
-  [data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-sidebar-peek="label"] {
+  [data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-sidebar-peek="label"],
+  [data-slot="sidebar"][data-opening]:not([data-opening-ready]) [data-sidebar-peek="label"] {
     opacity: 0;
   }
 
@@ -1059,6 +1061,13 @@ html[data-window-inactive]
     [data-sidebar-peek="copy"]
     :is(span, input, kbd, p, label),
   [data-slot="sidebar"][data-collapsed]:not([data-peeking])
+    [data-sidebar-peek="copy"]
+    [data-slot="sidebar-menu-button"]
+    > :not(svg),
+  [data-slot="sidebar"][data-opening]:not([data-opening-ready])
+    [data-sidebar-peek="copy"]
+    :is(span, input, kbd, p, label),
+  [data-slot="sidebar"][data-opening]:not([data-opening-ready])
     [data-sidebar-peek="copy"]
     [data-slot="sidebar-menu-button"]
     > :not(svg) {

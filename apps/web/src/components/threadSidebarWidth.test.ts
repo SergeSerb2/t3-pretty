@@ -112,6 +112,8 @@ describe("thread sidebar width", () => {
     expect(sidebar).toContain("w-(--sidebar-width) min-w-(--sidebar-width)");
     expect(sidebar).toContain("motion-safe:transition-[width,box-shadow]");
     expect(sidebar).toContain("group-data-present:z-40");
+    expect(sidebar).toContain("group-data-present:shadow-[12px_0_40px_rgba(0,0,0,0.12)]");
+    expect(sidebar).toContain("data-opening-ready");
     expect(sidebar).toContain("shouldIgnoreSidebarPeekLeave");
     expect(sidebar).not.toContain("clip-path");
     expect(sidebar).not.toContain("data-compact");
@@ -134,7 +136,7 @@ describe("thread sidebar width", () => {
     expect(settings).not.toContain("invisible");
     expect(chrome).toContain('data-sidebar-peek="label"');
     expect(css).toContain('[data-sidebar-peek="pane"]');
-    expect(css).toContain('[data-slot="sidebar"][data-collapsed]:not([data-peeking])');
+    expect(css).toContain("[data-opening]:not([data-opening-ready])");
     expect(css).not.toContain("--sidebar-peek-duration: 280ms");
     expect(css).toContain("var(--sidebar-peek-duration)");
     expect(css).toContain("var(--sidebar-peek-ease)");

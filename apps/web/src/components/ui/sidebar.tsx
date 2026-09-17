@@ -259,22 +259,34 @@ function Sidebar({
   );
   const iconCollapsed = state === "collapsed" && collapsible === "icon";
   const [pinOpening, setPinOpening] = React.useState(false);
+  const [pinOpeningReady, setPinOpeningReady] = React.useState(false);
   const wasIconCollapsedRef = React.useRef(iconCollapsed);
 
   React.useEffect(() => {
     if (iconCollapsed) {
       wasIconCollapsedRef.current = true;
       setPinOpening(false);
+      setPinOpeningReady(false);
       return;
     }
     if (!wasIconCollapsedRef.current) return;
 
     setPinOpening(true);
+    setPinOpeningReady(false);
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => setPinOpeningReady(true));
+    });
     const timeout = window.setTimeout(() => {
       wasIconCollapsedRef.current = false;
       setPinOpening(false);
+      setPinOpeningReady(false);
     }, SIDEBAR_PEEK_ANIMATION_MS);
-    return () => window.clearTimeout(timeout);
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+      window.clearTimeout(timeout);
+    };
   }, [iconCollapsed]);
 
   if (collapsible === "none") {
@@ -339,6 +351,7 @@ function Sidebar({
         data-collapsed={iconCollapsed ? "" : undefined}
         data-collapsible={state === "collapsed" && collapsible === "offcanvas" ? collapsible : ""}
         data-opening={pinOpening ? "" : undefined}
+        data-opening-ready={pinOpeningReady ? "" : undefined}
         data-peeking={peeking && iconCollapsed ? "" : undefined}
         data-present={peekFlyout && iconCollapsed ? "" : undefined}
         data-side={side}
@@ -378,7 +391,7 @@ function Sidebar({
               : "group-data-collapsed:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
             // Stay above the chat through the close width animation; the gap
             // never leaves icon width, so nothing in the page reflows.
-            "group-data-present:z-40 group-data-collapsed:group-data-peeking:w-(--sidebar-width)! group-data-peeking:shadow-[12px_0_40px_rgba(0,0,0,0.12)]",
+            "group-data-present:z-40 group-data-collapsed:group-data-peeking:w-(--sidebar-width)! group-data-present:shadow-[12px_0_40px_rgba(0,0,0,0.12)]",
             className,
           )}
           data-slot="sidebar-container"
