@@ -511,7 +511,10 @@ export const make = Effect.gen(function* () {
           selected.identity,
         ).pipe(Effect.result);
         if (Result.isFailure(connected)) {
-          return yield* connected.failure;
+          // Keep the token and the original ticket error. A relay outage
+          // must not replace a retryable endpoint 503, and without a
+          // bootstrap we cannot tell whether the host moved.
+          return yield* mapped;
         }
         if (
           connected.success.endpoint.httpBaseUrl === selected.token.endpoint.httpBaseUrl &&

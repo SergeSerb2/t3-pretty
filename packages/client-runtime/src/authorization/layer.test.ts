@@ -476,6 +476,50 @@ describe("RemoteEnvironmentAuthorization", () => {
     }),
   );
 
+  it.effect(
+    "keeps the original ticket error when relay bootstrap fails after a transient ticket",
+    () =>
+      Effect.gen(function* () {
+        const cached = new TokenStore.RemoteDpopAccessToken({
+          environmentId: ENVIRONMENT_ID,
+          accountId: "account-1",
+          label: DESCRIPTOR.label,
+          endpoint: ENDPOINT,
+          accessToken: "cached-access-token",
+          expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+          dpopThumbprint: "thumbprint-1",
+        });
+        const harness = yield* makeHarness({
+          initialToken: cached,
+          beforeBootstrap: Effect.fail(
+            new ManagedRelay.ManagedRelayRequestTimeoutError({
+              activity: "Relay environment connection",
+              timeoutMs: ManagedRelay.MANAGED_RELAY_REQUEST_TIMEOUT_MS,
+              traceId: null,
+            }),
+          ),
+          responses: [new Response("endpoint unavailable", { status: 503 })],
+        });
+
+        const failure = yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          return yield* remote.authorizeDpop({
+            expectedEnvironmentId: ENVIRONMENT_ID,
+          });
+        }).pipe(Effect.provide(harness.layer), Effect.flip);
+
+        expect(failure).toMatchObject({
+          _tag: "ConnectionTransientError",
+          reason: "remote-unavailable",
+        });
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+        expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)).toEqual(
+          expect.objectContaining({ accessToken: "cached-access-token" }),
+        );
+        expect(harness.fetch.calls).toHaveLength(1);
+      }),
+  );
+
   it.effect("re-exchanges when the relay moved the environment to a new endpoint", () =>
     Effect.gen(function* () {
       const cached = new TokenStore.RemoteDpopAccessToken({
