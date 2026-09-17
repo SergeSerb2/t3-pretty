@@ -16,6 +16,16 @@ import {
 
 export const ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS = 8_192;
 
+function boundReceiptError(error: string | null): string | null {
+  if (error === null || error.length <= ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS) {
+    return error;
+  }
+  const truncated = error.slice(0, ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS);
+  const last = truncated.charCodeAt(truncated.length - 1);
+  // String.slice is UTF-16; drop a dangling high surrogate so SQLite/JSON stay well-formed.
+  return last >= 0xd800 && last <= 0xdbff ? truncated.slice(0, -1) : truncated;
+}
+
 const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
@@ -49,6 +59,10 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
           result_sequence = excluded.result_sequence,
           status = excluded.status,
           error = excluded.error
+        WHERE NOT (
+          orchestration_command_receipts.status = 'accepted'
+          AND excluded.status = 'rejected'
+        )
       `,
   });
 
@@ -89,10 +103,7 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
   const upsert: OrchestrationCommandReceiptRepositoryShape["upsert"] = (receipt) =>
     upsertReceiptRow({
       ...receipt,
-      error:
-        receipt.error === null
-          ? null
-          : receipt.error.slice(0, ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS),
+      error: boundReceiptError(receipt.error),
     }).pipe(
       Effect.mapError(toPersistenceSqlError("OrchestrationCommandReceiptRepository.upsert:query")),
     );
