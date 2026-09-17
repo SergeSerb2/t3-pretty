@@ -180,6 +180,66 @@ layer("ProjectionThreadMessageRepository", (it) => {
     }),
   );
 
+  it.effect("ignores late streaming appends after a message is finalized", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const threadId = ThreadId.make("thread-finalized-append");
+      const messageId = MessageId.make("message-finalized-append");
+      const createdAt = "2026-02-28T19:07:00.000Z";
+      const finalizedAt = "2026-02-28T19:07:01.000Z";
+      const attachments = [
+        {
+          type: "image" as const,
+          id: "thread-finalized-append-att-1",
+          name: "example.png",
+          mimeType: "image/png",
+          sizeBytes: 5,
+        },
+      ];
+
+      yield* repository.appendStreaming({
+        messageId,
+        threadId,
+        turnId: null,
+        role: "assistant",
+        text: "hello",
+        attachments,
+        createdAt,
+        updatedAt: createdAt,
+      });
+      yield* repository.upsert({
+        messageId,
+        threadId,
+        turnId: null,
+        role: "assistant",
+        text: "hello world",
+        isStreaming: false,
+        createdAt,
+        updatedAt: finalizedAt,
+      });
+      yield* repository.appendStreaming({
+        messageId,
+        threadId,
+        turnId: TurnId.make("turn-late-chunk"),
+        role: "assistant",
+        text: " stale",
+        attachments: [],
+        createdAt: "2026-02-28T19:07:02.000Z",
+        updatedAt: "2026-02-28T19:07:02.000Z",
+      });
+
+      const row = yield* repository.getByMessageId({ messageId });
+      assert.equal(row._tag, "Some");
+      if (row._tag === "Some") {
+        assert.equal(row.value.text, "hello world");
+        assert.deepEqual(row.value.attachments, attachments);
+        assert.equal(row.value.turnId, null);
+        assert.equal(row.value.updatedAt, finalizedAt);
+        assert.isFalse(row.value.isStreaming);
+      }
+    }),
+  );
+
   it.effect("preserves existing attachments when upsert omits attachments", () =>
     Effect.gen(function* () {
       const repository = yield* ProjectionThreadMessageRepository;
