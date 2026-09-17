@@ -1,6 +1,8 @@
+import type { ProjectIconOverride } from "@t3tools/contracts";
 import { useEffect, useId, useState } from "react";
 import { create } from "zustand";
 
+import { ProjectIconPickerDialog } from "../settings/ProjectIconPickerDialog";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -39,6 +41,47 @@ export function ProjectFolderNameDialogHost() {
   const request = useRequest((state) => state.request);
   useEffect(() => () => finish(null), []);
   return request ? <ProjectFolderNameDialog request={request} /> : null;
+}
+
+type IconRequest = {
+  readonly folderName: string;
+  readonly current: ProjectIconOverride | null;
+  readonly resolve: (icon: ProjectIconOverride | null) => void;
+};
+
+const useIconRequest = create<{ request: IconRequest | null }>(() => ({ request: null }));
+
+export function requestProjectFolderIcon(input: {
+  readonly folderName: string;
+  readonly current: ProjectIconOverride | null;
+}): Promise<ProjectIconOverride | null> {
+  useIconRequest.getState().request?.resolve(null);
+  return new Promise((resolve) => useIconRequest.setState({ request: { ...input, resolve } }));
+}
+
+function finishIcon(icon: ProjectIconOverride | null) {
+  const request = useIconRequest.getState().request;
+  useIconRequest.setState({ request: null });
+  request?.resolve(icon);
+}
+
+export function ProjectFolderIconDialogHost() {
+  const request = useIconRequest((state) => state.request);
+  useEffect(() => () => finishIcon(null), []);
+  if (request === null) return null;
+  return (
+    <ProjectIconPickerDialog
+      open
+      current={request.current}
+      projectName={request.folderName}
+      title="Choose folder icon"
+      description="Shown on the project rail so folders are easy to tell apart."
+      onOpenChange={(open) => {
+        if (!open) finishIcon(null);
+      }}
+      onSelect={finishIcon}
+    />
+  );
 }
 
 function ProjectFolderNameDialog({ request }: { readonly request: Request }) {

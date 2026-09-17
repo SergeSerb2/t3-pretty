@@ -13,6 +13,7 @@ import {
   projectFolderMenuItems,
   RAIL_PROJECT_DRAG_TYPE,
   renameProjectFolder,
+  setProjectFolderIcon,
   toggleProjectFolderCollapsed,
   unassignProjectFromFolder,
   type SidebarProjectFolderSettings,
@@ -133,6 +134,29 @@ describe("project folder mutations", () => {
       assignments: { b: "home" },
     });
   });
+
+  it("sets and clears a folder icon without dropping the name", () => {
+    const settings = createProjectFolder(empty, "Work", "a", "work");
+    const withIcon = setProjectFolderIcon(settings, "work", {
+      kind: "emoji",
+      emoji: "💼",
+    });
+    expect(withIcon.folders[0]).toEqual({
+      id: "work",
+      name: "Work",
+      collapsed: false,
+      icon: { kind: "emoji", emoji: "💼" },
+    });
+    expect(renameProjectFolder(withIcon, "work", "Job").folders[0]?.icon).toEqual({
+      kind: "emoji",
+      emoji: "💼",
+    });
+    expect(setProjectFolderIcon(withIcon, "work", null).folders[0]).toEqual({
+      id: "work",
+      name: "Work",
+      collapsed: false,
+    });
+  });
 });
 
 describe("project folder menus", () => {
@@ -150,9 +174,19 @@ describe("project folder menus", () => {
       },
       { id: "project-folder:remove", label: "Remove from folder" },
     ]);
+    const labeled = setProjectFolderIcon(settings, "work", { kind: "emoji", emoji: "💼" });
+    expect(
+      projectFolderMenuItems({ projectKey: "a", settings: labeled })[0]?.children?.[0]?.label,
+    ).toBe("💼 Work");
+    expect(
+      projectFolderHeaderMenuItems({ folder: labeled.folders[0]!, settings: labeled }),
+    ).toEqual(
+      expect.arrayContaining([{ id: "project-folder:reset-icon:work", label: "Reset icon" }]),
+    );
     expect(projectFolderHeaderMenuItems({ folder: settings.folders[0]!, settings })).toEqual([
       { id: "project-folder:toggle:work", label: "Collapse" },
       { id: "project-folder:rename:work", label: "Rename…" },
+      { id: "project-folder:icon:work", label: "Change icon…" },
       { id: "project-folder:move-up:work", label: "Move up", disabled: true },
       { id: "project-folder:move-down:work", label: "Move down", disabled: true },
       {
@@ -169,6 +203,14 @@ describe("project folder menus", () => {
     expect(parseProjectFolderMenuAction("project-folder:new")).toEqual({ type: "new" });
     expect(parseProjectFolderMenuAction("project-folder:move:work")).toEqual({
       type: "move",
+      folderId: "work",
+    });
+    expect(parseProjectFolderMenuAction("project-folder:icon:work")).toEqual({
+      type: "icon",
+      folderId: "work",
+    });
+    expect(parseProjectFolderMenuAction("project-folder:reset-icon:work")).toEqual({
+      type: "reset-icon",
       folderId: "work",
     });
     expect(parseProjectFolderMenuAction("remove")).toBeNull();

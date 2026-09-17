@@ -133,8 +133,8 @@ project picker. Right-click an icon for **New thread**, **Settle idle threads**,
 Use **Move to folder** to group projects such as personal and work, then click
 the folder to collapse or expand it. Drag a project onto a folder to file it,
 or onto **All projects** / the ungrouped list to take it out. Right-click the
-folder to rename, reorder, or delete it; deleting a folder does not remove the
-projects. Settling idle threads parks every active thread in that project that
+folder to change its icon, rename, reorder, or delete it; deleting a folder does
+not remove the projects. Settling idle threads parks every active thread in that project that
 is not running, waiting, or holding an unseen response.
 
 When the sidebar is collapsed, the strip stays as a single column of projects.

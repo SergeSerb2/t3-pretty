@@ -4,7 +4,10 @@ import type { MouseEvent } from "react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import type { SidebarProjectFolder } from "@t3tools/contracts/settings";
 
-import { requestProjectFolderName } from "../components/sidebar/ProjectFolderNameDialog";
+import {
+  requestProjectFolderIcon,
+  requestProjectFolderName,
+} from "../components/sidebar/ProjectFolderNameDialog";
 import { persistClientSettingsUpdate, useClientSettings } from "./useSettings";
 import { randomUUID } from "../lib/utils";
 import { readLocalApi } from "../localApi";
@@ -19,6 +22,7 @@ import {
   projectFolderMenuItems,
   renameProjectFolder,
   selectProjectFolderSettings,
+  setProjectFolderIcon,
   toggleProjectFolderCollapsed,
   unassignProjectFromFolder,
   type ProjectRailDropTarget,
@@ -105,6 +109,22 @@ export function useSidebarProjectFolders() {
           }
           return true;
         }
+        case "icon": {
+          const folder = settings.folders.find((entry) => entry.id === action.folderId);
+          const icon = await requestProjectFolderIcon({
+            folderName: folder?.name ?? "Folder",
+            current: folder?.icon ?? null,
+          });
+          if (icon !== null) {
+            persistFolderSettings((current) =>
+              setProjectFolderIcon(current, action.folderId, icon),
+            );
+          }
+          return true;
+        }
+        case "reset-icon":
+          persistFolderSettings((current) => setProjectFolderIcon(current, action.folderId, null));
+          return true;
         case "delete":
           persistFolderSettings((current) => deleteProjectFolder(current, action.folderId));
           return true;
