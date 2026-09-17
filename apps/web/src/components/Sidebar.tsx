@@ -2201,7 +2201,7 @@ export default function Sidebar() {
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const router = useRouter();
-  const { isMobile, setOpenMobile, open, peeking, peekNow } = useSidebar();
+  const { isMobile, setOpenMobile, open, peekFlyout, peekNow } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
@@ -4576,7 +4576,7 @@ export default function Sidebar() {
       threadLastVisitedAtById,
     ],
   );
-  if (!isMobile && !open && !peeking) {
+  if (!isMobile && !open && !peekFlyout) {
     return (
       <>
         <SidebarChromeHeader isElectron={isElectron} />

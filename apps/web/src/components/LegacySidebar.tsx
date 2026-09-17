@@ -3162,7 +3162,7 @@ export default function LegacySidebar() {
   const newThreadContext = useHandleNewThread();
   const handleNewThread = newThreadContext.handleNewThread;
   const { archiveThread, deleteThread } = useThreadActions();
-  const { isMobile, setOpenMobile, open, peeking, peekNow } = useSidebar();
+  const { isMobile, setOpenMobile, open, peekFlyout, peekNow } = useSidebar();
   const routeTarget = useParams({
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
@@ -3901,7 +3901,7 @@ export default function LegacySidebar() {
     <SidebarThreadDetailPrewarmer key={scopedThreadKey(threadRef)} threadRef={threadRef} />
   ));
 
-  if (!isMobile && !open && !peeking) {
+  if (!isMobile && !open && !peekFlyout) {
     return (
       <>
         {prewarmers}

@@ -1,5 +1,5 @@
-// Collapsed icon-mode controls fill the traffic-light-wide rail as a single
-// column of full-bleed rows. A two-column wrap of the same 32px buttons is
-// what made the first dock feel random.
+// Collapsed icon-mode controls stay a compact 32px column. Stretching them
+// into full-bleed 36px rows was what made the traffic-light-wide rail look
+// empty: leftover list chrome (number gutters, folder pills) without a list.
 export const COLLAPSED_SWITCHER_CONTROL_CLASS =
-  "group-data-[collapsible=icon]:size-auto! group-data-[collapsible=icon]:h-9! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:p-0!";
+  "group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-0!";

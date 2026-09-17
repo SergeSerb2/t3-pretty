@@ -100,7 +100,7 @@ describe("thread sidebar width", () => {
     );
   });
 
-  it("fills the traffic-light-wide collapsed rail with a single-column switcher", () => {
+  it("keeps the collapsed rail a compact icon column and clips peek flyouts", () => {
     const rail = NodeFS.readFileSync(
       new URL("./sidebar/SidebarProjectRail.tsx", import.meta.url),
       "utf8",
@@ -111,12 +111,19 @@ describe("thread sidebar width", () => {
     );
     const sidebar = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
 
-    expect(rail).toContain("COLLAPSED_ROW_BUTTON_CLASS");
-    expect(rail).toContain('size={docked ? "icon" : "tile"}');
+    expect(rail).toContain('size="icon"');
+    expect(rail).toContain("mx-auto w-10 flex-1 rounded-2xl");
+    expect(rail).not.toContain("COLLAPSED_ROW_BUTTON_CLASS");
     expect(rail).not.toContain("grid-cols-2");
     expect(chrome).toContain("COLLAPSED_SWITCHER_CONTROL_CLASS");
-    expect(chrome).toContain("group-data-[collapsible=icon]:hidden");
-    expect(sidebar).toContain('data-peeking={flyout ? "true" : undefined}');
-    expect(sidebar).toContain("group-data-[peeking=true]:w-(--sidebar-width-icon)");
+    expect(chrome).toContain("group-data-[collapsible=icon]:items-center");
+    expect(sidebar).toContain("sidebarPeekDatasetValue(flyoutPresent, peeking)");
+    expect(sidebar).toContain("group-data-[peeking]:w-(--sidebar-width-icon)");
+    expect(sidebar).toContain(
+      "group-data-[side=left]:group-data-[peeking=out]:clip-path-[inset(0_calc(100%_-_var(--sidebar-width-icon))_0_0)]",
+    );
+    expect(sidebar).toContain(
+      "group-data-[side=right]:group-data-[peeking=out]:clip-path-[inset(0_0_0_calc(100%_-_var(--sidebar-width-icon)))]",
+    );
   });
 });
