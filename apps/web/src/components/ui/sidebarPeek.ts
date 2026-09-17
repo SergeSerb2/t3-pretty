@@ -29,13 +29,11 @@ export function shouldIgnoreSidebarPeekLeave(
   currentTarget: EventTarget | null,
   relatedTarget: EventTarget | null,
 ): boolean {
-  if (typeof Node === "undefined" || typeof Element === "undefined") return false;
-  if (relatedTarget instanceof Node && currentTarget instanceof Node) {
-    if (currentTarget.contains(relatedTarget)) return true;
-  }
-  if (!(relatedTarget instanceof Element)) return false;
+  if (typeof Node === "undefined") return false;
   return (
-    relatedTarget.closest("[data-slot='tooltip-popup'], [data-slot='tooltip-positioner']") != null
+    relatedTarget instanceof Node &&
+    currentTarget instanceof Node &&
+    currentTarget.contains(relatedTarget)
   );
 }
 
