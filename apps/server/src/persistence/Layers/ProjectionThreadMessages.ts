@@ -161,6 +161,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           ),
           is_streaming = 1,
           updated_at = excluded.updated_at
+        WHERE projection_thread_messages.is_streaming = 1
       `;
     },
   });
