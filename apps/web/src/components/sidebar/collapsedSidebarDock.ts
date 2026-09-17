@@ -14,7 +14,7 @@ export const COLLAPSED_DOCK_TILE_BUTTON_CLASS =
   "group-data-[collapsible=icon]:aspect-square group-data-[collapsible=icon]:size-auto! group-data-[collapsible=icon]:h-auto! group-data-[collapsible=icon]:min-h-8 group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:p-1!";
 
 export const COLLAPSED_DOCK_BAR_BUTTON_CLASS =
-  "col-span-full aspect-auto! h-8 min-h-8 w-full justify-center gap-1";
+  "col-span-full aspect-auto! h-8 min-h-8 w-full justify-center gap-1 whitespace-nowrap";
 
 export const COLLAPSED_DOCK_WIDE_LABEL_CLASS =
   "hidden text-[10px] font-medium leading-none @[4rem]/collapsed-dock:inline";

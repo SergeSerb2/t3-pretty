@@ -136,7 +136,7 @@ function ProjectRailItem({
           }}
           className={cn(
             "absolute z-10 flex size-4 cursor-pointer items-center justify-center rounded-full bg-sidebar-control-surface text-sidebar-foreground opacity-0 ring-1 ring-sidebar-border transition-opacity hover:bg-sidebar-row-hover focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-ring group-hover/rail-item:opacity-100",
-            docked ? "-bottom-1 -right-1" : "bottom-0.5 right-0.5",
+            docked ? "-bottom-1 -right-1" : "left-0.5 top-0.5",
           )}
         >
           <PlusIcon className="size-2.5" />
