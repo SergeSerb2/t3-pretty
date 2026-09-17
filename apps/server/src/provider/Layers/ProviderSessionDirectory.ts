@@ -83,6 +83,22 @@ function toRuntimeBinding(
   );
 }
 
+function tryRuntimeBinding(
+  runtime: ProviderSessionRuntime.ProviderSessionRuntime,
+  operation: string,
+): Effect.Effect<Option.Option<ProviderRuntimeBindingWithMetadata>> {
+  return toRuntimeBinding(runtime, operation).pipe(
+    Effect.map(Option.some),
+    Effect.catch((cause) =>
+      Effect.logWarning("provider.session.binding-skipped", {
+        threadId: runtime.threadId,
+        providerName: runtime.providerName,
+        cause,
+      }).pipe(Effect.as(Option.none())),
+    ),
+  );
+}
+
 const makeProviderSessionDirectory = Effect.gen(function* () {
   const repository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
 
@@ -92,10 +108,7 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
       Effect.flatMap((runtime) =>
         Option.match(runtime, {
           onNone: () => Effect.succeed(Option.none<ProviderRuntimeBinding>()),
-          onSome: (value) =>
-            toRuntimeBinding(value, "ProviderSessionDirectory.getBinding").pipe(
-              Effect.map((binding) => Option.some(binding)),
-            ),
+          onSome: (value) => tryRuntimeBinding(value, "ProviderSessionDirectory.getBinding"),
         }),
       ),
     );
@@ -189,8 +202,11 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
       Effect.mapError(toPersistenceError("ProviderSessionDirectory.listBindings:list")),
       Effect.flatMap((rows) =>
         Effect.forEach(rows, (row) =>
-          toRuntimeBinding(row, "ProviderSessionDirectory.listBindings"),
+          tryRuntimeBinding(row, "ProviderSessionDirectory.listBindings"),
         ),
+      ),
+      Effect.map((bindings) =>
+        bindings.flatMap((binding) => (Option.isSome(binding) ? [binding.value] : [])),
       ),
     );
 
