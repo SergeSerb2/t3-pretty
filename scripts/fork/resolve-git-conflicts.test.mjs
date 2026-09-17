@@ -2890,6 +2890,8 @@ ${">".repeat(7)} theirs
     assert.include(script, 'mv "$backup_cache" "$SYNC_RESOLUTION_CACHE_DIR"');
     assert.include(script, '> "$restore_cache/active-upstream-tag"');
     assert.include(script, "git commit-tree");
+    assert.include(script, 'ROOT/.t3-fork/resolution-seeds');
+    assert.include(script, 'cp -n "$seed" "$SYNC_RESOLUTION_CACHE_DIR/$seed_name"');
 
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, "reused the checkpointed resolution");
@@ -2907,6 +2909,40 @@ ${">".repeat(7)} theirs
       script.indexOf("run_conflict_resolver"),
       script.indexOf("auto-merge but break typecheck"),
     );
+  });
+
+  it("reuses the ThreadTerminalRouteScreen full-file seed as a completed resolution", () => {
+    const key = "f7fb2165e144ba1745e950ccaaaa58fbadaca5c701bb0bc33d8d289e63edb2d8";
+    const seedDir = NodePath.resolve(
+      NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+      "../../.t3-fork/resolution-seeds",
+    );
+    const cached = readCachedResolution({
+      key,
+      cacheDir: seedDir,
+      expectedPath: "apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx",
+    });
+
+    assert.ok(cached);
+    assert.equal(cached.path, "apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx");
+    assert.equal(typeof cached.resolvedSource, "string");
+    assert.notInclude(cached.resolvedSource, "<<<<<<<");
+    assert.equal(
+      [...cached.resolvedSource.matchAll(/import \{ useSafeAreaInsets \}/gu)].length,
+      1,
+    );
+    assert.equal(
+      [...cached.resolvedSource.matchAll(/const insets = useSafeAreaInsets\(\)/gu)].length,
+      1,
+    );
+    assert.include(cached.resolvedSource, 'from "../showcase/showcaseEnabled"');
+    assert.include(cached.resolvedSource, "terminalAutoFocus");
+    assert.include(cached.resolvedSource, "MaterialScreenContent");
+    assert.include(cached.resolvedSource, "Math.max(insets.bottom, 16)");
+    assertValidResolvedSource({
+      path: cached.path,
+      source: cached.resolvedSource,
+    });
   });
 
   it("installs parser dependencies before resolving and gates the complete web tree", () => {
