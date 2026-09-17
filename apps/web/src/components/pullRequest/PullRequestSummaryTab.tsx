@@ -15,7 +15,6 @@ import {
   ArrowDownUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  HammerIcon,
   MessageSquareIcon,
   PencilIcon,
   RotateCcwIcon,
@@ -634,7 +633,6 @@ function CommentGroup({
   );
 }
 
-
 /**
  * What a first render of the conversation carries. A pull request with two hundred comments is
  * two hundred markdown documents, and the ones worth arriving for are the recent ones.
@@ -1080,16 +1078,14 @@ export function PullRequestSummaryTab({
           {/* Review remarks only. A plain conversation comment is talk, not a finding,
                       and offering to fix one would promise more than it says. */}
           {onFixFinding && finding ? (
-            <Button
-              size="xs"
-              variant="ghost"
-              className="-mt-1 shrink-0"
+            <FixFindingButton
+              label={fixFindingLabel}
+              otherThreadLabel={fixFindingOtherLabel}
+              canFixInThisThread={canFixInThisThread}
+              pending={pendingFinding === pullRequestFindingKey(finding)}
               disabled={pendingFinding !== null && pendingFinding !== undefined}
-              onClick={() => onFixFinding(finding)}
-            >
-              <HammerIcon className="size-3" />
-              {pendingFinding === pullRequestFindingKey(finding) ? "Preparing..." : fixFindingLabel}
-            </Button>
+              onFix={(destination) => onFixFinding(finding, destination)}
+            />
           ) : null}
           {reactionBar}
         </div>
@@ -1434,9 +1430,7 @@ export function PullRequestSummaryTab({
                 ) : null}
                 {commentOrder === "oldest" ? showOldestCommentsButton : null}
                 {(() => {
-                  const renderIntegratedComment = (
-                    comment: (typeof visibleComments)[number],
-                  ) => {
+                  const renderIntegratedComment = (comment: (typeof visibleComments)[number]) => {
                     const thread = threadByCommentId.get(comment.id);
                     const body = visibleBody(comment.body);
                     const outcome = pullRequestReviewOutcome(comment.reviewState);
@@ -1510,16 +1504,15 @@ export function PullRequestSummaryTab({
                         className="group rounded-lg border border-border/60 p-3 [contain-intrinsic-block-size:120px] [content-visibility:auto]"
                       >
                         <div className="flex items-start gap-2">
-                          <span className="flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground">
-                            <CommentAuthor actor={comment.author} />
-                            <span>{formatRelativeTimeLabel(comment.createdAt)}</span>
+                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <CommentIdentity comment={comment} detail={detail} />
                             {outcome ? (
                               <PullRequestReviewOutcomeBadge outcome={outcome} />
                             ) : comment.reviewState ? (
                               <span>{reviewStateLabel(comment.reviewState)}</span>
                             ) : null}
                             {body === null ? reactionBar : null}
-                          </span>
+                          </div>
                           <span className="-mt-1 flex shrink-0 items-center gap-1">
                             {/* Resolving acts on the conversation the remark belongs to — the same
                                 toggle the code tab's thread card carries. */}
@@ -1650,7 +1643,10 @@ export function PullRequestSummaryTab({
                           size="sm"
                           variant="ghost"
                           className="w-full"
-                          onClick={() => setShown({ url: detail.url, count: COMMENT_PAGE })}
+                          onClick={() => {
+                            setShown({ key: targetKey, count: COMMENT_PAGE });
+                            onViewChange?.({ shownCommentCount: COMMENT_PAGE });
+                          }}
                         >
                           Show only {COMMENT_PAGE} recent comments
                         </Button>
@@ -1669,10 +1665,9 @@ export function PullRequestSummaryTab({
                         >
                           <div className="space-y-3 pt-2">
                             {openedBotGroup === detail.url
-                              ? orderPullRequestComments(
-                                  recentBotComments,
-                                  commentOrder,
-                                ).map(renderIntegratedComment)
+                              ? orderPullRequestComments(recentBotComments, commentOrder).map(
+                                  renderIntegratedComment,
+                                )
                               : null}
                             {hiddenBotCommentCount > 0 ? (
                               <Button
@@ -1687,9 +1682,8 @@ export function PullRequestSummaryTab({
                                 }
                               >
                                 Show {Math.min(hiddenBotCommentCount, COMMENT_PAGE)} older bot
-                                comment{hiddenBotCommentCount === 1 ? "" : "s"} ({
-                                  hiddenBotCommentCount
-                                } hidden)
+                                comment{hiddenBotCommentCount === 1 ? "" : "s"} (
+                                {hiddenBotCommentCount} hidden)
                               </Button>
                             ) : null}
                             {shownBotComments > COMMENT_PAGE ? (
@@ -1727,9 +1721,7 @@ export function PullRequestSummaryTab({
                                     editing={commentEditing}
                                     detail={detail}
                                     thread={thread}
-                                    label={
-                                      thread?.isResolved ? "Resolved" : "Approval dismissed"
-                                    }
+                                    label={thread?.isResolved ? "Resolved" : "Approval dismissed"}
                                     body={visibleBody(comment.body)}
                                     action={
                                       thread?.isResolved && canResolveThreads ? (
