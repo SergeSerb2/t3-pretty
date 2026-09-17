@@ -5,6 +5,9 @@ import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/Stac
 import { useCallback, useMemo, useRef } from "react";
 import { Platform, Pressable, TextInput, View } from "react-native";
 import type { SearchBarCommands } from "react-native-screens";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
 import { ControlPillMenu } from "../../components/ControlPill";
 import { SymbolView } from "../../components/AppSymbol";
@@ -19,6 +22,7 @@ import {
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
 import type { HomeProjectSortOrder } from "./homeThreadList";
+import { WorkspaceConnectionTitle } from "./WorkspaceConnectionTitle";
 import { MaterialThreadListToolbar } from "./MaterialThreadListToolbar";
 import {
   buildHomeListFilterMenu,

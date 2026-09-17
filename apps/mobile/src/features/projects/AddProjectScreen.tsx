@@ -1034,7 +1034,7 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
 
   if (environment === null) {
     return (
-      <AddProjectShell>
+      <AddProjectShell title="Add project">
         {error ? <ErrorBanner message={error} /> : null}
         <EmptyEnvironmentState />
       </AddProjectShell>
@@ -1195,7 +1195,7 @@ export function AddProjectDestinationScreen(props: {
 
   if (environment === null) {
     return (
-      <AddProjectShell>
+      <AddProjectShell title={repositoryTitle ?? "Clone repository"}>
         {error ? <ErrorBanner message={error} /> : null}
         {repositoryTitle ? (
           <View className="rounded-[24px] bg-card px-4 py-3">

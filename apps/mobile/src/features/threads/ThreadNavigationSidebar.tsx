@@ -1436,14 +1436,8 @@ function ThreadNavigationSidebarPane(
               onPress={props.onOpenEnvironmentSettings}
               size="pageTitle"
               brand={
-                <View
-                  className={
-                    Platform.OS === "android"
-                      ? "min-h-12 flex-1 justify-center"
-                      : "h-11 flex-1 justify-center"
-                  }
-                >
-                  <CompactBrandTitle allowFontScaling={Platform.OS === "android"} />
+                <View className="h-11 flex-1 justify-center">
+                  <CompactBrandTitle />
                 </View>
               }
             />

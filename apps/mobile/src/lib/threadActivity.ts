@@ -1997,6 +1997,7 @@ function appendMixedActivityRun(
       unsettledTurnId,
       isWorking,
       live && last.type === "activity-group",
+      liveHeadline,
     );
   }
   const toolSummary = toolRows.find((entry) => entry.type === "work-toggle");

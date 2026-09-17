@@ -1,3 +1,4 @@
+import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";

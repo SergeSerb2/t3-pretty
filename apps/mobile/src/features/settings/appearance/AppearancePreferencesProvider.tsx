@@ -51,6 +51,9 @@ interface AppearancePreferencesContextValue {
   readonly themeIds: MobileThemeIds;
   readonly themeMode: MobileThemeMode;
   readonly themeAppearance: MobileThemeAppearance;
+  readonly materialYouStyleLayoutEnabled: boolean;
+  readonly materialYouStyleLayoutActive: boolean;
+  readonly setMaterialYouStyleLayoutEnabled: (value: boolean) => void;
   readonly systemColorsAvailable: boolean;
   readonly systemColorsActive: boolean;
   readonly themeVariables: MobileThemeVariables;
@@ -94,6 +97,8 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     [resolvedThemeIds.dark, resolvedThemeIds.light],
   );
   const themeId = themeIds[themeAppearance];
+  const materialYouStyleLayoutEnabled = storedPreferences?.materialYouStyleLayoutEnabled ?? false;
+  const materialYouStyleLayoutActive = Platform.OS === "android" && materialYouStyleLayoutEnabled;
   const systemColorsActive = themeId === "material-you" && isSystemColorsAvailable;
   const [systemColorPalettes, setSystemColorPalettes] = useState(readSystemColorPalettes);
   useEffect(() => {
@@ -242,6 +247,13 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     [runtimeState, syncThemeRuntime, updateThemePreferences],
   );
 
+  const setMaterialYouStyleLayoutEnabled = useCallback(
+    (value: boolean) => {
+      updatePreferences({ materialYouStyleLayoutEnabled: value });
+    },
+    [updatePreferences],
+  );
+
   const setBaseFontSize = useCallback(
     (value: number) => {
       const current = appliedRuntimeStateRef.current ?? runtimeState;
@@ -279,6 +291,9 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeIds,
       themeMode,
       themeAppearance,
+      materialYouStyleLayoutEnabled,
+      materialYouStyleLayoutActive,
+      setMaterialYouStyleLayoutEnabled,
       systemColorsAvailable: isSystemColorsAvailable,
       systemColorsActive,
       themeVariables,
@@ -299,6 +314,9 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeIds,
       themeMode,
       themeAppearance,
+      materialYouStyleLayoutEnabled,
+      materialYouStyleLayoutActive,
+      setMaterialYouStyleLayoutEnabled,
       systemColorsActive,
       themeVariables,
       themeVariablesByAppearance,

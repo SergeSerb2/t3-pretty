@@ -18,10 +18,15 @@ import { useKeyboardState } from "react-native-keyboard-controller";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { appBlurTargetRef } from "../lib/appBlurTarget";
+import { cn } from "../lib/cn";
 import { useUniwindTheme } from "../lib/useUniwindTheme";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../native/native-glass";
 import { flattenMenuActions } from "./anchored-menu.logic";
+import { type AppSymbolName, SymbolView } from "./AppSymbol";
+import { AppText as Text } from "./AppText";
 import { OverlayPortal } from "./OverlayPortal";
+import { GlassBackdrop } from "./GlassBackdrop";
 import { MaterialMenuPopup } from "./MaterialMenuPopup";
 
 const MENU_WIDTH = 268;
@@ -210,6 +215,7 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
 
   const parent = path[path.length - 1] ?? null;
   const levelActions = flattenMenuActions(parent?.subactions ?? props.actions);
+  const popupActions = levelActions.flatMap((row) => (row.type === "action" ? [row.action] : []));
 
   const resolvedAnchor =
     isPlacementMode && overlay !== null && props.placement !== undefined
@@ -451,10 +457,11 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
               onPress={close}
             />
             {Platform.OS === "android" ? (
-              !placeable || local === null ? null : !anchor.keyboardWasVisible ? (
+              !placeable || local === null ? null : resolvedAnchor?.keyboardWasVisible !==
+                true ? (
                 <MaterialMenuPopup
                   anchor={local}
-                  actions={levelActions}
+                  actions={popupActions}
                   title={props.title}
                   parent={parent}
                   onPress={onPressItem}
@@ -488,7 +495,7 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
                     <MaterialMenuPopup
                       inline
                       anchor={local}
-                      actions={levelActions}
+                      actions={popupActions}
                       title={props.title}
                       parent={parent}
                       onPress={onPressItem}

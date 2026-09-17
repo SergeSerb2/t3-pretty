@@ -109,8 +109,6 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
             branch.current ? "border-subtle-strong" : "border-border",
           )}
           disabled={busy || disabled}
-          accessibilityRole="button"
-          accessibilityState={{ selected: branch.current, disabled: busy || disabled }}
           style={
             Platform.OS === "android"
               ? { borderWidth: 0, borderRadius: 20, overflow: "hidden" }
