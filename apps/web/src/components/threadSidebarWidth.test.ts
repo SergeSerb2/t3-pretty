@@ -100,30 +100,37 @@ describe("thread sidebar width", () => {
     );
   });
 
-  it("keeps the collapsed rail a compact icon column and clips peek flyouts", () => {
+  it("clips peek flyouts with clip-path Tailwind can compile", () => {
+    const sidebar = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
+
+    expect(sidebar).toContain("sidebarPeekDatasetValue(flyoutPresent, peeking)");
+    expect(sidebar).toContain("group-data-[peeking]:w-(--sidebar-width-icon)");
+    // `clip-path-[...]` is not a Tailwind utility and compiles to nothing, which
+    // is how the peek shipped once without any motion. Only the arbitrary
+    // property form `[clip-path:...]` produces CSS.
+    expect(sidebar).not.toContain("clip-path-[");
+    expect(sidebar).toContain(
+      "group-data-[side=left]:group-data-[peeking=out]:[clip-path:inset(0_calc(100%-var(--sidebar-width-icon))_0_0)]",
+    );
+    expect(sidebar).toContain(
+      "group-data-[side=right]:group-data-[peeking=out]:[clip-path:inset(0_0_0_calc(100%-var(--sidebar-width-icon)))]",
+    );
+    expect(sidebar).toContain("group-data-[peeking=true]:[clip-path:inset(0_-2rem)]");
+  });
+
+  it("keeps the project rail one column whether the sidebar is icon-only or open", () => {
     const rail = NodeFS.readFileSync(
       new URL("./sidebar/SidebarProjectRail.tsx", import.meta.url),
       "utf8",
     );
-    const chrome = NodeFS.readFileSync(
-      new URL("./sidebar/SidebarChrome.tsx", import.meta.url),
-      "utf8",
-    );
-    const sidebar = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
+    const threadSidebar = NodeFS.readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
 
-    expect(rail).toContain('size="icon"');
-    expect(rail).toContain("mx-auto w-10 flex-1 rounded-2xl");
-    expect(rail).not.toContain("COLLAPSED_ROW_BUTTON_CLASS");
-    expect(rail).not.toContain("grid-cols-2");
-    expect(chrome).toContain("COLLAPSED_SWITCHER_CONTROL_CLASS");
-    expect(chrome).toContain("group-data-[collapsible=icon]:items-center");
-    expect(sidebar).toContain("sidebarPeekDatasetValue(flyoutPresent, peeking)");
-    expect(sidebar).toContain("group-data-[peeking]:w-(--sidebar-width-icon)");
-    expect(sidebar).toContain(
-      "group-data-[side=left]:group-data-[peeking=out]:clip-path-[inset(0_calc(100%_-_var(--sidebar-width-icon))_0_0)]",
-    );
-    expect(sidebar).toContain(
-      "group-data-[side=right]:group-data-[peeking=out]:clip-path-[inset(0_0_0_calc(100%_-_var(--sidebar-width-icon)))]",
-    );
+    // The rail no longer swaps geometry between states, so a peek only clips
+    // the thread list column in beside it and the icons never jump.
+    expect(rail).not.toContain("variant");
+    expect(rail).toContain("group-data-compact:translate-x-");
+    expect(rail).toContain("footer");
+    expect(threadSidebar).toContain('<SidebarUtilityMenu orientation="vertical" />');
+    expect(threadSidebar).not.toContain("!isMobile && !open && !peekFlyout");
   });
 });

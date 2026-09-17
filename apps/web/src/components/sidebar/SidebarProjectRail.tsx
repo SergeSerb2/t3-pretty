@@ -264,12 +264,12 @@ function ProjectRailItem({
 /**
  * Vertical strip of project icons. The rail is the only project axis in the
  * sidebar: picking an icon scopes the thread list to that project, the top
- * entry shows every project. `docked` sits beside the list; `collapsed` is the
- * same compact icon column when the sidebar is icon-only. Search and new-thread
+ * entry shows every project. The same column sits beside the thread list and
+ * is the whole sidebar when it is icon-only, so expanding never moves an icon.
+ * `footer` pins utility controls under the projects. Search and new-thread
  * live on the peeked/expanded thread list, not here.
  */
 export function SidebarProjectRail({
-  variant = "collapsed",
   projects,
   selectedProjectKey,
   onSelectProject,
@@ -282,8 +282,8 @@ export function SidebarProjectRail({
   onFolderContextMenu,
   onApplyDrop,
   onReorderFolder,
+  footer,
 }: {
-  variant?: "docked" | "collapsed";
   projects: readonly SidebarProjectSnapshot[];
   selectedProjectKey: string | null;
   onSelectProject: (project: SidebarProjectSnapshot) => void;
@@ -292,14 +292,13 @@ export function SidebarProjectRail({
   attentionByProjectKey?: ReadonlyMap<string, ProjectRailAttention>;
   onNewThreadInProject?: (project: SidebarProjectSnapshot) => void;
   onProjectContextMenu?: (event: MouseEvent<HTMLElement>, project: SidebarProjectSnapshot) => void;
-  onNewThread?: (event: MouseEvent) => void;
   folders?: SidebarProjectFolderSettings;
   onToggleFolder?: (folderId: string) => void;
   onFolderContextMenu?: (event: MouseEvent<HTMLElement>, folder: SidebarProjectFolder) => void;
   onApplyDrop?: (projectKey: string, target: ProjectRailDropTarget) => void;
   onReorderFolder?: (folderId: string, beforeFolderId: string | null) => void;
+  footer?: ReactNode;
 }) {
-  const docked = variant === "docked";
   const items = buildProjectRailItems(projects, folders);
   const jumpByProjectKey = visibleProjectJumpNumbers(items);
   const [draggingProjectKey, setDraggingProjectKey] = useState<string | null>(null);
@@ -504,10 +503,11 @@ export function SidebarProjectRail({
       <nav
         aria-label="Projects"
         className={cn(
-          "flex min-h-0 flex-col items-center gap-1",
-          docked
-            ? "w-12 shrink-0 border-r border-sidebar-border/60 py-2"
-            : "mx-auto w-10 flex-1 rounded-2xl bg-sidebar-control-surface/40 py-1.5",
+          "flex min-h-0 w-12 shrink-0 flex-col items-center gap-1 py-2",
+          // On macOS the icon-only column is traffic-light wide. Centre the rail
+          // there and glide it to the docked edge as the list clips open.
+          "translate-x-0 group-data-compact:translate-x-[calc((var(--sidebar-width-icon)-3rem)/2)]",
+          "motion-safe:transition-transform motion-safe:duration-(--sidebar-peek-duration) motion-safe:ease-[cubic-bezier(0.23,1,0.32,1)]",
         )}
         onDragLeave={(event) => {
           const next = event.relatedTarget;
@@ -550,6 +550,9 @@ export function SidebarProjectRail({
             <FolderPlusIcon />
           </SidebarMenuButton>
         </div>
+        {footer ? (
+          <div className="flex shrink-0 flex-col items-center gap-0.5 pt-1">{footer}</div>
+        ) : null}
       </nav>
     </TooltipProvider>
   );
