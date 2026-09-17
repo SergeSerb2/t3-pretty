@@ -474,6 +474,8 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),
+  // Local copy used only until the first shared-settings lift. After that the
+  // server fields are the source of truth across connected environments.
   sidebarProjectFolders: Schema.Array(SidebarProjectFolder).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -1177,6 +1179,17 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
   ),
   sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /**
+   * Sidebar rail folders and which projects they hold. Clients that participate
+   * in shared-settings sync write these to every connected environment so a
+   * folder made on one machine appears on the others.
+   */
+  sidebarProjectFolders: Schema.Array(SidebarProjectFolder).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  sidebarProjectFolderAssignments: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   backgroundActivity: BackgroundActivitySettings,
   // Legacy flat fields retained for old settings files and old clients. New
   // consumers should resolve `backgroundActivity` instead.
@@ -1510,6 +1523,10 @@ export const ServerSettingsPatch = Schema.Struct({
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
+  sidebarProjectFolders: Schema.optionalKey(Schema.Array(SidebarProjectFolder)),
+  sidebarProjectFolderAssignments: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString),
+  ),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),

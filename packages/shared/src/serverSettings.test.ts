@@ -41,6 +41,23 @@ describe("serverSettings helpers", () => {
       logsAfterDays: 30,
     });
   });
+  it("replaces sidebar folder assignments so unfiled projects stay unfiled", () => {
+    const filed = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      sidebarProjectFolders: [{ id: "work", name: "Work", collapsed: false }],
+      sidebarProjectFolderAssignments: { a: "work", b: "work" },
+    });
+    expect(filed.sidebarProjectFolderAssignments).toEqual({ a: "work", b: "work" });
+    const unfiled = applyServerSettingsPatch(filed, {
+      sidebarProjectFolderAssignments: { a: "work" },
+    });
+    expect(unfiled.sidebarProjectFolderAssignments).toEqual({ a: "work" });
+    expect(
+      applyServerSettingsPatch(unfiled, {
+        sidebarProjectFolders: [],
+        sidebarProjectFolderAssignments: {},
+      }).sidebarProjectFolders,
+    ).toEqual([]);
+  });
   it("replaces SSH host lists when saving, editing, and removing hosts", () => {
     const host = { id: "mini", label: "Mac mini", target: "mini" };
     const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { deviceHosts: [host] });
