@@ -5,7 +5,7 @@ import {
   SIDEBAR_PEEK_ANIMATION_MS,
   SIDEBAR_PEEK_CLOSE_DELAY_MS,
   SIDEBAR_PEEK_OPEN_DELAY_MS,
-  sidebarPeekDatasetValue,
+  shouldIgnoreSidebarPeekLeave,
 } from "./sidebarPeek";
 
 describe("sidebar peek", () => {
@@ -39,10 +39,11 @@ describe("sidebar peek", () => {
     expect(resolveSidebarPeekIntent(true, "hide-now")).toEqual({ peeking: false, delayMs: 0 });
   });
 
-  it("keeps the overlay mounted while the close clip plays", () => {
-    expect(sidebarPeekDatasetValue(true, true)).toBe("true");
-    expect(sidebarPeekDatasetValue(true, false)).toBe("out");
-    expect(sidebarPeekDatasetValue(false, false)).toBeUndefined();
+  it("keeps the overlay mounted through the close width animation", () => {
     expect(SIDEBAR_PEEK_ANIMATION_MS).toBe(220);
+  });
+
+  it("does not ignore a leave into nowhere", () => {
+    expect(shouldIgnoreSidebarPeekLeave(null, null)).toBe(false);
   });
 });

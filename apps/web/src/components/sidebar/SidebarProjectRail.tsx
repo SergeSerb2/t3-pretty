@@ -502,13 +502,7 @@ export function SidebarProjectRail({
     <TooltipProvider delay={150} closeDelay={0} timeout={400}>
       <nav
         aria-label="Projects"
-        className={cn(
-          "flex min-h-0 w-12 shrink-0 flex-col items-center gap-1 py-2",
-          // On macOS the icon-only column is traffic-light wide. Centre the rail
-          // there and glide it to the docked edge as the list clips open.
-          "translate-x-0 group-data-compact:translate-x-[calc((var(--sidebar-width-icon)-3rem)/2)]",
-          "motion-safe:transition-transform motion-safe:duration-(--sidebar-peek-duration) motion-safe:ease-[cubic-bezier(0.23,1,0.32,1)]",
-        )}
+        className="flex min-h-0 w-12 shrink-0 flex-col items-center gap-1 py-2"
         onDragLeave={(event) => {
           const next = event.relatedTarget;
           if (next instanceof Node && event.currentTarget.contains(next)) return;

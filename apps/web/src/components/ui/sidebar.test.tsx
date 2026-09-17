@@ -37,7 +37,8 @@ describe("sidebar interactive cursors", () => {
     );
 
     expect(html).toContain('data-sidebar-state="collapsed"');
-    expect(html).toContain("max(3rem, var(--workspace-controls-left, 0px))");
+    expect(html).toContain("3rem");
+    expect(html).not.toContain("max(3rem, var(--workspace-controls-left, 0px))");
   });
 
   it("keeps the sidebar trigger interactive inside Electron drag regions", () => {

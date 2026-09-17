@@ -5,7 +5,6 @@ export const SIDEBAR_PEEK_CLOSE_DELAY_MS = 240;
 export const SIDEBAR_PEEK_ANIMATION_MS = 220;
 
 export type SidebarPeekEvent = "pointer-enter" | "pointer-leave" | "peek-now" | "hide-now";
-export type SidebarPeekDataset = "true" | "out";
 
 export function resolveSidebarPeekIntent(
   peeking: boolean,
@@ -26,12 +25,16 @@ export function resolveSidebarPeekIntent(
   }
 }
 
-export function sidebarPeekDatasetValue(
-  present: boolean,
-  peeking: boolean,
-): SidebarPeekDataset | undefined {
-  if (!present) return undefined;
-  return peeking ? "true" : "out";
+export function shouldIgnoreSidebarPeekLeave(
+  currentTarget: EventTarget | null,
+  relatedTarget: EventTarget | null,
+): boolean {
+  if (typeof Node === "undefined") return false;
+  return (
+    relatedTarget instanceof Node &&
+    currentTarget instanceof Node &&
+    currentTarget.contains(relatedTarget)
+  );
 }
 
 function prefersReducedMotion(): boolean {
@@ -41,28 +44,20 @@ function prefersReducedMotion(): boolean {
 export function useSidebarPeek(enabled: boolean) {
   const [peeking, setPeeking] = useState(false);
   const [present, setPresent] = useState(false);
-  const timersRef = useRef({ open: 0, close: 0, exit: 0, frame: 0 });
+  const timersRef = useRef({ open: 0, close: 0, exit: 0 });
 
   const clearTimers = useCallback(() => {
     window.clearTimeout(timersRef.current.open);
     window.clearTimeout(timersRef.current.close);
     window.clearTimeout(timersRef.current.exit);
-    window.cancelAnimationFrame(timersRef.current.frame);
     timersRef.current.open = 0;
     timersRef.current.close = 0;
     timersRef.current.exit = 0;
-    timersRef.current.frame = 0;
   }, []);
 
   const showFlyout = useCallback(() => {
     setPresent(true);
-    if (prefersReducedMotion()) {
-      setPeeking(true);
-      return;
-    }
-    // First paint stays clipped (`data-peeking=out`) so the width jump is hidden
-    // and clip-path can retarget instead of popping fully open.
-    timersRef.current.frame = window.requestAnimationFrame(() => setPeeking(true));
+    setPeeking(true);
   }, []);
 
   const hideFlyout = useCallback((immediate: boolean) => {

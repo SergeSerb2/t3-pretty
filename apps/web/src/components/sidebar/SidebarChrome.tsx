@@ -30,11 +30,6 @@ import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
-// A peek reveals the header with the container clip; the wordmark also fades
-// so it does not read as sliced while the edge sweeps across it.
-const SIDEBAR_BRAND_PEEK_FADE_CLASS =
-  "group-data-compact:opacity-0 motion-safe:transition-opacity motion-safe:duration-(--sidebar-peek-duration) motion-safe:ease-out";
-
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
 }: {
@@ -72,7 +67,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         // The wrapper carries the hiding: Badge's own `inline-flex` utility
         // outranks the components-layer `sidebar-brand-stage` display rules,
         // so the class has to live on an element without a display utility.
-        <span className="sidebar-brand-stage relative z-10 ml-1 items-center group-data-[collapsible=icon]:hidden group-data-compact:opacity-0 motion-safe:transition-opacity motion-safe:duration-(--sidebar-peek-duration) motion-safe:ease-out">
+        <span className="sidebar-brand-stage relative z-10 ml-1 items-center">
           <Badge
             className="rounded-full px-1.5 text-muted-foreground"
             data-environment-identification="pill"
@@ -92,8 +87,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
     <Link
       aria-label="Go to threads"
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex group-data-[collapsible=icon]:hidden",
-        SIDEBAR_BRAND_PEEK_FADE_CLASS,
+        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
