@@ -7,7 +7,7 @@ import {
   SearchIcon,
   SquarePenIcon,
 } from "lucide-react";
-import type { MouseEvent, ReactNode } from "react";
+import { useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 
 import type { SidebarProjectFolder } from "@t3tools/contracts/settings";
 
@@ -16,6 +16,9 @@ import { cn } from "../../lib/utils";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import {
   buildProjectRailItems,
+  dataTransferHasRailProject,
+  RAIL_PROJECT_DRAG_TYPE,
+  type ProjectRailDropTarget,
   type SidebarProjectFolderSettings,
 } from "../../sidebarProjectFolders";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -37,6 +40,11 @@ const RAIL_TOOLTIP_CLASS =
   "max-w-72 transition-[width,height,scale,opacity,translate] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] data-starting-style:-translate-x-1 data-ending-style:-translate-x-1";
 
 const EMPTY_FOLDER_SETTINGS: SidebarProjectFolderSettings = { folders: [], assignments: {} };
+const RAIL_DROP_HIGHLIGHT_CLASS = "bg-sidebar-row-hover ring-1 ring-ring/80";
+
+function railDragTypes(event: DragEvent): readonly string[] {
+  return event.dataTransfer === null ? [] : Array.from(event.dataTransfer.types);
+}
 
 function projectRailEnvironmentLine(project: SidebarProjectSnapshot): string | null {
   if (project.remoteEnvironmentLabels.length === 0) return null;
@@ -141,6 +149,10 @@ function ProjectRailItem({
   onSelectProject,
   onNewThreadInProject,
   onProjectContextMenu,
+  draggable = false,
+  dragging = false,
+  onDragStart,
+  onDragEnd,
 }: {
   project: SidebarProjectSnapshot;
   jumpNumber: number | null;
@@ -148,12 +160,27 @@ function ProjectRailItem({
   attention: ProjectRailAttention | null;
   docked: boolean;
   onSelectProject: (project: SidebarProjectSnapshot) => void;
-  onNewThreadInProject?: (project: SidebarProjectSnapshot) => void;
-  onProjectContextMenu?: (event: MouseEvent<HTMLElement>, project: SidebarProjectSnapshot) => void;
+  onNewThreadInProject?: ((project: SidebarProjectSnapshot) => void) | undefined;
+  onProjectContextMenu?:
+    | ((event: MouseEvent<HTMLElement>, project: SidebarProjectSnapshot) => void)
+    | undefined;
+  draggable?: boolean;
+  dragging?: boolean;
+  onDragStart?: ((event: DragEvent<HTMLDivElement>) => void) | undefined;
+  onDragEnd?: (() => void) | undefined;
 }) {
   const label = [project.displayName, ...project.remoteEnvironmentLabels].join(" · ");
   return (
-    <div className="group/rail-item relative min-w-0 shrink-0">
+    <div
+      className={cn(
+        "group/rail-item relative min-w-0 shrink-0",
+        draggable && "cursor-grab",
+        dragging && "opacity-50",
+      )}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+    >
       <SidebarMenuButton
         size={docked ? "icon" : "tile"}
         aria-label={`Show ${label} threads`}
@@ -206,6 +233,7 @@ function ProjectRailItem({
       {onNewThreadInProject ? (
         <button
           type="button"
+          draggable={false}
           aria-label={`New thread in ${project.displayName}`}
           onClick={(event) => {
             event.stopPropagation();
@@ -242,6 +270,7 @@ export function SidebarProjectRail({
   folders = EMPTY_FOLDER_SETTINGS,
   onToggleFolder,
   onFolderContextMenu,
+  onApplyDrop,
 }: {
   variant?: "docked" | "collapsed";
   projects: readonly SidebarProjectSnapshot[];
@@ -256,10 +285,40 @@ export function SidebarProjectRail({
   folders?: SidebarProjectFolderSettings;
   onToggleFolder?: (folderId: string) => void;
   onFolderContextMenu?: (event: MouseEvent<HTMLElement>, folder: SidebarProjectFolder) => void;
+  onApplyDrop?: (projectKey: string, target: ProjectRailDropTarget) => void;
 }) {
   const docked = variant === "docked";
   const items = buildProjectRailItems(projects, folders);
   const jumpByProjectKey = visibleProjectJumpNumbers(items);
+  const [draggingProjectKey, setDraggingProjectKey] = useState<string | null>(null);
+  const [dropHighlight, setDropHighlight] = useState<string | null>(null);
+  const canDrag = onApplyDrop !== undefined && folders.folders.length > 0;
+
+  const acceptRailDrag = (event: DragEvent) => {
+    if (draggingProjectKey === null && !dataTransferHasRailProject(railDragTypes(event))) {
+      return false;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return true;
+  };
+
+  const finishDrop = (event: DragEvent, target: ProjectRailDropTarget) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const projectKey = draggingProjectKey ?? event.dataTransfer?.getData(RAIL_PROJECT_DRAG_TYPE);
+    if (projectKey !== undefined && projectKey.length > 0) onApplyDrop?.(projectKey, target);
+    setDraggingProjectKey(null);
+    setDropHighlight(null);
+  };
+
+  const highlightUngrouped = (highlight: "all" | "list") => (event: DragEvent<HTMLElement>) => {
+    if (!acceptRailDrag(event)) return;
+    setDropHighlight(highlight);
+  };
+  const dropUngrouped = (event: DragEvent<HTMLElement>) => {
+    finishDrop(event, { kind: "ungrouped" });
+  };
 
   const renderProject = (project: SidebarProjectSnapshot) => (
     <ProjectRailItem
@@ -272,6 +331,18 @@ export function SidebarProjectRail({
       onSelectProject={onSelectProject}
       onNewThreadInProject={onNewThreadInProject}
       onProjectContextMenu={onProjectContextMenu}
+      draggable={canDrag}
+      dragging={draggingProjectKey === project.projectKey}
+      onDragStart={(event) => {
+        event.dataTransfer.setData(RAIL_PROJECT_DRAG_TYPE, project.projectKey);
+        event.dataTransfer.setData("text/plain", project.projectKey);
+        event.dataTransfer.effectAllowed = "move";
+        setDraggingProjectKey(project.projectKey);
+      }}
+      onDragEnd={() => {
+        setDraggingProjectKey(null);
+        setDropHighlight(null);
+      }}
     />
   );
 
@@ -291,7 +362,14 @@ export function SidebarProjectRail({
           docked
             ? "flex flex-col items-center gap-1 py-0.5"
             : cn(COLLAPSED_DOCK_GRID_CLASS, "col-span-full p-0.5"),
+          dropHighlight === `folder:${item.folder.id}` && RAIL_DROP_HIGHLIGHT_CLASS,
         )}
+        onDragOver={(event) => {
+          if (!acceptRailDrag(event)) return;
+          event.stopPropagation();
+          setDropHighlight(`folder:${item.folder.id}`);
+        }}
+        onDrop={(event) => finishDrop(event, { kind: "folder", folderId: item.folder.id })}
       >
         <div className={cn("relative min-w-0 shrink-0", docked ? undefined : "col-span-full")}>
           <SidebarMenuButton
@@ -350,6 +428,11 @@ export function SidebarProjectRail({
             ? "w-12 shrink-0 items-center gap-1.5 border-r border-sidebar-border/60 py-2"
             : cn(COLLAPSED_DOCK_CONTAINER_CLASS, "flex-1 gap-1 px-1 py-1.5"),
         )}
+        onDragLeave={(event) => {
+          const next = event.relatedTarget;
+          if (next instanceof Node && event.currentTarget.contains(next)) return;
+          setDropHighlight(null);
+        }}
       >
         {docked ? (
           <>
@@ -360,12 +443,23 @@ export function SidebarProjectRail({
                 tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "All projects" }}
                 isActive={selectedProjectKey === null}
                 aria-pressed={selectedProjectKey === null}
+                className={dropHighlight === "all" ? RAIL_DROP_HIGHLIGHT_CLASS : undefined}
                 onClick={onSelectAll}
+                onDragOver={highlightUngrouped("all")}
+                onDrop={dropUngrouped}
               >
                 <LayersIcon />
               </SidebarMenuButton>
             ) : null}
-            <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden py-1">
+            <div
+              className={cn(
+                "flex min-h-0 w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden py-1",
+                dropHighlight === "list" && "rounded-lg",
+                dropHighlight === "list" && RAIL_DROP_HIGHLIGHT_CLASS,
+              )}
+              onDragOver={highlightUngrouped("list")}
+              onDrop={dropUngrouped}
+            >
               {railItems}
             </div>
             <SidebarMenuButton
@@ -404,8 +498,13 @@ export function SidebarProjectRail({
                   tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "All projects" }}
                   isActive={selectedProjectKey === null}
                   aria-pressed={selectedProjectKey === null}
-                  className={COLLAPSED_DOCK_BAR_BUTTON_CLASS}
+                  className={cn(
+                    COLLAPSED_DOCK_BAR_BUTTON_CLASS,
+                    dropHighlight === "all" && RAIL_DROP_HIGHLIGHT_CLASS,
+                  )}
                   onClick={onSelectAll}
+                  onDragOver={highlightUngrouped("all")}
+                  onDrop={dropUngrouped}
                 >
                   <LayersIcon />
                   <span className={COLLAPSED_DOCK_WIDE_LABEL_CLASS}>All</span>
@@ -416,7 +515,11 @@ export function SidebarProjectRail({
               className={cn(
                 COLLAPSED_DOCK_GRID_CLASS,
                 "min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-0.5",
+                dropHighlight === "list" && "rounded-lg",
+                dropHighlight === "list" && RAIL_DROP_HIGHLIGHT_CLASS,
               )}
+              onDragOver={highlightUngrouped("list")}
+              onDrop={dropUngrouped}
             >
               {railItems}
             </div>

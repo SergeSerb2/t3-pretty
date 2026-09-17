@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  applyProjectRailDrop,
   assignProjectToFolder,
   buildProjectRailItems,
   createProjectFolder,
+  dataTransferHasRailProject,
   deleteProjectFolder,
   moveProjectFolder,
   parseProjectFolderMenuAction,
   projectFolderHeaderMenuItems,
   projectFolderMenuItems,
+  RAIL_PROJECT_DRAG_TYPE,
   renameProjectFolder,
   toggleProjectFolderCollapsed,
   unassignProjectFromFolder,
@@ -93,6 +96,22 @@ describe("project folder mutations", () => {
   it("ignores blank names and unknown folder moves", () => {
     expect(createProjectFolder(empty, "   ", "alpha", "work")).toEqual(empty);
     expect(assignProjectToFolder(empty, "alpha", "missing")).toEqual(empty);
+  });
+
+  it("files a dragged project into a folder or back onto the ungrouped list", () => {
+    const settings = createProjectFolder(empty, "Work", "a", "work");
+    expect(
+      applyProjectRailDrop(settings, "b", { kind: "folder", folderId: "work" }).assignments,
+    ).toEqual({ a: "work", b: "work" });
+    expect(applyProjectRailDrop(settings, "a", { kind: "ungrouped" }).assignments).toEqual({});
+    expect(applyProjectRailDrop(settings, "a", { kind: "folder", folderId: "work" })).toBe(
+      settings,
+    );
+    expect(applyProjectRailDrop(settings, "a", { kind: "folder", folderId: "missing" })).toBe(
+      settings,
+    );
+    expect(dataTransferHasRailProject([RAIL_PROJECT_DRAG_TYPE, "text/plain"])).toBe(true);
+    expect(dataTransferHasRailProject(["text/plain"])).toBe(false);
   });
 
   it("renames, toggles collapse, reorders, and deletes", () => {

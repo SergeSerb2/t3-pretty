@@ -3932,6 +3932,7 @@ export default function LegacySidebar() {
           folders={projectFolders.settings}
           onToggleFolder={projectFolders.toggleCollapsed}
           onFolderContextMenu={projectFolders.onFolderContextMenu}
+          onApplyDrop={projectFolders.applyDrop}
           onSelectAll={() => {
             setOpen(true);
           }}

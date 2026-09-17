@@ -4587,6 +4587,7 @@ export default function Sidebar() {
           folders={projectFolders.settings}
           onToggleFolder={projectFolders.toggleCollapsed}
           onFolderContextMenu={projectFolders.onFolderContextMenu}
+          onApplyDrop={projectFolders.applyDrop}
           onSelectAll={() => {
             setProjectScopeKey(null);
             setThreadSearchQuery("");
@@ -4616,6 +4617,7 @@ export default function Sidebar() {
           folders={projectFolders.settings}
           onToggleFolder={projectFolders.toggleCollapsed}
           onFolderContextMenu={projectFolders.onFolderContextMenu}
+          onApplyDrop={projectFolders.applyDrop}
           onSelectAll={() => {
             setProjectScopeKey(null);
             setThreadSearchQuery("");
