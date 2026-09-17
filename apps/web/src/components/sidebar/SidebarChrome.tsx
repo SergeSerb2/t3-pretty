@@ -26,11 +26,7 @@ import {
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
-import {
-  COLLAPSED_DOCK_COLLAPSED_MENU_CLASS,
-  COLLAPSED_DOCK_CONTAINER_CLASS,
-  COLLAPSED_DOCK_TILE_BUTTON_CLASS,
-} from "./collapsedSidebarDock";
+import { COLLAPSED_SWITCHER_CONTROL_CLASS } from "./collapsedSidebarDock";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -139,7 +135,7 @@ function SidebarUtilityItem({
           render={
             <SidebarMenuButton
               aria-label={label}
-              className={COLLAPSED_DOCK_TILE_BUTTON_CLASS}
+              className={COLLAPSED_SWITCHER_CONTROL_CLASS}
               data-animate-ui-icons
               onClick={onClick}
               size="icon"
@@ -212,16 +208,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   }, [canGoBack, closeMobileSidebar, navigate]);
 
   return (
-    <SidebarMenu
-      className={cn(
-        "flex-row items-center group-data-[collapsible=icon]:[&>li]:ml-0",
-        COLLAPSED_DOCK_COLLAPSED_MENU_CLASS,
-      )}
-    >
+    <SidebarMenu className="flex-row items-center group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:[&>li]:ml-0 group-data-[collapsible=icon]:w-full">
       {currentFooterPage ? (
         <SidebarMenuItem className="min-w-0 flex-1">
           <SidebarMenuButton
-            className={COLLAPSED_DOCK_TILE_BUTTON_CLASS}
+            className={COLLAPSED_SWITCHER_CONTROL_CLASS}
             onClick={handleBackClick}
             aria-label="Back"
             tooltip="Back"
@@ -266,12 +257,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
-    <SidebarFooter
-      className={cn(
-        COLLAPSED_DOCK_CONTAINER_CLASS,
-        "px-[var(--sidebar-content-inset)] py-1 group-data-[collapsible=icon]:px-1",
-      )}
-    >
+    <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1 group-data-[collapsible=icon]:hidden">
       <div className="contents group-data-[collapsible=icon]:hidden">
         <SidebarProviderUpdatePill />
         <SidebarUpdateArchitectureWarning />

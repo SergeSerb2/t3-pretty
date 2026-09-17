@@ -22,6 +22,7 @@ import { useIsMobile } from "~/hooks/useMediaQuery";
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
 import { clampSidebarWidth, formatSidebarWidth } from "./sidebarResize";
 import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState";
+import { useSidebarPeek } from "./sidebarPeek";
 import * as Schema from "effect/Schema";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
@@ -39,6 +40,10 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
   toggleSidebar: () => void;
+  peeking: boolean;
+  peekNow: () => void;
+  onPeekPointerEnter: () => void;
+  onPeekPointerLeave: () => void;
 };
 
 type SidebarResizableOptions = {
@@ -145,6 +150,9 @@ function SidebarProvider({
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
   const state = resolveSidebarState({ isMobile, open, openMobile });
+  const { peeking, peekNow, onPeekPointerEnter, onPeekPointerLeave } = useSidebarPeek(
+    !isMobile && !open,
+  );
 
   const contextValue = React.useMemo<SidebarContextProps>(
     () => ({
@@ -155,8 +163,23 @@ function SidebarProvider({
       setOpenMobile,
       state,
       toggleSidebar,
+      peeking,
+      peekNow,
+      onPeekPointerEnter,
+      onPeekPointerLeave,
     }),
-    [state, open, setOpen, isMobile, openMobile, toggleSidebar],
+    [
+      state,
+      open,
+      setOpen,
+      isMobile,
+      openMobile,
+      toggleSidebar,
+      peeking,
+      peekNow,
+      onPeekPointerEnter,
+      onPeekPointerLeave,
+    ],
   );
 
   return (
@@ -170,8 +193,7 @@ function SidebarProvider({
           {
             "--sidebar-width": SIDEBAR_WIDTH,
             // On macOS the traffic-light inset is wider than the default 3rem
-            // rail. Grow the collapsed rail so it clears the lights; the
-            // project dock fills that width instead of a skinny centered strip.
+            // rail. Grow the collapsed rail so it clears the lights.
             "--sidebar-width-icon": `max(${SIDEBAR_WIDTH_ICON}, var(--workspace-controls-left, 0px))`,
             "--workspace-titlebar-content-left":
               "calc(var(--workspace-controls-left) + var(--workspace-titlebar-control-size) + var(--workspace-titlebar-control-gap))",
@@ -200,7 +222,15 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none";
   resizable?: boolean | SidebarResizableOptions;
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const {
+    isMobile,
+    state,
+    openMobile,
+    setOpenMobile,
+    peeking,
+    onPeekPointerEnter,
+    onPeekPointerLeave,
+  } = useSidebar();
   const resolvedResizable = React.useMemo<SidebarResolvedResizableOptions | null>(() => {
     if (isMobile || collapsible === "none" || !resizable) {
       return null;
@@ -276,14 +306,17 @@ function Sidebar({
     );
   }
 
+  const flyout = state === "collapsed" && peeking;
+
   return (
     <SidebarInstanceContext value={instanceContextValue}>
       <div
         className="group peer hidden text-sidebar-foreground md:block"
-        data-collapsible={state === "collapsed" ? collapsible : ""}
+        data-collapsible={state === "collapsed" && !peeking ? collapsible : ""}
+        data-peeking={flyout ? "true" : undefined}
         data-side={side}
         data-slot="sidebar"
-        data-state={state}
+        data-state={flyout ? "expanded" : state}
         data-variant={variant}
       >
         {/* This is what handles the sidebar gap on desktop */}
@@ -296,6 +329,8 @@ function Sidebar({
             variant === "floating" || variant === "inset"
               ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
               : "group-data-[collapsible=icon]:w-(--sidebar-width-icon)",
+            // A peek flyout must not push the chat; the icon gap stays reserved.
+            "group-data-[peeking=true]:w-(--sidebar-width-icon)",
           )}
           data-slot="sidebar-gap"
         />
@@ -310,10 +345,19 @@ function Sidebar({
             variant === "floating" || variant === "inset"
               ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
               : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
+            "group-data-[peeking=true]:z-40 group-data-[peeking=true]:shadow-[8px_0_24px_rgba(0,0,0,0.18)]",
             className,
           )}
           data-slot="sidebar-container"
           {...props}
+          onPointerEnter={(event) => {
+            props.onPointerEnter?.(event);
+            onPeekPointerEnter();
+          }}
+          onPointerLeave={(event) => {
+            props.onPointerLeave?.(event);
+            onPeekPointerLeave();
+          }}
         >
           <div
             className="flex h-full w-full flex-col overflow-visible bg-sidebar surface-grain group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
@@ -746,7 +790,7 @@ const sidebarMenuButtonVariants = cva(
         default:
           "h-8 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-1.5 text-sm group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-[var(--sidebar-content-inset)]!",
         icon: "size-8 justify-center rounded-[var(--control-radius)] p-0",
-        // Fills a collapsed-dock cell instead of staying a centered 32px icon.
+        // Fills the collapsed rail instead of staying a centered 32px icon.
         tile: "aspect-square h-auto min-h-8 w-full min-w-0 justify-center rounded-[var(--control-radius)] p-1 group-data-[collapsible=icon]:size-auto! group-data-[collapsible=icon]:h-auto! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:p-1!",
         lg: "h-12 rounded-lg p-2 text-sm group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-0!",
         sm: "h-7 rounded-lg p-2 text-xs group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-[var(--sidebar-content-inset)]!",
@@ -771,7 +815,7 @@ function SidebarMenuButton({
   isActive?: boolean;
   tooltip?: string | React.ComponentProps<typeof TooltipPopup>;
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
-  const { isMobile, state } = useSidebar();
+  const { isMobile, state, peeking } = useSidebar();
 
   const defaultProps = {
     className: cn(sidebarMenuButtonVariants({ size, variant }), className),
@@ -803,7 +847,7 @@ function SidebarMenuButton({
   // stays available while the sidebar is expanded. Labelled rows only need
   // it when collapsed.
   const hideTooltip =
-    size === "icon" || size === "tile" ? isMobile : state !== "collapsed" || isMobile;
+    size === "icon" || size === "tile" ? isMobile : state !== "collapsed" || peeking || isMobile;
 
   return (
     <Tooltip>
