@@ -41,8 +41,12 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    `automation/upstream-*`, the next job uses that branch as the merge base
    instead of re-paying every conflict from `main`. After opening the Origin
    pull request it merges immediately (`origin pr merge --merge`) and retries
-   once if `main` moved underneath the branch. Maintainers retry with Buildkite New Build on `main` (UI or
-   API). Hosted desktop
+   once if `main` moved underneath the branch. Maintainers retry by rebuilding
+   the `:git: Upstream Sync` job on a `main` build, or with Buildkite New Build
+   on `main` (UI or API; the step's `if` accepts `schedule`, `ui`, and `api`).
+   The script prints `upstream-sync: start` immediately and the failing
+   `file:line` on error — a ~150ms red hook with no script lines is a bug.
+   Hosted desktop
    preflight often starts with no `.git`; it clones the triggering SHA from
    the parent Buildkite checkout when that path exists, and skips minting
    when the clone cannot be created or Origin tags cannot be fetched.

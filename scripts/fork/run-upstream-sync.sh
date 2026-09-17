@@ -9,6 +9,12 @@
 # file, and `set -u` then killed every scheduled sync in discover.
 set -euo pipefail
 
+# Print before any work. A later `set -e` failure used to kill the Buildkite
+# command hook in ~150ms with zero script lines (macOS `cp -n` is silent).
+# Keep this trap from echoing BASH_COMMAND: secret-loading lines can appear
+# there. file:line is enough to find the command.
+trap 'echo "upstream-sync: failed at ${BASH_SOURCE[0]}:${LINENO} (exit $?)" >&2' ERR
+
 # Buildkite sets FORCE_COLOR and NO_COLOR together. Origin's bun CLI then
 # prints assertion_error while loading tty colors and, on the macos-release
 # agent, can exit 255 from `git fetch` (credential helper) and `origin`.
@@ -18,6 +24,7 @@ export FORCE_COLOR=0
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+echo "upstream-sync: start root=$ROOT uname=$(uname -s) pid=$$"
 
 # Transient network failures (upstream ls-remote, Origin fetches, the pnpm
 # registry) must not kill a four-hour sync slot on the first blip. Three
@@ -61,14 +68,21 @@ mkdir -p "$SYNC_RESOLUTION_CACHE_DIR"
 # Reviewed full-file seeds survive cache-branch prune and unblock a pinned
 # nightly when the batched model path cannot validate the first conflict.
 # Remote checkpoint entries still win exact-key collisions.
+# Do not `cp -n` under `set -e`: macOS /bin/cp -n exits 1 with no message
+# when the destination exists (file_cmds utils.c nflag → rval = 1). The
+# macos-release agent reuses TMPDIR, so the second scheduled sync died
+# here after the first run had already copied the seeds.
 if [[ -d "$ROOT/.t3-fork/resolution-seeds" ]]; then
   for seed in "$ROOT/.t3-fork/resolution-seeds/"[0-9a-f]*.json; do
     [[ -f "$seed" ]] || continue
     seed_name="${seed##*/}"
     [[ "$seed_name" =~ ^[0-9a-f]{64}[.]json$ ]] || continue
-    cp -n "$seed" "$SYNC_RESOLUTION_CACHE_DIR/$seed_name"
+    if [[ ! -e "$SYNC_RESOLUTION_CACHE_DIR/$seed_name" ]]; then
+      cp "$seed" "$SYNC_RESOLUTION_CACHE_DIR/$seed_name"
+    fi
   done
 fi
+echo "upstream-sync: resolution-seed cache is $SYNC_RESOLUTION_CACHE_DIR"
 
 origin_git() {
   local store="" candidate
