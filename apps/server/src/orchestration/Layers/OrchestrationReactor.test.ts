@@ -9,11 +9,12 @@ import { CheckpointReactor } from "../Services/CheckpointReactor.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
-import { ThreadMergedPullRequestReactor } from "../ThreadMergedPullRequestReactor.ts";
+import * as ThreadSettlementReactor from "../ThreadSettlementReactor.ts";
+import * as PullRequestSyncReactor from "../PullRequestSyncReactor.ts";
+import * as ThreadPullRequestReactor from "../ThreadPullRequestReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
 import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
 import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
-import { ProjectIconReactor } from "../../project/ProjectIconReactor.ts";
 import { ActivityHeadlineReactor } from "./ActivityHeadlineReactor.ts";
 
 describe("OrchestrationReactor", () => {
@@ -59,21 +60,40 @@ describe("OrchestrationReactor", () => {
           }),
         ),
         Layer.provideMerge(
-          Layer.succeed(ThreadMergedPullRequestReactor, {
-            start: () => {
-              started.push("thread-merged-pull-request-reactor");
-              return Effect.void;
-            },
-            sweepOnce: Effect.void,
-          }),
-        ),
-        Layer.provideMerge(
           Layer.succeed(ThreadDeletionReactor, {
             start: () => {
               started.push("thread-deletion-reactor");
               return Effect.void;
             },
+            drainThrough: () => Effect.void,
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.succeed(ThreadPullRequestReactor.ThreadPullRequestReactor, {
+            start: () => {
+              started.push("thread-pull-request-reactor");
+              return Effect.void;
+            },
             drain: Effect.void,
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.succeed(ThreadSettlementReactor.ThreadSettlementReactor, {
+            start: () => {
+              started.push("thread-settlement-reactor");
+              return Effect.void;
+            },
+            drain: Effect.void,
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.succeed(PullRequestSyncReactor.PullRequestSyncReactor, {
+            start: () => {
+              started.push("pull-request-sync-reactor");
+              return Effect.void;
+            },
+            drain: Effect.void,
+            requestSync: () => Effect.void,
           }),
         ),
         Layer.provideMerge(
@@ -81,14 +101,6 @@ describe("OrchestrationReactor", () => {
             publishThread: () => Effect.void,
             start: () => {
               started.push("agent-awareness-relay");
-              return Effect.void;
-            },
-          }),
-        ),
-        Layer.provideMerge(
-          Layer.succeed(ProjectIconReactor, {
-            start: () => {
-              started.push("project-icon-reactor");
               return Effect.void;
             },
           }),
@@ -112,10 +124,11 @@ describe("OrchestrationReactor", () => {
       "provider-runtime-ingestion",
       "provider-command-reactor",
       "checkpoint-reactor",
-      "thread-merged-pull-request-reactor",
       "thread-deletion-reactor",
+      "thread-pull-request-reactor",
+      "thread-settlement-reactor",
+      "pull-request-sync-reactor",
       "agent-awareness-relay",
-      "project-icon-reactor",
       "activity-headline-reactor",
     ]);
 

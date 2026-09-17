@@ -25,7 +25,6 @@ import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { uuidv4 } from "../../lib/uuid";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
@@ -364,6 +363,13 @@ export function SettingsAppsRouteScreen() {
         contentContainerClassName="gap-6 px-5 pt-4 pb-[18px]"
         keyboardShouldPersistTaps="handled"
       >
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigation.navigate("Issues")}
+          className="min-h-11 justify-center rounded-xl bg-surface px-4 py-3"
+        >
+          <Text className="font-medium text-foreground">Manage Linear and Sentry issues</Text>
+        </Pressable>
         {environments.length > 1 ? (
           <View className="flex-row flex-wrap gap-2">
             {environments.map((environment) => (
@@ -607,7 +613,6 @@ function CatalogActionRow(props: {
   readonly value?: string;
   readonly onPress: () => void;
 }) {
-  const iconColor = useThemeColor("--color-icon");
   return (
     <Pressable
       accessibilityRole="button"
@@ -620,7 +625,7 @@ function CatalogActionRow(props: {
       <SymbolView
         name={props.icon}
         size={22}
-        tintColor={iconColor}
+        tintColorClassName="accent-icon"
         type="monochrome"
         weight="regular"
       />

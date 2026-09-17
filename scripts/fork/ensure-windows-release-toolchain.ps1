@@ -21,17 +21,21 @@ function Test-Pwsh7 {
   Test-Path (Join-Path $env:ProgramFiles "PowerShell\7\pwsh.exe")
 }
 
-function Get-VsInstallPath {
+function Get-VsComponentPath($componentId) {
   $programFilesX86 = ${env:ProgramFiles(x86)}
   $vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
   if (-not (Test-Path $vswhere)) {
     return $null
   }
-  $installPath = & $vswhere -products * -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+  $installPath = & $vswhere -products * -latest -requires $componentId -property installationPath
   if ([string]::IsNullOrWhiteSpace($installPath)) {
     return $null
   }
   return $installPath.Trim()
+}
+
+function Get-VsInstallPath {
+  Get-VsComponentPath "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
 }
 
 function Install-GitForWindows {
@@ -108,14 +112,12 @@ function Install-VsBuildTools {
 function Install-SpectreLibs {
   $componentId = "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre"
   $programFilesX86 = ${env:ProgramFiles(x86)}
-  $vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
   $setupExe = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\setup.exe"
   $installPath = Get-VsInstallPath
   if ($null -eq $installPath) {
     return
   }
-  $existing = & $vswhere -products * -latest -requires $componentId -property installationPath
-  if (-not [string]::IsNullOrWhiteSpace($existing)) {
+  if ($null -ne (Get-VsComponentPath $componentId)) {
     Write-Host "Spectre MSVC libs already installed."
     return
   }
@@ -147,6 +149,9 @@ if ($CheckOnly) {
   }
   if ($null -eq (Get-VsInstallPath)) {
     Write-Missing "Visual Studio MSVC x64 tools" "${env:ProgramFiles(x86)}\Microsoft Visual Studio"
+  }
+  if ($null -eq (Get-VsComponentPath "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre")) {
+    Write-Missing "Visual Studio MSVC x64 Spectre libraries" "${env:ProgramFiles(x86)}\Microsoft Visual Studio"
   }
   Write-Host "Windows release toolchain OK."
   return

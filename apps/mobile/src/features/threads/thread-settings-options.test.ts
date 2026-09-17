@@ -36,22 +36,12 @@ describe("runtimeModeChoicesForProvider", () => {
   it("gives every choice a row label, a summary shortLabel, and a description", () => {
     for (const choice of [
       ...runtimeModeChoicesForProvider(null),
-      ...runtimeModeChoicesForProvider("kimi"),
+      ...runtimeModeChoicesForProvider("grok"),
     ]) {
       expect(choice.label).toBeTruthy();
       expect(choice.shortLabel).toBeTruthy();
       expect(choice.description).toBeTruthy();
     }
-  });
-
-  it("offers Yolo and Full access for Kimi in ascending order of access", () => {
-    expect(
-      runtimeModeChoicesForProvider("kimi").map((choice) => [choice.mode, choice.label]),
-    ).toEqual([
-      ["approval-required", "Approve actions"],
-      ["yolo", "Yolo"],
-      ["full-access", "Full access"],
-    ]);
   });
 
   it("falls back to the generic modes for other providers", () => {

@@ -8,7 +8,7 @@
  * turn that carries them. The prelude is provider-neutral text so every
  * adapter gets the same behavior.
  */
-import type { SkillDocument } from "./SkillMaterializer.ts";
+import type { SkillDocument } from "./SkillLibrary.ts";
 
 const PRELUDE_HEADER = [
   "[Skills]",

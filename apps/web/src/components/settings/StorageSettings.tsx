@@ -33,8 +33,10 @@ import { primaryServerAvailableEditorsAtom, serverEnvironment } from "../../stat
 import { shellEnvironment } from "../../state/shell";
 import { threadEnvironment } from "../../state/threads";
 import { vcsEnvironment } from "../../state/vcs";
+import { useStatusPulse } from "../../hooks/useStatusPulse";
 import {
   refreshStorageInventory,
+  STORAGE_INVENTORY_MAX_ENVIRONMENTS,
   useStorageInventories,
   type EnvironmentStorageStatus,
 } from "../../state/storageInventory";
@@ -70,6 +72,9 @@ import {
   settledWorktrees,
   sortStorageEnvironments,
   storageDeviceStatusText,
+  STORAGE_SETTINGS_ROW_BATCH_SIZE,
+  storageSettingsRowWindow,
+  storageInventoryCoverageWarning,
   summaryCaption,
   type StoragePendingAction,
   worktreeRowDescription,
@@ -89,6 +94,7 @@ function StorageRefreshButton({
   readonly isPending: boolean;
   readonly onRefresh: () => void;
 }) {
+  useStatusPulse(isPending);
   return (
     <Tooltip>
       <TooltipTrigger
@@ -100,7 +106,7 @@ function StorageRefreshButton({
             disabled={isPending}
             onClick={onRefresh}
           >
-            <RefreshCwIcon className={isPending ? "size-3.5 animate-spin" : "size-3.5"} />
+            <RefreshCwIcon className={isPending ? "status-pulse size-3.5" : "size-3.5"} />
           </Button>
         }
       />
@@ -248,7 +254,7 @@ function StorageDeviceCard({
 }
 
 export function StorageSettingsPanel() {
-  const { environments } = useStorageInventories();
+  const { environments, omittedEnvironmentCount } = useStorageInventories();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const sortedEnvironments = useMemo(
     () => sortStorageEnvironments(environments, primaryEnvironmentId),
@@ -262,7 +268,7 @@ export function StorageSettingsPanel() {
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
   const [pending, setPending] = useState<PendingDialog | null>(null);
   const [isOperating, setIsOperating] = useState(false);
-  const [openingFolderFor, setOpeningFolderFor] = useState<EnvironmentId | null>(null);
+  const [openingFolders, setOpeningFolders] = useState<ReadonlySet<EnvironmentId>>(() => new Set());
   // Raw user intent; the effective selection is re-derived every render so a
   // device that drops out of the catalog falls back without erasing the pick —
   // if it reappears (e.g. after a reconnect) the selection is restored.
@@ -409,13 +415,21 @@ export function StorageSettingsPanel() {
         });
         return;
       }
-      setOpeningFolderFor(environmentId);
-      const result = await openInEditor({
-        environmentId,
-        input: { cwd: folderPath, editor },
-      });
-      setOpeningFolderFor(null);
-      reportFailure("Could not open folder", result);
+      setOpeningFolders((current) => new Set(current).add(environmentId));
+      try {
+        const result = await openInEditor({
+          environmentId,
+          input: { cwd: folderPath, editor },
+        });
+        reportFailure("Could not open folder", result);
+      } finally {
+        setOpeningFolders((current) => {
+          if (!current.has(environmentId)) return current;
+          const next = new Set(current);
+          next.delete(environmentId);
+          return next;
+        });
+      }
     },
     [availableEditors, openInEditor, reportFailure],
   );
@@ -455,7 +469,7 @@ export function StorageSettingsPanel() {
               key={selectedEnvironment.environmentId}
               environment={selectedEnvironment}
               isOperating={isOperating}
-              isOpeningFolder={openingFolderFor === selectedEnvironment.environmentId}
+              isOpeningFolder={openingFolders.has(selectedEnvironment.environmentId)}
               onOpenFolder={openManagedFolder}
               onPending={(action, inventory) =>
                 setPending({
@@ -468,6 +482,17 @@ export function StorageSettingsPanel() {
           ) : null}
         </>
       )}
+
+      {omittedEnvironmentCount > 0 ? (
+        <SettingsSection title="Additional environments">
+          <SettingsRow
+            title={`${omittedEnvironmentCount} additional ${
+              omittedEnvironmentCount === 1 ? "environment was" : "environments were"
+            } not measured`}
+            description={`Storage inventory is limited to the first ${STORAGE_INVENTORY_MAX_ENVIRONMENTS} connected environments at once so opening Settings cannot start an unbounded fleet of filesystem scans.`}
+          />
+        </SettingsSection>
+      ) : null}
 
       <AlertDialog
         open={pending !== null}
@@ -523,6 +548,9 @@ function EnvironmentStorage({
     () => refreshStorageInventory(environment.environmentId),
     [environment.environmentId],
   );
+  const coverageWarning = inventory ? storageInventoryCoverageWarning(inventory) : null;
+  const bulkActionsDisabled = actionsDisabled || coverageWarning !== null;
+  useStatusPulse(scanning);
 
   if (environment.unsupported) {
     return (
@@ -561,7 +589,7 @@ function EnvironmentStorage({
         <div className="rounded-xl px-3 py-3 sm:px-4">
           <div className="flex items-baseline gap-3">
             <p className="inline-flex items-center gap-2 font-medium text-foreground">
-              <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
+              <LoaderIcon className="status-pulse size-3.5 text-muted-foreground" />
               Measuring storage
             </p>
             <p className="text-[13px] text-muted-foreground">
@@ -584,7 +612,7 @@ function EnvironmentStorage({
           <div className="flex items-baseline gap-3">
             <p className="inline-flex items-center gap-2 font-mono text-lg font-semibold tabular-nums text-foreground">
               {scanning ? (
-                <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
+                <LoaderIcon className="status-pulse size-3.5 text-muted-foreground" />
               ) : null}
               {formatStorageBytes(inventory.totalBytes)}
             </p>
@@ -617,6 +645,11 @@ function EnvironmentStorage({
             Sizes are allocated on-disk bytes for this environment's managed worktrees. Project
             checkouts outside that folder are never counted or removed.
           </p>
+          {coverageWarning === null ? null : (
+            <p className="mt-2 max-w-xl text-[13px] leading-[1.45] text-amber-700 dark:text-amber-300">
+              {coverageWarning}
+            </p>
+          )}
         </div>
       </SettingsSection>
 
@@ -631,7 +664,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="outline"
-              disabled={actionsDisabled || cleanSettled.length === 0}
+              disabled={bulkActionsDisabled || cleanSettled.length === 0}
               onClick={() => onPending({ kind: "remove-clean-settled" }, inventory)}
             >
               Run
@@ -645,7 +678,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="outline"
-              disabled={actionsDisabled || allSettled.length === 0}
+              disabled={bulkActionsDisabled || allSettled.length === 0}
               onClick={() => onPending({ kind: "remove-all-settled" }, inventory)}
             >
               Run
@@ -659,7 +692,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="destructive-outline"
-              disabled={actionsDisabled || inventory.archivedWorktrees.length === 0}
+              disabled={bulkActionsDisabled || inventory.archivedWorktrees.length === 0}
               onClick={() => onPending({ kind: "delete-archived" }, inventory)}
             >
               Run
@@ -673,7 +706,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="outline"
-              disabled={actionsDisabled || inventory.orphanWorktrees.length === 0}
+              disabled={bulkActionsDisabled || inventory.orphanWorktrees.length === 0}
               onClick={() => onPending({ kind: "remove-orphans" }, inventory)}
             >
               Run
@@ -714,28 +747,11 @@ function EnvironmentStorage({
         {inventory.orphanWorktrees.length === 0 ? (
           <SettingsRow title="No orphan checkouts under the managed worktrees folder." />
         ) : (
-          inventory.orphanWorktrees.map((orphan) => (
-            <SettingsRow
-              key={orphan.path}
-              title={orphan.displayName}
-              description={orphan.path}
-              control={
-                <div className="flex items-center gap-2">
-                  <span className="tabular-nums text-[13px] text-muted-foreground">
-                    {formatStorageBytes(orphan.diskUsageBytes)}
-                  </span>
-                  <Button
-                    size="xs"
-                    variant="destructive-outline"
-                    disabled={actionsDisabled}
-                    onClick={() => onPending({ kind: "remove-orphan", orphan }, inventory)}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              }
-            />
-          ))
+          <OrphanWorktreeRows
+            actionsDisabled={actionsDisabled}
+            inventory={inventory}
+            onPending={onPending}
+          />
         )}
         <SettingsRow
           title="Managed worktrees folder"
@@ -783,6 +799,12 @@ function WorktreeListSection({
   readonly deleteLabel?: boolean;
   readonly onRemove: (entry: StorageWorktreeEntry) => void;
 }) {
+  const [requestedVisibleCount, setRequestedVisibleCount] = useState(
+    STORAGE_SETTINGS_ROW_BATCH_SIZE,
+  );
+  const rowWindow = storageSettingsRowWindow(entries.length, requestedVisibleCount);
+  const visibleEntries = entries.slice(0, rowWindow.visibleCount);
+
   return (
     <SettingsSection {...(id === undefined ? {} : { id })} title={title}>
       {entries.length === 0 ? (
@@ -795,66 +817,151 @@ function WorktreeListSection({
           }
         />
       ) : (
-        entries.map((item) => (
-          <SettingsRow
-            key={item.threadId}
-            title={
-              <span className="inline-flex min-w-0 items-center gap-2">
-                {deleteLabel ? (
-                  <ArchiveIcon className="size-3.5 text-muted-foreground" />
-                ) : (
-                  <DirtyIcon isDirty={item.isDirty} />
-                )}
-                <span className="truncate">{item.threadTitle}</span>
-              </span>
-            }
-            description={
-              <>
-                {worktreeRowDescription(item)}
-                {" · "}
-                {formatWorktreePathForDisplay(item.path)}
-              </>
-            }
-            control={
-              <div className="flex items-center gap-2">
-                <span className="tabular-nums text-[13px] text-muted-foreground">
-                  {formatStorageBytes(item.diskUsageBytes)}
+        <>
+          {visibleEntries.map((item) => (
+            <SettingsRow
+              key={item.threadId}
+              title={
+                <span className="inline-flex min-w-0 items-center gap-2">
+                  {deleteLabel ? (
+                    <ArchiveIcon className="size-3.5 text-muted-foreground" />
+                  ) : (
+                    <DirtyIcon isDirty={item.isDirty} />
+                  )}
+                  <span className="truncate">{item.threadTitle}</span>
                 </span>
-                {deleteLabel ? (
-                  <Button
-                    size="xs"
-                    variant="destructive-outline"
-                    disabled={isOperating}
-                    onClick={() => onRemove(item)}
-                  >
-                    Delete
-                  </Button>
-                ) : (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          disabled={isOperating || !item.canRemoveWorktree}
-                          onClick={() => onRemove(item)}
-                        >
-                          Remove
-                        </Button>
-                      }
-                    />
-                    <TooltipPopup side="top">
-                      {item.canRemoveWorktree
-                        ? "Remove this worktree and return the thread to the project checkout"
-                        : "Wait for the thread to settle before removing its worktree"}
-                    </TooltipPopup>
-                  </Tooltip>
-                )}
-              </div>
+              }
+              description={
+                <>
+                  {worktreeRowDescription(item)}
+                  {" · "}
+                  {formatWorktreePathForDisplay(item.path)}
+                </>
+              }
+              control={
+                <div className="flex items-center gap-2">
+                  <span className="tabular-nums text-[13px] text-muted-foreground">
+                    {formatStorageBytes(item.diskUsageBytes)}
+                  </span>
+                  {deleteLabel ? (
+                    <Button
+                      size="xs"
+                      variant="destructive-outline"
+                      disabled={isOperating}
+                      onClick={() => onRemove(item)}
+                    >
+                      Delete
+                    </Button>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={isOperating || !item.canRemoveWorktree}
+                            onClick={() => onRemove(item)}
+                          >
+                            Remove
+                          </Button>
+                        }
+                      />
+                      <TooltipPopup side="top">
+                        {item.canRemoveWorktree
+                          ? "Remove this worktree and return the thread to the project checkout"
+                          : "Wait for the thread to settle before removing its worktree"}
+                      </TooltipPopup>
+                    </Tooltip>
+                  )}
+                </div>
+              }
+            />
+          ))}
+          <StorageRowsRemaining
+            noun="worktrees"
+            remainingCount={rowWindow.remainingCount}
+            onShowMore={() =>
+              setRequestedVisibleCount((current) => current + STORAGE_SETTINGS_ROW_BATCH_SIZE)
             }
           />
-        ))
+        </>
       )}
     </SettingsSection>
+  );
+}
+
+function OrphanWorktreeRows({
+  actionsDisabled,
+  inventory,
+  onPending,
+}: {
+  readonly actionsDisabled: boolean;
+  readonly inventory: StorageInventory;
+  readonly onPending: (action: StoragePendingAction, inventory: StorageInventory) => void;
+}) {
+  const [requestedVisibleCount, setRequestedVisibleCount] = useState(
+    STORAGE_SETTINGS_ROW_BATCH_SIZE,
+  );
+  const rowWindow = storageSettingsRowWindow(
+    inventory.orphanWorktrees.length,
+    requestedVisibleCount,
+  );
+
+  return (
+    <>
+      {inventory.orphanWorktrees.slice(0, rowWindow.visibleCount).map((orphan) => (
+        <SettingsRow
+          key={orphan.path}
+          title={orphan.displayName}
+          description={orphan.path}
+          control={
+            <div className="flex items-center gap-2">
+              <span className="tabular-nums text-[13px] text-muted-foreground">
+                {formatStorageBytes(orphan.diskUsageBytes)}
+              </span>
+              <Button
+                size="xs"
+                variant="destructive-outline"
+                disabled={actionsDisabled}
+                onClick={() => onPending({ kind: "remove-orphan", orphan }, inventory)}
+              >
+                Remove
+              </Button>
+            </div>
+          }
+        />
+      ))}
+      <StorageRowsRemaining
+        noun="orphan checkouts"
+        remainingCount={rowWindow.remainingCount}
+        onShowMore={() =>
+          setRequestedVisibleCount((current) => current + STORAGE_SETTINGS_ROW_BATCH_SIZE)
+        }
+      />
+    </>
+  );
+}
+
+function StorageRowsRemaining({
+  noun,
+  remainingCount,
+  onShowMore,
+}: {
+  readonly noun: string;
+  readonly remainingCount: number;
+  readonly onShowMore: () => void;
+}) {
+  if (remainingCount === 0) return null;
+  const nextBatchCount = Math.min(remainingCount, STORAGE_SETTINGS_ROW_BATCH_SIZE);
+  return (
+    <SettingsRow
+      title={`${remainingCount.toLocaleString()} more ${noun}`}
+      description="Rows are shown in batches so a large inventory keeps Settings responsive."
+      control={
+        <Button size="xs" variant="outline" onClick={onShowMore}>
+          Show {nextBatchCount.toLocaleString()} more
+        </Button>
+      }
+    />
   );
 }

@@ -4,21 +4,22 @@ T3 Code can ask the agent to open a pull request when it finishes a task. Turn i
 
 ## The PR Toggle
 
-When you start a new task in a Git repository, the composer offers a **Create PR when done** toggle:
+When you start a new task in a Git repository, the composer offers a **PR** control:
 
-- **Web and desktop** – **Create PR when done** in the composer footer's `⋯` menu; the `⋯` button shows a dot while it is on
-- **Mobile** – a **PR** pill in the new-task composer toolbar
+- **Web and desktop** – a **PR** chip in the composer footer. Click it to turn create-PR on or off. The chevron opens **Fix reviews & auto-merge**. On a narrow footer the same options live in the `⋯` menu.
+- **Mobile** – a **PR** pill in the new-task composer toolbar, plus a **Merge** pill once create-PR is on
 
-While the toggle is on, the first message of the task carries an instruction asking the agent to create a pull request after finishing the work. The instruction itself stays hidden from your chat transcript — you see only what you typed.
+While create-PR is on, the first message of the task carries an instruction asking the agent to create a pull request after finishing the work. **Fix reviews & auto-merge** adds a second instruction: watch Auto Review and review comments, apply real fixes, and merge (or enable auto-merge) once checks are green. The instructions stay hidden from your chat transcript — you see only what you typed.
 
 ## Defaults
 
-The toggle remembers your choice separately for each workspace mode:
+The toggles remember your choice separately for each workspace mode:
 
-- **New worktree tasks** – on by default. Worktree tasks produce an isolated branch, so their work is expected to land as a pull request.
-- **Local checkout tasks** – off by default.
+- **New worktree tasks** – create-PR on by default. Worktree tasks produce an isolated branch, so their work is expected to land as a pull request.
+- **Local checkout tasks** – create-PR off by default.
+- **Fix reviews & auto-merge** – off by default in every mode. Turning it on also turns create-PR on; turning create-PR off turns this off too.
 
-Flip the toggle at any time; your choice for that mode is remembered on this device.
+Flip the toggles at any time; your choices for that mode are remembered on this device.
 
 ## What the Agent Does
 
@@ -29,7 +30,9 @@ When a task starts with the PR instruction, the agent finishes your requested wo
 3. Reviews the branch diff and commits any remaining changes
 4. **Pushes the branch to your remote** and **opens a pull request** against the default branch, following the repository's PR template if present
 
-Because this pushes to your remote and creates a PR on your Git hosting provider, leave the toggle off for exploratory work you don't want published.
+If **Fix reviews & auto-merge** is also on, the agent then stays with that PR: it applies real Auto Review and review-comment findings, dismisses invalid comments with a reason, and merges (or arms auto-merge) when checks are green. It stops and reports instead of guessing on security, auth, billing, or conflicting-intent questions.
+
+Because this pushes to your remote, opens a PR, and can merge it, leave the toggles off for exploratory work you don't want published.
 
 ## Details
 

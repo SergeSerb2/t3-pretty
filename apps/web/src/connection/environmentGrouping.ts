@@ -25,6 +25,7 @@ export function connectionPhaseGroupPriority(phase: ConnectionGroupPhase): numbe
     case "offline":
       return 3;
     case "error":
+    default:
       return 4;
   }
 }
