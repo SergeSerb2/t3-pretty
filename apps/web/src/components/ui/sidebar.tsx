@@ -360,7 +360,8 @@ function Sidebar({
             "group-data-[peeking]:z-40 group-data-[peeking]:w-(--sidebar-width)! group-data-[peeking]:overflow-hidden",
             "motion-safe:group-data-[peeking]:transition-[clip-path]! motion-safe:group-data-[peeking]:[transition-duration:var(--sidebar-peek-duration)]! motion-safe:group-data-[peeking]:ease-[cubic-bezier(0.23,1,0.32,1)]!",
             "group-data-[peeking=true]:clip-path-[inset(0_0_0_0)] group-data-[peeking=true]:shadow-[8px_0_24px_rgba(0,0,0,0.18)]",
-            "group-data-[peeking=out]:clip-path-[inset(0_calc(100%_-_var(--sidebar-width-icon))_0_0)]",
+            "group-data-[side=left]:group-data-[peeking=out]:clip-path-[inset(0_calc(100%_-_var(--sidebar-width-icon))_0_0)]",
+            "group-data-[side=right]:group-data-[peeking=out]:clip-path-[inset(0_0_0_calc(100%_-_var(--sidebar-width-icon)))]",
             className,
           )}
           data-slot="sidebar-container"

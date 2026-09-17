@@ -119,6 +119,11 @@ describe("thread sidebar width", () => {
     expect(chrome).toContain("group-data-[collapsible=icon]:items-center");
     expect(sidebar).toContain("sidebarPeekDatasetValue(flyoutPresent, peeking)");
     expect(sidebar).toContain("group-data-[peeking]:w-(--sidebar-width-icon)");
-    expect(sidebar).toContain("group-data-[peeking=out]:clip-path-");
+    expect(sidebar).toContain(
+      "group-data-[side=left]:group-data-[peeking=out]:clip-path-[inset(0_calc(100%_-_var(--sidebar-width-icon))_0_0)]",
+    );
+    expect(sidebar).toContain(
+      "group-data-[side=right]:group-data-[peeking=out]:clip-path-[inset(0_0_0_calc(100%_-_var(--sidebar-width-icon)))]",
+    );
   });
 });
