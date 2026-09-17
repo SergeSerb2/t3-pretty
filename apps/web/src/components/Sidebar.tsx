@@ -123,6 +123,7 @@ import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
+import { useSidebarProjectFolders } from "../hooks/useSidebarProjectFolders";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -2205,6 +2206,7 @@ export default function Sidebar() {
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const projectFolders = useSidebarProjectFolders();
   const {
     settleThread,
     unsettleThread,
@@ -4529,6 +4531,7 @@ export default function Sidebar() {
                     : "Settle idle threads",
                 disabled: idleThreads.length === 0,
               },
+              ...projectFolders.menuItemsForProject(group.projectKey),
               { id: "project-settings", label: "Project settings", icon: "settings" },
               { id: "copy-path", label: "Copy path" },
               { id: "remove", label: "Remove project", icon: "trash", destructive: true },
@@ -4536,7 +4539,8 @@ export default function Sidebar() {
             { x: event.clientX, y: event.clientY },
           ),
         );
-        if (clicked._tag === "Failure") return;
+        if (clicked._tag === "Failure" || clicked.value === null) return;
+        if (await projectFolders.handleAction(clicked.value, group.projectKey)) return;
         switch (clicked.value) {
           case "new-thread":
             startNewThreadInProject(group);
@@ -4563,6 +4567,7 @@ export default function Sidebar() {
       attemptSettle,
       copyPathToClipboard,
       openProjectSettings,
+      projectFolders,
       removeProjectGroup,
       startNewThreadInProject,
       threadLastVisitedAtById,
@@ -4579,6 +4584,9 @@ export default function Sidebar() {
           onNewThread={handleNewThreadClick}
           onNewThreadInProject={startNewThreadInProject}
           onProjectContextMenu={handleProjectContextMenu}
+          folders={projectFolders.settings}
+          onToggleFolder={projectFolders.toggleCollapsed}
+          onFolderContextMenu={projectFolders.onFolderContextMenu}
           onSelectAll={() => {
             setProjectScopeKey(null);
             setThreadSearchQuery("");
@@ -4605,6 +4613,9 @@ export default function Sidebar() {
           attentionByProjectKey={attentionByProjectKey}
           onNewThreadInProject={startNewThreadInProject}
           onProjectContextMenu={handleProjectContextMenu}
+          folders={projectFolders.settings}
+          onToggleFolder={projectFolders.toggleCollapsed}
+          onFolderContextMenu={projectFolders.onFolderContextMenu}
           onSelectAll={() => {
             setProjectScopeKey(null);
             setThreadSearchQuery("");
