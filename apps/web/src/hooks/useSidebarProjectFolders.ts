@@ -1,62 +1,145 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
 import type { SidebarProjectFolder } from "@t3tools/contracts/settings";
 
 import {
   requestProjectFolderIcon,
   requestProjectFolderName,
 } from "../components/sidebar/ProjectFolderNameDialog";
-import { persistClientSettingsUpdate, useClientSettings } from "./useSettings";
+import {
+  persistClientSettingsPatch,
+  useClientSettings,
+  useClientSettingsHydrated,
+  useUpdatePrimarySettings,
+} from "./useSettings";
 import { randomUUID } from "../lib/utils";
 import { readLocalApi } from "../localApi";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import {
   applyProjectRailDrop,
   assignProjectToFolder,
   createProjectFolder,
   deleteProjectFolder,
+  folderSettingsEqual,
   moveProjectFolder,
   parseProjectFolderMenuAction,
   projectFolderHeaderMenuItems,
   projectFolderMenuItems,
+  projectFolderSettingsHaveEntries,
+  projectFolderSettingsPatch,
   renameProjectFolder,
   reorderProjectFolderTo,
+  resolveProjectFolderSettings,
   selectProjectFolderSettings,
   setProjectFolderIcon,
+  shouldLiftProjectFolderSettings,
   toggleProjectFolderCollapsed,
   unassignProjectFromFolder,
   type ProjectRailDropTarget,
   type SidebarProjectFolderSettings,
 } from "../sidebarProjectFolders";
 
-function persistFolderSettings(
-  update: (settings: SidebarProjectFolderSettings) => SidebarProjectFolderSettings,
-) {
-  void persistClientSettingsUpdate((current) => {
-    const next = update(selectProjectFolderSettings(current));
-    return {
-      ...current,
-      sidebarProjectFolders: [...next.folders],
-      sidebarProjectFolderAssignments: { ...next.assignments },
-    };
-  });
-}
+const EMPTY_CLIENT_FOLDER_PATCH = {
+  sidebarProjectFolders: [],
+  sidebarProjectFolderAssignments: {},
+} as const;
 
 export function useSidebarProjectFolders() {
-  const settings = useClientSettings(selectProjectFolderSettings);
+  const client = useClientSettings(selectProjectFolderSettings);
+  const clientHydrated = useClientSettingsHydrated();
+  const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const updateSettings = useUpdatePrimarySettings();
+  const canWriteShared =
+    primaryEnvironmentId !== null || environments.some(supportsSharedSettingsSync);
+  const persisted = useMemo(
+    () =>
+      resolveProjectFolderSettings([
+        ...environments.map((environment) => environment.serverConfig?.settings ?? null),
+        {
+          sidebarProjectFolders: client.folders,
+          sidebarProjectFolderAssignments: client.assignments,
+        },
+      ]),
+    [client, environments],
+  );
+  const [optimistic, setOptimistic] = useState<SidebarProjectFolderSettings | null>(null);
+  const settings = optimistic ?? persisted;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const liftedKey = useRef<string | null>(null);
 
-  const toggleCollapsed = useCallback((folderId: string) => {
-    persistFolderSettings((current) => toggleProjectFolderCollapsed(current, folderId));
-  }, []);
+  useEffect(() => {
+    if (optimistic !== null && folderSettingsEqual(optimistic, persisted)) {
+      setOptimistic(null);
+    }
+  }, [optimistic, persisted]);
 
-  const applyDrop = useCallback((projectKey: string, target: ProjectRailDropTarget) => {
-    persistFolderSettings((current) => applyProjectRailDrop(current, projectKey, target));
-  }, []);
+  useEffect(() => {
+    if (!clientHydrated || !canWriteShared) return;
+    const servers = environments.flatMap((environment) =>
+      environment.serverConfig == null ? [] : [environment.serverConfig.settings],
+    );
+    if (!shouldLiftProjectFolderSettings({ client, servers })) return;
+    const key = JSON.stringify(projectFolderSettingsPatch(client));
+    if (liftedKey.current === key) return;
+    liftedKey.current = key;
+    setOptimistic(client);
+    updateSettings(projectFolderSettingsPatch(client));
+  }, [canWriteShared, client, clientHydrated, environments, updateSettings]);
 
-  const reorderFolder = useCallback((folderId: string, beforeFolderId: string | null) => {
-    persistFolderSettings((current) => reorderProjectFolderTo(current, folderId, beforeFolderId));
-  }, []);
+  useEffect(() => {
+    if (!clientHydrated || !projectFolderSettingsHaveEntries(client)) return;
+    const serverHasFolders = environments.some((environment) => {
+      const settings = environment.serverConfig?.settings;
+      return (
+        settings !== undefined &&
+        projectFolderSettingsHaveEntries(selectProjectFolderSettings(settings))
+      );
+    });
+    if (serverHasFolders) {
+      void persistClientSettingsPatch(EMPTY_CLIENT_FOLDER_PATCH);
+    }
+  }, [client, clientHydrated, environments]);
+
+  const persistFolderSettings = useCallback(
+    (update: (settings: SidebarProjectFolderSettings) => SidebarProjectFolderSettings) => {
+      const next = update(settingsRef.current);
+      setOptimistic(next);
+      const patch = projectFolderSettingsPatch(next);
+      if (canWriteShared) {
+        updateSettings(patch);
+        void persistClientSettingsPatch(EMPTY_CLIENT_FOLDER_PATCH);
+      } else {
+        void persistClientSettingsPatch(patch);
+      }
+    },
+    [canWriteShared, updateSettings],
+  );
+
+  const toggleCollapsed = useCallback(
+    (folderId: string) => {
+      persistFolderSettings((current) => toggleProjectFolderCollapsed(current, folderId));
+    },
+    [persistFolderSettings],
+  );
+
+  const applyDrop = useCallback(
+    (projectKey: string, target: ProjectRailDropTarget) => {
+      persistFolderSettings((current) => applyProjectRailDrop(current, projectKey, target));
+    },
+    [persistFolderSettings],
+  );
+
+  const reorderFolder = useCallback(
+    (folderId: string, beforeFolderId: string | null) => {
+      persistFolderSettings((current) => reorderProjectFolderTo(current, folderId, beforeFolderId));
+    },
+    [persistFolderSettings],
+  );
 
   const menuItemsForProject = useCallback(
     (projectKey: string) => projectFolderMenuItems({ projectKey, settings }),
@@ -141,7 +224,7 @@ export function useSidebarProjectFolders() {
           return true;
       }
     },
-    [settings.folders],
+    [persistFolderSettings, settings.folders],
   );
 
   const onFolderContextMenu = useCallback(

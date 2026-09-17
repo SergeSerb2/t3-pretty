@@ -102,6 +102,8 @@ describe("splitSharedServerPatch", () => {
     const { sharedPatch, localPatch } = splitSharedServerPatch({
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
+      sidebarProjectFolders: [{ id: "work", name: "Work", collapsed: false }],
+      sidebarProjectFolderAssignments: { "env:/repo": "work" },
       continueThreadsAfterServerUpdate: true,
       enableAgentBrowserAccess: false,
       defaultThreadEnvMode: "worktree",
@@ -111,6 +113,8 @@ describe("splitSharedServerPatch", () => {
     expect(sharedPatch).toEqual({
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
+      sidebarProjectFolders: [{ id: "work", name: "Work", collapsed: false }],
+      sidebarProjectFolderAssignments: { "env:/repo": "work" },
       continueThreadsAfterServerUpdate: true,
       newWorktreesStartFromOrigin: true,
       globalEnvironment: [{ name: "OPENAI_API_KEY", value: "sk-test", sensitive: true }],
@@ -218,6 +222,8 @@ describe("pickSharedServerSettings", () => {
       "newWorktreesStartFromOrigin",
       "sidebarAutoSettleAfterDays",
       "sidebarAutoSettleOnMerge",
+      "sidebarProjectFolderAssignments",
+      "sidebarProjectFolders",
       "sourceControlWritingStyle",
       "textGenerationModelSelection",
     ]);
@@ -234,6 +240,8 @@ describe("pickSharedServerSettings", () => {
       "newWorktreesStartFromOrigin",
       "sidebarAutoSettleAfterDays",
       "sidebarAutoSettleOnMerge",
+      "sidebarProjectFolderAssignments",
+      "sidebarProjectFolders",
       "sourceControlWritingStyle",
       "textGenerationModelSelection",
     ]);
