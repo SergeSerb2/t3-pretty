@@ -2851,8 +2851,26 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   color: var(--contrast-toolbar-foreground);
 }
 
+/* One L-frame material. Sidebar and titlebar used to tint from different
+   tokens (--sidebar vs --toolbar-background), so any solid fallback — and
+   any utility fill that beat `background: transparent` — read as two bars.
+   Hosts stay clear so ::after can sample the scenery; html beats .bg-*.
+   Chrome keeps its own opacity/blur so the settings slider, a 100% glass
+   setting, and a stuck data-window-interacting flag cannot flatten it. */
+html
+  :is(
+    .workspace-sidebar-glass,
+    [data-workspace-header],
+    [data-chat-header],
+    [data-pull-requests-header]
+  ) {
+  --workspace-glass-surface: var(--sidebar);
+  --workspace-glass-opacity: 42%;
+  --workspace-glass-blur: 16px;
+  background-color: transparent;
+}
+
 :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
-  --workspace-glass-surface: var(--toolbar-background);
   --workspace-glass-shadow: 0 10px 24px -16px rgb(0 0 0 / 32%);
   /* Stacking context so ::after (z-0) stays behind chrome (z-1) without
      becoming a Backdrop Root. Isolating the host would trap the plate's
@@ -2861,7 +2879,6 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
      containing block for fixed titlebar controls. */
   position: relative;
   z-index: 20;
-  background: transparent;
 }
 
 /* Flex items honor z-index. Keep breadcrumb, git, scripts, and the Electron
@@ -2881,14 +2898,11 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
 }
 
 .workspace-sidebar-glass {
-  --workspace-glass-surface: var(--sidebar);
   --workspace-glass-shadow:
     10px 4px 24px -16px rgb(0 0 0 / 32%), 20px 8px 48px -24px rgb(0 0 0 / 18%);
   position: relative;
   z-index: 30;
   overflow: visible;
-  /* Solid host fill if ::after never paints; the plate overlays this. */
-  background-color: var(--sidebar);
   border-color: transparent;
 }
 
@@ -2922,8 +2936,10 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
     inset 0 1px 2px var(--workspace-glass-rim),
     inset -1px -1px 3px color-mix(in srgb, var(--workspace-glass-rim) 35%, transparent),
     var(--workspace-glass-shadow);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
+    saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
+    saturate(var(--glass-saturation));
 }
 
 /* The sidebar and the top bar meet as one L-shaped frame around the content,
@@ -3002,37 +3018,8 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   }
 }
 
-/* Freeze the material during native window moves/resizes. These are static
-   surfaces at rest; no extra animation or pointer tracking is needed. */
-html[data-window-interacting]
-  :is(
-    .workspace-sidebar-glass,
-    [data-workspace-header],
-    [data-chat-header],
-    [data-pull-requests-header]
-  )::after,
-html[data-window-interacting] [data-workspace-header]::before {
-  background: var(--workspace-glass-surface);
-  box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  :is(
-    .workspace-sidebar-glass,
-    [data-workspace-header],
-    [data-chat-header],
-    [data-pull-requests-header]
-  )::after,
-  [data-workspace-header]::before {
-    background: var(--workspace-glass-surface);
-    box-shadow: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-
+/* Only a missing backdrop-filter implementation may flatten chrome, and both
+   bars still share --workspace-glass-surface so they cannot drift apart. */
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   :is(
     .workspace-sidebar-glass,

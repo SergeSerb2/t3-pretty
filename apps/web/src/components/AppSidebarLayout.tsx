@@ -209,8 +209,9 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // Window chrome state lands on <html> as plain attributes rather than React
   // state: only CSS reads it, so a re-render of the whole app would be pure
   // waste. `data-window-inactive` follows the AppKit convention of dimming an
-  // unfocused window; `data-window-interacting` lets expensive effects (glass
-  // blur) drop out for the duration of a drag or resize.
+  // unfocused window; `data-window-interacting` lets dialog/composer glass
+  // drop out for a drag or resize. `will-move` without `moved` can leave that
+  // flag stuck, so drop it if the main process never sends false.
   useEffect(() => {
     const bridge = window.desktopBridge;
     if (!bridge) return;
@@ -219,11 +220,19 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     const unsubscribeActive = onWindowActiveStateChange?.((active) => {
       root.toggleAttribute("data-window-inactive", !active);
     });
+    let interactingClearTimer = 0;
     const unsubscribeInteracting = onWindowInteractingChange?.((interacting) => {
+      window.clearTimeout(interactingClearTimer);
       root.toggleAttribute("data-window-interacting", interacting);
+      if (interacting) {
+        interactingClearTimer = window.setTimeout(() => {
+          root.removeAttribute("data-window-interacting");
+        }, 800);
+      }
     });
 
     return () => {
+      window.clearTimeout(interactingClearTimer);
       unsubscribeActive?.();
       unsubscribeInteracting?.();
       root.removeAttribute("data-window-inactive");
@@ -264,7 +273,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           side="left"
           collapsible="icon"
           data-app-sidebar=""
-          className="workspace-sidebar-glass bg-sidebar group-data-[side=left]:border-r-0 text-sidebar-foreground"
+          className="workspace-sidebar-glass group-data-[side=left]:border-r-0 text-sidebar-foreground"
           resizable={sidebarResizable}
         >
           {isOnSettings ? (
