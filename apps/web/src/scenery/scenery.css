@@ -558,9 +558,9 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   background-color: transparent;
 }
 
-/* Header controls (Add action / Open / Commit / Initialize git…): the band
-   behind them is already blurred, so a translucent fill is all a control
-   needs to read as glass — index.css paints them from these vars. */
+/* Header toolbar tokens: the band behind them is already blurred, so a
+   translucent fill is all a control needs to read as glass — index.css
+   paints them from these vars. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-header] {
   --toolbar-control: color-mix(in srgb, var(--app-theme-toolbar-control) 52%, transparent);
   --toolbar-control-hover: color-mix(

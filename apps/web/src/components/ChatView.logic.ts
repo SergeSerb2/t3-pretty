@@ -4,7 +4,6 @@ import {
   type EnvironmentId,
   effectiveRuntimeModeForProviderDriver,
   isProviderDriverKind,
-  ProjectId,
   type MessageId,
   type ModelSelection,
   type PreviewAnnotationPayload,
@@ -43,7 +42,6 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
-import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadDetails } from "../state/threads";
 import { stripInlineContextReferences } from "~/lib/composerContextReferences";
@@ -61,7 +59,6 @@ import {
   type ProviderInstanceEntry,
 } from "../providerInstances";
 
-export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 3;
 export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
 export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
@@ -132,8 +129,6 @@ export function shouldResetComposerQueueForRouteChange(
     previous.routeThreadKey === current.routeThreadKey;
   return !unchanged && !promoted;
 }
-
-export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
 
 export function agentControlledBrowserCloseConfirmation(
   surfaces: readonly RightPanelSurface[],
