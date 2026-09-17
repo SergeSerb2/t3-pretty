@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260917.1866002508",
+    date: "2026-09-17",
+    items: [
+      {
+        kind: "fixed",
+        title: "Collapsed sidebar peek fades and slides with the width",
+      },
+      {
+        kind: "fixed",
+        title: "Collapsed sidebar is a 3rem rail that peeks by width",
+      },
+      {
+        kind: "new",
+        title: "Sync sidebar project folders across shared connections",
+      },
+      {
+        kind: "fixed",
+        title: "EAS iOS Configure Xcode sees Internal target again",
+      },
+      {
+        kind: "fixed",
+        title: "Collapsed sidebar keeps one rail and animates its hover peek",
+      },
+      {
+        kind: "fixed",
+        title: "EAS iOS cloud builds no longer die installing pnpm",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260917.1866002496",
     date: "2026-09-17",
     items: [
