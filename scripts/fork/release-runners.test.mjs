@@ -399,6 +399,7 @@ ${setup}
     assert.include(mobileRelease, "refusing to publish OTA without a path diff");
     assert.include(mobileRelease, "git checkout -- apps/mobile/eas.json");
     assert.include(mobileRelease, "restore_eas_json");
+    assert.include(mobileRelease, "report_eas_cloud_build_failure");
     assert.include(mobileRelease, "checkout-origin.sh");
     assert.include(mobileRelease, "--full");
     assert.include(mobileRelease, "would reset to the scheduled starting SHA");
