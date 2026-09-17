@@ -293,6 +293,64 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
     }),
   );
 
+  it.effect("lists valid bindings when one persisted provider name cannot be decoded", () =>
+    Effect.gen(function* () {
+      const directory = yield* ProviderSessionDirectory;
+      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const validThreadId = ThreadId.make("thread-runtime-valid");
+      const poisonThreadId = ThreadId.make("thread-runtime-poison");
+
+      yield* runtimeRepository.upsert({
+        threadId: poisonThreadId,
+        providerName: "not a valid slug",
+        providerInstanceId: null,
+        adapterKey: "broken",
+        runtimeMode: "full-access",
+        status: "running",
+        lastSeenAt: "2026-04-14T12:00:00.000Z",
+        resumeCursor: null,
+        runtimePayload: null,
+      });
+      yield* runtimeRepository.upsert({
+        threadId: validThreadId,
+        providerName: "codex",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        adapterKey: "codex",
+        runtimeMode: "full-access",
+        status: "running",
+        lastSeenAt: "2026-04-14T12:05:00.000Z",
+        resumeCursor: null,
+        runtimePayload: null,
+      });
+
+      const bindings = (yield* directory.listBindings()).filter(
+        (binding) => binding.threadId === validThreadId || binding.threadId === poisonThreadId,
+      );
+
+      assert.deepEqual(
+        bindings.map((binding) => binding.threadId),
+        [validThreadId],
+      );
+
+      const poisonBinding = yield* directory.getBinding(poisonThreadId);
+      assert.equal(Option.isNone(poisonBinding), true);
+      const validBinding = yield* directory.getBinding(validThreadId);
+      assert.equal(Option.isSome(validBinding), true);
+
+      yield* directory.upsert({
+        threadId: poisonThreadId,
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        adapterKey: "codex",
+        runtimeMode: "full-access",
+        status: "running",
+      });
+      const recovered = yield* directory.getBinding(poisonThreadId);
+      assert.equal(Option.isSome(recovered), true);
+      assert.equal(Option.getOrThrow(recovered).provider, ProviderDriverKind.make("codex"));
+    }),
+  );
+
   it.effect("lists persisted bindings with metadata in oldest-first order", () =>
     Effect.gen(function* () {
       const directory = yield* ProviderSessionDirectory;
