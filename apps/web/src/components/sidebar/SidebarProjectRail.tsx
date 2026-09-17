@@ -7,13 +7,16 @@ import {
   SearchIcon,
   SquarePenIcon,
 } from "lucide-react";
-import { useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import { lazy, Suspense, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import type { IconName } from "lucide-react/dynamic";
 
 import type { SidebarProjectFolder } from "@t3tools/contracts/settings";
 
 import { openCommandPalette } from "../../commandPaletteBus";
 import { cn } from "../../lib/utils";
+import { projectIconColorClassName } from "../../projectIconColors";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
+import { ProjectMonogram } from "../ProjectMonogram";
 import {
   buildProjectRailItems,
   dataTransferHasRailProject,
@@ -34,6 +37,41 @@ import {
 
 const openNewThreadPicker = () => openCommandPalette({ open: "new-thread-in" });
 const openAddProject = () => openCommandPalette({ open: "add-project" });
+
+const DynamicIcon = lazy(() =>
+  import("lucide-react/dynamic").then((module) => ({ default: module.DynamicIcon })),
+);
+
+function FolderRailIcon({ folder }: { readonly folder: SidebarProjectFolder }) {
+  const Fallback = folder.collapsed ? FolderIcon : FolderOpenIcon;
+  if (folder.icon?.kind === "emoji") {
+    return (
+      <span
+        aria-hidden
+        className="inline-flex size-4 shrink-0 items-center justify-center leading-none [container-type:size]"
+      >
+        <span className="text-[length:80cqh] leading-none">{folder.icon.emoji}</span>
+      </span>
+    );
+  }
+  if (folder.icon?.kind === "monogram") {
+    return <ProjectMonogram text={folder.icon.text} color={folder.icon.color} />;
+  }
+  if (folder.icon?.kind === "lucide") {
+    const colorClassName = projectIconColorClassName(folder.icon.color);
+    return (
+      <span
+        aria-hidden
+        className={cn("inline-flex size-4 shrink-0 items-center justify-center", colorClassName)}
+      >
+        <Suspense fallback={<Fallback className="size-full" />}>
+          <DynamicIcon name={folder.icon.name as IconName} className="size-full" />
+        </Suspense>
+      </span>
+    );
+  }
+  return <Fallback />;
+}
 
 // Slides out from the rail; Base UI then skips this once the next icon is hovered.
 const RAIL_TOOLTIP_CLASS =
@@ -353,7 +391,6 @@ export function SidebarProjectRail({
     const containsSelected = item.projects.some(
       (project) => project.projectKey === selectedProjectKey,
     );
-    const FolderGlyph = item.folder.collapsed ? FolderIcon : FolderOpenIcon;
     return (
       <div
         key={item.folder.id}
@@ -395,7 +432,7 @@ export function SidebarProjectRail({
               onFolderContextMenu ? (event) => onFolderContextMenu(event, item.folder) : undefined
             }
           >
-            <FolderGlyph />
+            <FolderRailIcon folder={item.folder} />
             {docked ? null : (
               <span className={COLLAPSED_DOCK_WIDE_LABEL_CLASS}>{item.folder.name}</span>
             )}

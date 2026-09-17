@@ -21,6 +21,7 @@ import {
 import {
   DEFAULT_RUNTIME_MODE,
   ModelSelection,
+  ProjectIconOverride,
   ProjectScript,
   RuntimeMode,
 } from "./orchestration.ts";
@@ -76,6 +77,7 @@ export const SidebarProjectFolder = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
   collapsed: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  icon: Schema.optionalKey(ProjectIconOverride),
 });
 export type SidebarProjectFolder = typeof SidebarProjectFolder.Type;
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
