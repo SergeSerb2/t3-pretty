@@ -480,6 +480,7 @@ describe("RemoteEnvironmentAuthorization", () => {
     Effect.gen(function* () {
       const cached = new TokenStore.RemoteDpopAccessToken({
         environmentId: ENVIRONMENT_ID,
+        accountId: "account-1",
         label: DESCRIPTOR.label,
         endpoint: {
           ...ENDPOINT,

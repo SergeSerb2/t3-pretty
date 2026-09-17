@@ -3,7 +3,10 @@ import {
   EnvironmentId,
   type ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
-import { RelayEnvironmentConnectScope } from "@t3tools/contracts/relay";
+import {
+  RelayEnvironmentConnectScope,
+  type RelayEnvironmentConnectResponse,
+} from "@t3tools/contracts/relay";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import {
   exchangeRemoteDpopAccessToken,
@@ -297,9 +300,10 @@ export const make = Effect.gen(function* () {
       environmentId: EnvironmentId,
       thumbprint: string,
       identity: ClientCapabilities.CloudSessionIdentity,
+      bootstrap?: RelayEnvironmentConnectResponse,
     ) {
-      const bootstrap = yield* obtainBootstrap(environmentId, identity);
-      const descriptor = yield* fetchDescriptor(bootstrap.endpoint.httpBaseUrl, "relay").pipe(
+      const connected = bootstrap ?? (yield* obtainBootstrap(environmentId, identity));
+      const descriptor = yield* fetchDescriptor(connected.endpoint.httpBaseUrl, "relay").pipe(
         Effect.provideService(HttpClient.HttpClient, httpClient),
         Effect.withSpan("environment.authorization.descriptor"),
       );
@@ -312,7 +316,7 @@ export const make = Effect.gen(function* () {
       const bootstrapProof = yield* signer
         .createProof({
           method: "POST",
-          url: environmentEndpointUrl(bootstrap.endpoint.httpBaseUrl, "/oauth/token"),
+          url: environmentEndpointUrl(connected.endpoint.httpBaseUrl, "/oauth/token"),
         })
         .pipe(
           Effect.mapError(
@@ -325,8 +329,8 @@ export const make = Effect.gen(function* () {
         );
       yield* assertSession(identity);
       const access = yield* exchangeRemoteDpopAccessToken({
-        httpBaseUrl: bootstrap.endpoint.httpBaseUrl,
-        credential: bootstrap.credential,
+        httpBaseUrl: connected.endpoint.httpBaseUrl,
+        credential: connected.credential,
         dpopProof: bootstrapProof,
         scopes: presentation.scopes,
         clientMetadata: presentation.metadata,
@@ -340,7 +344,7 @@ export const make = Effect.gen(function* () {
         environmentId: descriptor.environmentId,
         accountId: identity.accountId,
         label: descriptor.label,
-        endpoint: bootstrap.endpoint,
+        endpoint: connected.endpoint,
         accessToken: access.access_token,
         expiresAtEpochMs: issuedAt + access.expires_in * 1_000,
         dpopThumbprint: thumbprint,
@@ -349,7 +353,9 @@ export const make = Effect.gen(function* () {
   );
 
   const getDpopToken = Effect.fn("clientRuntime.connection.remote.getDpopToken")(function* (
-    input: Parameters<RemoteEnvironmentAuthorization["Service"]["authorizeDpopHttp"]>[0],
+    input: Parameters<RemoteEnvironmentAuthorization["Service"]["authorizeDpopHttp"]>[0] & {
+      readonly bootstrap?: RelayEnvironmentConnectResponse;
+    },
   ) {
     const session = yield* cloudSession.identity;
     if (Option.isNone(session)) {
@@ -402,6 +408,7 @@ export const make = Effect.gen(function* () {
           input.expectedEnvironmentId,
           thumbprint,
           identity,
+          input.bootstrap,
         ).pipe(
           Effect.flatMap((token) =>
             tokenLock.withPermits(1)(
@@ -487,13 +494,37 @@ export const make = Effect.gen(function* () {
         yield* assertSession(selected.identity);
         return { ...httpAuthorization(selected.token), socketUrl: cachedSocket.success };
       }
-      if (cachedSocket.failure._tag === "ConnectionBlockedError") {
-        return yield* mapDpopSocketError(cachedSocket.failure);
+      const mapped = mapDpopSocketError(cachedSocket.failure);
+      if (mapped._tag === "ConnectionBlockedError") {
+        if (mapped.reason !== "authentication") {
+          return yield* mapped;
+        }
+        selected = yield* getDpopToken({
+          ...input,
+          rejectedAccessToken: selected.token.accessToken,
+        });
+      } else {
+        // A brief outage and a relocated tunnel look the same until the relay
+        // says whether this token's host is still the environment endpoint.
+        const connected = yield* obtainBootstrap(
+          input.expectedEnvironmentId,
+          selected.identity,
+        ).pipe(Effect.result);
+        if (Result.isFailure(connected)) {
+          return yield* connected.failure;
+        }
+        if (
+          connected.success.endpoint.httpBaseUrl === selected.token.endpoint.httpBaseUrl &&
+          connected.success.endpoint.wsBaseUrl === selected.token.endpoint.wsBaseUrl
+        ) {
+          return yield* mapped;
+        }
+        selected = yield* getDpopToken({
+          ...input,
+          rejectedAccessToken: selected.token.accessToken,
+          bootstrap: connected.success,
+        });
       }
-      selected = yield* getDpopToken({
-        ...input,
-        rejectedAccessToken: selected.token.accessToken,
-      });
     }
     const socket = yield* createDpopSocketUrl(selected.token).pipe(Effect.result);
     if (Result.isFailure(socket)) {
