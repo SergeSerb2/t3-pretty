@@ -3922,3 +3922,5 @@
 - `apps/server/src/provider/Layers/OpenCodeProvider.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
 - `apps/server/src/provider/opencodeRuntime.inventory.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
 - `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Upstream's `!setupRunning` guard on the Thinking-row condition.. Reason: T3 Pretty's newer setup handoff architecture intentionally uses `setupReservesLivePlaceholders` and the early return above; retaining the legacy setup-wide guard would hide the first turn's live placeholder after agent handoff while an asynchronous setup script is still running.
+- `mobile-typecheck` failed after merging `v0.0.43-nightly.20260916.1825`; repaired with `gpt-5.6-sol`: Updated the parent-added mobile cache test fixture to include T3 Pretty's required `enabledSkillIds` field, matching the sibling snapshot fixture and contract type.
+  - edited `apps/mobile/src/connection/environment-cache-store.test.ts`
