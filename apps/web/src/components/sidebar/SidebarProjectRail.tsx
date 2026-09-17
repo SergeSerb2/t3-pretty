@@ -1,13 +1,33 @@
-import { FolderPlusIcon, LayersIcon, PlusIcon, SearchIcon, SquarePenIcon } from "lucide-react";
+import {
+  FolderIcon,
+  FolderOpenIcon,
+  FolderPlusIcon,
+  LayersIcon,
+  PlusIcon,
+  SearchIcon,
+  SquarePenIcon,
+} from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
+
+import type { SidebarProjectFolder } from "@t3tools/contracts/settings";
 
 import { openCommandPalette } from "../../commandPaletteBus";
 import { cn } from "../../lib/utils";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
+import {
+  buildProjectRailItems,
+  type SidebarProjectFolderSettings,
+} from "../../sidebarProjectFolders";
 import { ProjectFavicon } from "../ProjectFavicon";
-import type { ProjectRailAttention } from "../Sidebar.logic";
+import { resolveProjectStatusIndicator, type ProjectRailAttention } from "../Sidebar.logic";
 import { SidebarMenuButton } from "../ui/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
+import {
+  COLLAPSED_DOCK_BAR_BUTTON_CLASS,
+  COLLAPSED_DOCK_CONTAINER_CLASS,
+  COLLAPSED_DOCK_GRID_CLASS,
+  COLLAPSED_DOCK_WIDE_LABEL_CLASS,
+} from "./collapsedSidebarDock";
 
 const openNewThreadPicker = () => openCommandPalette({ open: "new-thread-in" });
 const openAddProject = () => openCommandPalette({ open: "add-project" });
@@ -16,10 +36,46 @@ const openAddProject = () => openCommandPalette({ open: "add-project" });
 const RAIL_TOOLTIP_CLASS =
   "max-w-72 transition-[width,height,scale,opacity,translate] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] data-starting-style:-translate-x-1 data-ending-style:-translate-x-1";
 
+const EMPTY_FOLDER_SETTINGS: SidebarProjectFolderSettings = { folders: [], assignments: {} };
+
 function projectRailEnvironmentLine(project: SidebarProjectSnapshot): string | null {
   if (project.remoteEnvironmentLabels.length === 0) return null;
   const labels = project.remoteEnvironmentLabels.join(", ");
   return project.environmentPresence === "mixed" ? `Also on ${labels}` : `On ${labels}`;
+}
+
+function visibleProjectJumpNumbers(
+  items: ReturnType<typeof buildProjectRailItems<SidebarProjectSnapshot>>,
+): ReadonlyMap<string, number> {
+  const jumpByProjectKey = new Map<string, number>();
+  let jump = 0;
+  for (const item of items) {
+    const visible =
+      item.kind === "project" ? [item.project] : item.folder.collapsed ? [] : item.projects;
+    for (const project of visible) {
+      jump += 1;
+      if (jump <= 9) jumpByProjectKey.set(project.projectKey, jump);
+    }
+  }
+  return jumpByProjectKey;
+}
+
+function folderRailAttention(
+  projects: readonly SidebarProjectSnapshot[],
+  attentionByProjectKey?: ReadonlyMap<string, ProjectRailAttention>,
+): ProjectRailAttention | null {
+  let result: ProjectRailAttention | undefined;
+  for (const project of projects) {
+    const next = attentionByProjectKey?.get(project.projectKey);
+    if (!next) continue;
+    if (result === undefined) {
+      result = next;
+      continue;
+    }
+    const strongest = resolveProjectStatusIndicator([result, next]) ?? next;
+    result = { ...strongest, count: result.count + next.count };
+  }
+  return result ?? null;
 }
 
 function ProjectRailTooltip({
@@ -48,11 +104,130 @@ function ProjectRailTooltip({
   );
 }
 
+function FolderRailTooltip({
+  name,
+  projects,
+  collapsed,
+  attention,
+}: {
+  name: string;
+  projects: readonly SidebarProjectSnapshot[];
+  collapsed: boolean;
+  attention: ProjectRailAttention | null;
+}): ReactNode {
+  return (
+    <span className="flex min-w-0 w-full flex-col gap-0.5 py-0.5 text-left">
+      <span className="min-w-0 w-full font-medium">{name}</span>
+      <span className="text-muted-foreground">
+        {projects.length} {projects.length === 1 ? "project" : "projects"}
+        {collapsed ? " · collapsed" : ""}
+      </span>
+      {attention ? (
+        <span className={attention.colorClass}>
+          {attention.label}
+          {attention.count > 1 ? ` · ${attention.count}` : ""}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function ProjectRailItem({
+  project,
+  jumpNumber,
+  selected,
+  attention,
+  docked,
+  onSelectProject,
+  onNewThreadInProject,
+  onProjectContextMenu,
+}: {
+  project: SidebarProjectSnapshot;
+  jumpNumber: number | null;
+  selected: boolean;
+  attention: ProjectRailAttention | null;
+  docked: boolean;
+  onSelectProject: (project: SidebarProjectSnapshot) => void;
+  onNewThreadInProject?: (project: SidebarProjectSnapshot) => void;
+  onProjectContextMenu?: (event: MouseEvent<HTMLElement>, project: SidebarProjectSnapshot) => void;
+}) {
+  const label = [project.displayName, ...project.remoteEnvironmentLabels].join(" · ");
+  return (
+    <div className="group/rail-item relative min-w-0 shrink-0">
+      <SidebarMenuButton
+        size={docked ? "icon" : "tile"}
+        aria-label={`Show ${label} threads`}
+        tooltip={{
+          className: RAIL_TOOLTIP_CLASS,
+          sideOffset: 8,
+          children: <ProjectRailTooltip project={project} attention={attention} />,
+        }}
+        isActive={selected}
+        aria-pressed={selected}
+        className={docked ? undefined : "flex-col gap-0.5"}
+        onClick={() => onSelectProject(project)}
+        onContextMenu={
+          onProjectContextMenu ? (event) => onProjectContextMenu(event, project) : undefined
+        }
+      >
+        <ProjectFavicon
+          project={project}
+          className={docked ? "size-4 shrink-0" : "size-5 shrink-0"}
+        />
+        {!docked && jumpNumber !== null ? (
+          <span
+            aria-hidden
+            className="font-mono text-[9px] font-semibold leading-none tabular-nums text-sidebar-muted-foreground"
+          >
+            {jumpNumber}
+          </span>
+        ) : null}
+      </SidebarMenuButton>
+      {docked && jumpNumber !== null ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -bottom-0.5 -left-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-sm border border-border/80 bg-background/95 px-0.5 font-mono text-[9px] font-semibold tabular-nums text-foreground shadow-sm"
+        >
+          {jumpNumber}
+        </span>
+      ) : null}
+      {attention ? (
+        <span
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[9px] font-semibold tabular-nums text-white ring-2 ring-sidebar",
+            docked ? "-right-0.5 -top-0.5" : "right-0.5 top-0.5",
+            attention.dotClass,
+          )}
+        >
+          {attention.count}
+        </span>
+      ) : null}
+      {onNewThreadInProject ? (
+        <button
+          type="button"
+          aria-label={`New thread in ${project.displayName}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onNewThreadInProject(project);
+          }}
+          className={cn(
+            "absolute z-10 flex size-4 cursor-pointer items-center justify-center rounded-full bg-sidebar-control-surface text-sidebar-foreground opacity-0 ring-1 ring-sidebar-border transition-opacity hover:bg-sidebar-row-hover focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-ring group-hover/rail-item:opacity-100",
+            docked ? "-bottom-1 -right-1" : "bottom-0.5 right-0.5",
+          )}
+        >
+          <PlusIcon className="size-2.5" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Vertical strip of project icons. The rail is the only project axis in the
  * sidebar: picking an icon scopes the thread list to that project, the top
  * entry shows every project. `docked` renders beside the list; `collapsed`
- * stands in for the whole sidebar and carries search and new-thread too.
+ * stands in for the whole sidebar and fills the traffic-light-wide icon rail.
  */
 export function SidebarProjectRail({
   variant = "collapsed",
@@ -64,6 +239,9 @@ export function SidebarProjectRail({
   onNewThreadInProject,
   onProjectContextMenu,
   onNewThread = openNewThreadPicker,
+  folders = EMPTY_FOLDER_SETTINGS,
+  onToggleFolder,
+  onFolderContextMenu,
 }: {
   variant?: "docked" | "collapsed";
   projects: readonly SidebarProjectSnapshot[];
@@ -75,121 +253,185 @@ export function SidebarProjectRail({
   onNewThreadInProject?: (project: SidebarProjectSnapshot) => void;
   onProjectContextMenu?: (event: MouseEvent<HTMLElement>, project: SidebarProjectSnapshot) => void;
   onNewThread?: (event: MouseEvent) => void;
+  folders?: SidebarProjectFolderSettings;
+  onToggleFolder?: (folderId: string) => void;
+  onFolderContextMenu?: (event: MouseEvent<HTMLElement>, folder: SidebarProjectFolder) => void;
 }) {
   const docked = variant === "docked";
+  const items = buildProjectRailItems(projects, folders);
+  const jumpByProjectKey = visibleProjectJumpNumbers(items);
+
+  const renderProject = (project: SidebarProjectSnapshot) => (
+    <ProjectRailItem
+      key={project.projectKey}
+      project={project}
+      jumpNumber={jumpByProjectKey.get(project.projectKey) ?? null}
+      selected={selectedProjectKey === project.projectKey}
+      attention={attentionByProjectKey?.get(project.projectKey) ?? null}
+      docked={docked}
+      onSelectProject={onSelectProject}
+      onNewThreadInProject={onNewThreadInProject}
+      onProjectContextMenu={onProjectContextMenu}
+    />
+  );
+
+  const railItems = items.map((item) => {
+    if (item.kind === "project") return renderProject(item.project);
+
+    const attention = folderRailAttention(item.projects, attentionByProjectKey);
+    const containsSelected = item.projects.some(
+      (project) => project.projectKey === selectedProjectKey,
+    );
+    const FolderGlyph = item.folder.collapsed ? FolderIcon : FolderOpenIcon;
+    return (
+      <div
+        key={item.folder.id}
+        className={cn(
+          "min-w-0 rounded-lg bg-sidebar-control-surface/50",
+          docked
+            ? "flex flex-col items-center gap-1 py-0.5"
+            : cn(COLLAPSED_DOCK_GRID_CLASS, "col-span-full p-0.5"),
+        )}
+      >
+        <div className={cn("relative min-w-0 shrink-0", docked ? undefined : "col-span-full")}>
+          <SidebarMenuButton
+            size={docked ? "icon" : "tile"}
+            aria-label={`${item.folder.collapsed ? "Expand" : "Collapse"} ${item.folder.name}`}
+            aria-expanded={!item.folder.collapsed}
+            tooltip={{
+              className: RAIL_TOOLTIP_CLASS,
+              sideOffset: 8,
+              children: (
+                <FolderRailTooltip
+                  name={item.folder.name}
+                  projects={item.projects}
+                  collapsed={item.folder.collapsed}
+                  attention={attention}
+                />
+              ),
+            }}
+            isActive={containsSelected && item.folder.collapsed}
+            className={docked ? undefined : COLLAPSED_DOCK_BAR_BUTTON_CLASS}
+            onClick={() => onToggleFolder?.(item.folder.id)}
+            onContextMenu={
+              onFolderContextMenu ? (event) => onFolderContextMenu(event, item.folder) : undefined
+            }
+          >
+            <FolderGlyph />
+            {docked ? null : (
+              <span className={COLLAPSED_DOCK_WIDE_LABEL_CLASS}>{item.folder.name}</span>
+            )}
+          </SidebarMenuButton>
+          {item.folder.collapsed && attention ? (
+            <span
+              aria-hidden
+              className={cn(
+                "pointer-events-none absolute z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[9px] font-semibold tabular-nums text-white ring-2 ring-sidebar",
+                docked ? "-right-0.5 -top-0.5" : "right-0.5 top-0.5",
+                attention.dotClass,
+              )}
+            >
+              {attention.count}
+            </span>
+          ) : null}
+        </div>
+        {item.folder.collapsed ? null : item.projects.map(renderProject)}
+      </div>
+    );
+  });
+
   return (
     <TooltipProvider delay={150} closeDelay={0} timeout={400}>
       <nav
         aria-label="Projects"
         className={cn(
-          "flex min-h-0 flex-col items-center gap-1.5 py-2",
-          docked ? "w-12 shrink-0 border-r border-sidebar-border/60" : "flex-1",
+          "flex min-h-0 flex-col",
+          docked
+            ? "w-12 shrink-0 items-center gap-1.5 border-r border-sidebar-border/60 py-2"
+            : cn(COLLAPSED_DOCK_CONTAINER_CLASS, "flex-1 gap-1 px-1 py-1.5"),
         )}
       >
-        {docked ? null : (
+        {docked ? (
           <>
+            {onSelectAll ? (
+              <SidebarMenuButton
+                size="icon"
+                aria-label="All projects"
+                tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "All projects" }}
+                isActive={selectedProjectKey === null}
+                aria-pressed={selectedProjectKey === null}
+                onClick={onSelectAll}
+              >
+                <LayersIcon />
+              </SidebarMenuButton>
+            ) : null}
+            <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden py-1">
+              {railItems}
+            </div>
             <SidebarMenuButton
               size="icon"
-              aria-label="Search threads"
-              tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "Search threads" }}
-              onClick={() => openCommandPalette()}
+              aria-label="Add project"
+              tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "Add project" }}
+              onClick={openAddProject}
             >
-              <SearchIcon />
+              <FolderPlusIcon />
             </SidebarMenuButton>
-            <SidebarMenuButton
-              size="icon"
-              aria-label="New thread"
-              tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "New thread" }}
-              disabled={projects.length === 0}
-              onClick={onNewThread}
+          </>
+        ) : (
+          <>
+            <div className={COLLAPSED_DOCK_GRID_CLASS}>
+              <SidebarMenuButton
+                size="tile"
+                aria-label="Search threads"
+                tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "Search threads" }}
+                onClick={() => openCommandPalette()}
+              >
+                <SearchIcon />
+              </SidebarMenuButton>
+              <SidebarMenuButton
+                size="tile"
+                aria-label="New thread"
+                tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "New thread" }}
+                disabled={projects.length === 0}
+                onClick={onNewThread}
+              >
+                <SquarePenIcon />
+              </SidebarMenuButton>
+              {onSelectAll ? (
+                <SidebarMenuButton
+                  size="tile"
+                  aria-label="All projects"
+                  tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "All projects" }}
+                  isActive={selectedProjectKey === null}
+                  aria-pressed={selectedProjectKey === null}
+                  className={COLLAPSED_DOCK_BAR_BUTTON_CLASS}
+                  onClick={onSelectAll}
+                >
+                  <LayersIcon />
+                  <span className={COLLAPSED_DOCK_WIDE_LABEL_CLASS}>All</span>
+                </SidebarMenuButton>
+              ) : null}
+            </div>
+            <div
+              className={cn(
+                COLLAPSED_DOCK_GRID_CLASS,
+                "min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-0.5",
+              )}
             >
-              <SquarePenIcon />
+              {railItems}
+            </div>
+            <SidebarMenuButton
+              size="tile"
+              aria-label="Add project"
+              tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "Add project" }}
+              className={COLLAPSED_DOCK_BAR_BUTTON_CLASS}
+              onClick={openAddProject}
+            >
+              <FolderPlusIcon />
+              <span className={COLLAPSED_DOCK_WIDE_LABEL_CLASS}>Add</span>
             </SidebarMenuButton>
           </>
         )}
-        {onSelectAll ? (
-          <SidebarMenuButton
-            size="icon"
-            aria-label="All projects"
-            tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "All projects" }}
-            isActive={selectedProjectKey === null}
-            aria-pressed={selectedProjectKey === null}
-            onClick={onSelectAll}
-          >
-            <LayersIcon />
-          </SidebarMenuButton>
-        ) : null}
-        <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden py-1">
-          {projects.map((project, index) => {
-            const label = [project.displayName, ...project.remoteEnvironmentLabels].join(" · ");
-            const attention = attentionByProjectKey?.get(project.projectKey) ?? null;
-            const selected = selectedProjectKey === project.projectKey;
-            const jumpNumber = index < 9 ? index + 1 : null;
-            return (
-              <div key={project.projectKey} className="group/rail-item relative shrink-0">
-                <SidebarMenuButton
-                  size="icon"
-                  aria-label={`Show ${label} threads`}
-                  tooltip={{
-                    className: RAIL_TOOLTIP_CLASS,
-                    sideOffset: 8,
-                    children: <ProjectRailTooltip project={project} attention={attention} />,
-                  }}
-                  isActive={selected}
-                  aria-pressed={selected}
-                  onClick={() => onSelectProject(project)}
-                  onContextMenu={
-                    onProjectContextMenu
-                      ? (event) => onProjectContextMenu(event, project)
-                      : undefined
-                  }
-                >
-                  <ProjectFavicon project={project} className="size-4 shrink-0" />
-                </SidebarMenuButton>
-                {jumpNumber !== null ? (
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute -bottom-0.5 -left-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-sm border border-border/80 bg-background/95 px-0.5 font-mono text-[9px] font-semibold tabular-nums text-foreground shadow-sm"
-                  >
-                    {jumpNumber}
-                  </span>
-                ) : null}
-                {attention ? (
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "pointer-events-none absolute -right-0.5 -top-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[9px] font-semibold tabular-nums text-white ring-2 ring-sidebar",
-                      attention.dotClass,
-                    )}
-                  >
-                    {attention.count}
-                  </span>
-                ) : null}
-                {onNewThreadInProject ? (
-                  <button
-                    type="button"
-                    aria-label={`New thread in ${project.displayName}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onNewThreadInProject(project);
-                    }}
-                    className="absolute -bottom-1 -right-1 flex size-4 cursor-pointer items-center justify-center rounded-full bg-sidebar-control-surface text-sidebar-foreground opacity-0 ring-1 ring-sidebar-border transition-opacity hover:bg-sidebar-row-hover focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-ring group-hover/rail-item:opacity-100"
-                  >
-                    <PlusIcon className="size-2.5" />
-                  </button>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-        <SidebarMenuButton
-          size="icon"
-          aria-label="Add project"
-          tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "Add project" }}
-          onClick={openAddProject}
-        >
-          <FolderPlusIcon />
-        </SidebarMenuButton>
       </nav>
     </TooltipProvider>
   );

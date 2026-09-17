@@ -206,6 +206,7 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { CommandDialogTrigger } from "./ui/command";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
+import { useSidebarProjectFolders } from "~/hooks/useSidebarProjectFolders";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import {
   derivePhysicalProjectKey,
@@ -3158,6 +3159,7 @@ export default function LegacySidebar() {
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const sidebarThreadPreviewCount = useClientSettings((s) => s.sidebarThreadPreviewCount);
   const updateSettings = useUpdateClientSettings();
+  const projectFolders = useSidebarProjectFolders();
   const newThreadContext = useHandleNewThread();
   const handleNewThread = newThreadContext.handleNewThread;
   const { archiveThread, deleteThread } = useThreadActions();
@@ -3860,13 +3862,15 @@ export default function LegacySidebar() {
           api.contextMenu.show(
             [
               { id: "new-thread", label: "New thread" },
+              ...projectFolders.menuItemsForProject(project.projectKey),
               { id: "project-settings", label: "Project settings", icon: "settings" },
               { id: "copy-path", label: "Copy path" },
             ],
             { x: event.clientX, y: event.clientY },
           ),
         );
-        if (clicked._tag === "Failure") return;
+        if (clicked._tag === "Failure" || clicked.value === null) return;
+        if (await projectFolders.handleAction(clicked.value, project.projectKey)) return;
         switch (clicked.value) {
           case "new-thread":
             startNewThreadInProject(project);
@@ -3885,7 +3889,15 @@ export default function LegacySidebar() {
         }
       })();
     },
-    [copyRailPathToClipboard, isMobile, navigate, setOpen, setOpenMobile, startNewThreadInProject],
+    [
+      copyRailPathToClipboard,
+      isMobile,
+      navigate,
+      projectFolders,
+      setOpen,
+      setOpenMobile,
+      startNewThreadInProject,
+    ],
   );
   const selectCollapsedRailProject = useCallback(
     (project: SidebarProjectSnapshot) => {
@@ -3917,6 +3929,9 @@ export default function LegacySidebar() {
           onNewThread={handleNewThreadClick}
           onNewThreadInProject={startNewThreadInProject}
           onProjectContextMenu={handleProjectRailContextMenu}
+          folders={projectFolders.settings}
+          onToggleFolder={projectFolders.toggleCollapsed}
+          onFolderContextMenu={projectFolders.onFolderContextMenu}
           onSelectAll={() => {
             setOpen(true);
           }}

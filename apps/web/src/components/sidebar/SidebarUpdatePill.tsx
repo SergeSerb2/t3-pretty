@@ -410,7 +410,7 @@ function SidebarUpdateControl() {
       data-animate-ui-icons
       style={showCheckIcon ? ({ "--refresh-cw-from": checkSpinFrom } as CSSProperties) : undefined}
       className={cn(
-        "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2",
+        "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2 group-data-[collapsible=icon]:size-full group-data-[collapsible=icon]:rounded-[var(--control-radius)]",
         isInteractionDisabled ? "cursor-not-allowed" : "cursor-pointer",
         showUpdateIconState
           ? cn(
@@ -457,7 +457,7 @@ function SidebarUpdateControl() {
   );
 
   return (
-    <SidebarMenuItem className="ml-auto shrink-0">
+    <SidebarMenuItem className="ml-auto shrink-0 group-data-[collapsible=icon]:ml-0 group-data-[collapsible=icon]:w-full">
       <Popover
         handle={releaseNotesPopoverHandle}
         onOpenChange={(open, details) => {

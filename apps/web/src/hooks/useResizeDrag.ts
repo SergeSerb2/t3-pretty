@@ -37,20 +37,27 @@ export function useResizeDrag<T extends HTMLElement>(
       const active = drag.current;
       if (!active) return;
       if (active.frame !== null) cancelAnimationFrame(active.frame);
-      if (commit) flush();
-      // Release can synchronously dispatch lostpointercapture.
-      drag.current = null;
+      let flushed = !commit;
       try {
-        if (active.target.hasPointerCapture(active.pointerId)) {
-          active.target.releasePointerCapture(active.pointerId);
+        if (commit) {
+          flush();
+          flushed = true;
         }
-      } catch {
-        // Capture may already have been released by the browser.
+      } finally {
+        // Release can synchronously dispatch lostpointercapture.
+        drag.current = null;
+        try {
+          if (active.target.hasPointerCapture(active.pointerId)) {
+            active.target.releasePointerCapture(active.pointerId);
+          }
+        } catch {
+          // Capture may already have been released by the browser.
+        }
+        document.body.style.removeProperty("cursor");
+        document.body.style.removeProperty("user-select");
+        active.session.cleanup?.();
       }
-      document.body.style.removeProperty("cursor");
-      document.body.style.removeProperty("user-select");
-      active.session.cleanup?.();
-      if (commit) active.session.finish(active.width, active.moved);
+      if (commit && flushed) active.session.finish(active.width, active.moved);
     },
     [flush],
   );
@@ -82,7 +89,16 @@ export function useResizeDrag<T extends HTMLElement>(
 
   return {
     onPointerDown(event: PointerEvent<T>) {
-      if (event.button !== 0 || drag.current) return;
+      if (event.button !== 0) return;
+      if (drag.current) {
+        const active = drag.current;
+        const capturing =
+          active.target.isConnected &&
+          typeof active.target.hasPointerCapture === "function" &&
+          active.target.hasPointerCapture(active.pointerId);
+        if (capturing) return;
+        finish(false);
+      }
       const session = start(event);
       if (!session) return;
       try {

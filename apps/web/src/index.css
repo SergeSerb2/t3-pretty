@@ -2902,6 +2902,7 @@ html
     10px 4px 24px -16px rgb(0 0 0 / 32%), 20px 8px 48px -24px rgb(0 0 0 / 18%);
   position: relative;
   z-index: 30;
+  overflow: visible;
   border-color: transparent;
 }
 

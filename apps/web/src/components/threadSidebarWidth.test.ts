@@ -56,7 +56,7 @@ describe("thread sidebar width", () => {
     expect(sidebarSource).toContain(
       "hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden",
     );
-    expect(sidebarSource).toContain('className="inline-flex min-w-0 items-center gap-1"');
+    expect(sidebarSource).toContain("inline-flex min-w-0 items-center gap-1");
     expect(sidebarSource).toContain("md:flex");
     expect(sidebarSource).toContain('src="/t3-pretty-mark.png"');
     expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(16 * 16);
@@ -77,6 +77,17 @@ describe("thread sidebar width", () => {
     );
   });
 
+  it("keeps the rail listening after a tooltip preventDefault", () => {
+    const sidebarSource = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
+
+    expect(sidebarSource).toContain("resize.onPointerDown(event)");
+    expect(sidebarSource).toContain("resize.onPointerUp(event)");
+    expect(sidebarSource).not.toContain("if (!event.defaultPrevented) resize.onPointerDown");
+    expect(sidebarSource).not.toContain("if (!event.defaultPrevented) resize.onPointerUp");
+    expect(sidebarSource).toContain("formatSidebarWidth");
+    expect(sidebarSource).toContain("options.getCssWidth");
+  });
+
   it("grows the collapsed icon rail to the traffic-light inset", () => {
     const sidebarSource = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
     const inset = NodeFS.readFileSync(new URL("../workspaceTitlebar.ts", import.meta.url), "utf8");
@@ -87,5 +98,21 @@ describe("thread sidebar width", () => {
     expect(inset).toContain(
       "max(0px,calc(var(--workspace-titlebar-content-left)-var(--sidebar-width-icon)))",
     );
+  });
+
+  it("fills the traffic-light-wide collapsed rail with a two-column dock", () => {
+    const rail = NodeFS.readFileSync(
+      new URL("./sidebar/SidebarProjectRail.tsx", import.meta.url),
+      "utf8",
+    );
+    const chrome = NodeFS.readFileSync(
+      new URL("./sidebar/SidebarChrome.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(rail).toContain("COLLAPSED_DOCK_CONTAINER_CLASS");
+    expect(rail).toContain("COLLAPSED_DOCK_GRID_CLASS");
+    expect(rail).toContain('size="tile"');
+    expect(chrome).toContain("COLLAPSED_DOCK_COLLAPSED_MENU_CLASS");
   });
 });

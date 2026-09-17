@@ -515,6 +515,25 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettingsPatch({ confirmThreadUnpin: true }).confirmThreadUnpin).toBe(true);
     expect(() => decodeClientSettingsPatch({ confirmThreadUnpin: "yes" })).toThrow();
   });
+
+  it("defaults project rail folders empty and round-trips a named folder", () => {
+    expect(decodeClientSettings({}).sidebarProjectFolders).toEqual([]);
+    expect(decodeClientSettings({}).sidebarProjectFolderAssignments).toEqual({});
+    const stored = {
+      sidebarProjectFolders: [{ id: "work", name: " Work ", collapsed: true }],
+      sidebarProjectFolderAssignments: { "env:/repo": "work" },
+    };
+    expect(decodeClientSettings(stored).sidebarProjectFolders).toEqual([
+      { id: "work", name: "Work", collapsed: true },
+    ]);
+    expect(decodeClientSettings(stored).sidebarProjectFolderAssignments).toEqual({
+      "env:/repo": "work",
+    });
+    expect(decodeClientSettingsPatch(stored)).toEqual({
+      sidebarProjectFolders: [{ id: "work", name: "Work", collapsed: true }],
+      sidebarProjectFolderAssignments: { "env:/repo": "work" },
+    });
+  });
 });
 
 describe("ClientSettings context window meter", () => {

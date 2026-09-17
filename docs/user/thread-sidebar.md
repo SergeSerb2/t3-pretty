@@ -129,7 +129,10 @@ icons also show 1–9 so the rail is easy to scan.
 
 Hover a project icon and use its **+** to start a thread there without the
 project picker. Right-click an icon for **New thread**, **Settle idle threads**,
-**Project settings**, **Copy path**, and **Remove project**. Settling idle
+**Move to folder**, **Project settings**, **Copy path**, and **Remove project**.
+Use **Move to folder** to group projects such as personal and work, then click
+the folder to collapse or expand it. Right-click the folder to rename, reorder,
+or delete it; deleting a folder does not remove the projects. Settling idle
 threads parks every active thread in that project that is not running, waiting,
 or holding an unseen response.
 
