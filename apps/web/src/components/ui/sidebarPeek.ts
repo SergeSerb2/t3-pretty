@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export const SIDEBAR_PEEK_OPEN_DELAY_MS = 160;
+export const SIDEBAR_PEEK_OPEN_DELAY_MS = 120;
 export const SIDEBAR_PEEK_CLOSE_DELAY_MS = 240;
-export const SIDEBAR_PEEK_ANIMATION_MS = 220;
+/** Width, label, and pane motion share this duration so a reverse hover can interrupt mid-flight. */
+export const SIDEBAR_PEEK_ANIMATION_MS = 280;
+export const SIDEBAR_PEEK_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 export type SidebarPeekEvent = "pointer-enter" | "pointer-leave" | "peek-now" | "hide-now";
 

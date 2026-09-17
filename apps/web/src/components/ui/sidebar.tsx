@@ -24,6 +24,7 @@ import { clampSidebarWidth, formatSidebarWidth } from "./sidebarResize";
 import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState";
 import {
   SIDEBAR_PEEK_ANIMATION_MS,
+  SIDEBAR_PEEK_EASE,
   shouldIgnoreSidebarPeekLeave,
   useSidebarPeek,
 } from "./sidebarPeek";
@@ -233,6 +234,7 @@ function Sidebar({
     openMobile,
     setOpenMobile,
     peeking,
+    peekFlyout,
     onPeekPointerEnter,
     onPeekPointerLeave,
   } = useSidebar();
@@ -255,6 +257,37 @@ function Sidebar({
     () => ({ side, resizable: resolvedResizable }),
     [resolvedResizable, side],
   );
+  const iconCollapsed = state === "collapsed" && collapsible === "icon";
+  const [pinOpening, setPinOpening] = React.useState(false);
+  const [pinOpeningReady, setPinOpeningReady] = React.useState(false);
+  const wasIconCollapsedRef = React.useRef(iconCollapsed);
+
+  React.useEffect(() => {
+    if (iconCollapsed) {
+      wasIconCollapsedRef.current = true;
+      setPinOpening(false);
+      setPinOpeningReady(false);
+      return;
+    }
+    if (!wasIconCollapsedRef.current) return;
+
+    setPinOpening(true);
+    setPinOpeningReady(false);
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => setPinOpeningReady(true));
+    });
+    const timeout = window.setTimeout(() => {
+      wasIconCollapsedRef.current = false;
+      setPinOpening(false);
+      setPinOpeningReady(false);
+    }, SIDEBAR_PEEK_ANIMATION_MS);
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+      window.clearTimeout(timeout);
+    };
+  }, [iconCollapsed]);
 
   if (collapsible === "none") {
     return (
@@ -311,15 +344,16 @@ function Sidebar({
     );
   }
 
-  const iconCollapsed = state === "collapsed" && collapsible === "icon";
-
   return (
     <SidebarInstanceContext value={instanceContextValue}>
       <div
         className="group peer hidden text-sidebar-foreground md:block"
         data-collapsed={iconCollapsed ? "" : undefined}
         data-collapsible={state === "collapsed" && collapsible === "offcanvas" ? collapsible : ""}
+        data-opening={pinOpening ? "" : undefined}
+        data-opening-ready={pinOpeningReady ? "" : undefined}
         data-peeking={peeking && iconCollapsed ? "" : undefined}
+        data-present={peekFlyout && iconCollapsed ? "" : undefined}
         data-side={side}
         data-slot="sidebar"
         data-state={state}
@@ -327,6 +361,7 @@ function Sidebar({
         style={
           {
             "--sidebar-peek-duration": `${SIDEBAR_PEEK_ANIMATION_MS}ms`,
+            "--sidebar-peek-ease": SIDEBAR_PEEK_EASE,
           } as React.CSSProperties
         }
       >
@@ -346,7 +381,7 @@ function Sidebar({
         <div
           className={cn(
             "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
-            "motion-safe:transition-[width,box-shadow] motion-safe:duration-(--sidebar-peek-duration) motion-safe:ease-[cubic-bezier(0.23,1,0.32,1)] group-data-collapsed:duration-(--sidebar-peek-duration)!",
+            "motion-safe:transition-[width,box-shadow] motion-safe:duration-(--sidebar-peek-duration) motion-safe:ease-(--sidebar-peek-ease) group-data-collapsed:duration-(--sidebar-peek-duration)!",
             "[[data-panel-animations=true]_&]:transition-[left,right,width,box-shadow] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
@@ -354,8 +389,9 @@ function Sidebar({
             variant === "floating" || variant === "inset"
               ? "p-2 group-data-collapsed:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
               : "group-data-collapsed:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
-            // Peek overlays the chat; the gap stays at icon width so nothing reflows.
-            "group-data-peeking:z-40 group-data-collapsed:group-data-peeking:w-(--sidebar-width)! group-data-peeking:shadow-[0_0_24px_rgba(0,0,0,0.18)]",
+            // Stay above the chat through the close width animation; the gap
+            // never leaves icon width, so nothing in the page reflows.
+            "group-data-present:z-40 group-data-collapsed:group-data-peeking:w-(--sidebar-width)! group-data-present:shadow-[12px_0_40px_rgba(0,0,0,0.12)]",
             className,
           )}
           data-slot="sidebar-container"
@@ -371,7 +407,7 @@ function Sidebar({
           }}
         >
           <div
-            className="h-full w-full min-w-0 group-data-collapsed:overflow-hidden"
+            className="h-full w-full min-w-0 group-data-collapsed:overflow-hidden group-data-present:overflow-hidden group-data-opening:overflow-hidden"
             data-slot="sidebar-clip"
           >
             <div

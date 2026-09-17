@@ -67,7 +67,10 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         // The wrapper carries the hiding: Badge's own `inline-flex` utility
         // outranks the components-layer `sidebar-brand-stage` display rules,
         // so the class has to live on an element without a display utility.
-        <span className="sidebar-brand-stage relative z-10 ml-1 items-center">
+        <span
+          className="sidebar-brand-stage relative z-10 ml-1 items-center"
+          data-sidebar-peek="label"
+        >
           <Badge
             className="rounded-full px-1.5 text-muted-foreground"
             data-environment-identification="pill"
@@ -93,7 +96,10 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       to="/"
     >
       {/* Center the generated mark with the visible capitals, without font ascender/descender space. */}
-      <span className="inline-flex min-w-0 items-center gap-1 text-sm font-medium tracking-tight">
+      <span
+        className="inline-flex min-w-0 items-center gap-1 text-sm font-medium tracking-tight"
+        data-sidebar-peek="label"
+      >
         <img
           alt=""
           aria-hidden="true"
