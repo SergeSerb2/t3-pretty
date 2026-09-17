@@ -3916,6 +3916,7 @@ export default function LegacySidebar() {
           onToggleFolder={projectFolders.toggleCollapsed}
           onFolderContextMenu={projectFolders.onFolderContextMenu}
           onApplyDrop={projectFolders.applyDrop}
+          onReorderFolder={projectFolders.reorderFolder}
           onSelectAll={() => {
             peekNow();
           }}

@@ -21,6 +21,7 @@ import {
   projectFolderHeaderMenuItems,
   projectFolderMenuItems,
   renameProjectFolder,
+  reorderProjectFolderTo,
   selectProjectFolderSettings,
   setProjectFolderIcon,
   toggleProjectFolderCollapsed,
@@ -51,6 +52,10 @@ export function useSidebarProjectFolders() {
 
   const applyDrop = useCallback((projectKey: string, target: ProjectRailDropTarget) => {
     persistFolderSettings((current) => applyProjectRailDrop(current, projectKey, target));
+  }, []);
+
+  const reorderFolder = useCallback((folderId: string, beforeFolderId: string | null) => {
+    persistFolderSettings((current) => reorderProjectFolderTo(current, folderId, beforeFolderId));
   }, []);
 
   const menuItemsForProject = useCallback(
@@ -163,10 +168,19 @@ export function useSidebarProjectFolders() {
       settings,
       toggleCollapsed,
       applyDrop,
+      reorderFolder,
       menuItemsForProject,
       handleAction,
       onFolderContextMenu,
     }),
-    [applyDrop, handleAction, menuItemsForProject, onFolderContextMenu, settings, toggleCollapsed],
+    [
+      applyDrop,
+      handleAction,
+      menuItemsForProject,
+      onFolderContextMenu,
+      reorderFolder,
+      settings,
+      toggleCollapsed,
+    ],
   );
 }
