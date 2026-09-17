@@ -25,6 +25,7 @@ import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../ho
 import {
   MACOS_TRAFFIC_LIGHT_REVEAL_DELAY_MS,
   shouldReserveMacosTrafficLights,
+  shouldShowMacosWindowButtons,
 } from "../workspaceTitlebar";
 import {
   PanelAnimationSuppressionProvider,
@@ -86,12 +87,16 @@ function SidebarControl({
     environmentIdentificationMode === "artwork",
   );
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle");
-  const reserveTrafficLights = shouldReserveMacosTrafficLights({
-    isFullscreen: isWindowFullscreen,
+  const trafficLights = {
     isMacosDesktop,
     isMobile,
     sidebarOpen: open,
+  };
+  const reserveTrafficLights = shouldReserveMacosTrafficLights({
+    ...trafficLights,
+    isFullscreen: isWindowFullscreen,
   });
+  const showWindowButtons = shouldShowMacosWindowButtons(trafficLights);
 
   useLayoutEffect(() => {
     if (!isMacosDesktop) return;
@@ -103,7 +108,7 @@ function SidebarControl({
     if (!isMacosDesktop) return;
     const setVisibility = window.desktopBridge?.setWindowButtonVisibility;
     if (typeof setVisibility !== "function") return;
-    if (!reserveTrafficLights) {
+    if (!showWindowButtons) {
       void setVisibility(false);
       return;
     }
@@ -114,7 +119,7 @@ function SidebarControl({
       void setVisibility(true);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [isMacosDesktop, reserveTrafficLights]);
+  }, [isMacosDesktop, showWindowButtons]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

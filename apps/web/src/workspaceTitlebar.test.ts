@@ -3,7 +3,7 @@ import * as NodeFS from "node:fs";
 
 import { describe, expect, it } from "vite-plus/test";
 
-import { shouldReserveMacosTrafficLights } from "./workspaceTitlebar";
+import { shouldReserveMacosTrafficLights, shouldShowMacosWindowButtons } from "./workspaceTitlebar";
 
 describe("macOS traffic lights vs collapsed sidebar", () => {
   it("keeps native lights for an expanded desktop sidebar", () => {
@@ -28,7 +28,7 @@ describe("macOS traffic lights vs collapsed sidebar", () => {
     ).toBe(false);
   });
 
-  it("keeps lights in fullscreen-off mobile chrome and drops them in fullscreen", () => {
+  it("keeps lights in fullscreen-off mobile chrome and drops the inset in fullscreen", () => {
     expect(
       shouldReserveMacosTrafficLights({
         isFullscreen: false,
@@ -43,6 +43,23 @@ describe("macOS traffic lights vs collapsed sidebar", () => {
         isMacosDesktop: true,
         isMobile: false,
         sidebarOpen: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not latch native buttons hidden just because the window is fullscreen", () => {
+    expect(
+      shouldShowMacosWindowButtons({
+        isMacosDesktop: true,
+        isMobile: false,
+        sidebarOpen: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowMacosWindowButtons({
+        isMacosDesktop: true,
+        isMobile: false,
+        sidebarOpen: false,
       }),
     ).toBe(false);
   });

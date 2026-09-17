@@ -328,9 +328,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 /* Native traffic lights need ~90px. The collapsed 3rem rail cannot hold them,
    so macOS desktop drops this attribute and the sidebar toggle slides over. */
-html[data-macos-traffic-lights] {
-  --workspace-controls-left: var(--desktop-window-controls-inset, 90px);
-}
 
 [data-sidebar-control] {
   translate: calc(var(--workspace-controls-left) - env(safe-area-inset-left) - 0.75rem) 0;
@@ -353,6 +350,10 @@ html[data-macos-traffic-lights] {
   --workspace-native-controls-inset: calc(
     100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 0.75rem
   );
+}
+
+html[data-macos-traffic-lights] {
+  --workspace-controls-left: var(--desktop-window-controls-inset, 90px);
 }
 
 @media (min-width: 40rem) {

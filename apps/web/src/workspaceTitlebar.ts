@@ -6,11 +6,19 @@ export const COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS =
 /** Native lights appear after the toggle has started sliding out of their slot. */
 export const MACOS_TRAFFIC_LIGHT_REVEAL_DELAY_MS = 120;
 
+export function shouldShowMacosWindowButtons(input: {
+  isMacosDesktop: boolean;
+  isMobile: boolean;
+  sidebarOpen: boolean;
+}): boolean {
+  return input.isMacosDesktop && (input.isMobile || input.sidebarOpen);
+}
+
 export function shouldReserveMacosTrafficLights(input: {
   isMacosDesktop: boolean;
   isFullscreen: boolean;
   isMobile: boolean;
   sidebarOpen: boolean;
 }): boolean {
-  return input.isMacosDesktop && !input.isFullscreen && (input.isMobile || input.sidebarOpen);
+  return !input.isFullscreen && shouldShowMacosWindowButtons(input);
 }
