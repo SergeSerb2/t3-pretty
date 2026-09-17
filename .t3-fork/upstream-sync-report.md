@@ -4136,3 +4136,58 @@
 - `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Upstream's `!setupRunning` guard on the Thinking-row condition.. Reason: T3 Pretty's newer setup handoff architecture intentionally uses `setupReservesLivePlaceholders` and the early return above; retaining the legacy setup-wide guard would hide the first turn's live placeholder after agent handoff while an asynchronous setup script is still running.
 - `mobile-typecheck` failed after merging `v0.0.43-nightly.20260916.1825`; repaired with `gpt-5.6-sol`: Updated the parent-added mobile cache test fixture to include T3 Pretty's required `enabledSkillIds` field, matching the sibling snapshot fixture and contract type.
   - edited `apps/mobile/src/connection/environment-cache-store.test.ts`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260917.1866`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260917.1851`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — T3 Pretty's effective and initial provider-filter handling.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — T3 Pretty's route-aware settings-sheet page selection and visible option-descriptor filtering.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The exported ThreadSettingsSheetPage type used by fork integrations.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — T3 Pretty's thread settings summary label, including model identity, provider-aware runtime labels, and Plan-mode presentation.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Preserved provider-aware runtime mode choices in the thread settings session.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Preserved T3 Pretty's filtered visible option descriptors instead of exposing the unfiltered descriptor list.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Preserved the displayed model derived from the pending or currently applied model.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Preserved T3 Pretty's effectiveProviderFilter behavior, including its search-aware provider filtering semantics.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Preserved consistent use of activeProviderFilter when determining whether the catalog is narrowed and whether provider sections are collapsible.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Preserved T3 Pretty's refactored model catalog architecture, where ThreadSettingsCatalogContent takes no submenu callback prop and model selection is handled by the instant-apply catalog flow.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — T3 Pretty's simplified, instant-apply model catalog remains free of per-provider filter controls and exposes only the applicable legacy-model toggle.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Preserved T3 Pretty’s reworked single-panel model-picker behavior by keeping the fallback iOS filter menu limited to the legacy-model toggle.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Preserved parity with the adjacent native mail-style filter menu, which likewise exposes only the legacy-model filter rather than restoring the removed provider submenu.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.test.ts` — Preserved test access to T3 Pretty's effective and initial provider-filter behavior.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.test.ts` — Preserved T3 Pretty settings-sheet presentation and route-page state coverage.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.test.ts` — Preserved T3 Pretty provider setup candidate and visible option descriptor coverage.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.ts` — Preserved live settings-sheet page restoration for the home and catalog routes, including retaining the current page only when re-presenting the same owner.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.ts` — Preserved provider setup candidate discovery from the environment provider list, including install/auth checks, instance and provider filtering, and visible-label query matching.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.ts` — Preserved T3 Pretty's provider option descriptor and selectable-choice integration used by the surrounding model-settings logic.
+- `packages/shared/src/usageMerge.ts` — Complete source scans continue to take precedence over partial scans, preventing an incomplete duplicate from suppressing complete usage data.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Parent model-favorites support through favorites-first ordering, stable favorite keys, and favorite toggling.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Parent favorites state constants, including the typed empty favorites collection and @favorites provider filter.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Integrated upstream favorite model keys into the thread settings session.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Integrated upstream favorite-loading state and the corresponding memo dependencies.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Integrated the parent's intent that FAVORITES_PROVIDER_FILTER must not be treated as a concrete provider key; this is handled through effectiveProviderFilter while favorite models continue to be filtered across provider groups below.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Added session.providerFilter and session.searchQuery to the renderCatalogItem callback dependencies so empty-state messaging refreshes correctly when model filters or search text change.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.test.ts` — Integrated upstream model favorite ordering and provider-scoped favorite key test support.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.test.ts` — Integrated upstream model favorite toggle test support.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.ts` — Added the parent's ModelFavorite representation and stable provider/model favorite key helper.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.ts` — Added the parent's model favorite toggle behavior for adding and removing selections.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.ts` — Added the parent's stable favorites-first ordering while retaining catalog order within favorite and non-favorite partitions.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.ts` — Reused the already consolidated ProviderInstanceId contracts import instead of introducing a duplicate import.
+- `packages/shared/src/usageMerge.ts` — Among duplicate scans of equal quality, the most recently read summary now owns the source fingerprint.
+- `packages/shared/src/usageMerge.ts` — Environment identifiers provide deterministic ordering when summaries have the same read time.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Add props.onOpenSubmenu to the renderCatalogItem dependency array.. Reason: T3 Pretty's catalog component no longer accepts props and this callback does not use onOpenSubmenu; retaining the dependency would reference an undefined identifier and fail typechecking without restoring any behavior.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Add a Favorites provider-filter action to the model filter menu.. Reason: The action depends on the parent provider-filter menu. Adding it alone would let users enter the Favorites filter without any remaining provider action through which to leave it, while adding the full menu would regress T3 Pretty's intentionally simplified picker.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Restore provider-group filter actions in the model filter menu.. Reason: T3 Pretty intentionally removed these controls as part of its simplified single-panel model-picker behavior; restoring them would overwrite that fork-specific UX.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Restore the nested provider-filter menu in the fallback iOS toolbar and add the parent’s new Favorites provider-filter action.. Reason: T3 Pretty intentionally removed the provider submenu as part of its simplified instant-apply model-picker/filter UX. Restoring it, including the new Favorites entry, would regress that fork-specific presentation and create inconsistent behavior with the adjacent native mail-style filter menu.

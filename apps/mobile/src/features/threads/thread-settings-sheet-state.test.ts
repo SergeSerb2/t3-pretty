@@ -15,12 +15,15 @@ import {
   buildNewTaskThreadSettingsSession,
   canCommitPendingModel,
   effectiveProviderFilter,
+  favoritesFirst,
   initialProviderFilter,
+  modelFavoriteKey,
   modelMatchesCatalogQuery,
   pendingModelAfterPress,
   presentedSettingsSheetPage,
   providerSetupCandidates,
   threadSettingsSheetPageForRoute,
+  toggleModelFavorite,
   visibleSheetOptionDescriptors,
 } from "./thread-settings-sheet-state";
 
@@ -47,6 +50,46 @@ function modelOption(
 }
 
 describe("thread settings sheet state", () => {
+  it("keeps favorites in catalog order ahead of other models", () => {
+    const models = [
+      modelOption("first"),
+      modelOption("second"),
+      modelOption("third"),
+      modelOption("fourth"),
+    ];
+    const favorites = new Set([models[2]!.key, models[0]!.key]);
+
+    expect(favoritesFirst(models, favorites).map((model) => model.selection.model)).toEqual([
+      "first",
+      "third",
+      "second",
+      "fourth",
+    ]);
+    expect(models.map((model) => model.selection.model)).toEqual([
+      "first",
+      "second",
+      "third",
+      "fourth",
+    ]);
+  });
+
+  it("adds and removes favorites for one provider instance", () => {
+    const codexModel = modelOption("shared");
+    const otherProvider = ProviderInstanceId.make("codex_personal");
+    const personalModel = {
+      ...codexModel,
+      key: modelFavoriteKey(otherProvider, "shared"),
+      selection: { ...codexModel.selection, instanceId: otherProvider },
+    };
+    const favorites = toggleModelFavorite([], codexModel);
+
+    expect(toggleModelFavorite(favorites, personalModel)).toEqual([
+      { provider: ProviderInstanceId.make("codex"), model: "shared" },
+      { provider: otherProvider, model: "shared" },
+    ]);
+    expect(toggleModelFavorite(favorites, codexModel)).toEqual([]);
+  });
+
   it("matches visible model and provider terms", () => {
     const model = modelOption("gpt-next");
 

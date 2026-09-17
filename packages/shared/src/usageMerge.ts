@@ -144,9 +144,10 @@ function boundedCoverageMessage(message: string): string {
  *
  * Several environments on one machine (worktree servers, for instance) resolve
  * the same provider home and would otherwise double count every token. The
- * A complete scan wins over a partial scan; ties use stable environment-id
- * order. The rest have that provider's buckets dropped, so an incomplete
- * lower-id environment cannot suppress a complete duplicate.
+ * A complete scan wins over a partial scan. Among scans of equal quality, the
+ * most recently read summary claims the fingerprint; environment ids break
+ * read-time ties. The rest have that provider's buckets dropped, so an
+ * incomplete source cannot suppress a complete duplicate.
  */
 function claimSources(environments: readonly EnvironmentUsage[]): {
   readonly ownerByFingerprint: ReadonlyMap<string, EnvironmentId>;
@@ -173,7 +174,11 @@ function claimSources(environments: readonly EnvironmentUsage[]): {
     }
   };
 
-  const ordered = [...environments].sort((a, b) => a.environmentId.localeCompare(b.environmentId));
+  const ordered = [...environments].sort(
+    (a, b) =>
+      (Date.parse(b.summary.readAt) || 0) - (Date.parse(a.summary.readAt) || 0) ||
+      a.environmentId.localeCompare(b.environmentId),
+  );
 
   for (const environment of ordered) {
     for (const source of environment.summary.sources) {
