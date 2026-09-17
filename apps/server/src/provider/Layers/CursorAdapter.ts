@@ -116,6 +116,10 @@ export interface CursorAdapterLiveOptions {
    * the latest snapshot so the closure isn't stale.
    */
   readonly resolveSettings?: Effect.Effect<CursorSettings>;
+  readonly onAvailableCommands?: (
+    commands: ReadonlyArray<EffectAcpSchema.AvailableCommand>,
+    cwd: string,
+  ) => Effect.Effect<void>;
 }
 
 interface PendingApproval {
@@ -805,6 +809,11 @@ export function makeCursorAdapter(
                     return;
                   case "ModeChanged":
                     return;
+                  case "AvailableCommandsUpdated":
+                    yield* (
+                      options?.onAvailableCommands?.(event.availableCommands, cwd) ?? Effect.void
+                    );
+                    return;
                   case "AssistantItemStarted":
                     ctx.assistantReply = new CursorTransportFailure();
                     ctx.pendingAssistantItem = { itemId: event.itemId, started: false };
@@ -872,6 +881,26 @@ export function makeCursorAdapter(
                     );
                     return;
                   case "ThoughtDelta":
+                    // Thoughts are narration, not the reply: they stay out of
+                    // `assistantReply` so a resumed turn replays only answers.
+                    yield* logNative(
+                      ctx.threadId,
+                      "session/update",
+                      event.rawPayload,
+                      "acp.jsonrpc",
+                    );
+                    yield* offerRuntimeEvent(
+                      makeAcpContentDeltaEvent({
+                        stamp: yield* makeEventStamp(),
+                        provider: PROVIDER,
+                        threadId: ctx.threadId,
+                        turnId: ctx.activeTurnId,
+                        streamKind: "reasoning_text",
+                        text: event.text,
+                        rawPayload: event.rawPayload,
+                      }),
+                    );
+                    return;
                   case "ContentDelta":
                     ctx.assistantReply.push(event.text);
                     yield* logNative(
@@ -902,11 +931,8 @@ export function makeCursorAdapter(
                         provider: PROVIDER,
                         threadId: ctx.threadId,
                         turnId: ctx.activeTurnId,
-                        ...(event._tag === "ContentDelta" && event.itemId
-                          ? { itemId: event.itemId }
-                          : {}),
-                        streamKind:
-                          event._tag === "ThoughtDelta" ? "reasoning_text" : event.streamKind,
+                        ...(event.itemId ? { itemId: event.itemId } : {}),
+                        streamKind: event.streamKind,
                         text: event.text,
                         rawPayload: event.rawPayload,
                       }),
@@ -1107,7 +1133,13 @@ export function makeCursorAdapter(
                 ),
               );
 
-          let result = yield* promptOnce([...promptParts, runtimeInstruction]);
+          // ACP commands parse the complete text. Extra context can turn an exact
+          // command into an ordinary model prompt or change its arguments.
+          let result = yield* promptOnce(
+            /^\/[^\s/]+(?:\s|$)/.test(rawPrompt)
+              ? promptParts
+              : [...promptParts, runtimeInstruction],
+          );
           for (let attempt = 0; ; attempt += 1) {
             yield* ctx.acp.drainEvents;
             const failure = ctx.assistantReply.failure;
