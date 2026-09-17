@@ -77,6 +77,17 @@ describe("thread sidebar width", () => {
     );
   });
 
+  it("keeps the rail listening after a tooltip preventDefault", () => {
+    const sidebarSource = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
+
+    expect(sidebarSource).toContain("resize.onPointerDown(event)");
+    expect(sidebarSource).toContain("resize.onPointerUp(event)");
+    expect(sidebarSource).not.toContain("if (!event.defaultPrevented) resize.onPointerDown");
+    expect(sidebarSource).not.toContain("if (!event.defaultPrevented) resize.onPointerUp");
+    expect(sidebarSource).toContain("formatSidebarWidth");
+    expect(sidebarSource).toContain("options.getCssWidth");
+  });
+
   it("grows the collapsed icon rail to the traffic-light inset", () => {
     const sidebarSource = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
     const inset = NodeFS.readFileSync(new URL("../workspaceTitlebar.ts", import.meta.url), "utf8");

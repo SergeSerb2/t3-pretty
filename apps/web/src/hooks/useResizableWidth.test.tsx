@@ -8,6 +8,7 @@ let renderer: ReactTestRenderer;
 let result: ReturnType<typeof useResizableWidth>;
 let captured = false;
 const target = {
+  isConnected: true,
   setPointerCapture: () => {
     captured = true;
   },
@@ -177,6 +178,23 @@ describe("panel resize cleanup", () => {
     });
     expect(result.width).toBe(800);
     expect(setItem).toHaveBeenCalledExactlyOnceWith("test-panel-width", "800");
+  });
+
+  it("starts a new drag after a stale session lost capture without an up event", async () => {
+    await act(() => {
+      result.handlers.onPointerDown(pointer());
+      result.handlers.onPointerMove(pointer(50));
+    });
+    await act(() => frame?.(0));
+    expect(result.width).toBe(450);
+    captured = false;
+    await act(() => {
+      result.handlers.onPointerDown(pointer(200));
+      result.handlers.onPointerUp(pointer(50));
+    });
+    expect(result.width).toBe(600);
+    expect(setItem).toHaveBeenCalledExactlyOnceWith("test-panel-width", "600");
+    expect(captured).toBe(false);
   });
 
   it("saves the final width when release is followed by lost capture", async () => {
