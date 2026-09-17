@@ -135,9 +135,9 @@ export function editorRequestForScript(
 }
 
 /**
- * Add/edit dialog for a project script, shared by the chat-header scripts menu
- * and the project settings page. The parent owns which script (if any) is
- * being edited via `request`; the dialog owns the form state and validation.
+ * Add/edit dialog for a project script, used by the project settings page.
+ * The parent owns which script (if any) is being edited via `request`; the
+ * dialog owns the form state and validation.
  */
 export function ProjectScriptEditorDialog({
   request,
@@ -304,7 +304,7 @@ export function ProjectScriptEditorDialog({
           <DialogHeader>
             <DialogTitle>{isEditing ? "Edit Action" : "Add Action"}</DialogTitle>
             <DialogDescription>
-              Actions are project-scoped commands you can run from the top bar or keybindings.
+              Actions are project-scoped commands you can run from Project settings or keybindings.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>

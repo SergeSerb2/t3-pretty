@@ -13,9 +13,7 @@ export function WorkspaceBreadcrumb({ ariaLabel, children, className }: Workspac
     <nav aria-label={ariaLabel} className={cn("min-w-0", className)}>
       {/* Keep the flexible container draggable in Electron. Interactive
           descendants are excluded by the shared .drag-region CSS rules. */}
-      <ol className="m-0 flex min-w-0 list-none items-center gap-2 p-0 text-sm sm:gap-3">
-        {children}
-      </ol>
+      <ol className="m-0 flex min-w-0 list-none items-center gap-1.5 p-0 text-sm">{children}</ol>
     </nav>
   );
 }
@@ -47,7 +45,10 @@ export function WorkspaceBreadcrumbItem({
 
 export function WorkspaceBreadcrumbSeparator({ className }: { readonly className?: string }) {
   return (
-    <li aria-hidden="true" className={cn("flex shrink-0 items-center text-icon-muted", className)}>
+    <li
+      aria-hidden="true"
+      className={cn("flex shrink-0 items-center text-muted-foreground/45", className)}
+    >
       /
     </li>
   );
