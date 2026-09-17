@@ -4656,11 +4656,7 @@ export default function Sidebar() {
                           />
                         ) : null}
                       </>
-                    ) : (
-                      <span className="truncate">
-                        {projectGroups.length > 0 ? "All projects" : "Projects"}
-                      </span>
-                    )
+                    ) : undefined
                   }
                   onNewThread={handleNewThreadClick}
                   newThreadDisabled={projects.length === 0}

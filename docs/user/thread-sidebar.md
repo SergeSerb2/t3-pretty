@@ -122,10 +122,9 @@ and the strongest status from the hidden ones.
 ## Pick a project
 
 On web and desktop, the strip of project icons on the left edge of the sidebar
-chooses what the thread list shows. The top entry shows every project, with each
-row naming its project. Pick an icon to see only that project's threads; pick it
-again, or the top entry, to go back to all projects. The choice survives
-restarts and stays while you visit Settings.
+chooses what the thread list shows. Pick an icon to see only that project's
+threads; pick it again, or the rail's top entry, to go back to every project.
+The choice survives restarts and stays while you visit Settings.
 
 A number on a project icon is how many of its threads are waiting on you or
 already finished: an approval, a question, a plan to review, a finished response
