@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260916.1825002426",
+    date: "2026-09-17",
+    items: [
+      {
+        kind: "fixed",
+        title: "DPoP tokens when the relay endpoint is unchanged",
+      },
+      {
+        kind: "fixed",
+        title: "Bind all interfaces while waiting for a LAN address",
+      },
+      {
+        kind: "fixed",
+        title: "Accepted command receipts and well-formed errors",
+      },
+      {
+        kind: "fixed",
+        title: "Detect gssapi-keyex and password-retry auth failures",
+      },
+      {
+        kind: "fixed",
+        title: "Skip undecodable provider session bindings",
+      },
+      {
+        kind: "fixed",
+        title: "Ignore late streaming appends after finalize",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260916.1825002422",
     date: "2026-09-17",
     items: [
