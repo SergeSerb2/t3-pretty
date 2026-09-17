@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
+import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Kbd } from "../ui/kbd";
@@ -39,6 +40,10 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
+import {
+  COLLAPSED_DOCK_CONTAINER_CLASS,
+  COLLAPSED_DOCK_GRID_CLASS,
+} from "../sidebar/collapsedSidebarDock";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
   searchSettings,
@@ -248,32 +253,36 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   if (!isMobile && !open) {
     return (
       <>
-        <SidebarContent className="items-center overflow-x-hidden py-2">
-          <SidebarMenuButton
-            size="icon"
-            aria-label="Search settings"
-            tooltip="Search settings"
-            onClick={() => {
-              focusSearchAfterExpandRef.current = true;
-              setOpen(true);
-            }}
-          >
-            <SearchIcon />
-          </SidebarMenuButton>
-          {navItems.map(({ to, label, icon: Icon }) => (
+        <SidebarContent
+          className={cn(COLLAPSED_DOCK_CONTAINER_CLASS, "overflow-x-hidden px-1 py-2")}
+        >
+          <div className={COLLAPSED_DOCK_GRID_CLASS}>
             <SidebarMenuButton
-              key={to}
-              size="icon"
-              aria-label={label}
-              tooltip={label}
-              isActive={pathname === to || pathname.startsWith(`${to}/`)}
-              onClick={() => handleSectionClick(to)}
+              size="tile"
+              aria-label="Search settings"
+              tooltip="Search settings"
+              onClick={() => {
+                focusSearchAfterExpandRef.current = true;
+                setOpen(true);
+              }}
             >
-              <Icon />
+              <SearchIcon />
             </SidebarMenuButton>
-          ))}
+            {navItems.map(({ to, label, icon: Icon }) => (
+              <SidebarMenuButton
+                key={to}
+                size="tile"
+                aria-label={label}
+                tooltip={label}
+                isActive={pathname === to || pathname.startsWith(`${to}/`)}
+                onClick={() => handleSectionClick(to)}
+              >
+                <Icon />
+              </SidebarMenuButton>
+            ))}
+          </div>
         </SidebarContent>
-        <SidebarFooter className="px-2 py-1">
+        <SidebarFooter className={cn(COLLAPSED_DOCK_CONTAINER_CLASS, "px-1 py-1")}>
           <SidebarUtilityMenu />
         </SidebarFooter>
       </>

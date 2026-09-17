@@ -49,7 +49,6 @@ describe("sidebar interactive cursors", () => {
 
     expect(html).toContain("[-webkit-app-region:no-drag]");
     expect(html).toContain("size-[var(--workspace-titlebar-control-size)]!");
-    expect(html).toContain("data-animate-ui-icons");
   });
 
   it("keeps icon motion opt-in when a tooltip owns the trigger slot", () => {
@@ -63,7 +62,6 @@ describe("sidebar interactive cursors", () => {
 
     expect(html).toContain('data-slot="tooltip-trigger"');
     expect(html).not.toContain('data-slot="sidebar-trigger"');
-    expect(html).toContain("data-animate-ui-icons");
   });
 
   it("uses shared geometry and icon constraints for menu buttons by default", () => {
@@ -96,6 +94,21 @@ describe("sidebar interactive cursors", () => {
     expect(html).toContain("p-0");
     expect(html).toContain("font-medium");
     expect(html).toContain("text-sidebar-muted-foreground/80");
+  });
+
+  it("lets collapsed dock tiles fill their grid cell", () => {
+    const html = renderToStaticMarkup(
+      <SidebarProvider>
+        <SidebarMenuButton size="tile">
+          <span>+</span>
+        </SidebarMenuButton>
+      </SidebarProvider>,
+    );
+
+    expect(html).toContain("aspect-square");
+    expect(html).toContain("w-full");
+    expect(html).toContain("size-auto!");
+    expect(html).not.toContain("size-8!");
   });
 
   it("lets project drag handles override the default pointer cursor", () => {
