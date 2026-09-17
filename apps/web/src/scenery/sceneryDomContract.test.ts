@@ -228,6 +228,17 @@ describe("glass contract with upstream chrome", () => {
     expect(threadRouteViewSource).not.toContain("overflow-hidden overscroll-y-none");
   });
 
+  it("the L-frame inner corner is a square join, not a masked fillet", () => {
+    expect(indexCssSource).not.toContain("--workspace-frame-fillet");
+    expect(indexCssSource).not.toContain("[data-workspace-header]::before");
+    const headerPlate = indexCssSource.match(
+      /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]+\}/s,
+    )?.[0];
+    expect(headerPlate).toBeTruthy();
+    expect(headerPlate).not.toContain("mask-image");
+    expect(headerPlate).not.toContain("border-radius");
+  });
+
   it("the right panel still exposes the hooks the scenery glass plate targets", () => {
     expect(previewPanelShellSource).toContain("right-panel-inline-body");
     expect(previewPanelShellSource).toContain('data-right-panel=""');
