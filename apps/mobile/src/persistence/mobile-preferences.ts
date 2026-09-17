@@ -9,7 +9,6 @@ import type { SidebarProjectGroupingMode } from "@t3tools/contracts";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
 import { parsePhotoSetId, type PhotoSetId } from "../features/scenery/photoSets";
-
 import * as MobileDatabase from "./mobile-database";
 import * as MobileSecureStorage from "./mobile-secure-storage";
 import { MobileStorageDecodeError, MobileStorageEncodeError } from "./mobile-storage";

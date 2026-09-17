@@ -37,6 +37,7 @@ import {
 } from "./assets/AssetAccess.ts";
 import { ATTACHMENT_FEED_PREVIEW_VARIANT } from "./assets/attachmentFeedPreviewPath.ts";
 import { resolveAttachmentFeedPreview } from "./assets/AttachmentPreview.ts";
+import { githubMediaResponse } from "./assets/GitHubMediaFetch.ts";
 import { statMediaFile, streamMediaFile, type OpenMediaFile } from "./assets/MediaFile.ts";
 import {
   ATTACHMENT_UPLOAD_ROUTE_PREFIX,
@@ -558,6 +559,25 @@ export const assetRouteLayer = HttpRouter.add(
       );
       if (!asset) {
         return HttpServerResponse.text("Not Found", { status: 404 });
+      }
+      if (asset.kind === "github-media") {
+        return yield* githubMediaResponse(asset, request.headers).pipe(
+          Effect.tapError((cause) =>
+            Effect.logWarning("Failed to fetch GitHub media.", {
+              url: asset.url,
+              cause,
+            }),
+          ),
+          Effect.orElseSucceed(() =>
+            HttpServerResponse.empty({
+              status: 502,
+              headers: {
+                "cache-control": "private, no-store",
+                "x-content-type-options": "nosniff",
+              },
+            }),
+          ),
+        );
       }
       const config = yield* ServerConfig.ServerConfig;
       const requestedPath =

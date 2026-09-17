@@ -120,7 +120,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   }, []);
   const themeVariablesByAppearance = useMemo(() => {
     const resolve = (appearance: MobileThemeAppearance) => {
-      const base = getMobileThemeRuntimeVariables(themeIds[appearance], appearance);
+      const base = getMobileThemeRuntimeVariables(themeIds[appearance], appearance, Platform.OS);
       return themeIds[appearance] === "material-you" && systemColorPalettes
         ? materialYouPaletteToMobileThemeVariables(
             systemColorPalettes[appearance],
@@ -291,11 +291,11 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeIds,
       themeMode,
       themeAppearance,
-      systemColorsAvailable: isSystemColorsAvailable,
-      systemColorsActive,
       materialYouStyleLayoutEnabled,
       materialYouStyleLayoutActive,
       setMaterialYouStyleLayoutEnabled,
+      systemColorsAvailable: isSystemColorsAvailable,
+      systemColorsActive,
       themeVariables,
       themeVariablesByAppearance,
       systemColorPalettes,
@@ -314,10 +314,10 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeIds,
       themeMode,
       themeAppearance,
-      systemColorsActive,
       materialYouStyleLayoutEnabled,
       materialYouStyleLayoutActive,
       setMaterialYouStyleLayoutEnabled,
+      systemColorsActive,
       themeVariables,
       themeVariablesByAppearance,
       systemColorPalettes,

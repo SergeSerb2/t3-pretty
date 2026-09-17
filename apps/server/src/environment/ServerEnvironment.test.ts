@@ -202,6 +202,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         maxUploadBytes: 50 * 1024 * 1024,
       });
       expect(second.capabilities.pullRequests).toBe(true);
+      expect(second.capabilities.requiredWorktreeBootstrap).toBe(true);
       expect(second.capabilities.usagePriceOverrides).toBe(true);
       expect(second.capabilities.globalEnvironment).toBe(true);
       expect(second.capabilities.threadActiveReorder).toBe(true);

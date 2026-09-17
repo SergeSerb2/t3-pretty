@@ -472,6 +472,7 @@ describe("OrchestrationEngine", () => {
               updatedAt: projectionSnapshot.updatedAt,
             }),
           listMergedPullRequestCandidates: () => Effect.succeed([]),
+          getDeletedWorktreeThreads: () => Effect.die("unused"),
           getArchivedShellSnapshot: () =>
             Effect.succeed({
               snapshotSequence: projectionSnapshot.snapshotSequence,

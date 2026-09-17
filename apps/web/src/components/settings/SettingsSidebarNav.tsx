@@ -16,6 +16,7 @@ import {
   BotIcon,
   createLucideIcon,
   GitBranchIcon,
+  HardDriveIcon,
   PanelsTopLeftIcon,
   KeyboardIcon,
   Link2Icon,
@@ -89,7 +90,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/apps": BlocksIcon,
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
-  "/settings/storage": Settings2Icon,
+  "/settings/storage": HardDriveIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
 };

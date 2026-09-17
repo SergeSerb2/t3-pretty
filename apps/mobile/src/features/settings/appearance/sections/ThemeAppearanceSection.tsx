@@ -1,4 +1,4 @@
-import { Platform, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { ScopedTheme, ScopedVariables } from "uniwind";
 
 import { AppText as Text } from "../../../../components/AppText";
@@ -14,9 +14,6 @@ import { cn } from "../../../../lib/cn";
 import { PHOTO_SETS, type PhotoSetId } from "../../../scenery/photoSets";
 import { useScenery } from "../../../scenery/SceneryProvider";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
-
-import { SettingsSection } from "../../components/SettingsSection";
-import { SettingsSwitchRow } from "../../components/SettingsSwitchRow";
 
 const APPEARANCE_MODES: ReadonlyArray<{
   readonly id: MobileThemeMode;
@@ -140,6 +137,7 @@ export function ThemeAppearanceSection() {
     themeId,
     themeIds,
     themeMode,
+
   } = useAppearancePreferences();
   const { photoSetId, setPhotoSetId } = useScenery();
   const boring = isBoringMobileTheme(themeId);
@@ -151,18 +149,6 @@ export function ThemeAppearanceSection() {
 
   return (
     <View className="gap-6">
-      {Platform.OS === "android" ? (
-        <SettingsSection card title="Android">
-          <SettingsSwitchRow
-            disabled={!isReady}
-            icon="square.grid.2x2"
-            label="Material You Layout"
-            onValueChange={setMaterialYouStyleLayoutEnabled}
-            subtitle="Use Material You surfaces, shapes, and component styling."
-            value={materialYouStyleLayoutEnabled}
-          />
-        </SettingsSection>
-      ) : null}
       <View className="gap-2">
         <SectionLabel>Personalization</SectionLabel>
         <Text className="px-2 text-sm text-foreground-muted">

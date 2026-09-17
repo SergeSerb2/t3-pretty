@@ -1,14 +1,17 @@
+import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
+import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import {
   StackActions,
   useFocusEffect,
   useNavigation,
+  useRoute,
   type StaticScreenProps,
 } from "@react-navigation/native";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, BackHandler, Linking, Platform, ScrollView, View } from "react-native";
+import { Alert, BackHandler, Linking, Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   REMOTE_PAIRING_HOST_MAX_LENGTH,
@@ -16,8 +19,7 @@ import {
   REMOTE_PAIRING_URL_MAX_LENGTH,
 } from "@t3tools/shared/remote";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
-
-import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
+import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { ErrorBanner } from "../../components/ErrorBanner";
 import { ConnectionSheetButton } from "./ConnectionSheetButton";
@@ -41,6 +43,7 @@ export function ConnectionsNewRouteScreen({
     pairingConnectionError,
   } = useRemoteConnections();
   const navigation = useNavigation();
+  const routeName = useRoute().name;
   const params = route.params ?? {};
   // Deep-link prefill exists for development automation only. A production
   // link must not arrive with attacker-chosen host and token already filled.
@@ -297,13 +300,25 @@ export function ConnectionsNewRouteScreen({
   }, [connectAndClose, routePairingUrl, shouldAutoConnect]);
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SettingsScreen
+      formSheet={routeName === "ConnectionsNew"}
+      title={showScanner ? "Scan QR Code" : "Add Environment"}
+      actions={[
+        {
+          accessibilityLabel: showScanner ? "Close scanner" : "Scan QR code",
+          icon: showScanner ? "xmark" : "camera",
+          onPress: () => {
+            if (showScanner) {
+              closeScanner();
+            } else {
+              void openScanner();
+            }
+          },
+        },
+      ]}
+    >
       <NativeStackScreenOptions
-        options={{
-          // Android renders its own in-screen header below instead of the native bar.
-          ...(Platform.OS === "android" ? { headerShown: false } : null),
-          title: showScanner ? "Scan QR Code" : "Add Environment",
-        }}
+        options={{ title: showScanner ? "Scan QR Code" : "Add Environment" }}
       />
       {Platform.OS === "android" ? (
         <AndroidScreenHeader
@@ -323,7 +338,8 @@ export function ConnectionsNewRouteScreen({
             },
           ]}
         />
-      ) : (
+      ) : null}
+      {Platform.OS !== "android" ? (
         <NativeHeaderToolbar placement="right">
           <NativeHeaderToolbar.Button
             accessibilityLabel={showScanner ? "Close scanner" : "Scan QR code"}
@@ -339,7 +355,7 @@ export function ConnectionsNewRouteScreen({
             tintColor={headerIconColor}
           />
         </NativeHeaderToolbar>
-      )}
+      ) : null}
 
       <ScrollView
         automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
@@ -418,19 +434,21 @@ export function ConnectionsNewRouteScreen({
 
               {pairingConnectionError ? <ErrorBanner message={pairingConnectionError} /> : null}
 
-              <ConnectionSheetButton
-                icon="plus"
-                label={isSubmitting ? "Pairing..." : "Add environment"}
-                disabled={connectDisabled}
-                tone="primary"
-                onPress={() => {
-                  void handleSubmit();
-                }}
-              />
+              <View className={Platform.OS === "android" ? "flex-row justify-end" : undefined}>
+                <ConnectionSheetButton
+                  icon="plus"
+                  label={isSubmitting ? "Pairing..." : "Add environment"}
+                  disabled={connectDisabled}
+                  tone="primary"
+                  onPress={() => {
+                    void handleSubmit();
+                  }}
+                />
+              </View>
             </View>
           )}
         </View>
       </ScrollView>
-    </View>
+    </SettingsScreen>
   );
 }

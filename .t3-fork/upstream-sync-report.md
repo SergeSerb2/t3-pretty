@@ -1,5 +1,217 @@
 # T3 Pretty upstream integration report
 
+- Parent nightly: `v0.0.43-nightly.20260917.1851`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260916.1825`
+- Conflict resolver: replayed `automation/sync-resolution-cache` @ `27cee7a057` (diff3 key match) without CLIProxyAPI. Manual completions: SettingsSidebarNav storage icon, OpenCodeProvider.test.ts fork deletion, parent lockfile; then mobile typecheck repairs.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/app.config.ts` — T3 Pretty mobile versions continue to come from resolveMobileAppVersion(), which follows the fork release train and strips prerelease suffixes for iOS compatibility.
+- `apps/mobile/app.config.ts` — T3 Pretty's explicitly pinned native runtime fingerprint remains authoritative when configured, protecting OTA compatibility and the fork-owned update boundary.
+- `apps/mobile/src/App.tsx` — Preserved T3 Pretty's Boring-versus-World-Scenery navigation-theme selection through `isBoringMobileTheme`, including the custom scenery navigation palette behavior.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — Preserved T3 Pretty's flattenMenuActions-based row construction, which supports the fork's styled menu headers and action presentation rather than reverting to a plain filtered action list.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — Preserved placement-mode anchor resolution through anchorForPlacement, including overlay and safe-area-aware positioning used by the fork's cross-platform anchored menu behavior.
+- `apps/mobile/src/components/AndroidScreenHeader.tsx` — T3 Pretty's enlarged min-h-14 Android header baseline is retained rather than reverting to the base min-h-12 layout.
+- `apps/mobile/src/components/AndroidScreenHeader.tsx` — The surrounding T3 Pretty header theming, scaled title/subtitle typography, metadata presentation, responsive action overflow, safe-area handling, and embedded-header behavior remain unchanged.
+- `apps/mobile/src/components/EmptyState.tsx` — Preserved T3 Pretty's React Native Reanimated-based empty-state entrance behavior through the existing Animated and enterFade integration.
+- `apps/mobile/src/components/GlassSurface.tsx` — The native Liquid Glass path remains gated by T3 Pretty's guarded NATIVE_LIQUID_GLASS_SUPPORTED value rather than directly invoking expo-glass-effect's startup availability probe.
+- `apps/mobile/src/components/GlassSurface.tsx` — T3 Pretty's existing glass theming, tint classes, fallback backdrop, and chrome styling remain unchanged.
+- `apps/mobile/src/features/cloud/ConnectOnboardingRouteScreen.tsx` — Preserved the React useRef import used by T3 Pretty's mounted-state, pull-refresh deduplication, and onboarding opt-out race safeguards.
+- `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` — Preserved T3 Pretty's synchronized animated chevron implementation by retaining useEffect, Easing, useAnimatedStyle, useSharedValue, and withTiming.
+- `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` — Preserved system reduced-motion behavior by retaining ReduceMotion.
+- `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` — The expand/collapse chevron continues to animate over 250ms using the existing shared-value timing curve instead of rotating instantaneously.
+- `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` — The existing system reduced-motion handling remains active through the surrounding withTiming configuration.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — Retained useFocusEffect for T3 Pretty's focus-aware mobile connection-screen lifecycle behavior.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — Retained BackHandler for T3 Pretty's Android hardware-back behavior.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — Android continues to render the fork-specific AndroidScreenHeader with the Add Environment/Scan QR Code title and scanner action.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — Pressing Android back while the scanner is open closes the scanner instead of navigating away; normal mode still navigates back.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — Android retains the fork's camera/xmark header action behavior and accessibility labels.
+- `apps/mobile/src/features/home/AndroidHomeFab.tsx` — Preserved `ANDROID_HOME_FAB_SIZE` and `ANDROID_HOME_FAB_EDGE_GAP` as public exports so T3 Pretty layout code can continue positioning World Scenery credits away from the Android composer and FAB.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — T3 Pretty's CompactBrandTitle lockup remains in the mobile home header instead of reverting to the parent T3Wordmark and app-variant stage label.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — The custom Android header continues to use ControlPillMenu, SymbolView, the shared home inset, and the React Native controls required by its Pretty-specific presentation.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Android header controls and search affordances retain the fork's explicit 48-point Android sizing and spacing behavior.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — The existing Material You layout preference and safe-area-aware Android header behavior remain available.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — T3 Pretty's CompactBrandTitle and WorkspaceConnectionTitle connection-status presentation remain in the Android home header.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — The native pull-request manager remains reachable through the dedicated accessible header action.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — The fork-only automations entry point remains available when onOpenAutomations is configured.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — T3 Pretty's Material You-aware header, control-pill, search-field, and clear-search styling and accessibility behavior are preserved.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Environment selection, filtering, settings, and thread search continue to use the fork's established header layout without a list-layout shift.
+- `apps/mobile/src/features/home/HomeRouteScreen.tsx` — T3 Pretty's split-view architecture, where the persistent workspace sidebar remains the thread list and Home renders the corresponding detail or onboarding state.
+- `apps/mobile/src/features/home/HomeRouteScreen.tsx` — The Pull Requests, conditional Automations, and New Task actions in the split-view sidebar toolbar.
+- `apps/mobile/src/features/home/HomeRouteScreen.tsx` — T3 Pretty's dedicated, styled no-environment onboarding with an explicit Add environment action routed to SettingsEnvironmentNew.
+- `apps/mobile/src/features/home/HomeRouteScreen.tsx` — The fork's loading-aware behavior, which waits for connection discovery to settle before declaring that no environments are connected and does not offer task creation without an environment.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — T3 Pretty's computed `androidListBottomPad` remains the baseline for both the v2 FlatList and legacy LegendList, preserving fork-specific safe-area and floating-chrome clearance encoded by that value.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — T3 Pretty's computed `iosListBottomPad` remains authoritative for the legacy iOS LegendList.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The existing v2 iOS padding behavior, including `iosBottomToolbarClearance`, remains unchanged.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — Retained useDeferredValue, preserving T3 Pretty's deferred mobile rendering/performance behavior.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — The non-collapsible native View wrapper that prevents native-stack form-sheet keyboard relayout issues.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — The LegendList-based virtualized folder browser, including safe-area-aware spacing, automatic inset adjustment, keyboard tap handling, and stable entry keys.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — T3 Pretty's integrated header layout, styled loading and empty states, rounded card presentation, and parent-directory navigation behavior.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — The full-height, non-collapsible native wrapper used to avoid native-stack form-sheet keyboard relayout issues remains intact.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — The LegendList-based folder browser retains virtualization, recycled rows, stable rendering, content insets, empty/loading/error presentation, and rounded folder grouping.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — The local-folder screen continues to use FolderBrowser with its path controls supplied as the browser header, rather than reverting to the legacy static ListSection layout.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — The explicit null-environment path and EmptyEnvironmentState remain authoritative, avoiding a redundant nullable conditional inside the main folder-browser render.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — T3 Pretty's FolderBrowser-based clone-destination navigation remains authoritative, including navigateToBrowsePath, pathInput, and the repository-name pinned directory.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — The fork's inline clone form, error presentation, repository summary, submission state, and browse-navigation safeguards remain inside the folder-browser header.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — The existing early null-environment state remains the sole unavailable-environment path, avoiding redundant rendering branches.
+- `apps/mobile/src/features/settings/appearance/components/FontSizeSliderRow.tsx` — Preserved T3 Pretty's optional iconMin and iconMax properties for theme- or context-specific symbols flanking the mobile font-size slider.
+- `apps/mobile/src/features/settings/appearance/components/FontSizeSliderRow.tsx` — Preserved the existing mobile slider interaction, haptic feedback, animation, disabled styling, theming, and accessibility behavior.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Preserved T3 Pretty's custom mobile appearance/theme presentation by not restoring the legacy memoized SVG radial-gradient preview dependencies removed by the fork.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Preserved T3 Pretty's World Scenery photo-theme and Boring personalization flow.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Preserved the fork's customized mobile appearance UI and its existing Material You layout preference bindings.
+- `apps/mobile/src/features/settings/components/SettingsRow.tsx` — Preserved explicit accessibility disabled-state reporting for the direct-action settings row.
+- `apps/mobile/src/features/settings/components/SettingsRow.tsx` — Preserved accessibility value reporting when the settings row displays a value.
+- `apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx` — Preserved T3 Pretty's shared SHOWCASE_ENABLED import instead of a local Expo public-env constant.
+- `apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx` — Preserved iOS safe-area clearance for the hidden-keyboard terminal surface and the floating keyboard button.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Preserved `SelectionRow` support for T3 Pretty's custom ReactNode-based icons alongside the built-in branch symbol.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Preserved T3 Pretty's per-row picker composition instead of restoring the removed PickerSurface abstraction.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Preserved the existing platform-specific presentation: iOS continues using 2xl picker corners, and branch rows retain their current first/last-row clipping behavior.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Preserved T3 Pretty's virtualized and recycled LegendList environment picker, including estimated item sizing and selected-environment invalidation for mobile performance.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Preserved T3 Pretty's platform-specific rounded first and last environment-row presentation through the existing renderEnvironment implementation.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Preserved safe-area-aware spacing, hidden scroll indicators, automatic inset adjustment, haptic selection, environment state updates, and return navigation.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved T3 Pretty's NewTaskDraftFrame scenery chrome, daily-photo place, and NewTaskGlassChip presentation.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved scenery-aware composer-dock background so the wallpaper stays visible when scenery chrome is active.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved T3 Pretty's convertPastedImagesToAttachments result-object API.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Preserved the T3 Pretty useCallback import required by the fork's New Task screen behavior.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Preserved the LegendList-based virtualized and recycled project catalog, including its estimated item sizing, extraData invalidation, stable key extraction, and existing non-Android renderProjectScope behavior.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Preserved T3 Pretty's existing non-Android project-row presentation and theming, including the fork's renderer and icon treatment.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Preserved existing project selection, reserved-destination disabling, empty-state navigation, safe-area bottom spacing, and loading-state behavior.
+- `apps/mobile/src/features/threads/ThreadDetailScreen.tsx` — World Scenery remains visible because active scenery chrome uses a transparent absolute background instead of applying an opaque thread or screen canvas.
+- `apps/mobile/src/features/threads/ThreadDetailScreen.tsx` — T3 Pretty's scenery activation hook remains wired into the thread detail presentation.
+- `apps/mobile/src/features/threads/ThreadDetailScreen.tsx` — Theme appearance lookup remains intact for the surrounding dark-mode behavior.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — The T3 Pretty drawer shell remains intact, including its themed header/background colors, rounded Android content surface, safe-area handling, and existing thread-list behavior.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — The existing T3 Pretty connection-aware branded header remains in use on non-Android platforms; the native-chrome connection-aware brand configuration is also untouched.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — The parent Android toolbar is connected to the fork's existing environment settings, app settings, sidebar visibility, search, and customized filtering actions, preserving those navigation and integration entry points.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — The former Android-specific growing brand-row workaround is superseded only because Android now uses the parent's dedicated first-party Material toolbar rather than the legacy branded row.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Preserved T3 Pretty's Android-specific flexible brand container sizing instead of reverting to the fixed upstream `h-11` container.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Preserved Android font scaling for `CompactBrandTitle`.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Preserved the pull-request and automation entry points supplied to `SidebarHeaderActions`, alongside settings.
+
+## Compatible parent changes integrated at those boundaries
+
+- `apps/mobile/app.config.ts` — Retained the parent's runtimeVersion policy behavior as the fallback when no pinned runtime version is supplied, including the development optimization and fingerprinting for preview and production builds.
+- `apps/mobile/src/App.tsx` — Integrated the parent `shouldHandleAppLink` filter used by `appLinking` to validate which incoming links the mobile app handles.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — Integrated the parent refactor that selects the current submenu parent with `path[path.length - 1] ?? null`.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — Retained hidden-action handling through T3 Pretty's existing flattenMenuActions path rather than duplicating the parent's plain-array filter.
+- `apps/mobile/src/components/AndroidScreenHeader.tsx` — Replaced the fork-local Pressable/SymbolView header action rendering with the parent's first-party MaterialIconButton implementation.
+- `apps/mobile/src/components/AndroidScreenHeader.tsx` — Integrated tonal rendering for selected header actions and standard rendering for unselected actions.
+- `apps/mobile/src/components/AndroidScreenHeader.tsx` — Integrated useMaterialToolbarHeight so the header respects the configured/scaled Material toolbar height while keeping the fork's minimum height.
+- `apps/mobile/src/components/AndroidScreenHeader.tsx` — Integrated the parent's Material toolbar action spacing and shared back-button implementation using the arrow.left icon mapping.
+- `apps/mobile/src/components/EmptyState.tsx` — Integrated the ReactNode type import required by the upstream action prop.
+- `apps/mobile/src/components/EmptyState.tsx` — Integrated the View import required to lay out custom empty-state actions in both plain and card variants.
+- `apps/mobile/src/components/GlassSurface.tsx` — Removed the unused React RefObject type import.
+- `apps/mobile/src/components/GlassSurface.tsx` — Added the parent's hasShadow behavior, disabling surface shadows when chrome is set to none and on Android.
+- `apps/mobile/src/components/GlassSurface.tsx` — Added the Platform import needed for the upstream Android shadow safeguard.
+- `apps/mobile/src/features/cloud/ConnectOnboardingRouteScreen.tsx` — Removed the obsolete React Native ScrollView import so the screen uses the parent ScreenScrollView alias already imported at the top of the file, avoiding a duplicate local binding.
+- `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` — Integrated the parent's Platform import for platform-specific mobile behavior while retaining all existing React Native imports.
+- `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` — Normalized tintColorClassName to the parent form using a direct string literal.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — Added useRoute so the screen can use the current route name as required by the parent implementation.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — Removed the react-native ScrollView import, allowing the parent's ScreenScrollView alias to be used without a duplicate binding.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — The NativeHeaderToolbar now uses the parent's explicit `Platform.OS !== "android"` platform guard, so it is rendered only on non-Android platforms.
+- `apps/mobile/src/features/home/AndroidHomeFab.tsx` — Replaced the duplicated local FAB component with the parent's `AndroidHomeFab.shared` implementation through the new re-export facade.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — The obsolete expo-constants dependency remains removed.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — The old RNText import and app-variant stage-label plumbing remain removed, consistent with the newer header branding path.
+- `apps/mobile/src/features/home/HomeRouteScreen.tsx` — Added the parent Android Threads header and Android workspace-sidebar affordance in split layouts.
+- `apps/mobile/src/features/home/HomeRouteScreen.tsx` — Applied the parent's panes.primarySidebarVisible check so Android does not show a redundant New Task action while the primary sidebar is visible.
+- `apps/mobile/src/features/home/HomeRouteScreen.tsx` — Preserved the parent's no-connection navigation intent through T3 Pretty's existing Add environment onboarding action rather than rendering a second detail pane.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Applied the parent's Android bottom-padding increase from 88 to 148 as an equivalent 60-point increment on top of T3 Pretty's computed Android padding in both list implementations.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Preserved the parent's 88-point formula for non-iOS, non-Android platform fallbacks.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — Added React Native Platform for the parent's Android-specific section-title presentation.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — Removed the native react-native ScrollView import so the file consistently uses the parent's ScreenScrollView alias imported above.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — Applied the parent JSX cleanup by changing the loading indicator's colorClassName from an expression-wrapped string to a direct string literal.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — Folder and parent-directory symbols now use the upstream Android size of 24 while retaining size 17 on iOS.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — The upstream tintColorClassName normalization is applied to both affected symbols.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — Upstream parent-directory navigation and folder selection behavior remain represented by the fork's equivalent LegendList header and row renderer.
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — Added the upstream "Clone destination" heading to the T3 Pretty FolderBrowser header using the fork's existing typography conventions.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Integrated the parent cleanup that removes the no-longer-needed React Native Platform import.
+- `apps/mobile/src/features/settings/components/SettingsRow.tsx` — Integrated the parent accessibilityLabel on the direct-action Pressable, using the settings row label consistently with the target-based variants.
+- `apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx` — Integrated the parent Material/Android terminal chrome, sidebar button, themeVariables background, and Android autoFocus behavior.
+- `apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx` — Integrated the parent split between Android Material attach/keyboard controls and the iOS attach-output plus accessory toolbar.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Integrated the parent `MaterialListRow` dependency used to provide the Android-native selection-row presentation and accessibility behavior.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Integrated the parent's Android-specific 28px picker corner treatment into the environment picker's first and last row wrappers, matching the already-compatible branch picker treatment.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Wrapped the environment picker in the parent's MaterialScreenContent so the updated Material screen treatment applies without replacing the fork's virtualized list.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Integrated the parent's larger 24-point EnvironmentMachineSymbol on Android while retaining the 17-point size on other platforms.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent MaterialScreenContent wrapper around the Android new-task hero and sticky composer.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent Android bg-sheet-solid composer-dock background when scenery chrome is off.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Retained the parent import cleanup that removes React Native's ScrollView in favor of the existing shared ScreenScrollView component alias.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Integrated MaterialScreenContent around the project catalog.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Integrated Android-specific 16-point horizontal/top spacing and vertical centering for an empty catalog.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Integrated the Android MaterialButton empty-state action with the correct environment/project destination.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Integrated native MaterialListRow rendering on Android, including 24-point favicons, workspace subtitles, disabled-state handling, and the rounded 28-point grouped-card presentation.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Integrated the parent's platform-specific empty-state styling while retaining the existing iOS-style card and Pressable actions.
+- `apps/mobile/src/features/threads/ThreadDetailScreen.tsx` — Android now uses the thread-canvas background based directly on Platform.OS, replacing the previous Material You layout preference check.
+- `apps/mobile/src/features/threads/ThreadDetailScreen.tsx` — Non-Android platforms continue to use the standard screen background when World Scenery is not active.
+- `apps/mobile/src/features/threads/ThreadDetailScreen.tsx` — The no-longer-needed materialYouStyleLayoutActive destructuring is removed from this call site.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Added the parent's four-point horizontal margin around the Android rounded content surface.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Replaced the legacy Android sidebar header with the parent's first-party MaterialThreadListToolbar implementation.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Integrated the Material toolbar's search, filter-customization, settings, environment, visibility, and layout callbacks.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Restricted the legacy connection-aware header layout to the non-Android fallback path, including the parent's fixed-height row there.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Integrated the upstream JSX nesting and indentation for the sidebar header.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Integrated the explicitly closed sidebar-header actions container, keeping the title row and search row structurally separate.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Integrated the upstream multiline formatting of `SidebarFilterButton`.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Integrated the parent MaterialScreenContent component import.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Retained new-task-flow integration through the existing adjacent useNewTaskFlow import without introducing a duplicate binding.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Integrated the parent Android catalog layout that uses full available width while centering and constraining the list to a maximum width of 720.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The Android header now exposes the parent's conditional text-style Save button when a model change is pending.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The parent's `hideBottomBorder` Android header treatment is incorporated.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Integrated useWindowDimensions for the parent's window-height-responsive sheet sizing.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Android-specific “Branches & worktrees” sheet header and back navigation.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Keyboard tap persistence for form controls inside the branch list.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Android-specific compact list spacing, bottom safe-area padding, and fit-oriented list sizing.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Android material card styling and typography for the new-branch form.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Accessible “New branch name” label for the branch-name input.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Integrated Android Material-style presentation for the worktree card and its text inputs.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Integrated Android-specific Existing branches heading and loading/empty-state spacing.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Integrated Android branch selection styling, medium-weight typography, rounded cards, and native press feedback into the fork's renderBranch callback.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Integrated button accessibility role plus selected and disabled accessibility state for branch rows.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Retained upstream's checkout-and-dismiss behavior through the fork's more robust runAndDismiss helper.
+- `apps/mobile/src/features/threads/git/GitCommitSheet.tsx` — Added the Android commit-sheet header with a back action and hidden bottom border.
+- `apps/mobile/src/features/threads/git/GitCommitSheet.tsx` — Wrapped the sheet in MaterialScreenContent with fit-to-contents behavior.
+- `apps/mobile/src/features/threads/git/GitCommitSheet.tsx` — Integrated Android-specific scroll sizing, compact content spacing, and safe-area bottom padding.
+- `apps/mobile/src/features/threads/git/GitCommitSheet.tsx` — Integrated platform-adaptive branch and file card shapes, layouts, typography, action sizing, colors, and active-state styling.
+
+## Parent changes omitted to protect T3 Pretty
+
+- `apps/mobile/app.config.ts` — {'change': 'Set the mobile app version statically to 1.2.1.', 'reason': "T3 Pretty intentionally versions mobile builds from its own release train via resolveMobileAppVersion(); adopting the parent's static version would regress fork release identity and changelog version matching."}
+- `apps/mobile/src/components/GlassSurface.tsx` — {'change': 'Import and invoke isGlassEffectAPIAvailable through the supportsGlass iOS capability probe.', 'reason': 'T3 Pretty deliberately replaced this startup probe with the guarded NATIVE_LIQUID_GLASS_SUPPORTED mechanism to prevent Liquid Glass startup failures. The supportsGlass value is also unused by the composed implementation.'}
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — {'change': 'Remove the explicit AndroidScreenHeader and render no header component at this conflict boundary on Android.', 'reason': "That would regress T3 Pretty's Android navigation and scanner-mode back behavior, including the requirement that back closes the scanner before leaving the screen."}
+- `apps/mobile/src/features/home/HomeHeader.tsx` — {'change': 'Narrow the react-native import to Platform by removing Pressable, TextInput, and View.', 'reason': "Those primitives remain required by T3 Pretty's custom Android header and removing them would break that fork-authoritative UI."}
+- `apps/mobile/src/features/home/HomeHeader.tsx` — {'change': 'Remove the ControlPillMenu, SymbolView, CompactBrandTitle, and HOME_HORIZONTAL_INSET dependencies from HomeHeader.', 'reason': "That cleanup depends on discarding T3 Pretty's branded Android header presentation, including its Pretty lockup and control layout."}
+- `apps/mobile/src/features/home/HomeHeader.tsx` — {'change': 'Remove the Android appearance-preference, safe-area, and explicit control-sizing setup.', 'reason': "Doing so would regress T3 Pretty's selectable Material You layout behavior, inset handling, and Android-specific touch-target styling."}
+- `apps/mobile/src/features/home/HomeHeader.tsx` — {'change': 'Replace the custom Android home header with the parent MaterialThreadListToolbar component.', 'reason': "The shown parent component interface supports search, filtering, settings, and environments, but provides no slots or callbacks for T3 Pretty's CompactBrandTitle, pull-request manager, or automations action. Taking it here would silently remove authoritative fork branding and mobile functionality; adapting the external component is outside this conflict's available context and cannot be done safely by guessing."}
+- `apps/mobile/src/features/home/HomeRouteScreen.tsx` — {'change': "Use the parent's generic WorkspaceEmptyDetail for the no-connection state, including exposing its Add Connection affordance before connection loading settles and its Start New Task affordance on platforms where the Android sidebar suppression does not apply.", 'reason': "T3 Pretty has an authoritative loading-aware no-environment presentation that requires adding an environment before starting a task. Rendering the parent component as well would create duplicate detail panes and regress the fork's onboarding design; the compatible Add Connection navigation is retained in the fork's EmptyState."}
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — {'change': 'Wrap the local-folder UI in `AddProjectShell title="Local folder"`.', 'reason': "That legacy shell wrapper conflicts with T3 Pretty's full-height FolderBrowser/LegendList form-sheet architecture and its native-wrapper relayout safeguard. Adding the wrapper here would regress the fork-specific mobile layout; the smallest omission is the upstream wrapper and its title presentation."}
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx` — {'change': 'Use AddProjectShell as the destination-screen wrapper and retain its redundant environment conditional.', 'reason': 'T3 Pretty has replaced that static shell with FolderBrowser to provide its custom destination browsing and pinned-directory navigation. Wrapping or replacing FolderBrowser with AddProjectShell would regress that behavior; the upstream title and form presentation are instead adapted into the browser header. The environment conditional has no runtime benefit because the function already returns early when environment is null.'}
+- `apps/mobile/src/features/settings/appearance/components/FontSizeSliderRow.tsx` — {'change': 'Replace the local FontSizeSliderRow implementation with a re-export from FontSizeSliderRow.shared.', 'reason': "The supplied conflict does not establish that the upstream shared implementation supports T3 Pretty's fork-only iconMin/iconMax API. Taking the re-export would silently remove or weaken that mobile presentation behavior; adapting the unseen shared module cannot be done safely from this conflict context."}
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — {'change': 'Retain `systemColorsAvailable` in the `useAppearancePreferences()` destructuring.', 'reason': "T3 Pretty's customized appearance section no longer renders the parent system-colors control, so the value has no consumer in this component. Restoring only the binding would add dead state without integrating any behavior and could trigger unused-variable checks."}
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — {'change': 'Replace the project catalog with a ScrollView and projectScopes.map rendering.', 'reason': "That would regress T3 Pretty's established LegendList virtualization and item recycling, which protect mobile performance; the parent's Material presentation and behavior were ported onto LegendList instead."}
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — {'change': "Replace the existing non-Android renderProjectScope implementation with the parent's inline Pressable renderer and accent-chevron presentation.", 'reason': "T3 Pretty's existing renderer carries fork-authoritative visual/theming behavior. The parent-specific Android Material implementation was integrated separately without overwriting that presentation."}
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — {'change': 'Replace the custom catalog with `ThreadSettingsMainContent` and its `ThreadSettingsChoice` submenu navigation.', 'reason': "This would regress T3 Pretty's authoritative custom one-panel model catalog and its page-state behavior."}
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — {'change': 'Wrap the catalog body in `MaterialScreenContent`.', 'reason': "The upstream wrapper was introduced around its generic `ThreadSettingsMainContent`; applying it to the fork-specific catalog without evidence of compatibility could alter or duplicate T3 Pretty's custom layout and visual treatment."}
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — {'change': 'Add a left-side Cancel toolbar button that closes the whole settings presentation.', 'reason': 'T3 Pretty models the catalog as a nested page whose back action returns to the settings home, so a sheet-level Cancel control would conflict with that navigation behavior.'}
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — {'change': 'Use `presentation.onClose` and the `Thread settings` title for the Android catalog header.', 'reason': "Those values would bypass T3 Pretty's nested-page navigation and replace its catalog-specific `Model` identity."}
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — {'change': "Replacing the fork's LegendList with a non-virtualized ScrollView wrapped in MaterialScreenContent.", 'reason': "The fork's recent cross-surface reliability implementation intentionally virtualizes branch rows and supplies list-specific invalidation data. Replacing it would regress that fork behavior; the compatible Android sizing, spacing, keyboard, header, and material presentation changes are applied directly to LegendList instead."}
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — {'change': "Upstream's unconditional promise continuation that clears the branch field and navigates back whenever the create-branch promise resolves.", 'reason': "This conflicts with T3 Pretty's hardened success-only, mounted-and-focused dismissal behavior. The upstream presentation changes are retained while runAndDismiss remains authoritative."}
+- `apps/mobile/src/features/threads/git/GitConfirmSheet.tsx` — {'change': 'The parent-side hunk retained `const gitState = useSelectedThreadGitState()` from the merge base.', 'reason': "T3 Pretty intentionally removed that subscription as part of its cross-surface reliability changes, and the current sheet no longer imports or uses the state hook. Restoring it would add an obsolete dependency without contributing to the parent's responsive layout improvement."}
+- `apps/web/src/components/ChatView.tsx` — {'change': 'Set `variant="ghost"` on `ServerUpdateAction`.', 'reason': 'T3 Pretty intentionally removed the forced ghost variant to retain its fork-specific update action visual design; restoring it would regress authoritative fork styling.'}
+- `apps/web/src/components/DiffPanel.tsx` — {'change': 'Remove the focus-triggered branch diff refresh effect.', 'reason': 'This would regress T3 Pretty’s explicit stale-diff protection when users return to the application.'}
+- `apps/web/src/components/DiffPanel.tsx` — {'change': 'Remove the completed-turn branch diff refresh effect.', 'reason': 'This would leave the branch diff preview stale after an agent turn changes repository contents, regressing fork-specific cross-surface reliability behavior.'}
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — {'change': 'Remove detection of a streaming reasoning row and allow a generic Thinking row to be appended at the same time.', 'reason': "This would regress T3 Pretty's timeline presentation by rendering a redundant Thinking placeholder beneath the real live reasoning block."}
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — {'change': 'Continue suppressing the Thinking row for the entire duration represented by setupRunning.', 'reason': "T3 Pretty deliberately releases the live-row slot once setup has handed off to the agent, even when an asynchronous setup script remains active; retaining this parent guard would hide the first turn's live activity."}
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — {'change': 'Delete the exported worktreeSetupAgentStarted helper.', 'reason': "T3 Pretty's setupHandedOff calculation depends on this predicate to transition from the setup card to live first-turn rows without waiting for all asynchronous setup work to finish."}
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — {'change': "Reduce the static Description section's bottom padding from pb-4 to pb-1.", 'reason': 'The parent spacing change targets the raw &lt;section&gt; wrapper that T3 Pretty replaced with its authoritative collapsible Section component. Reintroducing that wrapper would regress persisted open-state and fork section UX, and applying the raw-wrapper padding to the custom Section without its layout API would be unsafe.'}
+- `apps/web/src/components/settings/settingsSearch.ts` — {'change': 'Classify /settings/storage with the project-defaults settings scope.', 'reason': "This conflicts directly with T3 Pretty's explicit unscoped storage category and would alter the fork's storage search and target-scope behavior."}
+
+- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — kept T3 Pretty's deletion (modify/delete)
+- `pnpm-lock.yaml` — took the parent nightly lockfile wholesale; regenerate against merged manifests if install refuses the frozen lockfile
+- `apps/web/src/components/settings/SettingsSidebarNav.tsx` — kept T3 Pretty's `/settings/storage` nav item and took the parent's HardDriveIcon
+
+## Post-merge repairs
+
+- `mobile-typecheck` failed on Buildkite #2443 after automated repair declined `threadActivity.ts` (missing `liveHeadline`, not in the 8-file repair list). Completed incomplete cached resolutions: restored Pretty imports/props on AndroidAnchoredMenu, HomeHeader, ConnectionsNewRouteScreen, thread-list-v2-items; AddProjectShell titles; GitBranchesSheet duplicate a11y attrs; iOS-only styles in ThreadNavigationSidebar's non-Android branch; restored Pretty Material You layout preference on AppearancePreferencesProvider / mobile-preferences / storage tests; passed `liveHeadline` into `appendToolGroupRows`.
+
+## Previous integration notes
+
 - Parent nightly: `v0.0.41-nightly.20260915.1752`
 - Previously integrated parent nightly: `v0.0.41-nightly.20260915.1735`
 - Conflict resolver: manual composition after Buildkite #2175 (exit 75). The scheduled AI resolver finished the mobile files, then failed validation on `CheckpointDiffQuery.test.ts` (the same stub block appears five times). Remaining files were hand-merged.
