@@ -2199,7 +2199,7 @@ export default function Sidebar() {
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const router = useRouter();
-  const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
+  const { isMobile, setOpenMobile, open, peeking, peekNow } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
@@ -4431,9 +4431,10 @@ export default function Sidebar() {
       // A scoped list follows the project you just started work in, so the
       // new draft row is not hidden behind another project's filter.
       if (projectScopeKey !== null) setProjectScopeKey(project.projectKey);
+      peekNow();
       void newThreadContext.handleNewThread(scopeProjectRef(project.environmentId, project.id));
     },
-    [isMobile, newThreadContext, projectScopeKey, setOpenMobile, setProjectScopeKey],
+    [isMobile, newThreadContext, peekNow, projectScopeKey, setOpenMobile, setProjectScopeKey],
   );
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
   const removeProjectGroup = useCallback(
@@ -4573,7 +4574,7 @@ export default function Sidebar() {
       threadLastVisitedAtById,
     ],
   );
-  if (!isMobile && !open) {
+  if (!isMobile && !open && !peeking) {
     return (
       <>
         <SidebarChromeHeader isElectron={isElectron} />
@@ -4581,7 +4582,6 @@ export default function Sidebar() {
           projects={projectGroups}
           selectedProjectKey={projectScopeKey}
           attentionByProjectKey={attentionByProjectKey}
-          onNewThread={handleNewThreadClick}
           onNewThreadInProject={startNewThreadInProject}
           onProjectContextMenu={handleProjectContextMenu}
           folders={projectFolders.settings}
@@ -4591,12 +4591,12 @@ export default function Sidebar() {
           onSelectAll={() => {
             setProjectScopeKey(null);
             setThreadSearchQuery("");
-            setOpen(true);
+            peekNow();
           }}
           onSelectProject={(project) => {
             setProjectScopeKey(nextSidebarProjectScopeKey(projectScopeKey, project.projectKey));
             setThreadSearchQuery("");
-            setOpen(true);
+            peekNow();
           }}
         />
         <SidebarChromeFooter />

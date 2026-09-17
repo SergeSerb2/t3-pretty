@@ -26,7 +26,6 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
-import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Kbd } from "../ui/kbd";
@@ -40,10 +39,7 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
-import {
-  COLLAPSED_DOCK_CONTAINER_CLASS,
-  COLLAPSED_DOCK_GRID_CLASS,
-} from "../sidebar/collapsedSidebarDock";
+import { COLLAPSED_SWITCHER_CONTROL_CLASS } from "../sidebar/collapsedSidebarDock";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
   searchSettings,
@@ -121,7 +117,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navItems = SETTINGS_NAV_ITEMS.filter(
     (item) => item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch),
   );
-  const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
+  const { isMobile, setOpenMobile, open, peeking, peekNow } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const focusSearchAfterExpandRef = useRef(false);
   const [query, setQuery] = useState("");
@@ -132,11 +128,11 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const hasResults = results.length > 0;
 
   useLayoutEffect(() => {
-    if (!focusSearchAfterExpandRef.current || !open) return;
+    if (!focusSearchAfterExpandRef.current || (!open && !peeking)) return;
     focusSearchAfterExpandRef.current = false;
     searchInputRef.current?.focus();
     searchInputRef.current?.select();
-  }, [open]);
+  }, [open, peeking]);
 
   useEffect(() => {
     setActiveResultIndex((index) => Math.min(index, Math.max(results.length - 1, 0)));
@@ -170,9 +166,9 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       event.preventDefault();
       if (isMobile) {
         setOpenMobile(true);
-      } else if (!open) {
+      } else if (!open && !peeking) {
         focusSearchAfterExpandRef.current = true;
-        setOpen(true);
+        peekNow();
         return;
       }
       requestAnimationFrame(() => {
@@ -182,7 +178,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isMobile, open, setOpen, setOpenMobile]);
+  }, [isMobile, open, peekNow, peeking, setOpenMobile]);
 
   const handleSectionClick = useCallback(
     (to: SettingsPath) => {
@@ -250,20 +246,19 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     },
     [activeResultIndex, clearSearch, handleSearchResultClick, isSearching, results],
   );
-  if (!isMobile && !open) {
+  if (!isMobile && !open && !peeking) {
     return (
       <>
-        <SidebarContent
-          className={cn(COLLAPSED_DOCK_CONTAINER_CLASS, "overflow-x-hidden px-1 py-2")}
-        >
-          <div className={COLLAPSED_DOCK_GRID_CLASS}>
+        <SidebarContent className="overflow-x-hidden px-1.5 py-2">
+          <div className="flex flex-col items-stretch gap-1">
             <SidebarMenuButton
               size="tile"
+              className={COLLAPSED_SWITCHER_CONTROL_CLASS}
               aria-label="Search settings"
               tooltip="Search settings"
               onClick={() => {
                 focusSearchAfterExpandRef.current = true;
-                setOpen(true);
+                peekNow();
               }}
             >
               <SearchIcon />
@@ -272,19 +267,20 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
               <SidebarMenuButton
                 key={to}
                 size="tile"
+                className={COLLAPSED_SWITCHER_CONTROL_CLASS}
                 aria-label={label}
                 tooltip={label}
                 isActive={pathname === to || pathname.startsWith(`${to}/`)}
-                onClick={() => handleSectionClick(to)}
+                onClick={() => {
+                  peekNow();
+                  handleSectionClick(to);
+                }}
               >
                 <Icon />
               </SidebarMenuButton>
             ))}
           </div>
         </SidebarContent>
-        <SidebarFooter className={cn(COLLAPSED_DOCK_CONTAINER_CLASS, "px-1 py-1")}>
-          <SidebarUtilityMenu />
-        </SidebarFooter>
       </>
     );
   }

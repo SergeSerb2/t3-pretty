@@ -100,7 +100,7 @@ describe("thread sidebar width", () => {
     );
   });
 
-  it("fills the traffic-light-wide collapsed rail with a two-column dock", () => {
+  it("fills the traffic-light-wide collapsed rail with a single-column switcher", () => {
     const rail = NodeFS.readFileSync(
       new URL("./sidebar/SidebarProjectRail.tsx", import.meta.url),
       "utf8",
@@ -109,10 +109,14 @@ describe("thread sidebar width", () => {
       new URL("./sidebar/SidebarChrome.tsx", import.meta.url),
       "utf8",
     );
+    const sidebar = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
 
-    expect(rail).toContain("COLLAPSED_DOCK_CONTAINER_CLASS");
-    expect(rail).toContain("COLLAPSED_DOCK_GRID_CLASS");
-    expect(rail).toContain('size="tile"');
-    expect(chrome).toContain("COLLAPSED_DOCK_COLLAPSED_MENU_CLASS");
+    expect(rail).toContain("COLLAPSED_ROW_BUTTON_CLASS");
+    expect(rail).toContain('size={docked ? "icon" : "tile"}');
+    expect(rail).not.toContain("grid-cols-2");
+    expect(chrome).toContain("COLLAPSED_SWITCHER_CONTROL_CLASS");
+    expect(chrome).toContain("group-data-[collapsible=icon]:hidden");
+    expect(sidebar).toContain('data-peeking={flyout ? "true" : undefined}');
+    expect(sidebar).toContain("group-data-[peeking=true]:w-(--sidebar-width-icon)");
   });
 });

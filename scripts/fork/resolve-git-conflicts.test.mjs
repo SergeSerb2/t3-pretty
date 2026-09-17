@@ -2890,7 +2890,7 @@ ${">".repeat(7)} theirs
     assert.include(script, 'mv "$backup_cache" "$SYNC_RESOLUTION_CACHE_DIR"');
     assert.include(script, '> "$restore_cache/active-upstream-tag"');
     assert.include(script, "git commit-tree");
-    assert.include(script, 'ROOT/.t3-fork/resolution-seeds');
+    assert.include(script, "ROOT/.t3-fork/resolution-seeds");
     assert.include(script, 'cp -n "$seed" "$SYNC_RESOLUTION_CACHE_DIR/$seed_name"');
 
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
@@ -2927,10 +2927,7 @@ ${">".repeat(7)} theirs
     assert.equal(cached.path, "apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx");
     assert.equal(typeof cached.resolvedSource, "string");
     assert.notInclude(cached.resolvedSource, "<<<<<<<");
-    assert.equal(
-      [...cached.resolvedSource.matchAll(/import \{ useSafeAreaInsets \}/gu)].length,
-      1,
-    );
+    assert.equal([...cached.resolvedSource.matchAll(/import \{ useSafeAreaInsets \}/gu)].length, 1);
     assert.equal(
       [...cached.resolvedSource.matchAll(/const insets = useSafeAreaInsets\(\)/gu)].length,
       1,
@@ -3010,10 +3007,7 @@ ${">".repeat(7)} theirs
       cached.resolvedSource,
       'Effect.die("CheckpointDiffQuery should not request merged PR candidates")',
     );
-    assert.include(
-      cached.resolvedSource,
-      "getDeletedWorktreeThreads: () => Effect.die(\"unused\")",
-    );
+    assert.include(cached.resolvedSource, 'getDeletedWorktreeThreads: () => Effect.die("unused")');
     assertValidResolvedSource({
       path: cached.path,
       source: cached.resolvedSource,

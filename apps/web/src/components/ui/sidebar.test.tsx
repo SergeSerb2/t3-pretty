@@ -96,7 +96,7 @@ describe("sidebar interactive cursors", () => {
     expect(html).toContain("text-sidebar-muted-foreground/80");
   });
 
-  it("lets collapsed dock tiles fill their grid cell", () => {
+  it("lets collapsed switcher tiles fill the rail width", () => {
     const html = renderToStaticMarkup(
       <SidebarProvider>
         <SidebarMenuButton size="tile">

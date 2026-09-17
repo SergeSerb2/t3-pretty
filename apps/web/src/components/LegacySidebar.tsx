@@ -113,7 +113,6 @@ import { useShortcutModifierState } from "../shortcutModifierState";
 import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
 
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -192,7 +191,6 @@ import {
   resolveThreadStatusPill,
   orderItemsByPreferredIds,
   shouldClearThreadSelectionOnMouseDown,
-  shouldCreateNewThreadInCurrentProject,
   sortProjectsForSidebar,
   useSidebarRowSubscriptionLease,
   useThreadJumpHintVisibility,
@@ -3163,7 +3161,7 @@ export default function LegacySidebar() {
   const newThreadContext = useHandleNewThread();
   const handleNewThread = newThreadContext.handleNewThread;
   const { archiveThread, deleteThread } = useThreadActions();
-  const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
+  const { isMobile, setOpenMobile, open, peeking, peekNow } = useSidebar();
   const routeTarget = useParams({
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
@@ -3809,30 +3807,15 @@ export default function LegacySidebar() {
     });
   }, []);
 
-  const handleNewThreadClick = useCallback(
-    (event?: React.MouseEvent) => {
-      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, sortedProjects.length)) {
-        void startNewThreadFromContext({
-          activeDraftThread: newThreadContext.activeDraftThread,
-          activeThread: newThreadContext.activeThread ?? undefined,
-          defaultProjectRef: newThreadContext.defaultProjectRef,
-          handleNewThread: newThreadContext.handleNewThread,
-        });
-        return;
-      }
-      openCommandPalette({ open: "new-thread-in" });
-    },
-    [newThreadContext, sortedProjects.length],
-  );
   const startNewThreadInProject = useCallback(
     (project: SidebarProjectSnapshot) => {
       const member = project.memberProjects[0];
       if (!member) return;
       if (isMobile) setOpenMobile(false);
-      setOpen(true);
+      peekNow();
       void handleNewThread(scopeProjectRef(member.environmentId, member.id));
     },
-    [handleNewThread, isMobile, setOpen, setOpenMobile],
+    [handleNewThread, isMobile, peekNow, setOpenMobile],
   );
   const { copyToClipboard: copyRailPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: (ctx) => {
@@ -3877,7 +3860,7 @@ export default function LegacySidebar() {
             return;
           case "project-settings":
             if (isMobile) setOpenMobile(false);
-            setOpen(true);
+            peekNow();
             void navigate({
               to: "/projects/$projectKey",
               params: { projectKey: project.projectKey },
@@ -3893,8 +3876,8 @@ export default function LegacySidebar() {
       copyRailPathToClipboard,
       isMobile,
       navigate,
+      peekNow,
       projectFolders,
-      setOpen,
       setOpenMobile,
       startNewThreadInProject,
     ],
@@ -3908,16 +3891,16 @@ export default function LegacySidebar() {
           .setProjectExpanded(projectExpansionPreferenceKeys(project), true);
         expandThreadListForProject(project.projectKey);
       }
-      setOpen(true);
+      peekNow();
     },
-    [activeRouteProjectKey, expandThreadListForProject, setOpen],
+    [activeRouteProjectKey, expandThreadListForProject, peekNow],
   );
 
   const prewarmers = prewarmedSidebarThreadRefs.map((threadRef) => (
     <SidebarThreadDetailPrewarmer key={scopedThreadKey(threadRef)} threadRef={threadRef} />
   ));
 
-  if (!isMobile && !open) {
+  if (!isMobile && !open && !peeking) {
     return (
       <>
         {prewarmers}
@@ -3926,7 +3909,6 @@ export default function LegacySidebar() {
           projects={sortedProjects}
           selectedProjectKey={activeRouteProjectKey}
           attentionByProjectKey={attentionByProjectKey}
-          onNewThread={handleNewThreadClick}
           onNewThreadInProject={startNewThreadInProject}
           onProjectContextMenu={handleProjectRailContextMenu}
           folders={projectFolders.settings}
@@ -3934,7 +3916,7 @@ export default function LegacySidebar() {
           onFolderContextMenu={projectFolders.onFolderContextMenu}
           onApplyDrop={projectFolders.applyDrop}
           onSelectAll={() => {
-            setOpen(true);
+            peekNow();
           }}
           onSelectProject={selectCollapsedRailProject}
         />
