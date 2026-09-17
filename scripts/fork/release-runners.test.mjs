@@ -400,6 +400,11 @@ ${setup}
     assert.include(mobileRelease, "git checkout -- apps/mobile/eas.json");
     assert.include(mobileRelease, "restore_eas_json");
     assert.include(mobileRelease, "report_eas_cloud_build_failure");
+    assert.notInclude(mobileRelease, 'T3CODE_BUILD_FLAVOR="${T3CODE_BUILD_FLAVOR:-internal}"');
+    assert.include(mobileRelease, "require_ios_internal_flavor");
+    assert.include(mobileRelease, 'configure_eas_build_fingerprint "$fingerprint" internal');
+    assert.include(mobileRelease, "EXPO_PUBLIC_T3CODE_BUILD_FLAVOR");
+    assert.include(mobileRelease, "credentials still point at");
     assert.include(mobileRelease, "checkout-origin.sh");
     assert.include(mobileRelease, "--full");
     assert.include(mobileRelease, "would reset to the scheduled starting SHA");

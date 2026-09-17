@@ -362,19 +362,44 @@ restore_eas_json() {
   fi
 }
 
+# Pin Internal only on the iOS TestFlight / EAS cloud path. The production
+# eas.json profile is also what public Android uses against a different EAS
+# project, so this script must not default Internal for every mode or caller.
+require_ios_internal_flavor() {
+  local current="${T3CODE_BUILD_FLAVOR:-}"
+  if [[ -n "$current" && "$current" != "internal" ]]; then
+    echo "iOS TestFlight requires T3CODE_BUILD_FLAVOR=internal; got $current." \
+      "Refusing to pin Internal onto a non-iOS or public path." >&2
+    exit 1
+  fi
+  export T3CODE_BUILD_FLAVOR=internal
+  export EXPO_PUBLIC_T3CODE_BUILD_FLAVOR=internal
+  export VITE_T3CODE_BUILD_FLAVOR=internal
+}
+
 configure_eas_build_fingerprint() {
   local expected_fingerprint="$1"
+  # Only the iOS TestFlight call site passes "internal". Omit flavor keys when
+  # this helper is reused for fingerprint-only or public Android paths that
+  # share eas.build.production.env.
+  local build_flavor="${2:-}"
   export EXPO_UPDATES_FINGERPRINT_OVERRIDE="$expected_fingerprint"
-  node --input-type=module - "$eas_json" "$expected_fingerprint" <<'NODE'
+  node --input-type=module - "$eas_json" "$expected_fingerprint" "$build_flavor" <<'NODE'
 import fs from "node:fs";
-const [easJsonPath, expectedFingerprint] = process.argv.slice(2);
+const [easJsonPath, expectedFingerprint, buildFlavor] = process.argv.slice(2);
 const eas = JSON.parse(fs.readFileSync(easJsonPath, "utf8"));
 eas.build ??= {};
 eas.build.production ??= {};
-eas.build.production.env = {
+const env = {
   ...eas.build.production.env,
   EXPO_UPDATES_FINGERPRINT_OVERRIDE: expectedFingerprint,
 };
+if (buildFlavor === "internal") {
+  env.T3CODE_BUILD_FLAVOR = "internal";
+  env.EXPO_PUBLIC_T3CODE_BUILD_FLAVOR = "internal";
+  env.VITE_T3CODE_BUILD_FLAVOR = "internal";
+}
+eas.build.production.env = env;
 fs.writeFileSync(easJsonPath, `${JSON.stringify(eas, null, 2)}\n`);
 NODE
 }
@@ -649,6 +674,14 @@ if [[ "$MODE" != "build" && "$MODE" != "release" ]]; then
   exit 0
 fi
 
+# Buildkite sets Internal on the Mac. The EAS worker does not inherit pipeline
+# env — only eas.json profile env and the EAS "production" environment. Pin
+# Internal here, on the iOS native/TestFlight path only, so prebuild emits
+# T3PrettyInternal / com.sergeserbinenko.t3pretty and Configure Xcode finds
+# the target credentials still point at. Do not default this at script top:
+# public Android reuses the production profile against another EAS project.
+require_ios_internal_flavor
+
 fingerprint_file="$tmp/ios-fingerprint.json"
 builds_file="$tmp/ios-builds.json"
 gate_file="$tmp/ios-gate.txt"
@@ -801,7 +834,7 @@ export EXPO_APPLE_TEAM_TYPE=INDIVIDUAL
 
 cp "$eas_json" "$tmp/eas.json.bak"
 eas_json_bak="$tmp/eas.json.bak"
-configure_eas_build_fingerprint "$fingerprint"
+configure_eas_build_fingerprint "$fingerprint" internal
 
 ipa_path="$tmp/t3-pretty.ipa"
 build_source="local Xcode"

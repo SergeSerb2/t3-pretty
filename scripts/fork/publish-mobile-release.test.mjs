@@ -474,7 +474,7 @@ describe("iOS embedded runtime fingerprint", () => {
         "bash",
         [
           "-c",
-          `${extractBuildFingerprintConfiguration()}\neas_json="$1"\nconfigure_eas_build_fingerprint "$2"\nprintf '%s' "$EXPO_UPDATES_FINGERPRINT_OVERRIDE" > "$3"`,
+          `${extractBuildFingerprintConfiguration()}\neas_json="$1"\nconfigure_eas_build_fingerprint "$2" internal\nprintf '%s' "$EXPO_UPDATES_FINGERPRINT_OVERRIDE" > "$3"`,
           "configure-build-fingerprint",
           easJson,
           expected,
@@ -485,6 +485,9 @@ describe("iOS embedded runtime fingerprint", () => {
 
       const configured = JSON.parse(NodeFS.readFileSync(easJson, "utf8"));
       assert.equal(configured.build.production.env.APP_VARIANT, "production");
+      assert.equal(configured.build.production.env.T3CODE_BUILD_FLAVOR, "internal");
+      assert.equal(configured.build.production.env.EXPO_PUBLIC_T3CODE_BUILD_FLAVOR, "internal");
+      assert.equal(configured.build.production.env.VITE_T3CODE_BUILD_FLAVOR, "internal");
       assert.equal(configured.build.production.env.EXPO_UPDATES_FINGERPRINT_OVERRIDE, expected);
       assert.equal(NodeFS.readFileSync(exportedFingerprint, "utf8"), expected);
     } finally {
@@ -661,6 +664,100 @@ describe("iOS embedded runtime fingerprint", () => {
     assert.include(cloud, "if ! (");
     assert.include(cloud, "report_eas_cloud_build_failure \"$cloud_build_json\"");
     assert.include(cloud, "EAS cloud iOS build failed.");
+  });
+
+  it("does not bake Internal flavor into committed eas.json production env", () => {
+    // Public Android reuses this profile against a different EAS project.
+    // Hardcoding internal here would make that worker prebuild the Internal app.
+    const eas = JSON.parse(
+      NodeFS.readFileSync(NodePath.resolve(here, "../../apps/mobile/eas.json"), "utf8"),
+    );
+    assert.equal(eas.build.production.env.T3CODE_BUILD_FLAVOR, undefined);
+    assert.notInclude(mobileRelease, 'T3CODE_BUILD_FLAVOR="${T3CODE_BUILD_FLAVOR:-internal}"');
+    assert.include(mobileRelease, "require_ios_internal_flavor");
+    assert.include(mobileRelease, 'configure_eas_build_fingerprint "$fingerprint" internal');
+    assert.include(mobileRelease, 'if (buildFlavor === "internal")');
+    assert.include(mobileRelease, "credentials still point at");
+    const nativePath = mobileRelease.slice(mobileRelease.indexOf("MODE\" != \"build\""));
+    assert.isBelow(
+      nativePath.indexOf("require_ios_internal_flavor"),
+      nativePath.indexOf("eas fingerprint:generate"),
+    );
+  });
+
+  it("omits flavor keys from the shared production profile unless iOS Internal is explicit", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-eas-flavor-"));
+    const easJson = NodePath.join(root, "eas.json");
+    try {
+      NodeFS.writeFileSync(
+        easJson,
+        `${JSON.stringify({ build: { production: { env: { APP_VARIANT: "production" } } } })}\n`,
+      );
+      const run = (flavorArg) => {
+        NodeFS.writeFileSync(
+          easJson,
+          `${JSON.stringify({ build: { production: { env: { APP_VARIANT: "production" } } } })}\n`,
+        );
+        NodeChildProcess.execFileSync(
+          "bash",
+          [
+            "-c",
+            `${extractBuildFingerprintConfiguration()}\neas_json="$1"\nconfigure_eas_build_fingerprint "$2" "$3"`,
+            "configure-build-fingerprint",
+            easJson,
+            "deadbeef",
+            flavorArg,
+          ],
+          { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+        );
+        return JSON.parse(NodeFS.readFileSync(easJson, "utf8"));
+      };
+
+      const omitted = run("");
+      assert.equal(omitted.build.production.env.APP_VARIANT, "production");
+      assert.equal(omitted.build.production.env.T3CODE_BUILD_FLAVOR, undefined);
+      assert.equal(omitted.build.production.env.EXPO_PUBLIC_T3CODE_BUILD_FLAVOR, undefined);
+      assert.equal(omitted.build.production.env.VITE_T3CODE_BUILD_FLAVOR, undefined);
+      assert.equal(omitted.build.production.env.EXPO_UPDATES_FINGERPRINT_OVERRIDE, "deadbeef");
+
+      const publicFlavor = run("public");
+      assert.equal(publicFlavor.build.production.env.T3CODE_BUILD_FLAVOR, undefined);
+      assert.equal(publicFlavor.build.production.env.EXPO_UPDATES_FINGERPRINT_OVERRIDE, "deadbeef");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to pin Internal when the process already has a public flavor", () => {
+    const script = mobileRelease.match(
+      /require_ios_internal_flavor\(\) \{[\s\S]*?\n\}\n\nconfigure_eas_build_fingerprint/,
+    );
+    assert.ok(script, "require_ios_internal_flavor missing");
+    const requireFn = script[0].replace(/\n\nconfigure_eas_build_fingerprint$/u, "");
+    const result = NodeChildProcess.spawnSync(
+      "bash",
+      ["-c", `${requireFn}\nrequire_ios_internal_flavor`],
+      {
+        encoding: "utf8",
+        env: { ...process.env, T3CODE_BUILD_FLAVOR: "public" },
+      },
+    );
+    assert.notEqual(result.status, 0);
+    assert.include(result.stderr, "T3CODE_BUILD_FLAVOR=internal");
+    assert.include(result.stderr, "public");
+
+    const unset = NodeChildProcess.spawnSync(
+      "bash",
+      ["-c", `${requireFn}\nrequire_ios_internal_flavor\nprintf '%s\\n' "$T3CODE_BUILD_FLAVOR" "$EXPO_PUBLIC_T3CODE_BUILD_FLAVOR" "$VITE_T3CODE_BUILD_FLAVOR"`],
+      {
+        encoding: "utf8",
+        env: Object.fromEntries(
+          Object.entries(process.env).filter(([name]) => name !== "T3CODE_BUILD_FLAVOR"),
+        ),
+      },
+    );
+    assert.equal(unset.status, 0);
+    assert.equal(unset.stdout.trim(), "internal\ninternal\ninternal");
   });
 
   it("pins Node 24 and pnpm on EAS workers without enabling corepack", () => {
