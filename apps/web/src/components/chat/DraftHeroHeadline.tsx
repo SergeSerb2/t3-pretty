@@ -3,7 +3,7 @@ import { useComposerDraftStore } from "~/composerDraftStore";
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { collectOpenProjectPullRequests } from "@t3tools/shared/threadPullRequestNesting";
-import { FolderPlusIcon, GitPullRequestIcon } from "lucide-react";
+import { FolderPlusIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
@@ -30,6 +30,7 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 
 interface DraftHeroHeadlineProps {
@@ -284,7 +285,7 @@ export function DraftHeroHeadline({
           aria-label="Attach to an existing pull request"
           className="pointer-events-auto inline-flex max-w-80 items-center gap-1.5 truncate border-foreground/40 border-b border-dotted text-sm text-muted-foreground transition-colors hover:border-foreground/70 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <GitPullRequestIcon aria-hidden className="size-3.5 shrink-0" />
+          <PullRequestGlyph.pullRequest aria-hidden className="size-3.5 shrink-0" />
           {attachedPullRequest
             ? (attachedPullRequest.title ??
               `${attachedPullRequest.repository}#${attachedPullRequest.number}`)

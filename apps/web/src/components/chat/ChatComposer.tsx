@@ -260,6 +260,7 @@ import {
 } from "./ComposerControl";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import {
   matchesPullRequestQuery,
   rankPullRequestMatches,
@@ -930,7 +931,6 @@ import {
   FileIcon,
   BotIcon,
   CircleAlertIcon,
-  GitPullRequestArrowIcon,
   PaperclipIcon,
   PencilRulerIcon,
   PlayIcon,
@@ -1221,7 +1221,7 @@ const ComposerCreatePrControl = memo(function ComposerCreatePrControl(props: {
             }
           >
             <ComposerControlIcon
-              icon={GitPullRequestArrowIcon}
+              icon={PullRequestGlyph.pullRequest}
               size={size}
               className={cn(active && "text-current opacity-100")}
             />

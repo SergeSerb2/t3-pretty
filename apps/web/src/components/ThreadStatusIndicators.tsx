@@ -22,9 +22,7 @@ import {
   CircleDashedIcon,
   EyeIcon,
   FolderGit2Icon,
-  GitPullRequestArrowIcon,
   HistoryIcon,
-  LayersIcon,
   MessageSquareWarningIcon,
   TerminalIcon,
 } from "lucide-react";
@@ -44,6 +42,7 @@ import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { pullRequestListLines } from "./pullRequest/pullRequestListLines";
+import { PullRequestGlyph } from "./pullRequest/pullRequestIcons";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 
 // Status visual vocabulary for Agents panel and automation rows
@@ -226,7 +225,7 @@ function ThreadPullRequestBadgeIcon({
   icon: "stack" | "pull-request";
   className?: string | undefined;
 }) {
-  const Icon = icon === "stack" ? LayersIcon : GitPullRequestArrowIcon;
+  const Icon = icon === "stack" ? PullRequestGlyph.stack : PullRequestGlyph.pullRequest;
   return <Icon aria-hidden className={cn("size-3 shrink-0", className)} />;
 }
 
@@ -347,7 +346,7 @@ export function ThreadPullRequestsMiniList({
                 className={cn("size-3 shrink-0", presentation.toneClassName)}
               />
             ) : (
-              <GitPullRequestArrowIcon
+              <PullRequestGlyph.pullRequest
                 aria-hidden
                 className="size-3 shrink-0 stroke-muted-foreground"
               />
@@ -668,7 +667,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
         </Tooltip>
       ) : null}
       {pendingLink ? (
-        <GitPullRequestArrowIcon
+        <PullRequestGlyph.pullRequest
           className="size-3 text-muted-foreground"
           aria-label={`PR #${pendingLink.number}, status pending`}
         />
