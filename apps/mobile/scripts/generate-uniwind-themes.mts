@@ -154,9 +154,22 @@ const adaptiveVariablesFor = (appearance: MobileThemeAppearance) =>
     ]),
   );
 
-const variablesFor = (themeId: BuiltInThemeId, appearance: MobileThemeAppearance) => ({
+const CLERK_THEME_VARIABLE_NAMES = [
+  "--color-clerk-page",
+  "--color-clerk-foreground",
+  "--color-clerk-foreground-muted",
+  "--color-clerk-border",
+  "--color-clerk-danger",
+] as const;
+
+const variablesFor = (
+  themeId: BuiltInThemeId,
+  appearance: MobileThemeAppearance,
+  clerkVariables: Readonly<Record<string, string>>,
+) => ({
   ...getMobileThemeVariables(themeId, appearance),
   ...adaptiveVariablesFor(appearance),
+  ...clerkVariables,
 });
 
 const renderVariant = (name: string, variables: Readonly<Record<string, string>>) => {
@@ -166,13 +179,17 @@ const renderVariant = (name: string, variables: Readonly<Record<string, string>>
   return `    @variant ${name} {\n${declarations}\n    }`;
 };
 
-export const renderUniwindThemesCSS = () => {
+export const renderUniwindThemesCSS = (css = NodeFS.readFileSync(GLOBAL_CSS_PATH, "utf8")) => {
+  const clerkVariables = readClerkThemeVariables(css);
   const variants = [
     renderVariant("light", adaptiveVariablesFor("light")),
     renderVariant("dark", adaptiveVariablesFor("dark")),
     ...BUILT_IN_THEME_IDS.flatMap((themeId) =>
       APPEARANCES.map((appearance) =>
-        renderVariant(`${themeId}-${appearance}`, variablesFor(themeId, appearance)),
+        renderVariant(
+          `${themeId}-${appearance}`,
+          variablesFor(themeId, appearance, clerkVariables[appearance]),
+        ),
       ),
     ),
   ];
@@ -187,21 +204,61 @@ export const renderUniwindThemesCSS = () => {
   ].join("\n");
 };
 
-const readVariantBody = (css: string, appearance: MobileThemeAppearance): string => {
+const readVariantBodies = (css: string, appearance: MobileThemeAppearance): string[] => {
   const marker = `@variant ${appearance} {`;
-  const markerIndex = css.indexOf(marker);
-  if (markerIndex === -1) throw new Error(`Could not find ${marker} in global.css.`);
+  const bodies: string[] = [];
+  let searchFrom = 0;
+  while (searchFrom < css.length) {
+    const markerIndex = css.indexOf(marker, searchFrom);
+    if (markerIndex === -1) break;
 
-  const openingBraceIndex = css.indexOf("{", markerIndex);
-  let depth = 0;
-  for (let index = openingBraceIndex; index < css.length; index += 1) {
-    if (css[index] === "{") depth += 1;
-    if (css[index] !== "}") continue;
-    depth -= 1;
-    if (depth === 0) return css.slice(openingBraceIndex + 1, index);
+    const openingBraceIndex = css.indexOf("{", markerIndex);
+    let depth = 0;
+    let closedAt = -1;
+    for (let index = openingBraceIndex; index < css.length; index += 1) {
+      if (css[index] === "{") depth += 1;
+      if (css[index] !== "}") continue;
+      depth -= 1;
+      if (depth === 0) {
+        bodies.push(css.slice(openingBraceIndex + 1, index));
+        closedAt = index;
+        break;
+      }
+    }
+    if (closedAt === -1) throw new Error(`Could not find the end of ${marker} in global.css.`);
+    searchFrom = closedAt + 1;
   }
-  throw new Error(`Could not find the end of ${marker} in global.css.`);
+  if (bodies.length === 0) throw new Error(`Could not find ${marker} in global.css.`);
+  return bodies;
 };
+
+const readVariantBody = (css: string, appearance: MobileThemeAppearance): string =>
+  readVariantBodies(css, appearance)[0]!;
+
+const readVariableValue = (bodies: readonly string[], name: string): string | undefined => {
+  for (const body of bodies) {
+    const match = new RegExp(`^\\s*${name}:\\s*([^;]+);`, "mu").exec(body);
+    if (match?.[1]) return match[1].trim();
+  }
+  return undefined;
+};
+
+export const readClerkThemeVariables = (css: string) =>
+  Object.fromEntries(
+    APPEARANCES.map((appearance) => {
+      const bodies = readVariantBodies(css, appearance);
+      const variables = Object.fromEntries(
+        CLERK_THEME_VARIABLE_NAMES.map((name) => {
+          const value = readVariableValue(bodies, name);
+          if (value === undefined) {
+            throw new Error(`Default ${appearance} theme is missing ${name}.`);
+          }
+          return [name, value];
+        }),
+      );
+      return [appearance, variables];
+    }),
+  ) as Readonly<Record<MobileThemeAppearance, Readonly<Record<string, string>>>>;
 
 export const readDefaultThemeVariables = (css: string) =>
   Object.fromEntries(
@@ -225,14 +282,14 @@ export const renderDefaultThemeVariablesJSON = (css: string) =>
 
 export const getGeneratedUniwindThemeOutputs = (): ReadonlyArray<
   readonly [filename: string, contents: string]
-> => [
-  [GENERATED_CSS_PATH, renderUniwindThemesCSS()],
-  [GENERATED_NAMES_PATH, `${JSON.stringify(customThemeNames, null, 2)}\n`],
-  [
-    GENERATED_DEFAULT_VARIABLES_PATH,
-    renderDefaultThemeVariablesJSON(NodeFS.readFileSync(GLOBAL_CSS_PATH, "utf8")),
-  ],
-];
+> => {
+  const css = NodeFS.readFileSync(GLOBAL_CSS_PATH, "utf8");
+  return [
+    [GENERATED_CSS_PATH, renderUniwindThemesCSS(css)],
+    [GENERATED_NAMES_PATH, `${JSON.stringify(customThemeNames, null, 2)}\n`],
+    [GENERATED_DEFAULT_VARIABLES_PATH, renderDefaultThemeVariablesJSON(css)],
+  ];
+};
 
 const writeFileAtomically = (filename: string, contents: string) => {
   const current = NodeFS.existsSync(filename) ? NodeFS.readFileSync(filename, "utf8") : null;
