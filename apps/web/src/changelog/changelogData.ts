@@ -26,6 +26,66 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260917.1866002488",
+    date: "2026-09-17",
+    items: [
+      {
+        kind: "fixed",
+        title: "Packaged Mac backend no longer crashes on GitHubCli",
+      },
+      {
+        kind: "fixed",
+        title: "Animate collapsed sidebar peek and tighten the rail",
+      },
+      {
+        kind: "fixed",
+        title: "Desktop and iOS tip builds after #585",
+      },
+      {
+        kind: "fixed",
+        title: "Square the sidebar and titlebar inner corner",
+      },
+      {
+        kind: "new",
+        title: "Drop the All projects thread-list header",
+      },
+      {
+        kind: "new",
+        title: "Drag sidebar folders to reorder them",
+      },
+    ],
+  },
+  {
+    version: "0.0.43-nightly.20260917.1851002485",
+    date: "2026-09-17",
+    items: [
+      {
+        kind: "fixed",
+        title: "Packaged Mac backend no longer crashes on GitHubCli",
+      },
+      {
+        kind: "fixed",
+        title: "Animate collapsed sidebar peek and tighten the rail",
+      },
+      {
+        kind: "fixed",
+        title: "Desktop and iOS tip builds after #585",
+      },
+      {
+        kind: "fixed",
+        title: "Square the sidebar and titlebar inner corner",
+      },
+      {
+        kind: "new",
+        title: "Drop the All projects thread-list header",
+      },
+      {
+        kind: "new",
+        title: "Drag sidebar folders to reorder them",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260917.1851002482",
     date: "2026-09-17",
     items: [

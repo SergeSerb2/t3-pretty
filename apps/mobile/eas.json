@@ -6,7 +6,8 @@
   },
   "build": {
     "development": {
-      "corepack": true,
+      "node": "24.13.1",
+      "pnpm": "11.10.0",
       "env": {
         "APP_VARIANT": "development",
         "NODE_OPTIONS": "--max-old-space-size=4096"
@@ -16,7 +17,8 @@
       "distribution": "internal"
     },
     "preview": {
-      "corepack": true,
+      "node": "24.13.1",
+      "pnpm": "11.10.0",
       "env": {
         "APP_VARIANT": "preview",
         "NODE_OPTIONS": "--max-old-space-size=4096"
@@ -26,7 +28,8 @@
       "distribution": "internal"
     },
     "preview:dev": {
-      "corepack": true,
+      "node": "24.13.1",
+      "pnpm": "11.10.0",
       "env": {
         "APP_VARIANT": "preview",
         "MOBILE_VERSION_POLICY": "fingerprint",
@@ -49,7 +52,8 @@
       }
     },
     "production": {
-      "corepack": true,
+      "node": "24.13.1",
+      "pnpm": "11.10.0",
       "env": {
         "APP_VARIANT": "production",
         "NODE_OPTIONS": "--max-old-space-size=4096"

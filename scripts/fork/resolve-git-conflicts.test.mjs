@@ -2891,7 +2891,15 @@ ${">".repeat(7)} theirs
     assert.include(script, '> "$restore_cache/active-upstream-tag"');
     assert.include(script, "git commit-tree");
     assert.include(script, "ROOT/.t3-fork/resolution-seeds");
-    assert.include(script, 'cp -n "$seed" "$SYNC_RESOLUTION_CACHE_DIR/$seed_name"');
+    assert.include(script, "upstream-sync: start root=");
+    assert.include(script, "upstream-sync: failed at ${BASH_SOURCE[0]}:${LINENO}");
+    assert.include(script, 'if [[ ! -e "$SYNC_RESOLUTION_CACHE_DIR/$seed_name" ]]; then');
+    assert.include(script, 'cp "$seed" "$SYNC_RESOLUTION_CACHE_DIR/$seed_name"');
+    assert.notInclude(script, 'cp -n "$seed"');
+    assert.isBelow(
+      script.indexOf("upstream-sync: start root="),
+      script.indexOf("resolution-seeds"),
+    );
 
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, "reused the checkpointed resolution");
@@ -2909,6 +2917,73 @@ ${">".repeat(7)} theirs
       script.indexOf("run_conflict_resolver"),
       script.indexOf("auto-merge but break typecheck"),
     );
+  });
+
+  it("installs reviewed resolution seeds twice under set -e when dest already exists", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-seeds-"));
+    const seedDir = NodePath.join(root, ".t3-fork", "resolution-seeds");
+    const cacheDir = NodePath.join(root, "sync-resolution-cache");
+    const seedName = `${"ab".repeat(32)}.json`;
+    NodeFS.mkdirSync(seedDir, { recursive: true });
+    NodeFS.mkdirSync(cacheDir, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(seedDir, seedName), '{"ok":true}\n');
+
+    const install = [
+      "set -euo pipefail",
+      'ROOT="$1"',
+      'SYNC_RESOLUTION_CACHE_DIR="$2"',
+      'if [[ -d "$ROOT/.t3-fork/resolution-seeds" ]]; then',
+      '  for seed in "$ROOT/.t3-fork/resolution-seeds/"[0-9a-f]*.json; do',
+      '    [[ -f "$seed" ]] || continue',
+      '    seed_name="${seed##*/}"',
+      '    [[ "$seed_name" =~ ^[0-9a-f]{64}[.]json$ ]] || continue',
+      '    if [[ ! -e "$SYNC_RESOLUTION_CACHE_DIR/$seed_name" ]]; then',
+      '      cp "$seed" "$SYNC_RESOLUTION_CACHE_DIR/$seed_name"',
+      "    fi",
+      "  done",
+      "fi",
+    ].join("\n");
+    const macosCpN = [
+      "set -euo pipefail",
+      "cp() {",
+      '  if [[ "$1" == "-n" && -e "$3" ]]; then',
+      "    return 1",
+      "  fi",
+      '  command cp "$@"',
+      "}",
+      'cp -n "$1" "$2"',
+    ].join("\n");
+
+    try {
+      const first = NodeChildProcess.spawnSync(
+        "bash",
+        ["-c", install, "seed-install", root, cacheDir],
+        {
+          encoding: "utf8",
+        },
+      );
+      assert.equal(first.status, 0, first.stderr);
+      const dest = NodePath.join(cacheDir, seedName);
+      assert.equal(NodeFS.readFileSync(dest, "utf8"), '{"ok":true}\n');
+
+      const second = NodeChildProcess.spawnSync(
+        "bash",
+        ["-c", install, "seed-install", root, cacheDir],
+        { encoding: "utf8" },
+      );
+      assert.equal(second.status, 0, second.stderr);
+
+      const stale = NodeChildProcess.spawnSync(
+        "bash",
+        ["-c", macosCpN, "macos-cp-n", NodePath.join(seedDir, seedName), dest],
+        { encoding: "utf8" },
+      );
+      assert.equal(stale.status, 1);
+      assert.equal(stale.stdout, "");
+      assert.equal(stale.stderr, "");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("reuses the ThreadTerminalRouteScreen full-file seed as a completed resolution", () => {

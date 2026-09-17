@@ -47,6 +47,7 @@ import {
 import { PREFERRED_HIGHLIGHTER } from "../lib/syntaxHighlighting";
 import { areAllDiffFilesCollapsed, toggleAllDiffFiles } from "../lib/diffCollapse";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
+import { useWorkspaceMutationRefresh } from "../hooks/useWorkspaceMutationRefresh";
 import { useProject, useThreadCheckpoints, useThreadShell } from "../state/entities";
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
@@ -118,18 +119,25 @@ interface CollapsedDiffFilesState {
 
 const EMPTY_COLLAPSED_DIFF_FILE_KEYS: ReadonlySet<string> = new Set();
 
-interface DiffPanelProps {
-  mode?: DiffPanelMode;
-  composerDraftTarget: ScopedThreadRef | DraftId;
-  initialGitScope: "branch" | "unstaged";
-  workspaceMutationId: string | null;
-}
+type DiffPanelProps =
+  | {
+      mode?: DiffPanelMode;
+      composerDraftTarget: ScopedThreadRef | DraftId;
+      initialGitScope: "branch" | "unstaged";
+      workspaceMutationId: string | null;
+    }
+  | {
+      mode: "embedded";
+      composerDraftTarget: ScopedThreadRef | DraftId;
+      initialGitScope?: "branch";
+      workspaceMutationId?: null;
+    };
 
 export default function DiffPanel({
   mode = "inline",
   composerDraftTarget,
-  initialGitScope: initialGitScopeProp,
-  workspaceMutationId,
+  initialGitScope: initialGitScopeProp = "branch",
+  workspaceMutationId = null,
 }: DiffPanelProps) {
   const resolvedTheme = usePaintedAppearance();
   const settings = useClientSettings();
@@ -305,6 +313,7 @@ export default function DiffPanel({
   const branchDiffPreview = shouldRetryBranchDiffAtEnvironmentCwd
     ? fallbackBranchDiffPreview
     : primaryBranchDiffPreview;
+  const refreshBranchDiffPreview = branchDiffPreview.refresh;
   const canRefreshGitDiff =
     isGitRepo && selectedTurnId === null && activeThread != null && activeCwd != null;
   const activeThreadRefreshKey = routeThreadRef
@@ -467,15 +476,6 @@ export default function DiffPanel({
       : undefined,
     preview: renderablePatch,
   });
-  const refreshBranchDiffPreview = refreshPreviewQuery;
-
-  useEffect(() => {
-    if (!canRefreshGitDiff) return;
-    const refreshOnFocus = () => refreshBranchDiffPreview();
-    window.addEventListener("focus", refreshOnFocus);
-    return () => window.removeEventListener("focus", refreshOnFocus);
-  }, [canRefreshGitDiff, refreshBranchDiffPreview]);
-
   useWorkspaceMutationRefresh({
     enabled: canRefreshGitDiff,
     mutationId: workspaceMutationId,

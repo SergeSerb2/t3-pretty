@@ -467,6 +467,101 @@ process.stdout.write(`${id}\n${artifactUrl}\n`);
 NODE
 }
 
+report_eas_cloud_build_failure() {
+  # eas build --json --wait still writes the failed build object to stdout. The
+  # CLI's "✖ Build failed" line is all Buildkite sees unless that JSON is printed.
+  local cloud_build_json="$1"
+  if [[ ! -f "$cloud_build_json" ]]; then
+    echo "EAS cloud build produced no JSON output." >&2
+    return 0
+  fi
+  node --input-type=module - "$cloud_build_json" <<'NODE'
+import fs from "node:fs";
+const raw = fs.readFileSync(process.argv[2], "utf8").trim();
+if (!raw) {
+  console.error("EAS cloud build JSON was empty.");
+  process.exit(0);
+}
+const values = [];
+for (let start = 0; start < raw.length; start += 1) {
+  if (raw[start] !== "{" && raw[start] !== "[") continue;
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+  for (let end = start; end < raw.length; end += 1) {
+    const character = raw[end];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+    } else if (character === "{") {
+      stack.push("}");
+    } else if (character === "[") {
+      stack.push("]");
+    } else if (character === "}" || character === "]") {
+      if (stack.pop() !== character) break;
+      if (stack.length === 0) {
+        let parsed = false;
+        try {
+          values.push(JSON.parse(raw.slice(start, end + 1)));
+          parsed = true;
+        } catch {
+          // Keep scanning from the next opener.
+        }
+        if (parsed) start = end;
+        break;
+      }
+    }
+  }
+}
+const candidates = values.flatMap((value) =>
+  Array.isArray(value) ? value : Array.isArray(value?.builds) ? value.builds : [value],
+);
+const nonEmptyString = (value) => (typeof value === "string" && value.trim() ? value : "");
+const build = [...candidates].reverse().find((candidate) => {
+  if (!candidate || typeof candidate !== "object") return false;
+  return Boolean(
+    nonEmptyString(candidate.id) ||
+      nonEmptyString(candidate.status) ||
+      nonEmptyString(candidate.error?.message) ||
+      nonEmptyString(candidate.error?.errorCode) ||
+      nonEmptyString(candidate.message),
+  );
+});
+if (!build) {
+  console.error("EAS cloud build JSON had no status, id, or error fields.");
+  process.exit(0);
+}
+const owner = process.env.T3CODE_MOBILE_EXPO_OWNER || "sergeserbinenkoteam";
+const slug = process.env.T3CODE_MOBILE_EXPO_SLUG || "t3-pretty";
+const id = nonEmptyString(build.id);
+const lines = [
+  `EAS cloud build id=${id || "unknown"}`,
+  `status=${nonEmptyString(build.status) || "unknown"}`,
+];
+const phase = nonEmptyString(build.buildPhase) || nonEmptyString(build.phase);
+if (phase) lines.push(`phase=${phase}`);
+const errorCode = nonEmptyString(build.error?.errorCode) || nonEmptyString(build.error?.code);
+if (errorCode) lines.push(`errorCode=${errorCode}`);
+const message = nonEmptyString(build.error?.message) || nonEmptyString(build.message);
+if (message) lines.push(`error=${message}`);
+const logs =
+  nonEmptyString(build.logUrl) ||
+  nonEmptyString(build.logsUrl) ||
+  (id ? `https://expo.dev/accounts/${owner}/projects/${slug}/builds/${id}` : "");
+if (logs) lines.push(`logs=${logs}`);
+console.error(lines.join("\n"));
+NODE
+}
+
 verify_ipa_fingerprint() {
   local ipa_path="$1"
   local expected_fingerprint="$2"
@@ -713,7 +808,7 @@ build_source="local Xcode"
 
 if [[ "$ipa_via_cloud" == "true" ]]; then
   cloud_build_json="$tmp/eas-cloud-build.json"
-  (
+  if ! (
     cd apps/mobile
     eas build \
       --platform ios \
@@ -721,7 +816,11 @@ if [[ "$ipa_via_cloud" == "true" ]]; then
       --non-interactive \
       --wait \
       --json > "$cloud_build_json"
-  )
+  ); then
+    echo "EAS cloud iOS build failed." >&2
+    report_eas_cloud_build_failure "$cloud_build_json"
+    exit 1
+  fi
   cloud_build_details="$tmp/eas-cloud-build-details"
   read_eas_cloud_build_details "$cloud_build_json" > "$cloud_build_details"
   build_id="$(sed -n '1p' "$cloud_build_details")"

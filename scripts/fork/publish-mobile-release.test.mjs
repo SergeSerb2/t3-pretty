@@ -184,9 +184,17 @@ function extractIpaFingerprintVerification() {
 
 function extractCloudBuildDetailsReader() {
   const match = mobileRelease.match(
-    /read_eas_cloud_build_details\(\) \{[\s\S]*?\n\}\n\nverify_ipa_fingerprint/,
+    /read_eas_cloud_build_details\(\) \{[\s\S]*?\n\}\n\nreport_eas_cloud_build_failure/,
   );
   assert.ok(match, "cloud build details reader missing");
+  return match[0].replace(/\n\nreport_eas_cloud_build_failure$/u, "");
+}
+
+function extractCloudBuildFailureReporter() {
+  const match = mobileRelease.match(
+    /report_eas_cloud_build_failure\(\) \{[\s\S]*?\n\}\n\nverify_ipa_fingerprint/,
+  );
+  assert.ok(match, "cloud build failure reporter missing");
   return match[0].replace(/\n\nverify_ipa_fingerprint$/u, "");
 }
 
@@ -577,6 +585,95 @@ describe("iOS embedded runtime fingerprint", () => {
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("prints the EAS JSON error when the cloud IPA fails", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-cloud-fail-"));
+    const buildJson = NodePath.join(root, "build.json");
+    const buildId = "18d3e8b4-7747-4b9e-8cb5-365a529313de";
+    try {
+      const reportFailure = (jsonPath) =>
+        NodeChildProcess.spawnSync(
+          "bash",
+          [
+            "-c",
+            `${extractCloudBuildFailureReporter()}\nreport_eas_cloud_build_failure "$1"`,
+            "report-cloud-build-failure",
+            jsonPath,
+          ],
+          {
+            encoding: "utf8",
+            env: {
+              ...process.env,
+              T3CODE_MOBILE_EXPO_OWNER: "sergeserbinenkoteam",
+              T3CODE_MOBILE_EXPO_SLUG: "t3-pretty",
+            },
+          },
+        );
+
+      NodeFS.writeFileSync(
+        buildJson,
+        [
+          "progress {not valid JSON around the later values:",
+          JSON.stringify({
+            status: "IN_PROGRESS",
+            progress: { message: "Spinning up build environment" },
+          }),
+          JSON.stringify({
+            id: buildId,
+            status: "ERRORED",
+            buildPhase: "INSTALL_DEPENDENCIES",
+            error: {
+              errorCode: "EAS_BUILD_UNKNOWN_ERROR",
+              message:
+                "Failed to install pnpm. Make sure you specified the correct version in eas.json.",
+            },
+          }),
+          "}",
+        ].join("\n"),
+      );
+
+      const reported = reportFailure(buildJson);
+      assert.equal(reported.status, 0);
+      assert.include(reported.stderr, `EAS cloud build id=${buildId}`);
+      assert.include(reported.stderr, "status=ERRORED");
+      assert.include(reported.stderr, "phase=INSTALL_DEPENDENCIES");
+      assert.include(reported.stderr, "errorCode=EAS_BUILD_UNKNOWN_ERROR");
+      assert.include(reported.stderr, "Failed to install pnpm");
+      assert.include(
+        reported.stderr,
+        `https://expo.dev/accounts/sergeserbinenkoteam/projects/t3-pretty/builds/${buildId}`,
+      );
+
+      const missing = reportFailure(NodePath.join(root, "missing.json"));
+      assert.equal(missing.status, 0);
+      assert.include(missing.stderr, "produced no JSON output");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("dumps the EAS JSON error instead of exiting on a bare ✖ Build failed", () => {
+    const cloud = mobileRelease.slice(
+      mobileRelease.indexOf('ipa_via_cloud" == "true"'),
+      mobileRelease.indexOf("Using Xcode at"),
+    );
+    assert.include(cloud, "if ! (");
+    assert.include(cloud, "report_eas_cloud_build_failure \"$cloud_build_json\"");
+    assert.include(cloud, "EAS cloud iOS build failed.");
+  });
+
+  it("pins Node 24 and pnpm on EAS workers without enabling corepack", () => {
+    const eas = JSON.parse(
+      NodeFS.readFileSync(NodePath.resolve(here, "../../apps/mobile/eas.json"), "utf8"),
+    );
+    for (const name of ["development", "preview", "preview:dev", "production"]) {
+      const profile = eas.build[name];
+      assert.equal(profile.node, "24.13.1", name);
+      assert.equal(profile.pnpm, "11.10.0", name);
+      assert.equal(profile.corepack, undefined, name);
+    }
+    assert.equal(eas.build["v2-preview"].extends, "production");
   });
 
   it("restores eas.json through the early EXIT trap after every mutation stage", () => {
