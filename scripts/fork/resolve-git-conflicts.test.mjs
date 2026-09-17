@@ -2982,6 +2982,44 @@ ${">".repeat(7)} theirs
     });
   });
 
+  it("reuses the CheckpointDiffQuery.test.ts full-file seed as a completed resolution", () => {
+    const key = "d87d726473d1c508cad0b31cdc7af31ffce0326e6f050e29981a8654f9cc8714";
+    const seedDir = NodePath.resolve(
+      NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+      "../../.t3-fork/resolution-seeds",
+    );
+    const cached = readCachedResolution({
+      key,
+      cacheDir: seedDir,
+      expectedPath: "apps/server/src/checkpointing/CheckpointDiffQuery.test.ts",
+    });
+
+    assert.ok(cached);
+    assert.equal(cached.path, "apps/server/src/checkpointing/CheckpointDiffQuery.test.ts");
+    assert.equal(typeof cached.resolvedSource, "string");
+    assert.notInclude(cached.resolvedSource, "<<<<<<<");
+    assert.notInclude(cached.resolvedSource, ">>>>>>>");
+    assert.notInclude(cached.resolvedSource, "|||||||");
+    assert.equal(
+      [...cached.resolvedSource.matchAll(/listMergedPullRequestCandidates:/gu)].length,
+      5,
+    );
+    assert.equal([...cached.resolvedSource.matchAll(/getDeletedWorktreeThreads:/gu)].length, 5);
+    assert.equal([...cached.resolvedSource.matchAll(/getAutomationShellById:/gu)].length, 5);
+    assert.include(
+      cached.resolvedSource,
+      'Effect.die("CheckpointDiffQuery should not request merged PR candidates")',
+    );
+    assert.include(
+      cached.resolvedSource,
+      "getDeletedWorktreeThreads: () => Effect.die(\"unused\")",
+    );
+    assertValidResolvedSource({
+      path: cached.path,
+      source: cached.resolvedSource,
+    });
+  });
+
   it("installs parser dependencies before resolving and gates the complete web tree", () => {
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");
     const earlyInstall = script.indexOf(
