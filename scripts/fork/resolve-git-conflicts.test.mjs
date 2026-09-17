@@ -2945,6 +2945,43 @@ ${">".repeat(7)} theirs
     });
   });
 
+  it("reuses the NewTaskDraftScreen full-file seed as a completed resolution", () => {
+    const key = "339198bf484ac76debb345cb809512cfb2e3ed637e9996991d9ba8a78b97ca80";
+    const seedDir = NodePath.resolve(
+      NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+      "../../.t3-fork/resolution-seeds",
+    );
+    const cached = readCachedResolution({
+      key,
+      cacheDir: seedDir,
+      expectedPath: "apps/mobile/src/features/threads/NewTaskDraftScreen.tsx",
+    });
+
+    assert.ok(cached);
+    assert.equal(cached.path, "apps/mobile/src/features/threads/NewTaskDraftScreen.tsx");
+    assert.equal(typeof cached.resolvedSource, "string");
+    assert.notInclude(cached.resolvedSource, "<<<<<<<");
+    assert.notInclude(cached.resolvedSource, ">>>>>>>");
+    assert.equal(
+      [...cached.resolvedSource.matchAll(/<NewTaskDraftFrame\b/gu)].length,
+      [...cached.resolvedSource.matchAll(/<\/NewTaskDraftFrame>/gu)].length,
+    );
+    assert.equal(
+      [...cached.resolvedSource.matchAll(/<MaterialScreenContent\b/gu)].length,
+      [...cached.resolvedSource.matchAll(/<\/MaterialScreenContent>/gu)].length,
+    );
+    assert.include(cached.resolvedSource, "<SceneryBackdrop threadKey={null} />");
+    assert.include(cached.resolvedSource, "bg-sheet-solid");
+    assert.include(cached.resolvedSource, "sceneryChrome");
+    assert.include(cached.resolvedSource, "result.images");
+    assert.include(cached.resolvedSource, "</MaterialScreenContent>");
+    assert.include(cached.resolvedSource, "</NewTaskDraftFrame>");
+    assertValidResolvedSource({
+      path: cached.path,
+      source: cached.resolvedSource,
+    });
+  });
+
   it("installs parser dependencies before resolving and gates the complete web tree", () => {
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");
     const earlyInstall = script.indexOf(
