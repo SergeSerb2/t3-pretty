@@ -9,6 +9,7 @@ import { persistClientSettingsUpdate, useClientSettings } from "./useSettings";
 import { randomUUID } from "../lib/utils";
 import { readLocalApi } from "../localApi";
 import {
+  applyProjectRailDrop,
   assignProjectToFolder,
   createProjectFolder,
   deleteProjectFolder,
@@ -20,6 +21,7 @@ import {
   selectProjectFolderSettings,
   toggleProjectFolderCollapsed,
   unassignProjectFromFolder,
+  type ProjectRailDropTarget,
   type SidebarProjectFolderSettings,
 } from "../sidebarProjectFolders";
 
@@ -41,6 +43,10 @@ export function useSidebarProjectFolders() {
 
   const toggleCollapsed = useCallback((folderId: string) => {
     persistFolderSettings((current) => toggleProjectFolderCollapsed(current, folderId));
+  }, []);
+
+  const applyDrop = useCallback((projectKey: string, target: ProjectRailDropTarget) => {
+    persistFolderSettings((current) => applyProjectRailDrop(current, projectKey, target));
   }, []);
 
   const menuItemsForProject = useCallback(
@@ -136,10 +142,11 @@ export function useSidebarProjectFolders() {
     () => ({
       settings,
       toggleCollapsed,
+      applyDrop,
       menuItemsForProject,
       handleAction,
       onFolderContextMenu,
     }),
-    [handleAction, menuItemsForProject, onFolderContextMenu, settings, toggleCollapsed],
+    [applyDrop, handleAction, menuItemsForProject, onFolderContextMenu, settings, toggleCollapsed],
   );
 }

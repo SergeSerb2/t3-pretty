@@ -113,6 +113,26 @@ export function unassignProjectFromFolder(
   return pruneEmptyFolders({ folders: settings.folders, assignments });
 }
 
+export const RAIL_PROJECT_DRAG_TYPE = "application/x-t3-rail-project";
+
+export type ProjectRailDropTarget =
+  | { readonly kind: "folder"; readonly folderId: string }
+  | { readonly kind: "ungrouped" };
+
+export function dataTransferHasRailProject(types: readonly string[]): boolean {
+  return types.includes(RAIL_PROJECT_DRAG_TYPE);
+}
+
+export function applyProjectRailDrop(
+  settings: SidebarProjectFolderSettings,
+  projectKey: string,
+  target: ProjectRailDropTarget,
+): SidebarProjectFolderSettings {
+  if (target.kind === "ungrouped") return unassignProjectFromFolder(settings, projectKey);
+  if (settings.assignments[projectKey] === target.folderId) return settings;
+  return assignProjectToFolder(settings, projectKey, target.folderId);
+}
+
 export function renameProjectFolder(
   settings: SidebarProjectFolderSettings,
   folderId: string,
