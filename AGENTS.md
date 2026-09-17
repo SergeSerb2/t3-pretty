@@ -141,7 +141,10 @@ with `gh pr`. Do not retarget `origin` at github.com.
   `origin pr comment`. Poll checks and comments newer than the last push,
   verify each bot finding against the source, fix real ones, dismiss false
   positives with a written reason. Stay quiet when nothing is new. Stop when
-  the bots are green on the latest commit.
+  required review and CI checks are green on the latest commit and the PR
+  can merge, then enable auto-merge (or merge). Ignore Buildkite / PR
+  deployment status — another bot monitors those. Do not wait for Buildkite
+  to turn green or treat a red Buildkite run as a finding to fix.
 
 ## Documentation
 

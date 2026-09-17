@@ -179,9 +179,28 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain("background-color: var(--toolbar-control)");
   });
 
-  it("headers use the toolbar palette for their raised glass material", () => {
+  it("sidebar and titlebar share one chrome glass material", () => {
     expect(indexCssSource).toMatch(
-      /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) \{\s*--workspace-glass-surface: var\(--toolbar-background\);/,
+      /html\s+:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\) \{\s*--workspace-glass-surface: var\(--sidebar\);\s*--workspace-glass-opacity: 42%;\s*--workspace-glass-blur: 16px;\s*background-color: transparent;/s,
+    );
+    expect(indexCssSource).not.toContain("--workspace-glass-surface: var(--toolbar-background);");
+    const sidebarRule = indexCssSource.match(/\.workspace-sidebar-glass \{[^}]+\}/)?.[0] ?? "";
+    expect(sidebarRule).not.toContain("background-color: var(--sidebar)");
+    expect(appSidebarLayoutSource).not.toContain("workspace-sidebar-glass bg-sidebar");
+    expect(appSidebarLayoutSource).toContain("will-move` without `moved`");
+    expect(chatViewSource).not.toContain('className="relative bg-background"');
+    expect(pullRequestsRouteSource).not.toContain('className="relative bg-background"');
+  });
+
+  it("chrome glass stays frosted instead of flattening to a solid slab", () => {
+    expect(indexCssSource).not.toContain(
+      "html[data-window-interacting]\n  :is(\n    .workspace-sidebar-glass",
+    );
+    expect(indexCssSource).not.toContain(
+      "@media (prefers-reduced-transparency: reduce), (prefers-contrast: more)",
+    );
+    expect(indexCssSource).toMatch(
+      /@supports not \(\(-webkit-backdrop-filter: blur\(1px\)\) or \(backdrop-filter: blur\(1px\)\)\) \{\s*:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after/s,
     );
   });
 
@@ -191,7 +210,7 @@ describe("glass contract with upstream chrome", () => {
     expect(sidebarRule).not.toContain("isolation: isolate");
     const headerRule =
       indexCssSource.match(
-        /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) \{\s*--workspace-glass-surface:[^}]+\}/,
+        /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) \{\s*--workspace-glass-shadow:[^}]+\}/,
       )?.[0] ?? "";
     expect(headerRule).toContain("position: relative;");
     expect(headerRule).toContain("z-index: 20;");
@@ -201,7 +220,7 @@ describe("glass contract with upstream chrome", () => {
       /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) > \* \{\s*z-index: 1;/,
     );
     expect(indexCssSource).toMatch(
-      /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]*z-index: 0;[^}]*pointer-events: none;[^}]*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturation\)\);/s,
+      /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]*z-index: 0;[^}]*pointer-events: none;[^}]*backdrop-filter: blur\(var\(--workspace-glass-blur, var\(--glass-blur\)\)\)/s,
     );
     expect(chatViewSource).toContain("overflow-clip bg-background");
     expect(chatViewSource).toContain("overflow-x-clip");

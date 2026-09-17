@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260916.1825002441",
+    date: "2026-09-17",
+    items: [
+      {
+        kind: "fixed",
+        title: "Sidebar and titlebar frosted as one glass",
+      },
+      {
+        kind: "new",
+        title: "Collapsible project folders to the sidebar rail",
+      },
+      {
+        kind: "fixed",
+        title: "The left sidebar resizable after the first drag",
+      },
+      {
+        kind: "new",
+        title: "Fill the traffic-light-wide collapsed project rail",
+      },
+      {
+        kind: "fixed",
+        title: "DPoP tokens when the relay endpoint is unchanged",
+      },
+      {
+        kind: "fixed",
+        title: "Bind all interfaces while waiting for a LAN address",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260916.1825002429",
     date: "2026-09-17",
     items: [

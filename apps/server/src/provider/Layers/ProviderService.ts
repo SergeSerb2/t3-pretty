@@ -857,7 +857,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     yield* recordCompletedTurnProperties(properties);
   });
   /**
-   * Whether the credential minted below may drive the user's browser.
+   * Whether the credential minted below may drive the user's browser, devices,
+   * or macOS host. Computer control is environment-wide; browser and device
+   * access honor project overrides.
    *
    * Deny on an unreadable settings file rather than letting the read failure
    * escape: adding `ServerSettingsError` to `ProviderServiceError` would widen
@@ -877,6 +879,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const environment = {
         browser: settings.enableAgentBrowserAccess,
         device: settings.enableAgentDeviceAccess,
+        computer: settings.enableComputerUse,
       };
       if (!browserOverridden && !deviceOverridden) return environment;
       // Provider-only runtimes may omit orchestration. An unresolved project
@@ -885,6 +888,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const denied = {
         browser: browserOverridden ? false : environment.browser,
         device: deviceOverridden ? false : environment.device,
+        computer: environment.computer,
       };
       if (Option.isNone(projectionQuery)) return denied;
       const thread = yield* projectionQuery.value.getThreadShellById(threadId);
@@ -893,13 +897,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       return {
         browser: resolved.enableAgentBrowserAccess,
         device: resolved.enableAgentDeviceAccess,
+        computer: settings.enableComputerUse,
       };
     },
     Effect.catch((cause) =>
       Effect.logWarning(
-        "Could not read server settings; withholding agent browser and device access for this session.",
+        "Could not read server settings; withholding agent browser, device, and computer access for this session.",
         { cause },
-      ).pipe(Effect.as({ browser: false, device: false })),
+      ).pipe(Effect.as({ browser: false, device: false, computer: false })),
     ),
   );
 
@@ -910,6 +915,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     const access = yield* agentAccessSettings(threadId);
     if (access.browser) capabilities.add("preview");
     if (access.device) capabilities.add("device");
+    if (access.computer) capabilities.add("computer-use");
     return capabilities;
   });
 

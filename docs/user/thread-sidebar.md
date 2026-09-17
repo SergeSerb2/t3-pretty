@@ -129,12 +129,18 @@ icons also show 1–9 so the rail is easy to scan.
 
 Hover a project icon and use its **+** to start a thread there without the
 project picker. Right-click an icon for **New thread**, **Settle idle threads**,
-**Project settings**, **Copy path**, and **Remove project**. Settling idle
-threads parks every active thread in that project that is not running, waiting,
-or holding an unseen response.
+**Move to folder**, **Project settings**, **Copy path**, and **Remove project**.
+Use **Move to folder** to group projects such as personal and work, then click
+the folder to collapse or expand it. Drag a project onto a folder to file it,
+or onto **All projects** / the ungrouped list to take it out. Right-click the
+folder to rename, reorder, or delete it; deleting a folder does not remove the
+projects. Settling idle threads parks every active thread in that project that
+is not running, waiting, or holding an unseen response.
 
-When the sidebar is collapsed, the strip stays. Picking a project reopens the sidebar scoped
-to it, and the top entry reopens it with every project.
+When the sidebar is collapsed, the strip stays as a single column of projects.
+Picking a project peeks the full sidebar scoped to it while the pointer stays
+over that sidebar; leaving it collapses the rail again. Use the sidebar toggle
+to keep it open. The top entry peeks every project.
 
 ## Find and reference work
 
