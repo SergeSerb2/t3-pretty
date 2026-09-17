@@ -1604,6 +1604,13 @@ export interface DesktopBridge {
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
   /**
+   * Show or hide native macOS traffic lights. The collapsed icon rail is too
+   * narrow for them; the renderer hides them there and restores them when the
+   * sidebar expands. Optional: older desktop builds lack it, and it is a no-op
+   * off macOS.
+   */
+  setWindowButtonVisibility?: (visible: boolean) => Promise<void>;
+  /**
    * Native window key state, pushed from the main process. Not the renderer's
    * own focus: focus moving into an embedded preview blurs the renderer while
    * the window is still key. Optional; older desktop builds never emit it.

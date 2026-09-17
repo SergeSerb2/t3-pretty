@@ -326,6 +326,23 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+/* Native traffic lights need ~90px. The collapsed 3rem rail cannot hold them,
+   so macOS desktop drops this attribute and the sidebar toggle slides over. */
+html[data-macos-traffic-lights] {
+  --workspace-controls-left: var(--desktop-window-controls-inset, 90px);
+}
+
+[data-sidebar-control] {
+  translate: calc(var(--workspace-controls-left) - env(safe-area-inset-left) - 0.75rem) 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-sidebar-control] {
+    transition: translate var(--sidebar-peek-duration, 280ms)
+      var(--sidebar-peek-ease, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+}
+
 .wco {
   --workspace-topbar-height: env(titlebar-area-height, 52px);
   --workspace-controls-top: env(titlebar-area-y, 0px);

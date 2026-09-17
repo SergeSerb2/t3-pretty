@@ -144,6 +144,7 @@ function makeFakeBrowserWindow(options?: { readonly focused?: boolean }) {
     setTitle: vi.fn(),
     setTitleBarOverlay: vi.fn(),
     setWindowButtonPosition: vi.fn(),
+    setWindowButtonVisibility: vi.fn(),
     show: vi.fn(),
     webContents,
   };
@@ -163,6 +164,7 @@ function makeFakeBrowserWindow(options?: { readonly focused?: boolean }) {
     send: webContents.send,
     setZoomLevel: webContents.setZoomLevel,
     setWindowButtonPosition: window.setWindowButtonPosition,
+    setWindowButtonVisibility: window.setWindowButtonVisibility,
     setBackgroundThrottling: webContents.setBackgroundThrottling,
     setAutoHideCursor: window.setAutoHideCursor,
     setFullScreen: window.setFullScreen,
@@ -840,6 +842,35 @@ describe("DesktopWindow", () => {
         fakeWindow.isFullScreen.mockReturnValue(false);
         fakeWindow.windowListeners.get("leave-full-screen")?.();
         assert.deepEqual(fakeWindow.setWindowButtonPosition.mock.lastCall, [{ x: 16, y: 19 }]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("hides macOS window buttons while the sidebar is collapsed", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({ window: fakeWindow.window, createCount, mainWindow });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        yield* desktopWindow.setWindowButtonVisibility(false);
+        assert.deepEqual(fakeWindow.setWindowButtonVisibility.mock.lastCall, [false]);
+        fakeWindow.setWindowButtonPosition.mockClear();
+        yield* desktopWindow.zoomMain("in");
+        assert.equal(fakeWindow.setWindowButtonPosition.mock.calls.length, 0);
+        assert.deepEqual(fakeWindow.setWindowButtonVisibility.mock.lastCall, [false]);
+
+        yield* desktopWindow.setWindowButtonVisibility(true);
+        assert.deepEqual(fakeWindow.setWindowButtonVisibility.mock.lastCall, [true]);
+        const position = fakeWindow.setWindowButtonPosition.mock.lastCall?.[0];
+        assert.isDefined(position);
+        assert.equal(position.x, 16);
+        const headerCenter = 26 * fakeWindow.window.webContents.getZoomFactor();
+        assert.isAtMost(Math.abs(position.y + 7 - headerCenter), 0.5);
       }).pipe(Effect.provide(layer));
     }),
   );

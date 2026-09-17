@@ -4,6 +4,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type CSSProperties,
@@ -21,6 +22,10 @@ import {
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
+import {
+  MACOS_TRAFFIC_LIGHT_REVEAL_DELAY_MS,
+  shouldReserveMacosTrafficLights,
+} from "../workspaceTitlebar";
 import {
   PanelAnimationSuppressionProvider,
   usePanelAnimationSettings,
@@ -52,9 +57,8 @@ import {
   useSidebarVisibility,
   type SidebarResizableOptions,
 } from "./ui/sidebar";
+import { SIDEBAR_PEEK_ANIMATION_MS, SIDEBAR_PEEK_EASE } from "./ui/sidebarPeek";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-
-const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
 
 function readInitialThreadSidebarWidth(): number {
   try {
@@ -67,15 +71,50 @@ function readInitialThreadSidebarWidth(): number {
   }
 }
 
-function SidebarControl() {
+function SidebarControl({
+  isMacosDesktop,
+  isWindowFullscreen,
+}: {
+  isMacosDesktop: boolean;
+  isWindowFullscreen: boolean;
+}) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const { toggleSidebar } = useSidebar();
+  const { isMobile, open, toggleSidebar } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const stageBackdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
   );
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle");
+  const reserveTrafficLights = shouldReserveMacosTrafficLights({
+    isFullscreen: isWindowFullscreen,
+    isMacosDesktop,
+    isMobile,
+    sidebarOpen: open,
+  });
+
+  useLayoutEffect(() => {
+    if (!isMacosDesktop) return;
+    document.documentElement.toggleAttribute("data-macos-traffic-lights", reserveTrafficLights);
+    return () => document.documentElement.removeAttribute("data-macos-traffic-lights");
+  }, [isMacosDesktop, reserveTrafficLights]);
+
+  useLayoutEffect(() => {
+    if (!isMacosDesktop) return;
+    const setVisibility = window.desktopBridge?.setWindowButtonVisibility;
+    if (typeof setVisibility !== "function") return;
+    if (!reserveTrafficLights) {
+      void setVisibility(false);
+      return;
+    }
+    const delay = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? 0
+      : MACOS_TRAFFIC_LIGHT_REVEAL_DELAY_MS;
+    const timer = window.setTimeout(() => {
+      void setVisibility(true);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [isMacosDesktop, reserveTrafficLights]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -112,8 +151,14 @@ function SidebarControl() {
     // the panel), so the trigger mirrors it: both clusters sit one extra pixel
     // off their edge and the titlebar reads symmetric.
     <div
-      className="pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center"
+      className="pointer-events-none fixed left-[calc(env(safe-area-inset-left)+0.75rem)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center"
       data-sidebar-control=""
+      style={
+        {
+          "--sidebar-peek-duration": `${SIDEBAR_PEEK_ANIMATION_MS}ms`,
+          "--sidebar-peek-ease": SIDEBAR_PEEK_EASE,
+        } as CSSProperties
+      }
     >
       <Tooltip>
         <TooltipTrigger
@@ -197,9 +242,6 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const sidebarProviderStyle = {
     "--sidebar-width": resolveThreadSidebarCssWidth(sidebarWidth),
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
-    ...(isMacosDesktop && !isWindowFullscreen
-      ? { "--workspace-controls-left": MACOS_TRAFFIC_LIGHTS_LEFT_INSET }
-      : {}),
   } as CSSProperties;
 
   useEffect(() => {
@@ -304,7 +346,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
         {children}
-        <SidebarControl />
+        <SidebarControl isMacosDesktop={isMacosDesktop} isWindowFullscreen={isWindowFullscreen} />
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>
   );

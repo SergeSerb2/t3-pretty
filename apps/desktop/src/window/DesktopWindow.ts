@@ -47,8 +47,10 @@ const TITLEBAR_HEIGHT = 40;
 const MACOS_WORKSPACE_TOPBAR_HEIGHT = 52;
 const MACOS_WINDOW_BUTTON_RADIUS = 7;
 
-function syncMacosWindowButtons(window: Electron.BrowserWindow): void {
+function syncMacosWindowButtons(window: Electron.BrowserWindow, visible: boolean): void {
   if (window.isDestroyed() || window.isFullScreen()) return;
+  window.setWindowButtonVisibility(visible);
+  if (!visible) return;
   window.setWindowButtonPosition({
     x: 16,
     y: Math.round(
@@ -148,6 +150,10 @@ export class DesktopWindow extends Context.Service<
     // guest page instead of the app UI. The menu routes here to always target
     // the main window.
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
+    // Collapsed icon rail is 3rem; native traffic lights do not fit. The
+    // renderer hides them while the sidebar is icon-only, then shows them
+    // again when the sidebar is expanded. No-op off macOS.
+    readonly setWindowButtonVisibility: (visible: boolean) => Effect.Effect<void>;
     // How many threads are waiting on the human right now. Drives the dock
     // badge, plus a single informational bounce whenever that total grows
     // while the window is in the background.
@@ -380,6 +386,7 @@ export const make = Effect.gen(function* () {
   // window key state — the renderer's own focus is not a substitute, since
   // focus moving into an embedded preview blurs it while the window stays key.
   let mainWindowFocused = false;
+  let macosWindowButtonsVisible = true;
   let dockAttentionCount = 0;
   // Growth is only news after the user has seen the window. Empty first
   // counts (sidebar mounts at 0 before threads hydrate) and backlog that
@@ -751,7 +758,7 @@ export const make = Effect.gen(function* () {
         window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, true);
       });
       window.on("leave-full-screen", () => {
-        syncMacosWindowButtons(window);
+        syncMacosWindowButtons(window, macosWindowButtonsVisible);
         window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, false);
       });
     }
@@ -868,7 +875,9 @@ export const make = Effect.gen(function* () {
       // Re-push so a first load (or crash-recovery reload) still gets the
       // current key state.
       sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, mainWindowFocused);
-      if (environment.platform === "darwin") syncMacosWindowButtons(window);
+      if (environment.platform === "darwin") {
+        syncMacosWindowButtons(window, macosWindowButtonsVisible);
+      }
     });
     window.webContents.on(
       "did-fail-load",
@@ -1165,12 +1174,23 @@ export const make = Effect.gen(function* () {
       webContents.setZoomLevel(
         direction === "reset" ? 0 : webContents.getZoomLevel() + (direction === "in" ? 0.5 : -0.5),
       );
-      if (environment.platform === "darwin") syncMacosWindowButtons(window.value);
+      if (environment.platform === "darwin") {
+        syncMacosWindowButtons(window.value, macosWindowButtonsVisible);
+      }
       // Chromium pushes the new level down to embedded guests, which would zoom
       // the previewed page along with the app UI. The preview browser keeps its
       // own zoom, so put each guest back where the preview left it.
       yield* previewManager.reapplyZoom();
     }),
+    setWindowButtonVisibility: Effect.fn("desktop.window.setWindowButtonVisibility")(
+      function* (visible) {
+        macosWindowButtonsVisible = visible;
+        if (environment.platform !== "darwin") return;
+        const window = yield* focusedMainWindow;
+        if (Option.isNone(window) || window.value.isDestroyed()) return;
+        syncMacosWindowButtons(window.value, visible);
+      },
+    ),
     setDockAttention: Effect.fn("desktop.window.setDockAttention")(function* (count) {
       const previousCount = dockAttentionCount;
       const seeded = dockAttentionSeeded;
