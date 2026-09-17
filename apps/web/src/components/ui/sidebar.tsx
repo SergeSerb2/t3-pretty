@@ -22,7 +22,7 @@ import { useIsMobile } from "~/hooks/useMediaQuery";
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
 import { clampSidebarWidth, formatSidebarWidth } from "./sidebarResize";
 import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState";
-import { useSidebarPeek } from "./sidebarPeek";
+import { SIDEBAR_PEEK_ANIMATION_MS, sidebarPeekDatasetValue, useSidebarPeek } from "./sidebarPeek";
 import * as Schema from "effect/Schema";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
@@ -41,6 +41,7 @@ type SidebarContextProps = {
   isMobile: boolean;
   toggleSidebar: () => void;
   peeking: boolean;
+  peekFlyout: boolean;
   peekNow: () => void;
   onPeekPointerEnter: () => void;
   onPeekPointerLeave: () => void;
@@ -150,7 +151,7 @@ function SidebarProvider({
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
   const state = resolveSidebarState({ isMobile, open, openMobile });
-  const { peeking, peekNow, onPeekPointerEnter, onPeekPointerLeave } = useSidebarPeek(
+  const { peeking, peekFlyout, peekNow, onPeekPointerEnter, onPeekPointerLeave } = useSidebarPeek(
     !isMobile && !open,
   );
 
@@ -164,6 +165,7 @@ function SidebarProvider({
       state,
       toggleSidebar,
       peeking,
+      peekFlyout,
       peekNow,
       onPeekPointerEnter,
       onPeekPointerLeave,
@@ -176,6 +178,7 @@ function SidebarProvider({
       openMobile,
       toggleSidebar,
       peeking,
+      peekFlyout,
       peekNow,
       onPeekPointerEnter,
       onPeekPointerLeave,
@@ -228,6 +231,7 @@ function Sidebar({
     openMobile,
     setOpenMobile,
     peeking,
+    peekFlyout,
     onPeekPointerEnter,
     onPeekPointerLeave,
   } = useSidebar();
@@ -306,18 +310,24 @@ function Sidebar({
     );
   }
 
-  const flyout = state === "collapsed" && peeking;
+  const flyoutPresent = state === "collapsed" && peekFlyout;
+  const peekingValue = sidebarPeekDatasetValue(flyoutPresent, peeking);
 
   return (
     <SidebarInstanceContext value={instanceContextValue}>
       <div
         className="group peer hidden text-sidebar-foreground md:block"
-        data-collapsible={state === "collapsed" && !peeking ? collapsible : ""}
-        data-peeking={flyout ? "true" : undefined}
+        data-collapsible={state === "collapsed" && !flyoutPresent ? collapsible : ""}
+        data-peeking={peekingValue}
         data-side={side}
         data-slot="sidebar"
-        data-state={flyout ? "expanded" : state}
+        data-state={flyoutPresent ? "expanded" : state}
         data-variant={variant}
+        style={
+          {
+            "--sidebar-peek-duration": `${SIDEBAR_PEEK_ANIMATION_MS}ms`,
+          } as React.CSSProperties
+        }
       >
         {/* This is what handles the sidebar gap on desktop */}
         <div
@@ -330,7 +340,7 @@ function Sidebar({
               ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
               : "group-data-[collapsible=icon]:w-(--sidebar-width-icon)",
             // A peek flyout must not push the chat; the icon gap stays reserved.
-            "group-data-[peeking=true]:w-(--sidebar-width-icon)",
+            "group-data-[peeking]:w-(--sidebar-width-icon)",
           )}
           data-slot="sidebar-gap"
         />
@@ -345,7 +355,12 @@ function Sidebar({
             variant === "floating" || variant === "inset"
               ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
               : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
-            "group-data-[peeking=true]:z-40 group-data-[peeking=true]:shadow-[8px_0_24px_rgba(0,0,0,0.18)]",
+            // Peek keeps the overlay at full width and reveals it with clip-path
+            // so the thread list does not reflow on every frame.
+            "group-data-[peeking]:z-40 group-data-[peeking]:w-(--sidebar-width)! group-data-[peeking]:overflow-hidden",
+            "motion-safe:group-data-[peeking]:transition-[clip-path]! motion-safe:group-data-[peeking]:[transition-duration:var(--sidebar-peek-duration)]! motion-safe:group-data-[peeking]:ease-[cubic-bezier(0.23,1,0.32,1)]!",
+            "group-data-[peeking=true]:clip-path-[inset(0_0_0_0)] group-data-[peeking=true]:shadow-[8px_0_24px_rgba(0,0,0,0.18)]",
+            "group-data-[peeking=out]:clip-path-[inset(0_calc(100%_-_var(--sidebar-width-icon))_0_0)]",
             className,
           )}
           data-slot="sidebar-container"
@@ -815,7 +830,7 @@ function SidebarMenuButton({
   isActive?: boolean;
   tooltip?: string | React.ComponentProps<typeof TooltipPopup>;
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
-  const { isMobile, state, peeking } = useSidebar();
+  const { isMobile, state, peekFlyout } = useSidebar();
 
   const defaultProps = {
     className: cn(sidebarMenuButtonVariants({ size, variant }), className),
@@ -847,7 +862,7 @@ function SidebarMenuButton({
   // stays available while the sidebar is expanded. Labelled rows only need
   // it when collapsed.
   const hideTooltip =
-    size === "icon" || size === "tile" ? isMobile : state !== "collapsed" || peeking || isMobile;
+    size === "icon" || size === "tile" ? isMobile : state !== "collapsed" || peekFlyout || isMobile;
 
   return (
     <Tooltip>

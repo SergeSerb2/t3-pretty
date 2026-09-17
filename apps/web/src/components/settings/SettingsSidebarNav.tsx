@@ -118,7 +118,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navItems = SETTINGS_NAV_ITEMS.filter(
     (item) => item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch),
   );
-  const { isMobile, setOpenMobile, open, peeking, peekNow } = useSidebar();
+  const { isMobile, setOpenMobile, open, peeking, peekFlyout, peekNow } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const focusSearchAfterExpandRef = useRef(false);
   const [query, setQuery] = useState("");
@@ -247,13 +247,13 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     },
     [activeResultIndex, clearSearch, handleSearchResultClick, isSearching, results],
   );
-  if (!isMobile && !open && !peeking) {
+  if (!isMobile && !open && !peekFlyout) {
     return (
       <>
         <SidebarContent className="overflow-x-hidden px-1.5 py-2">
-          <div className="flex flex-col items-stretch gap-1">
+          <div className="flex flex-col items-center gap-0.5">
             <SidebarMenuButton
-              size="tile"
+              size="icon"
               className={COLLAPSED_SWITCHER_CONTROL_CLASS}
               aria-label="Search settings"
               tooltip="Search settings"
@@ -267,7 +267,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
             {navItems.map(({ to, label, icon: Icon }) => (
               <SidebarMenuButton
                 key={to}
-                size="tile"
+                size="icon"
                 className={COLLAPSED_SWITCHER_CONTROL_CLASS}
                 aria-label={label}
                 tooltip={label}

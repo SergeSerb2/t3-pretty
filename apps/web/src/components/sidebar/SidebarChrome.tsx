@@ -208,7 +208,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   }, [canGoBack, closeMobileSidebar, navigate]);
 
   return (
-    <SidebarMenu className="flex-row items-center group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:[&>li]:ml-0 group-data-[collapsible=icon]:w-full">
+    <SidebarMenu className="flex-row items-center group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-0.5 group-data-[collapsible=icon]:[&>li]:ml-0">
       {currentFooterPage ? (
         <SidebarMenuItem className="min-w-0 flex-1">
           <SidebarMenuButton
@@ -249,7 +249,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
-    <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1 group-data-[collapsible=icon]:hidden">
+    <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
       <div className="contents group-data-[collapsible=icon]:hidden">
         <SidebarProviderUpdatePill />
         <SidebarUpdateArchitectureWarning />

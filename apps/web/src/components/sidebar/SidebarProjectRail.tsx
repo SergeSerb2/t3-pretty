@@ -65,9 +65,6 @@ function FolderRailIcon({ folder }: { readonly folder: SidebarProjectFolder }) {
 const RAIL_TOOLTIP_CLASS =
   "max-w-72 transition-[width,height,scale,opacity,translate] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] data-starting-style:-translate-x-1 data-ending-style:-translate-x-1";
 
-const COLLAPSED_ROW_BUTTON_CLASS =
-  "aspect-auto h-9 w-full min-w-0 justify-start gap-2 px-1.5 group-data-[collapsible=icon]:size-auto! group-data-[collapsible=icon]:h-9! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:px-1.5!";
-
 const EMPTY_FOLDER_SETTINGS: SidebarProjectFolderSettings = { folders: [], assignments: {} };
 const RAIL_DROP_HIGHLIGHT_CLASS = "bg-sidebar-row-hover ring-1 ring-ring/80";
 const RAIL_FOLDER_BEFORE_CLASS = "shadow-[inset_0_2px_0_0_var(--color-ring)]";
@@ -176,7 +173,6 @@ function ProjectRailItem({
   jumpNumber,
   selected,
   attention,
-  docked,
   onSelectProject,
   onNewThreadInProject,
   onProjectContextMenu,
@@ -189,7 +185,6 @@ function ProjectRailItem({
   jumpNumber: number | null;
   selected: boolean;
   attention: ProjectRailAttention | null;
-  docked: boolean;
   onSelectProject: (project: SidebarProjectSnapshot) => void;
   onNewThreadInProject?: ((project: SidebarProjectSnapshot) => void) | undefined;
   onProjectContextMenu?:
@@ -204,8 +199,7 @@ function ProjectRailItem({
   return (
     <div
       className={cn(
-        "group/rail-item relative min-w-0 shrink-0",
-        !docked && "w-full",
+        "group/rail-item relative shrink-0",
         draggable && "cursor-grab",
         dragging && "opacity-50",
       )}
@@ -214,7 +208,7 @@ function ProjectRailItem({
       onDragEnd={onDragEnd}
     >
       <SidebarMenuButton
-        size={docked ? "icon" : "tile"}
+        size="icon"
         aria-label={`Show ${label} threads`}
         tooltip={{
           className: RAIL_TOOLTIP_CLASS,
@@ -223,26 +217,14 @@ function ProjectRailItem({
         }}
         isActive={selected}
         aria-pressed={selected}
-        className={docked ? undefined : COLLAPSED_ROW_BUTTON_CLASS}
         onClick={() => onSelectProject(project)}
         onContextMenu={
           onProjectContextMenu ? (event) => onProjectContextMenu(event, project) : undefined
         }
       >
-        {!docked ? (
-          <span
-            aria-hidden
-            className="w-3.5 shrink-0 text-center font-mono text-[10px] font-semibold tabular-nums text-sidebar-muted-foreground"
-          >
-            {jumpNumber ?? ""}
-          </span>
-        ) : null}
-        <ProjectFavicon
-          project={project}
-          className={docked ? "size-4 shrink-0" : "size-5 shrink-0"}
-        />
+        <ProjectFavicon project={project} className="size-4 shrink-0" />
       </SidebarMenuButton>
-      {docked && jumpNumber !== null ? (
+      {jumpNumber !== null ? (
         <span
           aria-hidden
           className="pointer-events-none absolute -bottom-0.5 -left-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-sm border border-border/80 bg-background/95 px-0.5 font-mono text-[9px] font-semibold tabular-nums text-foreground shadow-sm"
@@ -254,8 +236,7 @@ function ProjectRailItem({
         <span
           aria-hidden
           className={cn(
-            "pointer-events-none absolute z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[9px] font-semibold tabular-nums text-white ring-2 ring-sidebar",
-            docked ? "-right-0.5 -top-0.5" : "right-1 top-1",
+            "pointer-events-none absolute -right-0.5 -top-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[9px] font-semibold tabular-nums text-white ring-2 ring-sidebar",
             attention.dotClass,
           )}
         >
@@ -271,10 +252,7 @@ function ProjectRailItem({
             event.stopPropagation();
             onNewThreadInProject(project);
           }}
-          className={cn(
-            "absolute z-10 flex size-4 cursor-pointer items-center justify-center rounded-full bg-sidebar-control-surface text-sidebar-foreground opacity-0 ring-1 ring-sidebar-border transition-opacity hover:bg-sidebar-row-hover focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-ring group-hover/rail-item:opacity-100",
-            docked ? "-bottom-1 -right-1" : "right-1.5 top-1/2 -translate-y-1/2",
-          )}
+          className="absolute -bottom-1 -right-1 z-10 flex size-4 cursor-pointer items-center justify-center rounded-full bg-sidebar-control-surface text-sidebar-foreground opacity-0 ring-1 ring-sidebar-border transition-opacity hover:bg-sidebar-row-hover focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-ring group-hover/rail-item:opacity-100"
         >
           <PlusIcon className="size-2.5" />
         </button>
@@ -286,9 +264,9 @@ function ProjectRailItem({
 /**
  * Vertical strip of project icons. The rail is the only project axis in the
  * sidebar: picking an icon scopes the thread list to that project, the top
- * entry shows every project. `docked` sits beside the list; `collapsed` is a
- * single-column project switcher that fills the traffic-light-wide icon rail.
- * Search and new-thread live on the peeked/expanded thread list, not here.
+ * entry shows every project. `docked` sits beside the list; `collapsed` is the
+ * same compact icon column when the sidebar is icon-only. Search and new-thread
+ * live on the peeked/expanded thread list, not here.
  */
 export function SidebarProjectRail({
   variant = "collapsed",
@@ -404,7 +382,6 @@ export function SidebarProjectRail({
       jumpNumber={jumpByProjectKey.get(project.projectKey) ?? null}
       selected={selectedProjectKey === project.projectKey}
       attention={attentionByProjectKey?.get(project.projectKey) ?? null}
-      docked={docked}
       onSelectProject={onSelectProject}
       onNewThreadInProject={onNewThreadInProject}
       onProjectContextMenu={onProjectContextMenu}
@@ -434,8 +411,7 @@ export function SidebarProjectRail({
       <div
         key={item.folder.id}
         className={cn(
-          "min-w-0 rounded-lg bg-sidebar-control-surface/50",
-          docked ? "flex flex-col items-center gap-1 py-0.5" : "flex w-full flex-col gap-1 p-0.5",
+          "flex min-w-0 flex-col items-center gap-0.5 rounded-lg py-0.5",
           dropHighlight === `folder:${item.folder.id}` && RAIL_DROP_HIGHLIGHT_CLASS,
           dropHighlight === `folder-before:${item.folder.id}` && RAIL_FOLDER_BEFORE_CLASS,
           dropHighlight === `folder-after:${item.folder.id}` && RAIL_FOLDER_AFTER_CLASS,
@@ -468,7 +444,7 @@ export function SidebarProjectRail({
         }}
       >
         <div
-          className={cn("relative min-w-0 w-full shrink-0", canDragFolder && "cursor-grab")}
+          className={cn("relative shrink-0", canDragFolder && "cursor-grab")}
           draggable={canDragFolder}
           onDragStart={(event) => {
             event.dataTransfer.setData(RAIL_FOLDER_DRAG_TYPE, item.folder.id);
@@ -483,7 +459,7 @@ export function SidebarProjectRail({
           }}
         >
           <SidebarMenuButton
-            size={docked ? "icon" : "tile"}
+            size="icon"
             aria-label={`${item.folder.collapsed ? "Expand" : "Collapse"} ${item.folder.name}`}
             aria-expanded={!item.folder.collapsed}
             tooltip={{
@@ -499,21 +475,18 @@ export function SidebarProjectRail({
               ),
             }}
             isActive={containsSelected && item.folder.collapsed}
-            className={docked ? undefined : COLLAPSED_ROW_BUTTON_CLASS}
             onClick={() => onToggleFolder?.(item.folder.id)}
             onContextMenu={
               onFolderContextMenu ? (event) => onFolderContextMenu(event, item.folder) : undefined
             }
           >
-            {!docked ? <span className="w-3.5 shrink-0" aria-hidden /> : null}
             <FolderRailIcon folder={item.folder} />
           </SidebarMenuButton>
           {item.folder.collapsed && attention ? (
             <span
               aria-hidden
               className={cn(
-                "pointer-events-none absolute z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[9px] font-semibold tabular-nums text-white ring-2 ring-sidebar",
-                docked ? "-right-0.5 -top-0.5" : "right-1 top-1",
+                "pointer-events-none absolute -right-0.5 -top-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[9px] font-semibold tabular-nums text-white ring-2 ring-sidebar",
                 attention.dotClass,
               )}
             >
@@ -531,10 +504,10 @@ export function SidebarProjectRail({
       <nav
         aria-label="Projects"
         className={cn(
-          "flex min-h-0 flex-col",
+          "flex min-h-0 flex-col items-center gap-1",
           docked
-            ? "w-12 shrink-0 items-center gap-1.5 border-r border-sidebar-border/60 py-2"
-            : "flex-1 items-stretch gap-1 px-1.5 py-1.5",
+            ? "w-12 shrink-0 border-r border-sidebar-border/60 py-2"
+            : "mx-auto w-10 flex-1 rounded-2xl bg-sidebar-control-surface/40 py-1.5",
         )}
         onDragLeave={(event) => {
           const next = event.relatedTarget;
@@ -544,27 +517,22 @@ export function SidebarProjectRail({
       >
         {onSelectAll ? (
           <SidebarMenuButton
-            size={docked ? "icon" : "tile"}
+            size="icon"
             aria-label="All projects"
             tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "All projects" }}
             isActive={selectedProjectKey === null}
             aria-pressed={selectedProjectKey === null}
-            className={cn(
-              docked ? undefined : COLLAPSED_ROW_BUTTON_CLASS,
-              dropHighlight === "all" && RAIL_DROP_HIGHLIGHT_CLASS,
-            )}
+            className={cn(dropHighlight === "all" && RAIL_DROP_HIGHLIGHT_CLASS)}
             onClick={onSelectAll}
             onDragOver={highlightUngrouped("all")}
             onDrop={dropUngrouped("all")}
           >
-            {!docked ? <span className="w-3.5 shrink-0" aria-hidden /> : null}
             <LayersIcon />
           </SidebarMenuButton>
         ) : null}
         <div
           className={cn(
-            "flex min-h-0 w-full flex-1 flex-col overflow-y-auto overflow-x-hidden py-1",
-            docked ? "items-center gap-1.5" : "items-stretch gap-1",
+            "flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden py-0.5",
             dropHighlight === "list" && "rounded-lg",
             dropHighlight === "list" && RAIL_DROP_HIGHLIGHT_CLASS,
             dropHighlight === "folder-end" && RAIL_FOLDER_AFTER_CLASS,
@@ -573,17 +541,15 @@ export function SidebarProjectRail({
           onDrop={dropUngrouped("list")}
         >
           {railItems}
+          <SidebarMenuButton
+            size="icon"
+            aria-label="Add project"
+            tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "Add project" }}
+            onClick={openAddProject}
+          >
+            <FolderPlusIcon />
+          </SidebarMenuButton>
         </div>
-        <SidebarMenuButton
-          size={docked ? "icon" : "tile"}
-          aria-label="Add project"
-          tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "Add project" }}
-          className={docked ? undefined : COLLAPSED_ROW_BUTTON_CLASS}
-          onClick={openAddProject}
-        >
-          {!docked ? <span className="w-3.5 shrink-0" aria-hidden /> : null}
-          <FolderPlusIcon />
-        </SidebarMenuButton>
       </nav>
     </TooltipProvider>
   );
