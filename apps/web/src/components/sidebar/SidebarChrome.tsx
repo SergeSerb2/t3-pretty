@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, CircleDotIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
@@ -235,14 +235,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               onClick={handlePullRequestsClick}
             />
           ) : null}
-          <SidebarUtilityItem
-            icon={<CircleDotIcon />}
-            label="Issues"
-            onClick={() => {
-              closeMobileSidebar();
-              void navigate({ to: "/issues" });
-            }}
-          />
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"

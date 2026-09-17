@@ -1,4 +1,3 @@
-import { IssuesService } from "./issues/IssuesService.ts";
 import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
@@ -496,7 +495,6 @@ const makeWsRpcLayer = (
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
-      const issues = yield* IssuesService;
       const currentSessionId = currentSession.sessionId;
       const crypto = yield* Crypto.Crypto;
       const sql = yield* SqlClient.SqlClient;
@@ -1828,45 +1826,6 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
-        [WS_METHODS.issuesConnections]: (_input) =>
-          observeRpcEffect(WS_METHODS.issuesConnections, issues.connections, {
-            "rpc.aggregate": "issues",
-          }),
-        [WS_METHODS.issuesConnect]: (input) =>
-          observeRpcEffect(WS_METHODS.issuesConnect, issues.connect(input), {
-            "rpc.aggregate": "issues",
-          }),
-        [WS_METHODS.issuesDisconnect]: (input) =>
-          observeRpcEffect(WS_METHODS.issuesDisconnect, issues.disconnect(input.provider), {
-            "rpc.aggregate": "issues",
-          }),
-        [WS_METHODS.issuesMetadata]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.issuesMetadata,
-            issues.metadata(input.provider, input.scopeId),
-            { "rpc.aggregate": "issues" },
-          ),
-        [WS_METHODS.issuesList]: (input) =>
-          observeRpcEffect(WS_METHODS.issuesList, issues.list(input), {
-            "rpc.aggregate": "issues",
-          }),
-        [WS_METHODS.issuesDetail]: (input) =>
-          observeRpcEffect(WS_METHODS.issuesDetail, issues.detail(input), {
-            "rpc.aggregate": "issues",
-          }),
-        [WS_METHODS.issuesCreate]: (input) =>
-          observeRpcEffect(WS_METHODS.issuesCreate, issues.create(input), {
-            "rpc.aggregate": "issues",
-          }),
-        [WS_METHODS.issuesUpdate]: (input) =>
-          observeRpcEffect(WS_METHODS.issuesUpdate, issues.update(input), {
-            "rpc.aggregate": "issues",
-          }),
-        [WS_METHODS.issuesComment]: (input) =>
-          observeRpcEffect(WS_METHODS.issuesComment, issues.comment(input), {
-            "rpc.aggregate": "issues",
-          }),
-
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,
@@ -3764,7 +3723,6 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         ),
     });
     const pullRequests = yield* PullRequestService.PullRequestService;
-    const issueService = yield* IssuesService;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -3806,7 +3764,6 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               previewAutomationBroker,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
-              Layer.provide(Layer.succeed(IssuesService, issueService)),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
               Layer.provide(AgentSessionScanner.layer),
               Layer.provide(ProviderMaintenanceRunner.layer),

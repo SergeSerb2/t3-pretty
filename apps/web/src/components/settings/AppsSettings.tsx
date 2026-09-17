@@ -6,7 +6,6 @@
  * or remove a connection, and register the bring-your-own OAuth clients that
  * families without dynamic registration require.
  */
-import { Link } from "@tanstack/react-router";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import {
   AppConnectionId,
@@ -379,9 +378,6 @@ export function AppsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <Link to="/issues" className="text-sm font-medium underline">
-        Manage Linear and Sentry issues
-      </Link>
       <SettingsSection
         {...searchableSetting("apps-connected")}
         title="Connected apps"
