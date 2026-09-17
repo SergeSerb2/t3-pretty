@@ -16,7 +16,6 @@ import {
   ArrowDownUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  GitPullRequestClosedIcon,
   HammerIcon,
   MessageSquareIcon,
   PencilIcon,
@@ -73,6 +72,7 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
+import { PullRequestGlyph } from "./pullRequestIcons";
 import { openPullRequestLinkOnHost } from "./pullRequestLinkContextMenu";
 import { pullRequestLabelColor } from "./pullRequestList.logic";
 import type {
@@ -453,7 +453,7 @@ function CommentComposer({
             onClick={() => void submit(followUpAction)}
           >
             {followUpAction === "close" ? (
-              <GitPullRequestClosedIcon className="size-3.5" />
+              <PullRequestGlyph.closed className="size-3.5" />
             ) : (
               <RotateCcwIcon className="size-3.5" />
             )}
