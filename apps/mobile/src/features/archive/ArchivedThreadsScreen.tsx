@@ -42,6 +42,7 @@ import {
 import { presentAppMenu } from "../../components/AppMenuHost";
 import { homeListFilterItemsToActions } from "../../components/anchored-menu.logic";
 import type { ArchivedThreadGroup, ArchivedThreadSortOrder } from "./archivedThreadList";
+import { SettingsScreenContent } from "../settings/components/SettingsScreen";
 
 export interface ArchivedThreadsHeaderEnvironment {
   readonly environmentId: EnvironmentId;
@@ -263,6 +264,7 @@ function ArchivedThreadsHeader(props: {
           className="border-b border-header-border bg-header px-3 pb-2.5"
           style={{
             paddingTop: Math.max(insets.top, 12),
+            borderBottomWidth: 0,
           }}
         >
           <View className="min-h-12 flex-row items-center gap-2">
@@ -276,7 +278,7 @@ function ArchivedThreadsHeader(props: {
               <SymbolView
                 name="chevron.left"
                 size={24}
-                tintColorClassName={"accent-foreground"}
+                tintColorClassName="accent-foreground"
                 type="monochrome"
               />
             </Pressable>
@@ -284,7 +286,7 @@ function ArchivedThreadsHeader(props: {
               <SymbolView
                 name="magnifyingglass"
                 size={17}
-                tintColorClassName={"accent-icon"}
+                tintColorClassName="accent-icon"
                 type="monochrome"
               />
               <TextInput
@@ -314,7 +316,7 @@ function ArchivedThreadsHeader(props: {
                       : "line.3.horizontal.decrease.circle"
                   }
                   size={16}
-                  tintColorClassName={"accent-icon"}
+                  tintColorClassName="accent-icon"
                   type="monochrome"
                 />
               </Pressable>
@@ -495,7 +497,7 @@ function ArchivedThreadRow(props: {
             <SymbolView
               name="archivebox.fill"
               size={15}
-              tintColorClassName={"accent-icon-subtle"}
+              tintColorClassName="accent-icon-subtle"
               type="monochrome"
             />
           </View>
@@ -517,7 +519,7 @@ function ArchivedThreadRow(props: {
                 <SymbolView
                   name="arrow.triangle.branch"
                   size={10}
-                  tintColorClassName={"accent-icon-subtle"}
+                  tintColorClassName="accent-icon-subtle"
                   type="monochrome"
                 />
                 <Text
@@ -655,7 +657,7 @@ export function ArchivedThreadsScreen(props: {
     if (isInitialLoad) {
       return (
         <View className="items-center py-16">
-          <ActivityIndicator colorClassName={"accent-icon"} />
+          <ActivityIndicator colorClassName="accent-icon" />
           <Text className="mt-3 text-sm text-foreground-muted">Loading archive...</Text>
         </View>
       );
@@ -686,37 +688,39 @@ export function ArchivedThreadsScreen(props: {
         sortOrder={props.sortOrder}
       />
 
-      <GestureDetector gesture={archiveScrollGesture}>
-        <LegendList
-          className="flex-1"
-          contentContainerStyle={{
-            paddingBottom: 32,
-            paddingHorizontal: 16,
-            paddingTop: 4,
-          }}
-          contentInsetAdjustmentBehavior="automatic"
-          data={listItems}
-          estimatedItemSize={62}
-          getItemType={(item) => item.kind}
-          keyboardDismissMode="on-drag"
-          keyboardShouldPersistTaps="handled"
-          keyExtractor={(item) => item.key}
-          ListEmptyComponent={listEmptyComponent}
-          ListHeaderComponent={
-            props.error ? <ArchiveError message={props.error} onRetry={props.onRefresh} /> : null
-          }
-          onScrollBeginDrag={() => openSwipeableRef.current?.close()}
-          refreshControl={
-            <RefreshControl
-              onRefresh={props.onRefresh}
-              refreshing={props.isLoading && !isInitialLoad}
-              tintColorClassName={String("accent-icon")}
-            />
-          }
-          renderItem={renderListItem}
-          showsVerticalScrollIndicator={false}
-        />
-      </GestureDetector>
+      <SettingsScreenContent>
+        <GestureDetector gesture={archiveScrollGesture}>
+          <LegendList
+            className="flex-1"
+            contentContainerStyle={{
+              paddingBottom: 32,
+              paddingHorizontal: 16,
+              paddingTop: 4,
+            }}
+            contentInsetAdjustmentBehavior="automatic"
+            data={listItems}
+            estimatedItemSize={62}
+            getItemType={(item) => item.kind}
+            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="handled"
+            keyExtractor={(item) => item.key}
+            ListEmptyComponent={listEmptyComponent}
+            ListHeaderComponent={
+              props.error ? <ArchiveError message={props.error} onRetry={props.onRefresh} /> : null
+            }
+            onScrollBeginDrag={() => openSwipeableRef.current?.close()}
+            refreshControl={
+              <RefreshControl
+                onRefresh={props.onRefresh}
+                refreshing={props.isLoading && !isInitialLoad}
+                tintColorClassName={String("accent-icon")}
+              />
+            }
+            renderItem={renderListItem}
+            showsVerticalScrollIndicator={false}
+          />
+        </GestureDetector>
+      </SettingsScreenContent>
     </View>
   );
 }

@@ -18,15 +18,11 @@ import { useKeyboardState } from "react-native-keyboard-controller";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { appBlurTargetRef } from "../lib/appBlurTarget";
 import { useUniwindTheme } from "../lib/useUniwindTheme";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../native/native-glass";
-import { cn } from "../lib/cn";
 import { flattenMenuActions } from "./anchored-menu.logic";
-import { type AppSymbolName, SymbolView } from "./AppSymbol";
-import { AppText as Text } from "./AppText";
 import { OverlayPortal } from "./OverlayPortal";
-import { GlassBackdrop } from "./GlassBackdrop";
+import { MaterialMenuPopup } from "./MaterialMenuPopup";
 
 const MENU_WIDTH = 268;
 const MENU_RADIUS = 16;
@@ -38,7 +34,13 @@ const BOTTOM_TOOLBAR_CLEARANCE = 56;
 
 const MENU_ENTERING = FadeIn.duration(180).reduceMotion(ReduceMotion.System);
 
-const PLACEHOLDER_ANCHOR = { x: 0, y: 0, width: 0, height: 0 } as const;
+const PLACEHOLDER_ANCHOR = {
+  x: 0,
+  y: 0,
+  width: 0,
+  height: 0,
+  keyboardWasVisible: false,
+} as const;
 
 export type MenuEdgePlacement = "top-start" | "top-end" | "bottom-start" | "bottom-end";
 
@@ -47,6 +49,7 @@ type AnchorSnapshot = {
   readonly y: number;
   readonly width: number;
   readonly height: number;
+  readonly keyboardWasVisible: boolean;
 };
 
 type OverlayFrame = {
@@ -97,6 +100,7 @@ function anchorForPlacement(
         y: overlay.y + overlay.height - insets.bottom - BOTTOM_TOOLBAR_CLEARANCE - size,
         width: size,
         height: size,
+        keyboardWasVisible: false,
       };
     case "bottom-end":
       return {
@@ -104,6 +108,7 @@ function anchorForPlacement(
         y: overlay.y + overlay.height - insets.bottom - BOTTOM_TOOLBAR_CLEARANCE - size,
         width: size,
         height: size,
+        keyboardWasVisible: false,
       };
     case "top-start":
       return {
@@ -111,6 +116,7 @@ function anchorForPlacement(
         y: overlay.y + insets.top,
         width: size,
         height: size,
+        keyboardWasVisible: false,
       };
     case "top-end":
       return {
@@ -118,16 +124,21 @@ function anchorForPlacement(
         y: overlay.y + insets.top,
         width: size,
         height: size,
+        keyboardWasVisible: false,
       };
   }
 }
 
 /**
- * Token-styled anchored dropdown used on both platforms. iOS tap menus used
- * to be stock UIMenu; that chrome reads as a foreign sheet over World Scenery
- * glass cards, so this surface matches the rest of the app (16pt continuous
- * radius, frosted card, DM Sans rows). Long-press row previews still use the
- * native context menu.
+ * Anchored dropdown used on both platforms. iOS tap menus use T3 Pretty's
+ * token-styled surface instead of stock UIMenu chrome so they match World
+ * Scenery glass cards (16pt continuous radius, frosted card, DM Sans rows).
+ * Long-press row previews still use the native context menu.
+ *
+ * On Android, this adapts the app's MenuView actions to the parent's Material
+ * dropdowns while retaining the app theme. Editor menus render native
+ * Material rows in-window to retain keyboard focus; other menus use the
+ * native popup for placement, animation, and dismissal.
  *
  * Lives at upstream's AndroidAnchoredMenu.tsx path on purpose: keeping the
  * implementation in the file upstream edits lets nightly syncs merge as
@@ -168,9 +179,9 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
   const open = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     anchorRef.current?.measureInWindow((x, y, width, height) => {
-      setMeasuredAnchor({ x, y, width, height });
+      setMeasuredAnchor({ x, y, width, height, keyboardWasVisible: keyboardVisible });
     });
-  }, []);
+  }, [keyboardVisible]);
 
   const measureOverlay = useCallback(() => {
     overlayRef.current?.measureInWindow((x, y, width, height) => {
@@ -179,9 +190,11 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
     });
   }, []);
 
+  // The native popup owns back dismissal. In-window menus need a handler;
+  // back returns to the parent submenu before closing the overlay.
   const submenuDepth = path.length;
   useEffect(() => {
-    if (measuredAnchor === null) {
+    if (measuredAnchor === null || !measuredAnchor.keyboardWasVisible) {
       return;
     }
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -437,7 +450,58 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
               className="absolute inset-0"
               onPress={close}
             />
-            {overlayMenu}
+            {Platform.OS === "android" ? (
+              !placeable || local === null ? null : !anchor.keyboardWasVisible ? (
+                <MaterialMenuPopup
+                  anchor={local}
+                  actions={levelActions}
+                  title={props.title}
+                  parent={parent}
+                  onPress={onPressItem}
+                  onBack={() => setPath((current) => current.slice(0, -1))}
+                  onClose={close}
+                />
+              ) : (
+                <Animated.View
+                  entering={FadeIn.duration(120)}
+                  className="absolute w-[250px] overflow-hidden rounded-[4px] bg-card-alt shadow-md"
+                  style={{
+                    left,
+                    maxHeight,
+                    ...(opensDown
+                      ? { top: local.y + local.height + ANCHOR_GAP }
+                      : { bottom: (rootHeight ?? 0) - local.y + ANCHOR_GAP }),
+                  }}
+                >
+                  {/* Compose DropdownMenu takes popup focus in the pinned Expo UI version.
+                      Keep editor menus in-window so opening one preserves the keyboard. */}
+
+                  {/* keyboardShouldPersistTaps: the menu often opens over an
+                    active editor; the first item tap must act, not just
+                    dismiss the keyboard. */}
+                  <ScrollView
+                    contentContainerClassName="py-2"
+                    bounces={false}
+                    keyboardShouldPersistTaps="always"
+                    showsVerticalScrollIndicator={false}
+                  >
+                    <MaterialMenuPopup
+                      inline
+                      anchor={local}
+                      actions={levelActions}
+                      title={props.title}
+                      parent={parent}
+                      onPress={onPressItem}
+                      onBack={() => setPath((current) => current.slice(0, -1))}
+                      onClose={close}
+                    />
+                  </ScrollView>
+                </Animated.View>
+              )
+            ) : (
+              overlayMenu
+            )}
+
           </View>
         </OverlayPortal>
       )}
