@@ -4194,3 +4194,5 @@
 - `web-typecheck` failed after merging `v0.0.43-nightly.20260917.1866`; repaired with `gpt-5.6-sol`: The repair restores and correctly orders diff refresh wiring, supports the parent's embedded DiffPanel call without weakening normal callers, and updates pull-request rendering for the fork's destination-aware findings and keyed view state. No upstream behavior or tests are omitted.
   - edited `apps/web/src/components/DiffPanel.tsx`
   - edited `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx`
+- `desktop-typecheck` failed after merging `v0.0.43-nightly.20260917.1866`; repaired with `gpt-5.6-sol`: Removed the duplicate bridge property that caused TS1117, preserving T3 Pretty's fault-tolerant `getPathForFile` behavior. Suggestion-level diagnostics remain unchanged as required.
+  - edited `apps/desktop/src/preload.ts`
