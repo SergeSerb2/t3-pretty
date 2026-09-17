@@ -166,8 +166,8 @@ function SidebarProvider({
           {
             "--sidebar-width": SIDEBAR_WIDTH,
             // On macOS the traffic-light inset is wider than the default 3rem
-            // rail. Grow the collapsed rail so project icons sit beside the
-            // lights, not under them.
+            // rail. Grow the collapsed rail so it clears the lights; the
+            // project dock fills that width instead of a skinny centered strip.
             "--sidebar-width-icon": `max(${SIDEBAR_WIDTH_ICON}, var(--workspace-controls-left, 0px))`,
             "--workspace-titlebar-content-left":
               "calc(var(--workspace-controls-left) + var(--workspace-titlebar-control-size) + var(--workspace-titlebar-control-gap))",
@@ -715,7 +715,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button flex w-full cursor-pointer items-center gap-[var(--sidebar-control-gap)] overflow-hidden text-left outline-hidden ring-ring transition-[width,height,padding] hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 active:bg-sidebar-row-active active:text-sidebar-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-row-selected data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[state=open]:hover:bg-sidebar-row-hover data-[state=open]:hover:text-sidebar-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-[var(--sidebar-content-inset)]! [&>span:last-child]:truncate [&>svg:not([class*='size-'])]:size-4 [&>svg]:shrink-0 [&>svg]:text-[var(--sidebar-icon-color)] hover:[&>svg]:text-sidebar-foreground active:[&>svg]:text-sidebar-foreground data-[active=true]:[&>svg]:text-sidebar-foreground",
+  "peer/menu-button flex w-full cursor-pointer items-center gap-[var(--sidebar-control-gap)] overflow-hidden text-left outline-hidden ring-ring transition-[width,height,padding] hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 active:bg-sidebar-row-active active:text-sidebar-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-row-selected data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[state=open]:hover:bg-sidebar-row-hover data-[state=open]:hover:text-sidebar-foreground [&>span:last-child]:truncate [&>svg:not([class*='size-'])]:size-4 [&>svg]:shrink-0 [&>svg]:text-[var(--sidebar-icon-color)] hover:[&>svg]:text-sidebar-foreground active:[&>svg]:text-sidebar-foreground data-[active=true]:[&>svg]:text-sidebar-foreground",
   {
     defaultVariants: {
       size: "default",
@@ -724,10 +724,12 @@ const sidebarMenuButtonVariants = cva(
     variants: {
       size: {
         default:
-          "h-8 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-1.5 text-sm",
+          "h-8 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-1.5 text-sm group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-[var(--sidebar-content-inset)]!",
         icon: "size-8 justify-center rounded-[var(--control-radius)] p-0",
-        lg: "h-12 rounded-lg p-2 text-sm group-data-[collapsible=icon]:p-0!",
-        sm: "h-7 rounded-lg p-2 text-xs",
+        // Fills a collapsed-dock cell instead of staying a centered 32px icon.
+        tile: "aspect-square h-auto min-h-8 w-full min-w-0 justify-center rounded-[var(--control-radius)] p-1 group-data-[collapsible=icon]:size-auto! group-data-[collapsible=icon]:h-auto! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:p-1!",
+        lg: "h-12 rounded-lg p-2 text-sm group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-0!",
+        sm: "h-7 rounded-lg p-2 text-xs group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-[var(--sidebar-content-inset)]!",
       },
       variant: {
         default: "font-medium text-sidebar-muted-foreground/80",
@@ -777,9 +779,11 @@ function SidebarMenuButton({
     };
   }
 
-  // Icon buttons never show a text label, so their tooltip stays available
-  // while the sidebar is expanded. Labelled rows only need it when collapsed.
-  const hideTooltip = size === "icon" ? isMobile : state !== "collapsed" || isMobile;
+  // Icon and tile buttons never show a full text label, so their tooltip
+  // stays available while the sidebar is expanded. Labelled rows only need
+  // it when collapsed.
+  const hideTooltip =
+    size === "icon" || size === "tile" ? isMobile : state !== "collapsed" || isMobile;
 
   return (
     <Tooltip>
