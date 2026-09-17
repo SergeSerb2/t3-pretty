@@ -13,9 +13,11 @@ import {
   projectFolderMenuItems,
   RAIL_PROJECT_DRAG_TYPE,
   renameProjectFolder,
+  reorderProjectFolderTo,
   setProjectFolderIcon,
   toggleProjectFolderCollapsed,
   unassignProjectFromFolder,
+  folderDropBeforeId,
   type SidebarProjectFolderSettings,
 } from "./sidebarProjectFolders";
 
@@ -129,6 +131,16 @@ describe("project folder mutations", () => {
       "work",
     ]);
     expect(moveProjectFolder(settings, "work", -1)).toEqual(settings);
+    expect(
+      reorderProjectFolderTo(settings, "home", "work").folders.map((folder) => folder.id),
+    ).toEqual(["home", "work"]);
+    expect(
+      reorderProjectFolderTo(settings, "work", null).folders.map((folder) => folder.id),
+    ).toEqual(["home", "work"]);
+    expect(reorderProjectFolderTo(settings, "work", "home")).toBe(settings);
+    expect(reorderProjectFolderTo(settings, "home", null)).toBe(settings);
+    expect(folderDropBeforeId(settings.folders, "work", "after")).toBe("home");
+    expect(folderDropBeforeId(settings.folders, "home", "after")).toBeNull();
     expect(deleteProjectFolder(settings, "work")).toEqual({
       folders: [{ id: "home", name: "Home", collapsed: false }],
       assignments: { b: "home" },

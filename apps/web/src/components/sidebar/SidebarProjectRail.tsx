@@ -11,7 +11,10 @@ import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { ProjectMonogram } from "../ProjectMonogram";
 import {
   buildProjectRailItems,
+  dataTransferHasRailFolder,
   dataTransferHasRailProject,
+  folderDropBeforeId,
+  RAIL_FOLDER_DRAG_TYPE,
   RAIL_PROJECT_DRAG_TYPE,
   type ProjectRailDropTarget,
   type SidebarProjectFolderSettings,
@@ -67,6 +70,8 @@ const COLLAPSED_ROW_BUTTON_CLASS =
 
 const EMPTY_FOLDER_SETTINGS: SidebarProjectFolderSettings = { folders: [], assignments: {} };
 const RAIL_DROP_HIGHLIGHT_CLASS = "bg-sidebar-row-hover ring-1 ring-ring/80";
+const RAIL_FOLDER_BEFORE_CLASS = "shadow-[inset_0_2px_0_0_var(--color-ring)]";
+const RAIL_FOLDER_AFTER_CLASS = "shadow-[inset_0_-2px_0_0_var(--color-ring)]";
 
 function railDragTypes(event: DragEvent): readonly string[] {
   return event.dataTransfer === null ? [] : Array.from(event.dataTransfer.types);
@@ -298,6 +303,7 @@ export function SidebarProjectRail({
   onToggleFolder,
   onFolderContextMenu,
   onApplyDrop,
+  onReorderFolder,
 }: {
   variant?: "docked" | "collapsed";
   projects: readonly SidebarProjectSnapshot[];
@@ -313,16 +319,31 @@ export function SidebarProjectRail({
   onToggleFolder?: (folderId: string) => void;
   onFolderContextMenu?: (event: MouseEvent<HTMLElement>, folder: SidebarProjectFolder) => void;
   onApplyDrop?: (projectKey: string, target: ProjectRailDropTarget) => void;
+  onReorderFolder?: (folderId: string, beforeFolderId: string | null) => void;
 }) {
   const docked = variant === "docked";
   const items = buildProjectRailItems(projects, folders);
   const jumpByProjectKey = visibleProjectJumpNumbers(items);
   const [draggingProjectKey, setDraggingProjectKey] = useState<string | null>(null);
+  const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
   const [dropHighlight, setDropHighlight] = useState<string | null>(null);
   const canDrag = onApplyDrop !== undefined && folders.folders.length > 0;
+  const canDragFolder = onReorderFolder !== undefined && folders.folders.length > 1;
 
   const acceptRailDrag = (event: DragEvent) => {
+    if (draggingFolderId !== null || dataTransferHasRailFolder(railDragTypes(event))) {
+      return false;
+    }
     if (draggingProjectKey === null && !dataTransferHasRailProject(railDragTypes(event))) {
+      return false;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return true;
+  };
+
+  const acceptFolderDrag = (event: DragEvent) => {
+    if (draggingFolderId === null && !dataTransferHasRailFolder(railDragTypes(event))) {
       return false;
     }
     event.preventDefault();
@@ -339,11 +360,40 @@ export function SidebarProjectRail({
     setDropHighlight(null);
   };
 
+  const finishFolderDrop = (
+    event: DragEvent,
+    target:
+      | { readonly kind: "end" }
+      | { readonly kind: "insert"; readonly folderId: string; readonly place: "before" | "after" },
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const folderId = draggingFolderId ?? event.dataTransfer?.getData(RAIL_FOLDER_DRAG_TYPE);
+    if (folderId !== undefined && folderId.length > 0) {
+      const beforeFolderId =
+        target.kind === "end"
+          ? null
+          : folderDropBeforeId(folders.folders, target.folderId, target.place);
+      onReorderFolder?.(folderId, beforeFolderId);
+    }
+    setDraggingFolderId(null);
+    setDropHighlight(null);
+  };
+
   const highlightUngrouped = (highlight: "all" | "list") => (event: DragEvent<HTMLElement>) => {
+    if (acceptFolderDrag(event)) {
+      setDropHighlight(highlight === "list" ? "folder-end" : null);
+      return;
+    }
     if (!acceptRailDrag(event)) return;
     setDropHighlight(highlight);
   };
-  const dropUngrouped = (event: DragEvent<HTMLElement>) => {
+  const dropUngrouped = (surface: "all" | "list") => (event: DragEvent<HTMLElement>) => {
+    if (draggingFolderId !== null || dataTransferHasRailFolder(railDragTypes(event))) {
+      if (surface === "list") finishFolderDrop(event, { kind: "end" });
+      else event.preventDefault();
+      return;
+    }
     finishDrop(event, { kind: "ungrouped" });
   };
 
@@ -387,15 +437,51 @@ export function SidebarProjectRail({
           "min-w-0 rounded-lg bg-sidebar-control-surface/50",
           docked ? "flex flex-col items-center gap-1 py-0.5" : "flex w-full flex-col gap-1 p-0.5",
           dropHighlight === `folder:${item.folder.id}` && RAIL_DROP_HIGHLIGHT_CLASS,
+          dropHighlight === `folder-before:${item.folder.id}` && RAIL_FOLDER_BEFORE_CLASS,
+          dropHighlight === `folder-after:${item.folder.id}` && RAIL_FOLDER_AFTER_CLASS,
+          draggingFolderId === item.folder.id && "opacity-50",
         )}
         onDragOver={(event) => {
+          if (acceptFolderDrag(event)) {
+            event.stopPropagation();
+            if (draggingFolderId === item.folder.id) {
+              setDropHighlight(null);
+              return;
+            }
+            const rect = event.currentTarget.getBoundingClientRect();
+            const place = event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+            setDropHighlight(`folder-${place}:${item.folder.id}`);
+            return;
+          }
           if (!acceptRailDrag(event)) return;
           event.stopPropagation();
           setDropHighlight(`folder:${item.folder.id}`);
         }}
-        onDrop={(event) => finishDrop(event, { kind: "folder", folderId: item.folder.id })}
+        onDrop={(event) => {
+          if (draggingFolderId !== null || dataTransferHasRailFolder(railDragTypes(event))) {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const place = event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+            finishFolderDrop(event, { kind: "insert", folderId: item.folder.id, place });
+            return;
+          }
+          finishDrop(event, { kind: "folder", folderId: item.folder.id });
+        }}
       >
-        <div className="relative min-w-0 w-full shrink-0">
+        <div
+          className={cn("relative min-w-0 w-full shrink-0", canDragFolder && "cursor-grab")}
+          draggable={canDragFolder}
+          onDragStart={(event) => {
+            event.dataTransfer.setData(RAIL_FOLDER_DRAG_TYPE, item.folder.id);
+            event.dataTransfer.setData("text/plain", item.folder.id);
+            event.dataTransfer.effectAllowed = "move";
+            setDraggingFolderId(item.folder.id);
+            event.stopPropagation();
+          }}
+          onDragEnd={() => {
+            setDraggingFolderId(null);
+            setDropHighlight(null);
+          }}
+        >
           <SidebarMenuButton
             size={docked ? "icon" : "tile"}
             aria-label={`${item.folder.collapsed ? "Expand" : "Collapse"} ${item.folder.name}`}
@@ -469,7 +555,7 @@ export function SidebarProjectRail({
             )}
             onClick={onSelectAll}
             onDragOver={highlightUngrouped("all")}
-            onDrop={dropUngrouped}
+            onDrop={dropUngrouped("all")}
           >
             {!docked ? <span className="w-3.5 shrink-0" aria-hidden /> : null}
             <LayersIcon />
@@ -481,9 +567,10 @@ export function SidebarProjectRail({
             docked ? "items-center gap-1.5" : "items-stretch gap-1",
             dropHighlight === "list" && "rounded-lg",
             dropHighlight === "list" && RAIL_DROP_HIGHLIGHT_CLASS,
+            dropHighlight === "folder-end" && RAIL_FOLDER_AFTER_CLASS,
           )}
           onDragOver={highlightUngrouped("list")}
-          onDrop={dropUngrouped}
+          onDrop={dropUngrouped("list")}
         >
           {railItems}
         </div>

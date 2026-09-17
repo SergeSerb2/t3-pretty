@@ -146,6 +146,43 @@ export function dataTransferHasRailProject(types: readonly string[]): boolean {
   return types.includes(RAIL_PROJECT_DRAG_TYPE);
 }
 
+export const RAIL_FOLDER_DRAG_TYPE = "application/x-t3-rail-folder";
+
+export function dataTransferHasRailFolder(types: readonly string[]): boolean {
+  return types.includes(RAIL_FOLDER_DRAG_TYPE);
+}
+
+export function folderDropBeforeId(
+  folders: readonly { readonly id: string }[],
+  targetFolderId: string,
+  place: "before" | "after",
+): string | null {
+  if (place === "before") return targetFolderId;
+  const index = folders.findIndex((folder) => folder.id === targetFolderId);
+  if (index < 0) return targetFolderId;
+  return folders[index + 1]?.id ?? null;
+}
+
+export function reorderProjectFolderTo(
+  settings: SidebarProjectFolderSettings,
+  folderId: string,
+  beforeFolderId: string | null,
+): SidebarProjectFolderSettings {
+  const from = settings.folders.findIndex((folder) => folder.id === folderId);
+  if (from < 0 || beforeFolderId === folderId) return settings;
+  const currentBefore = settings.folders[from + 1]?.id ?? null;
+  if (currentBefore === beforeFolderId) return settings;
+  const without = settings.folders.filter((folder) => folder.id !== folderId);
+  const to =
+    beforeFolderId === null
+      ? without.length
+      : without.findIndex((folder) => folder.id === beforeFolderId);
+  if (to < 0) return settings;
+  const folders = without.slice();
+  folders.splice(to, 0, settings.folders[from]!);
+  return { ...settings, folders };
+}
+
 export function applyProjectRailDrop(
   settings: SidebarProjectFolderSettings,
   projectKey: string,
