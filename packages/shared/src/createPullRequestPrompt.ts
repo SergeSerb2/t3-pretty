@@ -81,7 +81,9 @@ function buildGuidelines(model: string | null | undefined, babysitPullRequest: b
   - ${BABYSIT_PULL_REQUEST_GUIDELINE_MARKER}
   - Apply real review findings with the smallest safe fix and push.
   - Dismiss invalid or out-of-scope review comments with a concrete reason.
-  - When checks are green and the PR is mergeable, enable auto-merge if the host can wait on remaining checks; otherwise merge it.
+  - When required checks are green and the PR is mergeable, enable auto-merge if the host can wait on remaining required checks; otherwise merge it.
+  - Ignore Buildkite / PR deployment status, green or red. Do not wait on it, do not treat it as a merge blocker, and do not try to fix it — another bot monitors those.
+  - Stop once auto-merge is armed or the PR is merged.
   - If you are blocked on a human decision (security, auth, billing, or conflicting intent), stop and report instead of guessing.`
       : ""
   }`;

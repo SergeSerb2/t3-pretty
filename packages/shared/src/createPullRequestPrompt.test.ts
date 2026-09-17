@@ -96,6 +96,8 @@ describe("applyCreatePullRequestSuffix", () => {
     );
     expect(result).toContain("Watch Auto Review, review comments, and required checks.");
     expect(result).toContain("enable auto-merge");
+    expect(result).toContain("Ignore Buildkite / PR deployment status");
+    expect(result).toContain("Stop once auto-merge is armed or the PR is merged.");
     expect(hasBabysitPullRequestSuffix(result)).toBe(true);
     expect(stripCreatePullRequestSuffix(result)).toBe("Fix the login bug");
   });
