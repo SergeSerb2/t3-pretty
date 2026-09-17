@@ -1,3 +1,4 @@
+import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   type AtomCommandResult,
@@ -31,6 +32,7 @@ import {
 } from "../state/entities";
 import { readLocalApi } from "../localApi";
 import { useUiStateStore } from "../uiStateStore";
+import { openProjectTransferDialog } from "../projectTransferStore";
 import { useCopyThreadConversation } from "./useCopyThreadConversation";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
@@ -72,7 +74,7 @@ export function useThreadActionMenu(input: {
     snoozeThread,
     unsnoozeThread,
     pinThread,
-    unpinThread,
+    confirmAndUnpinThread,
     archiveThread,
     deleteThread,
   } = useThreadActions();
@@ -81,7 +83,7 @@ export function useThreadActionMenu(input: {
   });
   const handleNewThread = useNewThreadHandler();
   const markThreadUnread = useUiStateStore((s) => s.markThreadUnread);
-  const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
+  const autoSettleAfterDays = 7;
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
@@ -122,6 +124,7 @@ export function useThreadActionMenu(input: {
           snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
           pinning: readEnvironmentSupportsPinning(threadRef.environmentId),
           titleRegeneration: readEnvironmentSupportsTitleRegeneration(threadRef.environmentId),
+          projectTransfer: false,
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
@@ -151,7 +154,10 @@ export function useThreadActionMenu(input: {
         if (clicked._tag === "Failure" || clicked.value === null) return;
         const action: ThreadActionMenuId = clicked.value;
         if (action.startsWith("snooze:")) {
-          const preset = snoozePresets.find((candidate) => `snooze:${candidate.id}` === action);
+          const preset =
+            action === "snooze:custom"
+              ? await requestCustomSnooze()
+              : snoozePresets.find((candidate) => `snooze:${candidate.id}` === action);
           if (!preset) return;
           const result = await snoozeThread(threadRef, preset.snoozedUntil);
           if (result._tag === "Failure") {
@@ -217,9 +223,10 @@ export function useThreadActionMenu(input: {
           case "pin":
             await reportFailure("Failed to pin thread", () => pinThread(threadRef));
             return;
-          case "unpin":
-            await reportFailure("Failed to unpin thread", () => unpinThread(threadRef));
+          case "unpin": {
+            await reportFailure("Failed to unpin thread", () => confirmAndUnpinThread(threadRef));
             return;
+          }
           case "rename":
             onStartRename();
             return;
@@ -234,6 +241,9 @@ export function useThreadActionMenu(input: {
             return;
           case "mark-unread":
             markThreadUnread(scopedThreadKey(threadRef), thread.latestTurn?.completedAt);
+            return;
+          case "transfer":
+            openProjectTransferDialog(threadRef);
             return;
           case "copy":
           case "copy-conversation":
@@ -320,6 +330,7 @@ export function useThreadActionMenu(input: {
       changeRequest,
       confirmThreadArchive,
       confirmThreadDelete,
+      confirmAndUnpinThread,
       copyBranchToClipboard,
       copyPathToClipboard,
       copyThreadConversation,
@@ -334,7 +345,6 @@ export function useThreadActionMenu(input: {
       snoozeThread,
       threadRef,
       timestampFormat,
-      unpinThread,
       unsettleThread,
       unsnoozeThread,
       updateThreadMetadata,

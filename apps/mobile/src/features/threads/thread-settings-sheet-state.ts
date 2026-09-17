@@ -1,6 +1,16 @@
-import type { ModelSelection, ProviderOptionDescriptor } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ModelSelection,
+  ProviderInstanceId,
+  ProviderOptionDescriptor,
+  RuntimeMode,
+  ServerProvider,
+} from "@t3tools/contracts";
 
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
+import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
+const providerNeedsSetup = (provider: ServerProvider) =>
+  !provider.installed || provider.auth.status === "unauthenticated";
 import { selectableChoices } from "./thread-settings-options";
 
 export type ThreadSettingsSheetPage = "home" | "catalog";
@@ -28,6 +38,26 @@ export function presentedSettingsSheetPage(input: {
     return input.currentPage;
   }
   return input.requestedPage;
+}
+
+/** Read setup choices from this environment, not the selectable model list. */
+export function providerSetupCandidates(input: {
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly instanceId?: ProviderInstanceId;
+  readonly providerFilter: string | null;
+  readonly query: string;
+}): ReadonlyArray<ServerProvider> {
+  const query = input.query.trim().toLocaleLowerCase();
+  return input.providers.filter(
+    (provider) =>
+      providerNeedsSetup(provider) &&
+      (input.instanceId === undefined || provider.instanceId === input.instanceId) &&
+      (input.providerFilter === null || provider.instanceId === input.providerFilter) &&
+      (query.length === 0 ||
+        [provider.displayName ?? "", provider.driver, provider.instanceId].some((label) =>
+          label.toLocaleLowerCase().includes(query),
+        )),
+  );
 }
 
 /** Match the terms a user can actually see or recognize in the model picker. */
@@ -76,6 +106,16 @@ export function visibleSheetOptionDescriptors(
   });
 }
 
+/** A model can disappear while the picker is open. */
+export function canCommitPendingModel(
+  pending: ModelOption,
+  groups: ReadonlyArray<ProviderGroup>,
+): boolean {
+  return groups.some((group) =>
+    group.models.some((model) => model.key === pending.key && !model.isUnavailable),
+  );
+}
+
 /**
  * Selected provider starts open; all other catalogs start closed. A user's
  * disclosure tap inverts that default until the picker is dismissed. Search
@@ -120,4 +160,35 @@ export function effectiveProviderFilter(input: {
   readonly searchQuery: string;
 }): string | null {
   return input.searchQuery.trim().length > 0 ? null : input.providerFilter;
+}
+
+/**
+ * Draft compose has no thread yet. The settings sheet still needs a session:
+ * model catalog, option rows, and runtime — never a checkpoints thread ref.
+ */
+export function buildNewTaskThreadSettingsSession(input: {
+  readonly environmentId: EnvironmentId | null;
+  readonly selectedModel: ModelSelection | null;
+  readonly selectedModelOption: ModelOption | null;
+  readonly providerGroups: ReadonlyArray<ProviderGroup>;
+  readonly runtimeMode: RuntimeMode;
+}): {
+  readonly environmentId: EnvironmentId | null;
+  readonly providerInstanceId: ProviderInstanceId | undefined;
+  readonly providerGroups: ReadonlyArray<ProviderGroup>;
+  readonly selectedModel: ModelSelection | null;
+  readonly optionDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
+  readonly runtimeMode: RuntimeMode;
+} {
+  return {
+    environmentId: input.environmentId,
+    providerInstanceId: input.selectedModel?.instanceId,
+    providerGroups: input.providerGroups,
+    selectedModel: input.selectedModel,
+    optionDescriptors: resolveProviderOptionDescriptors({
+      capabilities: input.selectedModelOption?.capabilities,
+      selections: input.selectedModel?.options,
+    }),
+    runtimeMode: input.runtimeMode,
+  };
 }

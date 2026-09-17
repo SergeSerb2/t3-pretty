@@ -1,24 +1,29 @@
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 import { useNavigation } from "@react-navigation/native";
-import { useEffect, useMemo, useState } from "react";
-import { View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Platform, useWindowDimensions, View } from "react-native";
 
 import { EmptyState } from "../../components/EmptyState";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
-import { useProjects } from "../../state/entities";
+import { useProjects, useServerConfigs } from "../../state/entities";
 import { usePresentedThreadShells } from "../../state/optimistic-thread-send";
 import { usePendingNewTasks } from "../../state/use-pending-new-tasks";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { WorkspaceEmptyDetail } from "../layout/WorkspaceEmptyDetail";
-import { WorkspaceSidebarToolbar } from "../layout/workspace-sidebar-toolbar";
+import {
+  AndroidWorkspaceSidebarButton,
+  WorkspaceSidebarToolbar,
+} from "../layout/workspace-sidebar-toolbar";
+import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { checkForAppUpdateOnLaunch, startAppUpdateForegroundRecheck } from "../updates/app-updates";
 import { AndroidHomeFabLayout } from "./AndroidHomeFab";
 import { HomeScreen } from "./HomeScreen";
 import { HomeHeader } from "./HomeHeader";
 import { useHomeListOptions } from "./home-list-options";
+import { useHomeThreadSelection } from "./home-thread-navigation";
 import { buildHomeProjectScopes } from "./homeThreadList";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
@@ -28,13 +33,28 @@ import { markThreadOpenStarted } from "../observability/threadPerformance";
 /* ─── Route screen ───────────────────────────────────────────────────── */
 
 export function HomeRouteScreen() {
-  const { layout } = useAdaptiveWorkspaceLayout();
+  const { width: windowWidth } = useWindowDimensions();
+  const { layout, panes } = useAdaptiveWorkspaceLayout();
   const projects = useProjects();
+  const serverConfigs = useServerConfigs();
   const threads = usePresentedThreadShells();
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const navigation = useNavigation();
   const [searchQuery, setSearchQuery] = useState("");
+  const handleSelectThread = useHomeThreadSelection();
+  // One capable environment is enough to show the entry point; the list screen
+  // then picks the environment and explains any that are too old.
+  const automationsSupported = useMemo(
+    () =>
+      Array.from(serverConfigs.values()).some(
+        (config) => config.environment.capabilities.automations === true,
+      ),
+    [serverConfigs],
+  );
+  const openAutomations = useCallback(() => {
+    navigation.navigate("Automations");
+  }, [navigation]);
 
   useEffect(() => {
     void checkForAppUpdateOnLaunch();
@@ -49,7 +69,7 @@ export function HomeRouteScreen() {
     unsnoozeThread,
     pinThread,
     unpinThread,
-    movePinnedThread,
+    moveThread,
     regenerateThreadTitle,
     unsettleThread,
   } = useThreadListActions();
@@ -110,7 +130,11 @@ export function HomeRouteScreen() {
     return (
       <>
         <NativeStackScreenOptions
-          options={{ title: "", headerTitle: "", unstable_headerLeftItems: () => [] }}
+          options={
+            Platform.OS === "android"
+              ? { headerShown: false }
+              : { title: "", headerTitle: "", unstable_headerLeftItems: () => [] }
+          }
         />
         <WorkspaceSidebarToolbar
           afterSidebarButton={[
@@ -120,6 +144,16 @@ export function HomeRouteScreen() {
               icon="arrow.triangle.pull"
               onPress={() => navigation.navigate("PullRequests")}
             />,
+            ...(automationsSupported
+              ? [
+                  <NativeHeaderToolbar.Button
+                    key="automations"
+                    accessibilityLabel="Open automations"
+                    icon="bolt"
+                    onPress={openAutomations}
+                  />,
+                ]
+              : []),
             <NativeHeaderToolbar.Button
               key="new-task"
               accessibilityLabel="New task"
@@ -128,6 +162,9 @@ export function HomeRouteScreen() {
             />,
           ]}
         />
+        {Platform.OS === "android" ? (
+          <AndroidScreenHeader title="Threads" leading={<AndroidWorkspaceSidebarButton />} />
+        ) : null}
         {/* With no environment saved there is nothing to select, so the detail
             pane carries onboarding instead of the thread-picker copy. */}
         {!catalogState.isLoadingConnections && !catalogState.hasConnections ? (
@@ -147,7 +184,11 @@ export function HomeRouteScreen() {
           </View>
         ) : (
           <WorkspaceEmptyDetail
-            onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+            onStartNewTask={
+              Platform.OS === "android" && panes.primarySidebarVisible
+                ? undefined
+                : () => navigation.navigate("NewTaskSheet", { screen: "NewTask" })
+            }
           />
         )}
       </>
@@ -159,18 +200,22 @@ export function HomeRouteScreen() {
       onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
     >
       <>
-        {/* Restore the compact title after the split branch blanks the detail
-            header. The brand slot doubles as the connection status surface:
-            while an environment reconnects, the lockup fades to a status label
-            in place (no layout shift in the list below). */}
+        {/* Restore the header after leaving split view; screen options are
+            shallow-merged. The brand slot also doubles as the connection
+            status surface while an environment reconnects. */}
         <NativeStackScreenOptions
-          options={getConnectionAwareBrandHeaderOptions({
-            onOpenEnvironments: () =>
-              navigation.navigate("SettingsSheet", {
-                screen: "SettingsContent",
-                params: { screen: "SettingsEnvironments" },
-              }),
-          })}
+          optionsVersion={windowWidth}
+          options={{
+            ...getConnectionAwareBrandHeaderOptions({
+              headerWidth: windowWidth,
+              onOpenEnvironments: () =>
+                navigation.navigate("SettingsSheet", {
+                  screen: "SettingsContent",
+                  params: { screen: "SettingsEnvironments" },
+                }),
+            }),
+            headerShown: true,
+          }}
         />
         <HomeHeader
           environments={environments}
@@ -188,6 +233,7 @@ export function HomeRouteScreen() {
               params: { screen: "SettingsEnvironments" },
             })
           }
+          onOpenAutomations={automationsSupported ? openAutomations : null}
           onOpenPullRequests={() => navigation.navigate("PullRequests")}
           onOpenSettings={() =>
             navigation.navigate("SettingsSheet", {
@@ -218,7 +264,7 @@ export function HomeRouteScreen() {
           onUnsettleThread={unsettleThread}
           onPinThread={pinThread}
           onUnpinThread={unpinThread}
-          onMovePinnedThread={movePinnedThread}
+          onMoveThread={moveThread}
           onRegenerateThreadTitle={regenerateThreadTitle}
           onRenameThread={(thread) =>
             navigation.navigate("ThreadRename", {
@@ -241,13 +287,21 @@ export function HomeRouteScreen() {
             // Settled threads are live shells: opening one is plain
             // navigation, and sending a message un-settles server-side.
             markThreadOpenStarted(String(thread.environmentId), String(thread.id));
-            navigation.navigate("Thread", {
-              environmentId: thread.environmentId,
-              threadId: thread.id,
-            });
+            handleSelectThread(thread);
           }}
           onSelectPendingTask={openPendingTask}
           onDeletePendingTask={confirmDeletePendingTask}
+          onNewThreadOnBranch={(thread) => {
+            navigation.navigate("NewTaskSheet", {
+              screen: "NewTaskDraft",
+              params: {
+                environmentId: String(thread.environmentId),
+                projectId: String(thread.projectId),
+                branch: thread.branch,
+                worktreePath: thread.worktreePath,
+              },
+            });
+          }}
           onNewThreadInProject={(project) => {
             navigation.navigate("NewTaskSheet", {
               screen: "NewTaskDraft",

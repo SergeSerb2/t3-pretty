@@ -13,10 +13,19 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
-import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import {
+  isRichTextBoldShortcut,
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+} from "../keybindings";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
+import {
+  PanelAnimationSuppressionProvider,
+  usePanelAnimationSettings,
+  usePanelNavigationSuppression,
+} from "../panelAnimations";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
@@ -45,7 +54,7 @@ import {
 } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
+const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
 
 function readInitialThreadSidebarWidth(): number {
   try {
@@ -75,6 +84,15 @@ function SidebarControl() {
         event.target instanceof HTMLElement &&
         event.target.closest("[data-keybinding-capture]")
       ) {
+        return;
+      }
+      if (
+        isRichTextBoldShortcut(event) &&
+        event.target instanceof HTMLElement &&
+        event.target.closest('[data-composer-rich-text="true"]')
+      ) {
+        // The rich-text composer claims Mod+B for bold; the toggle stays
+        // available everywhere else, including the plain-text composer.
         return;
       }
       if (resolveShortcutCommand(event, keybindings) !== "sidebar.toggle") return;
@@ -136,9 +154,13 @@ const LegacyThreadSidebar = lazy(() => import("./LegacySidebar"));
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
+  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
+    usePanelAnimationSettings();
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
+  const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
+  const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
@@ -174,6 +196,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   });
   const sidebarProviderStyle = {
     "--sidebar-width": resolveThreadSidebarCssWidth(sidebarWidth),
+    "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
     ...(isMacosDesktop && !isWindowFullscreen
       ? { "--workspace-controls-left": MACOS_TRAFFIC_LIGHTS_LEFT_INSET }
       : {}),
@@ -199,8 +222,9 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // Window chrome state lands on <html> as plain attributes rather than React
   // state: only CSS reads it, so a re-render of the whole app would be pure
   // waste. `data-window-inactive` follows the AppKit convention of dimming an
-  // unfocused window; `data-window-interacting` lets expensive effects (glass
-  // blur) drop out for the duration of a drag or resize.
+  // unfocused window; `data-window-interacting` lets dialog/composer glass
+  // drop out for a drag or resize. `will-move` without `moved` can leave that
+  // flag stuck, so drop it if the main process never sends false.
   useEffect(() => {
     const bridge = window.desktopBridge;
     if (!bridge) return;
@@ -209,11 +233,19 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     const unsubscribeActive = onWindowActiveStateChange?.((active) => {
       root.toggleAttribute("data-window-inactive", !active);
     });
+    let interactingClearTimer = 0;
     const unsubscribeInteracting = onWindowInteractingChange?.((interacting) => {
+      window.clearTimeout(interactingClearTimer);
       root.toggleAttribute("data-window-interacting", interacting);
+      if (interacting) {
+        interactingClearTimer = window.setTimeout(() => {
+          root.removeAttribute("data-window-interacting");
+        }, 800);
+      }
     });
 
     return () => {
+      window.clearTimeout(interactingClearTimer);
       unsubscribeActive?.();
       unsubscribeInteracting?.();
       root.removeAttribute("data-window-inactive");
@@ -242,31 +274,38 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   }, [navigate, pathname]);
 
   return (
-    <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={sidebarProviderStyle}>
-      <ProjectProjectionRetention />
-      <Sidebar
-        side="left"
-        collapsible="offcanvas"
-        data-app-sidebar=""
-        className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
-        resizable={sidebarResizable}
+    <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
+      <SidebarProvider
+        className="h-dvh! min-h-0!"
+        data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
+        defaultOpen
+        style={sidebarProviderStyle}
       >
-        {isOnSettings ? (
-          <>
-            <SidebarChromeHeader isElectron={isElectron} />
-            <SettingsSidebarNav pathname={pathname} />
-          </>
-        ) : legacySidebarEnabled ? (
-          <Suspense fallback={null}>
-            <LegacyThreadSidebar />
-          </Suspense>
-        ) : (
-          <ThreadSidebar />
-        )}
-        <SidebarRail onDoubleClick={resetSidebarWidth} />
-      </Sidebar>
-      {children}
-      <SidebarControl />
-    </SidebarProvider>
+        <ProjectProjectionRetention />
+        <Sidebar
+          side="left"
+          collapsible="icon"
+          data-app-sidebar=""
+          className="workspace-sidebar-glass group-data-[side=left]:border-r-0 text-sidebar-foreground"
+          resizable={sidebarResizable}
+        >
+          {isOnSettings ? (
+            <>
+              <SidebarChromeHeader isElectron={isElectron} />
+              <SettingsSidebarNav pathname={pathname} />
+            </>
+          ) : legacySidebarEnabled ? (
+            <Suspense fallback={null}>
+              <LegacyThreadSidebar />
+            </Suspense>
+          ) : (
+            <ThreadSidebar />
+          )}
+          <SidebarRail onDoubleClick={resetSidebarWidth} />
+        </Sidebar>
+        {children}
+        <SidebarControl />
+      </SidebarProvider>
+    </PanelAnimationSuppressionProvider>
   );
 }

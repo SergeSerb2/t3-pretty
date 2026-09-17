@@ -2,10 +2,39 @@ import { it } from "@effect/vitest";
 import { describe, expect } from "vite-plus/test";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Scope from "effect/Scope";
 
 import { makeKeyedCoalescingWorker } from "./KeyedCoalescingWorker.ts";
 
 describe("makeKeyedCoalescingWorker", () => {
+  it.live("processes undefined payloads, including another enqueue while active", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        let calls = 0;
+        const worker = yield* makeKeyedCoalescingWorker<string, undefined, never, never>({
+          merge: () => undefined,
+          process: () =>
+            Effect.gen(function* () {
+              calls += 1;
+              if (calls === 1) {
+                yield* Deferred.succeed(started, undefined);
+                yield* Deferred.await(release);
+              }
+            }),
+        });
+        yield* worker.enqueue("thread", undefined);
+        yield* Deferred.await(started);
+        yield* worker.enqueue("thread", undefined);
+        yield* Deferred.succeed(release, undefined);
+        yield* worker.drainKey("thread");
+        expect(calls).toBe(2);
+      }),
+    ),
+  );
+
   it.live("waits for latest work enqueued during active processing before draining the key", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -91,6 +120,37 @@ describe("makeKeyedCoalescingWorker", () => {
         yield* worker.drainKey("terminal-1");
 
         expect(processed).toEqual(["terminal-1:first", "terminal-1:second"]);
+      }),
+    ),
+  );
+
+  it.live("preserves processor interruption when the owner scope closes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const workerScope = yield* Scope.make();
+        const started = yield* Deferred.make<void>();
+        const interrupted = yield* Deferred.make<void>();
+        let processCount = 0;
+        const worker = yield* makeKeyedCoalescingWorker<string, string, never, never>({
+          merge: (_current, next) => next,
+          process: () =>
+            Effect.sync(() => {
+              processCount += 1;
+            }).pipe(
+              Effect.andThen(Deferred.succeed(started, undefined)),
+              Effect.andThen(Effect.never),
+              Effect.onInterrupt(() =>
+                Deferred.succeed(interrupted, undefined).pipe(Effect.ignore),
+              ),
+            ),
+        }).pipe(Scope.provide(workerScope));
+
+        yield* worker.enqueue("terminal-1", "pending");
+        yield* Deferred.await(started);
+        yield* Scope.close(workerScope, Exit.void);
+        yield* Deferred.await(interrupted);
+
+        expect(processCount).toBe(1);
       }),
     ),
   );

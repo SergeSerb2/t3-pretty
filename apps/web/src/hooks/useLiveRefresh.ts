@@ -86,10 +86,20 @@ export function shouldRefreshOnInterval(input: {
  * When each view last read, kept outside React because a mount is exactly what it has to outlive:
  * a reader who navigates away and straight back mounts a fresh hook, and a timestamp that started
  * at zero would call that first read due. Keyed by whatever the caller calls the view, because two
- * views on screen at once each owe their own reader an answer. Entries are one number and never
- * pruned; there is one per view the session ever read.
+ * views on screen at once each owe their own reader an answer.
  */
 const lastRefreshedAtByView = new Map<string, number>();
+const MAX_LIVE_REFRESH_VIEW_ENTRIES = 256;
+
+function recordViewRefresh(viewId: string, refreshedAt: number): void {
+  lastRefreshedAtByView.delete(viewId);
+  lastRefreshedAtByView.set(viewId, refreshedAt);
+  while (lastRefreshedAtByView.size > MAX_LIVE_REFRESH_VIEW_ENTRIES) {
+    const oldest = lastRefreshedAtByView.keys().next().value as string | undefined;
+    if (oldest === undefined) return;
+    lastRefreshedAtByView.delete(oldest);
+  }
+}
 
 /**
  * When the reader last did anything. Shared rather than per view: a person is present in the
@@ -152,7 +162,7 @@ export function useLiveRefresh(
   useEffect(() => {
     if (!enabled) return;
     const read = (now: number) => {
-      lastRefreshedAtByView.set(viewId, now);
+      recordViewRefresh(viewId, now);
       latest.current?.();
     };
     const visible = () => document.visibilityState === "visible";
@@ -161,7 +171,7 @@ export function useLiveRefresh(
       const lastRefreshedAt = lastRefreshedAtByView.get(viewId);
       if (lastRefreshedAt === undefined) {
         // Nothing read yet, so nothing to refresh: the mount's own read is what fills this in.
-        lastRefreshedAtByView.set(viewId, now);
+        recordViewRefresh(viewId, now);
         return;
       }
       if (shouldRefreshOnArrival({ visible: visible(), now, lastRefreshedAt, minIntervalMs })) {

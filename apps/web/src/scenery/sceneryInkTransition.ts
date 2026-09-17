@@ -25,6 +25,7 @@ import { useMotionStore } from "./motionStore";
 
 export const SCENERY_INK_TRANSITION_MS = 300;
 export const SCENERY_INK_TRANSITION_EASING = "cubic-bezier(0.77, 0, 0.175, 1)";
+const SCENERY_INK_TRANSITION_SETTLE_TIMEOUT_MS = SCENERY_INK_TRANSITION_MS + 1_000;
 
 type InkViewTransition = {
   readonly finished: Promise<void>;
@@ -78,6 +79,13 @@ export function canAnimateSceneryInkTransition(): boolean {
   if (document.hidden) {
     return false;
   }
+  // A new draft accepts typing while its wallpaper loads. Snapshotting that
+  // live composer freezes the caret and can replay partial glyphs. Keep the
+  // CSS photo dissolve instead. Read the mounted DOM because the sibling
+  // layout effect publishing sceneryComposer may not have run yet.
+  if (document.querySelector?.('[data-chat-composer-overlay][data-composer-placement="hero"]')) {
+    return false;
+  }
   // While useTheme's swap dissolve is mid-flight, a second startViewTransition
   // would skip it and park the scenery layers; commit directly instead.
   if (document.documentElement.dataset.themeSwap !== undefined) {
@@ -120,7 +128,12 @@ export function runSceneryInkTransition(update: (animating: boolean) => void): v
     updateStarted = true;
     update(animating);
   };
+  let settleTimeoutId: ReturnType<typeof setTimeout> | null = null;
   const clearGate = () => {
+    if (settleTimeoutId !== null) {
+      clearTimeout(settleTimeoutId);
+      settleTimeoutId = null;
+    }
     if (inkTransitionGateGeneration !== generation) {
       return;
     }
@@ -142,6 +155,10 @@ export function runSceneryInkTransition(update: (animating: boolean) => void): v
       runUpdate(true);
       pinActiveChatTranscript(transitionDocument);
     });
+    settleTimeoutId = setTimeout(() => {
+      runUpdate(false);
+      clearGate();
+    }, SCENERY_INK_TRANSITION_SETTLE_TIMEOUT_MS);
     void transition.finished.then(clearGate, () => {
       runUpdate(false);
       clearGate();

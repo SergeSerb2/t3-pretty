@@ -22,51 +22,87 @@ interface CollectState {
   readonly truncated: boolean;
 }
 
+interface BoundedChunk {
+  readonly chunk: Uint8Array;
+  readonly truncated: boolean;
+}
+
+const initialCollectState = (): CollectState => ({
+  chunks: [],
+  bytes: 0,
+  truncated: false,
+});
+
+const appendChunk = (maxBytes: number) => (state: CollectState, chunk: Uint8Array) => {
+  /*
+   * Process output normally drains after truncation so a child process can exit cleanly. HTTP
+   * callers can opt out below: once their prefix is collected, interrupting the response stream
+   * saves the remaining bandwidth instead of reading and discarding it.
+   */
+  if (state.truncated) {
+    return state;
+  }
+
+  const remainingBytes = maxBytes - state.bytes;
+  if (remainingBytes <= 0) {
+    return {
+      ...state,
+      truncated: true,
+    };
+  }
+
+  const nextChunk = chunk.byteLength > remainingBytes ? chunk.slice(0, remainingBytes) : chunk;
+  state.chunks.push(nextChunk);
+  const bytes = state.bytes + nextChunk.byteLength;
+  const truncated = chunk.byteLength > remainingBytes;
+
+  return {
+    chunks: state.chunks,
+    bytes,
+    truncated,
+  };
+};
+
 export const collectUint8StreamText = <E>(input: {
   readonly stream: Stream.Stream<Uint8Array, E>;
   readonly maxBytes?: number | undefined;
   readonly truncatedMarker?: string | null | undefined;
+  /** Keep consuming after the retained prefix is full. Process pipes need this; HTTP does not. */
+  readonly drainAfterTruncation?: boolean | undefined;
 }): Effect.Effect<CollectedUint8StreamText, E> => {
-  const maxBytes = input.maxBytes ?? Number.POSITIVE_INFINITY;
+  const maxBytes = Math.max(0, input.maxBytes ?? Number.POSITIVE_INFINITY);
   const truncatedMarker = input.truncatedMarker ?? "";
+  const foldChunk = appendChunk(maxBytes);
 
-  return input.stream.pipe(
-    Stream.runFold(
-      (): CollectState => ({
-        chunks: [],
-        bytes: 0,
-        truncated: false,
-      }),
-      (state, chunk): CollectState => {
-        /*
-         * keep draining after truncation so the child process can exit normally.
-         * its a know issue that on windows killing after the output cap can force an expensive taskkill operation and hurt performance
-         */
-        if (state.truncated) {
-          return state;
-        }
+  const collect =
+    input.drainAfterTruncation === false && Number.isFinite(maxBytes)
+      ? input.stream.pipe(
+          Stream.mapAccum(
+            () => 0,
+            (bytes, chunk): readonly [number, ReadonlyArray<BoundedChunk>] => {
+              const remainingBytes = maxBytes - bytes;
+              const retained =
+                remainingBytes <= 0
+                  ? new Uint8Array()
+                  : chunk.byteLength > remainingBytes
+                    ? chunk.slice(0, remainingBytes)
+                    : chunk;
+              const truncated = chunk.byteLength > remainingBytes;
+              return [
+                bytes + retained.byteLength,
+                [{ chunk: retained, truncated } satisfies BoundedChunk],
+              ];
+            },
+          ),
+          Stream.takeUntil((bounded) => bounded.truncated),
+          Stream.runFold(initialCollectState, (state, bounded) => {
+            const next = foldChunk(state, bounded.chunk);
+            return bounded.truncated && !next.truncated ? { ...next, truncated: true } : next;
+          }),
+        )
+      : input.stream.pipe(Stream.runFold(initialCollectState, foldChunk));
 
-        const remainingBytes = maxBytes - state.bytes;
-        if (remainingBytes <= 0) {
-          return {
-            ...state,
-            truncated: true,
-          };
-        }
-
-        const nextChunk =
-          chunk.byteLength > remainingBytes ? chunk.slice(0, remainingBytes) : chunk;
-        state.chunks.push(nextChunk);
-        const bytes = state.bytes + nextChunk.byteLength;
-        const truncated = chunk.byteLength > remainingBytes;
-
-        return {
-          chunks: state.chunks,
-          bytes,
-          truncated,
-        };
-      },
-    ),
+  return collect.pipe(
     Effect.map((state): CollectedUint8StreamText => {
       const decoded = decodeUtf8(Buffer.concat(state.chunks, state.bytes));
       return {
