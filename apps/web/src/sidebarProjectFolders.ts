@@ -1,4 +1,4 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem, ProjectIconOverride } from "@t3tools/contracts";
 import type { SidebarProjectFolder } from "@t3tools/contracts/settings";
 
 export interface SidebarProjectFolderSettings {
@@ -83,13 +83,36 @@ export function createProjectFolder(
   name: string,
   projectKey: string,
   id: string,
+  icon?: ProjectIconOverride,
 ): SidebarProjectFolderSettings {
   const normalized = normalizeFolderName(name);
   if (normalized === null) return settings;
   return pruneEmptyFolders({
-    folders: [...settings.folders, { id, name: normalized, collapsed: false }],
+    folders: [
+      ...settings.folders,
+      icon === undefined
+        ? { id, name: normalized, collapsed: false }
+        : { id, name: normalized, collapsed: false, icon },
+    ],
     assignments: { ...settings.assignments, [projectKey]: id },
   });
+}
+
+export function setProjectFolderIcon(
+  settings: SidebarProjectFolderSettings,
+  folderId: string,
+  icon: ProjectIconOverride | null,
+): SidebarProjectFolderSettings {
+  const folders = settings.folders.map((folder) => {
+    if (folder.id !== folderId) return folder;
+    if (icon === null) {
+      if (folder.icon === undefined) return folder;
+      const { icon: _removed, ...rest } = folder;
+      return rest;
+    }
+    return { ...folder, icon };
+  });
+  return { ...settings, folders };
 }
 
 export function assignProjectToFolder(
@@ -193,7 +216,7 @@ export function projectFolderMenuItems(input: {
   const assignedFolderId = input.settings.assignments[input.projectKey];
   const moveChildren: ContextMenuItem[] = input.settings.folders.map((folder) => ({
     id: `${MENU_PREFIX}move:${folder.id}`,
-    label: folder.name,
+    label: folder.icon?.kind === "emoji" ? `${folder.icon.emoji} ${folder.name}` : folder.name,
     disabled: folder.id === assignedFolderId,
   }));
   moveChildren.push({
@@ -226,6 +249,10 @@ export function projectFolderHeaderMenuItems(input: {
       label: input.folder.collapsed ? "Expand" : "Collapse",
     },
     { id: `${MENU_PREFIX}rename:${input.folder.id}`, label: "Rename…" },
+    { id: `${MENU_PREFIX}icon:${input.folder.id}`, label: "Change icon…" },
+    ...(input.folder.icon === undefined
+      ? []
+      : [{ id: `${MENU_PREFIX}reset-icon:${input.folder.id}`, label: "Reset icon" }]),
     {
       id: `${MENU_PREFIX}move-up:${input.folder.id}`,
       label: "Move up",
@@ -252,6 +279,8 @@ export type ProjectFolderMenuAction =
   | { readonly type: "move"; readonly folderId: string }
   | { readonly type: "toggle"; readonly folderId: string }
   | { readonly type: "rename"; readonly folderId: string }
+  | { readonly type: "icon"; readonly folderId: string }
+  | { readonly type: "reset-icon"; readonly folderId: string }
   | { readonly type: "delete"; readonly folderId: string }
   | { readonly type: "move-up"; readonly folderId: string }
   | { readonly type: "move-down"; readonly folderId: string };
@@ -270,6 +299,8 @@ export function parseProjectFolderMenuAction(id: string): ProjectFolderMenuActio
     type === "move" ||
     type === "toggle" ||
     type === "rename" ||
+    type === "icon" ||
+    type === "reset-icon" ||
     type === "delete" ||
     type === "move-up" ||
     type === "move-down"

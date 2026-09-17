@@ -526,6 +526,25 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettings(stored).sidebarProjectFolders).toEqual([
       { id: "work", name: "Work", collapsed: true },
     ]);
+    expect(
+      decodeClientSettings({
+        sidebarProjectFolders: [
+          {
+            id: "home",
+            name: "Home",
+            collapsed: false,
+            icon: { kind: "emoji", emoji: "🏠" },
+          },
+        ],
+      }).sidebarProjectFolders,
+    ).toEqual([
+      {
+        id: "home",
+        name: "Home",
+        collapsed: false,
+        icon: { kind: "emoji", emoji: "🏠" },
+      },
+    ]);
     expect(decodeClientSettings(stored).sidebarProjectFolderAssignments).toEqual({
       "env:/repo": "work",
     });
