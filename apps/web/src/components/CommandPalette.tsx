@@ -1839,17 +1839,6 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push({
     kind: "action",
-    value: "action:open-issues",
-    searchTerms: ["linear", "sentry", "issues", "bugs", "tasks"],
-    title: "Open issues",
-    icon: <FileSearchIcon className={ITEM_ICON_CLASS} />,
-    run: async () => {
-      await navigate({ to: "/issues" });
-    },
-  });
-
-  actionItems.push({
-    kind: "action",
     value: "action:open-file-picker",
     searchTerms: ["go to file", "open file", "file picker", "find file", "quick open"],
     title: "Go to file",
