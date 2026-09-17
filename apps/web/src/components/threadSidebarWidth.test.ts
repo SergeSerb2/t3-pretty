@@ -88,11 +88,12 @@ describe("thread sidebar width", () => {
     expect(sidebarSource).toContain("options.getCssWidth");
   });
 
-  it("grows the collapsed icon rail to the traffic-light inset", () => {
+  it("keeps the collapsed icon rail at 3rem and lets the titlebar cover the rest", () => {
     const sidebarSource = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
     const inset = NodeFS.readFileSync(new URL("../workspaceTitlebar.ts", import.meta.url), "utf8");
 
-    expect(sidebarSource).toContain(
+    expect(sidebarSource).toContain('"--sidebar-width-icon": SIDEBAR_WIDTH_ICON');
+    expect(sidebarSource).not.toContain(
       "`max(${SIDEBAR_WIDTH_ICON}, var(--workspace-controls-left, 0px))`",
     );
     expect(inset).toContain(
@@ -100,22 +101,17 @@ describe("thread sidebar width", () => {
     );
   });
 
-  it("clips peek flyouts with clip-path Tailwind can compile", () => {
+  it("peeks by animating width over an overflow clip, not clip-path", () => {
     const sidebar = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
 
-    expect(sidebar).toContain("sidebarPeekDatasetValue(flyoutPresent, peeking)");
-    expect(sidebar).toContain("group-data-[peeking]:w-(--sidebar-width-icon)");
-    // `clip-path-[...]` is not a Tailwind utility and compiles to nothing, which
-    // is how the peek shipped once without any motion. Only the arbitrary
-    // property form `[clip-path:...]` produces CSS.
-    expect(sidebar).not.toContain("clip-path-[");
-    expect(sidebar).toContain(
-      "group-data-[side=left]:group-data-[peeking=out]:[clip-path:inset(0_calc(100%-var(--sidebar-width-icon))_0_0)]",
-    );
-    expect(sidebar).toContain(
-      "group-data-[side=right]:group-data-[peeking=out]:[clip-path:inset(0_0_0_calc(100%-var(--sidebar-width-icon)))]",
-    );
-    expect(sidebar).toContain("group-data-[peeking=true]:[clip-path:inset(0_-2rem)]");
+    expect(sidebar).toContain("group-data-collapsed:w-(--sidebar-width-icon)");
+    expect(sidebar).toContain("group-data-collapsed:group-data-peeking:w-(--sidebar-width)!");
+    expect(sidebar).toContain("group-data-collapsed:overflow-hidden");
+    expect(sidebar).toContain("w-(--sidebar-width) min-w-(--sidebar-width)");
+    expect(sidebar).toContain("motion-safe:transition-[width,box-shadow]");
+    expect(sidebar).toContain("shouldIgnoreSidebarPeekLeave");
+    expect(sidebar).not.toContain("clip-path");
+    expect(sidebar).not.toContain("data-compact");
   });
 
   it("keeps the project rail one column whether the sidebar is icon-only or open", () => {
@@ -125,12 +121,10 @@ describe("thread sidebar width", () => {
     );
     const threadSidebar = NodeFS.readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
 
-    // The rail no longer swaps geometry between states, so a peek only clips
-    // the thread list column in beside it and the icons never jump.
     expect(rail).not.toContain("variant");
-    expect(rail).toContain("group-data-compact:translate-x-");
-    expect(rail).toContain("footer");
+    expect(rail).not.toContain("group-data-compact");
+    expect(rail).toContain("w-12 shrink-0");
     expect(threadSidebar).toContain('<SidebarUtilityMenu orientation="vertical" />');
-    expect(threadSidebar).not.toContain("!isMobile && !open && !peekFlyout");
+    expect(threadSidebar).not.toContain("showThreadList");
   });
 });

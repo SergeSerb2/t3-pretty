@@ -22,7 +22,11 @@ import { useIsMobile } from "~/hooks/useMediaQuery";
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
 import { clampSidebarWidth, formatSidebarWidth } from "./sidebarResize";
 import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState";
-import { SIDEBAR_PEEK_ANIMATION_MS, sidebarPeekDatasetValue, useSidebarPeek } from "./sidebarPeek";
+import {
+  SIDEBAR_PEEK_ANIMATION_MS,
+  shouldIgnoreSidebarPeekLeave,
+  useSidebarPeek,
+} from "./sidebarPeek";
 import * as Schema from "effect/Schema";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
@@ -195,9 +199,7 @@ function SidebarProvider({
         style={
           {
             "--sidebar-width": SIDEBAR_WIDTH,
-            // On macOS the traffic-light inset is wider than the default 3rem
-            // rail. Grow the collapsed rail so it clears the lights.
-            "--sidebar-width-icon": `max(${SIDEBAR_WIDTH_ICON}, var(--workspace-controls-left, 0px))`,
+            "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
             "--workspace-titlebar-content-left":
               "calc(var(--workspace-controls-left) + var(--workspace-titlebar-control-size) + var(--workspace-titlebar-control-gap))",
             ...style,
@@ -231,7 +233,6 @@ function Sidebar({
     openMobile,
     setOpenMobile,
     peeking,
-    peekFlyout,
     onPeekPointerEnter,
     onPeekPointerLeave,
   } = useSidebar();
@@ -310,23 +311,18 @@ function Sidebar({
     );
   }
 
-  const flyoutPresent = state === "collapsed" && peekFlyout;
-  const peekingValue = sidebarPeekDatasetValue(flyoutPresent, peeking);
-  // Compact covers the icon rail at rest and the frames a peek spends clipped
-  // to rail width (mount and close), so chrome that slides between the two
-  // layouts animates in step with the clip instead of after it.
-  const compact = state === "collapsed" && collapsible === "icon" && !peeking;
+  const iconCollapsed = state === "collapsed" && collapsible === "icon";
 
   return (
     <SidebarInstanceContext value={instanceContextValue}>
       <div
         className="group peer hidden text-sidebar-foreground md:block"
-        data-collapsible={state === "collapsed" && !flyoutPresent ? collapsible : ""}
-        data-compact={compact ? "" : undefined}
-        data-peeking={peekingValue}
+        data-collapsed={iconCollapsed ? "" : undefined}
+        data-collapsible={state === "collapsed" && collapsible === "offcanvas" ? collapsible : ""}
+        data-peeking={peeking && iconCollapsed ? "" : undefined}
         data-side={side}
         data-slot="sidebar"
-        data-state={flyoutPresent ? "expanded" : state}
+        data-state={state}
         data-variant={variant}
         style={
           {
@@ -342,32 +338,24 @@ function Sidebar({
             "group-data-[collapsible=offcanvas]:w-0",
             "group-data-[side=right]:rotate-180",
             variant === "floating" || variant === "inset"
-              ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
-              : "group-data-[collapsible=icon]:w-(--sidebar-width-icon)",
-            // A peek flyout must not push the chat; the icon gap stays reserved.
-            "group-data-[peeking]:w-(--sidebar-width-icon)",
+              ? "group-data-collapsed:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
+              : "group-data-collapsed:w-(--sidebar-width-icon)",
           )}
           data-slot="sidebar-gap"
         />
         <div
           className={cn(
             "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
-            "[[data-panel-animations=true]_&]:transition-[left,right,width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
+            "motion-safe:transition-[width,box-shadow] motion-safe:duration-(--sidebar-peek-duration) motion-safe:ease-[cubic-bezier(0.23,1,0.32,1)] group-data-collapsed:duration-(--sidebar-peek-duration)!",
+            "[[data-panel-animations=true]_&]:transition-[left,right,width,box-shadow] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
               : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
-            // Adjust the padding for floating and inset variants.
             variant === "floating" || variant === "inset"
-              ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
-              : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
-            // Peek keeps the overlay at full width and reveals it with clip-path
-            // so the thread list does not reflow on every frame. The open clip
-            // leaves 2rem of slack for the shadow and the resize rail.
-            "group-data-[peeking]:z-40 group-data-[peeking]:w-(--sidebar-width)!",
-            "motion-safe:group-data-[peeking]:transition-[clip-path,box-shadow]! motion-safe:group-data-[peeking]:[transition-duration:var(--sidebar-peek-duration)]! motion-safe:group-data-[peeking]:ease-[cubic-bezier(0.23,1,0.32,1)]!",
-            "group-data-[peeking=true]:[clip-path:inset(0_-2rem)] group-data-[peeking=true]:shadow-[0_0_24px_rgba(0,0,0,0.18)]",
-            "group-data-[side=left]:group-data-[peeking=out]:[clip-path:inset(0_calc(100%-var(--sidebar-width-icon))_0_0)]",
-            "group-data-[side=right]:group-data-[peeking=out]:[clip-path:inset(0_0_0_calc(100%-var(--sidebar-width-icon)))]",
+              ? "p-2 group-data-collapsed:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
+              : "group-data-collapsed:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
+            // Peek overlays the chat; the gap stays at icon width so nothing reflows.
+            "group-data-peeking:z-40 group-data-collapsed:group-data-peeking:w-(--sidebar-width)! group-data-peeking:shadow-[0_0_24px_rgba(0,0,0,0.18)]",
             className,
           )}
           data-slot="sidebar-container"
@@ -378,15 +366,21 @@ function Sidebar({
           }}
           onPointerLeave={(event) => {
             props.onPointerLeave?.(event);
+            if (shouldIgnoreSidebarPeekLeave(event.currentTarget, event.relatedTarget)) return;
             onPeekPointerLeave();
           }}
         >
           <div
-            className="flex h-full w-full flex-col overflow-visible bg-sidebar surface-grain group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
-            data-sidebar="sidebar"
-            data-slot="sidebar-inner"
+            className="h-full w-full min-w-0 group-data-collapsed:overflow-hidden"
+            data-slot="sidebar-clip"
           >
-            {children}
+            <div
+              className="flex h-full w-(--sidebar-width) min-w-(--sidebar-width) flex-col bg-sidebar surface-grain group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
+              data-sidebar="sidebar"
+              data-slot="sidebar-inner"
+            >
+              {children}
+            </div>
           </div>
         </div>
       </div>
