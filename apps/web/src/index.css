@@ -2886,6 +2886,7 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
     10px 4px 24px -16px rgb(0 0 0 / 32%), 20px 8px 48px -24px rgb(0 0 0 / 18%);
   position: relative;
   z-index: 30;
+  overflow: visible;
   /* Solid host fill if ::after never paints; the plate overlays this. */
   background-color: var(--sidebar);
   border-color: transparent;

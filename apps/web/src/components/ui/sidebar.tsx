@@ -20,6 +20,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useResizeDrag } from "~/hooks/useResizeDrag";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
+import { clampSidebarWidth, formatSidebarWidth } from "./sidebarResize";
 import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState";
 import * as Schema from "effect/Schema";
 
@@ -41,7 +42,9 @@ type SidebarContextProps = {
 };
 
 type SidebarResizableOptions = {
+  // Viewport-clamped CSS expression so a static pixel write cannot lock later drags.
   getCssWidth?: (width: number) => string;
+  // Resolved on every drag frame so the cap tracks the live window.
   maxWidth?: number | (() => number);
   minWidth?: number;
   onResize?: (width: number) => void;
@@ -57,7 +60,8 @@ type SidebarResizableOptions = {
 };
 
 type SidebarResolvedResizableOptions = {
-  maxWidth: number;
+  getCssWidth?: (width: number) => string;
+  maxWidth: number | (() => number);
   minWidth: number;
   onResize?: (width: number) => void;
   shouldAcceptWidth?: (context: {
@@ -203,14 +207,11 @@ function Sidebar({
     }
 
     const options = typeof resizable === "boolean" ? {} : resizable;
-    const maxWidth =
-      typeof options.maxWidth === "function"
-        ? options.maxWidth()
-        : (options.maxWidth ?? Number.POSITIVE_INFINITY);
     return {
-      maxWidth,
+      maxWidth: options.maxWidth ?? Number.POSITIVE_INFINITY,
       minWidth: options.minWidth ?? SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH,
       storageKey: options.storageKey ?? null,
+      ...(options.getCssWidth ? { getCssWidth: options.getCssWidth } : {}),
       ...(options.onResize ? { onResize: options.onResize } : {}),
       ...(options.shouldAcceptWidth ? { shouldAcceptWidth: options.shouldAcceptWidth } : {}),
     };
@@ -315,7 +316,7 @@ function Sidebar({
           {...props}
         >
           <div
-            className="flex h-full w-full flex-col bg-sidebar surface-grain group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
+            className="flex h-full w-full flex-col overflow-visible bg-sidebar surface-grain group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
             data-sidebar="sidebar"
             data-slot="sidebar-inner"
           >
@@ -354,10 +355,6 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
   );
 }
 
-function clampSidebarWidth(width: number, options: SidebarResolvedResizableOptions): number {
-  return Math.max(options.minWidth, Math.min(width, options.maxWidth));
-}
-
 function SidebarRail({
   className,
   onClick,
@@ -391,10 +388,10 @@ function SidebarRail({
     if (!wrapper || !sidebarRoot || !sidebarContainer) return null;
 
     const side = sidebarInstance?.side ?? "left";
-    let width = clampSidebarWidth(
-      sidebarContainer.getBoundingClientRect().width,
-      resolvedResizable,
-    );
+    const measuredWidth = sidebarContainer.getBoundingClientRect().width;
+    let width = clampSidebarWidth(measuredWidth, resolvedResizable);
+    const startWidth = width;
+    const originalCssWidth = wrapper.style.getPropertyValue("--sidebar-width");
     const transitionTargets = [
       sidebarRoot.querySelector<HTMLElement>("[data-slot='sidebar-gap']"),
       sidebarContainer,
@@ -402,7 +399,15 @@ function SidebarRail({
     transitionTargets.forEach((element) => {
       element.style.setProperty("transition-duration", "0ms");
     });
-    wrapper.style.setProperty("--sidebar-width", `${width}px`);
+    // Only rewrite an out-of-range width. An in-range write would replace the
+    // viewport-clamped CSS expression with a static pixel value and leave the
+    // next drag unable to grow back into a stored preference.
+    if (width !== measuredWidth) {
+      wrapper.style.setProperty(
+        "--sidebar-width",
+        formatSidebarWidth(width, resolvedResizable.getCssWidth),
+      );
+    }
 
     return {
       width,
@@ -420,8 +425,11 @@ function SidebarRail({
             sidebarRoot,
             wrapper,
           }) ?? true;
-        if (accepted) {
-          wrapper.style.setProperty("--sidebar-width", `${nextWidth}px`);
+        if (accepted && nextWidth !== width) {
+          wrapper.style.setProperty(
+            "--sidebar-width",
+            formatSidebarWidth(nextWidth, options.getCssWidth),
+          );
           width = nextWidth;
         }
         return width;
@@ -429,6 +437,12 @@ function SidebarRail({
       finish(finalWidth, moved) {
         suppressClickRef.current = moved;
         const options = latestResizable.current;
+        if (finalWidth === startWidth) {
+          if (wrapper.style.getPropertyValue("--sidebar-width") !== originalCssWidth) {
+            wrapper.style.setProperty("--sidebar-width", originalCssWidth);
+          }
+          return;
+        }
         if (options?.storageKey) {
           try {
             setLocalStorageItem(options.storageKey, finalWidth, Schema.Finite);
@@ -479,11 +493,14 @@ function SidebarRail({
       return;
     }
     if (storedWidth === null) return;
-    const clampedWidth = clampSidebarWidth(storedWidth, resolvedResizable);
+    const width = Math.max(resolvedResizable.minWidth, storedWidth);
     // Hydrate the CSS variable before the browser paints so a restored sidebar
-    // never flashes at the default width first.
-    wrapper.style.setProperty("--sidebar-width", `${clampedWidth}px`);
-    resolvedResizable.onResize?.(clampedWidth);
+    // never flashes at the default width first. Keep the preference-backed
+    // expression; writing a clamped pixel width here used to lock later drags.
+    wrapper.style.setProperty(
+      "--sidebar-width",
+      formatSidebarWidth(width, resolvedResizable.getCssWidth),
+    );
   }, [resolvedResizable]);
 
   return (
@@ -494,7 +511,7 @@ function SidebarRail({
             aria-label={railLabel}
             className={cn(
               /* disable pointer events only when offcanvas sidebar is collapsed, that's when the rail sits over the native scrollbar on windows and linux. icon mode stays fully clickable. */
-              "-translate-x-1/2 group-data-[side=left]:-right-4 absolute inset-y-0 z-20 hidden w-4 group-data-[side=right]:left-0 sm:flex [[data-collapsible=offcanvas][data-state=collapsed]_&]:pointer-events-none",
+              "pointer-events-auto -translate-x-1/2 group-data-[side=left]:-right-4 absolute inset-y-0 z-20 hidden w-4 group-data-[side=right]:left-0 sm:flex [[data-collapsible=offcanvas][data-state=collapsed]_&]:pointer-events-none",
               "[[data-panel-animations=true]_&]:transition-all [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
               "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
               "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
@@ -508,23 +525,26 @@ function SidebarRail({
             onClick={handleClick}
             onLostPointerCapture={(event) => {
               onLostPointerCapture?.(event);
-              if (!event.defaultPrevented) resize.onLostPointerCapture(event);
+              resize.onLostPointerCapture(event);
             }}
             onPointerCancel={(event) => {
               onPointerCancel?.(event);
-              if (!event.defaultPrevented) resize.onPointerCancel(event);
+              resize.onPointerCancel(event);
             }}
             onPointerDown={(event) => {
               onPointerDown?.(event);
-              if (!event.defaultPrevented) resize.onPointerDown(event);
+              // TooltipTrigger can preventDefault after the first press. Skipping
+              // the drag hook then leaves the session open and blocks the next
+              // resize.
+              resize.onPointerDown(event);
             }}
             onPointerMove={(event) => {
               onPointerMove?.(event);
-              if (!event.defaultPrevented) resize.onPointerMove(event);
+              resize.onPointerMove(event);
             }}
             onPointerUp={(event) => {
               onPointerUp?.(event);
-              if (!event.defaultPrevented) resize.onPointerUp(event);
+              resize.onPointerUp(event);
             }}
             ref={railRef}
             tabIndex={-1}
