@@ -1882,6 +1882,7 @@ export function deriveThreadFeedPresentation(
             unsettledTurnId,
             isWorking,
             run.at(-1) === activeTailGroup,
+            liveHeadline,
           );
           index = end - 1;
           continue;
@@ -1948,6 +1949,7 @@ function appendMixedActivityRun(
   unsettledTurnId: TurnId | null,
   isWorking: boolean,
   activeTail: boolean,
+  liveHeadline: string | null,
 ) {
   const first = run[0]!;
   const last = run.at(-1)!;
@@ -1959,7 +1961,7 @@ function appendMixedActivityRun(
       : undefined;
   const groupId = firstTool ? toolActivityGroupId(firstTool) : `activity-run:${first.id}`;
   const expanded = expandedWorkGroupIds.has(groupId);
-  const state = `${isWorking}:${unsettledTurnId}:${activeTail}:${expanded}`;
+  const state = `${isWorking}:${unsettledTurnId}:${activeTail}:${expanded}:${liveHeadline ?? ""}`;
   const cached = activityRunsCache.get(first);
   if (
     cached?.state === state &&
@@ -2012,7 +2014,7 @@ function appendMixedActivityRun(
     hiddenCount: activities.length + thoughtCount,
     expanded,
     summary: thinking
-      ? "Thinking"
+      ? (liveHeadline ?? "Thinking")
       : (toolSummary?.summary ?? `Thought${thoughtCount > 1 ? ` (×${thoughtCount})` : ""}`),
     summaryKind: toolSummary?.summaryKind ?? "other",
     ...(thinking || !toolSummary

@@ -18,7 +18,6 @@ import { useKeyboardState } from "react-native-keyboard-controller";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { appBlurTargetRef } from "../lib/appBlurTarget";
 import { cn } from "../lib/cn";
 import { useUniwindTheme } from "../lib/useUniwindTheme";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../native/native-glass";
@@ -406,7 +405,7 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
         ) : (
           <>
             {Platform.OS === "android" ? (
-              <GlassBackdrop blurTarget={appBlurTargetRef} />
+              <GlassBackdrop />
             ) : (
               <>
                 <BlurView
