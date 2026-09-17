@@ -198,7 +198,11 @@ import {
   ThreadStatusPill,
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
-import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import {
+  SidebarChromeFooter,
+  SidebarChromeHeader,
+  SidebarUtilityMenu,
+} from "./sidebar/SidebarChrome";
 import { SidebarProjectRail } from "./sidebar/SidebarProjectRail";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useMediaQuery";
@@ -3906,23 +3910,25 @@ export default function LegacySidebar() {
       <>
         {prewarmers}
         <SidebarChromeHeader isElectron={isElectron} />
-        <SidebarProjectRail
-          projects={sortedProjects}
-          selectedProjectKey={activeRouteProjectKey}
-          attentionByProjectKey={attentionByProjectKey}
-          onNewThreadInProject={startNewThreadInProject}
-          onProjectContextMenu={handleProjectRailContextMenu}
-          folders={projectFolders.settings}
-          onToggleFolder={projectFolders.toggleCollapsed}
-          onFolderContextMenu={projectFolders.onFolderContextMenu}
-          onApplyDrop={projectFolders.applyDrop}
-          onReorderFolder={projectFolders.reorderFolder}
-          onSelectAll={() => {
-            peekNow();
-          }}
-          onSelectProject={selectCollapsedRailProject}
-        />
-        <SidebarChromeFooter />
+        <div className="flex min-h-0 flex-1">
+          <SidebarProjectRail
+            projects={sortedProjects}
+            selectedProjectKey={activeRouteProjectKey}
+            attentionByProjectKey={attentionByProjectKey}
+            onNewThreadInProject={startNewThreadInProject}
+            onProjectContextMenu={handleProjectRailContextMenu}
+            folders={projectFolders.settings}
+            onToggleFolder={projectFolders.toggleCollapsed}
+            onFolderContextMenu={projectFolders.onFolderContextMenu}
+            onApplyDrop={projectFolders.applyDrop}
+            onReorderFolder={projectFolders.reorderFolder}
+            onSelectAll={() => {
+              peekNow();
+            }}
+            onSelectProject={selectCollapsedRailProject}
+            footer={<SidebarUtilityMenu orientation="vertical" />}
+          />
+        </div>
       </>
     );
   }
@@ -3970,7 +3976,9 @@ export default function LegacySidebar() {
         attachProjectListAutoAnimateRef={attachProjectListAutoAnimateRef}
         projectsLength={projects.length}
       />
-      <SidebarChromeFooter />
+      <SidebarChromeFooter>
+        <SidebarUtilityMenu />
+      </SidebarChromeFooter>
     </>
   );
 }

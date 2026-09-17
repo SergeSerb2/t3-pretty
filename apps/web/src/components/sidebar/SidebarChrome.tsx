@@ -26,10 +26,14 @@ import {
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
-import { COLLAPSED_SWITCHER_CONTROL_CLASS } from "./collapsedSidebarDock";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+
+// A peek reveals the header with the container clip; the wordmark also fades
+// so it does not read as sliced while the edge sweeps across it.
+const SIDEBAR_BRAND_PEEK_FADE_CLASS =
+  "group-data-compact:opacity-0 motion-safe:transition-opacity motion-safe:duration-(--sidebar-peek-duration) motion-safe:ease-out";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -68,7 +72,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         // The wrapper carries the hiding: Badge's own `inline-flex` utility
         // outranks the components-layer `sidebar-brand-stage` display rules,
         // so the class has to live on an element without a display utility.
-        <span className="sidebar-brand-stage relative z-10 ml-1 items-center group-data-[collapsible=icon]:hidden">
+        <span className="sidebar-brand-stage relative z-10 ml-1 items-center group-data-[collapsible=icon]:hidden group-data-compact:opacity-0 motion-safe:transition-opacity motion-safe:duration-(--sidebar-peek-duration) motion-safe:ease-out">
           <Badge
             className="rounded-full px-1.5 text-muted-foreground"
             data-environment-identification="pill"
@@ -89,6 +93,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       aria-label="Go to threads"
       className={cn(
         "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex group-data-[collapsible=icon]:hidden",
+        SIDEBAR_BRAND_PEEK_FADE_CLASS,
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
@@ -119,14 +124,18 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   );
 }
 
+type SidebarUtilityMenuOrientation = "horizontal" | "vertical";
+
 function SidebarUtilityItem({
   icon,
   label,
   onClick,
+  tooltipSide,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
+  tooltipSide: "top" | "right";
 }) {
   return (
     <SidebarMenuItem className="shrink-0">
@@ -135,7 +144,6 @@ function SidebarUtilityItem({
           render={
             <SidebarMenuButton
               aria-label={label}
-              className={COLLAPSED_SWITCHER_CONTROL_CLASS}
               data-animate-ui-icons
               onClick={onClick}
               size="icon"
@@ -144,13 +152,26 @@ function SidebarUtilityItem({
             </SidebarMenuButton>
           }
         />
-        <TooltipPopup side="top">{label}</TooltipPopup>
+        <TooltipPopup side={tooltipSide}>{label}</TooltipPopup>
       </Tooltip>
     </SidebarMenuItem>
   );
 }
 
-export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+/**
+ * Settings, pull requests, usage and the desktop update control. `vertical`
+ * is the icon column pinned under the project rail, identical whether the
+ * sidebar is icon-only or expanded, so nothing moves when it opens.
+ * `horizontal` is the footer row of sidebars without a rail; it folds into a
+ * column on its own when that sidebar collapses to icons.
+ */
+export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
+  orientation = "horizontal",
+}: {
+  orientation?: SidebarUtilityMenuOrientation;
+}) {
+  const vertical = orientation === "vertical";
+  const tooltipSide = vertical ? "right" : "top";
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -208,37 +229,51 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   }, [canGoBack, closeMobileSidebar, navigate]);
 
   return (
-    <SidebarMenu className="flex-row items-center group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-0.5 group-data-[collapsible=icon]:[&>li]:ml-0">
+    <SidebarMenu
+      className={cn(
+        "items-center",
+        vertical
+          ? "w-auto flex-col gap-0.5 [&>li]:ml-0"
+          : "flex-row group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-0.5 group-data-[collapsible=icon]:[&>li]:ml-0",
+      )}
+    >
       {currentFooterPage ? (
-        <SidebarMenuItem className="min-w-0 flex-1">
-          <SidebarMenuButton
-            className={COLLAPSED_SWITCHER_CONTROL_CLASS}
+        vertical ? (
+          <SidebarUtilityItem
+            icon={<ArrowLeftIcon />}
+            label="Back"
             onClick={handleBackClick}
-            aria-label="Back"
-            tooltip="Back"
-          >
-            <ArrowLeftIcon />
-            <span className="group-data-[collapsible=icon]:hidden">Back</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
+            tooltipSide={tooltipSide}
+          />
+        ) : (
+          <SidebarMenuItem className="min-w-0 flex-1">
+            <SidebarMenuButton onClick={handleBackClick} aria-label="Back" tooltip="Back">
+              <ArrowLeftIcon />
+              <span className="group-data-[collapsible=icon]:hidden">Back</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )
       ) : (
         <>
           <SidebarUtilityItem
             icon={<SettingsIcon />}
             label="Settings"
             onClick={handleSettingsClick}
+            tooltipSide={tooltipSide}
           />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}
               label="Pull Requests"
               onClick={handlePullRequestsClick}
+              tooltipSide={tooltipSide}
             />
           ) : null}
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"
             onClick={handleUsageClick}
+            tooltipSide={tooltipSide}
           />
         </>
       )}
@@ -247,14 +282,21 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   );
 });
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+/**
+ * Update notices above the thread list. Utilities live in the project rail
+ * (`SidebarUtilityMenu` vertical); sidebars without a rail pass their own row
+ * as children. Collapses to nothing so an idle footer adds no padding.
+ */
+export const SidebarChromeFooter = memo(function SidebarChromeFooter({
+  children,
+}: {
+  children?: ReactNode;
+}) {
   return (
-    <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
-      <div className="contents group-data-[collapsible=icon]:hidden">
-        <SidebarProviderUpdatePill />
-        <SidebarUpdateArchitectureWarning />
-      </div>
-      <SidebarUtilityMenu />
+    <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1 empty:hidden">
+      <SidebarProviderUpdatePill />
+      <SidebarUpdateArchitectureWarning />
+      {children}
     </SidebarFooter>
   );
 });

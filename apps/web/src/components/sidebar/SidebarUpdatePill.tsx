@@ -410,7 +410,9 @@ function SidebarUpdateControl() {
       data-animate-ui-icons
       style={showCheckIcon ? ({ "--refresh-cw-from": checkSpinFrom } as CSSProperties) : undefined}
       className={cn(
-        "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2 group-data-[collapsible=icon]:rounded-[var(--control-radius)]",
+        // Same radius as the utility icons it sits with, in every sidebar state,
+        // so a peek does not pop it between a circle and a square.
+        "inline-flex size-8 items-center justify-center rounded-[var(--control-radius)] outline-hidden ring-ring transition-colors focus-visible:ring-2",
         isInteractionDisabled ? "cursor-not-allowed" : "cursor-pointer",
         showUpdateIconState
           ? cn(

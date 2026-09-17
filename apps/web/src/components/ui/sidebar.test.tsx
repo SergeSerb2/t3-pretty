@@ -96,21 +96,6 @@ describe("sidebar interactive cursors", () => {
     expect(html).toContain("text-sidebar-muted-foreground/80");
   });
 
-  it("lets collapsed switcher tiles fill the rail width", () => {
-    const html = renderToStaticMarkup(
-      <SidebarProvider>
-        <SidebarMenuButton size="tile">
-          <span>+</span>
-        </SidebarMenuButton>
-      </SidebarProvider>,
-    );
-
-    expect(html).toContain("aspect-square");
-    expect(html).toContain("w-full");
-    expect(html).toContain("size-auto!");
-    expect(html).not.toContain("size-8!");
-  });
-
   it("lets project drag handles override the default pointer cursor", () => {
     const html = renderSidebarButton("cursor-grab");
 

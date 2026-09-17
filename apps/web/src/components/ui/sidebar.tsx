@@ -312,12 +312,17 @@ function Sidebar({
 
   const flyoutPresent = state === "collapsed" && peekFlyout;
   const peekingValue = sidebarPeekDatasetValue(flyoutPresent, peeking);
+  // Compact covers the icon rail at rest and the frames a peek spends clipped
+  // to rail width (mount and close), so chrome that slides between the two
+  // layouts animates in step with the clip instead of after it.
+  const compact = state === "collapsed" && collapsible === "icon" && !peeking;
 
   return (
     <SidebarInstanceContext value={instanceContextValue}>
       <div
         className="group peer hidden text-sidebar-foreground md:block"
         data-collapsible={state === "collapsed" && !flyoutPresent ? collapsible : ""}
+        data-compact={compact ? "" : undefined}
         data-peeking={peekingValue}
         data-side={side}
         data-slot="sidebar"
@@ -356,12 +361,13 @@ function Sidebar({
               ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
               : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
             // Peek keeps the overlay at full width and reveals it with clip-path
-            // so the thread list does not reflow on every frame.
-            "group-data-[peeking]:z-40 group-data-[peeking]:w-(--sidebar-width)! group-data-[peeking]:overflow-hidden",
-            "motion-safe:group-data-[peeking]:transition-[clip-path]! motion-safe:group-data-[peeking]:[transition-duration:var(--sidebar-peek-duration)]! motion-safe:group-data-[peeking]:ease-[cubic-bezier(0.23,1,0.32,1)]!",
-            "group-data-[peeking=true]:clip-path-[inset(0_0_0_0)] group-data-[peeking=true]:shadow-[8px_0_24px_rgba(0,0,0,0.18)]",
-            "group-data-[side=left]:group-data-[peeking=out]:clip-path-[inset(0_calc(100%_-_var(--sidebar-width-icon))_0_0)]",
-            "group-data-[side=right]:group-data-[peeking=out]:clip-path-[inset(0_0_0_calc(100%_-_var(--sidebar-width-icon)))]",
+            // so the thread list does not reflow on every frame. The open clip
+            // leaves 2rem of slack for the shadow and the resize rail.
+            "group-data-[peeking]:z-40 group-data-[peeking]:w-(--sidebar-width)!",
+            "motion-safe:group-data-[peeking]:transition-[clip-path,box-shadow]! motion-safe:group-data-[peeking]:[transition-duration:var(--sidebar-peek-duration)]! motion-safe:group-data-[peeking]:ease-[cubic-bezier(0.23,1,0.32,1)]!",
+            "group-data-[peeking=true]:[clip-path:inset(0_-2rem)] group-data-[peeking=true]:shadow-[0_0_24px_rgba(0,0,0,0.18)]",
+            "group-data-[side=left]:group-data-[peeking=out]:[clip-path:inset(0_calc(100%-var(--sidebar-width-icon))_0_0)]",
+            "group-data-[side=right]:group-data-[peeking=out]:[clip-path:inset(0_0_0_calc(100%-var(--sidebar-width-icon)))]",
             className,
           )}
           data-slot="sidebar-container"
@@ -806,8 +812,6 @@ const sidebarMenuButtonVariants = cva(
         default:
           "h-8 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-1.5 text-sm group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-[var(--sidebar-content-inset)]!",
         icon: "size-8 justify-center rounded-[var(--control-radius)] p-0",
-        // Fills the collapsed rail instead of staying a centered 32px icon.
-        tile: "aspect-square h-auto min-h-8 w-full min-w-0 justify-center rounded-[var(--control-radius)] p-1 group-data-[collapsible=icon]:size-auto! group-data-[collapsible=icon]:h-auto! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:p-1!",
         lg: "h-12 rounded-lg p-2 text-sm group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-0!",
         sm: "h-7 rounded-lg p-2 text-xs group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-[var(--sidebar-content-inset)]!",
       },
@@ -859,11 +863,9 @@ function SidebarMenuButton({
     };
   }
 
-  // Icon and tile buttons never show a full text label, so their tooltip
-  // stays available while the sidebar is expanded. Labelled rows only need
-  // it when collapsed.
-  const hideTooltip =
-    size === "icon" || size === "tile" ? isMobile : state !== "collapsed" || peekFlyout || isMobile;
+  // Icon buttons never show a text label, so their tooltip stays available
+  // while the sidebar is expanded. Labelled rows only need it when collapsed.
+  const hideTooltip = size === "icon" ? isMobile : state !== "collapsed" || peekFlyout || isMobile;
 
   return (
     <Tooltip>

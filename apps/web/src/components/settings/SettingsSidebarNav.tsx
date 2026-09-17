@@ -39,8 +39,8 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "../ui/sidebar";
+import { cn } from "../../lib/utils";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
-import { COLLAPSED_SWITCHER_CONTROL_CLASS } from "../sidebar/collapsedSidebarDock";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
   searchSettings,
@@ -104,6 +104,12 @@ const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   label: SETTINGS_SECTION_LABELS[to],
   icon: SETTINGS_SECTION_ICONS[to],
 }));
+
+// The icon-only sidebar can be wider than its 3rem icon column (macOS traffic
+// lights). Centre the column there and glide it to the docked edge in step with
+// the peek clip, instead of leaving it hugging the left of an empty band.
+const SETTINGS_NAV_COMPACT_SHIFT_CLASS =
+  "translate-x-0 group-data-compact:translate-x-[calc((var(--sidebar-width-icon)-3rem)/2)] motion-safe:transition-transform motion-safe:duration-(--sidebar-peek-duration) motion-safe:ease-[cubic-bezier(0.23,1,0.32,1)]";
 
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   const Icon = SETTINGS_SECTION_ICONS[to];
@@ -247,14 +253,21 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     },
     [activeResultIndex, clearSearch, handleSearchResultClick, isSearching, results],
   );
-  if (!isMobile && !open && !peekFlyout) {
-    return (
-      <>
-        <SidebarContent className="overflow-x-hidden px-1.5 py-2">
-          <div className="flex flex-col items-center gap-0.5">
+  // Icon-only sidebar. The section rows stay mounted and shrink to their icons
+  // (the shared menu button does that), so a peek only widens them in place.
+  const iconOnly = !isMobile && !open && !peekFlyout;
+  // A query typed before collapsing waits for the next peek to show results.
+  const showSearchResults = isSearching && !iconOnly;
+
+  return (
+    <>
+      <SidebarContent className="overflow-x-hidden">
+        <SidebarGroup
+          className={cn("gap-2 p-[var(--sidebar-content-inset)]", SETTINGS_NAV_COMPACT_SHIFT_CLASS)}
+        >
+          {iconOnly ? (
             <SidebarMenuButton
               size="icon"
-              className={COLLAPSED_SWITCHER_CONTROL_CLASS}
               aria-label="Search settings"
               tooltip="Search settings"
               onClick={() => {
@@ -264,77 +277,53 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
             >
               <SearchIcon />
             </SidebarMenuButton>
-            {navItems.map(({ to, label, icon: Icon }) => (
-              <SidebarMenuButton
-                key={to}
-                size="icon"
-                className={COLLAPSED_SWITCHER_CONTROL_CLASS}
-                aria-label={label}
-                tooltip={label}
-                isActive={pathname === to || pathname.startsWith(`${to}/`)}
-                onClick={() => {
-                  peekNow();
-                  handleSectionClick(to);
+          ) : (
+            <div className="flex h-8 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
+              <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
+              <Input
+                ref={searchInputRef}
+                nativeInput
+                unstyled
+                type="search"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.currentTarget.value);
+                  setActiveResultIndex(0);
                 }}
-              >
-                <Icon />
-              </SidebarMenuButton>
-            ))}
-          </div>
-        </SidebarContent>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <SidebarContent className="overflow-x-hidden">
-        <SidebarGroup className="gap-2 p-[var(--sidebar-content-inset)]">
-          <div className="flex h-8 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
-            <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
-            <Input
-              ref={searchInputRef}
-              nativeInput
-              unstyled
-              type="search"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.currentTarget.value);
-                setActiveResultIndex(0);
-              }}
-              onKeyDown={handleSearchKeyDown}
-              placeholder="Search"
-              aria-label="Search settings"
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={isSearching && hasResults}
-              aria-controls={isSearching && hasResults ? "settings-search-results" : undefined}
-              aria-activedescendant={
-                isSearching && results[activeResultIndex]
-                  ? `settings-search-result-${results[activeResultIndex].id}`
-                  : undefined
-              }
-              className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
-            />
-            {isSearching ? (
-              <Button
-                type="button"
-                size="icon-micro"
-                variant="ghost"
-                className="shrink-0 text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                aria-label="Clear settings search"
-                onClick={() => {
-                  clearSearch();
-                  searchInputRef.current?.focus();
-                }}
-              >
-                <XIcon className="size-3" />
-              </Button>
-            ) : (
-              <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">/</Kbd>
-            )}
-          </div>
-          {isSearching && results.length === 0 ? (
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Search"
+                aria-label="Search settings"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={isSearching && hasResults}
+                aria-controls={isSearching && hasResults ? "settings-search-results" : undefined}
+                aria-activedescendant={
+                  isSearching && results[activeResultIndex]
+                    ? `settings-search-result-${results[activeResultIndex].id}`
+                    : undefined
+                }
+                className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
+              />
+              {isSearching ? (
+                <Button
+                  type="button"
+                  size="icon-micro"
+                  variant="ghost"
+                  className="shrink-0 text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
+                  aria-label="Clear settings search"
+                  onClick={() => {
+                    clearSearch();
+                    searchInputRef.current?.focus();
+                  }}
+                >
+                  <XIcon className="size-3" />
+                </Button>
+              ) : (
+                <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">/</Kbd>
+              )}
+            </div>
+          )}
+          {showSearchResults && results.length === 0 ? (
             <p
               role="status"
               className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
@@ -342,7 +331,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
               No settings found
             </p>
           ) : null}
-          {isSearching ? (
+          {showSearchResults ? (
             <SidebarMenu
               className="ps-px"
               id={hasResults ? "settings-search-results" : undefined}
@@ -387,10 +376,18 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
                       isActive={isActive}
-                      onClick={() => handleSectionClick(item.to)}
+                      tooltip={item.label}
+                      onClick={() => {
+                        peekNow();
+                        handleSectionClick(item.to);
+                      }}
                     >
                       <Icon />
-                      <span className="truncate">{item.label}</span>
+                      {/* Fades with the peek clip so a half-revealed label never
+                          shows sliced through a letter. */}
+                      <span className="truncate group-data-compact:opacity-0 motion-safe:transition-opacity motion-safe:duration-(--sidebar-peek-duration)">
+                        {item.label}
+                      </span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -399,12 +396,16 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
           )}
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1">
-        <Suspense fallback={null}>
-          <T3ConnectSidebarSignIn />
-        </Suspense>
-        <div className="flex items-center gap-1">
-          <div className="min-w-0 flex-1">
+      <SidebarFooter
+        className={cn("px-[var(--sidebar-content-inset)] py-1", SETTINGS_NAV_COMPACT_SHIFT_CLASS)}
+      >
+        <div className="contents group-data-[collapsible=icon]:hidden">
+          <Suspense fallback={null}>
+            <T3ConnectSidebarSignIn />
+          </Suspense>
+        </div>
+        <div className="flex items-center gap-1 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:flex-col">
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:flex-none">
             <SidebarUtilityMenu />
           </div>
           <Suspense fallback={null}>
