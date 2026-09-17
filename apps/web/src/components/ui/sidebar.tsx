@@ -257,6 +257,25 @@ function Sidebar({
     () => ({ side, resizable: resolvedResizable }),
     [resolvedResizable, side],
   );
+  const iconCollapsed = state === "collapsed" && collapsible === "icon";
+  const [pinOpening, setPinOpening] = React.useState(false);
+  const wasIconCollapsedRef = React.useRef(iconCollapsed);
+
+  React.useEffect(() => {
+    if (iconCollapsed) {
+      wasIconCollapsedRef.current = true;
+      setPinOpening(false);
+      return;
+    }
+    if (!wasIconCollapsedRef.current) return;
+
+    setPinOpening(true);
+    const timeout = window.setTimeout(() => {
+      wasIconCollapsedRef.current = false;
+      setPinOpening(false);
+    }, SIDEBAR_PEEK_ANIMATION_MS);
+    return () => window.clearTimeout(timeout);
+  }, [iconCollapsed]);
 
   if (collapsible === "none") {
     return (
@@ -313,14 +332,13 @@ function Sidebar({
     );
   }
 
-  const iconCollapsed = state === "collapsed" && collapsible === "icon";
-
   return (
     <SidebarInstanceContext value={instanceContextValue}>
       <div
         className="group peer hidden text-sidebar-foreground md:block"
         data-collapsed={iconCollapsed ? "" : undefined}
         data-collapsible={state === "collapsed" && collapsible === "offcanvas" ? collapsible : ""}
+        data-opening={pinOpening ? "" : undefined}
         data-peeking={peeking && iconCollapsed ? "" : undefined}
         data-present={peekFlyout && iconCollapsed ? "" : undefined}
         data-side={side}
@@ -375,7 +393,10 @@ function Sidebar({
             onPeekPointerLeave();
           }}
         >
-          <div className="h-full w-full min-w-0 overflow-hidden" data-slot="sidebar-clip">
+          <div
+            className="h-full w-full min-w-0 group-data-collapsed:overflow-hidden group-data-present:overflow-hidden group-data-opening:overflow-hidden"
+            data-slot="sidebar-clip"
+          >
             <div
               className="flex h-full w-(--sidebar-width) min-w-(--sidebar-width) flex-col bg-sidebar surface-grain group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
               data-sidebar="sidebar"

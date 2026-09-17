@@ -1029,8 +1029,6 @@ html[data-window-inactive]
      clip edge never slices glyphs. Rail icons stay seated; settings icons
      already sit in the 3rem column and do not travel. */
   [data-slot="sidebar"] {
-    --sidebar-peek-duration: 280ms;
-    --sidebar-peek-ease: cubic-bezier(0.22, 1, 0.36, 1);
     --sidebar-peek-shift: 0.625rem;
   }
 
@@ -1040,7 +1038,8 @@ html[data-window-inactive]
     translate: 0;
   }
 
-  [data-sidebar-peek="copy"] :is(span, input, kbd, p) {
+  [data-sidebar-peek="copy"] :is(span, input, kbd, p, label),
+  [data-sidebar-peek="copy"] [data-slot="sidebar-menu-button"] > :not(svg) {
     opacity: 1;
     pointer-events: auto;
     translate: 0;
@@ -1058,7 +1057,11 @@ html[data-window-inactive]
 
   [data-slot="sidebar"][data-collapsed]:not([data-peeking])
     [data-sidebar-peek="copy"]
-    :is(span, input, kbd, p) {
+    :is(span, input, kbd, p, label),
+  [data-slot="sidebar"][data-collapsed]:not([data-peeking])
+    [data-sidebar-peek="copy"]
+    [data-slot="sidebar-menu-button"]
+    > :not(svg) {
     opacity: 0;
     pointer-events: none;
     translate: calc(var(--sidebar-peek-shift) * -0.6) 0;
@@ -1072,7 +1075,8 @@ html[data-window-inactive]
     }
 
     [data-sidebar-peek="label"],
-    [data-sidebar-peek="copy"] :is(span, input, kbd, p) {
+    [data-sidebar-peek="copy"] :is(span, input, kbd, p, label),
+    [data-sidebar-peek="copy"] [data-slot="sidebar-menu-button"] > :not(svg) {
       transition:
         opacity calc(var(--sidebar-peek-duration) * 0.8) var(--sidebar-peek-ease),
         translate var(--sidebar-peek-duration) var(--sidebar-peek-ease);

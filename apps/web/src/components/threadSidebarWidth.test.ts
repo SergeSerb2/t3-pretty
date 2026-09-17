@@ -106,7 +106,9 @@ describe("thread sidebar width", () => {
 
     expect(sidebar).toContain("group-data-collapsed:w-(--sidebar-width-icon)");
     expect(sidebar).toContain("group-data-collapsed:group-data-peeking:w-(--sidebar-width)!");
-    expect(sidebar).toContain('className="h-full w-full min-w-0 overflow-hidden"');
+    expect(sidebar).toContain("group-data-collapsed:overflow-hidden");
+    expect(sidebar).toContain("group-data-present:overflow-hidden");
+    expect(sidebar).toContain("group-data-opening:overflow-hidden");
     expect(sidebar).toContain("w-(--sidebar-width) min-w-(--sidebar-width)");
     expect(sidebar).toContain("motion-safe:transition-[width,box-shadow]");
     expect(sidebar).toContain("group-data-present:z-40");
@@ -133,6 +135,9 @@ describe("thread sidebar width", () => {
     expect(chrome).toContain('data-sidebar-peek="label"');
     expect(css).toContain('[data-sidebar-peek="pane"]');
     expect(css).toContain('[data-slot="sidebar"][data-collapsed]:not([data-peeking])');
+    expect(css).not.toContain("--sidebar-peek-duration: 280ms");
+    expect(css).toContain("var(--sidebar-peek-duration)");
+    expect(css).toContain("var(--sidebar-peek-ease)");
   });
 
   it("keeps the project rail one column whether the sidebar is icon-only or open", () => {
