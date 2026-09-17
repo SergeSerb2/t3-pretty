@@ -4612,7 +4612,10 @@ export default function Sidebar() {
           }}
           footer={<SidebarUtilityMenu orientation="vertical" />}
         />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-sidebar-border/60">
+        <div
+          className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-sidebar-border/60"
+          data-sidebar-peek="pane"
+        >
           <SidebarContent
             className="gap-0 min-h-full"
             fixedHeader={

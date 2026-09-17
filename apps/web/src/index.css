@@ -1024,6 +1024,61 @@ html[data-window-inactive]
     display: none;
   }
 
+  /* Collapsed peek: the shell animates width over a clip of the expanded
+     tree. Copy and the thread pane fade/slide into the revealed space so the
+     clip edge never slices glyphs. Rail icons stay seated; settings icons
+     already sit in the 3rem column and do not travel. */
+  [data-slot="sidebar"] {
+    --sidebar-peek-duration: 280ms;
+    --sidebar-peek-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --sidebar-peek-shift: 0.625rem;
+  }
+
+  [data-sidebar-peek="pane"],
+  [data-sidebar-peek="label"] {
+    opacity: 1;
+    translate: 0;
+  }
+
+  [data-sidebar-peek="copy"] :is(span, input, kbd, p) {
+    opacity: 1;
+    pointer-events: auto;
+    translate: 0;
+  }
+
+  [data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-sidebar-peek="pane"] {
+    opacity: 0;
+    pointer-events: none;
+    translate: calc(var(--sidebar-peek-shift) * -1) 0;
+  }
+
+  [data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-sidebar-peek="label"] {
+    opacity: 0;
+  }
+
+  [data-slot="sidebar"][data-collapsed]:not([data-peeking])
+    [data-sidebar-peek="copy"]
+    :is(span, input, kbd, p) {
+    opacity: 0;
+    pointer-events: none;
+    translate: calc(var(--sidebar-peek-shift) * -0.6) 0;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    [data-sidebar-peek="pane"] {
+      transition:
+        opacity calc(var(--sidebar-peek-duration) * 0.8) var(--sidebar-peek-ease),
+        translate var(--sidebar-peek-duration) var(--sidebar-peek-ease);
+    }
+
+    [data-sidebar-peek="label"],
+    [data-sidebar-peek="copy"] :is(span, input, kbd, p) {
+      transition:
+        opacity calc(var(--sidebar-peek-duration) * 0.8) var(--sidebar-peek-ease),
+        translate var(--sidebar-peek-duration) var(--sidebar-peek-ease);
+    }
+  }
+
   /* Each maintainer palette gives the same line art its own material: rose
      vellum, forest drafting paper, marine cyanotype, copper, and violet ink.
      These colors stay deliberately deep at the top edge so the white stage

@@ -40,7 +40,7 @@ describe("sidebar peek", () => {
   });
 
   it("keeps the overlay mounted through the close width animation", () => {
-    expect(SIDEBAR_PEEK_ANIMATION_MS).toBe(220);
+    expect(SIDEBAR_PEEK_ANIMATION_MS).toBe(280);
   });
 
   it("does not ignore a leave into nowhere", () => {
