@@ -58,6 +58,17 @@ export SYNC_RESOLUTION_CACHE_DIR="${SYNC_RESOLUTION_CACHE_DIR:-${CACHE_ROOT}/syn
 # the next scheduled run instead of publishing unresolved fork-side fallbacks.
 export SYNC_MODEL_DEADLINE_EPOCH_MS="$(( ($(date +%s) + 150 * 60) * 1000 ))"
 mkdir -p "$SYNC_RESOLUTION_CACHE_DIR"
+# Reviewed full-file seeds survive cache-branch prune and unblock a pinned
+# nightly when the batched model path cannot validate the first conflict.
+# Remote checkpoint entries still win exact-key collisions.
+if [[ -d "$ROOT/.t3-fork/resolution-seeds" ]]; then
+  for seed in "$ROOT/.t3-fork/resolution-seeds/"[0-9a-f]*.json; do
+    [[ -f "$seed" ]] || continue
+    seed_name="${seed##*/}"
+    [[ "$seed_name" =~ ^[0-9a-f]{64}[.]json$ ]] || continue
+    cp -n "$seed" "$SYNC_RESOLUTION_CACHE_DIR/$seed_name"
+  done
+fi
 
 origin_git() {
   local store="" candidate
