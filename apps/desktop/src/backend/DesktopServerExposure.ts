@@ -115,7 +115,7 @@ const resolveLanAdvertisedHost = (
 
     for (const address of interfaceAddresses) {
       if (address.internal) continue;
-      if (address.family !== "IPv4") continue;
+      if (!DesktopNetworkInterfaces.isIpv4Family(address.family)) continue;
       if (isUsableLanIpv4Address(address.address)) {
         return address.address;
       }
@@ -341,11 +341,6 @@ interface RuntimeState {
   readonly tailscaleServePort: number;
 }
 
-interface ResolvedRuntimeState {
-  readonly state: RuntimeState;
-  readonly unavailable: boolean;
-}
-
 const initialRuntimeState = (): RuntimeState =>
   runtimeStateFromResolvedExposure({
     requestedMode: DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS.serverExposureMode,
@@ -410,43 +405,23 @@ function resolveRuntimeState(input: {
   readonly port: number;
   readonly networkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces;
   readonly advertisedHostOverride: Option.Option<string>;
-}): ResolvedRuntimeState {
+}): RuntimeState {
   const advertisedHostOverride = Option.getOrUndefined(input.advertisedHostOverride);
-  const requestedExposure = resolveDesktopServerExposure({
-    mode: input.requestedMode,
-    port: input.port,
-    networkInterfaces: input.networkInterfaces,
-    ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
-  });
-  // resolveLanAdvertisedHost already falls back to Tailscale IP when no LAN exists,
-  // so endpointUrl will be non-null if any usable IP is available.
-  const unavailable =
-    input.requestedMode === "network-accessible" &&
-    requestedExposure.endpointUrl === null &&
-    !Object.values(input.networkInterfaces).some((addresses) =>
-      addresses?.some(
-        (address) =>
-          !address.internal && address.family === "IPv4" && isTailscaleIpv4Address(address.address),
-      ),
-    );
-  const exposure = unavailable
-    ? resolveDesktopServerExposure({
-        mode: "local-only",
-        port: input.port,
-        networkInterfaces: input.networkInterfaces,
-        ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
-      })
-    : requestedExposure;
-
-  return {
-    state: runtimeStateFromResolvedExposure({
-      requestedMode: input.requestedMode,
-      settings: input.settings,
-      exposure,
+  // Keep the requested bind even when no address is available to advertise.
+  // Falling back to loopback made late Wi-Fi / DHCP addresses unshareable until
+  // a settings toggle or relaunch, because refresh refuses to invent a LAN URL
+  // for a 127.0.0.1 listener.
+  return runtimeStateFromResolvedExposure({
+    requestedMode: input.requestedMode,
+    settings: input.settings,
+    exposure: resolveDesktopServerExposure({
+      mode: input.requestedMode,
       port: input.port,
+      networkInterfaces: input.networkInterfaces,
+      ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
     }),
-    unavailable,
-  };
+    port: input.port,
+  });
 }
 
 const requiresBackendRelaunch = (previous: RuntimeState, next: RuntimeState): boolean =>
@@ -477,7 +452,42 @@ export const make = Effect.gen(function* () {
 
   const readNetworkInterfaces = networkInterfaces.read;
 
-  const getState = Ref.get(stateRef).pipe(Effect.map(toContractState));
+  // Re-resolve the advertised host from live interfaces when the backend is
+  // already bound on all addresses. A loopback bind cannot serve a newly
+  // appeared LAN URL, so that snapshot stays put until configure/setMode
+  // (which may relaunch). Bind host and port are never changed here.
+  const refreshAdvertisedExposure = Effect.gen(function* () {
+    const current = yield* Ref.get(stateRef);
+    if (current.bindHost !== DESKTOP_LAN_BIND_HOST) {
+      return current;
+    }
+    const settings = yield* desktopSettings.get;
+    const currentNetworkInterfaces = yield* readNetworkInterfaces;
+    const resolved = resolveRuntimeState({
+      requestedMode: current.requestedMode,
+      settings,
+      port: current.port,
+      networkInterfaces: currentNetworkInterfaces,
+      advertisedHostOverride: config.desktopLanHostOverride,
+    });
+    const next: RuntimeState = {
+      ...current,
+      mode: resolved.mode,
+      endpointUrl: resolved.endpointUrl,
+      advertisedHost: resolved.advertisedHost,
+    };
+    if (
+      next.mode === current.mode &&
+      Option.getOrNull(next.endpointUrl) === Option.getOrNull(current.endpointUrl) &&
+      Option.getOrNull(next.advertisedHost) === Option.getOrNull(current.advertisedHost)
+    ) {
+      return current;
+    }
+    yield* Ref.set(stateRef, next);
+    return next;
+  }).pipe(Effect.withSpan("desktop.serverExposure.refreshAdvertisedExposure"));
+
+  const getState = refreshAdvertisedExposure.pipe(Effect.map(toContractState));
   const backendConfig = Ref.get(stateRef).pipe(Effect.map(toBackendConfig));
 
   const configureFromSettings = Effect.fn("desktop.serverExposure.configureFromSettings")(
@@ -492,8 +502,8 @@ export const make = Effect.gen(function* () {
         networkInterfaces: currentNetworkInterfaces,
         advertisedHostOverride: config.desktopLanHostOverride,
       });
-      yield* Ref.set(stateRef, resolved.state);
-      return toContractState(resolved.state);
+      yield* Ref.set(stateRef, resolved);
+      return toContractState(resolved);
     },
   );
 
@@ -516,10 +526,6 @@ export const make = Effect.gen(function* () {
       advertisedHostOverride: config.desktopLanHostOverride,
     });
 
-    if (resolved.unavailable) {
-      return yield* new DesktopServerExposureNoNetworkAddressError({ port: previous.port });
-    }
-
     const change = yield* desktopSettings.setServerExposureMode(mode).pipe(
       Effect.mapError(
         (cause) =>
@@ -530,10 +536,10 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-    yield* Ref.set(stateRef, resolved.state);
+    yield* Ref.set(stateRef, resolved);
     return {
-      state: toContractState(resolved.state),
-      requiresRelaunch: change.changed || requiresBackendRelaunch(previous, resolved.state),
+      state: toContractState(resolved),
+      requiresRelaunch: change.changed || requiresBackendRelaunch(previous, resolved),
     };
   });
 
@@ -573,7 +579,7 @@ export const make = Effect.gen(function* () {
   );
 
   const getAdvertisedEndpoints = Effect.gen(function* () {
-    const state = yield* Ref.get(stateRef);
+    const state = yield* refreshAdvertisedExposure;
     const currentNetworkInterfaces = yield* readNetworkInterfaces;
     const coreEndpoints = resolveDesktopCoreAdvertisedEndpoints({
       port: state.port,
@@ -598,7 +604,11 @@ export const make = Effect.gen(function* () {
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
-    return [...coreEndpoints, ...tailscaleEndpoints].slice(0, ADVERTISED_ENDPOINTS_MAX_ITEMS);
+    const seenHttpBaseUrls = new Set(coreEndpoints.map((endpoint) => endpoint.httpBaseUrl));
+    const extraTailscaleEndpoints = tailscaleEndpoints.filter(
+      (endpoint) => !seenHttpBaseUrls.has(endpoint.httpBaseUrl),
+    );
+    return [...coreEndpoints, ...extraTailscaleEndpoints].slice(0, ADVERTISED_ENDPOINTS_MAX_ITEMS);
   }).pipe(Effect.withSpan("desktop.serverExposure.getAdvertisedEndpoints"));
 
   return DesktopServerExposure.of({

@@ -20,6 +20,11 @@ export type NetworkInterfaces = Readonly<
   Record<string, readonly DesktopNetworkInterfaceInfo[] | undefined>
 >;
 
+// os.networkInterfaces() reports family as "IPv4"/"IPv6" on Electron's Node,
+// and as 4/6 (or the string "4"/"6") on some other Node builds.
+export const isIpv4Family = (family: string | number): boolean =>
+  family === "IPv4" || family === 4 || family === "4";
+
 export class DesktopNetworkInterfacesReadError extends Schema.TaggedError<DesktopNetworkInterfacesReadError>()(
   "DesktopNetworkInterfacesReadError",
   {
