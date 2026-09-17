@@ -3848,3 +3848,77 @@
 - `docs/user/install.md` — The `https://t3.codes/install.sh` and `https://t3.codes/install.ps1` installer URLs.. Reason: Those URLs install upstream T3 Code and would cross T3 Pretty's authoritative R2 release boundary. The same parent installation flows are retained using the fork-owned R2 endpoints.
 - `docs/user/install.md` — The `T3CODE_CHANNEL=nightly` and `T3CODE_VERSION` installer-selection guidance.. Reason: The documented T3 Pretty delivery contract is the fork's R2 `latest` feed; the supplied context does not establish parent channel or exact-version selectors within that feed, and documenting them could redirect or promise artifacts outside the fork release boundary.
 - `docs/user/install.md` — The one-shot `npx t3@latest` recommendation.. Reason: That command runs upstream T3 Code rather than T3 Pretty, as the fork-specific warning immediately above explicitly states.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260916.1825`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260916.1811`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/provider/Layers/OpenCodeProvider.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/provider/opencodeRuntime.inventory.test.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/mobile/src/connection/environment-cache-store.test.ts` — Preserved the EnvironmentId, ThreadId, ProjectId, ProviderInstanceId, OrchestrationThreadDetailSnapshot, and VcsListRefsResult imports used by T3 Pretty's hardened mobile environment-cache and thread-snapshot fixtures.
+- `apps/mobile/src/connection/environment-cache-store.ts` — Preserved the exported 25-entry LRU bound for per-environment mobile thread snapshot caches, preventing unbounded SQLite growth from large paginated snapshots.
+- `apps/server/src/provider/Layers/CursorAdapter.ts` — Preserved T3 Pretty's CursorTransportFailure accumulation and transport-dump suppression for actual assistant ContentDelta answers, including the retry-oriented failure guard.
+- `apps/server/src/provider/Layers/CursorAdapter.ts` — Preserved the existing pending assistant-item lifecycle and itemId propagation for answer content.
+- `apps/server/src/provider/Layers/CursorAdapter.ts` — Preserved the fork's session-scoped notification consumer and surrounding Cursor runtime event flow.
+- `apps/server/src/provider/Layers/CursorAdapter.ts` — Preserved T3 Pretty's reusable `promptOnce` wrapper and mutable result flow required to retry Cursor turns after transport failures.
+- `apps/server/src/provider/Layers/CursorAdapter.ts` — Preserved runtime instructions for ordinary prompts and retry continuation prompts as a separate ACP content block.
+- `apps/server/src/provider/Layers/CursorAdapter.ts` — Preserved the surrounding transport-failure handling that drains events, suppresses failed partial assistant state, warns the runtime, and resumes with `Continue.` instead of duplicating the original request.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Preserved T3 Pretty's Grok reasoning-event behavior: ThoughtDelta notifications still emit stamped reasoning_text deltas with provider, thread, turn, text, and raw-payload context.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Preserved ContentDelta forwarding, including optional item IDs and each content event's original stream kind.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Preserved T3 Pretty’s additional status, automated-review, and subagent-related Lucide icon imports used by its richer thread indicators.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Preserved PullRequestGlyph rather than restoring restricted Lucide pull-request icons.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Preserved T3 Pretty’s PullRequestGlyph.stack and PullRequestGlyph.pullRequest usage instead of restoring the restricted Lucide LayersIcon and GitPullRequestArrowIcon glyphs.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Preserved the compact badge control’s fork-compatible icon presentation and sizing through the existing ThreadPullRequestBadgePresentation contract.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Preserved T3 Pretty's `automatedReview: null` field on generated PR status indicators, maintaining compatibility with the fork's automated-review status integration.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Preserved provider-aware change-request branding through `presentation.shortName`.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Preserved T3 Pretty's eased worktree handoff: once setup releases its live-placeholder reservation, the first turn may display its Thinking row even while an asynchronous setup script is still running.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Preserved existing activity-row and failed-tool handling for deciding when the live Thinking placeholder is needed.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — T3 Pretty's `liveHeadline` remains part of timeline activity state, preserving generated live activity headlines and related live-tool-call presentation.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — `liveHeadline` remains in the `useMemo` dependency list so headline changes continue to propagate correctly.
+- `apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx` — Preserved T3 Pretty's openPullRequestLinkOnHost integration for opening pull-request links on the host.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Preserved `CircleDotIcon`, which supports T3 Pretty's native Linear and Sentry issue-management sidebar behavior.
+- `apps/web/src/composer-logic.ts` — Preserved T3 Pretty's client-side slash commands for skills, new-thread, settings, commands, and auto-pr, in addition to model, plan, and default.
+- `apps/web/src/composer-logic.ts` — Preserved the distinction documented between built-in client commands and provider commands forwarded to the CLI.
+- `apps/web/src/composer-logic.ts` — Preserved foreground and background submission intents used by T3 Pretty's queue/steer delivery behavior.
+- `apps/web/src/sourceControlPresentation.ts` — Preserved Cursor Origin as a first-class source-control host by retaining OriginIcon for the existing "origin" presentation case.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/connection/environment-cache-store.test.ts` — Integrated the parent-added MessageId contract import for the newest environment-cache-store test behavior.
+- `apps/mobile/src/connection/environment-cache-store.ts` — Updated the thread snapshot cache schema from version 3 to version 4 so older pre-thinking cache records are reloaded rather than allowing system-role fallbacks to hide settled reasoning messages after an afterSequence resume.
+- `apps/server/src/provider/Layers/CursorAdapter.ts` — Adopted the parent's first-party ThoughtDelta implementation in place of T3 Pretty's earlier fallthrough implementation.
+- `apps/server/src/provider/Layers/CursorAdapter.ts` — Thought narration is logged and emitted as reasoning_text without being appended to assistantReply, so resumed or retried turns replay only answer text.
+- `apps/server/src/provider/Layers/CursorAdapter.ts` — Separated ThoughtDelta from ContentDelta and simplified the now-narrowed ContentDelta event construction.
+- `apps/server/src/provider/Layers/CursorAdapter.ts` — Integrated upstream ACP slash-command handling: prompts beginning with an exact command token are sent without appended runtime instructions, preventing command parsing or arguments from being altered.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Replaced the fork-only ThoughtDelta fall-through case with the parent's first-party dedicated ThoughtDelta implementation and explicit return.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Integrated the parent’s PULL_REQUEST_STATE_PRESENTATION import for centralized pull-request state presentation.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Integrated the parent’s PullRequestGlyphIcon type used by PrStatusIndicator.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Retained the parent’s PullRequestGlyph-based pull-request icon path.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Integrated the parent’s full badge presentation resolver for stack, single-PR, and multi-linked-PR states.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Integrated aggregate pull-request state tones, labels, layer/count text, status-aware icons, pending-status fallback text, and null handling when no complete PR target is available.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Integrated accessible labels describing stack state and additional linked pull requests for the shared sidebar/composer control.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Replaced duplicated open/closed/merged branches with the centralized `resolvePullRequestState` presentation already computed as `state`.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Integrated upstream state-derived labels and tone classes, including consistent draft presentation.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Integrated the state-specific `Icon` in each PR status indicator.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Integrated upstream's standardized tooltip lead format using the provider name, PR number, and resolved state label.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Integrated upstream's `hasStreamingReasoningRow` guard so a live reasoning message suppresses the redundant Thinking placeholder.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added `unsettledTurnId` using `deriveUnsettledTurnId(latestTurn ?? null, runningTurnId)`, keeping row blocks and adjacent placeholders consistent about whether a turn is live.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added `latestTurn.state`, `latestTurn.completedAt`, and `runningTurnId` as memo dependencies required by unsettled-turn derivation while retaining the upstream fine-grained dependency strategy.
+- `apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx` — Integrated the parent PullRequestGlyph import used by the updated pull-request timeline UI.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Integrated upstream's removal of `GitPullRequestIcon`; pull-request presentation can continue through the existing `PullRequestGlyph` abstraction.
+- `apps/web/src/composer-logic.ts` — Added the parent `alternate` composer submission intent, matching the existing running-session modifier-key branch that returns `alternate`.
+- `apps/web/src/sourceControlPresentation.ts` — Integrated the parent import cleanup by eliminating the duplicate ForgejoIcon import.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/provider/Layers/OpenCodeProvider.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/provider/opencodeRuntime.inventory.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Upstream's `!setupRunning` guard on the Thinking-row condition.. Reason: T3 Pretty's newer setup handoff architecture intentionally uses `setupReservesLivePlaceholders` and the early return above; retaining the legacy setup-wide guard would hide the first turn's live placeholder after agent handoff while an asynchronous setup script is still running.
