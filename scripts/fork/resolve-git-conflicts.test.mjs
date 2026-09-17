@@ -3020,6 +3020,54 @@ ${">".repeat(7)} theirs
     });
   });
 
+  it("reuses the StorageSettings.tsx full-file seed as a completed resolution", () => {
+    const key = "97d6ff2ef26b1605e0a4306fe4ee84cb71639f49811891b4fce295daf4d39cdd";
+    const seedDir = NodePath.resolve(
+      NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+      "../../.t3-fork/resolution-seeds",
+    );
+    const cached = readCachedResolution({
+      key,
+      cacheDir: seedDir,
+      expectedPath: "apps/web/src/components/settings/StorageSettings.tsx",
+    });
+
+    assert.ok(cached);
+    assert.equal(cached.path, "apps/web/src/components/settings/StorageSettings.tsx");
+    assert.equal(typeof cached.resolvedSource, "string");
+    assert.notInclude(cached.resolvedSource, "<<<<<<<");
+    assert.notInclude(cached.resolvedSource, ">>>>>>>");
+    assert.notInclude(cached.resolvedSource, "|||||||");
+    assert.equal(
+      [...cached.resolvedSource.matchAll(/export function StorageSettingsPanel\(/gu)].length,
+      1,
+    );
+    assert.equal(
+      [...cached.resolvedSource.matchAll(/function StorageCleanupPolicySections\(/gu)].length,
+      1,
+    );
+    assert.equal(
+      [...cached.resolvedSource.matchAll(/function StorageInventorySettings\(/gu)].length,
+      1,
+    );
+    assert.include(cached.resolvedSource, "function RetentionControl(");
+    assert.include(cached.resolvedSource, 'from "@t3tools/shared/projectSettings"');
+    assert.include(cached.resolvedSource, "resolveWorktreeCleanup");
+    assert.include(cached.resolvedSource, 'id="storage-worktrees"');
+    assert.include(cached.resolvedSource, 'id="storage-artifacts"');
+    assert.include(cached.resolvedSource, "worktreeOnMerge");
+    assert.include(cached.resolvedSource, "browserArtifactsAfterDays");
+    assert.include(cached.resolvedSource, "useStorageInventories");
+    assert.include(cached.resolvedSource, 'searchableSetting("storage-disk-use")');
+    assert.include(cached.resolvedSource, 'searchableSetting("storage-cleanup")');
+    assert.include(cached.resolvedSource, "FolderOpenIcon");
+    assert.include(cached.resolvedSource, "SettingsScopeNotice");
+    assertValidResolvedSource({
+      path: cached.path,
+      source: cached.resolvedSource,
+    });
+  });
+
   it("installs parser dependencies before resolving and gates the complete web tree", () => {
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");
     const earlyInstall = script.indexOf(
