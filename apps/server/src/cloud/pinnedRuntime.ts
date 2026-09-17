@@ -97,6 +97,41 @@ export class PinnedRuntimePreflightBlockedError extends Schema.TaggedError<Pinne
   }
 }
 
+/**
+ * `@ff-labs/fff-node` ships ESM-only `exports`. The CLI loads it with
+ * `createRequire` (SEA cannot `import` a file-backed package), so an npm
+ * install cannot start until this adds a `require` condition.
+ */
+export function fffNodeRequireExportPatch(manifest: unknown): unknown | undefined {
+  if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) return;
+  const record = manifest as Record<string, unknown>;
+  const exportsField = record.exports;
+  if (exportsField === null || typeof exportsField !== "object" || Array.isArray(exportsField)) {
+    return;
+  }
+  const exportsRecord = exportsField as Record<string, unknown>;
+  const entry = exportsRecord["."];
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return;
+  const conditions = entry as Record<string, unknown>;
+  if (typeof conditions.require === "string") return;
+  const target =
+    (typeof conditions.import === "string" ? conditions.import : undefined) ??
+    (typeof conditions.default === "string" ? conditions.default : undefined) ??
+    (typeof record.main === "string" ? record.main : undefined);
+  if (target === undefined) return;
+  return {
+    ...record,
+    exports: {
+      ...exportsRecord,
+      ".": {
+        ...conditions,
+        require: target,
+        ...(typeof conditions.default === "string" ? {} : { default: target }),
+      },
+    },
+  };
+}
+
 export type PinnedRuntimeProgress =
   | { readonly stage: "download"; readonly received: number; readonly total: number | undefined }
   | { readonly stage: "verify" | "extract" | "validate" | "cached" };
@@ -362,6 +397,40 @@ const installFromForkCliTarball = Effect.fn("cloud.pinned_runtime.install_cli_ta
       ),
     );
   yield* fs.remove(archivePath, { force: true }).pipe(Effect.ignore);
+  const fffNodePackageJson = path.join(
+    stagingDir,
+    "node_modules",
+    "@ff-labs",
+    "fff-node",
+    "package.json",
+  );
+  if (yield* fs.exists(fffNodePackageJson).pipe(Effect.orElseSucceed(() => false))) {
+    const raw = yield* fs.readFileString(fffNodePackageJson).pipe(
+      Effect.mapError(
+        (cause) => new PinnedRuntimeInstallError({ step: "reading fff-node for a CJS export", cause }),
+      ),
+    );
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (cause) {
+      return yield* new PinnedRuntimeInstallError({
+        step: "reading fff-node for a CJS export",
+        cause,
+      });
+    }
+    const patched = fffNodeRequireExportPatch(parsed);
+    if (patched !== undefined) {
+      yield* fs
+        .writeFileString(fffNodePackageJson, `${JSON.stringify(patched, null, 2)}\n`)
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new PinnedRuntimeInstallError({ step: "patching fff-node for CJS require", cause }),
+          ),
+        );
+    }
+  }
   const npmBin = path.join(stagingDir, "node_modules", ".bin", "t3");
   if (!(yield* fs.exists(npmBin).pipe(Effect.orElseSucceed(() => false)))) {
     return yield* new PinnedRuntimeInstallError({
