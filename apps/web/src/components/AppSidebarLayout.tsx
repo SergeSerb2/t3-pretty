@@ -82,7 +82,7 @@ function SidebarControl({
   isWindowFullscreen: boolean;
 }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const { isMobile, open, toggleSidebar } = useSidebar();
+  const { isMobile, open, peeking, toggleSidebar } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const stageBackdropVariant = useSidebarStageBackdropVariant(
@@ -93,6 +93,7 @@ function SidebarControl({
     isMacosDesktop,
     isMobile,
     sidebarOpen: open,
+    sidebarPeeking: peeking,
   };
   const reserveTrafficLights = shouldReserveMacosTrafficLights({
     ...trafficLights,

@@ -32,6 +32,26 @@ describe("macOS traffic lights vs collapsed sidebar", () => {
     ).toBe(false);
   });
 
+  it("restores native lights while the collapsed desktop sidebar is peeking", () => {
+    expect(
+      shouldShowMacosWindowButtons({
+        isMacosDesktop: true,
+        isMobile: false,
+        sidebarOpen: false,
+        sidebarPeeking: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldReserveMacosTrafficLights({
+        isFullscreen: false,
+        isMacosDesktop: true,
+        isMobile: false,
+        sidebarOpen: false,
+        sidebarPeeking: true,
+      }),
+    ).toBe(true);
+  });
+
   it("keeps lights in fullscreen-off mobile chrome and drops the inset in fullscreen", () => {
     expect(
       shouldReserveMacosTrafficLights({
@@ -98,6 +118,7 @@ describe("macOS traffic lights vs collapsed sidebar", () => {
     expect(layout).toContain("hideMacosWindowButtonsThenReleaseInset");
     expect(layout).toContain("setWindowButtonVisibility");
     expect(layout).toContain("sendWindowButtonVisibility(true)");
+    expect(layout).toContain("sidebarPeeking: peeking");
     expect(layout).toContain('data-sidebar-control=""');
     expect(layout).not.toContain("MACOS_TRAFFIC_LIGHTS_LEFT_INSET");
     expect(css).toContain("html[data-macos-traffic-lights]");
