@@ -30,27 +30,73 @@ const DynamicIcon = lazy(() =>
   import("lucide-react/dynamic").then((module) => ({ default: module.DynamicIcon })),
 );
 
-function FolderRailIcon({ folder }: { readonly folder: SidebarProjectFolder }) {
+const FOLDER_RAIL_PREVIEW_LIMIT = 4;
+
+/** Faint mosaic of contained project icons, clipped to the frosted folder tile. */
+function FolderRailContentsPreview({
+  projects,
+}: {
+  readonly projects: readonly SidebarProjectSnapshot[];
+}) {
+  const previews = projects.slice(0, FOLDER_RAIL_PREVIEW_LIMIT);
+  if (previews.length === 0) return null;
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "pointer-events-none absolute inset-[3px] z-0 grid gap-px overflow-hidden rounded-[3px] opacity-[0.55] saturate-[1.25]",
+        previews.length === 1 ? "grid-cols-1" : "grid-cols-2",
+      )}
+      style={{
+        maskImage: "radial-gradient(circle, transparent 30%, black 78%)",
+        WebkitMaskImage: "radial-gradient(circle, transparent 30%, black 78%)",
+      }}
+    >
+      {previews.map((project) => (
+        <span key={project.projectKey} className="flex min-h-0 min-w-0 overflow-hidden">
+          <ProjectFavicon project={project} className="size-full" />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+const FOLDER_RAIL_GLYPH_CLASS = "relative z-10 drop-shadow-[0_0_1.5px_var(--sidebar)]";
+
+function FolderRailGlyph({ folder }: { readonly folder: SidebarProjectFolder }) {
   const Fallback = folder.collapsed ? FolderIcon : FolderOpenIcon;
   if (folder.icon?.kind === "emoji") {
     return (
       <span
         aria-hidden
-        className="inline-flex size-4 shrink-0 items-center justify-center leading-none [container-type:size]"
+        className={cn(
+          FOLDER_RAIL_GLYPH_CLASS,
+          "inline-flex size-4 shrink-0 items-center justify-center leading-none [container-type:size]",
+        )}
       >
         <span className="text-[length:80cqh] leading-none">{folder.icon.emoji}</span>
       </span>
     );
   }
   if (folder.icon?.kind === "monogram") {
-    return <ProjectMonogram text={folder.icon.text} color={folder.icon.color} />;
+    return (
+      <ProjectMonogram
+        text={folder.icon.text}
+        color={folder.icon.color}
+        className={FOLDER_RAIL_GLYPH_CLASS}
+      />
+    );
   }
   if (folder.icon?.kind === "lucide") {
     const colorClassName = projectIconColorClassName(folder.icon.color);
     return (
       <span
         aria-hidden
-        className={cn("inline-flex size-4 shrink-0 items-center justify-center", colorClassName)}
+        className={cn(
+          FOLDER_RAIL_GLYPH_CLASS,
+          "inline-flex size-4 shrink-0 items-center justify-center",
+          colorClassName,
+        )}
       >
         <Suspense fallback={<Fallback className="size-full" />}>
           <DynamicIcon name={folder.icon.name as IconName} className="size-full" />
@@ -58,7 +104,22 @@ function FolderRailIcon({ folder }: { readonly folder: SidebarProjectFolder }) {
       </span>
     );
   }
-  return <Fallback />;
+  return <Fallback className={FOLDER_RAIL_GLYPH_CLASS} />;
+}
+
+function FolderRailIcon({
+  folder,
+  projects,
+}: {
+  readonly folder: SidebarProjectFolder;
+  readonly projects: readonly SidebarProjectSnapshot[];
+}) {
+  return (
+    <>
+      <FolderRailContentsPreview projects={projects} />
+      <FolderRailGlyph folder={folder} />
+    </>
+  );
 }
 
 // Slides out from the rail; Base UI then skips this once the next icon is hovered.
@@ -70,7 +131,7 @@ const RAIL_DROP_HIGHLIGHT_CLASS = "bg-sidebar-row-hover ring-1 ring-ring/80";
 const RAIL_FOLDER_BEFORE_CLASS = "shadow-[inset_0_2px_0_0_var(--color-ring)]";
 const RAIL_FOLDER_AFTER_CLASS = "shadow-[inset_0_-2px_0_0_var(--color-ring)]";
 /** Frosted control-surface tile; hover/selected `bg-*` still replace the fill. */
-const RAIL_FOLDER_BUTTON_CLASS = "project-rail-folder";
+const RAIL_FOLDER_BUTTON_CLASS = "relative project-rail-folder";
 
 function railDragTypes(event: DragEvent): readonly string[] {
   return event.dataTransfer === null ? [] : Array.from(event.dataTransfer.types);
@@ -482,7 +543,7 @@ export function SidebarProjectRail({
               onFolderContextMenu ? (event) => onFolderContextMenu(event, item.folder) : undefined
             }
           >
-            <FolderRailIcon folder={item.folder} />
+            <FolderRailIcon folder={item.folder} projects={item.projects} />
           </SidebarMenuButton>
           {item.folder.collapsed && attention ? (
             <span
