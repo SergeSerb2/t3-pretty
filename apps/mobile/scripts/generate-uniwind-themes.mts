@@ -5,9 +5,11 @@ import * as NodePath from "node:path";
 import tailwindColors from "tailwindcss/colors";
 import { BUILT_IN_THEME_IDS, type BuiltInThemeId } from "@t3tools/shared/themePalettes";
 
+import clerkTheme from "../clerk-theme.json" with { type: "json" };
 import {
   getMobileThemeVariables,
   MOBILE_THEME_VARIABLE_NAMES,
+  themeColorWithAlpha,
   type MobileThemeAppearance,
   type MobileThemeVariables,
 } from "../src/lib/mobileTheme.ts";
@@ -162,15 +164,24 @@ const CLERK_THEME_VARIABLE_NAMES = [
   "--color-clerk-danger",
 ] as const;
 
-const variablesFor = (
-  themeId: BuiltInThemeId,
-  appearance: MobileThemeAppearance,
-  clerkVariables: Readonly<Record<string, string>>,
-) => ({
+const variablesFor = (themeId: BuiltInThemeId, appearance: MobileThemeAppearance) => ({
   ...getMobileThemeVariables(themeId, appearance),
   ...adaptiveVariablesFor(appearance),
-  ...clerkVariables,
+  ...clerkVariablesFor(appearance),
 });
+
+// Clerk's native screens use one build-time palette per appearance. Custom
+// profile pages must match it even when the rest of the app uses a named theme.
+const clerkVariablesFor = (appearance: MobileThemeAppearance) => {
+  const colors = appearance === "dark" ? clerkTheme.darkColors : clerkTheme.colors;
+  return {
+    "--color-clerk-page": colors.background.toLowerCase(),
+    "--color-clerk-foreground": colors.foreground.toLowerCase(),
+    "--color-clerk-foreground-muted": colors.mutedForeground.toLowerCase(),
+    "--color-clerk-border": themeColorWithAlpha(colors.border, 0.06),
+    "--color-clerk-danger": colors.danger.toLowerCase(),
+  };
+};
 
 const renderVariant = (name: string, variables: Readonly<Record<string, string>>) => {
   const declarations = Object.entries(variables)
@@ -179,17 +190,17 @@ const renderVariant = (name: string, variables: Readonly<Record<string, string>>
   return `    @variant ${name} {\n${declarations}\n    }`;
 };
 
-export const renderUniwindThemesCSS = (css = NodeFS.readFileSync(GLOBAL_CSS_PATH, "utf8")) => {
-  const clerkVariables = readClerkThemeVariables(css);
+export const renderUniwindThemesCSS = () => {
   const variants = [
-    renderVariant("light", adaptiveVariablesFor("light")),
-    renderVariant("dark", adaptiveVariablesFor("dark")),
+    ...APPEARANCES.map((appearance) =>
+      renderVariant(appearance, {
+        ...adaptiveVariablesFor(appearance),
+        ...clerkVariablesFor(appearance),
+      }),
+    ),
     ...BUILT_IN_THEME_IDS.flatMap((themeId) =>
       APPEARANCES.map((appearance) =>
-        renderVariant(
-          `${themeId}-${appearance}`,
-          variablesFor(themeId, appearance, clerkVariables[appearance]),
-        ),
+        renderVariant(`${themeId}-${appearance}`, variablesFor(themeId, appearance)),
       ),
     ),
   ];

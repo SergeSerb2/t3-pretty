@@ -131,6 +131,9 @@ export function useThreadActionMenu(input: {
         const items = buildThreadActionMenuItems({
           surface: "header",
           branch: thread.branch ?? null,
+          // The chat header has no project-scoped thread list behind the
+          // menu, so the "Filter by project" affordance is sidebar-only.
+          projectFilter: null,
           isPinned: thread.pinnedAt != null,
           isSettled:
             supports.settlement &&
