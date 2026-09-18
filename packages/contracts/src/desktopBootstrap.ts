@@ -7,11 +7,12 @@ export const DESKTOP_BOOTSTRAP_HOST_MAX_LENGTH = 1_024;
 export const DESKTOP_BOOTSTRAP_TOKEN_MAX_LENGTH = 64 * 1024;
 export const DESKTOP_BOOTSTRAP_URL_MAX_LENGTH = 8_192;
 
-export {
-  DESKTOP_LOCAL_BEARER_EXCHANGE_RETRY_TIMEOUT_MS,
-  DESKTOP_LOCAL_BEARER_READY_TIMEOUT_MS,
-  DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS,
-} from "./desktopBearerTimeout.js";
+// Keep these mirrored with desktopBearerTimeout.js, which is consumed directly
+// by Node smokes without TypeScript type-stripping.
+export const DESKTOP_LOCAL_BEARER_READY_TIMEOUT_MS = 90_000;
+export const DESKTOP_LOCAL_BEARER_EXCHANGE_RETRY_TIMEOUT_MS = 8_000;
+export const DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS =
+  DESKTOP_LOCAL_BEARER_READY_TIMEOUT_MS + DESKTOP_LOCAL_BEARER_EXCHANGE_RETRY_TIMEOUT_MS + 2_000;
 
 const DesktopBootstrapPath = Schema.String.check(
   Schema.isMaxLength(DESKTOP_BOOTSTRAP_PATH_MAX_LENGTH),

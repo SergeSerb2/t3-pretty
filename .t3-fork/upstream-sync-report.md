@@ -4469,3 +4469,5 @@
 - `apps/web/src/components/settings/ProviderAccentColorPicker.tsx` — Removal of the PointerEvent type import.. Reason: T3 Pretty's retained pointer-interaction implementation still requires this type.
 - `apps/web/src/components/settings/ProviderAccentColorPicker.tsx` — Deletion of the local nextColor computation in commitHsv.. Reason: The shared continuation still consumes nextColor for the draft and commit calls; deleting its declaration would make the component invalid and regress color commits.
 - `apps/web/src/components/threadActionMenu.logic.ts` — Use the parent `mail-open` icon for the Mark unread action.. Reason: T3 Pretty intentionally uses the `mail` icon as part of its fork-specific visual design; changing it back would regress the authoritative fork presentation.
+- `shared-typecheck` failed after merging `v0.0.43-nightly.20260918.1895`; repaired with `gpt-5.6-sol`: The contracts package no longer crosses an undeclared JavaScript module boundary during typechecking. The fork's timeout values and plain-JavaScript smoke-test API remain unchanged.
+  - edited `packages/contracts/src/desktopBootstrap.ts`
