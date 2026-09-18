@@ -97,6 +97,7 @@ describe("macOS traffic lights vs collapsed sidebar", () => {
     expect(layout).toContain("data-macos-traffic-lights");
     expect(layout).toContain("hideMacosWindowButtonsThenReleaseInset");
     expect(layout).toContain("setWindowButtonVisibility");
+    expect(layout).toContain("sendWindowButtonVisibility(true)");
     expect(layout).toContain('data-sidebar-control=""');
     expect(layout).not.toContain("MACOS_TRAFFIC_LIGHTS_LEFT_INSET");
     expect(css).toContain("html[data-macos-traffic-lights]");

@@ -1186,7 +1186,7 @@ export const make = Effect.gen(function* () {
       function* (visible) {
         macosWindowButtonsVisible = visible;
         if (environment.platform !== "darwin") return;
-        const window = yield* focusedMainWindow;
+        const window = yield* currentMainWindow;
         if (Option.isNone(window) || window.value.isDestroyed()) return;
         syncMacosWindowButtons(window.value, visible);
       },

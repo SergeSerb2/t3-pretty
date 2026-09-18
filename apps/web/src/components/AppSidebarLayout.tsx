@@ -100,6 +100,16 @@ function SidebarControl({
   });
   const showWindowButtons = shouldShowMacosWindowButtons(trafficLights);
   const windowButtonVisibilityQueue = useRef(Promise.resolve());
+  const sendWindowButtonVisibility = (visible: boolean) => {
+    const setVisibility = window.desktopBridge?.setWindowButtonVisibility;
+    if (typeof setVisibility !== "function") return Promise.resolve();
+    const next = windowButtonVisibilityQueue.current.then(() => setVisibility(visible));
+    windowButtonVisibilityQueue.current = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
 
   useLayoutEffect(() => {
     if (!isMacosDesktop) {
@@ -108,23 +118,12 @@ function SidebarControl({
     }
 
     const root = document.documentElement;
-    const setVisibility = window.desktopBridge?.setWindowButtonVisibility;
     let cancelled = false;
     let revealTimer = 0;
 
-    const sendVisibility = (visible: boolean) => {
-      if (typeof setVisibility !== "function") return Promise.resolve();
-      const next = windowButtonVisibilityQueue.current.then(() => setVisibility(visible));
-      windowButtonVisibilityQueue.current = next.then(
-        () => undefined,
-        () => undefined,
-      );
-      return next;
-    };
-
     if (!showWindowButtons) {
       void hideMacosWindowButtonsThenReleaseInset({
-        hide: () => sendVisibility(false),
+        hide: () => sendWindowButtonVisibility(false),
         releaseInset: () => {
           if (!cancelled) root.removeAttribute("data-macos-traffic-lights");
         },
@@ -139,7 +138,7 @@ function SidebarControl({
       ? 0
       : MACOS_TRAFFIC_LIGHT_REVEAL_DELAY_MS;
     revealTimer = window.setTimeout(() => {
-      void sendVisibility(true);
+      void sendWindowButtonVisibility(true);
     }, delay);
     return () => {
       cancelled = true;
@@ -150,6 +149,7 @@ function SidebarControl({
   useLayoutEffect(
     () => () => {
       document.documentElement.removeAttribute("data-macos-traffic-lights");
+      void sendWindowButtonVisibility(true);
     },
     [],
   );
