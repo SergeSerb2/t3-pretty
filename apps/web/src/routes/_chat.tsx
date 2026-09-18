@@ -28,8 +28,14 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
-  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
-    useHandleNewThread();
+  const {
+    activeDraftThread,
+    activeThread,
+    defaultProjectRef,
+    handleNewThread,
+    routeThreadRef,
+    scopedProjectRef,
+  } = useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const isMobile = useIsMobile();
   const legacySidebarEnabled = useLegacySidebarEnabled();
@@ -109,6 +115,7 @@ function ChatRouteGlobalShortcuts() {
             activeThread: activeThread ?? undefined,
             defaultProjectRef,
             handleNewThread,
+            scopedProjectRef,
           }),
         );
         return;
@@ -118,9 +125,10 @@ function ChatRouteGlobalShortcuts() {
         event.preventDefault();
         event.stopPropagation();
         // The default sidebar routes creation through the command palette
-        // whenever there is a real choice to make; the legacy sidebar (and
-        // single-project setups) keep the immediate contextual create.
-        if (!legacySidebarEnabled && projectGroupCount > 1) {
+        // whenever there is a real choice to make; a scoped project list is
+        // already that choice. The legacy sidebar (and single-project setups)
+        // keep the immediate contextual create.
+        if (!legacySidebarEnabled && projectGroupCount > 1 && scopedProjectRef === null) {
           openCommandPalette({ open: "new-thread-in" });
           return;
         }
@@ -130,6 +138,7 @@ function ChatRouteGlobalShortcuts() {
             activeThread: activeThread ?? undefined,
             defaultProjectRef,
             handleNewThread,
+            scopedProjectRef,
           }),
         );
         return;
@@ -194,6 +203,7 @@ function ChatRouteGlobalShortcuts() {
     previewOpen,
     projectGroupCount,
     routeThreadRef,
+    scopedProjectRef,
     selectedThreadKeysSize,
     legacySidebarEnabled,
     terminalOpen,

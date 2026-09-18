@@ -7,6 +7,7 @@ import {
   getProjectScopeSelectionTarget,
   resolveDraftProjectSelection,
   resolveEnvironmentProjectMatch,
+  resolveNewTaskSheetRoute,
 } from "./new-task-project-selection";
 
 function makeProject(
@@ -66,6 +67,48 @@ describe("getProjectScopeSelectionTarget", () => {
     expect(getProjectScopeSelectionTarget(makeScope(projects), EnvironmentId.make("other"))).toBe(
       projects[0],
     );
+  });
+});
+
+describe("resolveNewTaskSheetRoute", () => {
+  it("opens the project picker when no home project is selected", () => {
+    const scope = makeScope([makeProject("t3code")]);
+    expect(
+      resolveNewTaskSheetRoute({
+        selectedProjectKey: null,
+        selectedEnvironmentId: null,
+        projectScopes: [scope],
+      }),
+    ).toEqual({ screen: "NewTask" });
+  });
+
+  it("opens a draft in the filtered project, preferring the current environment", () => {
+    const projects = [makeProject("t3code-mac", "mac"), makeProject("t3code-server", "server")];
+    const scope = makeScope(projects);
+    expect(
+      resolveNewTaskSheetRoute({
+        selectedProjectKey: scope.key,
+        selectedEnvironmentId: EnvironmentId.make("server"),
+        projectScopes: [scope],
+      }),
+    ).toEqual({
+      screen: "NewTaskDraft",
+      params: {
+        environmentId: "server",
+        projectId: "t3code-server",
+        title: "t3code-server",
+      },
+    });
+  });
+
+  it("falls back to the picker when the filtered project is gone", () => {
+    expect(
+      resolveNewTaskSheetRoute({
+        selectedProjectKey: "missing",
+        selectedEnvironmentId: null,
+        projectScopes: [makeScope([makeProject("t3code")])],
+      }),
+    ).toEqual({ screen: "NewTask" });
   });
 });
 

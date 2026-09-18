@@ -102,6 +102,21 @@ describe("chatThreadActions", () => {
     ).toBe(false);
   });
 
+  it("prefers the sidebar-scoped project over the active thread", () => {
+    const scopedProjectRef = scopeProjectRef(ENVIRONMENT_ID, FALLBACK_PROJECT_ID);
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+        },
+        scopedProjectRef,
+      }),
+    );
+
+    expect(projectRef).toEqual(scopedProjectRef);
+  });
+
   it("prefers the active thread project when resolving thread actions", () => {
     const projectRef = resolveThreadActionProjectRef(
       createContext({
@@ -153,6 +168,25 @@ describe("chatThreadActions", () => {
 
     expect(didStart).toBe(true);
     expect(handleNewThread).toHaveBeenCalledWith(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID));
+  });
+
+  it("starts a thread in the sidebar-scoped project even when another thread is open", async () => {
+    const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
+    const scopedProjectRef = scopeProjectRef(ENVIRONMENT_ID, FALLBACK_PROJECT_ID);
+
+    const didStart = await startNewThreadFromContext(
+      createContext({
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+        },
+        scopedProjectRef,
+        handleNewThread,
+      }),
+    );
+
+    expect(didStart).toBe(true);
+    expect(handleNewThread).toHaveBeenCalledWith(scopedProjectRef);
   });
 
   it("does not start a thread when there is no project context", async () => {
