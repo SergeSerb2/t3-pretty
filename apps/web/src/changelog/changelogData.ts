@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260917.1880002553",
+    date: "2026-09-18",
+    items: [
+      {
+        kind: "fixed",
+        title: "Unblock Windows splash local bearer handshake",
+      },
+      {
+        kind: "fixed",
+        title: "Show macOS traffic lights on collapsed sidebar hover",
+      },
+      {
+        kind: "fixed",
+        title: "Replace Groq composer dictation with local speech recognition",
+      },
+      {
+        kind: "new",
+        title: "Detect Tesla passenger browser and use a touch-friendly layout",
+      },
+      {
+        kind: "new",
+        title: "Create new threads in the filtered sidebar project",
+      },
+      {
+        kind: "fixed",
+        title: "Hide macOS traffic lights when the sidebar collapses",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260917.1880002543",
     date: "2026-09-18",
     items: [
