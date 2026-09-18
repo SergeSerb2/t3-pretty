@@ -4471,3 +4471,7 @@
 - `apps/web/src/components/threadActionMenu.logic.ts` — Use the parent `mail-open` icon for the Mark unread action.. Reason: T3 Pretty intentionally uses the `mail` icon as part of its fork-specific visual design; changing it back would regress the authoritative fork presentation.
 - `shared-typecheck` failed after merging `v0.0.43-nightly.20260918.1895`; repaired with `gpt-5.6-sol`: The contracts package no longer crosses an undeclared JavaScript module boundary during typechecking. The fork's timeout values and plain-JavaScript smoke-test API remain unchanged.
   - edited `packages/contracts/src/desktopBootstrap.ts`
+- `web-typecheck` failed after merging `v0.0.43-nightly.20260918.1895`; repaired with `gpt-5.6-sol`: Restore two fork test imports, adapt the pull-request summary mock to the parent destination parameter, and fix the remaining stale thread-menu helper reference. These minimal test-only edits address all six error-level web typecheck diagnostics.
+  - edited `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts`
+  - edited `apps/web/src/components/pullRequest/PullRequestDetailPanel.test.tsx`
+  - edited `apps/web/src/components/threadActionMenu.logic.test.ts`

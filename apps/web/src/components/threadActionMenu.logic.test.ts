@@ -113,7 +113,7 @@ describe("buildThreadActionMenuItems", () => {
   });
 
   it("offers project filtering only for surfaces with a scoped thread list", () => {
-    expect(ids(baseState)).not.toContain("filter-by-project");
+    expect(visibleIds(baseState)).not.toContain("filter-by-project");
     expect(
       buildThreadActionMenuItems({
         ...baseState,

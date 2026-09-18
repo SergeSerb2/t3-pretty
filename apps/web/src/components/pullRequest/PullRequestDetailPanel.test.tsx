@@ -103,10 +103,13 @@ vi.mock("./PullRequestSummaryTab", () => ({
   }: ComponentProps<typeof import("./PullRequestSummaryTab").PullRequestSummaryTab>) => (
     <button
       onClick={() =>
-        onFixFinding?.({
-          kind: "check",
-          check: { name: "Unit tests", status: "failure", description: "Test failed", url: null },
-        })
+        onFixFinding?.(
+          {
+            kind: "check",
+            check: { name: "Unit tests", status: "failure", description: "Test failed", url: null },
+          },
+          "this-thread",
+        )
       }
     >
       Fix check
