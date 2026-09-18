@@ -5,6 +5,7 @@ import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./thread
 const baseState: ThreadActionMenuState = {
   surface: "sidebar",
   branch: null,
+  projectFilter: null,
   isPinned: false,
   isSettled: false,
   isSnoozed: false,
@@ -109,6 +110,27 @@ describe("buildThreadActionMenuItems", () => {
         supports: { ...baseState.supports, projectTransfer: true },
       }).find((item) => item.id === "transfer"),
     ).toMatchObject({ disabled: true });
+  });
+
+  it("offers project filtering only for surfaces with a scoped thread list", () => {
+    expect(visibleIds(baseState)).not.toContain("filter-by-project");
+    expect(
+      buildThreadActionMenuItems({
+        ...baseState,
+        projectFilter: { label: "Beta Project", isActive: false },
+      }).find((item) => item.id === "filter-by-project"),
+    ).toMatchObject({ label: "Filter by Beta Project", icon: "folder-tree" });
+  });
+
+  it("offers the way back to all projects once the list is scoped", () => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      projectFilter: { label: "Beta Project", isActive: true },
+    });
+    const filterIndex = items.findIndex((candidate) => candidate.id === "filter-by-project");
+    expect(items[filterIndex]).toMatchObject({ label: "Show all projects", icon: "folder-tree" });
+    expect(items[filterIndex - 1]?.id).toBe("mark-unread");
+    expect(items[filterIndex + 1]?.id).toBe("copy");
   });
 
   it("includes branch items only for threads with a branch", () => {

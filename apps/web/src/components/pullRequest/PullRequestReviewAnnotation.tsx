@@ -10,19 +10,14 @@ import type {
   PullRequestThreadComment,
 } from "@t3tools/contracts";
 import { parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
-import {
-  CheckCircle2Icon,
-  CircleIcon,
-  MessageSquareIcon,
-  PencilIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { CheckCircle2Icon, CircleIcon, MessageSquareIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { cn } from "~/lib/utils";
 
 import { Button } from "../ui/button";
 import { FixFindingButton } from "./FixFindingButton";
+import { PullRequestEditButton } from "./PullRequestEditButton";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
@@ -367,15 +362,10 @@ export function ReviewThreadCard({
                         ) : null}
                       </div>
                       {canEditComment(comment) ? (
-                        <Button
-                          size="icon-xs"
-                          variant="ghost"
-                          className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+                        <PullRequestEditButton
                           aria-label="Edit comment"
                           onClick={() => setEditingId(comment.id)}
-                        >
-                          <PencilIcon className="size-3" />
-                        </Button>
+                        />
                       ) : null}
                     </div>
                   )}

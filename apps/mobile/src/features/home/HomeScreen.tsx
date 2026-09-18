@@ -56,6 +56,7 @@ import {
   ThreadListV2PendingRow,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
+  ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
 } from "../threads/thread-list-v2-items";
 import { resolveThreadProviderInstance } from "../threads/thread-provider-instance";
@@ -1295,21 +1296,22 @@ export function HomeScreen(props: HomeScreenProps) {
               ListHeaderComponent={v2ListHeader}
               ListFooterComponent={
                 settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Show ${Math.min(threadListV2Layout.hiddenSettledCount, THREAD_LIST_V2_SETTLED_PAGE_COUNT)} more settled threads`}
-                    onPress={showMoreSettled}
-                    className={
-                      sceneryChrome
-                        ? "mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
-                        : "mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
-                    }
-                    style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-                  >
-                    <Text className="text-xs font-t3-medium text-foreground-muted">
-                      Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
-                    </Text>
-                  </Pressable>
+                  sceneryChrome ? (
+                    <Pressable
+                      onPress={showMoreSettled}
+                      className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
+                      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                    >
+                      <Text className="text-xs font-t3-medium text-foreground-muted">
+                        Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <ThreadListV2ShowMoreRow
+                      hiddenCount={threadListV2Layout.hiddenSettledCount}
+                      onPress={showMoreSettled}
+                    />
+                  )
                 ) : null
               }
               ListEmptyComponent={v2ListEmpty}

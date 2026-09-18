@@ -5,7 +5,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   customThemeNames,
   getGeneratedUniwindThemeOutputs,
-  readClerkThemeVariables,
   readDefaultThemeVariables,
   renderUniwindThemesCSS,
 } from "./generate-uniwind-themes.mts";
@@ -53,57 +52,36 @@ describe("generate mobile Uniwind themes", () => {
     expect(variables.dark["--color-screen"]).toBe("#0e1110");
     expect(Object.keys(variables.light)).toEqual(Object.keys(variables.dark));
   });
-
-  it("keeps custom palettes on the same Uniwind variable set as light and dark", () => {
-    const authored = NodeFS.readFileSync(
-      NodePath.resolve(import.meta.dirname, "../global.css"),
-      "utf8",
+  it("gives every theme the same variables and a fixed Clerk palette for its appearance", () => {
+    const css =
+      NodeFS.readFileSync(NodePath.resolve(import.meta.dirname, "../global.css"), "utf8") +
+      renderUniwindThemesCSS();
+    const themes = new Map<string, Map<string, string>>(
+      ["light", "dark", ...customThemeNames].map((name) => [name, new Map()]),
     );
-    const generated = renderUniwindThemesCSS(authored);
-    const namesByTheme = new Map<string, Set<string>>();
-
-    for (const stylesheet of [authored, generated]) {
-      for (const match of stylesheet.matchAll(/@variant\s+([A-Za-z0-9-]+)\s*\{/gu)) {
-        const themeName = match[1]!;
-        if (themeName === "android") continue;
-        const bodyStart = stylesheet.indexOf("{", match.index);
-        const bodyEnd = stylesheet.indexOf("\n    }", bodyStart);
-        const names = namesByTheme.get(themeName) ?? new Set<string>();
-        for (const [, name] of stylesheet
-          .slice(bodyStart, bodyEnd)
-          .matchAll(/(--[A-Za-z0-9-]+)\s*:/gu)) {
-          names.add(name!);
-        }
-        namesByTheme.set(themeName, names);
+    for (const [, name, body] of css.matchAll(/@variant ([\w-]+) \{([^}]+)\}/gu)) {
+      const variables = themes.get(name!);
+      for (const [, variable, value] of body!.matchAll(/(--[\w-]+):\s*([^;]+);/gu)) {
+        variables?.set(variable!, value!.trim().toLowerCase());
       }
     }
 
-    const expected = namesByTheme.get("light");
-    expect(expected?.size).toBeGreaterThan(0);
-    for (const [themeName, names] of namesByTheme) {
-      expect([...names].sort(), themeName).toEqual([...expected!].sort());
-    }
-  });
-
-  it("copies the fixed Clerk tokens onto every custom palette", () => {
-    const css = NodeFS.readFileSync(NodePath.resolve(import.meta.dirname, "../global.css"), "utf8");
-    const clerkVariables = readClerkThemeVariables(css);
-    const stylesheet = renderUniwindThemesCSS(css);
-
-    expect(clerkVariables.light["--color-clerk-page"]).toBe("#f2f2f7");
-    expect(clerkVariables.dark["--color-clerk-page"]).toBe("#0e0e0e");
-
-    for (const themeName of customThemeNames) {
-      const appearance = themeName.endsWith("-dark") ? "dark" : "light";
-      const marker = `@variant ${themeName} {`;
-      const start = stylesheet.indexOf(marker);
-      expect(start).toBeGreaterThan(-1);
-      const bodyStart = stylesheet.indexOf("{", start);
-      const bodyEnd = stylesheet.indexOf("\n    }", bodyStart);
-      const body = stylesheet.slice(bodyStart, bodyEnd);
-      for (const [name, value] of Object.entries(clerkVariables[appearance])) {
-        expect(body).toContain(`${name}: ${value};`);
-      }
+    const lightVariables = themes.get("light")!;
+    for (const [name, variables] of themes) {
+      expect([...variables.keys()].sort(), name).toEqual([...lightVariables.keys()].sort());
+      const isDark = name === "dark" || name.endsWith("-dark");
+      expect(
+        Object.fromEntries(
+          [...variables].filter(([variable]) => variable.startsWith("--color-clerk-")),
+        ),
+        name,
+      ).toEqual({
+        "--color-clerk-page": isDark ? "#0e0e0e" : "#f2f2f7",
+        "--color-clerk-foreground": isDark ? "#f5f5f5" : "#262626",
+        "--color-clerk-foreground-muted": isDark ? "#a3a3a3" : "#737373",
+        "--color-clerk-border": isDark ? "rgba(42, 42, 42, 0.06)" : "rgba(229, 229, 234, 0.06)",
+        "--color-clerk-danger": isDark ? "#fca5a5" : "#dc2626",
+      });
     }
   });
 });

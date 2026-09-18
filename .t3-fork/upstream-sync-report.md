@@ -4352,3 +4352,129 @@
 - `apps/server/src/usage/UsageService.ts` — Accumulate every contributing session ID in an unbounded Set.. Reason: T3 Pretty intentionally caps distinct-session tracking to prevent excessive memory growth and reports sessionLimitReached when the cap is exceeded.
 - `apps/server/src/usage/usageScanCache.ts` — Retain the decodeCodexState helper for validating persisted Codex reducer state.. Reason: OURS explicitly removed this Codex-specific persistence path, and the surrounding fork cache deserialization now reconstructs entries from provider and record data without persisted reducer state. Restoring the helper would reintroduce an orphaned Codex-specific implementation and could require types removed with that architecture.
 - `apps/web/src/components/chat/ComposerBannerStack.tsx` — Restrict `priority` to only `"urgent" | "activity" | "notice"`.. Reason: T3 Pretty intentionally supports numeric and custom string priorities for its stack assemblers; narrowing the type would regress the fork API. All parent named values remain supported.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260918.1895`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260917.1880`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/scripts/generate-uniwind-themes.mts` — T3 Pretty's built-in theme IDs, named-theme composition, mobile theme variables, and adaptive light/dark colors remain unchanged.
+- `apps/mobile/scripts/generate-uniwind-themes.mts` — T3 Pretty branding and presentation continue to flow through the existing getMobileThemeVariables and shared clerkTheme configuration rather than being replaced with hard-coded colors.
+- `apps/mobile/scripts/generate-uniwind-themes.mts` — The existing exported CSS parsing compatibility helpers remain present; only their superseded use as the generated Clerk palette source is removed.
+- `apps/mobile/scripts/generate-uniwind-themes.test.ts` — The T3 Pretty custom palettes—including T3 Chat and the Grove, Ocean, Ember, and Iris scenery palettes—remain covered for exact variable-set parity with the authored light theme.
+- `apps/mobile/scripts/generate-uniwind-themes.test.ts` — Appearance-specific Clerk presentation remains protected for every T3 Pretty custom light and dark palette.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — Explicit accessibility labels remain on both the host and pairing-code inputs for mobile assistive technology.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — REMOTE_PAIRING_HOST_MAX_LENGTH continues to bound manually entered host values.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — REMOTE_PAIRING_TOKEN_MAX_LENGTH continues to bound manually entered pairing tokens.
+- `apps/mobile/src/features/files/WorkspaceFileWebPreview.tsx` — Preserved T3 Pretty's hardened component boundary: nullable URIs are handled before rendering the string-only WebView component.
+- `apps/mobile/src/features/files/WorkspaceFileWebPreview.tsx` — Preserved the URI-keyed ResolvedWorkspaceFileWebPreview remount, which resets progress and error state when switching files.
+- `apps/mobile/src/features/files/WorkspaceFileWebPreview.tsx` — Preserved the card-themed preparation state and all existing progress, error, and WebView behavior.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Preserved the Scenery chrome settled-thread show-more treatment, including the glass background, wider margin, rounded-2xl shape, dashed border, pressed opacity, typography, and hidden-count label.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Preserved the existing show-more callback and settled-thread count behavior in the fork-themed branch.
+- `apps/server/src/orchestration/Layers/CheckpointReactor.test.ts` — Both test thread.create commands continue to initialize enabledSkillIds to an empty array, preserving T3 Pretty's skills registry and per-thread skill materialization contract.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — T3 Pretty's explicit maximum image-size enforcement before sending a Codex turn.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Early, provider-specific request errors when an attachment cannot be read.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — The bounded prefix-read safeguard, which detects oversized images without loading the complete file into memory.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.test.ts` — Preserved T3 Pretty's test ensuring per-token and cumulative native records are dropped in normal logging while lifecycle records remain.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.test.ts` — Preserved the fork's verbose logging opt-in and its exposure through the native logger's `verbose` property.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — Preserved the exported `isTransientNativeEvent` classifier for high-volume Claude, Codex, and ACP native event shapes.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — Preserved T3 Pretty's `verbose` behavior, which retains all native events when enabled.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — Preserved non-verbose filtering through T3 Pretty's transient native method and ACP session-update sets before the existing detailed provider-event filters run.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — T3 Pretty's verbose provider-event logging remains authoritative: when verbose logging is enabled, events are not removed by the normal provider-event persistence filter.
+- `apps/server/src/vcs/GitVcsDriver.test.ts` — Preserved the VCS_REMOTE_MAX_COUNT import used by T3 Pretty's regression test for bounded and truncated Git remote listings.
+- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Preserved T3 Pretty's shared resize/scroll subscription, which coalesces cross-surface geometry updates through requestAnimationFrame and removes the global listeners when the final subscriber is released.
+- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Preserved cleanup through unsubscribeWindowGeometry(), including cancellation of a pending shared animation frame.
+- `apps/web/src/components/auth/PairingRouteSurface.tsx` — Preserved the dynamic `data-pairing-status` DOM contract used by T3 Pretty's cross-surface reliability behavior, now on a wrapper encompassing the complete shared pairing page.
+- `apps/web/src/components/auth/PairingRouteSurface.tsx` — Preserved T3 Pretty branding through `APP_DISPLAY_NAME` and retained theme-aware pairing presentation, status messages, error guidance, and actions.
+- `apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx` — Kept the T3 Pretty `FixFindingButton` integration used to offer fix destinations for recognized review findings.
+- `apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx` — Preserved T3 Pretty's single body-adjacent comment-edit affordance instead of restoring a duplicate control in the comment metadata row.
+- `apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx` — Preserved the existing edit action, accessibility label, and editing-state transition.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved T3 Pretty's pull-request conversation and editing icon imports: MessageSquareIcon, PencilIcon, RotateCcwIcon, and SendIcon.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved T3 Pretty's targetKey-based pull-request description editor state, matching the existing bodyScope === targetKey check and avoiding incorrect editor targeting when the stable target key differs from detail.url.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Kept the T3 Pretty-specific pullRequestConversationFinding import used by the fork's pull-request finding and fix-action test coverage.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Handoff-label coverage for writing fixes and resolutions into the current thread, choosing another thread, fixing all findings, and resolving conflicts.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Standalone pull-request-page handoff labels for opening or selecting an appropriate thread.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Reply placement behavior that exposes Reply only on the final remark in a review thread.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Composer targeting safeguard that rejects the page composer and prevents agent comments from opening an unintended new review thread.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — The pull-request fix destination model continues to distinguish fixing in the current thread from starting a new thread.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Review conversations retain exactly one Reply anchor on their final comment rather than rendering a reply control for every comment.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Composer targets remain available only when the pull request is being viewed in its linked thread, preventing page-context actions from incorrectly targeting that thread.
+- `apps/web/src/components/settings/ProviderAccentColorPicker.tsx` — Preserved the PointerEvent type import used by T3 Pretty's pointer-interaction code.
+- `apps/web/src/components/settings/ProviderAccentColorPicker.tsx` — Preserved conversion of the selected HSV value to a hex color before synchronizing the draft and invoking onCommit, maintaining the fork's hardened custom-color behavior.
+- `apps/web/src/components/threadActionMenu.logic.ts` — Preserved T3 Pretty's shared menu grouping and copy behavior across the sidebar and chat header.
+- `apps/web/src/components/threadActionMenu.logic.ts` — Preserved the fork-specific rule that settle and snooze remain in the header menu because the header lacks sidebar hover-row affordances.
+- `apps/web/src/components/threadActionMenu.logic.ts` — The connection transfer action remains available when project transfer is supported and stays disabled while a thread is running.
+- `apps/web/src/components/threadActionMenu.logic.ts` — The Copy flyout retains T3 Pretty's click activation and Conversation-copy action, along with path, branch, and thread-ID actions.
+- `apps/web/src/components/threadActionMenu.logic.ts` — Copy and Project settings remain in their own generated menu group, preserving the in-app menu separator and danger-boundary structure.
+- `apps/web/src/components/threadActionMenu.logic.ts` — The T3 Pretty `mail` icon for Mark unread is retained instead of reverting the fork's visual choice to `mail-open`.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/scripts/generate-uniwind-themes.mts` — Replaced the fork-only global.css-based Clerk palette propagation with the parent's first-party clerkVariablesFor implementation.
+- `apps/mobile/scripts/generate-uniwind-themes.mts` — Applied the parent Clerk palette consistently to both base appearance variants and every built-in named theme, keeping custom Clerk profile pages aligned with native Clerk screens.
+- `apps/mobile/scripts/generate-uniwind-themes.mts` — Removed the obsolete CSS-input plumbing from renderUniwindThemesCSS so theme generation uses the authoritative build-time Clerk palette.
+- `apps/mobile/scripts/generate-uniwind-themes.test.ts` — Integrated the parent’s consolidated parser-based test across light, dark, and all custom themes.
+- `apps/mobile/scripts/generate-uniwind-themes.test.ts` — Integrated exact assertions for all five fixed Clerk palette tokens: page, foreground, muted foreground, border, and danger.
+- `apps/mobile/scripts/generate-uniwind-themes.test.ts` — Integrated normalized value comparison so equivalent casing does not cause false test failures.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — Both manually entered connection fields now use the parent's shared ConnectionFormField implementation instead of duplicating label and TextInput presentation markup.
+- `apps/mobile/src/features/files/WorkspaceFileWebPreview.tsx` — Integrated the parent's FilePreviewLoading feedback component with the upstream message and card background at the reachable nullable-URI boundary.
+- `apps/mobile/src/features/files/WorkspaceFileWebPreview.tsx` — Avoided retaining a redundant, unreachable null check inside ResolvedWorkspaceFileWebPreview.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Adopted the parent's reusable ThreadListV2ShowMoreRow component for the standard v2 settled-shelf footer, passing the upstream hiddenCount and onPress API.
+- `apps/server/src/orchestration/Layers/CheckpointReactor.test.ts` — The primary test thread now distinguishes an undefined worktree-path option from an explicitly supplied null value, matching the parent command behavior.
+- `apps/server/src/orchestration/Layers/CheckpointReactor.test.ts` — The second test thread can use secondThreadWorktreePath(cwd), enabling upstream shared-workspace ownership coverage for aliases, nested paths, and ancestor paths.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — The parent's performance intent to avoid reading complete image files in the adapter is retained through a bounded prefix read; the image continues to be sent to Codex as a local path rather than encoded file contents.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.test.ts` — Added coverage that large provider histories are summarized by item count without reading or serializing individual history entries.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.test.ts` — Added coverage that oversized native records remain bounded while retaining thread, turn, error message, error code, and escaped-record identity details.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.test.ts` — Added coverage that oversized canonical diff snapshots are bounded before duplicate raw and normalized diff payloads are serialized, while retaining turn identity metadata.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — Adopted the upstream `shouldPersistProviderEvent` predicate name while extending its signature with T3 Pretty's required `verbose` parameter.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — Adopted the parent's `shouldPersistProviderEvent` policy for normal, non-verbose logging.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — Adopted `boundProviderEventForLogging` before serialization to limit provider event payloads safely.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — Retained mutable `payload` handling required by the parent's subsequent oversized-record summarization fallback.
+- `apps/server/src/vcs/GitVcsDriver.test.ts` — Integrated the parent VcsProcessExitError import needed by the newest process-exit error test coverage.
+- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Integrated observation of the nearest inline preview-panel shell so browser-surface geometry updates while the outer panel width animates even when the slot itself does not resize.
+- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Retained upstream resize and captured-scroll geometry behavior through T3 Pretty's equivalent shared subscription mechanism rather than adding per-slot window listeners.
+- `apps/web/src/components/auth/PairingRouteSurface.tsx` — Migrated the hosted pairing surface to the parent's reusable `StandalonePage` with the `pairing` tone.
+- `apps/web/src/components/auth/PairingRouteSurface.tsx` — Integrated the parent's `StandalonePageHeader` structure for the branded eyebrow, status-dependent title, and pairing message.
+- `apps/web/src/components/auth/PairingRouteSurface.tsx` — Retained the parent's host summary, error guidance, retry flow, pairing progress state, and Open app action within the shared page layout.
+- `apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx` — Added the parent `PullRequestEditButton` import for the upstream pull-request comment editing UI.
+- `apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx` — Integrated the parent's PullRequestEditButton abstraction for the retained comment-edit control.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Retained the parent implementation's HammerIcon import for its pull-request action UI.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Integrated the parent's self-closing PullRequestEditButton API, which owns its presentation instead of receiving a PencilIcon child; this also removes the stale mismatched &lt;/Button&gt; closing tag.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Integrated the parent cleanup that removes the obsolete pullRequestComposerTarget import.
+- `apps/web/src/components/settings/ProviderAccentColorPicker.tsx` — Integrated the parent's explicit HsvColor callback parameter type.
+- `apps/web/src/components/settings/ProviderAccentColorPicker.tsx` — Retained the streamlined React import without the obsolete useMemo dependency.
+- `apps/web/src/components/threadActionMenu.logic.ts` — Integrated the parent clarification that labels, ordering, and capability gating are shared between menu surfaces.
+- `apps/web/src/components/threadActionMenu.logic.ts` — Integrated the parent clarification that each surface supplies state for the actions it supports.
+- `apps/web/src/components/threadActionMenu.logic.ts` — Added the parent project-filter action when `state.projectFilter` is available, including its active/inactive labels and `folder-tree` icon.
+- `apps/web/src/components/threadActionMenu.logic.ts` — Preserved the parent's placement of project filtering after Mark unread while adapting it to T3 Pretty's grouped menu architecture.
+- `apps/web/src/components/threadActionMenu.logic.ts` — Retained the parent Copy actions for path, conditional branch, and thread ID, with separation supplied by T3 Pretty's group joiner rather than `separatorBefore`.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Universal replacement of the inline footer Pressable with ThreadListV2ShowMoreRow, including use of that component while Scenery chrome is active.. Reason: The upstream call surface shown here has no presentation override for T3 Pretty's required glass-themed Scenery styling. The omission is limited to the themed branch; its count and press behavior remain equivalent, while the upstream component is used everywhere else.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Remove all adapter-side attachment file probing and size validation, deferring file access and acceptance entirely to the Codex CLI.. Reason: That deletion would regress T3 Pretty's deliberate image-size limit and early unreadable-file error handling. The compatible performance portion is retained by reading at most the configured limit plus one byte.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — Unconditionally apply `shouldPersistProviderEvent` even when verbose logging is enabled.. Reason: That would regress T3 Pretty's fork-specific verbose mode, whose purpose is to retain events normally excluded by the persistence filter. The parent policy is still applied in normal non-verbose operation.
+- `apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx` — Add PullRequestEditButton to the comment metadata row after the reaction bar.. Reason: T3 Pretty intentionally removed that duplicate placement and retains one edit control beside the comment body; restoring the parent placement would expose two controls for the same action.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Parent removal of the PencilIcon import.. Reason: T3 Pretty retains fork-specific pull-request editing UI that still requires PencilIcon; removing it would regress that behavior.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Set the description editing scope directly to detail.url.. Reason: T3 Pretty uses targetKey as the authoritative scope identity, and the surrounding render condition checks bodyScope === targetKey. Using detail.url here could prevent the editor from opening when those identities differ.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Parent deletion of the pull-request handoff-label tests.. Reason: The tests protect T3 Pretty's fork-specific PR Fix and resolve handoff UX, including fields and wording added after the base version; deleting them would silently weaken coverage of authoritative fork behavior.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Parent deletion of the thread reply-anchor test.. Reason: The test protects T3 Pretty's one-reply-entry-point-per-thread behavior and cannot be removed without weakening fork-specific UX coverage.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Parent deletion of the pull-request composer-target test.. Reason: The test protects T3 Pretty's safeguard against agent comments opening another review thread, so accepting the deletion would regress fork hardening coverage.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Upstream removed the pullRequestComposerTarget helper.. Reason: The helper is still required by T3 Pretty's fork-specific pull-request handoff behavior to clear thread targets in page context; applying the removal would regress that behavior.
+- `apps/web/src/components/settings/ProviderAccentColorPicker.tsx` — Removal of the PointerEvent type import.. Reason: T3 Pretty's retained pointer-interaction implementation still requires this type.
+- `apps/web/src/components/settings/ProviderAccentColorPicker.tsx` — Deletion of the local nextColor computation in commitHsv.. Reason: The shared continuation still consumes nextColor for the draft and commit calls; deleting its declaration would make the component invalid and regress color commits.
+- `apps/web/src/components/threadActionMenu.logic.ts` — Use the parent `mail-open` icon for the Mark unread action.. Reason: T3 Pretty intentionally uses the `mail` icon as part of its fork-specific visual design; changing it back would regress the authoritative fork presentation.
+- `shared-typecheck` failed after merging `v0.0.43-nightly.20260918.1895`; repaired with `gpt-5.6-sol`: The contracts package no longer crosses an undeclared JavaScript module boundary during typechecking. The fork's timeout values and plain-JavaScript smoke-test API remain unchanged.
+  - edited `packages/contracts/src/desktopBootstrap.ts`
+- `web-typecheck` failed after merging `v0.0.43-nightly.20260918.1895`; repaired with `gpt-5.6-sol`: Restore two fork test imports, adapt the pull-request summary mock to the parent destination parameter, and fix the remaining stale thread-menu helper reference. These minimal test-only edits address all six error-level web typecheck diagnostics.
+  - edited `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts`
+  - edited `apps/web/src/components/pullRequest/PullRequestDetailPanel.test.tsx`
+  - edited `apps/web/src/components/threadActionMenu.logic.test.ts`
+- `mobile-typecheck` failed after merging `v0.0.43-nightly.20260918.1895`; repaired with `gpt-5.6-sol`: Align the theme generator call with the parent's new renderer API and restore the imports required by T3 Pretty's scenery footer. These minimal edits address all reported mobile typecheck errors without removing either fork or upstream behavior.
+  - edited `apps/mobile/scripts/generate-uniwind-themes.mts`
+  - edited `apps/mobile/src/features/home/HomeScreen.tsx`

@@ -20,8 +20,9 @@ import {
 } from "@t3tools/shared/remote";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { AppText as Text } from "../../components/AppText";
 import { ErrorBanner } from "../../components/ErrorBanner";
+import { ConnectionFormField } from "./ConnectionFormField";
 import { ConnectionSheetButton } from "./ConnectionSheetButton";
 import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
@@ -399,38 +400,28 @@ export function ConnectionsNewRouteScreen({
             )
           ) : (
             <View collapsable={false} className="gap-4 rounded-[24px] bg-card p-4">
-              <View collapsable={false} className="gap-1.5">
-                <Text className="text-2xs font-t3-bold tracking-[0.8px] uppercase text-foreground-muted">
-                  Host
-                </Text>
-                <TextInput
-                  accessibilityLabel="Host"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                  maxLength={REMOTE_PAIRING_HOST_MAX_LENGTH}
-                  placeholder="192.168.1.100:8080"
-                  value={hostInput}
-                  onChangeText={handleHostChange}
-                  className="rounded-[14px] border border-input-border bg-input px-4 py-3.5 text-base text-foreground"
-                />
-              </View>
+              <ConnectionFormField
+                label="Host"
+                accessibilityLabel="Host"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                maxLength={REMOTE_PAIRING_HOST_MAX_LENGTH}
+                placeholder="192.168.1.100:8080"
+                value={hostInput}
+                onChangeText={handleHostChange}
+              />
 
-              <View collapsable={false} className="gap-1.5">
-                <Text className="text-2xs font-t3-bold tracking-[0.8px] uppercase text-foreground-muted">
-                  Pairing code
-                </Text>
-                <TextInput
-                  accessibilityLabel="Pairing code"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  maxLength={REMOTE_PAIRING_TOKEN_MAX_LENGTH}
-                  placeholder="abc-123-xyz"
-                  value={codeInput}
-                  onChangeText={handleCodeChange}
-                  className="rounded-[14px] border border-input-border bg-input px-4 py-3.5 text-base text-foreground"
-                />
-              </View>
+              <ConnectionFormField
+                label="Pairing code"
+                accessibilityLabel="Pairing code"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={REMOTE_PAIRING_TOKEN_MAX_LENGTH}
+                placeholder="abc-123-xyz"
+                value={codeInput}
+                onChangeText={handleCodeChange}
+              />
 
               {pairingConnectionError ? <ErrorBanner message={pairingConnectionError} /> : null}
 

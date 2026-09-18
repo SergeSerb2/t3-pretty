@@ -8,6 +8,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
  */
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
+  | "filter-by-project"
   | "project-settings"
   | "pin"
   | "unpin"
@@ -33,6 +34,15 @@ export type ThreadActionMenuId =
 
 export interface ThreadActionMenuState {
   readonly branch: string | null;
+  /**
+   * Project scoping for the thread list. Null on surfaces with no scoped
+   * list behind the menu (the chat header), where the item must not show.
+   */
+  readonly projectFilter: {
+    readonly label: string;
+    /** True when the list is already scoped to this thread's project. */
+    readonly isActive: boolean;
+  } | null;
   readonly isPinned: boolean;
   readonly isSettled: boolean;
   readonly isSnoozed: boolean;
@@ -79,8 +89,9 @@ function joinGroups(
 
 /**
  * Single source for the per-thread action menu: the sidebar row's right-click
- * menu and the chat header menu share grouping and copy, but the header keeps
- * settle/snooze because it has no hover-row affordances.
+ * menu and the chat header menu share labels, ordering, grouping, copy, and
+ * capability gating. Each surface supplies state for the actions it supports;
+ * the header keeps settle/snooze because it has no hover-row affordances.
  */
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
@@ -147,6 +158,17 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "mark-unread", label: "Mark unread", icon: "mail" },
+    ...(state.projectFilter
+      ? [
+          {
+            id: "filter-by-project" as const,
+            label: state.projectFilter.isActive
+              ? "Show all projects"
+              : `Filter by ${state.projectFilter.label}`,
+            icon: "folder-tree",
+          },
+        ]
+      : []),
     ...(state.supports.projectTransfer
       ? [
           {
