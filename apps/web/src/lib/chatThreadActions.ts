@@ -35,6 +35,8 @@ export interface ChatThreadActionContext {
   readonly activeThread: ThreadContextLike | undefined;
   readonly defaultProjectRef: ScopedProjectRef | null;
   readonly handleNewThread: NewThreadHandler;
+  /** Sidebar project filter, when the thread list is scoped to one project. */
+  readonly scopedProjectRef?: ScopedProjectRef | null;
 }
 
 export function resolveNewDraftStartFromOrigin(input: {
@@ -71,6 +73,9 @@ export function hasExplicitComposerModelSelection(
 export function resolveThreadActionProjectRef(
   context: ChatThreadActionContext,
 ): ScopedProjectRef | null {
+  if (context.scopedProjectRef) {
+    return context.scopedProjectRef;
+  }
   if (context.activeThread) {
     return scopeProjectRef(context.activeThread.environmentId, context.activeThread.projectId);
   }

@@ -7,8 +7,10 @@ import {
   buildProjectActionItems,
   buildThreadActionItems,
   buildLinkedThreadActionItems,
+  commandPaletteNewThreadInValue,
   enumerateCommandPaletteItems,
   filterPinnedBrowseEntries,
+  prioritizeCommandPaletteItems,
   filterCommandPaletteGroups,
   reduceCommandPaletteUiState,
   type CommandPaletteActionItem,
@@ -269,6 +271,29 @@ describe("reduceCommandPaletteUiState", () => {
       mode: "command",
       openIntent: null,
     });
+  });
+});
+
+describe("prioritizeCommandPaletteItems", () => {
+  it("moves the preferred project to the top of the new-thread picker", () => {
+    const items = [
+      { value: commandPaletteNewThreadInValue({ environmentId: "a", projectId: "one" }) },
+      { value: commandPaletteNewThreadInValue({ environmentId: "b", projectId: "two" }) },
+      { value: commandPaletteNewThreadInValue({ environmentId: "c", projectId: "three" }) },
+    ];
+
+    expect(
+      prioritizeCommandPaletteItems(
+        items,
+        commandPaletteNewThreadInValue({ environmentId: "c", projectId: "three" }),
+      ).map((item) => item.value),
+    ).toEqual(["new-thread-in:c:three", "new-thread-in:a:one", "new-thread-in:b:two"]);
+  });
+
+  it("leaves the list unchanged when nothing is preferred", () => {
+    const items = [{ value: "new-thread-in:a:one" }, { value: "new-thread-in:b:two" }];
+    expect(prioritizeCommandPaletteItems(items, null)).toEqual(items);
+    expect(prioritizeCommandPaletteItems(items, "new-thread-in:missing:project")).toEqual(items);
   });
 });
 

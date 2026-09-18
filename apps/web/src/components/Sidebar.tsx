@@ -4394,42 +4394,53 @@ export default function Sidebar() {
     updateThreadJumpHintsVisibility(shouldShowJumpHintsNow);
   }, [shouldShowJumpHintsNow, updateThreadJumpHintsVisibility]);
 
-  // New thread defaults to the project you're in (active thread's project,
-  // falling back to the top project) — same resolution the command palette
-  // uses. The command palette already offers a "New thread in..." submenu
-  // for multi-project setups.
+  // New thread defaults to the project you're in: a sidebar project filter
+  // first, then the active thread's project, then the top project. The
+  // command palette still offers a "New thread in..." submenu when the list
+  // is showing every project.
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
-      // One project: nothing to pick, create immediately. Shift+click creates
-      // directly in the current project even with several projects, skipping
-      // the palette picker.
-      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {
+      // One project, a scoped list, or Shift+click: nothing to pick, create
+      // immediately. Shift+click creates directly in the current project even
+      // with several projects, skipping the palette picker.
+      if (
+        shouldCreateNewThreadInCurrentProject(
+          event?.shiftKey ?? false,
+          projectGroups.length,
+          scopedProjectGroup !== null,
+        )
+      ) {
         if (isMobile) setOpenMobile(false);
         void startNewThreadFromContext({
           activeDraftThread: newThreadContext.activeDraftThread,
           activeThread: newThreadContext.activeThread ?? undefined,
           defaultProjectRef: newThreadContext.defaultProjectRef,
           handleNewThread: newThreadContext.handleNewThread,
+          scopedProjectRef: newThreadContext.scopedProjectRef,
         });
         return;
       }
       if (isMobile) setOpenMobile(false);
       openCommandPalette({ open: "new-thread-in" });
     },
-    [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
+    [isMobile, newThreadContext, projectGroups.length, scopedProjectGroup, setOpenMobile],
   );
 
   // The button mirrors chat.new: in multi-project setups both route through
-  // the command palette's "New thread in..." picker, and in single-project
-  // setups both create immediately. In multi-project setups the label is only
-  // the picker's shortcut: falling back to chat.newLocal would advertise the
-  // same shortcut for both the picker and direct create. In single-project
-  // setups both commands create directly, so chat.newLocal is a valid
-  // fallback. The second tooltip line (multi-project only) advertises
-  // shift+click and its keyboard twin chat.newLocal for direct create.
+  // the command palette's "New thread in..." picker unless the sidebar is
+  // already filtered to one project, and in single-project setups both
+  // create immediately. In multi-project setups the label is only the
+  // picker's shortcut: falling back to chat.newLocal would advertise the
+  // same shortcut for both the picker and direct create. When creation is
+  // already direct (one project, or a scoped list), chat.newLocal is a valid
+  // fallback. The second tooltip line (multi-project, unscoped only)
+  // advertises shift+click and its keyboard twin chat.newLocal for direct
+  // create.
   const newThreadShortcutLabel =
     shortcutLabelForCommand(keybindings, "chat.new") ??
-    (projectGroups.length <= 1 ? shortcutLabelForCommand(keybindings, "chat.newLocal") : undefined);
+    (projectGroups.length <= 1 || scopedProjectGroup !== null
+      ? shortcutLabelForCommand(keybindings, "chat.newLocal")
+      : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   const startNewThreadInProject = useCallback(
     (project: SidebarProjectSnapshot) => {
@@ -4645,7 +4656,9 @@ export default function Sidebar() {
                   newThreadDisabled={projects.length === 0}
                   newThreadShortcutLabel={newThreadShortcutLabel}
                   newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}
-                  showNewThreadInProjectHint={projectGroups.length > 1}
+                  showNewThreadInProjectHint={
+                    projectGroups.length > 1 && scopedProjectGroup === null
+                  }
                   searchInputRef={threadSearchInputRef}
                   searchQuery={threadSearchQuery}
                   onSearchQueryChange={(value) => {

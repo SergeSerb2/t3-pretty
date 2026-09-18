@@ -26,11 +26,15 @@ import {
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
 import { readProjects, readThreadShell, useProjects, useThread } from "../state/entities";
+import { usePrimaryEnvironmentId } from "../state/environments";
+import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import {
   hasExplicitComposerModelSelection,
   resolveNewDraftStartFromOrigin,
   resolveNewThreadModelSelectionOverride,
+  resolveThreadActionProjectRef,
 } from "../lib/chatThreadActions";
+import { resolveSidebarScopedProjectRef } from "../lib/newThreadDefaults";
 import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
 import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
@@ -482,15 +486,47 @@ export function useHandleNewThread() {
     });
   }, [projectOrder, projects]);
   const handleNewThread = useNewThreadHandler();
+  const defaultProjectRef = orderedProjects[0]
+    ? scopeProjectRef(orderedProjects[0].environmentId, orderedProjects[0].id)
+    : null;
+  const projectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
+  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const scopedProjectRef = useMemo(() => {
+    const preferredMemberRef = resolveThreadActionProjectRef({
+      activeDraftThread,
+      activeThread: activeThread ?? undefined,
+      defaultProjectRef,
+      handleNewThread,
+    });
+    return resolveSidebarScopedProjectRef({
+      projectScopeKey,
+      groups: buildSidebarProjectSnapshots({
+        projects,
+        settings: projectGroupingSettings,
+        primaryEnvironmentId,
+        resolveEnvironmentLabel: () => null,
+      }),
+      preferredMemberRef,
+    });
+  }, [
+    activeDraftThread,
+    activeThread,
+    defaultProjectRef,
+    handleNewThread,
+    primaryEnvironmentId,
+    projectGroupingSettings,
+    projectScopeKey,
+    projects,
+  ]);
 
   return {
     activeDraftThread,
     activeThread,
-    defaultProjectRef: orderedProjects[0]
-      ? scopeProjectRef(orderedProjects[0].environmentId, orderedProjects[0].id)
-      : null,
+    defaultProjectRef,
     handleNewThread,
     routeDraftId,
     routeThreadRef,
+    scopedProjectRef,
   };
 }

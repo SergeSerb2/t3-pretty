@@ -59,6 +59,7 @@ import {
 import { useServerConfigs } from "../../state/entities";
 import { AndroidHomeFabLayout } from "../home/AndroidHomeFab";
 import { HomeListOptionsProvider } from "../home/home-list-options";
+import { useStartNewTaskFromHomeScope } from "../home/useStartNewTaskFromHomeScope";
 import { ThreadNavigationSidebar } from "../threads/ThreadNavigationSidebar";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
 import { WorkspaceInspectorPane } from "./workspace-inspector-pane";
@@ -447,10 +448,6 @@ function AdaptiveWorkspaceLayoutContent(
     navigation.navigate("Automations");
   }, [navigation]);
 
-  const handleStartNewTask = useCallback(() => {
-    navigation.navigate("NewTaskSheet", { screen: "NewTask" });
-  }, [navigation]);
-
   // Minted here (root stack navigation) so the sidebar pane stays free of
   // navigation hooks — on iOS it renders inside an independent nav tree.
   const handleOpenEnvironmentSettings = useCallback(() => {
@@ -607,6 +604,7 @@ function AdaptiveWorkspaceLayoutContent(
 
   return (
     <HomeListOptionsProvider projectGroupingMode={projectGroupingMode}>
+      <AdaptiveWorkspaceNewTaskShortcut />
       <AdaptiveWorkspaceContext.Provider value={contextValue}>
         <View testID="adaptive-workspace-layout" className="flex-1 flex-row">
           {shouldRenderPrimarySidebar && layout.listPaneWidth !== null ? (
@@ -621,7 +619,7 @@ function AdaptiveWorkspaceLayoutContent(
               style={sidebarAnimatedStyle}
             >
               <View className="flex-1" style={{ width: layout.listPaneWidth }}>
-                <AndroidHomeFabLayout sidebar onStartNewTask={handleStartNewTask}>
+                <AdaptiveWorkspaceSidebarNewTaskLayout>
                   <ThreadNavigationSidebar
                     width={layout.listPaneWidth}
                     visible={panes.primarySidebarVisible}
@@ -638,7 +636,7 @@ function AdaptiveWorkspaceLayoutContent(
                     onSearchQueryChange={setPrimarySidebarSearchQuery}
                     searchQuery={primarySidebarSearchQuery}
                   />
-                </AndroidHomeFabLayout>
+                </AdaptiveWorkspaceSidebarNewTaskLayout>
               </View>
             </Animated.View>
           ) : null}
@@ -679,5 +677,24 @@ function AdaptiveWorkspaceLayoutContent(
         </View>
       </AdaptiveWorkspaceContext.Provider>
     </HomeListOptionsProvider>
+  );
+}
+
+function AdaptiveWorkspaceNewTaskShortcut() {
+  const startNewTask = useStartNewTaskFromHomeScope();
+  const handleNewTask = useCallback(() => {
+    startNewTask();
+    return true;
+  }, [startNewTask]);
+  useHardwareKeyboardCommand("newTask", handleNewTask);
+  return null;
+}
+
+function AdaptiveWorkspaceSidebarNewTaskLayout(props: { readonly children: ReactNode }) {
+  const handleStartNewTask = useStartNewTaskFromHomeScope();
+  return (
+    <AndroidHomeFabLayout sidebar onStartNewTask={handleStartNewTask}>
+      {props.children}
+    </AndroidHomeFabLayout>
   );
 }

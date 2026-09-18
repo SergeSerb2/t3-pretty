@@ -754,14 +754,16 @@ export function nextSidebarProjectScopeKey(
 }
 
 // Shift+click on the new thread button creates directly in the current
-// project, skipping the command palette's project picker. With a single
-// project there is nothing to pick, so a plain click already creates
-// immediately and the modifier changes nothing.
+// project, skipping the command palette's project picker. A scoped sidebar
+// list is already a project choice, so a plain click creates there too.
+// With a single project there is nothing to pick, so a plain click already
+// creates immediately and the modifier changes nothing.
 export function shouldCreateNewThreadInCurrentProject(
   shiftKey: boolean,
   projectGroupCount: number,
+  hasSidebarProjectScope = false,
 ): boolean {
-  return shiftKey || projectGroupCount <= 1;
+  return shiftKey || projectGroupCount <= 1 || hasSidebarProjectScope;
 }
 
 export function orderItemsByPreferredIds<TItem, TId>(input: {

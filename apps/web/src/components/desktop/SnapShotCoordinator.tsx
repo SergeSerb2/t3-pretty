@@ -202,6 +202,7 @@ export function SnapShotCoordinator() {
     handleNewThread,
     routeDraftId,
     routeThreadRef,
+    scopedProjectRef,
   } = useHandleNewThread();
   const captureSound = useClientSettings((settings) =>
     settings.snapShotPlaySound ? settings.snapShotSound : null,
@@ -233,13 +234,21 @@ export function SnapShotCoordinator() {
       activeThread: activeThread ?? undefined,
       defaultProjectRef,
       handleNewThread,
+      scopedProjectRef,
     });
     if (!projectRef) return null;
     const created = await handleNewThread(projectRef);
     if (!created) return null;
     lastTargetRef.current = created.draftId;
     return created.draftId;
-  }, [activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef]);
+  }, [
+    activeDraftThread,
+    activeThread,
+    defaultProjectRef,
+    handleNewThread,
+    routeThreadRef,
+    scopedProjectRef,
+  ]);
 
   const resolveCaptureTarget = useCallback(
     () => resolveSnapShotTargetOnce(targetResolutionRef, resolveTarget),
