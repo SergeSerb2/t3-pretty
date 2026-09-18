@@ -15,7 +15,12 @@ import { DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS } from "@t3tools/contracts/deskto
 
 export const DEFAULT_TIMEOUT_MS = DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS;
 export const BIND_RETRY_LIMIT = 5;
+// Match the desktop/shared HTTP readiness probe. A single hung connect — common
+// on Windows after SO_EXCLUSIVEADDRUSE reservation close — must not consume
+// the whole ready+token budget.
+export const REQUEST_TIMEOUT_MS = 1_000;
 const ADDRESS_IN_USE = /EADDRINUSE|address already in use/iu;
+const LISTENING_PORT = /Listening on http:\/\/127\.0\.0\.1:(\d+)/u;
 const TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange";
 const BOOTSTRAP_TOKEN_TYPE = "urn:t3:params:oauth:token-type:environment-bootstrap";
 const ACCESS_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:access_token";
@@ -108,6 +113,45 @@ export class AddressInUseError extends Error {
 
 export function isAddressInUseOutput(output) {
   return ADDRESS_IN_USE.test(output);
+}
+
+export function advertisedListenNeedle(port) {
+  return `Listening on http://127.0.0.1:${port}`;
+}
+
+export function listeningPortFromOutput(output) {
+  const match = LISTENING_PORT.exec(output);
+  if (match === null) return null;
+  const port = Number.parseInt(match[1], 10);
+  return Number.isInteger(port) && port > 0 ? port : null;
+}
+
+export class ListenPortMismatchError extends Error {
+  constructor(reservedPort, listenedPort) {
+    super(
+      `Packaged backend listened on 127.0.0.1:${listenedPort} but smoke reserved ${reservedPort}.`,
+    );
+    this.name = "ListenPortMismatchError";
+    this.reservedPort = reservedPort;
+    this.listenedPort = listenedPort;
+  }
+}
+
+export function readyTimeoutMessage(timeoutMs, details) {
+  const seconds = Math.floor(timeoutMs / 1000);
+  const listen = details.sawListen ? "listen=seen" : "listen=missing";
+  const lastError = details.lastError;
+  const detail =
+    lastError instanceof Error
+      ? lastError.message
+      : lastError === undefined
+        ? "no HTTP probe error yet"
+        : String(lastError);
+  return `Packaged backend did not become ready within ${seconds} seconds. ${listen}; lastError=${detail}`;
+}
+
+function createRequestSignal(parent, timeoutMs) {
+  return AbortSignal.any([parent, AbortSignal.timeout(timeoutMs)]);
 }
 
 async function reservePort() {
@@ -304,45 +348,92 @@ async function smokeWindowsBackendAttempt(launch, input, baseDir) {
       },
     );
     closed = NodeEvents.once(child, "close");
-    await writeBootstrapEnvelope(child.stdin, envelope);
+    const controller = new AbortController();
+    let sawAdvertisedListen = false;
+    let lastReadyError;
+    let markAdvertisedListen = () => {};
+    const advertisedListen = new Promise((resolve, reject) => {
+      markAdvertisedListen = resolve;
+      const abortListen = () => {
+        reject(
+          new Error(
+            readyTimeoutMessage(timeoutMs, {
+              sawListen: sawAdvertisedListen,
+              lastError: lastReadyError,
+            }),
+          ),
+        );
+      };
+      if (controller.signal.aborted) abortListen();
+      else controller.signal.addEventListener("abort", abortListen, { once: true });
+    });
     const bindFailed = new Promise((_, reject) => {
-      const failIfAddressInUse = () => {
-        if (isAddressInUseOutput(output)) reject(new AddressInUseError(port));
+      const inspectOutput = (buffer) => {
+        if (isAddressInUseOutput(buffer)) reject(new AddressInUseError(port));
+        const listened = listeningPortFromOutput(buffer);
+        if (listened !== null && listened !== port) {
+          reject(new ListenPortMismatchError(port, listened));
+        }
+        if (buffer.includes(advertisedListenNeedle(port))) {
+          sawAdvertisedListen = true;
+          markAdvertisedListen();
+        }
       };
       for (const stream of [child.stdout, child.stderr]) {
         stream.on("data", (chunk) => {
-          output = (output + chunk.toString()).slice(-16_384);
-          failIfAddressInUse();
+          const combined = output + chunk.toString();
+          // Inspect before truncating. A 16KiB+ flush can put Listening at
+          // the front and drop it from the retained tail.
+          inspectOutput(combined);
+          output = combined.slice(-16_384);
         });
       }
     });
+    await writeBootstrapEnvelope(child.stdin, envelope);
     const exited = closed.then(([code, signal]) => {
       if (isAddressInUseOutput(output)) throw new AddressInUseError(port);
       throw new Error(`Packaged backend exited before readiness (code=${code}, signal=${signal}).`);
     });
-    const controller = new AbortController();
     let timeout;
     const deadline = new Promise((_, reject) => {
       timeout = setTimeout(() => {
         reject(
           new Error(
-            `Packaged backend did not become ready within ${Math.floor(timeoutMs / 1000)} seconds.`,
+            readyTimeoutMessage(timeoutMs, {
+              sawListen: sawAdvertisedListen,
+              lastError: lastReadyError,
+            }),
           ),
         );
         controller.abort();
       }, timeoutMs);
     });
     const proveReady = async () => {
-      await waitForEnvironment(port, controller.signal);
-      await exchangeLocalBearer(port, bootstrapToken, controller.signal);
+      await waitForEnvironment(
+        port,
+        createRequestSignal(controller.signal, REQUEST_TIMEOUT_MS),
+      );
+      await exchangeLocalBearer(
+        port,
+        bootstrapToken,
+        createRequestSignal(controller.signal, REQUEST_TIMEOUT_MS),
+      );
     };
     const pollReady = (async () => {
+      await advertisedListen;
+      console.log(
+        `Packaged backend advertised listen on 127.0.0.1:${port}; proving environment + bearer.`,
+      );
       while (!controller.signal.aborted) {
         try {
           await proveReady();
           return;
         } catch (error) {
+          lastReadyError = error;
           if (controller.signal.aborted) throw error;
+          if (error instanceof ListenPortMismatchError || error instanceof AddressInUseError) {
+            throw error;
+          }
           if (isAddressInUseOutput(output)) throw new AddressInUseError(port);
           try {
             await NodeTimersPromises.setTimeout(100, undefined, { signal: controller.signal });

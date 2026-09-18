@@ -10,10 +10,15 @@ import { assert, describe, it } from "vite-plus/test";
 
 import {
   AddressInUseError,
+  advertisedListenNeedle,
   BIND_RETRY_LIMIT,
   DEFAULT_TIMEOUT_MS,
   isAddressInUseOutput,
   isInvokedAsCli,
+  listeningPortFromOutput,
+  ListenPortMismatchError,
+  readyTimeoutMessage,
+  REQUEST_TIMEOUT_MS,
   smokeWindowsBackend,
   writeBootstrapEnvelope,
 } from "./smoke-windows-backend.mjs";
@@ -141,6 +146,69 @@ await NodeTimersPromises.setTimeout(250);
 server.listen(port, "127.0.0.1");
 `;
 
+const HANGING_FIRST_REQUEST_BACKEND_SOURCE = `import * as NodeHttp from "node:http";
+import * as NodeReadline from "node:readline";
+
+const portIndex = process.argv.indexOf("--port");
+const port = Number(process.argv[portIndex + 1]);
+let envelope = null;
+const pending = [];
+let requests = 0;
+
+const rl = NodeReadline.createInterface({ input: process.stdin });
+rl.once("line", (line) => {
+  envelope = JSON.parse(line);
+  for (const resolve of pending) resolve();
+  pending.length = 0;
+});
+
+const waitForEnvelope = () =>
+  envelope !== null ? Promise.resolve() : new Promise((resolve) => pending.push(resolve));
+
+const server = NodeHttp.createServer((request, response) => {
+  requests += 1;
+  if (requests === 1) return;
+  if (request.url === "/.well-known/t3/environment") {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ environmentId: "smoke-env" }));
+    return;
+  }
+  if (request.method === "POST" && request.url === "/oauth/token") {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+    request.on("end", () => {
+      void waitForEnvelope().then(() => {
+        const params = new URLSearchParams(body);
+        if (params.get("subject_token") !== envelope.desktopBootstrapToken) {
+          response.statusCode = 401;
+          response.end(JSON.stringify({ error: "invalid_grant" }));
+          return;
+        }
+        response.setHeader("content-type", "application/json");
+        response.end(
+          JSON.stringify({
+            access_token: "smoke-bearer-token",
+            issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+            token_type: "Bearer",
+            expires_in: 3600,
+            scope: "orchestration:read",
+          }),
+        );
+      });
+    });
+    return;
+  }
+  response.statusCode = 404;
+  response.end();
+});
+
+server.listen(port, "127.0.0.1", () => {
+  console.log(\`Listening on http://127.0.0.1:\${port}\`);
+});
+`;
+
 describe("smoke-windows-backend", () => {
   it("exchanges a local bearer after the child listens on the advertised port", async () => {
     const tempDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-windows-smoke-"));
@@ -172,6 +240,97 @@ describe("smoke-windows-backend", () => {
     }
   });
 
+  it("retries after a hung first HTTP request instead of consuming the whole budget", async () => {
+    const tempDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-windows-smoke-"));
+    const entryPath = NodePath.join(tempDir, "bin.mjs");
+    await NodeFSP.writeFile(entryPath, HANGING_FIRST_REQUEST_BACKEND_SOURCE);
+    const started = Date.now();
+    try {
+      await smokeWindowsBackend({
+        executablePath: process.execPath,
+        entryPath,
+        timeoutMs: 5_000,
+      });
+      assert.isBelow(Date.now() - started, 4_000);
+    } finally {
+      await NodeFSP.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("still sees Listening when it arrives at the front of a large stdio flush", async () => {
+    const tempDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-windows-smoke-"));
+    const entryPath = NodePath.join(tempDir, "bin.mjs");
+    await NodeFSP.writeFile(
+      entryPath,
+      FAKE_BACKEND_SOURCE.replace(
+        "console.log(`Listening on http://127.0.0.1:${port}`);",
+        'process.stdout.write(`Listening on http://127.0.0.1:${port}\\n${"x".repeat(20_000)}\\n`);',
+      ),
+    );
+    const started = Date.now();
+    try {
+      await smokeWindowsBackend({
+        executablePath: process.execPath,
+        entryPath,
+        timeoutMs: 5_000,
+      });
+      assert.isBelow(Date.now() - started, 4_000);
+    } finally {
+      await NodeFSP.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails fast when the child listens on a different port than reserved", async () => {
+    const tempDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-windows-smoke-"));
+    const entryPath = NodePath.join(tempDir, "bin.mjs");
+    await NodeFSP.writeFile(
+      entryPath,
+      "console.log('Listening on http://127.0.0.1:1');\nsetInterval(() => {}, 1000);\n",
+    );
+    const started = Date.now();
+    try {
+      let error;
+      try {
+        await smokeWindowsBackend({
+          executablePath: process.execPath,
+          entryPath,
+          timeoutMs: 5_000,
+        });
+      } catch (caught) {
+        error = caught;
+      }
+      assert.instanceOf(error, ListenPortMismatchError);
+      assert.isAbove(error.reservedPort, 1);
+      assert.equal(error.listenedPort, 1);
+      assert.isBelow(Date.now() - started, 4_000);
+    } finally {
+      await NodeFSP.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports listen status when the ready budget expires", async () => {
+    const tempDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-windows-smoke-"));
+    const entryPath = NodePath.join(tempDir, "bin.mjs");
+    await NodeFSP.writeFile(entryPath, "setInterval(() => {}, 1000);\n");
+    try {
+      let message = "";
+      try {
+        await smokeWindowsBackend({
+          executablePath: process.execPath,
+          entryPath,
+          timeoutMs: 1_200,
+        });
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      assert.match(message, /did not become ready within 1 seconds/u);
+      assert.include(message, "listen=missing");
+      assert.include(message, "no HTTP probe error yet");
+    } finally {
+      await NodeFSP.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("runs the smoke when invoked as a CLI instead of no-op exiting 0", async () => {
     const tempDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-windows-smoke-"));
     const entryPath = NodePath.join(tempDir, "bin.mjs");
@@ -191,6 +350,7 @@ describe("smoke-windows-backend", () => {
         { encoding: "utf8" },
       );
       assert.equal(result.status, 0, result.stderr);
+      assert.include(result.stdout, "advertised listen");
       assert.include(result.stdout, "reached environment readiness");
     } finally {
       await NodeFSP.rm(tempDir, { recursive: true, force: true });
@@ -372,6 +532,21 @@ ${FAKE_BACKEND_SOURCE}`,
     assert.equal(BIND_RETRY_LIMIT, 5);
   });
 
+  it("parses the advertised listen port and formats ready timeouts", () => {
+    assert.equal(advertisedListenNeedle(64661), "Listening on http://127.0.0.1:64661");
+    assert.equal(listeningPortFromOutput("Listening on http://127.0.0.1:64661"), 64661);
+    assert.equal(listeningPortFromOutput("still starting"), null);
+    assert.equal(REQUEST_TIMEOUT_MS, 1_000);
+    assert.equal(
+      readyTimeoutMessage(100_000, { sawListen: true, lastError: new Error("fetch failed") }),
+      "Packaged backend did not become ready within 100 seconds. listen=seen; lastError=fetch failed",
+    );
+    assert.equal(
+      readyTimeoutMessage(1_200, {}),
+      "Packaged backend did not become ready within 1 seconds. listen=missing; lastError=no HTTP probe error yet",
+    );
+  });
+
   it("fails when the packaged child exits before listen", async () => {
     const tempDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-windows-smoke-"));
     const entryPath = NodePath.join(tempDir, "bin.mjs");
@@ -405,5 +580,6 @@ ${FAKE_BACKEND_SOURCE}`,
     assert.include(artifact, '"--timeout-ms"');
     assert.include(macos, "smoke-macos-backend.mjs");
     assert.equal(DEFAULT_TIMEOUT_MS, DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS);
+    assert.equal(REQUEST_TIMEOUT_MS, 1_000);
   });
 });
