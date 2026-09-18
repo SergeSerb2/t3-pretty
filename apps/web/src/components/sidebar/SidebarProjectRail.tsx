@@ -34,10 +34,12 @@ const DynamicIcon = lazy(() =>
 /** Faint mosaic of contained project icons, clipped to the frosted folder tile. */
 function FolderRailContentsPreview({
   projects,
+  collapsed,
 }: {
   readonly projects: readonly SidebarProjectSnapshot[];
+  readonly collapsed: boolean;
 }) {
-  const previews = folderRailPreviewProjects(projects);
+  const previews = folderRailPreviewProjects(projects, collapsed);
   if (previews.length === 0) return null;
   return (
     <span
@@ -78,12 +80,12 @@ function FolderRailGlyph({ folder }: { readonly folder: SidebarProjectFolder }) 
     );
   }
   if (folder.icon?.kind === "monogram") {
+    // Own positioned wrapper: ProjectMonogram's root is sized, not stacked, so
+    // className alone cannot lift the glyph above the folder's ::after sheen.
     return (
-      <ProjectMonogram
-        text={folder.icon.text}
-        color={folder.icon.color}
-        className={FOLDER_RAIL_GLYPH_CLASS}
-      />
+      <span aria-hidden className={FOLDER_RAIL_GLYPH_CLASS}>
+        <ProjectMonogram text={folder.icon.text} color={folder.icon.color} />
+      </span>
     );
   }
   if (folder.icon?.kind === "lucide") {
@@ -115,7 +117,7 @@ function FolderRailIcon({
 }) {
   return (
     <>
-      <FolderRailContentsPreview projects={projects} />
+      <FolderRailContentsPreview projects={projects} collapsed={folder.collapsed} />
       <FolderRailGlyph folder={folder} />
     </>
   );
