@@ -185,7 +185,7 @@ describe("getWindowFullscreenState", () => {
 
 describe("setWindowButtonVisibility", () => {
   it.effect("forwards visibility to the desktop window", () => {
-    const setWindowButtonVisibilityFn = vi.fn(() => Effect.void);
+    const setWindowButtonVisibilityFn = vi.fn((_visible: boolean) => Effect.void);
 
     return Effect.gen(function* () {
       yield* setWindowButtonVisibility.handler(false);

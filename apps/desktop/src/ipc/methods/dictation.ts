@@ -15,6 +15,13 @@ import {
 import * as DesktopIpc from "../DesktopIpc.ts";
 import * as IpcChannels from "../channels.ts";
 
+export class DesktopDictationError extends Schema.TaggedError<DesktopDictationError>()(
+  "DesktopDictationError",
+  {
+    message: Schema.String,
+  },
+) {}
+
 const DictationStartRequest = Schema.Struct({
   locale: Schema.optionalKey(Schema.String),
 });
@@ -51,7 +58,9 @@ export const startDictation = DesktopIpc.makeIpcMethod({
     yield* stopActive("cancel");
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     if (environment.platform !== "darwin") {
-      return yield* Effect.fail(new Error("On-device dictation is available on macOS only."));
+      return yield* new DesktopDictationError({
+        message: "On-device dictation is available on macOS only.",
+      });
     }
     const fileSystem = yield* FileSystem.FileSystem;
     const execDir = environment.path.dirname(Electron.app.getPath("exe"));
@@ -71,9 +80,9 @@ export const startDictation = DesktopIpc.makeIpcMethod({
       }
     }
     if (helperPath === undefined) {
-      return yield* Effect.fail(
-        new Error("macOS speech recognition is not available in this desktop build."),
-      );
+      return yield* new DesktopDictationError({
+        message: "macOS speech recognition is not available in this desktop build.",
+      });
     }
     const app = yield* ElectronApp.ElectronApp;
     const locale = input.locale?.trim() || (yield* app.systemLocale) || "en-US";
@@ -91,7 +100,9 @@ export const startDictation = DesktopIpc.makeIpcMethod({
           },
         }),
       catch: (cause) =>
-        cause instanceof Error ? cause : new Error("macOS speech recognition failed."),
+        new DesktopDictationError({
+          message: cause instanceof Error ? cause.message : "macOS speech recognition failed.",
+        }),
     });
     active = { session, senderId };
   }),

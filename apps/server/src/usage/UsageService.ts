@@ -116,6 +116,11 @@ const encodeRatesCache = Schema.encodeEffect(
 const ScanCacheJson = Schema.fromJsonString(Schema.Unknown as unknown as Schema.Codec<unknown>);
 const decodeScanCacheFile = Schema.decodeUnknownEffect(ScanCacheJson);
 const encodeScanCacheFile = Schema.encodeEffect(ScanCacheJson);
+const encodeUsageRecordKey = Schema.encodeSync(ScanCacheJson);
+const CachedSource = Schema.Struct({ dir: Schema.String, volumeId: Schema.String });
+const decodeCachedSources = Schema.decodeUnknownOption(
+  Schema.Struct({ sources: Schema.Record(Schema.String, CachedSource) }),
+);
 
 export class UsageService extends Context.Service<
   UsageService,
@@ -164,7 +169,12 @@ export const make = Effect.gen(function* () {
 
   const fileCache: ScanCache = new Map();
   let cachedRecordCount = 0;
+  const sourceCache = new Map<string, typeof CachedSource.Type>();
   let cacheDirty = false;
+  const isWithinDirectory = (filePath: string, dir: string) => {
+    const relative = path.relative(dir, filePath);
+    return relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative);
+  };
 
   const ratesCachePath = path.join(config.stateDir, "usage-model-rates.json");
   const scanCachePath = path.join(config.stateDir, "usage-scan-cache.json");
@@ -292,8 +302,14 @@ export const make = Effect.gen(function* () {
   /** Resolves the transcript directory for each provider. */
   const resolveTranscriptDirs = Effect.fn("UsageService.resolveTranscriptDirs")(function* (
     settings: ServerSettingsValue,
+    retentionCutoffMs: number,
   ) {
-    const dirs: Array<{ provider: UsageProviderKind; dir: string; fileName?: string }> = [];
+    const dirs: Array<{
+      provider: UsageProviderKind;
+      dir: string;
+      volumeId: string;
+      fileName?: string;
+    }> = [];
     const seen = new Set<string>();
     for (const driver of ["claudeAgent", "codex", "grok"] as const) {
       // Disabled accounts still have history. Explicit default slots replace
@@ -334,14 +350,41 @@ export const make = Effect.gen(function* () {
           );
         }
         const directory = path.resolve(home, provider === "claude" ? "projects" : "sessions");
-        // Account aliases and Codex auth overlays can share the same history.
+        const sourceKey = provider + "\0" + directory;
+        const previous = sourceCache.get(sourceKey);
+        // Keep canonical paths and source fingerprints stable after root cleanup,
+        // including aliases and clients merging pre-cleanup environment summaries.
         const dir = yield* fileSystem
           .realPath(directory)
-          .pipe(Effect.orElseSucceed(() => directory));
+          .pipe(Effect.orElseSucceed(() => previous?.dir ?? directory));
+        const currentVolumeId = yield* Effect.promise(() => readDirectoryVolumeId(dir));
+        const hasRetainedHistory = fileCache
+          .entries()
+          .some(
+            ([filePath, entry]) =>
+              entry.provider === provider &&
+              entry.mtimeMs >= retentionCutoffMs &&
+              entry.records.length + entry.tailRecords.length > 0 &&
+              isWithinDirectory(filePath, dir),
+          );
+        // A recreated directory still reports the retained history under its old identity.
+        const volumeId =
+          previous?.dir === dir && (hasRetainedHistory || !currentVolumeId)
+            ? previous.volumeId || currentVolumeId
+            : currentVolumeId;
+        if (previous?.dir !== dir || previous.volumeId !== volumeId) {
+          sourceCache.set(sourceKey, { dir, volumeId });
+          cacheDirty = true;
+        }
         const key = `${provider}\0${dir}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        dirs.push({ provider, dir, ...(provider === "grok" ? { fileName: "updates.jsonl" } : {}) });
+        dirs.push({
+          provider,
+          dir,
+          volumeId,
+          ...(provider === "grok" ? { fileName: "updates.jsonl" } : {}),
+        });
       }
     }
     return dirs;
@@ -376,6 +419,11 @@ export const make = Effect.gen(function* () {
         fileCache.set(filePath, entry);
         cachedRecordCount += entry.records.length;
       }
+      const sources = decodeCachedSources(document);
+      if (Option.isSome(sources)) {
+        for (const [key, source] of Object.entries(sources.value.sources))
+          sourceCache.set(key, source);
+      }
     }),
   );
 
@@ -383,7 +431,10 @@ export const make = Effect.gen(function* () {
     if (!cacheDirty) return;
     // Cleared only after the write lands, so a failed persist is retried on
     // the next scan instead of leaving disk permanently stale.
-    yield* encodeScanCacheFile(encodeScanCache(fileCache)).pipe(
+    yield* encodeScanCacheFile({
+      ...encodeScanCache(fileCache),
+      sources: Object.fromEntries(sourceCache),
+    }).pipe(
       Effect.flatMap((serialized) => {
         const encodedBytes = new TextEncoder().encode(serialized).byteLength;
         if (encodedBytes > SCAN_CACHE_MAX_BYTES) {
@@ -455,11 +506,16 @@ export const make = Effect.gen(function* () {
       // A read failure is not an empty transcript: caching it under this
       // (size, mtime) would silently drop the file's usage until it changes.
       if (parsed === null) {
+        const records =
+          cached?.provider === provider
+            ? [...cached.records, ...(cached.tailRecords ?? [])]
+            : [];
+        const recordLimitReached = records.length > maxRecords;
         return {
-          records: [],
+          records: recordLimitReached ? records.slice(0, maxRecords) : records,
           oversizedRecords: 0,
           unreadable: true,
-          recordLimitReached: false,
+          recordLimitReached,
         };
       }
       // Stored already de-duplicated within the file, which is 99% of all
@@ -489,6 +545,7 @@ export const make = Effect.gen(function* () {
   const readSummaryCore = Effect.fn("UsageService.readSummary")(function* (
     input: UsageSummaryInput,
     settings: ServerSettingsValue,
+    retentionCutoffMs: number,
   ) {
     if (!isValidUsageTimeZone(input.timeZone)) {
       return yield* new UsageReadError({
@@ -560,8 +617,6 @@ export const make = Effect.gen(function* () {
     });
 
     const sources: UsageSource[] = [];
-    const livePaths = new Set<string>();
-    const walkedRoots: string[] = [];
 
     for (const { provider, dir, fileName } of dirs) {
       const volumeId = yield* Effect.promise(() => readDirectoryVolumeId(dir));
@@ -569,7 +624,35 @@ export const make = Effect.gen(function* () {
         .exists(dir)
         .pipe(Effect.catchCause(() => Effect.succeed(false)));
 
-      if (!exists) {
+      const listing = exists
+        ? yield* Effect.promise(() =>
+            listTranscriptFiles(
+              dir,
+              windowStartMs,
+              fileName === undefined ? undefined : { fileName },
+            ),
+          )
+        : undefined;
+      const retainedFiles = [...(listing?.files ?? [])];
+      const livePaths = new Set(retainedFiles.map((file) => file.path));
+      // Cleanup may remove transcripts, but the usage we already saved still
+      // contributes to this source. Keep the normal aggregation and dedupe path.
+      for (const [filePath, entry] of fileCache) {
+        if (
+          entry.provider !== provider ||
+          entry.mtimeMs < retentionCutoffMs ||
+          livePaths.has(filePath) ||
+          !isWithinDirectory(filePath, dir) ||
+          (fileName !== undefined && path.basename(filePath) !== fileName)
+        )
+          continue;
+        retainedFiles.push({
+          path: filePath,
+          records: [...entry.records, ...(entry.tailRecords ?? [])],
+        });
+      }
+
+      if (listing === undefined && retainedFiles.length === 0) {
         sources.push({
           fingerprint: { hostId, provider, resolvedHomePath: dir, volumeId },
           status: "missing",
@@ -581,15 +664,6 @@ export const make = Effect.gen(function* () {
         });
         continue;
       }
-
-      const listing = yield* Effect.promise(() =>
-        listTranscriptFiles(dir, windowStartMs, fileName === undefined ? undefined : { fileName }),
-      );
-      // Absence only proves deletion after a complete walk. Treating a
-      // truncated or partially unreadable listing as authoritative would evict
-      // valid warm entries that the walk simply never reached.
-      if (!listing.truncated && listing.unreadableDirectories === 0) walkedRoots.push(dir);
-      const { files } = listing;
       let scannedFiles = 0;
       let skippedFiles = 0;
       let malformedRecords = 0;
@@ -604,22 +678,32 @@ export const make = Effect.gen(function* () {
       // session spans days and models, so clients total this figure instead.
       const sessionIds = new Set<string>();
 
-      for (const file of files) livePaths.add(file.path);
-      const orderedFiles = files.toSorted((left, right) => right.mtimeMs - left.mtimeMs);
+      const orderedFiles = retainedFiles.toSorted((left, right) => {
+        const leftMtimeMs =
+          "mtimeMs" in left && typeof left.mtimeMs === "number" ? left.mtimeMs : 0;
+        const rightMtimeMs =
+          "mtimeMs" in right && typeof right.mtimeMs === "number" ? right.mtimeMs : 0;
+        return rightMtimeMs - leftMtimeMs;
+      });
 
       for (let index = 0; index < orderedFiles.length; index += 1) {
         const file = orderedFiles[index]!;
-        if (file.size > TRANSCRIPT_FILE_MAX_BYTES) {
+        const fileSize = "size" in file && typeof file.size === "number" ? file.size : undefined;
+        if (fileSize !== undefined && fileSize > TRANSCRIPT_FILE_MAX_BYTES) {
           oversizedFiles += 1;
           skippedFiles += 1;
           continue;
         }
-        if (corpusBytes + file.size > TRANSCRIPT_PROVIDER_MAX_BYTES) {
+        if (file.records.length === 0) {
+          skippedFiles += 1;
+          continue;
+        }
+        if (fileSize !== undefined && corpusBytes + fileSize > TRANSCRIPT_PROVIDER_MAX_BYTES) {
           corpusLimitReached = true;
           skippedFiles += orderedFiles.length - index;
           break;
         }
-        corpusBytes += file.size;
+        if (fileSize !== undefined) corpusBytes += fileSize;
 
         const remainingRecords = TRANSCRIPT_PROVIDER_RECORD_MAX - retainedRecords;
         if (remainingRecords <= 0) {
@@ -628,20 +712,12 @@ export const make = Effect.gen(function* () {
           break;
         }
 
-        const result = yield* readFileRecords(
-          file.path,
-          file.size,
-          file.mtimeMs,
-          provider,
-          remainingRecords,
-        );
-        malformedRecords += result.oversizedRecords;
-        if (result.unreadable) unreadableFiles += 1;
-        const { records } = result;
+        const records = file.records.slice(0, remainingRecords);
+        const fileRecordLimitReached = records.length < file.records.length;
         retainedRecords += records.length;
         if (records.length === 0) {
           skippedFiles += 1;
-          if (result.recordLimitReached) {
+          if (fileRecordLimitReached) {
             recordLimitReached = true;
             skippedFiles += orderedFiles.length - index - 1;
             break;
@@ -649,10 +725,26 @@ export const make = Effect.gen(function* () {
           continue;
         }
         scannedFiles += 1;
+        const codexEventOccurrences = new Map<string, number>();
         for (const record of records) {
-          // Only sessions that contributed in-window count: the mtime slack
-          // admits boundary files whose records fall outside the range.
-          if (aggregator.add(record) && record.sessionId.length > 0) {
+          let usageRecord = record;
+          if (record.provider === "codex" && record.sessionId.length > 0) {
+            // Match moved rollout copies without collapsing repeated equal events
+            // within one rollout (timestamps can have only second precision).
+            const key = encodeUsageRecordKey([
+              record.provider,
+              record.sessionId,
+              record.timestampMs,
+              record.model,
+              record.totals,
+            ]);
+            const occurrence = (codexEventOccurrences.get(key) ?? 0) + 1;
+            codexEventOccurrences.set(key, occurrence);
+            usageRecord = { ...record, dedupeKey: key + ":" + occurrence };
+          }
+          // Only sessions contributing in-window count; the mtime slack can
+          // admit boundary files whose records fall outside the range.
+          if (aggregator.add(usageRecord) && record.sessionId.length > 0) {
             if (sessionIds.has(record.sessionId)) continue;
             if (sessionIds.size < TRANSCRIPT_PROVIDER_SESSION_MAX) {
               sessionIds.add(record.sessionId);
@@ -678,59 +770,66 @@ export const make = Effect.gen(function* () {
         sessionLimitReached ||
         aggregateCapacity.droppedRecords > 0 ||
         aggregateCapacity.omittedSessionMemberships > 0 ||
-        listing.truncated ||
-        listing.unreadableDirectories > 0;
+        (listing?.truncated ?? false) ||
+        (listing?.unreadableDirectories ?? 0) > 0;
 
       sources.push({
         fingerprint: { hostId, provider, resolvedHomePath: dir, volumeId },
-        status: isPartial ? "partial" : "ok",
+        // Clients exclude missing sources, so saved records remain an available source.
+        status:
+          listing === undefined && scannedFiles === 0
+            ? "missing"
+            : isPartial
+              ? "partial"
+              : "ok",
         scannedFiles,
         skippedFiles,
         malformedRecords,
         distinctSessions: sessionIds.size,
-        message: isPartial
-          ? [
-              malformedRecords > 0
-                ? `${malformedRecords} oversized transcript record${malformedRecords === 1 ? " was" : "s were"} skipped.`
-                : null,
-              unreadableFiles > 0
-                ? `${unreadableFiles} transcript file${unreadableFiles === 1 ? " was" : "s were"} unreadable.`
-                : null,
-              oversizedFiles > 0
-                ? `${oversizedFiles} transcript file${oversizedFiles === 1 ? " exceeded" : "s exceeded"} 512 MiB and ${oversizedFiles === 1 ? "was" : "were"} skipped.`
-                : null,
-              corpusLimitReached
-                ? "Transcript discovery exceeded the 4 GiB per-provider scan budget."
-                : null,
-              recordLimitReached
-                ? "Transcript parsing reached the 200,000-record per-provider limit."
-                : null,
-              sessionLimitReached
-                ? "Distinct-session counting reached the 50,000-session per-provider limit."
-                : null,
-              aggregateCapacity.droppedRecords > 0
-                ? `${aggregateCapacity.droppedRecords} usage record${aggregateCapacity.droppedRecords === 1 ? " exceeded" : "s exceeded"} aggregate identity or bucket limits and ${aggregateCapacity.droppedRecords === 1 ? "was" : "were"} omitted.`
-                : null,
-              aggregateCapacity.omittedSessionMemberships > 0
-                ? `${aggregateCapacity.omittedSessionMemberships} bucket session membership${aggregateCapacity.omittedSessionMemberships === 1 ? " exceeded" : "s exceeded"} the aggregate limit.`
-                : null,
-              listing.unreadableDirectories > 0
-                ? `${listing.unreadableDirectories} transcript director${listing.unreadableDirectories === 1 ? "y was" : "ies were"} unreadable.`
-                : null,
-              listing.truncated ? "Transcript discovery reached its safety limit." : null,
-            ]
-              .filter((part): part is string => part !== null)
-              .join(" ")
-          : null,
+        message:
+          [
+            listing === undefined ? "No transcript directory on this environment." : null,
+            isPartial
+              ? [
+                  malformedRecords > 0
+                    ? `${malformedRecords} oversized transcript record${malformedRecords === 1 ? " was" : "s were"} skipped.`
+                    : null,
+                  unreadableFiles > 0
+                    ? `${unreadableFiles} transcript file${unreadableFiles === 1 ? " was" : "s were"} unreadable.`
+                    : null,
+                  oversizedFiles > 0
+                    ? `${oversizedFiles} transcript file${oversizedFiles === 1 ? " exceeded" : "s exceeded"} 512 MiB and ${oversizedFiles === 1 ? "was" : "were"} skipped.`
+                    : null,
+                  corpusLimitReached
+                    ? "Transcript discovery exceeded the 4 GiB per-provider scan budget."
+                    : null,
+                  recordLimitReached
+                    ? "Transcript parsing reached the 200,000-record per-provider limit."
+                    : null,
+                  sessionLimitReached
+                    ? "Distinct-session counting reached the 50,000-session per-provider limit."
+                    : null,
+                  aggregateCapacity.droppedRecords > 0
+                    ? `${aggregateCapacity.droppedRecords} usage record${aggregateCapacity.droppedRecords === 1 ? " exceeded" : "s exceeded"} aggregate identity or bucket limits and ${aggregateCapacity.droppedRecords === 1 ? "was" : "were"} omitted.`
+                    : null,
+                  aggregateCapacity.omittedSessionMemberships > 0
+                    ? `${aggregateCapacity.omittedSessionMemberships} bucket session membership${aggregateCapacity.omittedSessionMemberships === 1 ? " exceeded" : "s exceeded"} the aggregate limit.`
+                    : null,
+                  (listing?.unreadableDirectories ?? 0) > 0
+                    ? `${listing?.unreadableDirectories ?? 0} transcript director${(listing?.unreadableDirectories ?? 0) === 1 ? "y was" : "ies were"} unreadable.`
+                    : null,
+                  listing?.truncated ? "Transcript discovery reached its safety limit." : null,
+                ]
+                  .filter((part): part is string => part !== null)
+                  .join(" ")
+              : null,
+          ]
+            .filter((part): part is string => part !== null)
+            .join(" ") || null,
       });
     }
 
-    const pruned = pruneScanCache(fileCache, {
-      livePaths,
-      walkedRoots,
-      windowStartMs,
-      retentionCutoffMs: startedAtMs - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-    });
+    const pruned = pruneScanCache(fileCache, retentionCutoffMs);
     if (pruned > 0) {
       cachedRecordCount = 0;
       for (const entry of fileCache.values()) cachedRecordCount += entry.records.length;

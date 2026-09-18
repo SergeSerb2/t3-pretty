@@ -1,5 +1,46 @@
 # T3 Pretty upstream integration report
 
+- Parent nightly: `v0.0.43-nightly.20260917.1880`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260917.1866`
+- Conflict resolver: replayed `automation/sync-resolution-cache` for the six 1880 files whose diff3 keys still matched (Stack, SettingsProjectGrouping, settings-sheet-targets, Migrations, PullRequestService, UsageService). Manual completions for the remaining eight files, following the Buildkite #2511 resolution notes. UsageService's cached body still named a removed `files` binding; that adjacent identifier was corrected to `listing`.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/Stack.tsx` — Preserved T3 Pretty's Apps settings route and integrated the parent project-overview settings screen.
+- `apps/mobile/src/features/settings/SettingsProjectGroupingRouteScreen.tsx` — Preserved radiogroup accessibility while taking the parent section-title update.
+- `apps/mobile/src/features/settings/components/settings-sheet-targets.ts` — Preserved the Apps settings target and added every new upstream organization, project, and environment settings target.
+- `apps/server/src/persistence/Migrations.ts` — Preserved T3 Pretty's stable migration history and appended `053_PullRequestFilesViewed` as ID 64.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Avoided redeclaring `context`/`runFork` and kept the lifecycle safeguard for background stale-data refreshes.
+- `apps/server/src/usage/UsageService.ts` — Preserved cache-record accounting, capacity limits, and bounded scan behavior while integrating upstream retained-usage after transcript cleanup.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved NodePath cache-validation imports and took the parent retention-only prune API used by the resolved UsageService.
+- `apps/web/src/components/ChatView.tsx` — Preserved native-resume and create-PR prompt imports and added the parent source-control repository selector.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — Preserved T3 Pretty's Alert visual shell, dismissal, `urgent`/`priority` API, and item class names, and adopted the parent compact-banner ComposerBanner content layout.
+- `apps/web/src/lib/openPullRequestLink.test.ts` — Preserved Origin host matching and added Azure DevOps SSH remote normalization coverage.
+- `docs/README.md` — Preserved Apps and Automations index links and added the pull request file revisions page.
+- `docs/user/source-control.md` — Preserved T3 Pretty pull-request lifecycle documentation and added the parent file-viewed feature.
+- `packages/contracts/src/pullRequest.test.ts` — Preserved comment/review-submission imports and added files-viewed contract imports.
+- `packages/shared/src/git.ts` — Preserved expanded SCP remote recognition and applied Azure DevOps repository-key normalization to those remotes.
+
+## Compatible parent behavior integrated
+
+- Pull request files can be marked as viewed.
+- Composer banners can stay compact and readable, including description overflow.
+- Usage totals survive transcript cleanup until reporting retention expires.
+- Settings gained scoped organization/project/environment navigation.
+
+## Parent changes omitted
+
+- `apps/server/src/usage/usageScanCache.ts` — Parent removal of the `node:path` import. T3 Pretty's cache hydration still validates paths with NodePath.
+- `apps/server/src/usage/UsageService.ts` — Parent `collectDirs`/rate-loading concurrency optimization. It conflicts with the fork's directory-scanning architecture.
+
+## Post-merge repairs
+
+- `mobile-typecheck` — Upstream #12316 narrowed `AppSymbolName` to `keyof typeof ANDROID_ICON_BY_SF_SYMBOL`. Added Android Tabler mappings for `bolt`, `minus.circle`, `key`, `photo.on.rectangle`, `circle.lefthalf.filled`, `circle.fill`, and `photo.fill` so scenery, automations, PR checks, Apps settings, and sidebar actions keep those symbols.
+- `web-typecheck` — `#607`'s local dictation helpers failed `exactOptionalPropertyTypes` and ES2023 (`Promise.withResolvers`) once 1880 was stacked on current main. Pass `desktopBridge` only when it is defined, and use a manual deferred in the browser-dictation test.
+- `desktop-typecheck` — `#607`'s macOS dictation IPC used untagged `Error` and raw `setTimeout`; switch those to a tagged `DesktopDictationError` and mark the child-process timeouts as outside an Effect fiber. Also type the window-button-visibility mock so `Layer.mock` accepts the visibility argument.
+
+## Previous integration notes
+
 - Parent nightly: `v0.0.43-nightly.20260917.1851`
 - Previously integrated parent nightly: `v0.0.43-nightly.20260916.1825`
 - Conflict resolver: replayed `automation/sync-resolution-cache` @ `27cee7a057` (diff3 key match) without CLIProxyAPI. Manual completions: SettingsSidebarNav storage icon, OpenCodeProvider.test.ts fork deletion, parent lockfile; then mobile typecheck repairs.

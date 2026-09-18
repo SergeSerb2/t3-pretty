@@ -55,7 +55,9 @@ export function resolveLocalDictationEngineFromWindow(
 ): LocalDictationEngine | null {
   if (targetWindow === undefined) return null;
   return resolveLocalDictationEngine({
-    desktopBridge: targetWindow.desktopBridge,
+    ...(targetWindow.desktopBridge === undefined
+      ? {}
+      : { desktopBridge: targetWindow.desktopBridge }),
     speechRecognitionAvailable: getSpeechRecognitionConstructor(targetWindow) !== null,
   });
 }

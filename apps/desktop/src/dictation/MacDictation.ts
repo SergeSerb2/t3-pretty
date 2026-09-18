@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- This macOS platform boundary spawns the Speech.framework helper with Node.
+// @effect-diagnostics globalTimers:off -- Child-process ready/stop timeouts sit outside any Effect fiber.
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodePath from "node:path";

@@ -257,8 +257,11 @@ describe("browser composer dictation", () => {
   });
 
   it("cancels prepare when toggled again before recording starts", async () => {
-    const permission = Promise.withResolvers<void>();
-    desktopBridge.startDictation.mockReturnValueOnce(permission.promise);
+    let resolvePermission!: () => void;
+    const permission = new Promise<void>((resolve) => {
+      resolvePermission = resolve;
+    });
+    desktopBridge.startDictation.mockReturnValueOnce(permission);
     stubWindow(desktopBridge);
     await act(() => root.render(<Probe />));
     let starting: Promise<void> | void;
@@ -271,7 +274,7 @@ describe("browser composer dictation", () => {
     });
     expect(dictation.phase).toBe("idle");
     await act(async () => {
-      permission.resolve();
+      resolvePermission();
       await starting;
     });
     expect(desktopBridge.cancelDictation).toHaveBeenCalled();
