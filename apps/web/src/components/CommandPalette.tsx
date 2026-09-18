@@ -43,6 +43,7 @@ import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
+  CarFrontIcon,
   ChartNoAxesColumnIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
@@ -80,6 +81,11 @@ import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl"
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useClientSettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
+import {
+  TESLA_TOUCH_PREFERENCE_LABELS,
+  type TeslaTouchPreference,
+  useTeslaTouchPreference,
+} from "../teslaTouchUi";
 import { useCustomThemes } from "../hooks/useCustomThemes";
 import { useEnvironmentThemeDefinitions } from "../hooks/useEnvironmentTheme";
 import { BUILT_IN_THEMES } from "@t3tools/shared/themePalettes";
@@ -779,6 +785,7 @@ function OpenCommandPaletteDialog(props: {
     setTheme,
     setThemeHalf,
   } = useTheme();
+  const [teslaTouchPreference, setTeslaTouchPreference] = useTeslaTouchPreference();
   const customThemes = useCustomThemes();
   const environmentThemes = useEnvironmentThemeDefinitions();
   const themeCards = useMemo(() => {
@@ -1987,6 +1994,52 @@ function OpenCommandPaletteDialog(props: {
     ],
   };
   actionItems.push(changeAppearanceItem);
+
+  const teslaTouchItem: CommandPaletteSubmenuItem = {
+    kind: "submenu",
+    value: "action:car-display",
+    searchTerms: [
+      "car display",
+      "tesla",
+      "passenger",
+      "touch",
+      "infotainment",
+      "vehicle",
+      "browser",
+    ],
+    title: "Car display",
+    icon: <CarFrontIcon className={ITEM_ICON_CLASS} />,
+    addonIcon: <CarFrontIcon className={ADDON_ICON_CLASS} />,
+    groups: [
+      {
+        value: "car-display",
+        label: "Car display",
+        items: (Object.keys(TESLA_TOUCH_PREFERENCE_LABELS) as TeslaTouchPreference[]).map(
+          (mode) => ({
+            kind: "action" as const,
+            value: `car-display:${mode}`,
+            title: TESLA_TOUCH_PREFERENCE_LABELS[mode],
+            description:
+              mode === "auto"
+                ? "On in Tesla's passenger browser"
+                : mode === "on"
+                  ? "Large-touch layout"
+                  : "Desktop layout",
+            searchTerms: [TESLA_TOUCH_PREFERENCE_LABELS[mode], "car display", "tesla"],
+            icon: <CarFrontIcon className={ITEM_ICON_CLASS} />,
+            titleTrailingContent:
+              teslaTouchPreference === mode ? (
+                <span className="text-xs text-muted-foreground/70">Current</span>
+              ) : undefined,
+            run: async () => {
+              setTeslaTouchPreference(mode);
+            },
+          }),
+        ),
+      },
+    ],
+  };
+  actionItems.push(teslaTouchItem);
 
   useLayoutEffect(() => {
     if (openIntent?.kind !== "change-theme") return;

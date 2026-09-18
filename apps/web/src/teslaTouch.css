@@ -1,0 +1,72 @@
+/* Tesla passenger browser: large landscape touchscreen, no hover, fat-finger
+   reach across a 15–18" center display. `data-tesla-touch` is stamped from
+   teslaTouchUi.ts when the UA matches or the user forces Car display on. */
+
+html[data-tesla-touch] {
+  -webkit-tap-highlight-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  touch-action: manipulation;
+  --app-scrollbar-width: 14px;
+  --command-content-inset: 1.25rem;
+  --command-shell-inset: 0.75rem;
+  --control-radius: 0.75rem;
+  --floating-content-inset: 1rem;
+  --sidebar-content-inset: 0.75rem;
+  --sidebar-control-gap: 0.75rem;
+  --sidebar-row-content-inset: 0.875rem;
+  --tesla-touch-target: 3.25rem;
+  --workspace-titlebar-control-size: 2.75rem;
+  --workspace-topbar-height: 64px;
+  scrollbar-width: auto;
+}
+
+html[data-tesla-touch] [data-slot="button"],
+html[data-tesla-touch] [data-slot="toggle"],
+html[data-tesla-touch] [data-slot="select-trigger"],
+html[data-tesla-touch] [data-slot="sidebar-menu-button"],
+html[data-tesla-touch] [data-slot="sidebar-menu-action"],
+html[data-tesla-touch] [data-slot="sidebar-menu-sub-button"],
+html[data-tesla-touch] [data-slot="command-item"],
+html[data-tesla-touch] [data-slot="menu-item"] {
+  min-height: var(--tesla-touch-target);
+  font-size: 1rem;
+}
+
+html[data-tesla-touch] [data-slot="sidebar-menu-button"] {
+  height: auto;
+  padding-block: 0.7rem;
+}
+
+html[data-tesla-touch] [data-slot="sidebar-menu"] {
+  gap: 0.4rem;
+}
+
+html[data-tesla-touch] [data-slot="sidebar-trigger"] {
+  width: var(--tesla-touch-target);
+  height: var(--tesla-touch-target);
+}
+
+html[data-tesla-touch] [data-slot="composer-shell"] {
+  max-width: min(56rem, calc(100% - 1.5rem));
+}
+
+html[data-tesla-touch] [data-testid="composer-editor"] {
+  font-size: max(var(--font-size-prompt, 1rem), 1.125rem);
+  line-height: 1.5;
+}
+
+html[data-tesla-touch] [data-slot="composer-host"] button[type="submit"] {
+  width: var(--tesla-touch-target);
+  height: var(--tesla-touch-target);
+}
+
+html[data-tesla-touch] [data-assistant-meta="overlay"] {
+  height: auto;
+  min-height: var(--tesla-touch-target);
+  overflow: visible;
+  pointer-events: auto;
+  opacity: 1;
+}
+
+html[data-tesla-touch] [data-slot="command-item"] {
+  padding-block: 0.7rem;
+}

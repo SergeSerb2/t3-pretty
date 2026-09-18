@@ -142,6 +142,11 @@ import { ScopedSwitch } from "./ScopedSwitch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useSceneryThemeActive } from "../../scenery/useHtmlAttributes";
+import {
+  TESLA_TOUCH_PREFERENCE_LABELS,
+  type TeslaTouchPreference,
+  useTeslaTouchPreference,
+} from "../../teslaTouchUi";
 import { ThemeLibrary } from "./ThemeSettings";
 import {
   backgroundActivityOverrideSettings,
@@ -1143,6 +1148,7 @@ const SceneryAppearanceSettings = lazy(() => import("../../scenery/SceneryAppear
 
 export function AppearanceSettingsPanel() {
   const sceneryThemeActive = useSceneryThemeActive();
+  const [teslaTouchPreference, setTeslaTouchPreference] = useTeslaTouchPreference();
   const {
     appearanceMode,
     refreshTheme,
@@ -1285,6 +1291,42 @@ export function AppearanceSettingsPanel() {
                 value={settings.glassOpacity}
               />
             </div>
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("car-display")}
+          description="Larger tap targets and an overlay sidebar for Tesla's passenger browser. Auto turns on when this page loads in a Tesla."
+          resetAction={
+            teslaTouchPreference !== "auto" ? (
+              <SettingResetButton
+                label="car display"
+                onClick={() => setTeslaTouchPreference("auto")}
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={teslaTouchPreference}
+              onValueChange={(value) => {
+                if (value === "auto" || value === "on" || value === "off") {
+                  setTeslaTouchPreference(value);
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Car display">
+                <SelectValue>{TESLA_TOUCH_PREFERENCE_LABELS[teslaTouchPreference]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {(Object.keys(TESLA_TOUCH_PREFERENCE_LABELS) as TeslaTouchPreference[]).map(
+                  (value) => (
+                    <SelectItem hideIndicator key={value} value={value}>
+                      {TESLA_TOUCH_PREFERENCE_LABELS[value]}
+                    </SelectItem>
+                  ),
+                )}
+              </SelectPopup>
+            </Select>
           }
         />
 
