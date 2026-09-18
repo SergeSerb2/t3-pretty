@@ -1,5 +1,9 @@
 import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
-import { makeLocalFileTracer, makeTraceSink } from "@t3tools/shared/observability";
+import {
+  makeLocalFileTracer,
+  makeTraceSink,
+  otlpSerializationLayer,
+} from "@t3tools/shared/observability";
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -17,9 +21,10 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import * as Tracer from "effect/Tracer";
-import { OtlpExporter, OtlpSerialization, OtlpTracer } from "effect/unstable/observability";
+import { OtlpExporter, OtlpTracer } from "effect/unstable/observability";
 
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import { readFileStringWithinLimit } from "../boundedFileRead.ts";
 
 const DESKTOP_LOG_FILE_MAX_BYTES = 10 * 1024 * 1024;
 const DESKTOP_LOG_FILE_MAX_FILES = 10;
@@ -27,6 +32,7 @@ const DESKTOP_BACKEND_CHILD_LOG_FIBER_ID = "#backend-child";
 const DESKTOP_TRACE_BATCH_WINDOW_MS = 1_000;
 const DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_BYTES = 1024 * 1024;
 const DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_CHUNKS = 256;
+const SERVER_SETTINGS_FILE_MAX_BYTES = 1024 * 1024;
 
 export interface RotatingLogFileWriter {
   readonly writeBytes: (chunk: Uint8Array) => Effect.Effect<void>;
@@ -97,7 +103,7 @@ export function makeComponentLogger(component: string): DesktopComponentLogger {
   };
 }
 
-class DesktopLogFileWriterConfigurationError extends Schema.TaggedErrorClass<DesktopLogFileWriterConfigurationError>()(
+class DesktopLogFileWriterConfigurationError extends Schema.TaggedError<DesktopLogFileWriterConfigurationError>()(
   "DesktopLogFileWriterConfigurationError",
   {
     option: Schema.Literals(["maxBytes", "maxFiles"]),
@@ -329,7 +335,11 @@ const readPersistedOtlpTracesUrl: Effect.Effect<
 > = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  const raw = yield* fileSystem.readFileString(environment.serverSettingsPath).pipe(Effect.option);
+  const raw = yield* readFileStringWithinLimit(
+    fileSystem,
+    environment.serverSettingsPath,
+    SERVER_SETTINGS_FILE_MAX_BYTES,
+  ).pipe(Effect.option);
   if (Option.isNone(raw)) {
     return Option.none();
   }
@@ -520,17 +530,18 @@ const backendOutputLogFactoryLayer = Layer.effect(
     // second caller's writes to the first caller's id. Each sink pins
     // itself to the factory's scope so all log resources tear down
     // together at app exit. Mutex serializes concurrent first-time
-    // lookups for the same file path.
-    const cacheRef = yield* SynchronizedRef.make<
-      ReadonlyMap<string, Option.Option<RotatingLogFileWriter>>
-    >(new Map());
+    // lookups for the same file path. Failed initialization is not cached so a
+    // transient filesystem failure can recover on the next backend start.
+    const cacheRef = yield* SynchronizedRef.make<ReadonlyMap<string, RotatingLogFileWriter>>(
+      new Map(),
+    );
 
     const makeForId = (id: string): Effect.Effect<DesktopBackendOutputLogShape> =>
       SynchronizedRef.modifyEffect(cacheRef, (cache) => {
         const cacheKey = backendLogFilePathForInstance(environment, id);
         const cached = cache.get(cacheKey);
         if (cached !== undefined) {
-          return makeBackendOutputLogShape(environment, id, cached).pipe(
+          return makeBackendOutputLogShape(environment, id, Option.some(cached)).pipe(
             Effect.map((outputLog) => [outputLog, cache] as const),
           );
         }
@@ -539,18 +550,17 @@ const backendOutputLogFactoryLayer = Layer.effect(
           Effect.provideService(Path.Path, path),
           Scope.provide(factoryScope),
           Effect.map((sink) => {
-            const next = new Map(cache);
-            next.set(cacheKey, sink);
+            const next = Option.match(sink, {
+              onNone: () => cache,
+              onSome: (writer) => new Map(cache).set(cacheKey, writer),
+            });
             return { sink, next };
           }),
           Effect.flatMap(({ sink, next }) =>
             makeBackendOutputLogShape(environment, id, sink).pipe(
               Effect.map(
                 (outputLog) =>
-                  [
-                    outputLog,
-                    next as ReadonlyMap<string, Option.Option<RotatingLogFileWriter>>,
-                  ] as const,
+                  [outputLog, next as ReadonlyMap<string, RotatingLogFileWriter>] as const,
               ),
             ),
           ),
@@ -584,6 +594,7 @@ const tracerLayer = Layer.unwrap(
       : yield* OtlpTracer.make({
           url: otlpTracesUrl.value,
           exportInterval: `${environment.otlpExportIntervalMs} millis`,
+          headers: Option.getOrUndefined(environment.otlpHeaders),
           resource: {
             serviceName: "desktop",
             attributes: {
@@ -591,7 +602,7 @@ const tracerLayer = Layer.unwrap(
               "service.mode": environment.isDevelopment ? "development" : "packaged",
             },
           },
-        });
+        }).pipe(Effect.provide(otlpSerializationLayer(environment.otlpProtocol)));
     const tracer = yield* makeLocalFileTracer({
       filePath: tracePath,
       maxBytes: DESKTOP_LOG_FILE_MAX_BYTES,
@@ -603,7 +614,7 @@ const tracerLayer = Layer.unwrap(
 
     return Layer.succeed(Tracer.Tracer, tracer);
   }),
-).pipe(Layer.provide(OtlpExporter.layerFlusher), Layer.provideMerge(OtlpSerialization.layerJson));
+).pipe(Layer.provide(OtlpExporter.layerFlusher));
 
 export const layer = Layer.mergeAll(
   backendOutputLogFactoryLayer,

@@ -1,3 +1,7 @@
+import { MaterialListRow } from "../../components/MaterialListRow";
+import { SettingsScreen } from "../settings/components/SettingsScreen";
+import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
+import { MaterialButton } from "../../components/MaterialButton";
 import {
   addProjectRemoteSourceLabel,
   addProjectRemoteSourcePathHint,
@@ -31,27 +35,42 @@ import {
   inferProjectTitleFromPath,
   isWindowsPlatform,
 } from "@t3tools/client-runtime/state/projects";
-import { CommandId, type EnvironmentId, ProjectId } from "@t3tools/contracts";
+import {
+  CommandId,
+  type EnvironmentId,
+  type EnvironmentMachineKind,
+  type FilesystemBrowseEntry,
+  ProjectId,
+  resolveEnvironmentMachineKind,
+} from "@t3tools/contracts";
+import { LegendList } from "@legendapp/list/react-native";
 import { CommonActions, StackActions, useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { Platform, ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Order from "effect/Order";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { cn } from "../../lib/cn";
-
-import { useProjects, useServerConfigs } from "../../state/entities";
+import { useProjects, useServerConfigs, waitForProject } from "../../state/entities";
 import { filesystemEnvironment } from "../../state/filesystem";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ErrorBanner } from "../../components/ErrorBanner";
 import { SourceControlIcon } from "../../components/SourceControlIcon";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { uuidv4 } from "../../lib/uuid";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
@@ -66,10 +85,13 @@ interface EnvironmentOption {
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly platform: string;
+  readonly machine: EnvironmentMachineKind;
   readonly baseDirectory: string | null;
   readonly connectionState: EnvironmentConnectionPhase;
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
+  /** Server runs clones in the background and streams progress; older servers block. */
+  readonly supportsCloneTracking: boolean;
 }
 
 const environmentOptionOrder = Order.mapInput(
@@ -103,6 +125,7 @@ function sourceFromParam(value: string | string[] | undefined): AddProjectRemote
     source === "url" ||
     source === "github" ||
     source === "gitlab" ||
+    source === "forgejo" ||
     source === "bitbucket" ||
     source === "azure-devops"
   ) {
@@ -111,15 +134,33 @@ function sourceFromParam(value: string | string[] | undefined): AddProjectRemote
   return "url";
 }
 
+function useIsScreenActive(): () => boolean {
+  const navigation = useNavigation();
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  return useCallback(() => mountedRef.current && navigation.isFocused(), [navigation]);
+}
+
 function SectionTitle(props: { readonly children: string }) {
   return (
-    <Text className="px-1 text-2xs font-t3-bold tracking-[0.7px] uppercase text-foreground-muted">
+    <Text
+      className={
+        Platform.OS === "android"
+          ? "px-4 text-sm font-t3-medium text-primary"
+          : "px-1 text-2xs font-t3-bold tracking-[0.7px] uppercase text-foreground-muted"
+      }
+    >
       {props.children}
     </Text>
   );
 }
 
-function AddProjectShell(props: { readonly children: ReactNode }) {
+function AddProjectShell(props: { readonly children: ReactNode; readonly title: string }) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -128,25 +169,35 @@ function AddProjectShell(props: { readonly children: ReactNode }) {
     // scroll-view frame correction mistakes this full-height wrapper for a
     // "header" sibling, coercing the ScrollView to zero height (blank sheet
     // as soon as the sheet re-lays-out, e.g. when the keyboard opens).
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SettingsScreen title={props.title}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{
-          paddingHorizontal: 20,
+          paddingHorizontal: Platform.OS === "android" ? 16 : 20,
           paddingTop: 16,
           paddingBottom: Math.max(insets.bottom, 18) + 18,
-          gap: 10,
+          gap: Platform.OS === "android" ? 16 : 10,
         }}
       >
         {props.children}
       </ScrollView>
-    </View>
+    </SettingsScreen>
   );
 }
 
 function ListSection(props: { readonly children: ReactNode }) {
-  return <View className="overflow-hidden rounded-[24px] bg-card">{props.children}</View>;
+  return (
+    <View
+      className={
+        Platform.OS === "android"
+          ? "overflow-hidden rounded-[28px] bg-card"
+          : "overflow-hidden rounded-[24px] bg-card"
+      }
+    >
+      {props.children}
+    </View>
+  );
 }
 
 function ListRow(props: {
@@ -159,10 +210,23 @@ function ListRow(props: {
   readonly right?: ReactNode;
   readonly onPress?: () => void;
 }) {
-  const chevronColor = useThemeColor("--color-chevron");
-
+  if (Platform.OS === "android") {
+    return (
+      <MaterialListRow
+        title={props.title}
+        subtitle={props.subtitle}
+        leading={props.icon}
+        trailing={props.right}
+        disabled={props.disabled}
+        onPress={props.onPress}
+        accessibilityRole={props.selected !== undefined ? "radio" : "button"}
+        accessibilityState={props.selected !== undefined ? { checked: props.selected } : undefined}
+      />
+    );
+  }
   return (
     <Pressable
+      accessibilityRole={props.onPress ? "button" : undefined}
       disabled={props.disabled}
       onPress={props.onPress}
       className={cn(
@@ -192,7 +256,12 @@ function ListRow(props: {
         {"right" in props ? (
           props.right
         ) : !props.disabled ? (
-          <SymbolView name="chevron.right" size={13} tintColor={chevronColor} type="monochrome" />
+          <SymbolView
+            name="chevron.right"
+            size={13}
+            tintColorClassName="accent-chevron"
+            type="monochrome"
+          />
         ) : null}
       </View>
     </Pressable>
@@ -205,8 +274,7 @@ function PrimaryActionButton(props: {
   readonly loading?: boolean;
   readonly onPress: () => void;
 }) {
-  const primaryForeground = useThemeColor("--color-primary-foreground");
-
+  if (Platform.OS === "android") return <MaterialButton {...props} tone="primary" fullWidth />;
   return (
     <Pressable
       disabled={props.disabled}
@@ -214,7 +282,7 @@ function PrimaryActionButton(props: {
       className="h-12 items-center justify-center rounded-full bg-primary active:opacity-70 disabled:opacity-45"
     >
       {props.loading ? (
-        <ActivityIndicator color={String(primaryForeground)} />
+        <ActivityIndicator colorClassName={String("accent-primary-foreground")} />
       ) : (
         <Text className="text-base font-t3-bold text-primary-foreground">{props.label}</Text>
       )}
@@ -352,10 +420,12 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
         environmentId: connection.environmentId,
         label: connection.environmentLabel,
         platform: platformFromOs(config?.environment.platform.os ?? null),
+        machine: resolveEnvironmentMachineKind(config ?? null),
         baseDirectory: config?.settings.addProjectBaseDirectory ?? null,
         connectionState: runtime?.connectionState ?? "available",
         connectionError: runtime?.connectionError ?? null,
         connectionErrorTraceId: runtime?.connectionErrorTraceId ?? null,
+        supportsCloneTracking: config?.environment.capabilities.projectCloneTracking === true,
       };
     });
     return Arr.sort(options, environmentOptionOrder);
@@ -414,7 +484,6 @@ function SourceControlRow(props: {
   readonly isFirst: boolean;
 }) {
   const navigation = useNavigation();
-  const iconColor = useThemeColor("--color-icon");
   const title =
     props.source === "url" ? "Git URL" : `${addProjectRemoteSourceLabel(props.source)} repository`;
   const subtitle =
@@ -423,9 +492,18 @@ function SourceControlRow(props: {
       : `Clone ${addProjectRemoteSourceLabel(props.source)} ${props.hint}`;
   const icon =
     props.source === "url" ? (
-      <SymbolView name="link" size={17} tintColor={iconColor} type="monochrome" />
+      <SymbolView
+        name="link"
+        size={Platform.OS === "android" ? 24 : 17}
+        tintColorClassName="accent-icon"
+        type="monochrome"
+      />
     ) : (
-      <SourceControlIcon kind={props.source} size={18} color={String(iconColor)} />
+      <SourceControlIcon
+        kind={props.source}
+        size={Platform.OS === "android" ? 24 : 18}
+        colorClassName="accent-icon"
+      />
     );
 
   if (!props.ready) {
@@ -454,8 +532,6 @@ function SourceControlRow(props: {
 
 export function AddProjectSourceScreen() {
   const navigation = useNavigation();
-  const accentColor = useThemeColor("--color-icon-muted");
-  const iconColor = useThemeColor("--color-icon");
   const { environmentOptions, selectedEnvironment, setSelectedEnvironmentId } =
     useSelectedEnvironment();
   const discoveryState = useEnvironmentQuery(
@@ -472,7 +548,7 @@ export function AddProjectSourceScreen() {
   );
 
   return (
-    <AddProjectShell>
+    <AddProjectShell title="Add project">
       {selectedEnvironment === null ? <EmptyEnvironmentState /> : null}
 
       {environmentOptions.length > 1 ? (
@@ -485,7 +561,7 @@ export function AddProjectSourceScreen() {
                 title={environment.label}
                 subtitle={
                   canCreateProjectInEnvironment(environment.connectionState)
-                    ? environment.environmentId
+                    ? undefined
                     : connectionStatusText({
                         phase: environment.connectionState,
                         error: environment.connectionError,
@@ -493,11 +569,10 @@ export function AddProjectSourceScreen() {
                       })
                 }
                 icon={
-                  <SymbolView
-                    name="server.rack"
-                    size={17}
-                    tintColor={iconColor}
-                    type="monochrome"
+                  <EnvironmentMachineSymbol
+                    kind={environment.machine}
+                    size={Platform.OS === "android" ? 24 : 17}
+                    tintColorClassName="accent-icon"
                   />
                 }
                 selected={environment.environmentId === selectedEnvironment?.environmentId}
@@ -507,8 +582,8 @@ export function AddProjectSourceScreen() {
                   environment.environmentId === selectedEnvironment?.environmentId ? (
                     <SymbolView
                       name="checkmark"
-                      size={14}
-                      tintColor={iconColor}
+                      size={Platform.OS === "android" ? 20 : 14}
+                      tintColorClassName="accent-icon"
                       type="monochrome"
                     />
                   ) : null
@@ -529,8 +604,8 @@ export function AddProjectSourceScreen() {
               icon={
                 <SymbolView
                   name="folder.badge.plus"
-                  size={17}
-                  tintColor={iconColor}
+                  size={Platform.OS === "android" ? 24 : 17}
+                  tintColorClassName="accent-icon"
                   type="monochrome"
                 />
               }
@@ -560,15 +635,27 @@ export function AddProjectSourceScreen() {
               ),
             )}
           </ListSection>
-          {discoveryState.isPending ? <ActivityIndicator color={accentColor} /> : null}
+          {discoveryState.isPending ? (
+            <ActivityIndicator colorClassName="accent-icon-muted" />
+          ) : null}
         </>
       ) : null}
     </AddProjectShell>
   );
 }
 
+function openNewTaskDraft(
+  navigation: { dispatch: (action: ReturnType<typeof CommonActions.reset>) => void },
+  params: { environmentId: EnvironmentId; projectId: ProjectId; title: string; cloning?: "1" },
+) {
+  navigation.dispatch(
+    CommonActions.reset({ index: 0, routes: [{ name: "NewTaskDraft", params }] }),
+  );
+}
+
 function useCreateProject(environment: EnvironmentOption | null) {
   const navigation = useNavigation();
+  const isScreenActive = useIsScreenActive();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const projects = useProjects();
 
@@ -612,7 +699,7 @@ function useCreateProject(environment: EnvironmentOption | null) {
         environmentId: environment.environmentId,
         input: command,
       });
-      if (AsyncResult.isFailure(result)) {
+      if (AsyncResult.isFailure(result) || !isScreenActive()) {
         return result;
       }
       navigation.dispatch(
@@ -632,7 +719,7 @@ function useCreateProject(environment: EnvironmentOption | null) {
       );
       return result;
     },
-    [createProject, environment, projects, navigation],
+    [createProject, environment, isScreenActive, projects, navigation],
   );
 }
 
@@ -657,9 +744,19 @@ export function AddProjectRepositoryScreen(props: {
   const [repositoryInput, setRepositoryInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
+  const isScreenActive = useIsScreenActive();
 
   const lookupRepository = useCallback(async () => {
-    if (!environment || repositoryInput.trim().length === 0 || isSubmitting) return;
+    if (
+      !environment ||
+      repositoryInput.trim().length === 0 ||
+      isSubmitting ||
+      submittingRef.current
+    ) {
+      return;
+    }
+    submittingRef.current = true;
     setError(null);
     setIsSubmitting(true);
     const provider = addProjectRemoteSourceProvider(source);
@@ -674,7 +771,6 @@ export function AddProjectRepositoryScreen(props: {
           repositoryName: getCloneDirectoryName(remoteUrl),
         }),
       );
-      setIsSubmitting(false);
       return;
     }
 
@@ -685,6 +781,11 @@ export function AddProjectRepositoryScreen(props: {
         repository: repositoryInput.trim(),
       },
     });
+    submittingRef.current = false;
+    if (!isScreenActive()) {
+      return;
+    }
+    setIsSubmitting(false);
     if (AsyncResult.isFailure(result)) {
       setError(errorMessage(Cause.squash(result.cause)));
     } else {
@@ -699,11 +800,18 @@ export function AddProjectRepositoryScreen(props: {
         }),
       );
     }
-    setIsSubmitting(false);
-  }, [environment, isSubmitting, lookupRepositoryQuery, repositoryInput, navigation, source]);
+  }, [
+    environment,
+    isScreenActive,
+    isSubmitting,
+    lookupRepositoryQuery,
+    repositoryInput,
+    navigation,
+    source,
+  ]);
 
   return (
-    <AddProjectShell>
+    <AddProjectShell title={source === "url" ? "Git URL" : addProjectRemoteSourceLabel(source)}>
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>
@@ -711,6 +819,7 @@ export function AddProjectRepositoryScreen(props: {
             className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
             value={repositoryInput}
             onChangeText={setRepositoryInput}
+            editable={!isSubmitting}
             autoCapitalize="none"
             autoCorrect={false}
             placeholder={
@@ -736,16 +845,16 @@ export function AddProjectRepositoryScreen(props: {
 }
 
 function FolderBrowser(props: {
+  readonly header: ReactNode;
   readonly environment: EnvironmentOption;
   readonly pathInput: string;
-  readonly setPathInput: (path: string) => void;
   readonly navigateToBrowsePath: (input: {
     readonly browseDirectoryPath: string;
     readonly selectedDirectoryName?: string;
   }) => Promise<boolean>;
   readonly pinnedDirectoryName?: string;
 }) {
-  const accentColor = useThemeColor("--color-icon-muted");
+  const insets = useSafeAreaInsets();
   const browsePath = useMemo(
     () => getFilesystemBrowsePath(props.pathInput, props.environment.platform),
     [props.environment.platform, props.pathInput],
@@ -769,60 +878,121 @@ function FolderBrowser(props: {
     ? browsePath.filterQuery.toLowerCase() === pinnedDirectoryName.toLowerCase()
     : browsePath.filterQuery === pinnedDirectoryName;
   const browseFilterQuery = pinnedDirectoryMatches ? "" : browsePath.filterQuery;
+  const deferredBrowseFilterQuery = useDeferredValue(browseFilterQuery);
   const { visibleEntries: visibleBrowseEntries } = useMemo(
-    () => filterFilesystemBrowseEntries(browseState.data?.entries ?? [], browseFilterQuery),
-    [browseFilterQuery, browseState.data?.entries],
+    () => filterFilesystemBrowseEntries(browseState.data?.entries ?? [], deferredBrowseFilterQuery),
+    [browseState.data?.entries, deferredBrowseFilterQuery],
+  );
+  const renderBrowseEntry = useCallback(
+    ({ item: entry, index }: { item: FilesystemBrowseEntry; index: number }) => (
+      <View
+        className={cn(
+          "overflow-hidden",
+          index === 0 && !browsePath.canBrowseUp && "rounded-t-[24px]",
+          index === visibleBrowseEntries.length - 1 && "rounded-b-[24px]",
+        )}
+      >
+        <ListRow
+          title={entry.name}
+          icon={
+            <SymbolView
+              name="folder"
+              size={Platform.OS === "android" ? 24 : 17}
+              tintColorClassName="accent-icon-muted"
+              type="monochrome"
+            />
+          }
+          isFirst={index === 0 && !browsePath.canBrowseUp}
+          right={null}
+          onPress={() => {
+            void props.navigateToBrowsePath({
+              browseDirectoryPath: browsePath.directoryPath,
+              selectedDirectoryName: entry.name,
+            });
+          }}
+        />
+      </View>
+    ),
+    [
+      browsePath.canBrowseUp,
+      browsePath.directoryPath,
+      props.navigateToBrowsePath,
+      visibleBrowseEntries.length,
+    ],
   );
 
   return (
-    <>
-      <SectionTitle>Browse folders</SectionTitle>
-      {browseState.error ? <ErrorBanner message={browseState.error} /> : null}
-      <ListSection>
-        {browseState.isPending && browseState.data === null ? (
-          <View className="items-center py-5">
-            <ActivityIndicator color={accentColor} />
+    // Keep a non-collapsible native wrapper around the list. Native-stack
+    // form sheets otherwise risk treating the full-height scroll surface as a
+    // header sibling during keyboard-driven relayout.
+    <View collapsable={false} className="flex-1 bg-sheet">
+      <LegendList
+        className="flex-1"
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{
+          paddingBottom: Math.max(insets.bottom, 18) + 18,
+          paddingHorizontal: 20,
+          paddingTop: 16,
+        }}
+        data={visibleBrowseEntries}
+        estimatedItemSize={52}
+        keyboardShouldPersistTaps="handled"
+        keyExtractor={(entry) => entry.fullPath}
+        ListEmptyComponent={
+          !browsePath.canBrowseUp && !browseState.isPending && browseState.error === null ? (
+            <View className="rounded-[24px] bg-card px-4 py-5">
+              <Text className="text-sm text-foreground-muted">No matching folders.</Text>
+            </View>
+          ) : null
+        }
+        ListHeaderComponent={
+          <View className={browsePath.canBrowseUp ? undefined : "pb-2.5"}>
+            <View className="gap-2.5">{props.header}</View>
+            <View className="mt-2.5 gap-2.5">
+              <SectionTitle>Browse folders</SectionTitle>
+              {browseState.error ? <ErrorBanner message={browseState.error} /> : null}
+              {browseState.isPending && browseState.data === null ? (
+                <View className="items-center rounded-[24px] bg-card py-5">
+                  <ActivityIndicator colorClassName="accent-icon-muted" />
+                </View>
+              ) : null}
+            </View>
+            {browsePath.canBrowseUp ? (
+              <View
+                className={cn(
+                  "mt-2.5 overflow-hidden rounded-t-[24px]",
+                  visibleBrowseEntries.length === 0 && "rounded-b-[24px]",
+                )}
+              >
+                <ListRow
+                  title=".."
+                  icon={
+                    <SymbolView
+                      name="arrow.turn.left.up"
+                      size={Platform.OS === "android" ? 24 : 17}
+                      tintColorClassName="accent-icon-muted"
+                      type="monochrome"
+                    />
+                  }
+                  isFirst
+                  right={null}
+                  onPress={() => {
+                    if (browsePath.parentPath) {
+                      void props.navigateToBrowsePath({
+                        browseDirectoryPath: browsePath.parentPath,
+                      });
+                    }
+                  }}
+                />
+              </View>
+            ) : null}
           </View>
-        ) : null}
-        {browsePath.canBrowseUp ? (
-          <ListRow
-            title=".."
-            icon={
-              <SymbolView
-                name="arrow.turn.left.up"
-                size={17}
-                tintColor={accentColor}
-                type="monochrome"
-              />
-            }
-            isFirst
-            right={null}
-            onPress={() => {
-              if (browsePath.parentPath) {
-                void props.navigateToBrowsePath({
-                  browseDirectoryPath: browsePath.parentPath,
-                });
-              }
-            }}
-          />
-        ) : null}
-        {visibleBrowseEntries.map((entry, index) => (
-          <ListRow
-            key={entry.fullPath}
-            title={entry.name}
-            icon={<SymbolView name="folder" size={17} tintColor={accentColor} type="monochrome" />}
-            isFirst={index === 0 && !browsePath.canBrowseUp}
-            right={null}
-            onPress={() => {
-              void props.navigateToBrowsePath({
-                browseDirectoryPath: browsePath.directoryPath,
-                selectedDirectoryName: entry.name,
-              });
-            }}
-          />
-        ))}
-      </ListSection>
-    </>
+        }
+        recycleItems
+        renderItem={renderBrowseEntry}
+        showsVerticalScrollIndicator={false}
+      />
+    </View>
   );
 }
 
@@ -833,9 +1003,11 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
     useBrowsePathInput(environment);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
+  const isScreenActive = useIsScreenActive();
 
   const submitPath = useCallback(async () => {
-    if (!environment || isBrowseNavigating || isSubmitting) return;
+    if (!environment || isBrowseNavigating || isSubmitting || submittingRef.current) return;
     setError(null);
     const resolved = resolveAddProjectPath({
       rawPath: pathInput,
@@ -847,19 +1019,34 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
       return;
     }
 
+    submittingRef.current = true;
     setIsSubmitting(true);
     const result = await createProject(resolved.path);
+    submittingRef.current = false;
+    if (!isScreenActive()) {
+      return;
+    }
     if (result && AsyncResult.isFailure(result)) {
       setError(errorMessage(Cause.squash(result.cause)));
     }
     setIsSubmitting(false);
-  }, [createProject, environment, isBrowseNavigating, isSubmitting, pathInput]);
+  }, [createProject, environment, isBrowseNavigating, isScreenActive, isSubmitting, pathInput]);
+
+  if (environment === null) {
+    return (
+      <AddProjectShell title="Add project">
+        {error ? <ErrorBanner message={error} /> : null}
+        <EmptyEnvironmentState />
+      </AddProjectShell>
+    );
+  }
 
   return (
-    <AddProjectShell>
-      {error ? <ErrorBanner message={error} /> : null}
-      {environment ? (
+    <FolderBrowser
+      environment={environment}
+      header={
         <>
+          {error ? <ErrorBanner message={error} /> : null}
           <ProjectPathInput
             value={pathInput}
             onChangeText={setPathInput}
@@ -871,17 +1058,11 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
             onPress={() => void submitPath()}
             loading={isSubmitting}
           />
-          <FolderBrowser
-            environment={environment}
-            navigateToBrowsePath={navigateToBrowsePath}
-            pathInput={pathInput}
-            setPathInput={setPathInput}
-          />
         </>
-      ) : (
-        <EmptyEnvironmentState />
-      )}
-    </AddProjectShell>
+      }
+      navigateToBrowsePath={navigateToBrowsePath}
+      pathInput={pathInput}
+    />
   );
 }
 
@@ -894,6 +1075,10 @@ export function AddProjectDestinationScreen(props: {
   const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
     reportFailure: false,
   });
+  const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
+    reportFailure: false,
+  });
+  const navigation = useNavigation();
   const environment = useEnvironmentFromParam(props.environmentId);
   const createProject = useCreateProject(environment);
   const remoteUrl = stringParam(props.remoteUrl);
@@ -909,9 +1094,13 @@ export function AddProjectDestinationScreen(props: {
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
+  const isScreenActive = useIsScreenActive();
 
   const submitPath = useCallback(async () => {
-    if (!environment || !remoteUrl || isBrowseNavigating || isSubmitting) return;
+    if (!environment || !remoteUrl || isBrowseNavigating || isSubmitting || submittingRef.current) {
+      return;
+    }
     setError(null);
     const resolved = resolveAddProjectPath({
       rawPath: pathInput,
@@ -923,7 +1112,50 @@ export function AddProjectDestinationScreen(props: {
       return;
     }
 
+    submittingRef.current = true;
     setIsSubmitting(true);
+    if (environment.supportsCloneTracking) {
+      // The server creates the project and clones in the background; the
+      // draft screen shows progress and holds Start until the files land.
+      const projectId = ProjectId.make(uuidv4());
+      const title = inferProjectTitleFromPath(resolved.path);
+      const startResult = await startProjectClone({
+        environmentId: environment.environmentId,
+        input: {
+          projectId,
+          title,
+          createdAt: new Date().toISOString(),
+          remoteUrl,
+          destinationPath: resolved.path,
+        },
+      });
+      if (AsyncResult.isFailure(startResult)) {
+        setError(errorMessage(Cause.squash(startResult.cause)));
+      } else {
+        // The draft screen resolves its project from the client store, so it
+        // must not open before the create event has arrived (it would fall
+        // back to the project picker and lose the clone controls). Stay in
+        // the submitting state until then; the clone keeps running either way.
+        const project = await waitForProject(
+          { environmentId: environment.environmentId, projectId },
+          15_000,
+        );
+        if (project === null) {
+          setError(
+            "The project was created but has not reached this device yet. It will appear in the project list once the connection catches up.",
+          );
+        } else {
+          openNewTaskDraft(navigation, {
+            environmentId: environment.environmentId,
+            projectId,
+            title,
+            cloning: "1",
+          });
+        }
+      }
+      setIsSubmitting(false);
+      return;
+    }
     const cloneResult = await cloneRepository({
       environmentId: environment.environmentId,
       input: {
@@ -931,6 +1163,10 @@ export function AddProjectDestinationScreen(props: {
         destinationPath: resolved.path,
       },
     });
+    if (!isScreenActive()) {
+      submittingRef.current = false;
+      return;
+    }
     if (AsyncResult.isFailure(cloneResult)) {
       setError(errorMessage(Cause.squash(cloneResult.cause)));
     } else {
@@ -939,30 +1175,56 @@ export function AddProjectDestinationScreen(props: {
         setError(errorMessage(Cause.squash(createResult.cause)));
       }
     }
+    submittingRef.current = false;
+    if (!isScreenActive()) {
+      return;
+    }
     setIsSubmitting(false);
   }, [
     cloneRepository,
     createProject,
     environment,
     isBrowseNavigating,
+    isScreenActive,
     isSubmitting,
+    navigation,
     pathInput,
     remoteUrl,
+    startProjectClone,
   ]);
 
+  if (environment === null) {
+    return (
+      <AddProjectShell title={repositoryTitle ?? "Clone repository"}>
+        {error ? <ErrorBanner message={error} /> : null}
+        {repositoryTitle ? (
+          <View className="rounded-[24px] bg-card px-4 py-3">
+            <Text className="text-base font-t3-bold">{repositoryTitle}</Text>
+            <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={2}>
+              {remoteUrl}
+            </Text>
+          </View>
+        ) : null}
+        <EmptyEnvironmentState />
+      </AddProjectShell>
+    );
+  }
+
   return (
-    <AddProjectShell>
-      {error ? <ErrorBanner message={error} /> : null}
-      {repositoryTitle ? (
-        <View className="rounded-[24px] bg-card px-4 py-3">
-          <Text className="text-base font-t3-bold">{repositoryTitle}</Text>
-          <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={2}>
-            {remoteUrl}
-          </Text>
-        </View>
-      ) : null}
-      {environment ? (
+    <FolderBrowser
+      environment={environment}
+      header={
         <>
+          <Text className="text-base font-t3-bold">Clone destination</Text>
+          {error ? <ErrorBanner message={error} /> : null}
+          {repositoryTitle ? (
+            <View className="rounded-[24px] bg-card px-4 py-3">
+              <Text className="text-base font-t3-bold">{repositoryTitle}</Text>
+              <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={2}>
+                {remoteUrl}
+              </Text>
+            </View>
+          ) : null}
           <ProjectPathInput
             value={pathInput}
             onChangeText={setPathInput}
@@ -974,17 +1236,11 @@ export function AddProjectDestinationScreen(props: {
             onPress={() => void submitPath()}
             loading={isSubmitting}
           />
-          <FolderBrowser
-            environment={environment}
-            navigateToBrowsePath={navigateToBrowsePath}
-            pathInput={pathInput}
-            setPathInput={setPathInput}
-            pinnedDirectoryName={repositoryName}
-          />
         </>
-      ) : (
-        <EmptyEnvironmentState />
-      )}
-    </AddProjectShell>
+      }
+      navigateToBrowsePath={navigateToBrowsePath}
+      pathInput={pathInput}
+      pinnedDirectoryName={repositoryName}
+    />
   );
 }

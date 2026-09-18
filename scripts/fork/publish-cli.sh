@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Pack the T3 Pretty headless CLI and upload t3.tgz / t3-<version>.tgz / install.sh
-# to the public R2 feed. Native linux-small. Do not git fetch origin: hosted
-# linux-small has no Origin HTTPS credentials and git waits forever on the
-# username prompt.
+# Pack the T3 Pretty headless CLI and upload t3.tgz / t3-<version>.tgz / .sha256 / install.sh
+# to the public R2 feed. Runs on macos-release after macos-dmg (the tarball is
+# JS). Do not git fetch origin: hosted linux-small has no Origin HTTPS
+# credentials and git waits forever on the username prompt.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -104,6 +104,17 @@ node apps/server/scripts/cli.ts pack --app-version "$version" --out-dir "$tmp" -
 tarball="$tmp/t3-${version}.tgz"
 test -f "$tarball"
 cp "$tarball" "$tmp/t3.tgz"
+# Per-object sidecars so a later publish does not drop hashes for older t3-<version>.tgz.
+(
+  cd "$tmp"
+  if command -v sha256sum >/dev/null; then
+    sha256sum "t3-${version}.tgz" | tee "t3-${version}.tgz.sha256"
+    sha256sum "t3.tgz" >"t3.tgz.sha256"
+  else
+    shasum -a 256 "t3-${version}.tgz" | tee "t3-${version}.tgz.sha256"
+    shasum -a 256 "t3.tgz" >"t3.tgz.sha256"
+  fi
+)
 # Never upload the checked-in public installer unchanged from Buildkite.
 sed \
   's|https://github.com/SergeSerb2/t3-pretty/releases/latest/download|https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest|g; s|T3 Connect|Surge Connect|g' \
@@ -117,6 +128,8 @@ fi
 
 node scripts/fork/origin-forge.mjs upload-assets \
   --asset "$tmp/t3-${version}.tgz" \
+  --asset "$tmp/t3-${version}.tgz.sha256" \
   --asset "$tmp/t3.tgz" \
+  --asset "$tmp/t3.tgz.sha256" \
   --asset "$tmp/install.sh"
 echo "Published CLI $version to ${T3CODE_DESKTOP_UPDATE_FEED_URL}"

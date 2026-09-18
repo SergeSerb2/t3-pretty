@@ -3,6 +3,7 @@ import { Globe, History, RadioTower } from "lucide-react";
 
 import type { BrowserHistoryEntry } from "~/browserHistoryStore";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui/empty";
+import { DiscoveryList } from "../ui/discovery-list";
 
 import { PreviewLocalServerCard } from "./PreviewLocalServerCard";
 import { PreviewRecentUrlCard } from "./PreviewRecentUrlCard";
@@ -55,16 +56,18 @@ export function PreviewEmptyState({
               <History className="size-4 shrink-0" />
               <h2 className="font-medium">Recently used</h2>
             </div>
-            <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
-              {recents.map((entry) => (
-                <PreviewRecentUrlCard
-                  key={entry.url}
-                  threadRef={threadRef}
-                  entry={entry}
-                  onOpen={() => onOpenUrl(entry.url)}
-                  onRemove={() => onRemoveRecent(entry.url)}
-                />
-              ))}
+            <div className="contents [&>*]:bg-card">
+              <DiscoveryList>
+                {recents.map((entry) => (
+                  <PreviewRecentUrlCard
+                    key={entry.url}
+                    threadRef={threadRef}
+                    entry={entry}
+                    onOpen={() => onOpenUrl(entry.url)}
+                    onRemove={() => onRemoveRecent(entry.url)}
+                  />
+                ))}
+              </DiscoveryList>
             </div>
           </div>
         ) : null}
@@ -74,15 +77,17 @@ export function PreviewEmptyState({
               <RadioTower className="size-4 shrink-0" />
               <h2 className="font-medium">Local servers</h2>
             </div>
-            <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
-              {servers.map((server) => (
-                <PreviewLocalServerCard
-                  key={`${server.host}:${server.port}`}
-                  threadRef={threadRef}
-                  server={server}
-                  onOpen={() => onOpenUrl(server.requestedUrl)}
-                />
-              ))}
+            <div className="contents [&>*]:bg-card">
+              <DiscoveryList>
+                {servers.map((server) => (
+                  <PreviewLocalServerCard
+                    key={`${server.host}:${server.port}`}
+                    threadRef={threadRef}
+                    server={server}
+                    onOpen={() => onOpenUrl(server.requestedUrl)}
+                  />
+                ))}
+              </DiscoveryList>
             </div>
             <p className="px-1 text-xs text-muted-foreground">
               Select a live local server to open it in this browser tab.

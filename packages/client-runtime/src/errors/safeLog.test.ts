@@ -52,4 +52,38 @@ describe("safeErrorLogAttributes", () => {
       traceId: "trace-safe-inner",
     });
   });
+
+  it("bounds hostile cause traversal", () => {
+    let causeReads = 0;
+    const makeNode = (): object =>
+      new Proxy(
+        {},
+        {
+          get(_target, property) {
+            if (property === "cause") {
+              causeReads += 1;
+              return makeNode();
+            }
+            return undefined;
+          },
+        },
+      );
+
+    expect(safeErrorLogAttributes(makeNode())).toEqual({ errorType: "object" });
+    expect(causeReads).toBeLessThanOrEqual(128);
+  });
+
+  it("bounds stack work and scrubs malformed stack URLs", () => {
+    const error = new Error("secret");
+    error.stack = Array.from(
+      { length: 1_000 },
+      (_, index) =>
+        `    at frame${index} (https://user:password@%zz.test/file.ts?token=secret#fragment)`,
+    ).join("\n");
+
+    const stack = safeErrorLogAttributes(error).stack ?? "";
+    expect(stack.split("\n")).toHaveLength(32);
+    expect(stack).not.toContain("user:password");
+    expect(stack).not.toContain("token=secret");
+  });
 });

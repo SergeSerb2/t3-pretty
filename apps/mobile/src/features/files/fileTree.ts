@@ -5,6 +5,7 @@ export interface FileTreeNode {
   readonly path: string;
   readonly name: string;
   readonly kind: ProjectEntry["kind"];
+  readonly ignored?: boolean;
   readonly children: ReadonlyArray<FileTreeNode>;
   readonly searchSegments: ReadonlyArray<string>;
   readonly searchWords: ReadonlyArray<string>;
@@ -19,6 +20,7 @@ interface MutableFileTreeNode {
   path: string;
   name: string;
   kind: ProjectEntry["kind"];
+  ignored?: boolean;
   children: Map<string, MutableFileTreeNode>;
 }
 
@@ -68,6 +70,7 @@ function freezeNode(node: MutableFileTreeNode): FileTreeNode {
     path: node.path,
     name: node.name,
     kind: node.kind,
+    ...(node.ignored ? { ignored: true } : {}),
     children: [...node.children.values()].sort(compareNodes).map(freezeNode),
     searchSegments: searchTerms.segments,
     searchWords: searchTerms.words,
@@ -94,13 +97,14 @@ export function buildFileTree(entries: ReadonlyArray<ProjectEntry>): ReadonlyArr
     }
 
     let current = root;
+    let path = "";
     for (let index = 0; index < parts.length; index += 1) {
       const part = parts[index];
       if (!part) {
         continue;
       }
 
-      const path = parts.slice(0, index + 1).join("/");
+      path = path.length === 0 ? part : `${path}/${part}`;
       const isLeaf = index === parts.length - 1;
       const kind = isLeaf ? entry.kind : "directory";
       let child = current.children.get(part);
@@ -110,23 +114,12 @@ export function buildFileTree(entries: ReadonlyArray<ProjectEntry>): ReadonlyArr
       } else if (isLeaf) {
         child.kind = entry.kind;
       }
+      if (isLeaf && entry.ignored) child.ignored = true;
       current = child;
     }
   }
 
   return [...root.children.values()].sort(compareNodes).map(freezeNode);
-}
-
-export function countFileNodes(nodes: ReadonlyArray<FileTreeNode>): number {
-  let count = 0;
-  for (const node of nodes) {
-    if (node.kind === "file") {
-      count += 1;
-    } else {
-      count += countFileNodes(node.children);
-    }
-  }
-  return count;
 }
 
 export function defaultExpandedTreePaths(nodes: ReadonlyArray<FileTreeNode>): ReadonlySet<string> {
@@ -172,11 +165,12 @@ function flattenNode(
   const isSearching = searchTokens.length > 0;
   const matches = isSearching && nodeMatchesSearch(node, searchTokens);
   let descendantMatches = false;
-  const childOutput: VisibleFileTreeNode[] = [];
+  const outputStart = output.length;
+  output.push({ node, depth });
 
   if (node.kind === "directory" && (expanded.has(node.path) || isSearching)) {
     for (const child of node.children) {
-      if (flattenNode(childOutput, child, depth + 1, expanded, searchTokens)) {
+      if (flattenNode(output, child, depth + 1, expanded, searchTokens)) {
         descendantMatches = true;
       }
     }
@@ -184,11 +178,10 @@ function flattenNode(
 
   const visible = !isSearching || matches || descendantMatches;
   if (!visible) {
+    output.length = outputStart;
     return false;
   }
 
-  output.push({ node, depth });
-  output.push(...childOutput);
   return matches || descendantMatches;
 }
 
@@ -204,17 +197,4 @@ export function flattenFileTree(input: {
     flattenNode(output, node, 0, input.expanded, searchTokens);
   }
   return output;
-}
-
-export function firstFilePath(nodes: ReadonlyArray<FileTreeNode>): string | null {
-  for (const node of nodes) {
-    if (node.kind === "file") {
-      return node.path;
-    }
-    const child = firstFilePath(node.children);
-    if (child !== null) {
-      return child;
-    }
-  }
-  return null;
 }

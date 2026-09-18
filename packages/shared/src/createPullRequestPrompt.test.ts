@@ -6,6 +6,7 @@ import {
   CREATE_PULL_REQUEST_CLOSE_MARKER,
   CREATE_PULL_REQUEST_MESSAGE_SUFFIX,
   CREATE_PULL_REQUEST_OPEN_MARKER,
+  hasBabysitPullRequestSuffix,
   hasCreatePullRequestSuffix,
   stripCreatePullRequestSuffix,
 } from "./createPullRequestPrompt.ts";
@@ -69,14 +70,35 @@ describe("applyCreatePullRequestSuffix", () => {
       text: "Fix the login bug",
       autoCreatePullRequest: true,
       threadHasStarted: false,
-      model: "kimi-code/k3",
+      model: "grok-build",
     });
 
-    expect(result).toBe(`Fix the login bug${buildCreatePullRequestMessageSuffix("kimi-code/k3")}`);
+    expect(result).toBe(`Fix the login bug${buildCreatePullRequestMessageSuffix("grok-build")}`);
     expect(result).toContain(
-      'T3 Code recorded the current thread\'s selected model as "kimi-code/k3".',
+      'T3 Code recorded the current thread\'s selected model as "grok-build".',
     );
     expect(result).toContain("copy this exact identifier");
+    expect(stripCreatePullRequestSuffix(result)).toBe("Fix the login bug");
+  });
+
+  it("adds review-and-merge instructions when babysit is on", () => {
+    const result = applyCreatePullRequestSuffix({
+      text: "Fix the login bug",
+      autoCreatePullRequest: true,
+      threadHasStarted: false,
+      babysitPullRequest: true,
+    });
+
+    expect(result).toBe(
+      `Fix the login bug${buildCreatePullRequestMessageSuffix(undefined, {
+        babysitPullRequest: true,
+      })}`,
+    );
+    expect(result).toContain("Watch Auto Review, review comments, and required checks.");
+    expect(result).toContain("enable auto-merge");
+    expect(result).toContain("Ignore Buildkite / PR deployment status");
+    expect(result).toContain("Stop once auto-merge is armed or the PR is merged.");
+    expect(hasBabysitPullRequestSuffix(result)).toBe(true);
     expect(stripCreatePullRequestSuffix(result)).toBe("Fix the login bug");
   });
 });
@@ -154,11 +176,20 @@ describe("stripCreatePullRequestSuffix", () => {
     expect(sent).toBe(`${typed}${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`);
     expect(stripCreatePullRequestSuffix(sent)).toBe(typed);
   });
+
+  it("strips repeated historical suffixes without repeatedly copying the visible prefix", () => {
+    const sent = `Visible request${CREATE_PULL_REQUEST_MESSAGE_SUFFIX.repeat(400)}`;
+    const started = performance.now();
+
+    expect(stripCreatePullRequestSuffix(sent)).toBe("Visible request");
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
 });
 
 describe("hasCreatePullRequestSuffix", () => {
   it("detects the applied suffix", () => {
     expect(hasCreatePullRequestSuffix(`x${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`)).toBe(true);
     expect(hasCreatePullRequestSuffix("x")).toBe(false);
+    expect(hasBabysitPullRequestSuffix(`x${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`)).toBe(false);
   });
 });
