@@ -507,9 +507,7 @@ export const make = Effect.gen(function* () {
       // (size, mtime) would silently drop the file's usage until it changes.
       if (parsed === null) {
         const records =
-          cached?.provider === provider
-            ? [...cached.records, ...(cached.tailRecords ?? [])]
-            : [];
+          cached?.provider === provider ? [...cached.records, ...(cached.tailRecords ?? [])] : [];
         const recordLimitReached = records.length > maxRecords;
         return {
           records: recordLimitReached ? records.slice(0, maxRecords) : records,
@@ -753,7 +751,7 @@ export const make = Effect.gen(function* () {
             }
           }
         }
-        if (result.recordLimitReached || retainedRecords >= TRANSCRIPT_PROVIDER_RECORD_MAX) {
+        if (retainedRecords >= TRANSCRIPT_PROVIDER_RECORD_MAX) {
           recordLimitReached = true;
           skippedFiles += orderedFiles.length - index - 1;
           break;
@@ -777,11 +775,7 @@ export const make = Effect.gen(function* () {
         fingerprint: { hostId, provider, resolvedHomePath: dir, volumeId },
         // Clients exclude missing sources, so saved records remain an available source.
         status:
-          listing === undefined && scannedFiles === 0
-            ? "missing"
-            : isPartial
-              ? "partial"
-              : "ok",
+          listing === undefined && scannedFiles === 0 ? "missing" : isPartial ? "partial" : "ok",
         scannedFiles,
         skippedFiles,
         malformedRecords,

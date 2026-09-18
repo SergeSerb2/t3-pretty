@@ -14,9 +14,6 @@
  *
  * @module usageScanCache
  */
-// @effect-diagnostics nodeBuiltinImport:off
-import * as NodePath from "node:path";
-
 import {
   isUsageProviderKind,
   USAGE_MODEL_MAX_LENGTH,
