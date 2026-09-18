@@ -1612,8 +1612,8 @@ export interface DesktopBridge {
   /**
    * Show or hide native macOS traffic lights. The collapsed icon rail is too
    * narrow for them; the renderer hides them there and restores them when the
-   * sidebar expands. Optional: older desktop builds lack it, and it is a no-op
-   * off macOS.
+   * sidebar expands or peeks. Optional: older desktop builds lack it, and it is a
+   * no-op off macOS.
    */
   setWindowButtonVisibility?: (visible: boolean) => Promise<void>;
   /**

@@ -152,7 +152,7 @@ export class DesktopWindow extends Context.Service<
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
     // Collapsed icon rail is 3rem; native traffic lights do not fit. The
     // renderer hides them while the sidebar is icon-only, then shows them
-    // again when the sidebar is expanded. No-op off macOS.
+    // again when the sidebar is expanded or peeked. No-op off macOS.
     readonly setWindowButtonVisibility: (visible: boolean) => Effect.Effect<void>;
     // How many threads are waiting on the human right now. Drives the dock
     // badge, plus a single informational bounce whenever that total grows

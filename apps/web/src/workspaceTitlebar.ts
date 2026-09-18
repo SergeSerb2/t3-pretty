@@ -19,8 +19,9 @@ export function shouldShowMacosWindowButtons(input: {
   isMacosDesktop: boolean;
   isMobile: boolean;
   sidebarOpen: boolean;
+  sidebarPeeking?: boolean;
 }): boolean {
-  return input.isMacosDesktop && (input.isMobile || input.sidebarOpen);
+  return input.isMacosDesktop && (input.isMobile || input.sidebarOpen || !!input.sidebarPeeking);
 }
 
 export function shouldReserveMacosTrafficLights(input: {
@@ -28,6 +29,7 @@ export function shouldReserveMacosTrafficLights(input: {
   isFullscreen: boolean;
   isMobile: boolean;
   sidebarOpen: boolean;
+  sidebarPeeking?: boolean;
 }): boolean {
   return !input.isFullscreen && shouldShowMacosWindowButtons(input);
 }
