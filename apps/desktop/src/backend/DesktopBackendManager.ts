@@ -492,9 +492,9 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     stderr: options.captureOutput ? "pipe" : "inherit",
     killSignal: "SIGTERM",
     forceKillAfter: DEFAULT_BACKEND_TERMINATE_GRACE,
-    // wsl.exe drops additional file descriptors when forwarding to the Linux
-    // side, so the WSL spawn path delivers the bootstrap envelope via stdin
-    // (`--bootstrap-fd 0`) instead.
+    // Extra stdio is dropped or unreadable on some spawn paths (wsl.exe, and
+    // packaged Windows Electron-as-node pipes). Those configs deliver the
+    // bootstrap envelope via stdin (`--bootstrap-fd 0`) instead.
     ...(options.bootstrapDelivery === "fd3" ? { additionalFds } : {}),
   });
 

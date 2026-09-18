@@ -197,21 +197,39 @@ const isUnavailableBootstrapFdError = Predicate.compose(
   (_) => _.code === "EBADF" || _.code === "ENOENT",
 );
 
+// Windows anonymous pipes (stdin and extra stdio) often reject fstat with
+// EINVAL or EACCES even when the fd is inherited and readable. Only skip
+// those codes on win32 so a real EACCES on Mac/Linux still fails fast.
+const isStatSkippableBootstrapFdError = Predicate.compose(
+  Predicate.hasProperty("code"),
+  (_) => _.code === "EINVAL" || _.code === "EACCES",
+);
+
 const isFdReady = (fd: number) =>
-  Effect.try({
-    try: () => NodeFS.fstatSync(fd),
-    catch: (error) =>
-      new BootstrapFdStatError({
-        fd,
-        cause: error,
+  Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
+    return yield* Effect.try({
+      try: () => NodeFS.fstatSync(fd),
+      catch: (error) =>
+        new BootstrapFdStatError({
+          fd,
+          cause: error,
+        }),
+    }).pipe(
+      Effect.as(true),
+      Effect.catchTags({
+        BootstrapFdStatError: (error) => {
+          if (isUnavailableBootstrapFdError(error.cause)) {
+            return Effect.succeed(false);
+          }
+          if (platform === "win32" && isStatSkippableBootstrapFdError(error.cause)) {
+            return Effect.succeed(true);
+          }
+          return Effect.fail(error);
+        },
       }),
-  }).pipe(
-    Effect.as(true),
-    Effect.catchTags({
-      BootstrapFdStatError: (error) =>
-        isUnavailableBootstrapFdError(error.cause) ? Effect.succeed(false) : Effect.fail(error),
-    }),
-  );
+    );
+  });
 
 const makeBootstrapInputStream = (fd: number) =>
   Effect.gen(function* () {

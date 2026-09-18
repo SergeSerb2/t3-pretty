@@ -155,6 +155,9 @@ node "$root\scripts\update-release-package-versions.ts" $version
 if ($LASTEXITCODE -ne 0) {
   throw "update-release-package-versions exited $LASTEXITCODE"
 }
+# validateWindowsPackagedPayload smokes listen + POST /oauth/token against the
+# unpacked payload via scripts/fork/smoke-windows-backend.mjs so a missing
+# local bearer cannot ship green.
 Invoke-Pnpm run dist:desktop:artifact -- --platform win --target nsis --arch x64 --build-version $version --verbose
 
 $publish = Join-Path $root "release-publish"

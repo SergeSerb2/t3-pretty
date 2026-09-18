@@ -1,5 +1,8 @@
 import { assert, describe, it } from "@effect/vitest";
-import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import {
+  DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS,
+  PRIMARY_LOCAL_ENVIRONMENT_ID,
+} from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -81,7 +84,7 @@ const makePoolLayer = (options?: {
 
 describe("DesktopLocalEnvironmentAuth", () => {
   it("keeps the ready-plus-retry budget inside the renderer IPC timeout", () => {
-    const rendererIpcTimeoutMs = 40_000;
+    const rendererIpcTimeoutMs = DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS;
     assert.isAtMost(
       Duration.toMillis(DesktopLocalEnvironmentAuth.LOCAL_ENVIRONMENT_AUTH_READY_TIMEOUT) +
         Duration.toMillis(

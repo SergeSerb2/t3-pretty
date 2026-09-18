@@ -13,6 +13,7 @@ import {
   type DirectoryRecord,
 } from "@electron/asar";
 
+import { DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS } from "@t3tools/contracts";
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
@@ -580,6 +581,9 @@ const BUNDLE_SELF_CHECK_TIMEOUT = Duration.seconds(120);
 // in the sidecar; the probe then timed out, left the exe locked, and stage
 // cleanup reported EPERM instead of the timeout.
 const WINDOWS_PRIMARY_NATIVE_PROBE_TIMEOUT = Duration.seconds(90);
+const WINDOWS_PACKAGED_BACKEND_READINESS_TIMEOUT = Duration.millis(
+  DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS + 20_000,
+);
 
 const WINDOWS_PRIMARY_FFF_PROBE_SOURCE = `
 const { join } = await import("node:path");
@@ -718,6 +722,19 @@ export class WindowsPrimaryNativeProbeError extends Schema.TaggedError<WindowsPr
 ) {
   override get message(): string {
     return `The packaged Windows primary could not load fff from server.asar (exit ${this.exitCode}). Output:\n${this.output}`;
+  }
+}
+
+export class WindowsPackagedBackendReadinessError extends Schema.TaggedError<WindowsPackagedBackendReadinessError>()(
+  "WindowsPackagedBackendReadinessError",
+  {
+    executablePath: Schema.String,
+    exitCode: Schema.Number,
+    output: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `The packaged Windows backend did not reach environment readiness and mint a local bearer (exit ${this.exitCode}). Output:\n${this.output}`;
   }
 }
 
@@ -3461,6 +3478,66 @@ export const verifyWindowsPrimaryFffNativeLoad = Effect.fn(
   );
 });
 
+export const verifyWindowsPackagedBackendReadiness = Effect.fn(
+  "desktopArtifact.verifyWindowsPackagedBackendReadiness",
+)(function* (input: {
+  readonly packagedAppDir: string;
+  readonly appExecutableName: string;
+  readonly targetArch: typeof BuildArch.Type;
+  readonly verbose: boolean;
+}) {
+  const hostPlatform = yield* HostProcessPlatform;
+  const hostArchitecture = yield* HostProcessArchitecture;
+  const path = yield* Path.Path;
+  const executablePath = path.join(input.packagedAppDir, input.appExecutableName);
+  if (hostPlatform !== "win32" || hostArchitecture !== input.targetArch) return;
+
+  const repoRoot = yield* RepoRoot;
+  const smokeScript = path.join(repoRoot, "scripts/fork/smoke-windows-backend.mjs");
+  yield* Effect.log("[desktop-artifact] Smoking packaged Windows backend listen + bearer...");
+  yield* runCommand(
+    ChildProcess.make(
+      process.execPath,
+      [
+        smokeScript,
+        input.packagedAppDir,
+        input.appExecutableName,
+        "--timeout-ms",
+        String(DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS),
+      ],
+      {
+        cwd: repoRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    ),
+    {
+      label: "Windows packaged backend readiness + bearer smoke",
+      verbose: input.verbose,
+    },
+  ).pipe(
+    Effect.timeout(WINDOWS_PACKAGED_BACKEND_READINESS_TIMEOUT),
+    Effect.catchTags({
+      TimeoutError: () =>
+        Effect.fail(
+          new WindowsPackagedBackendReadinessError({
+            executablePath,
+            exitCode: -1,
+            output: `The packaged backend smoke did not finish within ${Duration.toSeconds(WINDOWS_PACKAGED_BACKEND_READINESS_TIMEOUT)}s.`,
+          }),
+        ),
+      BuildCommandFailedError: (error) =>
+        Effect.fail(
+          new WindowsPackagedBackendReadinessError({
+            executablePath,
+            exitCode: error.exitCode,
+            output: `${error.stderrTail ?? ""}${error.stdoutTail ?? ""}`.trim(),
+          }),
+        ),
+    }),
+  );
+});
+
 export const validateWindowsPackagedPayload = Effect.fn(
   "desktopArtifact.validateWindowsPackagedPayload",
 )(function* (input: {
@@ -3688,6 +3765,13 @@ export const validateWindowsPackagedPayload = Effect.fn(
 
   yield* verifyPackagedBundleIsSelfContained({
     asarPath,
+    verbose: input.verbose ?? false,
+  });
+
+  yield* verifyWindowsPackagedBackendReadiness({
+    packagedAppDir,
+    appExecutableName: input.appExecutableName,
+    targetArch: input.targetArch,
     verbose: input.verbose ?? false,
   });
 

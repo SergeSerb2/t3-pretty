@@ -1,4 +1,9 @@
 import type { DesktopBridge } from "@t3tools/contracts";
+import {
+  DESKTOP_LOCAL_BEARER_EXCHANGE_RETRY_TIMEOUT_MS,
+  DESKTOP_LOCAL_BEARER_READY_TIMEOUT_MS,
+  DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS,
+} from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
 
 import { DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS, DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS } from "./auth";
@@ -40,7 +45,9 @@ describe("desktop primary auth", () => {
   });
 
   it("waits at least as long as main ready latch plus token retries", () => {
-    const mainReadyAndRetryBudgetMs = 30_000 + 8_000;
+    const mainReadyAndRetryBudgetMs =
+      DESKTOP_LOCAL_BEARER_READY_TIMEOUT_MS + DESKTOP_LOCAL_BEARER_EXCHANGE_RETRY_TIMEOUT_MS;
+    expect(DESKTOP_BEARER_TOKEN_TIMEOUT_MS).toBe(DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS);
     expect(DESKTOP_BEARER_TOKEN_TIMEOUT_MS).toBeGreaterThanOrEqual(mainReadyAndRetryBudgetMs);
     expect(DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS).toBe(DESKTOP_BEARER_TOKEN_TIMEOUT_MS);
     expect(DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS).toBe(DESKTOP_BEARER_TOKEN_TIMEOUT_MS);

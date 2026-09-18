@@ -654,6 +654,7 @@ ${setup}
     assert.include(windows, "corepack pnpm");
     assert.include(windows, "Invoke-Pnpm install");
     assert.include(windows, "Invoke-Pnpm run dist:desktop:artifact");
+    assert.include(windows, "smoke-windows-backend.mjs");
     assert.include(
       windows,
       '$buildkiteAgent = "C:\\buildkite-agent\\service\\buildkite-agent.exe"',

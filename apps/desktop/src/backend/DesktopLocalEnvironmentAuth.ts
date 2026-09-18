@@ -1,5 +1,9 @@
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
-import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import {
+  DESKTOP_LOCAL_BEARER_EXCHANGE_RETRY_TIMEOUT_MS,
+  DESKTOP_LOCAL_BEARER_READY_TIMEOUT_MS,
+  PRIMARY_LOCAL_ENVIRONMENT_ID,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -20,8 +24,12 @@ import * as DesktopBackendPool from "./DesktopBackendPool.ts";
 // rejection, so the renderer promise never settles and #boot-shell stays up
 // even after "backend ready". Wait for the primary latch, then retry the
 // remaining listen race. Cause is a string so a late failure still serializes.
-export const LOCAL_ENVIRONMENT_AUTH_READY_TIMEOUT = Duration.seconds(30);
-export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT = Duration.seconds(8);
+export const LOCAL_ENVIRONMENT_AUTH_READY_TIMEOUT = Duration.millis(
+  DESKTOP_LOCAL_BEARER_READY_TIMEOUT_MS,
+);
+export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT = Duration.millis(
+  DESKTOP_LOCAL_BEARER_EXCHANGE_RETRY_TIMEOUT_MS,
+);
 export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_SPACING = Duration.millis(200);
 export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_TIMEOUT_MS = 2_000;
 

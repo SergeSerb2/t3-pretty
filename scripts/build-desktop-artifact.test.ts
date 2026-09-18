@@ -2,6 +2,8 @@
 import * as NodeCrypto from "node:crypto";
 import * as NodePath from "node:path";
 
+import { DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS } from "@t3tools/contracts";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -79,6 +81,8 @@ import {
   LinuxBrowserSecretHostError,
   stageBrowserSecret,
   validateWindowsPackagedPayload,
+  verifyWindowsPackagedBackendReadiness,
+  WindowsPackagedBackendReadinessError,
   WindowsPrimaryNativeProbeError,
   WindowsDesktopBuildPrerequisitesMissingError,
   WindowsPackagedPayloadValidationError,
@@ -1544,6 +1548,20 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         );
         assert.equal(primaryProbe.options.cwd, fixture.packagedAppDir);
         assert.equal(primaryProbe.options.env?.NODE_PATH, "");
+
+        const readinessSmoke = commands.find((command) =>
+          command.args.some((arg) => arg.endsWith("smoke-windows-backend.mjs")),
+        );
+        if (readinessSmoke === undefined) {
+          return assert.fail("Windows packaged backend readiness smoke was not spawned");
+        }
+        assert.equal(readinessSmoke.command, process.execPath);
+        assert.deepStrictEqual(readinessSmoke.args.slice(-4), [
+          fixture.packagedAppDir,
+          fixture.appExecutableName,
+          "--timeout-ms",
+          String(DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS),
+        ]);
       }),
     ).pipe(
       Effect.provide(
@@ -1630,6 +1648,78 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           spawnerLayer,
           Layer.succeed(HostProcessPlatform, "darwin"),
           Layer.succeed(HostProcessArchitecture, "arm64"),
+        ),
+      ),
+    );
+  });
+
+  it.effect("smokes packaged Windows backend listen and bearer on a matching host", () => {
+    const commands: Array<{
+      readonly command: string;
+      readonly args: ReadonlyArray<string>;
+    }> = [];
+    const spawnerLayer = Layer.succeed(
+      ChildProcessSpawner.ChildProcessSpawner,
+      ChildProcessSpawner.make((command) => {
+        commands.push(command as unknown as (typeof commands)[number]);
+        return Effect.succeed(mockProcess(0));
+      }),
+    );
+
+    return Effect.gen(function* () {
+      yield* verifyWindowsPackagedBackendReadiness({
+        packagedAppDir: "C:\\T3Pretty\\win-unpacked",
+        appExecutableName: "T3 Pretty (Nightly).exe",
+        targetArch: "x64",
+        verbose: false,
+      });
+
+      assert.lengthOf(commands, 1);
+      assert.equal(commands[0]?.command, process.execPath);
+      assert.match(
+        commands[0]?.args[0] ?? "",
+        /scripts[\\/]+fork[\\/]+smoke-windows-backend\.mjs$/u,
+      );
+      assert.deepStrictEqual(commands[0]?.args.slice(1), [
+        "C:\\T3Pretty\\win-unpacked",
+        "T3 Pretty (Nightly).exe",
+        "--timeout-ms",
+        String(DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS),
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          spawnerLayer,
+          Layer.succeed(HostProcessPlatform, "win32"),
+          Layer.succeed(HostProcessArchitecture, "x64"),
+        ),
+      ),
+    );
+  });
+
+  it.effect("maps a failed Windows backend smoke to a readiness error", () => {
+    const spawnerLayer = Layer.succeed(
+      ChildProcessSpawner.ChildProcessSpawner,
+      ChildProcessSpawner.make(() => Effect.succeed(mockProcess(2, "Timed out waiting"))),
+    );
+
+    return Effect.gen(function* () {
+      const error = yield* verifyWindowsPackagedBackendReadiness({
+        packagedAppDir: "C:\\T3Pretty\\win-unpacked",
+        appExecutableName: "T3 Pretty (Nightly).exe",
+        targetArch: "x64",
+        verbose: false,
+      }).pipe(Effect.flip);
+
+      assert.instanceOf(error, WindowsPackagedBackendReadinessError);
+      assert.equal(error.exitCode, 2);
+      assert.include(error.output, "Timed out waiting");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          spawnerLayer,
+          Layer.succeed(HostProcessPlatform, "win32"),
+          Layer.succeed(HostProcessArchitecture, "x64"),
         ),
       ),
     );

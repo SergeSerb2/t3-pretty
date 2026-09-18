@@ -533,6 +533,12 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
     const backendExposure = yield* serverExposure.backendConfig;
 
+    // Extra stdio (fd 3/4/5) is unreliable on packaged Windows Electron-as-node:
+    // inherited pipes often fail fstat, and a dropped envelope used to start the
+    // child as `web` on the wrong port so the renderer never received a bearer.
+    // Deliver the envelope on stdin like WSL, and pass listen flags so a missed
+    // envelope still binds the advertised host/port.
+    const useStdinBootstrap = environment.platform === "win32";
     const bootstrap = {
       mode: "desktop" as const,
       noBrowser: true,
@@ -542,18 +548,35 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       desktopBootstrapToken: input.bootstrapToken,
       tailscaleServeEnabled: backendExposure.tailscaleServeEnabled,
       tailscaleServePort: backendExposure.tailscaleServePort,
-      desktopTelemetryFd: 4,
-      desktopTelemetryControlFd: 5,
+      ...(useStdinBootstrap
+        ? {}
+        : {
+            desktopTelemetryFd: 4,
+            desktopTelemetryControlFd: 5,
+          }),
       ...Option.match(input.resourceMonitorPath, {
         onNone: () => ({}),
         onSome: (resourceMonitorPath) => ({ resourceMonitorPath }),
       }),
       ...buildObservabilityFragment(input.observabilitySettings),
     };
+    const listenFlags = [
+      "--mode",
+      "desktop",
+      "--no-browser",
+      "--host",
+      backendExposure.bindHost,
+      "--port",
+      String(backendExposure.port),
+      "--base-dir",
+      environment.baseDir,
+    ];
 
     return {
       executablePath: process.execPath,
-      args: [environment.backendEntryPath, "--bootstrap-fd", "3"],
+      args: useStdinBootstrap
+        ? [environment.backendEntryPath, "--bootstrap-fd", "0", ...listenFlags]
+        : [environment.backendEntryPath, "--bootstrap-fd", "3"],
       entryPath: environment.backendEntryPath,
       cwd: environment.backendCwd,
       env: {
@@ -564,7 +587,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       // Primary wants process.env (PATH, dev-runner's T3CODE_HOME, etc.).
       extendEnv: true,
       bootstrap,
-      bootstrapDelivery: "fd3",
+      bootstrapDelivery: useStdinBootstrap ? "stdin" : "fd3",
       httpBaseUrl: backendExposure.httpBaseUrl,
       captureOutput: true,
       preflightFailure: Option.none(),

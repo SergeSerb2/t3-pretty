@@ -18,6 +18,9 @@
     "./relay": {
       "types": "./src/relay.ts",
       "import": "./src/relay.ts"
+    },
+    "./desktopBearerTimeout": {
+      "import": "./src/desktopBearerTimeout.js"
     }
   },
   "scripts": {

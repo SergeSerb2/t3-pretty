@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
+import * as NodeURL from "node:url";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -51,26 +55,26 @@ const serverExposureLayer = Layer.succeed(DesktopServerExposure.DesktopServerExp
 
 function makeEnvironmentLayer(
   baseDir: string,
-  options?: {
+  options: {
+    readonly platform: NodeJS.Platform;
     readonly appPath?: string;
     readonly dirname?: string;
     readonly isPackaged?: boolean;
     readonly devServerUrl?: string;
-    readonly platform?: NodeJS.Platform;
     readonly resourcesPath?: string;
     readonly appVersion?: string;
     readonly processArch?: NodeJS.Architecture;
   },
 ) {
   return DesktopEnvironment.layer({
-    dirname: options?.dirname ?? "/repo/apps/desktop/src",
+    dirname: options.dirname ?? "/repo/apps/desktop/src",
     homeDirectory: baseDir,
-    platform: options?.platform ?? "darwin",
-    processArch: options?.processArch ?? "x64",
-    appVersion: options?.appVersion ?? "1.2.3",
-    appPath: options?.appPath ?? "/repo",
-    isPackaged: options?.isPackaged ?? true,
-    resourcesPath: options?.resourcesPath ?? "/missing/resources",
+    platform: options.platform,
+    processArch: options.processArch ?? "x64",
+    appVersion: options.appVersion ?? "1.2.3",
+    appPath: options.appPath ?? "/repo",
+    isPackaged: options.isPackaged ?? true,
+    resourcesPath: options.resourcesPath ?? "/missing/resources",
     runningUnderArm64Translation: false,
   }).pipe(
     Layer.provide(
@@ -119,7 +123,7 @@ const withHarness = <A, E, R>(
           Layer.provideMerge(DesktopAppSettings.layerTest()),
           Layer.provideMerge(DesktopWslEnvironment.layerTest()),
           Layer.provideMerge(DesktopWslServerTree.layerTest()),
-          Layer.provideMerge(makeEnvironmentLayer(baseDir)),
+          Layer.provideMerge(makeEnvironmentLayer(baseDir, { platform: "darwin" })),
         ),
       ),
     );
@@ -218,6 +222,14 @@ const withPackagedWslHarness = <A, E, R>(
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 describe("DesktopBackendConfiguration", () => {
+  it("pins platform on every environment layer so host OS cannot flip bootstrapDelivery", () => {
+    const source = NodeFS.readFileSync(NodeURL.fileURLToPath(import.meta.url), "utf8");
+    assert.isFalse(/makeEnvironmentLayer\(\s*baseDir\s*\)/u.test(source));
+    assert.include(source, "platform: options.platform");
+    assert.include(source, 'platform: "darwin"');
+    assert.include(source, 'platform: "win32"');
+  });
+
   it.effect("resolvePrimary produces a stable scoped bootstrap token", () =>
     withHarness(
       Effect.gen(function* () {
@@ -250,6 +262,83 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(second.bootstrap.desktopBootstrapToken, first.bootstrap.desktopBootstrapToken);
       }),
     ),
+  );
+
+  it.effect("resolvePrimary delivers the non-Windows bootstrap on fd3", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-desktop-backend-config-test-",
+      });
+
+      yield* Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const config = yield* configuration.resolvePrimary;
+
+        assert.equal(config.bootstrapDelivery, "fd3");
+        assert.deepEqual(config.args, [environment.backendEntryPath, "--bootstrap-fd", "3"]);
+        assert.equal(config.bootstrap.desktopTelemetryFd, 4);
+        assert.equal(config.bootstrap.desktopTelemetryControlFd, 5);
+      }).pipe(
+        Effect.provide(
+          DesktopBackendConfiguration.layer.pipe(
+            Layer.provideMerge(serverExposureLayer),
+            Layer.provideMerge(DesktopAppSettings.layerTest()),
+            Layer.provideMerge(DesktopWslEnvironment.layerTest()),
+            Layer.provideMerge(DesktopWslServerTree.layerTest()),
+            Layer.provideMerge(makeEnvironmentLayer(baseDir, { platform: "darwin" })),
+          ),
+        ),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("resolvePrimary delivers the Windows bootstrap on stdin with listen flags", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-desktop-backend-config-test-",
+      });
+
+      yield* Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const config = yield* configuration.resolvePrimary;
+
+        assert.equal(config.bootstrapDelivery, "stdin");
+        assert.deepEqual(config.args, [
+          environment.backendEntryPath,
+          "--bootstrap-fd",
+          "0",
+          "--mode",
+          "desktop",
+          "--no-browser",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "4888",
+          "--base-dir",
+          environment.baseDir,
+        ]);
+        assert.notProperty(config.bootstrap, "desktopTelemetryFd");
+        assert.notProperty(config.bootstrap, "desktopTelemetryControlFd");
+        assert.equal(config.bootstrap.mode, "desktop");
+        assert.equal(config.bootstrap.port, 4888);
+        assert.equal(config.bootstrap.host, "0.0.0.0");
+        assert.match(config.bootstrap.desktopBootstrapToken, /^[0-9a-f]{48}$/i);
+      }).pipe(
+        Effect.provide(
+          DesktopBackendConfiguration.layer.pipe(
+            Layer.provideMerge(serverExposureLayer),
+            Layer.provideMerge(DesktopAppSettings.layerTest()),
+            Layer.provideMerge(DesktopWslEnvironment.layerTest()),
+            Layer.provideMerge(DesktopWslServerTree.layerTest()),
+            Layer.provideMerge(makeEnvironmentLayer(baseDir, { platform: "win32" })),
+          ),
+        ),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
   it.effect("resolvePrimary starts from server.asar without materializing the WSL tree", () =>
@@ -840,7 +929,7 @@ describe("DesktopBackendConfiguration", () => {
               Layer.provideMerge(DesktopAppSettings.layerTest()),
               Layer.provideMerge(DesktopWslServerTree.layerTest()),
               Layer.provideMerge(DesktopWslEnvironment.layerTest()),
-              Layer.provideMerge(makeEnvironmentLayer(baseDir)),
+              Layer.provideMerge(makeEnvironmentLayer(baseDir, { platform: "darwin" })),
               Layer.provideMerge(failingFileSystemLayer),
             ),
             Logger.layer([logger], { mergeWithExisting: false }),
@@ -886,6 +975,7 @@ describe("DesktopBackendConfiguration", () => {
               makeEnvironmentLayer(baseDir, {
                 isPackaged: false,
                 devServerUrl: "http://127.0.0.1:5733",
+                platform: "darwin",
               }),
             ),
           ),
@@ -1266,6 +1356,7 @@ describe("DesktopBackendConfiguration", () => {
                 appPath: `${resourcesPath}/app.asar`,
                 dirname,
                 isPackaged: true,
+                platform: "darwin",
                 resourcesPath,
               }),
             ),
@@ -1312,6 +1403,7 @@ describe("DesktopBackendConfiguration", () => {
                 dirname,
                 devServerUrl: "http://127.0.0.1:5733",
                 isPackaged: false,
+                platform: "darwin",
               }),
             ),
           ),

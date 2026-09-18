@@ -1,11 +1,12 @@
+import { DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 // One in-flight mint is shared across renderer HTTP calls. A hung IPC
 // (Electron failing to clone a main-process Effect rejection) used to pin
 // this promise forever and leave #boot-shell up after the backend was ready.
-// Must cover main waitForReady (30s) + /oauth/token retries (8s); a shorter
-// timeout fail-opens splash while the child is still coming up.
-export const DESKTOP_BEARER_TOKEN_TIMEOUT_MS = 40_000;
+// Must cover main waitForReady + /oauth/token retries; a shorter timeout
+// fail-opens splash while a slow Windows first listen is still coming up.
+export const DESKTOP_BEARER_TOKEN_TIMEOUT_MS = DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS;
 
 export class PrimaryEnvironmentDesktopBearerTimeoutError extends Schema.TaggedError<PrimaryEnvironmentDesktopBearerTimeoutError>()(
   "PrimaryEnvironmentDesktopBearerTimeoutError",

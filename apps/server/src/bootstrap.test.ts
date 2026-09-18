@@ -27,7 +27,10 @@ const openSyncInterceptor = vi.hoisted(() => ({
   failPath: null as string | null,
   errorCode: "ENXIO",
 }));
-const fstatSyncInterceptor = vi.hoisted(() => ({ failFd: null as number | null }));
+const fstatSyncInterceptor = vi.hoisted(() => ({
+  failFd: null as number | null,
+  errorCode: "EACCES",
+}));
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -48,8 +51,8 @@ vi.mock("node:fs", async (importOriginal) => {
     },
     fstatSync: (...args: Parameters<typeof actual.fstatSync>) => {
       if (args[0] === fstatSyncInterceptor.failFd) {
-        const error = new Error("permission denied");
-        Object.assign(error, { code: "EACCES" });
+        const error = new Error(`fstat failed with ${fstatSyncInterceptor.errorCode}`);
+        Object.assign(error, { code: fstatSyncInterceptor.errorCode });
         throw error;
       }
       return (actual.fstatSync as (...a: typeof args) => NodeFS.Stats)(...args);
@@ -179,6 +182,7 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
       );
 
       fstatSyncInterceptor.failFd = fd;
+      fstatSyncInterceptor.errorCode = "EIO";
       try {
         const error = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, {
           timeoutMs: 100,
@@ -186,10 +190,85 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
 
         assert.instanceOf(error, BootstrapFdStatError);
         assert.equal(error.fd, fd);
-        assert.equal((error.cause as NodeJS.ErrnoException).code, "EACCES");
+        assert.equal((error.cause as NodeJS.ErrnoException).code, "EIO");
         assert.equal(error.message, `Failed to stat bootstrap file descriptor ${fd}.`);
       } finally {
         fstatSyncInterceptor.failFd = null;
+        fstatSyncInterceptor.errorCode = "EACCES";
+      }
+    }),
+  );
+
+  it.effect("reads the envelope when Windows-style fstat rejects a readable pipe", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const filePath = yield* fs.makeTempFileScoped({ prefix: "t3-bootstrap-", suffix: ".ndjson" });
+      yield* fs.writeFileString(
+        filePath,
+        `${yield* encodeTestEnvelopeSchema({ mode: "desktop" })}\n`,
+      );
+      // win32 reads the inherited fd with autoClose. Do not also close it
+      // from a POSIX finalizer or the stream's async close races EBADF.
+      const fd = NodeFS.openSync(filePath, "r");
+
+      fstatSyncInterceptor.failFd = fd;
+      fstatSyncInterceptor.errorCode = "EINVAL";
+      try {
+        const payload = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, {
+          timeoutMs: 100,
+        }).pipe(Effect.provideService(HostProcessPlatform, "win32"));
+        assertSome(payload, { mode: "desktop" });
+      } finally {
+        fstatSyncInterceptor.failFd = null;
+        fstatSyncInterceptor.errorCode = "EACCES";
+      }
+    }),
+  );
+
+  it.effect("keeps EACCES fatal when stating a bootstrap fd off Windows", () =>
+    Effect.gen(function* () {
+      const fd = yield* Effect.acquireRelease(
+        Effect.sync(() => NodeFS.openSync(nullDevice, "r")),
+        (fd) => Effect.sync(() => closeIfOpen(fd)),
+      );
+
+      fstatSyncInterceptor.failFd = fd;
+      fstatSyncInterceptor.errorCode = "EACCES";
+      try {
+        const error = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, {
+          timeoutMs: 100,
+        }).pipe(Effect.provideService(HostProcessPlatform, "linux"), Effect.flip);
+
+        assert.instanceOf(error, BootstrapFdStatError);
+        assert.equal(error.fd, fd);
+        assert.equal((error.cause as NodeJS.ErrnoException).code, "EACCES");
+      } finally {
+        fstatSyncInterceptor.failFd = null;
+        fstatSyncInterceptor.errorCode = "EACCES";
+      }
+    }),
+  );
+
+  it.effect("reads the envelope when Windows-style fstat rejects a readable pipe with EACCES", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const filePath = yield* fs.makeTempFileScoped({ prefix: "t3-bootstrap-", suffix: ".ndjson" });
+      yield* fs.writeFileString(
+        filePath,
+        `${yield* encodeTestEnvelopeSchema({ mode: "desktop" })}\n`,
+      );
+      const fd = NodeFS.openSync(filePath, "r");
+
+      fstatSyncInterceptor.failFd = fd;
+      fstatSyncInterceptor.errorCode = "EACCES";
+      try {
+        const payload = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, {
+          timeoutMs: 100,
+        }).pipe(Effect.provideService(HostProcessPlatform, "win32"));
+        assertSome(payload, { mode: "desktop" });
+      } finally {
+        fstatSyncInterceptor.failFd = null;
+        fstatSyncInterceptor.errorCode = "EACCES";
       }
     }),
   );
