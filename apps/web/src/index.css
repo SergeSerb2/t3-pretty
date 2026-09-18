@@ -550,16 +550,29 @@ html[data-status-pulse="1"] .status-ping {
 }
 
 /* Raised frosted tile for project-rail folders so they don't read as project
-   icons. Fill and sheen are separate properties so hover/selected `bg-*` still
-   replace the color. Rim is an inset ring so the icon box matches neighbors. */
+   icons. Fill stays on the button so hover/selected `bg-*` still replace the
+   color. Sheen is an overlay so a faint mosaic of contained projects can sit
+   in the glass, under the folder glyph. Rim is an inset ring so the icon box
+   matches neighbors. */
 @utility project-rail-folder {
+  isolation: isolate;
+  position: relative;
   background-color: color-mix(in srgb, var(--sidebar-control-surface) 72%, transparent);
-  background-image: linear-gradient(155deg, var(--workspace-glass-sheen), transparent 52%);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--workspace-glass-rim) 75%, transparent),
     inset 0 1px 0 var(--workspace-glass-rim),
     inset 0 -1px 2px rgb(0 0 0 / 16%),
     0 1px 2px rgb(0 0 0 / 18%);
+
+  &::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    background-image: linear-gradient(155deg, var(--workspace-glass-sheen), transparent 52%);
+  }
 
   @variant dark {
     background-color: color-mix(in srgb, var(--sidebar-control-surface) 82%, transparent);
@@ -572,10 +585,13 @@ html[data-status-pulse="1"] .status-ping {
 
   @media (prefers-reduced-transparency: reduce) {
     background-color: var(--sidebar-control-surface);
-    background-image: none;
     box-shadow:
       inset 0 0 0 1px color-mix(in srgb, var(--workspace-glass-rim) 75%, transparent),
       0 1px 2px rgb(0 0 0 / 18%);
+
+    &::after {
+      content: none;
+    }
   }
 }
 

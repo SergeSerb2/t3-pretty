@@ -18,6 +18,7 @@ import {
   toggleProjectFolderCollapsed,
   unassignProjectFromFolder,
   folderDropBeforeId,
+  folderRailPreviewProjects,
   resolveProjectFolderSettings,
   shouldLiftProjectFolderSettings,
   type SidebarProjectFolderSettings,
@@ -81,6 +82,24 @@ describe("buildProjectRailItems", () => {
       },
       { kind: "project", project: { projectKey: "a" } },
     ]);
+  });
+});
+
+describe("folderRailPreviewProjects", () => {
+  it("caps the folder-tile mosaic at four projects and hides empty or expanded folders", () => {
+    expect(folderRailPreviewProjects([project("a"), project("b"), project("c")], true)).toEqual([
+      project("a"),
+      project("b"),
+      project("c"),
+    ]);
+    expect(
+      folderRailPreviewProjects(
+        [project("a"), project("b"), project("c"), project("d"), project("e")],
+        true,
+      ),
+    ).toEqual([project("a"), project("b"), project("c"), project("d")]);
+    expect(folderRailPreviewProjects([], true)).toEqual([]);
+    expect(folderRailPreviewProjects([project("a"), project("b")], false)).toEqual([]);
   });
 });
 
