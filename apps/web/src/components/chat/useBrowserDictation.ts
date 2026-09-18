@@ -342,6 +342,12 @@ export function useBrowserDictation(input: {
           closeSession(session);
           return;
         }
+        const next = inputRef.current.readComposer();
+        if (next.value !== snapshot.value || next.cursor !== snapshot.cursor) {
+          session.cancelled = true;
+          closeSession(session);
+          throw new Error("The composer changed before recording started. Please try again.");
+        }
       }
 
       if (session.closed || session.cancelled) return;

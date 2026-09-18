@@ -237,6 +237,25 @@ describe("browser composer dictation", () => {
     expect(dictation.phase).toBe("idle");
   });
 
+  it("aborts web speech if the composer changes before recording begins", async () => {
+    const originalStart = Recognition.prototype.start;
+    Recognition.prototype.start = function (this: Recognition) {
+      cursor = 0;
+      this.started = true;
+    };
+    try {
+      await act(async () => {
+        await dictation.toggle();
+      });
+    } finally {
+      Recognition.prototype.start = originalStart;
+    }
+    expect(Recognition.instances[0]?.aborted).toBe(true);
+    expect(dictation.phase).toBe("idle");
+    expect(reportError).toHaveBeenCalledWith(expect.stringContaining("composer changed"));
+    expect(value).toBe("Before after");
+  });
+
   it("cancels prepare when toggled again before recording starts", async () => {
     const permission = Promise.withResolvers<void>();
     desktopBridge.startDictation.mockReturnValueOnce(permission.promise);
