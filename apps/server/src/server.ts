@@ -37,7 +37,6 @@ import { websocketRpcRouteLayer } from "./ws.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
-import { dictationHttpApiLayer } from "./dictation/http.ts";
 import { readAloudHttpApiLayer } from "./readAloud/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -579,7 +578,6 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(pullRequestHttpApiLayer),
       Layer.provide(serverEnvironmentHttpApiLayer),
       Layer.provide(serverConfigHttpApiLayer),
-      Layer.provide(dictationHttpApiLayer),
       Layer.provide(readAloudHttpApiLayer),
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),

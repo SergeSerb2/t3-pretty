@@ -27,6 +27,8 @@ import {
   DESKTOP_EXTRA_RESOURCES,
   LINUX_CAPTURE_EXTRA_RESOURCES,
   LINUX_BROWSER_SECRET_EXTRA_RESOURCES,
+  MAC_DICTATION_EXTRA_RESOURCES,
+  MAC_DICTATION_EXTRA_FILES,
   LINUX_FILE_EXCLUSIONS,
   MAC_FILE_EXCLUSIONS,
   InvalidMacPasskeyRpDomainError,
@@ -656,6 +658,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     for (const resource of [
       ...WSL_RUNTIME_EXTRA_RESOURCES,
       ...LINUX_BROWSER_SECRET_EXTRA_RESOURCES,
+      ...MAC_DICTATION_EXTRA_RESOURCES,
     ]) {
       assert.include(
         DESKTOP_FILE_EXCLUSIONS,
@@ -673,6 +676,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "!apps/desktop/resources/browser-secret/**/*",
       "!apps/desktop/prod-resources/browser-secret",
       "!apps/desktop/prod-resources/browser-secret/**/*",
+      "!apps/desktop/resources/mac-dictation",
+      "!apps/desktop/resources/mac-dictation/**/*",
+      "!apps/desktop/prod-resources/mac-dictation",
+      "!apps/desktop/prod-resources/mac-dictation/**/*",
       "!apps/desktop/prod-resources/windows-server",
       "!apps/desktop/prod-resources/windows-server/**/*",
       "!apps/desktop/prod-resources/wsl-runtime.tar.gz",
@@ -759,7 +766,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(win.asarUnpack, [WINDOWS_NATIVE_ASAR_UNPACK_GLOB]);
       assert.deepStrictEqual(winWithoutWslRuntime.asar, win.asar);
       assert.deepStrictEqual(winWithoutWslRuntime.asarUnpack, win.asarUnpack);
-      assert.deepStrictEqual(mac.extraResources, DESKTOP_EXTRA_RESOURCES);
+      assert.deepStrictEqual(mac.extraResources, [
+        ...DESKTOP_EXTRA_RESOURCES,
+        ...MAC_DICTATION_EXTRA_RESOURCES,
+      ]);
+      assert.deepStrictEqual(mac.extraFiles, [...MAC_DICTATION_EXTRA_FILES]);
       assert.deepStrictEqual(linux.extraResources, [
         ...DESKTOP_EXTRA_RESOURCES,
         ...LINUX_CAPTURE_EXTRA_RESOURCES,
@@ -790,7 +801,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       // asar; everything else stays packed. The Claude SDK platform packages
       // and .bin shims never ship.
       assert.equal(
-        WINDOWS_SERVER_ASAR_UNPACK_GLOB,
+        WINDOWS_NATIVE_ASAR_UNPACK_GLOB,
         "{**/*.node,**/*.dll,**/*.exe,**/*.so,**/*.so.*,**/*.dylib}",
       );
       assert.deepStrictEqual(WINDOWS_SERVER_ASAR_IGNORE_GLOBS, [
@@ -2101,6 +2112,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.match(
         String((mac.extendInfo as Record<string, unknown>).NSMicrophoneUsageDescription),
         /dictate messages/,
+      );
+      assert.match(
+        String((mac.extendInfo as Record<string, unknown>).NSSpeechRecognitionUsageDescription),
+        /speech recognition/,
       );
       assert.match(String(mac.sign), /[\\/]scripts[\\/]sign-macos\.ts$/);
       assert.deepStrictEqual(mac.protocols, [

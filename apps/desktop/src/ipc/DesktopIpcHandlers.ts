@@ -73,6 +73,7 @@ import {
 import * as PreviewIpc from "./methods/preview.ts";
 import * as AppActivationIpc from "./methods/appActivation.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
+import { cancelDictation, startDictation, stopDictation } from "./methods/dictation.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
   const ipc = yield* DesktopIpc.DesktopIpc;
@@ -140,6 +141,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(checkSystemPermission);
   yield* ipc.handle(pasteAsText);
   yield* ipc.handle(probeRemoteEditors);
+  yield* ipc.handle(startDictation);
+  yield* ipc.handle(stopDictation);
+  yield* ipc.handle(cancelDictation);
   yield* ipc.handle(setDockAttention);
   yield* ipc.handle(getUpdateState);
   yield* ipc.handle(setUpdateChannel);

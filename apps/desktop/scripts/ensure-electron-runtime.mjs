@@ -43,6 +43,34 @@ function repairPathFile(electronDir, platformPath) {
   }
 }
 
+function patchMacElectronInfoPlist(plistPath) {
+  if (!NodeFS.existsSync(plistPath)) {
+    return;
+  }
+
+  const usage = {
+    NSMicrophoneUsageDescription:
+      "T3 Pretty uses your microphone to dictate messages with macOS speech recognition.",
+    NSSpeechRecognitionUsageDescription:
+      "T3 Pretty turns your speech into composer text with macOS speech recognition.",
+  };
+  let xml = NodeFS.readFileSync(plistPath, "utf8");
+  let changed = false;
+  for (const [key, value] of Object.entries(usage)) {
+    if (xml.includes(`<key>${key}</key>`)) continue;
+    const escaped = value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    const insertion = `  <key>${key}</key>\n  <string>${escaped}</string>\n`;
+    if (!/<\/dict>\s*<\/plist>\s*$/.test(xml)) {
+      throw new Error(`Electron Info.plist is missing a closing dict: ${plistPath}`);
+    }
+    xml = xml.replace(/<\/dict>\s*<\/plist>\s*$/, `${insertion}</dict>\n</plist>\n`);
+    changed = true;
+  }
+  if (changed) {
+    NodeFS.writeFileSync(plistPath, xml);
+  }
+}
+
 function getRequiredRuntimePaths(electronDir, platformPath) {
   const paths = [NodePath.join(electronDir, "dist", platformPath)];
 
@@ -173,6 +201,11 @@ export function ensureElectronRuntime() {
 
   ensureExecutable(electronPath);
   repairPathFile(electronDir, platformPath);
+  if (hostPlatform === "darwin") {
+    patchMacElectronInfoPlist(
+      NodePath.join(electronDir, "dist", "Electron.app", "Contents", "Info.plist"),
+    );
+  }
 
   return electronPath;
 }

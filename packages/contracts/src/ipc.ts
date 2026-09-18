@@ -1471,6 +1471,12 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+export type DesktopDictationEvent =
+  | { readonly type: "ready" }
+  | { readonly type: "transcript"; readonly text: string }
+  | { readonly type: "error"; readonly message: string }
+  | { readonly type: "ended" };
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   /** The desktop client's OS platform, read from Electron's preload process. */
@@ -1634,6 +1640,14 @@ export interface DesktopBridge {
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
+  /**
+   * macOS on-device dictation via Speech.framework. Optional: web clients and
+   * older desktop shells omit it and fall back to the browser Speech API.
+   */
+  startDictation?: (input?: { locale?: string }) => Promise<void>;
+  stopDictation?: () => Promise<void>;
+  cancelDictation?: () => Promise<void>;
+  onDictationEvent?: (listener: (event: DesktopDictationEvent) => void) => () => void;
   /** Present when the desktop shell accepts `t3 app` activation requests. */
   appActivation?: {
     setReady: (ready: boolean) => Promise<void>;

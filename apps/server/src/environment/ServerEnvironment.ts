@@ -18,7 +18,6 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { readAgentActivityPublishingActive } from "../cloud/config.ts";
 import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
-import { resolveDictationAvailability } from "../dictation/availability.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
@@ -268,7 +267,6 @@ export const make = Effect.gen(function* () {
         capabilities: {
           ...descriptor.capabilities,
           agentActivityPublishing,
-          ...(resolveDictationAvailability().available ? { voiceDictation: true } : {}),
         },
       })),
     ),

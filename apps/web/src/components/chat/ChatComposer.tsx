@@ -54,7 +54,7 @@ import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
-import { useDictationHost } from "../../state/dictation";
+import { isLocalDictationSupported } from "../../lib/localDictation";
 import { useBrowserDictation } from "./useBrowserDictation";
 import { ComposerDictationControl } from "./ComposerDictationControl";
 import {
@@ -3662,9 +3662,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   }, [composerCursor, promptRef]);
 
-  const dictationHost = useDictationHost(environmentId);
+  const dictationSupported = isLocalDictationSupported();
   const dictationAvailable =
     T3CODE_BUILD_FLAVOR === "internal" &&
+    dictationSupported &&
     !isComposerApprovalState &&
     !projectSelectionRequired &&
     pendingUserInputs.length === 0;
@@ -3673,7 +3674,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ownerKey: composerTargetKey(composerDraftTarget),
     enabled: dictationAvailable,
     canStart: dictationCanStart,
-    prepared: dictationHost,
     readComposer: () => {
       const snapshot = readComposerSnapshot();
       return { value: promptRef.current, cursor: snapshot.expandedCursor };
@@ -3683,11 +3683,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     reportError: (message) => toastManager.add({ type: "error", title: message }),
   });
   const dictationControl =
-    T3CODE_BUILD_FLAVOR === "internal" ? (
+    T3CODE_BUILD_FLAVOR === "internal" && dictationSupported ? (
       <ComposerDictationControl
         phase={dictation.phase}
         disabled={dictation.active ? !dictationAvailable : !dictationCanStart}
-        hostLabel={dictation.hostLabel}
+        hint={dictation.hint}
         shortcut={shortcutLabelForCommand(keybindings, "composer.dictation") ?? undefined}
         onToggle={() => {
           expandComposerForEditorChange();

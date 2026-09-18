@@ -1,7 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ORCHESTRATION_PROTOCOL_VERSION } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
-import { vi } from "vite-plus/test";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -19,7 +18,6 @@ import {
 } from "../cloud/config.ts";
 import * as ServerConfig from "../config.ts";
 import { resolveDictationAvailability } from "../dictation/availability.ts";
-import * as DictationAvailability from "../dictation/availability.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
 
 const isServerEnvironmentIdPersistenceError = Schema.is(
@@ -150,27 +148,6 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
     }),
   );
 
-  it.effect("advertises dictation only while the host is configured for it", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-dictation-host-" });
-      const availability = vi.spyOn(DictationAvailability, "resolveDictationAvailability");
-      try {
-        yield* Effect.gen(function* () {
-          const environment = yield* ServerEnvironment.ServerEnvironment;
-          availability.mockReturnValue({ available: true, reason: null });
-          expect((yield* environment.getDescriptor).capabilities.voiceDictation).toBe(true);
-          availability.mockReturnValue({ available: false, reason: "groq_api_key_missing" });
-          expect((yield* environment.getDescriptor).capabilities.voiceDictation).toBeUndefined();
-          availability.mockReturnValue({ available: false, reason: "internal_build_required" });
-          expect((yield* environment.getDescriptor).capabilities.voiceDictation).toBeUndefined();
-        }).pipe(Effect.provide(makeServerEnvironmentLayer(baseDir)));
-      } finally {
-        availability.mockRestore();
-      }
-    }),
-  );
-
   it.effect("persists the environment id across service restarts", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -192,9 +169,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.repositoryIdentity).toBe(true);
       expect(second.capabilities.connectionProbe).toBe(true);
       expect(second.capabilities.attachmentUploads).toBe(true);
-      expect(second.capabilities.voiceDictation).toBe(
-        resolveDictationAvailability().available ? true : undefined,
-      );
+      expect(second.capabilities.voiceDictation).toBeUndefined();
       expect(second.capabilities.readAloud).toBe(
         resolveDictationAvailability().available ? true : undefined,
       );

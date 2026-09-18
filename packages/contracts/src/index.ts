@@ -46,7 +46,6 @@ export * from "./assets.ts";
 export * from "./review.ts";
 export * from "./browserImport.ts";
 export * from "./browserProfile.ts";
-export * from "./dictation.ts";
 export * from "./readAloud.ts";
 export * from "./device.ts";
 export * from "./preview.ts";
