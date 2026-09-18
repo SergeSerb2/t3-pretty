@@ -1,9 +1,12 @@
 @import "tailwindcss";
+@import "./teslaTouch.css";
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
+/* Tesla passenger browser / Car display. The flag lives on <html>. */
+@custom-variant tesla-touch (&:is(html[data-tesla-touch], html[data-tesla-touch] *));
 
 /* Animate UI's icon catalog uses Lucide glyphs, which the app already ships.
    Keep that existing dependency and apply the catalog's interaction language

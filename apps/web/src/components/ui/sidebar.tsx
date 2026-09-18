@@ -19,6 +19,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useResizeDrag } from "~/hooks/useResizeDrag";
 import { useIsMobile } from "~/hooks/useMediaQuery";
+import { useTeslaTouchUi } from "~/teslaTouchUi";
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
 import { clampSidebarWidth, formatSidebarWidth } from "./sidebarResize";
 import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState";
@@ -34,6 +35,7 @@ const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "calc(100vw - var(--spacing(3)))";
+const SIDEBAR_WIDTH_TESLA = "min(26rem, calc(100vw - 2.5rem))";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH = 16 * 16;
 
@@ -121,7 +123,9 @@ function SidebarProvider({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const isMobile = useIsMobile();
+  const isNarrowViewport = useIsMobile();
+  const teslaTouch = useTeslaTouchUi();
+  const isMobile = isNarrowViewport || teslaTouch;
   const [openMobile, setOpenMobile] = React.useState(false);
 
   // This is the internal state of the sidebar.
@@ -238,6 +242,7 @@ function Sidebar({
     onPeekPointerEnter,
     onPeekPointerLeave,
   } = useSidebar();
+  const teslaTouch = useTeslaTouchUi();
   const resolvedResizable = React.useMemo<SidebarResolvedResizableOptions | null>(() => {
     if (isMobile || collapsible === "none" || !resizable) {
       return null;
@@ -322,7 +327,7 @@ function Sidebar({
             side={side}
             style={
               {
-                "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
+                "--sidebar-width": teslaTouch ? SIDEBAR_WIDTH_TESLA : SIDEBAR_WIDTH_MOBILE,
               } as React.CSSProperties
             }
           >

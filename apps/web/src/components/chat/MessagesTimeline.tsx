@@ -2222,7 +2222,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           />
         </div>
       </div>
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 tesla-touch:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
           <Tooltip>
             <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
@@ -2460,7 +2460,7 @@ function AssistantMessageOverlay({
       data-assistant-meta-gap="true"
       className={cn(
         assistantMetaActionsClassName,
-        "h-8 overflow-hidden opacity-0 pointer-events-none pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
+        "h-8 overflow-hidden opacity-0 pointer-events-none pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 tesla-touch:pointer-events-auto tesla-touch:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
       )}
     >
       <AssistantMessageActions

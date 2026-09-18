@@ -6,6 +6,7 @@ import { createHashHistory, createBrowserHistory } from "@tanstack/react-router"
 import "./index.css";
 
 import { isElectron } from "./env";
+import { syncTeslaTouchUi } from "./teslaTouchUi";
 import { ManagedRelayAuthProvider } from "./cloud/managedAuth";
 import { isClerkGateOpen, useClerkGateOpen } from "./cloud/clerkGate";
 import { hasCloudPublicConfig } from "./cloud/publicConfig";
@@ -29,6 +30,7 @@ const LazyElectronClerkRoot = React.lazy(loadElectronClerkRoot);
 // Hosted web keeps real paths for OAuth callbacks and pairing links; its static host serves the
 // built 404.html fallback for direct route loads.
 const history = isElectron ? createHashHistory() : createBrowserHistory();
+syncTeslaTouchUi();
 
 const router = getRouter(history, import.meta.env.BASE_URL);
 

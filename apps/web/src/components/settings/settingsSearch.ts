@@ -264,6 +264,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["transparent transparency solid menus dialogs composer"],
   },
   {
+    id: "car-display",
+    title: "Car display",
+    to: "/settings/appearance",
+    searchTerms: ["tesla passenger touch infotainment vehicle browser overlay"],
+  },
+  {
     id: "setting-photo-blur",
     title: "Photo blur",
     to: "/settings/appearance",

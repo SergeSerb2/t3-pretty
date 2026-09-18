@@ -61,6 +61,7 @@ describe("searchSettings", () => {
   it("matches normalized title substrings", () => {
     expect(searchSettings("  WORD   WRAP  ", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("glass").map((item) => item.id)).toEqual(["setting-glass-opacity"]);
+    expect(searchSettings("tesla").map((item) => item.id)).toEqual(["car-display"]);
     expect(searchSettings("interface font").map((item) => item.id)).toEqual(["interface-font"]);
     expect(searchSettings("panel animations").map((item) => item.id)).toEqual(["panel-animations"]);
     expect(searchSettings("thè\u{1ab0}mes")[0]?.id).toBe("theme");
@@ -298,6 +299,10 @@ describe("searchSettings", () => {
       id: "environment-identification",
       to: "/settings/appearance",
       targetId: "appearance-interface",
+    });
+    expect(searchSettings("car display")[0]).toMatchObject({
+      id: "car-display",
+      to: "/settings/appearance",
     });
   });
 

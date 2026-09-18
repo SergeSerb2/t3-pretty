@@ -24,6 +24,13 @@ On web and desktop, toggle the main sidebar to keep a compact navigation rail be
 thread. Select a project in the rail to reopen its threads, or toggle again to restore the full
 sidebar at its previous width. Drag the sidebar edge to resize it.
 
+## Car display
+
+On web, T3 Code switches to a larger-touch layout in Tesla's passenger browser. Controls get
+bigger tap targets, the sidebar and right panel open as overlays, and hover-only actions stay
+visible. Use **Settings → Appearance → Car display** or **Car display** in the command palette to
+force it on or off. Add `?tesla-touch=1` to the page URL to preview it in any browser.
+
 ## Motion
 
 The main sidebar, right panel, and terminal drawer open and close immediately by default. Move the
