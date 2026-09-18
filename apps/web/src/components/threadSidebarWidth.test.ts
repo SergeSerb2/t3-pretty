@@ -152,6 +152,7 @@ describe("thread sidebar width", () => {
     expect(rail).not.toContain("variant");
     expect(rail).not.toContain("group-data-compact");
     expect(rail).toContain("w-12 shrink-0");
+    expect(rail).toContain('const RAIL_FOLDER_BUTTON_CLASS = "project-rail-folder"');
     expect(threadSidebar).toContain('<SidebarUtilityMenu orientation="vertical" />');
     expect(threadSidebar).not.toContain("showThreadList");
   });
