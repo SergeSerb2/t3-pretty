@@ -14,6 +14,7 @@ import {
   dataTransferHasRailFolder,
   dataTransferHasRailProject,
   folderDropBeforeId,
+  folderRailPreviewProjects,
   RAIL_FOLDER_DRAG_TYPE,
   RAIL_PROJECT_DRAG_TYPE,
   type ProjectRailDropTarget,
@@ -30,15 +31,13 @@ const DynamicIcon = lazy(() =>
   import("lucide-react/dynamic").then((module) => ({ default: module.DynamicIcon })),
 );
 
-const FOLDER_RAIL_PREVIEW_LIMIT = 4;
-
 /** Faint mosaic of contained project icons, clipped to the frosted folder tile. */
 function FolderRailContentsPreview({
   projects,
 }: {
   readonly projects: readonly SidebarProjectSnapshot[];
 }) {
-  const previews = projects.slice(0, FOLDER_RAIL_PREVIEW_LIMIT);
+  const previews = folderRailPreviewProjects(projects);
   if (previews.length === 0) return null;
   return (
     <span

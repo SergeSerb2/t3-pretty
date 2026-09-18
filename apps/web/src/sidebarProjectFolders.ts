@@ -95,6 +95,12 @@ export function shouldLiftProjectFolderSettings(input: {
   );
 }
 
+export const FOLDER_RAIL_PREVIEW_LIMIT = 4;
+
+export function folderRailPreviewProjects<T>(projects: readonly T[]): readonly T[] {
+  return projects.slice(0, FOLDER_RAIL_PREVIEW_LIMIT);
+}
+
 export function buildProjectRailItems<T extends { projectKey: string }>(
   projects: readonly T[],
   settings: SidebarProjectFolderSettings,
