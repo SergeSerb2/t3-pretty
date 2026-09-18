@@ -21,11 +21,13 @@ import * as ElectronDialog from "../../electron/ElectronDialog.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
 import type { DesktopSettings } from "../../settings/DesktopAppSettings.ts";
+import * as DesktopWindow from "../../window/DesktopWindow.ts";
 import {
   getLocalEnvironmentBootstraps,
   getWindowFullscreenState,
   pasteAsText,
   pickProjectFavicon,
+  setWindowButtonVisibility,
 } from "./window.ts";
 
 const readyWslConfig: DesktopBackendManager.DesktopBackendStartConfig = {
@@ -175,6 +177,23 @@ describe("getWindowFullscreenState", () => {
       Effect.provide(
         Layer.mock(ElectronWindow.ElectronWindow)({
           currentMainOrFirst: Effect.succeed(Option.some(window)),
+        }),
+      ),
+    );
+  });
+});
+
+describe("setWindowButtonVisibility", () => {
+  it.effect("forwards visibility to the desktop window", () => {
+    const setWindowButtonVisibilityFn = vi.fn(() => Effect.void);
+
+    return Effect.gen(function* () {
+      yield* setWindowButtonVisibility.handler(false);
+      assert.deepEqual(setWindowButtonVisibilityFn.mock.calls, [[false]]);
+    }).pipe(
+      Effect.provide(
+        Layer.mock(DesktopWindow.DesktopWindow)({
+          setWindowButtonVisibility: (visible) => setWindowButtonVisibilityFn(visible),
         }),
       ),
     );

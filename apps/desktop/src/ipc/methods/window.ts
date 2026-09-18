@@ -119,6 +119,16 @@ export const getWindowFullscreenState = DesktopIpc.makeSyncIpcMethod({
   }),
 });
 
+export const setWindowButtonVisibility = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SET_WINDOW_BUTTON_VISIBILITY_CHANNEL,
+  payload: Schema.Boolean,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.setWindowButtonVisibility")(function* (visible) {
+    const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    yield* desktopWindow.setWindowButtonVisibility(visible);
+  }),
+});
+
 export const setDockAttention = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.SET_DOCK_ATTENTION_CHANNEL,
   payload: Schema.Struct({ count: Schema.Number }),

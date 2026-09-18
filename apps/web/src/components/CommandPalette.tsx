@@ -152,6 +152,7 @@ import {
   buildRootGroups,
   buildThreadActionItems,
   buildLinkedThreadActionItems,
+  commandPaletteNewThreadInValue,
   enumerateCommandPaletteItems,
   type CommandPaletteActionItem,
   type CommandPaletteOpenIntent,
@@ -162,6 +163,7 @@ import {
   getCommandPaletteInputPlaceholder,
   getCommandPaletteMode,
   ITEM_ICON_CLASS,
+  prioritizeCommandPaletteItems,
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
   type SearchOverlayMode,
@@ -724,7 +726,7 @@ function OpenCommandPaletteDialog(props: {
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
-  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
+  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, scopedProjectRef } =
     useHandleNewThread();
   const projects = useProjects();
   const referenceThreadRef =
@@ -932,8 +934,9 @@ function OpenCommandPaletteDialog(props: {
         activeThread: activeThread ?? undefined,
         defaultProjectRef,
         handleNewThread,
+        scopedProjectRef,
       }),
-    [activeDraftThread, activeThread, defaultProjectRef, handleNewThread],
+    [activeDraftThread, activeThread, defaultProjectRef, handleNewThread, scopedProjectRef],
   );
   const projectPickerEntries = useMemo(
     () =>
@@ -1715,16 +1718,10 @@ function OpenCommandPaletteDialog(props: {
     setAddProjectCloneFlow(null);
     setViewStack([]);
     setQuery("");
-    const currentPrefix =
-      currentProjectEnvironmentId && currentProjectId
-        ? `new-thread-in:${currentProjectEnvironmentId}:${currentProjectId}`
-        : null;
-    const prioritized = currentPrefix
-      ? [
-          ...projectThreadItems.filter((item) => item.value === currentPrefix),
-          ...projectThreadItems.filter((item) => item.value !== currentPrefix),
-        ]
-      : projectThreadItems;
+    const currentPrefix = contextualProjectRef
+      ? commandPaletteNewThreadInValue(contextualProjectRef)
+      : null;
+    const prioritized = prioritizeCommandPaletteItems(projectThreadItems, currentPrefix);
     pushPaletteView({
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [
@@ -1738,8 +1735,7 @@ function OpenCommandPaletteDialog(props: {
   }, [
     clearOpenIntent,
     browseNavigation,
-    currentProjectEnvironmentId,
-    currentProjectId,
+    contextualProjectRef,
     openIntent,
     projectThreadItems,
     pushPaletteView,
@@ -1784,6 +1780,7 @@ function OpenCommandPaletteDialog(props: {
             activeThread: activeThread ?? undefined,
             defaultProjectRef,
             handleNewThread,
+            scopedProjectRef,
           });
         },
       });

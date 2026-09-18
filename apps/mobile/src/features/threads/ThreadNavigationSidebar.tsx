@@ -200,8 +200,13 @@ function ThreadNavigationSidebarPane(
     () => new Set(environments.map((environment) => environment.environmentId)),
     [environments],
   );
-  const { options, setSelectedEnvironmentId, setProjectSortOrder, setThreadSortOrder } =
-    useHomeListOptions(availableEnvironmentIds);
+  const {
+    options,
+    setSelectedEnvironmentId,
+    setSelectedProjectKey,
+    setProjectSortOrder,
+    setThreadSortOrder,
+  } = useHomeListOptions(availableEnvironmentIds);
   const searchEnvironmentIds = useMemo(
     () =>
       options.selectedEnvironmentId === null
@@ -231,7 +236,7 @@ function ThreadNavigationSidebarPane(
     () => new Set(threadSearch.matches.map(threadSearchMatchKey)),
     [threadSearch.matches],
   );
-  const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
+  const selectedProjectKey = options.selectedProjectKey;
   const projectScopes = useMemo(
     () =>
       buildHomeProjectScopes({
@@ -278,7 +283,7 @@ function ThreadNavigationSidebarPane(
     ) {
       setSelectedProjectKey(null);
     }
-  }, [projectFilterOptions, selectedProjectKey]);
+  }, [projectFilterOptions, selectedProjectKey, setSelectedProjectKey]);
   const selectedProjectRefs = useMemo(
     () =>
       selectedProjectScope === null
@@ -1197,7 +1202,7 @@ function ThreadNavigationSidebarPane(
   // light the "customized" state while the beta is on.
   const filterCustomized = threadListV2Enabled
     ? options.selectedEnvironmentId !== null || selectedProjectKey !== null
-    : hasCustomHomeListOptions({ ...options, selectedProjectKey });
+    : hasCustomHomeListOptions(options);
   const filterIcon = filterCustomized
     ? "line.3.horizontal.decrease.circle.fill"
     : "line.3.horizontal.decrease.circle";

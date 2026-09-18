@@ -23,6 +23,7 @@ import type { HomeProjectSortOrder } from "./homeThreadList";
 
 export interface HomeListOptions {
   readonly selectedEnvironmentId: EnvironmentId | null;
+  readonly selectedProjectKey: string | null;
   readonly projectSortOrder: HomeProjectSortOrder;
   readonly threadSortOrder: SidebarThreadSortOrder;
 }
@@ -50,6 +51,7 @@ export const THREAD_SORT_OPTIONS: ReadonlyArray<{
 function defaultHomeListOptions(): HomeListOptions {
   return {
     selectedEnvironmentId: null,
+    selectedProjectKey: null,
     projectSortOrder:
       DEFAULT_SIDEBAR_PROJECT_SORT_ORDER === "manual"
         ? "updated_at"
@@ -81,18 +83,14 @@ export function HomeListOptionsProvider({
   return createElement(HomeListOptionsContext, { value }, children);
 }
 
-export function hasCustomHomeListOptions(
-  options: HomeListOptions & {
-    readonly selectedProjectKey?: string | null;
-  },
-): boolean {
+export function hasCustomHomeListOptions(options: HomeListOptions): boolean {
   const defaultProjectSortOrder =
     DEFAULT_SIDEBAR_PROJECT_SORT_ORDER === "manual"
       ? "updated_at"
       : DEFAULT_SIDEBAR_PROJECT_SORT_ORDER;
   return (
     options.selectedEnvironmentId !== null ||
-    (options.selectedProjectKey !== null && options.selectedProjectKey !== undefined) ||
+    options.selectedProjectKey !== null ||
     options.projectSortOrder !== defaultProjectSortOrder ||
     options.threadSortOrder !== DEFAULT_SIDEBAR_THREAD_SORT_ORDER
   );
@@ -120,6 +118,9 @@ export function useHomeListOptions(availableEnvironmentIds: ReadonlySet<Environm
   const setSelectedEnvironmentId = useCallback((value: EnvironmentId | null) => {
     setOptions((current) => ({ ...current, selectedEnvironmentId: value }));
   }, []);
+  const setSelectedProjectKey = useCallback((value: string | null) => {
+    setOptions((current) => ({ ...current, selectedProjectKey: value }));
+  }, []);
   const setProjectSortOrder = useCallback((value: HomeProjectSortOrder) => {
     setOptions((current) => ({ ...current, projectSortOrder: value }));
   }, []);
@@ -129,6 +130,7 @@ export function useHomeListOptions(availableEnvironmentIds: ReadonlySet<Environm
   return {
     options: resolvedOptions,
     setSelectedEnvironmentId,
+    setSelectedProjectKey,
     setProjectSortOrder,
     setThreadSortOrder,
   } as const;

@@ -19,6 +19,38 @@ export function getProjectScopeSelectionTarget(
   );
 }
 
+export function resolveNewTaskSheetRoute(input: {
+  readonly selectedProjectKey: string | null;
+  readonly selectedEnvironmentId: EnvironmentId | null;
+  readonly projectScopes: ReadonlyArray<HomeProjectScope>;
+}):
+  | { readonly screen: "NewTask" }
+  | {
+      readonly screen: "NewTaskDraft";
+      readonly params: {
+        readonly environmentId: string;
+        readonly projectId: string;
+        readonly title: string;
+      };
+    } {
+  if (input.selectedProjectKey === null) {
+    return { screen: "NewTask" };
+  }
+  const scope = input.projectScopes.find((candidate) => candidate.key === input.selectedProjectKey);
+  if (!scope) {
+    return { screen: "NewTask" };
+  }
+  const project = getProjectScopeSelectionTarget(scope, input.selectedEnvironmentId);
+  return {
+    screen: "NewTaskDraft",
+    params: {
+      environmentId: String(project.environmentId),
+      projectId: String(project.id),
+      title: project.title,
+    },
+  };
+}
+
 function getOnlySelectableProject(
   projectScopes: ReadonlyArray<HomeProjectScope>,
 ): EnvironmentProject | null {

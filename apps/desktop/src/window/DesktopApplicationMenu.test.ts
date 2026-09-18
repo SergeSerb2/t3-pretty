@@ -94,6 +94,7 @@ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
     zoomMain: (direction) =>
       Deferred.succeed(selectedAction, `zoom-${direction}`).pipe(Effect.asVoid),
     setDockAttention: () => Effect.void,
+    setWindowButtonVisibility: () => Effect.void,
     syncAppearance: Effect.void,
   } satisfies DesktopWindow.DesktopWindow["Service"]);
 

@@ -26,6 +26,7 @@ import { useProjects, useThreadShell, useThreadShells } from "../../state/entiti
 import { useThreadSearch } from "../../state/queries";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import { useStartNewTaskFromHomeScope } from "../home/useStartNewTaskFromHomeScope";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { ThreadSearchMatchExcerpt } from "../threads/thread-search-match";
 import {
@@ -118,6 +119,7 @@ export function CommandPalette(props: {
 }) {
   const navigation = useNavigation();
   const { selectThread } = useAdaptiveWorkspaceLayout();
+  const startNewTask = useStartNewTaskFromHomeScope();
   const runCommand = props.onCommand;
   const projects = useProjects();
   const threads = useThreadShells();
@@ -162,7 +164,7 @@ export function CommandPalette(props: {
         kind: "action",
         title: "New thread in…",
         searchTerms: ["new task", "chat", "create", "project"],
-        run: () => navigation.navigate("NewTaskSheet", { screen: "NewTask" }),
+        run: startNewTask,
       },
       {
         key: "addProject",
@@ -317,6 +319,7 @@ export function CommandPalette(props: {
     runCommand,
     savedConnectionsById,
     selectThread,
+    startNewTask,
     threads,
   ]);
   const results = useMemo(

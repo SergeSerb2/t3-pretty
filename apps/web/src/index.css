@@ -329,6 +329,20 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+/* Native traffic lights need ~90px. The collapsed 3rem rail cannot hold them,
+   so macOS desktop drops this attribute and the sidebar toggle slides over. */
+
+[data-sidebar-control] {
+  translate: calc(var(--workspace-controls-left) - env(safe-area-inset-left) - 0.75rem) 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-sidebar-control] {
+    transition: translate var(--sidebar-peek-duration, 280ms)
+      var(--sidebar-peek-ease, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+}
+
 .wco {
   --workspace-topbar-height: env(titlebar-area-height, 52px);
   --workspace-controls-top: env(titlebar-area-y, 0px);
@@ -339,6 +353,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --workspace-native-controls-inset: calc(
     100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 0.75rem
   );
+}
+
+html[data-macos-traffic-lights] {
+  --workspace-controls-left: var(--desktop-window-controls-inset, 90px);
 }
 
 @media (min-width: 40rem) {
@@ -528,6 +546,36 @@ html[data-status-pulse="1"] .status-ping {
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--background) !important;
+  }
+}
+
+/* Raised frosted tile for project-rail folders so they don't read as project
+   icons. Fill and sheen are separate properties so hover/selected `bg-*` still
+   replace the color. Rim is an inset ring so the icon box matches neighbors. */
+@utility project-rail-folder {
+  background-color: color-mix(in srgb, var(--sidebar-control-surface) 72%, transparent);
+  background-image: linear-gradient(155deg, var(--workspace-glass-sheen), transparent 52%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--workspace-glass-rim) 75%, transparent),
+    inset 0 1px 0 var(--workspace-glass-rim),
+    inset 0 -1px 2px rgb(0 0 0 / 16%),
+    0 1px 2px rgb(0 0 0 / 18%);
+
+  @variant dark {
+    background-color: color-mix(in srgb, var(--sidebar-control-surface) 82%, transparent);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--workspace-glass-rim) 75%, transparent),
+      inset 0 1px 0 var(--workspace-glass-rim),
+      inset 0 -1px 2px rgb(0 0 0 / 32%),
+      0 1px 2px rgb(0 0 0 / 28%);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    background-color: var(--sidebar-control-surface);
+    background-image: none;
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--workspace-glass-rim) 75%, transparent),
+      0 1px 2px rgb(0 0 0 / 18%);
   }
 }
 

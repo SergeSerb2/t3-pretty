@@ -23,6 +23,7 @@ import { AndroidHomeFabLayout } from "./AndroidHomeFab";
 import { HomeScreen } from "./HomeScreen";
 import { HomeHeader } from "./HomeHeader";
 import { useHomeListOptions } from "./home-list-options";
+import { useStartNewTaskFromHomeScope } from "./useStartNewTaskFromHomeScope";
 import { useHomeThreadSelection } from "./home-thread-navigation";
 import { buildHomeProjectScopes } from "./homeThreadList";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
@@ -98,11 +99,13 @@ export function HomeRouteScreen() {
   const {
     options: listOptions,
     setSelectedEnvironmentId,
+    setSelectedProjectKey,
     setProjectSortOrder,
     setThreadSortOrder,
   } = useHomeListOptions(availableEnvironmentIds);
   const selectedEnvironmentId = listOptions.selectedEnvironmentId;
-  const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
+  const selectedProjectKey = listOptions.selectedProjectKey;
+  const startNewTask = useStartNewTaskFromHomeScope();
   const projectFilterOptions = useMemo(
     () =>
       buildHomeProjectScopes({
@@ -122,7 +125,7 @@ export function HomeRouteScreen() {
     ) {
       setSelectedProjectKey(null);
     }
-  }, [projectFilterOptions, selectedProjectKey]);
+  }, [projectFilterOptions, selectedProjectKey, setSelectedProjectKey]);
 
   // In split layouts the persistent sidebar IS the thread list — Home becomes
   // an empty detail pane so selecting a thread never transitions layouts.
@@ -158,7 +161,7 @@ export function HomeRouteScreen() {
               key="new-task"
               accessibilityLabel="New task"
               icon="square.and.pencil"
-              onPress={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+              onPress={startNewTask}
             />,
           ]}
         />
@@ -185,9 +188,7 @@ export function HomeRouteScreen() {
         ) : (
           <WorkspaceEmptyDetail
             onStartNewTask={
-              Platform.OS === "android" && panes.primarySidebarVisible
-                ? undefined
-                : () => navigation.navigate("NewTaskSheet", { screen: "NewTask" })
+              Platform.OS === "android" && panes.primarySidebarVisible ? undefined : startNewTask
             }
           />
         )}
@@ -196,9 +197,7 @@ export function HomeRouteScreen() {
   }
 
   return (
-    <AndroidHomeFabLayout
-      onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
-    >
+    <AndroidHomeFabLayout onStartNewTask={startNewTask}>
       <>
         {/* Restore the header after leaving split view; screen options are
             shallow-merged. The brand slot also doubles as the connection
@@ -243,7 +242,7 @@ export function HomeRouteScreen() {
           }
           onProjectSortOrderChange={setProjectSortOrder}
           onSearchQueryChange={setSearchQuery}
-          onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+          onStartNewTask={startNewTask}
           onThreadSortOrderChange={setThreadSortOrder}
         />
 
@@ -312,7 +311,7 @@ export function HomeRouteScreen() {
               },
             });
           }}
-          onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+          onStartNewTask={startNewTask}
           onThreadSortOrderChange={setThreadSortOrder}
           pendingTasks={pendingTasks}
           projectGroupingMode={listOptions.projectGroupingMode}

@@ -20,6 +20,23 @@ export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
 export const ADDON_ICON_CLASS = "size-4";
 
+export function commandPaletteNewThreadInValue(projectRef: {
+  readonly environmentId: string;
+  readonly projectId: string;
+}): string {
+  return `new-thread-in:${projectRef.environmentId}:${projectRef.projectId}`;
+}
+
+export function prioritizeCommandPaletteItems<T extends { readonly value: string }>(
+  items: readonly T[],
+  preferredValue: string | null,
+): T[] {
+  if (preferredValue === null) return [...items];
+  const preferred = items.filter((item) => item.value === preferredValue);
+  if (preferred.length === 0) return [...items];
+  return [...preferred, ...items.filter((item) => item.value !== preferredValue)];
+}
+
 /** A PR's relations include archived threads that normal palette search omits. */
 export function buildLinkedThreadActionItems(
   input: CommandPaletteLinkedThreads & {
