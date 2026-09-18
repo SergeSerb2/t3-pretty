@@ -6,6 +6,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -23,6 +24,7 @@ import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
 import {
+  hideMacosWindowButtonsThenReleaseInset,
   MACOS_TRAFFIC_LIGHT_REVEAL_DELAY_MS,
   shouldReserveMacosTrafficLights,
   shouldShowMacosWindowButtons,
@@ -97,29 +99,60 @@ function SidebarControl({
     isFullscreen: isWindowFullscreen,
   });
   const showWindowButtons = shouldShowMacosWindowButtons(trafficLights);
+  const windowButtonVisibilityQueue = useRef(Promise.resolve());
 
   useLayoutEffect(() => {
-    if (!isMacosDesktop) return;
-    document.documentElement.toggleAttribute("data-macos-traffic-lights", reserveTrafficLights);
-    return () => document.documentElement.removeAttribute("data-macos-traffic-lights");
-  }, [isMacosDesktop, reserveTrafficLights]);
-
-  useLayoutEffect(() => {
-    if (!isMacosDesktop) return;
-    const setVisibility = window.desktopBridge?.setWindowButtonVisibility;
-    if (typeof setVisibility !== "function") return;
-    if (!showWindowButtons) {
-      void setVisibility(false);
+    if (!isMacosDesktop) {
+      document.documentElement.removeAttribute("data-macos-traffic-lights");
       return;
     }
+
+    const root = document.documentElement;
+    const setVisibility = window.desktopBridge?.setWindowButtonVisibility;
+    let cancelled = false;
+    let revealTimer = 0;
+
+    const sendVisibility = (visible: boolean) => {
+      if (typeof setVisibility !== "function") return Promise.resolve();
+      const next = windowButtonVisibilityQueue.current.then(() => setVisibility(visible));
+      windowButtonVisibilityQueue.current = next.then(
+        () => undefined,
+        () => undefined,
+      );
+      return next;
+    };
+
+    if (!showWindowButtons) {
+      void hideMacosWindowButtonsThenReleaseInset({
+        hide: () => sendVisibility(false),
+        releaseInset: () => {
+          if (!cancelled) root.removeAttribute("data-macos-traffic-lights");
+        },
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    root.toggleAttribute("data-macos-traffic-lights", reserveTrafficLights);
     const delay = window.matchMedia("(prefers-reduced-motion: reduce)").matches
       ? 0
       : MACOS_TRAFFIC_LIGHT_REVEAL_DELAY_MS;
-    const timer = window.setTimeout(() => {
-      void setVisibility(true);
+    revealTimer = window.setTimeout(() => {
+      void sendVisibility(true);
     }, delay);
-    return () => window.clearTimeout(timer);
-  }, [isMacosDesktop, showWindowButtons]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(revealTimer);
+    };
+  }, [isMacosDesktop, reserveTrafficLights, showWindowButtons]);
+
+  useLayoutEffect(
+    () => () => {
+      document.documentElement.removeAttribute("data-macos-traffic-lights");
+    },
+    [],
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

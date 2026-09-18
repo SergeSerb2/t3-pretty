@@ -6,6 +6,15 @@ export const COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS =
 /** Native lights appear after the toggle has started sliding out of their slot. */
 export const MACOS_TRAFFIC_LIGHT_REVEAL_DELAY_MS = 120;
 
+/** Native lights cannot fade. Hide them before the toggle slides into their slot. */
+export async function hideMacosWindowButtonsThenReleaseInset(input: {
+  hide: () => void | Promise<void>;
+  releaseInset: () => void;
+}): Promise<void> {
+  await input.hide();
+  input.releaseInset();
+}
+
 export function shouldShowMacosWindowButtons(input: {
   isMacosDesktop: boolean;
   isMobile: boolean;
