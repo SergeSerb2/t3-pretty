@@ -296,7 +296,7 @@ export const getGeneratedUniwindThemeOutputs = (): ReadonlyArray<
 > => {
   const css = NodeFS.readFileSync(GLOBAL_CSS_PATH, "utf8");
   return [
-    [GENERATED_CSS_PATH, renderUniwindThemesCSS(css)],
+    [GENERATED_CSS_PATH, renderUniwindThemesCSS()],
     [GENERATED_NAMES_PATH, `${JSON.stringify(customThemeNames, null, 2)}\n`],
     [GENERATED_DEFAULT_VARIABLES_PATH, renderDefaultThemeVariablesJSON(css)],
   ];

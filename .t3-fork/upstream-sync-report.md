@@ -4475,3 +4475,6 @@
   - edited `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts`
   - edited `apps/web/src/components/pullRequest/PullRequestDetailPanel.test.tsx`
   - edited `apps/web/src/components/threadActionMenu.logic.test.ts`
+- `mobile-typecheck` failed after merging `v0.0.43-nightly.20260918.1895`; repaired with `gpt-5.6-sol`: Align the theme generator call with the parent's new renderer API and restore the imports required by T3 Pretty's scenery footer. These minimal edits address all reported mobile typecheck errors without removing either fork or upstream behavior.
+  - edited `apps/mobile/scripts/generate-uniwind-themes.mts`
+  - edited `apps/mobile/src/features/home/HomeScreen.tsx`
