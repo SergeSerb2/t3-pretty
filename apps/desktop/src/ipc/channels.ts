@@ -14,6 +14,7 @@ export const PASTE_AS_TEXT_CHANNEL = "desktop:paste-as-text";
 export const SNAP_SHOT_EVENT_CHANNEL = "desktop:snap-shot-event";
 export const QUIT_SHORTCUT_CHANNEL = "desktop:quit-shortcut";
 export const GET_WINDOW_FULLSCREEN_STATE_CHANNEL = "desktop:get-window-fullscreen-state";
+export const SET_WINDOW_BUTTON_VISIBILITY_CHANNEL = "desktop:set-window-button-visibility";
 export const WINDOW_FULLSCREEN_STATE_CHANNEL = "desktop:window-fullscreen-state";
 export const WINDOW_ACTIVE_STATE_CHANNEL = "desktop:window-active-state";
 export const WINDOW_INTERACTING_CHANNEL = "desktop:window-interacting";
