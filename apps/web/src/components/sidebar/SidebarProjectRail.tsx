@@ -69,6 +69,8 @@ const EMPTY_FOLDER_SETTINGS: SidebarProjectFolderSettings = { folders: [], assig
 const RAIL_DROP_HIGHLIGHT_CLASS = "bg-sidebar-row-hover ring-1 ring-ring/80";
 const RAIL_FOLDER_BEFORE_CLASS = "shadow-[inset_0_2px_0_0_var(--color-ring)]";
 const RAIL_FOLDER_AFTER_CLASS = "shadow-[inset_0_-2px_0_0_var(--color-ring)]";
+/** Frosted control-surface tile; hover/selected `bg-*` still replace the fill. */
+const RAIL_FOLDER_BUTTON_CLASS = "project-rail-folder";
 
 function railDragTypes(event: DragEvent): readonly string[] {
   return event.dataTransfer === null ? [] : Array.from(event.dataTransfer.types);
@@ -461,6 +463,7 @@ export function SidebarProjectRail({
             size="icon"
             aria-label={`${item.folder.collapsed ? "Expand" : "Collapse"} ${item.folder.name}`}
             aria-expanded={!item.folder.collapsed}
+            className={RAIL_FOLDER_BUTTON_CLASS}
             tooltip={{
               className: RAIL_TOOLTIP_CLASS,
               sideOffset: 8,
