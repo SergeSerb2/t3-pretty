@@ -102,6 +102,7 @@ function makeDesktopWindowLayer(
     dispatchSnapShotEvent: () => Effect.void,
     zoomMain: () => Effect.void,
     setDockAttention: () => Effect.void,
+    setWindowButtonVisibility: () => Effect.void,
     syncAppearance: Effect.void,
   });
 }
@@ -180,6 +181,7 @@ describe("DesktopLifecycle", () => {
         dispatchSnapShotEvent: () => Effect.void,
         zoomMain: () => Effect.void,
         setDockAttention: () => Effect.void,
+        setWindowButtonVisibility: () => Effect.void,
         syncAppearance: Effect.void,
       } satisfies DesktopWindow.DesktopWindow["Service"]);
       const shutdownLayer = Layer.succeed(DesktopShutdown.DesktopShutdown, {

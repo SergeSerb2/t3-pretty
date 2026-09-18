@@ -50,7 +50,14 @@ if (clientPlatform === "darwin") {
       `${90 / webFrame.getZoomFactor()}px`,
     );
   };
-  window.addEventListener("DOMContentLoaded", syncWindowControlInset, { once: true });
+  window.addEventListener(
+    "DOMContentLoaded",
+    () => {
+      document.documentElement.toggleAttribute("data-macos-traffic-lights", true);
+      syncWindowControlInset();
+    },
+    { once: true },
+  );
   window.addEventListener("resize", syncWindowControlInset);
 }
 
@@ -258,6 +265,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   getWindowFullscreenState: () =>
     ipcRenderer.sendSync(IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL) === true,
+  setWindowButtonVisibility: (visible) =>
+    ipcRenderer.invoke(IpcChannels.SET_WINDOW_BUTTON_VISIBILITY_CHANNEL, visible),
   onWindowFullscreenStateChange: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, fullscreen: unknown) => {
       if (typeof fullscreen !== "boolean") return;

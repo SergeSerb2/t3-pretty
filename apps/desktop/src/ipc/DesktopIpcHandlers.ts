@@ -42,6 +42,7 @@ import {
   getLocalEnvironmentBearerToken,
   getSystemLocale,
   getWindowFullscreenState,
+  setWindowButtonVisibility,
   openExternal,
   openSystemSettings,
   checkSystemPermission,
@@ -84,6 +85,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getAppBranding);
   yield* ipc.handleSync(getSystemLocale);
   yield* ipc.handleSync(getWindowFullscreenState);
+  yield* ipc.handle(setWindowButtonVisibility);
   yield* ipc.handle(getLocalEnvironmentBootstraps);
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);
