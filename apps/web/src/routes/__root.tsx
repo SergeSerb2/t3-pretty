@@ -49,7 +49,7 @@ import {
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
 import { applyAppearanceFontVariables } from "~/appearanceFonts";
 import { applyAppearanceContrast } from "~/appearanceContrast";
-import { useTeslaTouchDocumentSync } from "~/teslaTouchUi";
+import { extractSearchParams, useTeslaTouchDocumentSync } from "~/teslaTouchUi";
 import { useClientSettings } from "../hooks/useSettings";
 import { PlanAgentSelectionHeal } from "../planAgentSelectionHeal";
 import {
@@ -137,9 +137,12 @@ function RootRouteNotFoundView() {
 }
 
 function RootRouteView() {
-  useTeslaTouchDocumentSync();
-  useEffect(() => installDesktopPasteAsText(window.desktopBridge, window), []);
   const pathname = useLocation({ select: (location) => location.pathname });
+  const teslaTouchSearch = useLocation({
+    select: (location) => extractSearchParams(location.href),
+  });
+  useTeslaTouchDocumentSync(teslaTouchSearch);
+  useEffect(() => installDesktopPasteAsText(window.desktopBridge, window), []);
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
   const returningFromWelcomeRef = useRef(pathname === "/welcome");

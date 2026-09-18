@@ -50,9 +50,41 @@ export function isTeslaCarBrowserUserAgent(userAgent: string): boolean {
   );
 }
 
+/**
+ * Pull the query string out of a router href, `window.location.search`, or a
+ * hash-history URL (`#/chat?tesla-touch=1`). Electron uses hash history, so
+ * `location.search` is empty there.
+ */
+export function extractSearchParams(hrefOrSearch: string): string {
+  const queryIndex = hrefOrSearch.indexOf("?");
+  if (queryIndex >= 0) {
+    const after = hrefOrSearch.slice(queryIndex + 1);
+    const hashIndex = after.indexOf("#");
+    return hashIndex >= 0 ? after.slice(0, hashIndex) : after;
+  }
+  if (
+    hrefOrSearch.length === 0 ||
+    hrefOrSearch.startsWith("#") ||
+    hrefOrSearch.startsWith("/") ||
+    hrefOrSearch.includes("://")
+  ) {
+    return "";
+  }
+  return hrefOrSearch;
+}
+
+export function readTeslaTouchSearchFromWindow(
+  location: Pick<Location, "search" | "hash"> | undefined = typeof window === "undefined"
+    ? undefined
+    : window.location,
+): string {
+  if (location === undefined) return "";
+  if (location.search.length > 1) return extractSearchParams(location.search);
+  return extractSearchParams(location.hash);
+}
+
 export function parseTeslaTouchQueryParam(search: string): boolean | null {
-  const query = search.startsWith("?") ? search.slice(1) : search;
-  const raw = new URLSearchParams(query).get(TESLA_TOUCH_QUERY_PARAM);
+  const raw = new URLSearchParams(extractSearchParams(search)).get(TESLA_TOUCH_QUERY_PARAM);
   if (raw === null) return null;
   const normalized = raw.trim().toLowerCase();
   if (normalized === "1" || normalized === "on" || normalized === "true") return true;
@@ -103,7 +135,7 @@ export function syncTeslaTouchUi(input?: {
 }): boolean {
   const enabled = resolveTeslaTouchUi({
     preference: input?.preference ?? readTeslaTouchPreference(),
-    search: input?.search ?? (typeof window === "undefined" ? "" : window.location.search),
+    search: input?.search ?? readTeslaTouchSearchFromWindow(),
     userAgent: input?.userAgent ?? (typeof navigator === "undefined" ? "" : navigator.userAgent),
   });
   if (typeof document !== "undefined") {
@@ -138,10 +170,10 @@ export function useTeslaTouchUi(): boolean {
   );
 }
 
-/** Keeps `data-tesla-touch` in sync when Settings or the palette change Auto/On/Off. */
-export function useTeslaTouchDocumentSync(): void {
+/** Keeps `data-tesla-touch` in sync when Settings, the palette, or `?tesla-touch=` change. */
+export function useTeslaTouchDocumentSync(search: string): void {
   const [preference] = useTeslaTouchPreference();
   useEffect(() => {
-    syncTeslaTouchUi({ preference });
-  }, [preference]);
+    syncTeslaTouchUi({ preference, search });
+  }, [preference, search]);
 }

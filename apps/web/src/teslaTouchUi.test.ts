@@ -2,8 +2,10 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applyTeslaTouchDocumentState,
+  extractSearchParams,
   isTeslaCarBrowserUserAgent,
   parseTeslaTouchQueryParam,
+  readTeslaTouchSearchFromWindow,
   resolveTeslaTouchUi,
   TESLA_TOUCH_QUERY_PARAM,
 } from "./teslaTouchUi";
@@ -41,11 +43,45 @@ describe("isTeslaCarBrowserUserAgent", () => {
   });
 });
 
+describe("extractSearchParams", () => {
+  it("reads query strings from router hrefs and hash-history URLs", () => {
+    expect(extractSearchParams(`/${TESLA_TOUCH_QUERY_PARAM}=1`)).toBe("");
+    expect(extractSearchParams(`/chat?${TESLA_TOUCH_QUERY_PARAM}=1`)).toBe(
+      `${TESLA_TOUCH_QUERY_PARAM}=1`,
+    );
+    expect(extractSearchParams(`#/chat?${TESLA_TOUCH_QUERY_PARAM}=0#panel`)).toBe(
+      `${TESLA_TOUCH_QUERY_PARAM}=0`,
+    );
+    expect(extractSearchParams(`${TESLA_TOUCH_QUERY_PARAM}=true`)).toBe(
+      `${TESLA_TOUCH_QUERY_PARAM}=true`,
+    );
+    expect(extractSearchParams("/chat")).toBe("");
+    expect(extractSearchParams("#/chat")).toBe("");
+  });
+});
+
+describe("readTeslaTouchSearchFromWindow", () => {
+  it("prefers location.search and falls back to a hash query", () => {
+    expect(
+      readTeslaTouchSearchFromWindow({ search: `?${TESLA_TOUCH_QUERY_PARAM}=1`, hash: "" }),
+    ).toBe(`${TESLA_TOUCH_QUERY_PARAM}=1`);
+    expect(
+      readTeslaTouchSearchFromWindow({
+        search: "",
+        hash: `#/chat?${TESLA_TOUCH_QUERY_PARAM}=0`,
+      }),
+    ).toBe(`${TESLA_TOUCH_QUERY_PARAM}=0`);
+    expect(readTeslaTouchSearchFromWindow(undefined)).toBe("");
+  });
+});
+
 describe("parseTeslaTouchQueryParam", () => {
   it(`reads ${TESLA_TOUCH_QUERY_PARAM} from a search string`, () => {
     expect(parseTeslaTouchQueryParam(`?${TESLA_TOUCH_QUERY_PARAM}=1`)).toBe(true);
     expect(parseTeslaTouchQueryParam(`${TESLA_TOUCH_QUERY_PARAM}=true`)).toBe(true);
     expect(parseTeslaTouchQueryParam(`?foo=1&${TESLA_TOUCH_QUERY_PARAM}=on`)).toBe(true);
+    expect(parseTeslaTouchQueryParam(`/chat?${TESLA_TOUCH_QUERY_PARAM}=1`)).toBe(true);
+    expect(parseTeslaTouchQueryParam(`#/chat?${TESLA_TOUCH_QUERY_PARAM}=0`)).toBe(false);
     expect(parseTeslaTouchQueryParam(`?${TESLA_TOUCH_QUERY_PARAM}=0`)).toBe(false);
     expect(parseTeslaTouchQueryParam(`?${TESLA_TOUCH_QUERY_PARAM}=off`)).toBe(false);
     expect(parseTeslaTouchQueryParam("?other=1")).toBeNull();
