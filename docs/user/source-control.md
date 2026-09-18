@@ -230,8 +230,8 @@ source of truth for that configuration.
   before saving.
 - Rewrite your own comments the same way wherever they are shown.
 - GitHub, GitLab, Bitbucket, and Origin support these editing tools. Azure DevOps accepts a new title
-  and description, but its comments remain read-only in T3 Code; use the host website to view diffs
-  or change comments.
+  and description, but its comments remain read-only in T3 Code; use the host website to change
+  comments.
 - Bitbucket does not support reopening a declined pull request.
 - On GitHub, add or remove labels from the **Labels** row. Changing labels requires triage access or
   better on the repository.

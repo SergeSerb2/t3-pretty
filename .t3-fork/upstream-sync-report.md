@@ -4237,3 +4237,118 @@
   - edited `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx`
 - `desktop-typecheck` failed after merging `v0.0.43-nightly.20260917.1866`; repaired with `gpt-5.6-sol`: Removed the duplicate bridge property that caused TS1117, preserving T3 Pretty's fault-tolerant `getPathForFile` behavior. Suggestion-level diagnostics remain unchanged as required.
   - edited `apps/desktop/src/preload.ts`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260917.1880`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260917.1880`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/Stack.tsx` — T3 Pretty's mobile Apps settings route, app editing route, and app OAuth client route imports remain available.
+- `apps/mobile/src/components/AppSymbol.ios.tsx` — Preserved the iOS module's exported AppSymbolViewProps compatibility surface, now backed by the shared canonical type rather than the obsolete SymbolViewProps alias.
+- `apps/mobile/src/components/AppSymbol.tsx` — Preserved T3 Pretty's Android fallbacks for the `circle.fill` and `circle.lefthalf.filled` SF Symbols.
+- `apps/mobile/src/features/settings/SettingsProjectGroupingRouteScreen.tsx` — Preserved T3 Pretty’s mobile accessibility behavior by keeping the grouping options inside a labeled View with accessibilityRole="radiogroup".
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — The fork-specific Apps row remains available in the mobile App settings section and continues navigating to SettingsApps.
+- `apps/mobile/src/features/settings/components/settings-sheet-targets.ts` — Preserved the fork-only `SettingsApps` settings-sheet target used by T3 Pretty's Apps settings and catalog behavior.
+- `apps/server/src/persistence/Migrations.ts` — Preserved stable, already-shipped T3 Pretty migration manifest IDs so existing databases do not reinterpret IDs 50–60 as different migrations.
+- `apps/server/src/persistence/Migrations.ts` — Preserved migrations for branch pull-request repair, orchestration event timestamps, branch heads, World Scenery, canvas, activity compaction, skills, superseded tool cleanup, subagent policy, search indexing, and automations.
+- `apps/server/src/persistence/Migrations.ts` — Preserved the collision-handling convention that assigns parent source migrations to the next available manifest IDs.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Background pull-request revalidation fibers remain attached to a dedicated acquired scope that is closed when the service scope is released, preventing detached refresh work from outliving the service lifecycle.
+- `apps/server/src/usage/UsageService.ts` — T3 Pretty's `cachedRecordCount` state remains initialized for bounded usage scan-cache record accounting and related runner/resource safeguards.
+- `apps/server/src/usage/UsageService.ts` — Bounded restoration of the usage scan cache using USAGE_SCAN_CACHE_MAX_FILES and USAGE_SCAN_CACHE_MAX_RECORDS, preventing an oversized persisted cache from being loaded without limits.
+- `apps/server/src/usage/UsageService.ts` — Accurate cachedRecordCount maintenance while restoring persisted transcript records.
+- `apps/server/src/usage/UsageService.ts` — Marking the cache dirty when persisted entries must be truncated so a bounded cache can be written back.
+- `apps/server/src/usage/UsageService.ts` — SCAN_CACHE_MAX_BYTES enforcement before persistence, including warning and safe skipping of oversized serialized caches.
+- `apps/server/src/usage/UsageService.ts` — Use of writeCacheFile rather than an unguarded direct filesystem write, preserving the fork's cache persistence safeguards.
+- `apps/server/src/usage/UsageService.ts` — Unreadable transcripts retain matching cached records and optional tail records instead of silently losing previously observed usage.
+- `apps/server/src/usage/UsageService.ts` — Unreadable transcript results remain explicitly marked with unreadable=true and preserve max-record truncation and recordLimitReached reporting.
+- `apps/server/src/usage/UsageService.ts` — Invalid usage time zones are rejected as invalidWindow before filesystem scanning, preserving the fork's validation and error semantics.
+- `apps/server/src/usage/UsageService.ts` — The fork's newer structured transcript-scanning API is not regressed to the parent's older array-only readFileRecords call pattern.
+- `apps/server/src/usage/UsageService.ts` — Per-source transcript resolution continues to honor the optional `fileName` restriction, including when restoring records from the scan cache.
+- `apps/server/src/usage/UsageService.ts` — The retention cutoff supplied to `readSummaryCore` remains authoritative instead of being shadowed by a newly computed local value.
+- `apps/server/src/usage/UsageService.ts` — Cached transcript restoration retains directory-containment checks and compatibility with cache entries whose `tailRecords` field is absent.
+- `apps/server/src/usage/UsageService.ts` — A missing transcript directory is reported only when no retained cached usage is available, allowing saved usage to continue contributing after cleanup.
+- `apps/server/src/usage/UsageService.ts` — Newest-first transcript processing so limited scans prioritize the most recent usage data.
+- `apps/server/src/usage/UsageService.ts` — Per-file and per-provider corpus-size limits, provider record limits, skipped-file accounting, and partial-result signaling.
+- `apps/server/src/usage/UsageService.ts` — Bounded distinct-session tracking through TRANSCRIPT_PROVIDER_SESSION_MAX and sessionLimitReached.
+- `apps/server/src/usage/UsageService.ts` — Aggregation of retained cached transcripts, including records whose source transcript was removed by cleanup, without bypassing the fork’s safeguards.
+- `apps/server/src/usage/UsageService.ts` — Partial transcript scans remain explicitly reported as partial rather than being presented as successful.
+- `apps/server/src/usage/UsageService.ts` — Detailed diagnostics remain available for malformed records, unreadable or oversized files, scan budgets, record and session limits, aggregate capacity limits, unreadable directories, and truncated discovery.
+- `apps/server/src/usage/UsageService.ts` — Cache pruning continues to recalculate cachedRecordCount, preserving correct cache-capacity accounting after records are removed.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved T3 Pretty's runtime usage-provider validation through isUsageProviderKind, including support for the fork's expanded provider integrations.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved the USAGE_MODEL_MAX_LENGTH trust-boundary validation used when hydrating persisted scan-cache data.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved T3 Pretty's retention-only cache pruning, so cached usage survives transcript cleanup until the reporting retention cutoff.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved the fork's provider-generic serialized cache shape by not restoring the removed Codex-specific persisted reducer-state decoder.
+- `apps/web/src/components/ChatView.tsx` — Native thread-resume support through NATIVE_RESUME_THREAD_TITLE and parseNativeResumeCommand.
+- `apps/web/src/components/ChatView.tsx` — Create-pull-request prompt augmentation through applyCreatePullRequestSuffix.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — Preserved the fork-only `urgent` ordering hint used to front calm banners such as live-update progress.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — Preserved T3 Pretty's broader numeric or string `priority` API for fork stack assemblers.
+- `apps/web/src/lib/openPullRequestLink.test.ts` — Preserved the T3 Pretty regression test requiring Origin pull-request links to match the `origin.cursor.com` Git host while rejecting the distinct `cursor.com` web UI host.
+- `docs/README.md` — The internal documentation index continues to expose T3 Pretty's Apps (remote MCP connections) documentation.
+- `docs/README.md` — The internal documentation index continues to expose T3 Pretty's Automations documentation.
+- `docs/user/source-control.md` — Pull-request merge and lifecycle behavior, including auto-merge support, fork-workflow approval, revert PRs, and keeping merged PR threads active until explicitly settled.
+- `docs/user/source-control.md` — Origin/Grok review presentation and T3 Pretty's Fix all and Fix continuously workflows, including host coverage and visibility only when unresolved review comments exist.
+- `docs/user/source-control.md` — GitHub review reactions, resolved-conversation controls, and the detailed Codex Auto Review status behavior.
+- `docs/user/source-control.md` — In-place review editing across supported providers, Azure DevOps title/description editing, Bitbucket reopening limitations, and GitHub label management.
+- `packages/contracts/src/pullRequest.test.ts` — PullRequestComment remains imported so T3 Pretty's pull-request comment and reaction-related contract tests remain available.
+- `packages/contracts/src/pullRequest.test.ts` — PullRequestSubmitReviewInput remains imported for T3 Pretty's pull-request review submission decoding and tests.
+- `packages/shared/src/git.ts` — Preserved T3 Pretty's repository identity handling for scp-style remotes with optional usernames, non-`git` usernames, and username-less `host:path` syntax.
+- `packages/shared/src/git.ts` — Preserved support for the legacy `git@host/path` remote form.
+- `packages/shared/src/git.ts` — Preserved safeguards that do not misclassify Windows drive-letter paths, remote-helper `&lt;transport&gt;::&lt;address&gt;` forms, or slash-separated filesystem paths as scp-style remotes.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/Stack.tsx` — Retained the parent-added SettingsProjectOverviewRouteScreen import.
+- `apps/mobile/src/components/AppSymbol.ios.tsx` — Integrated the parent refactor that sources AppSymbolName from the shared AppSymbol module.
+- `apps/mobile/src/components/AppSymbol.ios.tsx` — Applied the shared AppSymbolViewProps definition to the preserved iOS type export, keeping iOS and fallback implementations type-aligned.
+- `apps/mobile/src/components/AppSymbol.tsx` — Integrated the parent's Android fallback mapping from the `circle` SF Symbol to `IconCircle`.
+- `apps/mobile/src/features/settings/SettingsProjectGroupingRouteScreen.tsx` — Integrated the parent rename of the settings section from “Default grouping” to “Project grouping” while retaining the existing option behavior.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — Retained the parent’s current App section structure with Usage and About navigation rows.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — Accepted the refactored settings index shape rather than restoring the obsolete inline version/update, storage, diagnostics, licenses, legal, and archived-thread section code shown only in the merge base.
+- `apps/mobile/src/features/settings/components/settings-sheet-targets.ts` — Integrated the parent settings-sheet targets for organization, project overview, new-thread environment settings, source control, agent behavior, and environment maintenance.
+- `apps/server/src/persistence/Migrations.ts` — Integrated the parent PullRequestFilesViewed schema migration as manifest ID 64 rather than colliding with T3 Pretty's shipped ID 53.
+- `apps/server/src/persistence/Migrations.ts` — Retained the parent ProjectionThreadPullRequests, ProjectionThreadMessageContext, and ProjectionThreadTitleState migrations at their existing collision-free T3 Pretty manifest IDs 61–63.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Kept the parent removal of the legacy local `Effect.context` capture and `Effect.runForkWith` initialization; those obsolete declarations are not reintroduced.
+- `apps/server/src/usage/UsageService.ts` — Retained the parent nightly's `sourceCache` map initialization for caching decoded usage source metadata.
+- `apps/server/src/usage/UsageService.ts` — Decode and restore cached usage source metadata into sourceCache when loading the scan cache.
+- `apps/server/src/usage/UsageService.ts` — Encode sourceCache metadata alongside transcript scan-cache entries when persisting the cache.
+- `apps/server/src/usage/UsageService.ts` — Preserve the parent's non-fatal cache persistence behavior through the surrounding catchCause handling.
+- `apps/server/src/usage/UsageService.ts` — On transcript read failure, matching cached records and cached tail records are returned rather than treating the transcript as empty.
+- `apps/server/src/usage/UsageService.ts` — Cached records for transcript files removed by cleanup continue through the normal aggregation and deduplication path.
+- `apps/server/src/usage/UsageService.ts` — Cached files are restored only when they match the provider, are newer than the retention cutoff, remain within the source directory, and are not already represented by a live path.
+- `apps/server/src/usage/UsageService.ts` — Missing source reporting remains in place when neither a live directory listing nor retained cached records are available.
+- `apps/server/src/usage/UsageService.ts` — Iteration uses retainedFiles, preserving parent handling for the combined live and retained transcript set.
+- `apps/server/src/usage/UsageService.ts` — Codex records receive occurrence-qualified dedupe keys so moved rollout copies are matched without collapsing repeated equal events within one rollout.
+- `apps/server/src/usage/UsageService.ts` — Session IDs are counted only when the corresponding usage record contributes within the requested aggregation window.
+- `apps/server/src/usage/UsageService.ts` — Parent deduplication is composed with T3 Pretty’s capped records array rather than processing the same record twice.
+- `apps/server/src/usage/UsageService.ts` — Sources with no transcript directory and no scanned files are marked missing, allowing clients to continue using saved records as an available source.
+- `apps/server/src/usage/UsageService.ts` — Missing transcript directories emit the parent's explanatory message, adapted from the obsolete files-null check to the current listing abstraction.
+- `apps/server/src/usage/UsageService.ts` — Scan-cache pruning uses the retentionCutoffMs API and marks the cache dirty when entries are pruned.
+- `apps/server/src/usage/usageScanCache.ts` — Removed the node:path namespace import and its Effect diagnostics suppression as done upstream.
+- `apps/server/src/usage/usageScanCache.ts` — Retained UsageProviderKind as a type-only specifier within the combined contracts import.
+- `apps/server/src/usage/usageScanCache.ts` — Integrated the parent's retention-cutoff pruning API and behavior, including removal of disappeared-file pruning and its PruneOptions-based interface.
+- `apps/web/src/components/ChatView.tsx` — Source-control repository selection through sourceControlRepositorySelector.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — Retained the parent's optional `compact` banner metadata.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — The parent's named priority values (`urgent`, `activity`, and `notice`) remain accepted by the fork's broader string-compatible priority type.
+- `apps/web/src/lib/openPullRequestLink.test.ts` — Integrated the parent test covering Azure DevOps repositories cloned through `ssh.dev.azure.com`, including normalization to `dev.azure.com/.../_git/...` pull-request URLs.
+- `docs/README.md` — Included the parent nightly's internal Pull request file revisions documentation link.
+- `docs/user/source-control.md` — Applied the upstream Azure DevOps clarification: the host website is required to change comments, but no longer documented as necessary for viewing diffs.
+- `docs/user/source-control.md` — Retained the parent viewed-file behavior and documentation for GitHub-hosted marks, server-managed marks on other providers, changed-file resets, and web/desktop availability.
+- `docs/user/source-control.md` — Retained the Bitbucket limitation that declined pull requests cannot be reopened.
+- `packages/contracts/src/pullRequest.test.ts` — Integrated PullRequestFilesViewedResult and PullRequestSetFilesViewedInput imports for the parent's files-viewed contract decoding and tests.
+- `packages/shared/src/git.ts` — Integrated the parent normalization of recognized Azure DevOps SSH remotes through `azureDevOpsRepositoryKey`, including both `ssh.dev.azure.com` and `vs-ssh.visualstudio.com` forms.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — Remove the Apps row from the App settings section.. Reason: The Apps entry is existing T3 Pretty functionality, and no parent first-party replacement is present in this conflict. Removing it would regress the fork-specific settings navigation.
+- `apps/server/src/usage/UsageService.ts` — The parent scanner calls resolveTranscriptDirs(settings, retentionCutoffMs) and consumes volumeId from each resolved directory at this location.. Reason: This hunk targets the superseded pre-validation scanner. In the fork's current architecture, readFileRecords requires maxRecords and returns structured records, unreadable, oversizedRecords, and recordLimitReached data; inserting the parent block here would call that API with a missing argument, treat its structured result as a record array, and bypass the fork's validation-first and scan-limit flow.
+- `apps/server/src/usage/UsageService.ts` — Compute `retentionCutoffMs` locally from `startedAtMs`.. Reason: T3 Pretty's current `readSummaryCore` API already receives the authoritative cutoff as a parameter; redeclaring it would shadow that parameter and fail compilation.
+- `apps/server/src/usage/UsageService.ts` — Use `collectDirs(windowStartMs, settings, retentionCutoffMs)` concurrently with rate loading.. Reason: The upstream bulk collector does not carry T3 Pretty's per-source optional `fileName` constraint shown at this conflict boundary. Switching to it would scan and cache unrelated files and regress fork-specific provider transcript selection; rates are already loaded earlier in the fork flow.
+- `apps/server/src/usage/UsageService.ts` — Process retained transcript files and all file.records without newest-first ordering or provider resource caps.. Reason: That unbounded traversal conflicts with T3 Pretty’s transcript file-size, corpus-size, and record-count safeguards. The parent’s retained-file behavior is preserved within those limits.
+- `apps/server/src/usage/UsageService.ts` — Accumulate every contributing session ID in an unbounded Set.. Reason: T3 Pretty intentionally caps distinct-session tracking to prevent excessive memory growth and reports sessionLimitReached when the cap is exceeded.
+- `apps/server/src/usage/usageScanCache.ts` — Retain the decodeCodexState helper for validating persisted Codex reducer state.. Reason: OURS explicitly removed this Codex-specific persistence path, and the surrounding fork cache deserialization now reconstructs entries from provider and record data without persisted reducer state. Restoring the helper would reintroduce an orphaned Codex-specific implementation and could require types removed with that architecture.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — Restrict `priority` to only `"urgent" | "activity" | "notice"`.. Reason: T3 Pretty intentionally supports numeric and custom string priorities for its stack assemblers; narrowing the type would regress the fork API. All parent named values remain supported.

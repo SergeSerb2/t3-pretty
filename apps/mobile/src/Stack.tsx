@@ -790,7 +790,7 @@ export const RootStack = createNativeStackNavigator({
           ? { presentation: "card" as const }
           : {
               ...FORM_SHEET_PRESENTATION_OPTIONS,
-              sheetAllowedDetents: [0.7, 0.92],
+              sheetAllowedDetents: [0.92],
               sheetGrabberVisible: true,
             }),
       },
