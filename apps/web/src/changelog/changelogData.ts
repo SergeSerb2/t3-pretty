@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260917.1866002534",
+    date: "2026-09-18",
+    items: [
+      {
+        kind: "fixed",
+        title: "Replace Groq composer dictation with local speech recognition",
+      },
+      {
+        kind: "new",
+        title: "Detect Tesla passenger browser and use a touch-friendly layout",
+      },
+      {
+        kind: "new",
+        title: "Create new threads in the filtered sidebar project",
+      },
+      {
+        kind: "fixed",
+        title: "Hide macOS traffic lights when the sidebar collapses",
+      },
+      {
+        kind: "fixed",
+        title: "Raise frosted tiles on project-rail folders",
+      },
+      {
+        kind: "fixed",
+        title: "Collapsed sidebar peek fades and slides with the width",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260917.1866002508",
     date: "2026-09-17",
     items: [
