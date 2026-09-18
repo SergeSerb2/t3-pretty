@@ -13,23 +13,26 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
+import { automationEnvironment } from "./automations";
 import { environmentSnapshotAtom } from "./shell";
 
 // Keep back-navigation warm without retaining every opened thread's WebSocket
 // stream and full event history for the shared five-minute desktop TTL.
 export const MOBILE_THREAD_STATE_IDLE_TTL_MS = 15_000;
 
-export const threadEnvironment = createThreadEnvironmentAtoms(connectionAtomRuntime);
-export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime, {
-  idleTtlMs: MOBILE_THREAD_STATE_IDLE_TTL_MS,
-});
+export const threadEnvironment = createThreadEnvironmentAtoms(
+  connectionAtomRuntime,
+  environmentSnapshotAtom,
+);
+export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
 export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
   environmentThreads.stateAtom,
   { idleTtlMs: MOBILE_THREAD_STATE_IDLE_TTL_MS },
 );
 export const environmentThreadShells = createEnvironmentThreadShellAtoms({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
-  snapshotAtom: environmentSnapshotAtom,
+  snapshotAtom: threadEnvironment.snapshotAtom,
+  automationIndexAtom: automationEnvironment.automationIndexAtom,
 });
 
 const EMPTY_THREAD_STATE_ATOM = Atom.make(AsyncResult.success(EMPTY_ENVIRONMENT_THREAD_STATE)).pipe(

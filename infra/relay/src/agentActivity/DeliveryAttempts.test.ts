@@ -1,13 +1,50 @@
 import * as NodeCryptoLayer from "@effect/platform-node/NodeCrypto";
+import { RELAY_DETAIL_MAX_LENGTH } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as RelayDb from "../db.ts";
 import { relayDeliveryAttempts } from "../persistence/schema.ts";
 import * as DeliveryAttempts from "./DeliveryAttempts.ts";
 
 describe("DeliveryAttempts", () => {
+  it.effect("prunes delivery diagnostics older than the retention cutoff", () => {
+    let whereClause: SQL | null = null;
+    const fakeDb = {
+      delete: (table: unknown) => {
+        expect(table).toBe(relayDeliveryAttempts);
+        return {
+          where: (clause: SQL) => {
+            whereClause = clause;
+            return Effect.void;
+          },
+        };
+      },
+    } as unknown as RelayDb.RelayDb["Service"];
+
+    return Effect.gen(function* () {
+      const attempts = yield* DeliveryAttempts.DeliveryAttempts;
+      yield* attempts.pruneBefore({ createdBefore: "2026-05-01T00:00:00.000Z" });
+
+      expect(whereClause).not.toBeNull();
+      expect(new PgDialect().sqlToQuery(whereClause!)).toEqual({
+        sql: '"relay_delivery_attempts"."created_at" < $1',
+        params: ["2026-05-01T00:00:00.000Z"],
+      });
+    }).pipe(
+      Effect.provide(
+        DeliveryAttempts.layer.pipe(
+          Layer.provide(NodeCryptoLayer.layer),
+          Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
+        ),
+      ),
+    );
+  });
+
   it.effect("records the signed queue source job id for APNs delivery auditability", () => {
     const insertedValues: Array<Record<string, unknown>> = [];
     const fakeDb = {
@@ -34,6 +71,8 @@ describe("DeliveryAttempts", () => {
         token: "apns-token",
         apnsStatus: 200,
         apnsId: "apns-id",
+        apnsReason: "r".repeat(RELAY_DETAIL_MAX_LENGTH + 1),
+        transportError: "t".repeat(RELAY_DETAIL_MAX_LENGTH + 1),
       });
 
       expect(insertedValues).toHaveLength(1);
@@ -47,6 +86,8 @@ describe("DeliveryAttempts", () => {
         tokenSuffix: "ns-token",
         apnsStatus: 200,
         apnsId: "apns-id",
+        apnsReason: "r".repeat(RELAY_DETAIL_MAX_LENGTH),
+        transportError: "t".repeat(RELAY_DETAIL_MAX_LENGTH),
       });
     }).pipe(
       Effect.provide(
@@ -175,7 +216,7 @@ describe("DeliveryAttempts", () => {
             limit: () =>
               Effect.succeed([
                 {
-                  createdAt: "2999-01-01T00:00:00.000Z",
+                  createdAt: "2026-05-25T23:58:01.000Z",
                   apnsStatus: null,
                   apnsReason: null,
                   apnsId: null,
@@ -188,6 +229,7 @@ describe("DeliveryAttempts", () => {
     } as unknown as RelayDb.RelayDb["Service"];
 
     return Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-05-26T00:00:00.000Z"));
       const attempts = yield* DeliveryAttempts.DeliveryAttempts;
       const claimed = yield* attempts.claimSourceJob({
         userId: "user-1",
@@ -226,7 +268,7 @@ describe("DeliveryAttempts", () => {
             limit: () =>
               Effect.succeed([
                 {
-                  createdAt: "1969-12-31T23:00:00.000Z",
+                  createdAt: "2026-05-25T23:58:00.000Z",
                   apnsStatus: null,
                   apnsReason: null,
                   apnsId: null,
@@ -249,6 +291,7 @@ describe("DeliveryAttempts", () => {
     } as unknown as RelayDb.RelayDb["Service"];
 
     return Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-05-26T00:00:00.000Z"));
       const attempts = yield* DeliveryAttempts.DeliveryAttempts;
       const claimed = yield* attempts.claimSourceJob({
         userId: "user-1",
@@ -297,8 +340,9 @@ describe("DeliveryAttempts", () => {
       yield* attempts.completeSourceJob({
         sourceJobId: "job-1",
         apnsStatus: 410,
-        apnsReason: "Unregistered",
-        apnsId: "apns-id",
+        apnsReason: "r".repeat(RELAY_DETAIL_MAX_LENGTH + 1),
+        apnsId: "a".repeat(129),
+        transportError: "t".repeat(RELAY_DETAIL_MAX_LENGTH + 1),
       });
 
       expect(whereClauses).toHaveLength(1);
@@ -306,9 +350,9 @@ describe("DeliveryAttempts", () => {
         {
           createdAt: expect.any(String),
           apnsStatus: 410,
-          apnsReason: "Unregistered",
-          apnsId: "apns-id",
-          transportError: null,
+          apnsReason: "r".repeat(RELAY_DETAIL_MAX_LENGTH),
+          apnsId: "a".repeat(128),
+          transportError: "t".repeat(RELAY_DETAIL_MAX_LENGTH),
         },
       ]);
     }).pipe(

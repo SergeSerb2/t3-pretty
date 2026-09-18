@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
+import * as Schema from "effect/Schema";
 
 import {
+  AuthOtherClientSessionsRevokeResult,
   EnvironmentAuthInvalidError,
   EnvironmentInternalError,
   EnvironmentOperationForbiddenError,
@@ -10,6 +12,9 @@ import {
 } from "./environmentHttp.ts";
 
 const traceId = "trace-1";
+const decodeOtherSessionsRevokeResult = Schema.decodeUnknownSync(
+  AuthOtherClientSessionsRevokeResult,
+);
 
 describe("environment HTTP errors", () => {
   // A client squashes the cause and shows `message`; an empty one becomes a generic
@@ -59,4 +64,13 @@ describe("environment HTTP errors", () => {
       expect(error.message).toContain(details[index]);
     });
   });
+});
+
+describe("environment auth results", () => {
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects an invalid revoked-session count: %s",
+    (revokedCount) => {
+      expect(() => decodeOtherSessionsRevokeResult({ revokedCount })).toThrow();
+    },
+  );
 });

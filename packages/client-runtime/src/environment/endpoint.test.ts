@@ -22,6 +22,15 @@ describe("advertised endpoint helpers", () => {
     expect(deriveWsBaseUrl("http://127.0.0.1:3773")).toBe("ws://127.0.0.1:3773/");
   });
 
+  it("rejects endpoint URLs containing credentials", () => {
+    expect(() => normalizeHttpBaseUrl("https://alice:secret@example.com")).toThrow(
+      "Endpoint URLs must not include credentials.",
+    );
+    expect(() => deriveWsBaseUrl("wss://alice:secret@example.com/socket")).toThrow(
+      "Endpoint URLs must not include credentials.",
+    );
+  });
+
   it("marks HTTP endpoints as blocked from hosted HTTPS apps", () => {
     expect(classifyHostedHttpsCompatibility("http://192.168.1.44:3773")).toBe(
       "mixed-content-blocked",

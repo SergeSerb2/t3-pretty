@@ -3,33 +3,12 @@ import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { runMigrations } from "../Migrations.ts";
 import { cleanupSupersededToolUpdates } from "../Migrations/047_DeleteSupersededToolUpdatedActivities.ts";
+import ensureProjectionThreadBranchPullRequest from "../Migrations/050_EnsureProjectionThreadBranchPullRequest.ts";
 import { ServerConfig } from "../../config.ts";
-
-type RuntimeSqliteLayerConfig = {
-  readonly filename: string;
-  readonly spanAttributes?: Record<string, unknown>;
-};
-
-type Loader = {
-  layer: (config: RuntimeSqliteLayerConfig) => Layer.Layer<SqlClient.SqlClient, SqlError>;
-};
-const defaultSqliteClientLoaders = {
-  bun: () => import("@effect/sql-sqlite-bun/SqliteClient"),
-  node: () => import("../NodeSqliteClient.ts"),
-} satisfies Record<string, () => Promise<Loader>>;
-
-const makeRuntimeSqliteLayer = Effect.fn("makeRuntimeSqliteLayer")(function* (
-  config: RuntimeSqliteLayerConfig,
-) {
-  const runtime = process.versions.bun !== undefined ? "bun" : "node";
-  const loader = defaultSqliteClientLoaders[runtime];
-  const clientModule = yield* Effect.promise<Loader>(loader);
-  return clientModule.layer(config);
-}, Layer.unwrap);
 
 const setup = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -50,13 +29,16 @@ const setup = Layer.effectDiscard(
     // 2 MB cache re-reads hot projection pages on every snapshot query.
     yield* sql`PRAGMA cache_size = -65536;`;
     const ranMigrations = yield* runMigrations();
-    // Migration 47 marks the switch to live-only tool progress; the bulk
+    // Fork slot collisions skip 048 when id 48 was already recorded under
+    // another name. Re-run the idempotent ADD COLUMN so old ~/.t3 DBs boot.
+    yield* ensureProjectionThreadBranchPullRequest;
+    // The tool-progress migration marks the switch to live-only progress; the bulk
     // delete of the superseded per-tick rows runs here, best-effort and
     // batched, while this is the only connection (no client has served a
     // request yet), then VACUUM reclaims the pages (measured ~8 s + ~4 s for
     // a 3 GB file that shrank to 1 GB). A failure (e.g. disk full) only
     // means the rows / space stay; the read side already hides them.
-    if (ranMigrations.some(([id]) => id === 47)) {
+    if (ranMigrations.some(([, name]) => name === "DeleteSupersededToolUpdatedActivities")) {
       yield* cleanupSupersededToolUpdates().pipe(
         Effect.tap((deleted) =>
           Effect.log("deleted superseded tool progress rows").pipe(Effect.annotateLogs(deleted)),
@@ -82,7 +64,7 @@ export const makeSqlitePersistenceLive = Effect.fn("makeSqlitePersistenceLive")(
 
   return Layer.provideMerge(
     setup,
-    makeRuntimeSqliteLayer({
+    NodeSqliteClient.layer({
       filename: dbPath,
       spanAttributes: {
         "db.name": path.basename(dbPath),
@@ -94,7 +76,7 @@ export const makeSqlitePersistenceLive = Effect.fn("makeSqlitePersistenceLive")(
 
 export const SqlitePersistenceMemory = Layer.provideMerge(
   setup,
-  makeRuntimeSqliteLayer({ filename: ":memory:" }),
+  NodeSqliteClient.layer({ filename: ":memory:" }),
 );
 
 export const layerConfig = Layer.unwrap(

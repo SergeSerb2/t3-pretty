@@ -10,10 +10,26 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
+  buildServerProvider,
+  extractAuthBoolean,
   isCommandMissingCause,
+  NATIVE_RESUME_SLASH_COMMAND,
+  parseGenericCliVersion,
   providerModelsFromSettings,
   spawnAndCollect,
 } from "./providerSnapshot.ts";
+
+describe("extractAuthBoolean", () => {
+  it("handles cyclic and deeply nested provider payloads within a finite work budget", () => {
+    const cyclic: { auth?: unknown; session?: unknown } = {};
+    cyclic.auth = cyclic;
+    expect(extractAuthBoolean(cyclic)).toBeUndefined();
+
+    let nested: unknown = { authenticated: true };
+    for (let index = 0; index < 5_000; index += 1) nested = { auth: nested };
+    expect(extractAuthBoolean(nested)).toBeUndefined();
+  });
+});
 
 const CUSTOM_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [
@@ -48,6 +64,27 @@ describe("providerModelsFromSettings", () => {
     ]);
   });
 
+  it("keeps an entry's own name and capabilities over the driver default", () => {
+    const capabilities = createModelCapabilities({
+      optionDescriptors: [{ id: "fastMode", label: "Fast Mode", type: "boolean" }],
+    });
+    const models = providerModelsFromSettings(
+      [],
+      ["bare", { slug: "named", name: "Named", capabilities }],
+      OPENCODE_CUSTOM_MODEL_CAPABILITIES,
+    );
+
+    expect(models).toEqual([
+      {
+        slug: "bare",
+        name: "bare",
+        isCustom: true,
+        capabilities: OPENCODE_CUSTOM_MODEL_CAPABILITIES,
+      },
+      { slug: "named", name: "Named", isCustom: true, capabilities },
+    ]);
+  });
+
   it("preserves a custom slug that collides with a provider alias", () => {
     const capabilities = createModelCapabilities({ optionDescriptors: [] });
     const models = providerModelsFromSettings(
@@ -65,6 +102,29 @@ describe("providerModelsFromSettings", () => {
 
     expect(models.map((model) => model.slug)).toEqual(["claude-opus-4-8", "opus"]);
     expect(models[1]?.isCustom).toBe(true);
+  });
+});
+
+describe("parseGenericCliVersion", () => {
+  it("parses a bare version", () => {
+    expect(parseGenericCliVersion("1.14.19")).toBe("1.14.19");
+  });
+
+  it("parses a v-prefixed version", () => {
+    expect(parseGenericCliVersion("opencode v2.0.3")).toBe("2.0.3");
+    expect(parseGenericCliVersion("v22.19.0")).toBe("22.19.0");
+  });
+
+  it("parses a version embedded in other output", () => {
+    expect(parseGenericCliVersion("codex-cli 0.53.0 (build abc)")).toBe("0.53.0");
+  });
+
+  it("returns null when no version is present", () => {
+    expect(parseGenericCliVersion("no version here")).toBeNull();
+  });
+
+  it("ignores versions glued to other word characters", () => {
+    expect(parseGenericCliVersion("build2.0.3artifact")).toBeNull();
   });
 });
 
@@ -128,5 +188,27 @@ describe("ProviderCommandNotFoundError", () => {
       expect(error).not.toHaveProperty("stderr");
       expect(error.message).not.toContain("secret-token-value");
     });
+  });
+});
+
+describe("buildServerProvider", () => {
+  it("advertises native resume only for providers that support it", () => {
+    const build = (supportsNativeResume: boolean) =>
+      buildServerProvider({
+        presentation: { displayName: "Provider", supportsNativeResume },
+        enabled: true,
+        checkedAt: "2026-08-27T00:00:00.000Z",
+        models: [],
+        slashCommands: [{ name: "help" }],
+        probe: {
+          installed: true,
+          version: "1.0.0",
+          status: "ready",
+          auth: { status: "authenticated" },
+        },
+      });
+
+    expect(build(true).slashCommands).toEqual([NATIVE_RESUME_SLASH_COMMAND, { name: "help" }]);
+    expect(build(false).slashCommands).toEqual([{ name: "help" }]);
   });
 });

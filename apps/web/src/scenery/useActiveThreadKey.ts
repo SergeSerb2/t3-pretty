@@ -8,20 +8,64 @@
  * keeps the photo stable across the draft→server URL swap.
  */
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { ENTITY_ID_MAX_LENGTH } from "@t3tools/contracts";
 import { useLocation } from "@tanstack/react-router";
 
-import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
+import { useComposerDraftStore } from "../composerDraftStore";
+import {
+  DRAFT_ROUTE_ID_MAX_LENGTH,
+  resolveThreadRouteRef,
+  resolveThreadRouteTarget,
+  type ThreadRouteTarget,
+} from "../threadRoutes";
 
 /** First path segments that are app routes, not environment ids. */
 const NON_THREAD_SEGMENTS = new Set(["draft", "settings", "usage", "connect", "pair"]);
+const MAX_ENCODED_ENTITY_ID_LENGTH = ENTITY_ID_MAX_LENGTH * 6;
+const MAX_ENCODED_DRAFT_ID_LENGTH = DRAFT_ROUTE_ID_MAX_LENGTH * 6;
+const MAX_ACTIVE_THREAD_PATHNAME_LENGTH = "/draft//".length + MAX_ENCODED_DRAFT_ID_LENGTH;
+
+function decodeRouteSegment(raw: string, maximumEncodedLength: number): string | null {
+  if (raw.length === 0 || raw.length > maximumEncodedLength) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** Parse the root-level URL without letting malformed external paths crash the scenery host. */
+export function resolveActiveThreadPathname(pathname: string): ThreadRouteTarget | null {
+  if (pathname.length === 0 || pathname.length > MAX_ACTIVE_THREAD_PATHNAME_LENGTH) {
+    return null;
+  }
+
+  const rawDraftId = /^\/draft\/([^/]+)\/?$/.exec(pathname)?.[1] ?? null;
+  if (rawDraftId) {
+    const draftId = decodeRouteSegment(rawDraftId, MAX_ENCODED_DRAFT_ID_LENGTH);
+    return draftId ? resolveThreadRouteTarget({ draftId }) : null;
+  }
+
+  const match = /^\/([^/]+)\/([^/]+)\/?$/.exec(pathname);
+  if (!match?.[1] || !match[2]) {
+    return null;
+  }
+  const environmentId = decodeRouteSegment(match[1], MAX_ENCODED_ENTITY_ID_LENGTH);
+  const threadId = decodeRouteSegment(match[2], MAX_ENCODED_ENTITY_ID_LENGTH);
+  if (!environmentId || !threadId || NON_THREAD_SEGMENTS.has(environmentId)) {
+    return null;
+  }
+
+  const threadRef = resolveThreadRouteRef({ environmentId, threadId });
+  return threadRef ? { kind: "server", threadRef } : null;
+}
 
 export function useActiveThreadKey(): string | null {
   const pathname = useLocation({ select: (location) => location.pathname });
-  const rawDraftId = /^\/draft\/([^/]+)\/?$/.exec(pathname)?.[1] ?? null;
-  // Decode like the router decodes params: legacy migrated draft sessions are
-  // keyed `environmentId:threadId`, and the `:` arrives as `%3A`.
-  const draftId = (rawDraftId ? decodeURIComponent(rawDraftId) : null) as DraftId | null;
+  const target = resolveActiveThreadPathname(pathname);
+  const draftId = target?.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
     draftId ? store.getDraftSession(draftId) : null,
   );
@@ -30,11 +74,8 @@ export function useActiveThreadKey(): string | null {
     return scopedThreadKey(scopeThreadRef(draftSession.environmentId, draftSession.threadId));
   }
 
-  const match = /^\/([^/]+)\/([^/]+)\/?$/.exec(pathname);
-  if (match && match[1] && match[2] && !NON_THREAD_SEGMENTS.has(match[1])) {
-    return scopedThreadKey(
-      scopeThreadRef(match[1] as EnvironmentId, decodeURIComponent(match[2]) as ThreadId),
-    );
+  if (target?.kind === "server") {
+    return scopedThreadKey(target.threadRef);
   }
 
   return null;
