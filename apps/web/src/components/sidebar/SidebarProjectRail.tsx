@@ -69,7 +69,7 @@ const EMPTY_FOLDER_SETTINGS: SidebarProjectFolderSettings = { folders: [], assig
 const RAIL_DROP_HIGHLIGHT_CLASS = "bg-sidebar-row-hover ring-1 ring-ring/80";
 const RAIL_FOLDER_BEFORE_CLASS = "shadow-[inset_0_2px_0_0_var(--color-ring)]";
 const RAIL_FOLDER_AFTER_CLASS = "shadow-[inset_0_-2px_0_0_var(--color-ring)]";
-/** Raised frosted tile so folder toggles don't read as project icons. */
+/** Sheen and inset rim only; hover/selected fills stay on the button. */
 const RAIL_FOLDER_BUTTON_CLASS = "project-rail-folder";
 
 function railDragTypes(event: DragEvent): readonly string[] {
