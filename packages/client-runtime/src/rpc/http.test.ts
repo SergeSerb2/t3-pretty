@@ -1,4 +1,4 @@
-import { DictationUpstreamError } from "@t3tools/contracts";
+import { ReadAloudUpstreamError } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -57,12 +57,12 @@ describe("executeEnvironmentHttpRequest", () => {
 
   it.effect("preserves endpoint-specific errors without treating them as connection failures", () =>
     Effect.gen(function* () {
-      const failure = new DictationUpstreamError({ reason: "transcription_failed" });
+      const failure = new ReadAloudUpstreamError();
       const error = yield* executeEnvironmentHttpRequestWithAdditionalError(
-        "https://environment.test/api/dictation/transcribe",
+        "https://environment.test/api/read-aloud/synthesize",
         1_000,
         Effect.fail(failure),
-        Schema.is(DictationUpstreamError),
+        Schema.is(ReadAloudUpstreamError),
       ).pipe(Effect.flip);
 
       expect(error).toBe(failure);

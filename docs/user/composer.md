@@ -29,22 +29,19 @@ On mobile, type while the agent works and tap send to steer, or long-press send 
 
 ## Dictate a message
 
-In T3 Pretty Internal, click the microphone to speak into the composer. On web
-and desktop, **Cmd+Shift+Space** (Mac) or **Ctrl+Shift+Space** starts and finishes
-dictation; **Esc** cancels it. You can also use the command palette or change the
-shortcut in Settings → Keybindings. Text appears at the caret in short updates,
-then gets punctuation and filler-word cleanup when you finish. Review it before
-sending. Recordings stop after five minutes.
+In T3 Pretty Internal, click the microphone to speak into the composer. On
+macOS, T3 Pretty uses on-device speech recognition from Speech.framework. In a
+browser it uses that browser's speech recognition. **Cmd+Shift+Space** (Mac) or
+**Ctrl+Shift+Space** starts and finishes dictation; **Esc** cancels it. You can
+also use the command palette or change the shortcut in Settings → Keybindings.
+Text appears at the caret as you speak. Review it before sending. Recordings
+stop after five minutes.
 
-Set `GROQ_API_KEY` in the environment of one internal T3 host and start that host
-with it. Connect your other devices to that machine through Surge Connect. T3
-automatically uses an online host with Groq configured, even when your current
-thread runs on another machine. The key stays on that host; microphone audio and
-surrounding draft text go through it to Groq.
+The macOS desktop app and web browsers that expose speech recognition show the
+microphone. The Windows and Linux desktop apps do not; those platforms have no
+on-device engine in this app. Web microphone access requires HTTPS or localhost.
 
-On mobile, tap the microphone, then the checkmark to insert cleaned-up speech.
-Supported iOS devices can still use local transcription when no Groq host is
-connected. Web microphone access requires HTTPS or localhost.
+On mobile, tap the microphone, then the checkmark to insert on-device speech.
 
 ## Attach files
 
@@ -168,7 +165,7 @@ minutes long. Canceling, leaving the screen, or an audio interruption discards t
 recording and preserves your existing draft. While recording, the screen stays
 awake; it can sleep normally once recording stops.
 
-Transcription runs on your device. T3 Code deletes the temporary audio after
+Transcription runs on your device. T3 Pretty deletes the temporary audio after
 transcription or cancellation; only the message text is sent when you submit.
 
 ## Commands and skills

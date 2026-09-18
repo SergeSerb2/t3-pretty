@@ -7,7 +7,7 @@ import type { DictationPhase } from "./useBrowserDictation";
 export function ComposerDictationControl(props: {
   readonly phase: DictationPhase;
   readonly disabled: boolean;
-  readonly hostLabel: string | null;
+  readonly hint: string | null;
   readonly shortcut: string | undefined;
   readonly onToggle: () => void;
   readonly onCancel: () => void;
@@ -20,7 +20,7 @@ export function ComposerDictationControl(props: {
       {props.phase !== "idle" ? (
         <>
           <span role="status" className="text-xs text-muted-foreground">
-            {recording ? "Listening…" : props.phase === "preparing" ? "Preparing…" : "Cleaning up…"}
+            {recording ? "Listening…" : props.phase === "preparing" ? "Preparing…" : "Finishing…"}
           </span>
           <Button
             type="button"
@@ -57,11 +57,7 @@ export function ComposerDictationControl(props: {
         <TooltipPopup>
           {label}
           {props.shortcut ? ` (${props.shortcut})` : ""}
-          <div className="text-xs text-muted-foreground">
-            {props.hostLabel
-              ? `Via ${props.hostLabel}`
-              : "Set up Groq on a connected internal host"}
-          </div>
+          {props.hint ? <div className="text-xs text-muted-foreground">{props.hint}</div> : null}
         </TooltipPopup>
       </Tooltip>
     </div>

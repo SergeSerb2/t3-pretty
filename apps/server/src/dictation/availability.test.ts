@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { normalizeCleanupResult, resolveDictationAvailability } from "./http.ts";
+import { resolveDictationAvailability } from "./availability.ts";
 
-describe("dictation availability", () => {
+describe("Groq speech availability", () => {
   it("requires both an internal build and a host Groq key", () => {
     expect(resolveDictationAvailability("public", "key")).toEqual({
       available: false,
@@ -16,10 +16,5 @@ describe("dictation availability", () => {
       available: true,
       reason: null,
     });
-  });
-
-  it("turns the cleanup model's empty sentinel into an empty insertion", () => {
-    expect(normalizeCleanupResult("  EMPTY\n")).toBe("");
-    expect(normalizeCleanupResult("  Keep this.\n")).toBe("Keep this.");
   });
 });

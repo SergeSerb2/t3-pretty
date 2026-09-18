@@ -119,3 +119,7 @@ export const PREVIEW_POINTER_EVENT_CHANNEL = "desktop:preview-pointer-event";
 export const MAC_PERMISSION_HELPER_CHANNEL = "desktop:mac-permission-helper";
 
 export const CHECK_SYSTEM_PERMISSION_CHANNEL = "desktop:check-system-permission";
+export const START_DICTATION_CHANNEL = "desktop:dictation-start";
+export const STOP_DICTATION_CHANNEL = "desktop:dictation-stop";
+export const CANCEL_DICTATION_CHANNEL = "desktop:dictation-cancel";
+export const DICTATION_EVENT_CHANNEL = "desktop:dictation-event";

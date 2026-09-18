@@ -16,6 +16,7 @@ import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
+import { isLocalDictationSupported } from "../lib/localDictation";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
@@ -1740,11 +1741,15 @@ function OpenCommandPaletteDialog(props: {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  if (T3CODE_BUILD_FLAVOR === "internal" && (activeThread || activeDraftThread)) {
+  if (
+    T3CODE_BUILD_FLAVOR === "internal" &&
+    isLocalDictationSupported() &&
+    (activeThread || activeDraftThread)
+  ) {
     actionItems.push({
       kind: "action",
       value: "action:dictation",
-      searchTerms: ["voice", "speech", "microphone", "dictation", "groq"],
+      searchTerms: ["voice", "speech", "microphone", "dictation"],
       title: "Start or finish dictation",
       icon: <MicIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "composer.dictation",

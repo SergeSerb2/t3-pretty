@@ -456,6 +456,15 @@ export class LinuxBrowserSecretHostError extends Schema.TaggedError<LinuxBrowser
   }
 }
 
+export class MacDictationHostError extends Schema.TaggedError<MacDictationHostError>()(
+  "MacDictationHostError",
+  { hostPlatform: Schema.String },
+) {
+  override get message(): string {
+    return `macOS desktop builds must run on a Mac: the speech-recognition helper is compiled with Swift and cannot be built on '${this.hostPlatform}'.`;
+  }
+}
+
 export class DesktopIconSourceMissingError extends Schema.TaggedError<DesktopIconSourceMissingError>()(
   "DesktopIconSourceMissingError",
   {
@@ -964,6 +973,10 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   "!apps/desktop/resources/browser-secret/**/*",
   "!apps/desktop/prod-resources/browser-secret",
   "!apps/desktop/prod-resources/browser-secret/**/*",
+  "!apps/desktop/resources/mac-dictation",
+  "!apps/desktop/resources/mac-dictation/**/*",
+  "!apps/desktop/prod-resources/mac-dictation",
+  "!apps/desktop/prod-resources/mac-dictation/**/*",
   // Windows stages the server sidecar below prod-resources so electron-builder
   // can copy it using project-relative extraResources matchers. Keep those
   // staging inputs out of app.asar; they are emitted once at resources/.
@@ -1135,6 +1148,15 @@ export const LINUX_CAPTURE_EXTRA_RESOURCES = [
 ] as const;
 export const LINUX_BROWSER_SECRET_EXTRA_RESOURCES = [
   { from: "apps/desktop/prod-resources/browser-secret", to: "browser-secret" },
+] as const;
+export const MAC_DICTATION_EXTRA_RESOURCES = [
+  { from: "apps/desktop/prod-resources/mac-dictation", to: "mac-dictation" },
+] as const;
+export const MAC_DICTATION_EXTRA_FILES = [
+  {
+    from: "apps/desktop/prod-resources/mac-dictation/t3-dictation-helper",
+    to: "MacOS/t3-dictation-helper",
+  },
 ] as const;
 
 export interface MacPasskeySigningConfiguration {
@@ -2500,6 +2522,35 @@ export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (inp
   );
 });
 
+export const stageMacDictationHelper = Effect.fn("stageMacDictationHelper")(function* (input: {
+  readonly repoRoot: string;
+  readonly stageResourcesDir: string;
+  readonly platform: typeof BuildPlatform.Type;
+  readonly arch: typeof BuildArch.Type;
+  readonly verbose: boolean;
+}) {
+  if (input.platform !== "mac") return;
+  const hostPlatform = yield* HostProcessPlatform;
+  if (hostPlatform !== "darwin") {
+    return yield* new MacDictationHostError({ hostPlatform });
+  }
+  const path = yield* Path.Path;
+  yield* runCommand(
+    ChildProcess.make(
+      "node",
+      [
+        path.join(input.repoRoot, "apps/desktop/scripts/build-dictation-helper.mjs"),
+        "--arch",
+        input.arch,
+        "--output",
+        path.join(input.stageResourcesDir, "mac-dictation", "t3-dictation-helper"),
+      ],
+      { cwd: input.repoRoot },
+    ),
+    { label: "build macOS dictation helper", verbose: input.verbose },
+  );
+});
+
 function generateMacIconSet(
   sourcePng: string,
   targetIcns: string,
@@ -2952,9 +3003,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ...DESKTOP_EXTRA_RESOURCES,
       ...(platform === "linux" ? LINUX_CAPTURE_EXTRA_RESOURCES : []),
       ...(platform === "linux" ? LINUX_BROWSER_SECRET_EXTRA_RESOURCES : []),
+      ...(platform === "mac" ? MAC_DICTATION_EXTRA_RESOURCES : []),
       ...(platform === "win" ? WINDOWS_SERVER_EXTRA_RESOURCES : []),
       ...(platform === "win" && wslRuntimeBundled ? WSL_RUNTIME_EXTRA_RESOURCES : []),
     ],
+    ...(platform === "mac" ? { extraFiles: [...MAC_DICTATION_EXTRA_FILES] } : {}),
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
   if (!isDesktopPreviewVersion(version)) {
@@ -2984,7 +3037,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         ...(buildFlavor === "internal"
           ? {
               NSMicrophoneUsageDescription:
-                "T3 Pretty uses your microphone to dictate messages. Audio is transcribed through your connected Groq host.",
+                "T3 Pretty uses your microphone to dictate messages with macOS speech recognition.",
+              NSSpeechRecognitionUsageDescription:
+                "T3 Pretty turns your speech into composer text with macOS speech recognition.",
             }
           : {}),
       },
@@ -3892,6 +3947,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       });
   }
   yield* stageBrowserSecret({
+    repoRoot,
+    stageResourcesDir,
+    platform: options.platform,
+    arch: options.arch,
+    verbose: options.verbose,
+  });
+  yield* stageMacDictationHelper({
     repoRoot,
     stageResourcesDir,
     platform: options.platform,

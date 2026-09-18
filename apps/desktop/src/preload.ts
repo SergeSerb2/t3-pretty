@@ -90,6 +90,36 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LOCALE_CHANNEL);
     return typeof result === "string" ? result : null;
   },
+  startDictation: (input) => ipcRenderer.invoke(IpcChannels.START_DICTATION_CHANNEL, input ?? {}),
+  stopDictation: () => ipcRenderer.invoke(IpcChannels.STOP_DICTATION_CHANNEL),
+  cancelDictation: () => ipcRenderer.invoke(IpcChannels.CANCEL_DICTATION_CHANNEL),
+  onDictationEvent: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, event: unknown) => {
+      if (typeof event !== "object" || event === null || !("type" in event)) return;
+      const type = Reflect.get(event, "type");
+      if (type === "ready" || type === "ended") {
+        listener({ type });
+        return;
+      }
+      if (type === "transcript") {
+        const text = Reflect.get(event, "text");
+        if (typeof text === "string") listener({ type, text });
+        return;
+      }
+      if (type === "error") {
+        const message = Reflect.get(event, "message");
+        listener({
+          type,
+          message:
+            typeof message === "string" && message.trim()
+              ? message
+              : "macOS speech recognition failed.",
+        });
+      }
+    };
+    ipcRenderer.on(IpcChannels.DICTATION_EVENT_CHANNEL, wrappedListener);
+    return () => ipcRenderer.removeListener(IpcChannels.DICTATION_EVENT_CHANNEL, wrappedListener);
+  },
   getLocalEnvironmentBootstraps: () =>
     ipcRenderer.invoke(IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL),
   onLocalBackendReady: (listener) => {
