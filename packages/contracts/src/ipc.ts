@@ -882,7 +882,6 @@ export const DesktopPreviewTabStateSchema: Schema.Codec<DesktopPreviewTabState> 
   updatedAt: Schema.String,
 });
 
-
 export interface DesktopPreviewPointerEvent {
   tabId: string;
   phase: "move" | "click" | "type" | "press" | "scroll";

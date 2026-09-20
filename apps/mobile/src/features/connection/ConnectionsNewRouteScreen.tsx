@@ -318,7 +318,6 @@ export function ConnectionsNewRouteScreen({
         },
       ]}
     >
-
       <ScrollView
         automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
         contentInsetAdjustmentBehavior="automatic"

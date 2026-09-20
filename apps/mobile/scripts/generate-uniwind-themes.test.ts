@@ -51,7 +51,9 @@ describe("generate mobile Uniwind themes", () => {
     expect(variables.light).toEqual(readDefaultMobileThemeVariables("light"));
     expect(variables.dark).toEqual(readDefaultMobileThemeVariables("dark"));
     expect(variables.light["--color-screen"]).toBe("#f4f6f4");
+    expect(variables.light["--color-drawer"]).toBe("#fafafa");
     expect(variables.dark["--color-screen"]).toBe("#0e1110");
+    expect(variables.dark["--color-drawer"]).toBe("#000000");
     expect(Object.keys(variables.light)).toEqual(Object.keys(variables.dark));
   });
   it("gives every theme the same variables and a fixed Clerk palette for its appearance", () => {

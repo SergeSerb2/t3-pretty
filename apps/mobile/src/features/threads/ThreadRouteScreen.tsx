@@ -194,7 +194,6 @@ function ThreadHeader(
     </>
   );
 }
-
 interface ThreadInspectorSelection {
   readonly routeThreadIdentity: string | null;
   readonly mode: ThreadInspectorMode;

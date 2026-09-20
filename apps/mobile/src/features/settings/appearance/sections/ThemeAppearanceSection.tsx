@@ -25,6 +25,7 @@ const APPEARANCE_MODES: ReadonlyArray<{
 ];
 
 
+
 function PreviewPane(props: { readonly compact?: boolean }) {
   return (
     <View className="flex-1 overflow-hidden bg-screen">

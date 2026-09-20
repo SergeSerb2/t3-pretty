@@ -229,7 +229,7 @@ it.layer(NodeServices.layer)("external package dependency closure", (it) => {
 });
 
 // Configuring the bundler is not the same as checking what it emitted. These
-// exercise the scanner against the marker shape rolldown actually produces.
+// exercise the scanner against the module path shape rolldown actually produces.
 describe("findInlinedExternalPackages", () => {
   it("flags an external package that was inlined", () => {
     const result = findInlinedExternalPackages([

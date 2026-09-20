@@ -34,7 +34,6 @@ const selectTriggerVariants = cva(
   },
 );
 
-
 function SelectTrigger({
   className,
   size = "default",

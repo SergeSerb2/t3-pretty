@@ -13,10 +13,6 @@ import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { WorkspaceEmptyDetail } from "../layout/WorkspaceEmptyDetail";
-import {
-  AndroidWorkspaceSidebarButton,
-  WorkspaceSidebarToolbar,
-} from "../layout/workspace-sidebar-toolbar";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { checkForAppUpdateOnLaunch, startAppUpdateForegroundRecheck } from "../updates/app-updates";
 import { AndroidHomeFabLayout } from "./AndroidHomeFab";
@@ -139,35 +135,31 @@ export function HomeRouteScreen() {
               : { title: "", headerTitle: "", unstable_headerLeftItems: () => [] }
           }
         />
-        <WorkspaceSidebarToolbar
-          afterSidebarButton={[
+        {Platform.OS === "ios" ? (
+          <NativeHeaderToolbar placement="left">
             <NativeHeaderToolbar.Button
               key="pull-requests"
               accessibilityLabel="Open pull requests"
               icon="arrow.triangle.pull"
               onPress={() => navigation.navigate("PullRequests")}
-            />,
-            ...(automationsSupported
-              ? [
-                  <NativeHeaderToolbar.Button
-                    key="automations"
-                    accessibilityLabel="Open automations"
-                    icon="bolt"
-                    onPress={openAutomations}
-                  />,
-                ]
-              : []),
+            />
+            {automationsSupported ? (
+              <NativeHeaderToolbar.Button
+                key="automations"
+                accessibilityLabel="Open automations"
+                icon="bolt"
+                onPress={openAutomations}
+              />
+            ) : null}
             <NativeHeaderToolbar.Button
               key="new-task"
               accessibilityLabel="New task"
               icon="square.and.pencil"
               onPress={startNewTask}
-            />,
-          ]}
-        />
-        {Platform.OS === "android" ? (
-          <AndroidScreenHeader title="Threads" leading={<AndroidWorkspaceSidebarButton />} />
+            />
+          </NativeHeaderToolbar>
         ) : null}
+        {Platform.OS === "android" ? <AndroidScreenHeader title="Threads" /> : null}
         {/* With no environment saved there is nothing to select, so the detail
             pane carries onboarding instead of the thread-picker copy. */}
         {!catalogState.isLoadingConnections && !catalogState.hasConnections ? (

@@ -20,6 +20,8 @@ import {
 } from "@t3tools/contracts";
 import { resolveEditorExecutable } from "@t3tools/shared/editorLaunch";
 import { WORKSPACE_IMAGE_PREVIEW_EXTENSIONS } from "@t3tools/shared/filePreview";
+import { resolveEditorCommand } from "@t3tools/shared/editor";
+import * as HostProcess from "@t3tools/shared/hostProcess";
 import * as NodeOS from "node:os";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -407,16 +409,25 @@ export const probeRemoteEditors = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.window.probeRemoteEditors")(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const available: Array<EditorId> = [];
+    const env = yield* HostProcess.HostProcessEnvironment;
     for (const editorId of REMOTE_CAPABLE_EDITOR_IDS) {
-      const commands = EDITORS.find((editor) => editor.id === editorId)?.commands;
-      if (!commands) continue;
-      const resolved = yield* resolveEditorExecutable({
+      const editor = EDITORS.find((candidate) => candidate.id === editorId);
+      const commands = editor?.commands;
+      if (!editor || !commands) continue;
+
+      const resolvedCommand = yield* resolveEditorCommand(editor, env);
+      if (Option.isSome(resolvedCommand)) {
+        available.push(editorId);
+        continue;
+      }
+
+      const resolvedExecutable = yield* resolveEditorExecutable({
         editorId,
         commands,
         platform: environment.platform,
         env: process.env,
       });
-      if (Option.isSome(resolved)) {
+      if (Option.isSome(resolvedExecutable)) {
         available.push(editorId);
       }
     }

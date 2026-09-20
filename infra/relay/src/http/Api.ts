@@ -81,7 +81,6 @@ const isRelayCloudUserId = Schema.is(RelayCloudUserId);
 export const RELAY_HTTP_ROUTER_CONFIG = {
   maxParamLength: 512,
 } as const;
-
 const relayCorsAllowedMethods = ["GET", "POST", "DELETE", "OPTIONS"] as const;
 const relayCorsAllowedHeaders = [
   "authorization",

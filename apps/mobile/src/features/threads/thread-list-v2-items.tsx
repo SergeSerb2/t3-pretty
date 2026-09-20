@@ -21,7 +21,7 @@ import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/t
 import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
-import { Alert, Platform, Pressable, useWindowDimensions, View } from "react-native";
+import { Alert, Pressable, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import { SymbolView } from "../../components/AppSymbol";
@@ -847,8 +847,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
-  // Sidebar rows use navigation foregrounds on their idle surfaces. The sidebar
-  // pane fills selected rows with the theme's message surface, so selected text
+  // Sidebar rows use navigation foregrounds on their active and idle surfaces.
+  // The sidebar pane fills selected rows with the theme's message surface, so selected text
   // uses that surface's paired foreground.
   const nestToggle =
     props.nest === "parent" && (props.childCount ?? 0) > 0 ? (
@@ -936,9 +936,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           className={cn(
             "flex-1 text-base font-t3-medium",
             selected
-              ? Platform.OS === "android"
-                ? "text-thread-selected-foreground"
-                : "text-user-bubble-foreground"
+              ? selectedThreadRowColors.foregroundClassName
               : rowAppearance.foregroundClassName,
           )}
           numberOfLines={2}

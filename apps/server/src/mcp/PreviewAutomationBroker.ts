@@ -386,7 +386,6 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       return closeConnection(queue, removed.disconnected, completeStream).pipe(
         Effect.as([undefined, removed.state] as const),
       );
-
     });
   });
 

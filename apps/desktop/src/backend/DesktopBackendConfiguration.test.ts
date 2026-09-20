@@ -998,6 +998,7 @@ describe("DesktopBackendConfiguration", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+
   it.effect("logs structured context when persisted observability settings cannot be read", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

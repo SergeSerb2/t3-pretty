@@ -1099,7 +1099,6 @@ const make = Effect.gen(function* () {
         return resolveTextGenerationProvider(materialized);
       }),
     );
-
   const revalidateAndEmit = writeSemaphore.withPermits(1)(
     Effect.gen(function* () {
       yield* Cache.invalidate(settingsCache, cacheKey);

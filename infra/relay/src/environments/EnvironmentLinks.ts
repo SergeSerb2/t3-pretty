@@ -53,6 +53,7 @@ export class EnvironmentLinkUserListPersistenceError extends Schema.TaggedError<
 ) {
   override get message(): string {
     return `Failed to list delivery users for environment '${this.environmentId}' via environment link user query 'list-delivery-users'`;
+
   }
 }
 
