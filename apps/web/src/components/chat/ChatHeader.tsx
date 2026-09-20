@@ -6,7 +6,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -17,6 +17,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
@@ -29,8 +30,12 @@ import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
   WorkspaceBreadcrumbSeparator,
+  WorkspaceBreadcrumbText,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
+import { useIsMobile } from "~/hooks/useMediaQuery";
+import { Button } from "../ui/button";
+import { Menu, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -78,6 +83,41 @@ export const ChatHeader = memo(function ChatHeader({
   onNewThreadInProject,
   onOpenProjectSettings,
 }: ChatHeaderProps) {
+  const headerActionsRef = useRef<HTMLDivElement | null>(null);
+  const isMobile = useIsMobile();
+  // Side panels can leave a desktop header narrower than a phone.
+  const [isNarrowHeader, setIsNarrowHeader] = useState(false);
+  useEffect(() => {
+    const container = headerActionsRef.current?.parentElement;
+    if (!container) return;
+    const update = () => setIsNarrowHeader(container.clientWidth < 512);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+  const actionsCollapsed = isMobile || isNarrowHeader;
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [actionsContainer] = useState(() => {
+    const container = document.createElement("div");
+    container.className = "contents";
+    return container;
+  });
+  // Reparent the DOM host, not the React controls: rotating a phone or resizing
+  // a window must not discard an unsaved script or Git dialog.
+  const mountInlineActions = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (node && !actionsCollapsed) node.appendChild(actionsContainer);
+    },
+    [actionsContainer, actionsCollapsed],
+  );
+  const mountMenuActions = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (node && actionsCollapsed) node.appendChild(actionsContainer);
+    },
+    [actionsContainer, actionsCollapsed],
+  );
+  if (!actionsCollapsed && actionsOpen) setActionsOpen(false);
   const activeProjectName = activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadRef = useMemo(
@@ -221,6 +261,50 @@ export const ChatHeader = memo(function ChatHeader({
     },
     [commitRename],
   );
+  const headerActions = (
+    <>
+      {activeProjectScripts && (
+        <>
+          <ProjectScriptsControl
+            onRequestMenuClose={() => setActionsOpen(false)}
+            presentation={actionsCollapsed ? "menu" : "toolbar"}
+            scripts={activeProjectScripts}
+            fileScripts={fileScripts}
+            keybindings={keybindings}
+            preferredScriptId={preferredScriptId}
+            onRunScript={onRunProjectScript}
+            onAddScript={onAddProjectScript}
+            onUpdateScript={onUpdateProjectScript}
+            onDeleteScript={onDeleteProjectScript}
+          />
+        </>
+      )}
+      {showOpenInPicker && (
+        <>
+          {actionsCollapsed && activeProjectScripts && <MenuSeparator />}
+          <OpenInPicker
+            presentation={actionsCollapsed ? "menu" : "toolbar"}
+            environmentId={activeThreadEnvironmentId}
+            keybindings={keybindings}
+            availableEditors={availableEditors}
+            openInCwd={openInCwd}
+          />
+        </>
+      )}
+      {activeProjectName && gitCwd && (
+        <>
+          {actionsCollapsed && (activeProjectScripts || showOpenInPicker) && <MenuSeparator />}
+          <GitActionsControl
+            presentation={actionsCollapsed ? "menu" : "toolbar"}
+            gitCwd={gitCwd}
+            activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
+            onOpenPullRequest={onOpenPullRequest}
+            {...(draftId ? { draftId } : {})}
+          />
+        </>
+      )}
+    </>
+  );
   return (
     <div
       className={cn(
@@ -255,12 +339,16 @@ export const ChatHeader = memo(function ChatHeader({
                   }
                 >
                   <ProjectFavicon project={activeProject} className="size-3.5" />
-                  <span className="max-w-36 truncate tracking-tight">{activeProjectName}</span>
+                  <WorkspaceBreadcrumbText className="max-w-36 tracking-tight">
+                    {activeProjectName}
+                  </WorkspaceBreadcrumbText>
                 </TooltipTrigger>
                 <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
-            <WorkspaceBreadcrumbSeparator />
+            <WorkspaceBreadcrumbSeparator>
+              <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
+            </WorkspaceBreadcrumbSeparator>
           </>
         ) : null}
         <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
@@ -294,7 +382,9 @@ export const ChatHeader = memo(function ChatHeader({
                   />
                 }
               >
-                <h2 className="min-w-0 truncate font-medium tracking-tight">{activeThreadTitle}</h2>
+                <h2 className="min-w-0 font-medium tracking-tight">
+                  <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                </h2>
                 <ChevronDownIcon
                   aria-hidden
                   data-thread-title-chevron
@@ -309,12 +399,12 @@ export const ChatHeader = memo(function ChatHeader({
                 render={
                   <h2
                     aria-label={activeThreadTitle}
-                    className="min-w-0 flex-1 truncate font-medium tracking-tight"
-                  >
-                    {activeThreadTitle}
-                  </h2>
+                    className="min-w-0 flex-1 font-medium tracking-tight"
+                  />
                 }
-              />
+              >
+                <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+              </TooltipTrigger>
               <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
             </Tooltip>
           )}
