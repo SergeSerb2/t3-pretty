@@ -1235,3 +1235,5 @@ Local verification on this repair tree. `tsc` printed Effect suggestions only; e
   - edited `packages/contracts/src/ipc.ts`
 - `web-typecheck` failed after merging `v0.0.43-nightly.20260920.1990`; repaired with `gpt-5.6-sol`: Import `renderToStaticMarkup` from `react-dom/server`, resolving all six error-level diagnostics while preserving the merged sidebar tests and behavior.
   - edited `apps/web/src/components/ui/sidebar.test.tsx`
+- `desktop-typecheck` failed after merging `v0.0.43-nightly.20260920.1990`; repaired with `gpt-5.6-sol`: Restored T3 Pretty's typed, serialized saved-environment mutation layer, including atomic bounded writes and encrypted-secret preservation, while retaining the parent's relay-managed metadata support. The service contract now contextually types all mutation implementations and tests.
+  - edited `apps/desktop/src/settings/DesktopSavedEnvironments.ts`

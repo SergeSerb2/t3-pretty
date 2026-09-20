@@ -1,11 +1,13 @@
 import { EnvironmentId, type PersistedSavedEnvironmentRecord } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
@@ -67,11 +69,36 @@ const SavedEnvironmentRegistryDocumentJson = fromLenientJson(
 const decodeSavedEnvironmentRegistryDocumentJson = Schema.decodeEffect(
   SavedEnvironmentRegistryDocumentJson,
 );
+const encodeSavedEnvironmentRegistryDocumentJson = Schema.encodeEffect(
+  SavedEnvironmentRegistryDocumentJson,
+);
+
+const DesktopSavedEnvironmentsWriteOperation = Schema.Literals([
+  "create-temporary-file-name",
+  "encode-registry",
+  "create-directory",
+  "write-temporary-file",
+  "replace-registry-file",
+]);
 
 const DesktopSavedEnvironmentSecretProtectionOperation = Schema.Literals([
   "check-encryption-availability",
+  "encrypt-secret",
   "decrypt-secret",
 ]);
+
+export class DesktopSavedEnvironmentsWriteError extends Schema.TaggedError<DesktopSavedEnvironmentsWriteError>()(
+  "DesktopSavedEnvironmentsWriteError",
+  {
+    operation: DesktopSavedEnvironmentsWriteOperation,
+    path: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Desktop saved-environment write failed during ${this.operation} at ${this.path}.`;
+  }
+}
 
 export class DesktopSavedEnvironmentsReadError extends Schema.TaggedError<DesktopSavedEnvironmentsReadError>()(
   "DesktopSavedEnvironmentsReadError",
@@ -129,12 +156,19 @@ export type DesktopSavedEnvironmentsReadRegistryError =
   | DesktopSavedEnvironmentsReadError
   | DesktopSavedEnvironmentsDocumentDecodeError;
 
+export type DesktopSavedEnvironmentsMutationError =
+  | DesktopSavedEnvironmentsReadRegistryError
+  | DesktopSavedEnvironmentsWriteError;
+
 export type DesktopSavedEnvironmentsGetSecretError =
   | DesktopSavedEnvironmentsReadRegistryError
   | DesktopSavedEnvironmentSecretDecodeError
   | DesktopSavedEnvironmentSecretProtectionError;
 
-/** Reads the previous registry for connection-catalog migration. */
+export type DesktopSavedEnvironmentsSetSecretError =
+  | DesktopSavedEnvironmentsMutationError
+  | DesktopSavedEnvironmentSecretProtectionError;
+
 export class DesktopSavedEnvironments extends Context.Service<
   DesktopSavedEnvironments,
   {
@@ -142,10 +176,22 @@ export class DesktopSavedEnvironments extends Context.Service<
       readonly PersistedSavedEnvironmentRecord[],
       DesktopSavedEnvironmentsReadRegistryError
     >;
-
+    readonly setRegistry: (
+      records: readonly PersistedSavedEnvironmentRecord[],
+    ) => Effect.Effect<void, DesktopSavedEnvironmentsMutationError>;
+    readonly removeEnvironment: (
+      environmentId: string,
+    ) => Effect.Effect<void, DesktopSavedEnvironmentsMutationError>;
     readonly getSecret: (
       environmentId: string,
     ) => Effect.Effect<Option.Option<string>, DesktopSavedEnvironmentsGetSecretError>;
+    readonly setSecret: (input: {
+      readonly environmentId: string;
+      readonly secret: string;
+    }) => Effect.Effect<boolean, DesktopSavedEnvironmentsSetSecretError>;
+    readonly removeSecret: (
+      environmentId: string,
+    ) => Effect.Effect<void, DesktopSavedEnvironmentsMutationError>;
   }
 >()("@t3tools/desktop/settings/DesktopSavedEnvironments") {}
 
@@ -165,6 +211,28 @@ function toPersistedSavedEnvironmentRecord(
     ...(record.desktopSsh ? { desktopSsh: record.desktopSsh } : {}),
     ...(record.relayManaged ? { relayManaged: record.relayManaged } : {}),
   };
+}
+
+function toSavedEnvironmentStorageRecord(
+  record: PersistedSavedEnvironmentRecord | PersistedSavedEnvironmentStorageRecord,
+  encryptedBearerToken: Option.Option<string>,
+): PersistedSavedEnvironmentStorageRecord {
+  const nextRecord = {
+    environmentId: record.environmentId,
+    label: record.label,
+    httpBaseUrl: record.httpBaseUrl,
+    wsBaseUrl: record.wsBaseUrl,
+    createdAt: record.createdAt,
+    lastConnectedAt: record.lastConnectedAt,
+  };
+  const metadata = {
+    ...(record.desktopSsh ? { desktopSsh: record.desktopSsh } : {}),
+    ...(record.relayManaged ? { relayManaged: record.relayManaged } : {}),
+  };
+  return Option.match(encryptedBearerToken, {
+    onNone: () => ({ ...nextRecord, ...metadata }),
+    onSome: (value) => ({ ...nextRecord, ...metadata, encryptedBearerToken: value }),
+  });
 }
 
 function normalizeSavedEnvironmentRegistryDocument(
@@ -220,6 +288,94 @@ function readRegistryDocument(
   );
 }
 
+const writeRegistryDocument = Effect.fn("desktop.savedEnvironments.writeRegistryDocument")(
+  function* (input: {
+    readonly fileSystem: FileSystem.FileSystem;
+    readonly path: Path.Path;
+    readonly registryPath: string;
+    readonly document: SavedEnvironmentRegistryDocument;
+    readonly suffix: string;
+  }): Effect.fn.Return<void, DesktopSavedEnvironmentsWriteError> {
+    const directory = input.path.dirname(input.registryPath);
+    const tempPath = `${input.registryPath}.${process.pid}.${input.suffix}.tmp`;
+    const encoded = yield* encodeSavedEnvironmentRegistryDocumentJson(input.document).pipe(
+      Effect.mapError(
+        (cause) =>
+          new DesktopSavedEnvironmentsWriteError({
+            operation: "encode-registry",
+            path: input.registryPath,
+            cause,
+          }),
+      ),
+    );
+    const serialized = `${encoded}\n`;
+    if (Buffer.byteLength(serialized, "utf8") > SAVED_ENVIRONMENT_REGISTRY_FILE_MAX_BYTES) {
+      return yield* new DesktopSavedEnvironmentsWriteError({
+        operation: "encode-registry",
+        path: input.registryPath,
+        cause: new Error(
+          `Encoded saved-environment registry exceeds ${SAVED_ENVIRONMENT_REGISTRY_FILE_MAX_BYTES} bytes.`,
+        ),
+      });
+    }
+    yield* input.fileSystem.makeDirectory(directory, { recursive: true }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new DesktopSavedEnvironmentsWriteError({
+            operation: "create-directory",
+            path: directory,
+            cause,
+          }),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      yield* input.fileSystem.writeFileString(tempPath, serialized).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopSavedEnvironmentsWriteError({
+              operation: "write-temporary-file",
+              path: tempPath,
+              cause,
+            }),
+        ),
+      );
+      yield* input.fileSystem.rename(tempPath, input.registryPath).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopSavedEnvironmentsWriteError({
+              operation: "replace-registry-file",
+              path: input.registryPath,
+              cause,
+            }),
+        ),
+      );
+    }).pipe(
+      Effect.ensuring(input.fileSystem.remove(tempPath, { force: true }).pipe(Effect.ignore)),
+    );
+  },
+);
+
+function preserveExistingSecrets(
+  currentDocument: SavedEnvironmentRegistryDocument,
+  records: readonly PersistedSavedEnvironmentRecord[],
+): SavedEnvironmentRegistryDocument {
+  const encryptedBearerTokenById = new Map(
+    currentDocument.records.flatMap((record) =>
+      record.encryptedBearerToken
+        ? [[record.environmentId, record.encryptedBearerToken] as const]
+        : [],
+    ),
+  );
+
+  return {
+    version: currentDocument.version,
+    records: records.map((record) => {
+      const encryptedBearerToken = encryptedBearerTokenById.get(record.environmentId);
+      return toSavedEnvironmentStorageRecord(record, Option.fromNullishOr(encryptedBearerToken));
+    }),
+  };
+}
+
 function decodeSecretBytes(
   environmentId: string,
   registryPath: string,
@@ -242,8 +398,32 @@ function decodeSecretBytes(
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
-
+  const path = yield* Path.Path;
   const safeStorage = yield* ElectronSafeStorage.ElectronSafeStorage;
+  const crypto = yield* Crypto.Crypto;
+  const mutationSemaphore = yield* Semaphore.make(1);
+
+  const writeDocument = (document: SavedEnvironmentRegistryDocument) =>
+    crypto.randomUUIDv4.pipe(
+      Effect.map((uuid) => uuid.replace(/-/g, "")),
+      Effect.mapError(
+        (cause) =>
+          new DesktopSavedEnvironmentsWriteError({
+            operation: "create-temporary-file-name",
+            path: environment.savedEnvironmentRegistryPath,
+            cause,
+          }),
+      ),
+      Effect.flatMap((suffix) =>
+        writeRegistryDocument({
+          fileSystem,
+          path,
+          registryPath: environment.savedEnvironmentRegistryPath,
+          document,
+          suffix,
+        }),
+      ),
+    );
 
   return DesktopSavedEnvironments.of({
     getRegistry: readRegistryDocument(fileSystem, environment.savedEnvironmentRegistryPath).pipe(
