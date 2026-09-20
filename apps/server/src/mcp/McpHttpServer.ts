@@ -2,6 +2,7 @@ import * as NodeCrypto from "node:crypto";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -46,7 +47,7 @@ import {
 } from "./toolkits/device/tools.ts";
 
 export const MCP_HTTP_MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024;
-const MCP_HTTP_MAX_REQUEST_BODY_SIZE = FileSystem.Size(MCP_HTTP_MAX_REQUEST_BODY_BYTES);
+const MCP_HTTP_MAX_REQUEST_BODY_SIZE = ByteSize.bytes(MCP_HTTP_MAX_REQUEST_BODY_BYTES);
 
 export function mcpDeclaredContentLengthExceedsLimit(
   contentLength: string | undefined,

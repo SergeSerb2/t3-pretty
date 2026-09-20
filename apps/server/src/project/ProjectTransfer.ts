@@ -21,6 +21,7 @@ import {
   type ProjectTransferPrepareInput,
   type ProjectTransferSendInput,
 } from "@t3tools/contracts";
+import * as ByteSize from "effect/ByteSize";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -804,7 +805,7 @@ export const sendProjectTransfer = Effect.fn("ProjectTransfer.send")(function* (
         return yield* transferError("archive_failed", "The source project could not be archived.");
       }
       const archive = yield* fileSystem.stat(archivePath);
-      if (archive.size > FileSystem.Size(PROJECT_TRANSFER_MAX_ARCHIVE_BYTES)) {
+      if (archive.size > ByteSize.bytes(PROJECT_TRANSFER_MAX_ARCHIVE_BYTES)) {
         return yield* transferError(
           "archive_too_large",
           "The compressed project is larger than the 96 MB transfer limit.",

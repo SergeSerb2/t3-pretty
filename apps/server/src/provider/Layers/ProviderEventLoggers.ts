@@ -67,7 +67,7 @@ export const NoOpProviderEventLoggers: ProviderEventLoggers["Service"] = {
  */
 // Native logs drop per-token deltas and cumulative tool updates by default;
 // this keeps them for protocol debugging at the cost of much larger files.
-const verboseConfig = Config.boolean("T3CODE_LOG_PROVIDER_EVENTS_VERBOSE").pipe(
+const verboseConfig = Config.Boolean("T3CODE_LOG_PROVIDER_EVENTS_VERBOSE").pipe(
   Config.withDefault(false),
 );
 
