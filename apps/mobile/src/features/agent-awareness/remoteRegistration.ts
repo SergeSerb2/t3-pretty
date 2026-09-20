@@ -194,7 +194,7 @@ function isLocalLiveActivityContentCurrent(fingerprint: string): boolean {
 
 function readNativeHasArmedLiveActivity(): boolean {
   try {
-    return AgentActivity.getInstances().length > 0;
+    return getAgentLiveActivities().length > 0;
   } catch {
     return false;
   }
@@ -704,7 +704,7 @@ export function applyLocalLiveActivityProps(props: AgentActivityProps): void {
     if (isLocalLiveActivityContentCurrent(fingerprint) && hasArmedLiveActivity()) {
       return;
     }
-    let instances = AgentActivity.getInstances();
+    let instances = getAgentLiveActivities();
     setHasArmedLiveActivity(instances.length > 0);
     if (instances.length > 1) {
       for (const extra of instances.slice(1)) {
@@ -718,7 +718,10 @@ export function applyLocalLiveActivityProps(props: AgentActivityProps): void {
       return;
     }
     if (instances.length === 0) {
-      const activity = AgentActivity.start(props);
+      const activity = startAgentLiveActivity(props);
+      if (!activity) {
+        return;
+      }
       clearActivityPushTokenSubscription();
       clearPendingLocalLiveActivityUpdate();
       lastAppliedLiveActivityFingerprint = fingerprint;

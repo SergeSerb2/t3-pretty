@@ -10,7 +10,12 @@ import { HttpClient } from "effect/unstable/http";
 
 import { MobileStorage } from "../../persistence/mobile-storage";
 
-import { linkEnvironmentToCloudWithPreference } from "./linkEnvironment";
+import {
+  connectCloudEnvironment,
+  linkEnvironmentToCloudWithPreference,
+  listCloudEnvironments,
+  listCloudEnvironmentsWithStatus,
+} from "./linkEnvironment";
 
 vi.mock("expo-constants", () => ({
   default: {
@@ -141,6 +146,31 @@ function validLinkChallengeResponse() {
 
 function requestBodyText(body: BodyInit | null | undefined): string {
   return body instanceof Uint8Array ? new TextDecoder().decode(body) : String(body ?? "");
+}
+
+const stableClerkToken = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyXzEyMyJ9.test";
+
+function validDpopAccessTokenResponse(scope = "environment:status environment:connect") {
+  return {
+    access_token: "relay-dpop-token",
+    issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+    token_type: "DPoP",
+    expires_in: 300,
+    scope,
+  };
+}
+
+function listedEnvironment(environmentId: string) {
+  return {
+    environmentId: EnvironmentId.make(environmentId),
+    label: "Desktop",
+    endpoint: {
+      httpBaseUrl: `https://${environmentId}.example.test/`,
+      wsBaseUrl: `wss://${environmentId}.example.test/ws`,
+      providerKind: "cloudflare_tunnel" as const,
+    },
+    linkedAt: "2026-05-25T00:00:00.000Z",
+  };
 }
 
 describe("mobile cloud link environment client", () => {

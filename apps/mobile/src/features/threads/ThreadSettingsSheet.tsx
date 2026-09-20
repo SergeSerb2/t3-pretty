@@ -19,6 +19,7 @@ import {
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
 import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
+import { HeaderHeightContext } from "@react-navigation/elements";
 import { StackActions, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import {
   createNativeStackNavigator,

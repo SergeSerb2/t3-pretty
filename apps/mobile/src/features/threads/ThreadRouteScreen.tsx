@@ -134,7 +134,7 @@ function ThreadHeader(
       actions.push({
         accessibilityLabel: "Open terminal",
         icon: "terminal",
-        onPress: () => onOpenTerminal(null),
+        onPress: () => onOpenTerminal?.(null),
       });
     }
     actions.push({

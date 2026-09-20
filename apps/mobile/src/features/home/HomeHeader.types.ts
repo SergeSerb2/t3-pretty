@@ -21,6 +21,7 @@ export interface HomeHeaderProps {
   readonly onProjectSortOrderChange: (sortOrder: HomeProjectSortOrder) => void;
   readonly onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
   readonly onOpenEnvironments: () => void;
+  readonly onOpenPullRequests: () => void;
   readonly onOpenSettings: () => void;
   readonly onStartNewTask: () => void;
 }

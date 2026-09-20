@@ -10,10 +10,13 @@ import {
   getMobileThemeColors,
   getMobileThemeVariables,
   DEFAULT_MOBILE_THEME_ID,
+  MOBILE_THEME_VARIABLE_NAMES,
   type MobileThemeAppearance,
+  type MobileThemeVariables,
 } from "../src/lib/mobileTheme.ts";
 
 const APPEARANCES = ["light", "dark"] as const;
+const GLOBAL_CSS_PATH = NodePath.resolve(import.meta.dirname, "../global.css");
 const GENERATED_CSS_PATH = NodePath.resolve(import.meta.dirname, "../generated-uniwind-themes.css");
 const GENERATED_NAMES_PATH = NodePath.resolve(
   import.meta.dirname,

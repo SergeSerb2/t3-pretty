@@ -3,6 +3,7 @@ import type { ScreenHeaderMenu } from "../../components/ScreenHeader.types";
 import {
   EnvironmentId,
   type GitRunStackedActionResult,
+  type ProjectScript,
   ThreadId,
   type VcsStatusResult,
 } from "@t3tools/contracts";
@@ -105,6 +106,8 @@ type ThreadGitControlsProps = ThreadGitMenuProps & {
   };
   readonly showActionControls?: boolean;
   readonly canOpenFiles: boolean;
+  readonly projectScripts?: ReadonlyArray<ProjectScript>;
+  readonly onOpenTerminal?: (terminalId?: string | null) => void;
   readonly settlementSupported: boolean;
   readonly snoozeSupported: boolean;
   readonly settled: boolean;

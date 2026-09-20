@@ -1,4 +1,5 @@
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
+import type { MenuAction } from "@react-native-menu/menu";
 import { useCallback, useMemo, useRef } from "react";
 import { Platform, Pressable, TextInput, View } from "react-native";
 import type { SearchBarCommands } from "react-native-screens";
@@ -34,6 +35,10 @@ import {
 import type { HomeHeaderProps as UpstreamHomeHeaderProps } from "./HomeHeader.types";
 
 export type { HomeHeaderEnvironment } from "./HomeHeader.types";
+
+function checkedMenuState(checked: boolean) {
+  return checked ? ("on" as const) : undefined;
+}
 
 type HomeHeaderProps = UpstreamHomeHeaderProps & {
   /** Null while no connected environment advertises the automations capability. */

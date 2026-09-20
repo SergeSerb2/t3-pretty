@@ -577,6 +577,10 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   const screenColor = theme["--color-screen"];
   const drawerColor = theme["--color-drawer"];
   const selectedBackgroundColor = theme["--color-thread-selected"];
+  const materialSelectedForegroundColor = theme["--color-thread-selected-foreground"];
+  const selectedForegroundColor = theme["--color-user-bubble-foreground"];
+  const effectiveSelectedForeground =
+    Platform.OS === "android" ? materialSelectedForegroundColor : selectedForegroundColor;
 
   const {
     thread,
