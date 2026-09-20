@@ -51,7 +51,7 @@ import type {
   TerminalWriteInput,
 } from "./terminal.ts";
 import * as Schema from "effect/Schema";
-import { PortSchema } from "./baseSchemas.ts";
+import { EnvironmentId, PortSchema, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import type {
   DiscoveredLocalServerList,
   PreviewCloseInput,
@@ -92,7 +92,6 @@ import type {
   OrchestrationThreadStreamItem,
 } from "./orchestration.ts";
 import { SnapShotSource } from "./orchestration.ts";
-import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 import type {
   BrowserImportResult,
@@ -882,6 +881,7 @@ export const DesktopPreviewTabStateSchema: Schema.Codec<DesktopPreviewTabState> 
   favicon: Schema.optionalKey(DesktopPreviewFaviconSchema),
   updatedAt: Schema.String,
 });
+
 
 export interface DesktopPreviewPointerEvent {
   tabId: string;

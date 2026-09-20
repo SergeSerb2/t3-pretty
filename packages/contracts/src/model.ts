@@ -106,7 +106,7 @@ const CanonicalProviderOptionSelectionArray = ProviderOptionSelectionArray.check
 const ProviderOptionSelectionsFromArray = ProviderOptionSelectionArray.pipe(
   Schema.decodeTo(
     CanonicalProviderOptionSelectionArray,
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (selections) => Effect.succeed(dedupeProviderOptionSelections(selections)),
       encode: (selections) => Effect.succeed(selections),
     }),
@@ -132,7 +132,7 @@ const LegacyProviderOptionSelectionsObject = Schema.Record(
 const ProviderOptionSelectionsFromLegacyObject = LegacyProviderOptionSelectionsObject.pipe(
   Schema.decodeTo(
     CanonicalProviderOptionSelectionArray,
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (record) => Effect.succeed(coerceLegacyOptionsObjectToArray(record)),
       encode: (selections) => Effect.succeed(canonicalSelectionsToLegacyObject(selections)),
     }),

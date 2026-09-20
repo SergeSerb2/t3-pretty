@@ -165,7 +165,7 @@ const releaseDownloadResponseBody = <E>(stream: Stream.Stream<Uint8Array, E>) =>
   );
 
 const trimmedString = (name: string) =>
-  Config.string(name).pipe(
+  Config.String(name).pipe(
     Config.option,
     Config.map(
       Option.flatMap((value) => {

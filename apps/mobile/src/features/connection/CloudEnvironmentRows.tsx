@@ -42,9 +42,9 @@ interface CloudEnvironmentRowsProps {
   readonly showcaseAvailableEnvironments?: ReadonlyArray<RelayEnvironmentView>;
   readonly showcaseSignedIn?: boolean;
   /**
-   * Hide the Surge Connect section title + refresh button for hosts that
-   * provide their own chrome (the onboarding sheet's native header and
-   * pull-to-refresh).
+   * Hide the Surge Connect section header (title and refresh button) when the
+   * host provides its own header or chrome, such as the onboarding sheet's
+   * native header and pull-to-refresh.
    */
   readonly showHeader?: boolean;
 }

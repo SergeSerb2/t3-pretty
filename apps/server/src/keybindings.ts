@@ -64,7 +64,7 @@ const KEYBINDINGS_CONFIG_MAX_BYTES = 256 * 1024;
 export const ResolvedKeybindingFromConfig = KeybindingRule.pipe(
   Schema.decodeTo(
     Schema.toType(ResolvedKeybindingRule),
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (rule) =>
         Effect.succeed(compileResolvedKeybindingRule(rule)).pipe(
           Effect.filterOrFail(

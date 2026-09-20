@@ -15,7 +15,7 @@ import {
   sanitizeApnsLiveActivityAlert,
   sanitizeApnsNotificationPayload,
 } from "./agentActivityPayloads.ts";
-import { ApnsJwtEncodingError, ApnsJwtSigningError } from "./apnsJwt.ts";
+import type { ApnsJwtEncodingError, ApnsJwtSigningError } from "./apnsJwt.ts";
 import * as ApnsProviderTokens from "./ApnsProviderTokens.ts";
 import {
   RUNNING_AGENT_ACTIVITY_ROW_TTL_MS,
@@ -86,12 +86,7 @@ export class ApnsHttpRequestError extends Schema.TaggedError<ApnsHttpRequestErro
   }
 }
 
-export const ApnsError = Schema.Union([
-  ApnsJwtEncodingError,
-  ApnsJwtSigningError,
-  ApnsHttpRequestError,
-]);
-export type ApnsError = typeof ApnsError.Type;
+export type ApnsError = ApnsJwtEncodingError | ApnsJwtSigningError | ApnsHttpRequestError;
 
 const decodeApnsErrorResponseJson = Schema.decodeUnknownOption(
   Schema.fromJsonString(

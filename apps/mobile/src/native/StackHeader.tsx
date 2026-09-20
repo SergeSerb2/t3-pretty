@@ -1,7 +1,5 @@
 import { useNavigation, type ParamListBase } from "@react-navigation/native";
 import type {
-  NativeStackHeaderItem,
-  NativeStackHeaderItemMenu,
   NativeStackNavigationOptions,
   NativeStackNavigationProp,
 } from "@react-navigation/native-stack";
@@ -19,6 +17,8 @@ import {
 import type { ColorValue } from "react-native";
 
 import { presentAppMenu, type MenuEdgePlacement } from "../components/AppMenuHost";
+
+export { NativeHeaderToolbar } from "./NativeHeaderToolbar";
 
 export {
   nativeHeaderScrollEdgeEffects,

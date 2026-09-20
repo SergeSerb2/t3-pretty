@@ -37,7 +37,8 @@ import {
   loadPreferences,
   saveAgentAwarenessRegistrationRecord,
 } from "../../persistence/imperative";
-import AgentActivity, { type AgentActivityProps } from "../../widgets/AgentActivity";
+import type { AgentActivityProps } from "../../widgets/AgentActivity";
+import { getAgentLiveActivities, startAgentLiveActivity } from "./agentLiveActivity";
 import { liveActivityContentFingerprint } from "./localLiveActivity";
 import { resolveCloudPublicConfig } from "../cloud/publicConfig";
 import { supportsAgentAwarenessPush } from "./capabilities";
@@ -639,7 +640,7 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
   readonly projectTitle: string;
 }): void {
   try {
-    if (AgentActivity.getInstances().length > 0) {
+    if (getAgentLiveActivities().length > 0) {
       return;
     }
     const nowIso = new Date(Date.now()).toISOString();
@@ -663,7 +664,10 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
         },
       ],
     };
-    const activity = AgentActivity.start(props);
+    const activity = startAgentLiveActivity(props);
+    if (!activity) {
+      return;
+    }
     // A newly started card replaces any native instance that owned the prior
     // pending-token listener. Keep exactly one explicitly owned subscription;
     // getInstances() creates fresh JS wrappers, so object identity cannot
@@ -1069,7 +1073,7 @@ function endLocalLiveActivities(context: string): void {
   try {
     clearActivityPushTokenSubscription();
     clearPendingLocalLiveActivityUpdate();
-    for (const activity of AgentActivity.getInstances()) {
+    for (const activity of getAgentLiveActivities()) {
       activity.end("immediate").catch((error: unknown) => {
         logRegistrationError(context, error);
       });
@@ -1350,7 +1354,7 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
       }
 
       const activityLookup = yield* Effect.try({
-        try: () => AgentActivity.getInstances(),
+        try: () => getAgentLiveActivities(),
         catch: (cause) =>
           new AgentAwarenessOperationError({
             operation: "list-active-live-activities",
@@ -1404,7 +1408,7 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
           // The snapshot request yields; an arm-on-send may have created the
           // card in the meantime. Re-check so two cards are never started.
           const armedMeanwhile = yield* Effect.try({
-            try: () => AgentActivity.getInstances(),
+            try: () => getAgentLiveActivities(),
             catch: () => [] as ReadonlyArray<LiveActivity<AgentActivityProps>>,
           }).pipe(
             Effect.orElseSucceed(() => [] as ReadonlyArray<LiveActivity<AgentActivityProps>>),
@@ -1417,7 +1421,7 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
               try: () => {
                 clearActivityPushTokenSubscription();
                 clearPendingLocalLiveActivityUpdate();
-                return AgentActivity.start({
+                return startAgentLiveActivity({
                   title: aggregate.title,
                   subtitle: aggregate.subtitle,
                   activeCount: aggregate.activeCount,

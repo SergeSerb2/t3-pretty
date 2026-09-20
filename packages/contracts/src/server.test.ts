@@ -5,6 +5,7 @@ import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import {
   resolveEnvironmentMachineKind,
   ServerConfig,
+  ServerObservability,
   ServerProcessDiagnosticsEntry,
   ServerProvider,
   ServerProviders,
@@ -22,6 +23,7 @@ import { ServerSettings } from "./settings.ts";
 
 const decodeServerProvider = Schema.decodeUnknownSync(ServerProvider);
 const decodeServerProviders = Schema.decodeUnknownSync(ServerProviders);
+const decodeServerObservability = Schema.decodeUnknownSync(ServerObservability);
 const decodeUpsertKeybindingResult = Schema.decodeUnknownSync(ServerUpsertKeybindingResult);
 const decodeAvailableEditors = Schema.decodeUnknownSync(ServerConfig.fields.availableEditors);
 const decodeTraceSpanSummary = Schema.decodeUnknownSync(ServerTraceDiagnosticsSpanSummary);
@@ -259,6 +261,21 @@ describe("server diagnostics payload bounds", () => {
         Array.from({ length: SERVER_PROCESS_DIAGNOSTIC_MAX_COUNT + 1 }, (_, index) => index + 1),
       ),
     ).toThrow();
+  });
+});
+
+describe("ServerObservability", () => {
+  it("reads a server from before the log signal as exporting no logs", () => {
+    const parsed = decodeServerObservability({
+      logsDirectoryPath: "/tmp/t3/logs",
+      localTracingEnabled: true,
+      otlpTracesUrl: "https://collector.example.com/v1/traces",
+      otlpTracesEnabled: true,
+      otlpMetricsEnabled: false,
+    });
+
+    expect(parsed.otlpLogsEnabled).toBe(false);
+    expect(parsed.otlpLogsUrl).toBeUndefined();
   });
 });
 

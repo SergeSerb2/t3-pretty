@@ -37,6 +37,7 @@ export const DesktopBackendBootstrap = Schema.Struct({
   tailscaleServePort: PortSchema,
   otlpTracesUrl: Schema.optional(DesktopBootstrapUrl),
   otlpMetricsUrl: Schema.optional(DesktopBootstrapUrl),
+  otlpLogsUrl: Schema.optional(DesktopBootstrapUrl),
   desktopTelemetryFd: Schema.optionalKey(PositiveInt),
   desktopTelemetryControlFd: Schema.optionalKey(PositiveInt),
   resourceMonitorPath: Schema.optionalKey(

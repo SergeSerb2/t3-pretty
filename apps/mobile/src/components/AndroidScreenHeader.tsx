@@ -25,7 +25,13 @@ export function AndroidHeaderIconButton(props: {
   readonly disabled?: boolean;
   readonly selected?: boolean;
 }) {
-  return <MaterialIconButton {...props} variant={props.selected ? "tonal" : "standard"} />;
+  return (
+    <MaterialIconButton
+      {...props}
+      tintColorClassName="accent-header-foreground"
+      variant={props.selected ? "tonal" : "standard"}
+    />
+  );
 }
 
 export function AndroidScreenHeader(props: {
@@ -66,6 +72,7 @@ export function AndroidScreenHeader(props: {
           <MaterialIconButton
             accessibilityLabel="Navigate up"
             icon="arrow.left"
+            tintColorClassName="accent-header-foreground"
             onPress={props.onBack}
           />
         ) : null}
@@ -73,7 +80,7 @@ export function AndroidScreenHeader(props: {
         {props.leading}
 
         <View className={cn("min-w-0 flex-1", !props.onBack && "pl-1")}>
-          <Text numberOfLines={1} style={titleTypography} className="text-foreground">
+          <Text numberOfLines={1} style={titleTypography} className="text-header-foreground">
             {props.title}
           </Text>
           {props.subtitle ? (
@@ -123,6 +130,7 @@ export function AndroidScreenHeader(props: {
               <MaterialIconButton
                 accessibilityLabel="More actions"
                 icon="ellipsis"
+                tintColorClassName="accent-header-foreground"
                 onPress={open}
               />
             )}

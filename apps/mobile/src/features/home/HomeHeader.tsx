@@ -1,6 +1,3 @@
-import type { EnvironmentId, SidebarThreadSortOrder } from "@t3tools/contracts";
-import type { MenuAction } from "@react-native-menu/menu";
-
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { useCallback, useMemo, useRef } from "react";
 import { Platform, Pressable, TextInput, View } from "react-native";
@@ -23,7 +20,6 @@ import {
 } from "../layout/native-mail-search-toolbar";
 import type { HomeProjectSortOrder } from "./homeThreadList";
 import { WorkspaceConnectionTitle } from "./WorkspaceConnectionTitle";
-import { MaterialThreadListToolbar } from "./MaterialThreadListToolbar";
 import {
   buildHomeListFilterMenu,
   type HomeListFilterMenuEnvironment,
@@ -35,40 +31,21 @@ import {
   PROJECT_SORT_OPTIONS,
   THREAD_SORT_OPTIONS,
 } from "./home-list-options";
+import type { HomeHeaderProps as UpstreamHomeHeaderProps } from "./HomeHeader.types";
 
-export type HomeHeaderEnvironment = HomeListFilterMenuEnvironment;
+export type { HomeHeaderEnvironment } from "./HomeHeader.types";
 
-export function HomeHeader(props: {
-  readonly environments: ReadonlyArray<HomeHeaderEnvironment>;
-  readonly projects: ReadonlyArray<HomeListFilterMenuProject>;
-  readonly searchQuery: string;
-  readonly selectedEnvironmentId: EnvironmentId | null;
-  readonly selectedProjectKey: string | null;
-  readonly projectSortOrder: HomeProjectSortOrder;
-  readonly threadSortOrder: SidebarThreadSortOrder;
-  readonly onSearchQueryChange: (query: string) => void;
-  readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
-  readonly onProjectChange: (projectKey: string | null) => void;
-  readonly onProjectSortOrderChange: (sortOrder: HomeProjectSortOrder) => void;
-  readonly onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
-  readonly onOpenEnvironments: () => void;
-  readonly onOpenPullRequests: () => void;
+type HomeHeaderProps = UpstreamHomeHeaderProps & {
   /** Null while no connected environment advertises the automations capability. */
   readonly onOpenAutomations: (() => void) | null;
-  readonly onOpenSettings: () => void;
-  readonly onStartNewTask: () => void;
-}) {
+};
+
+export function HomeHeader(props: HomeHeaderProps) {
   if (Platform.OS === "android") {
     return <AndroidHomeHeader {...props} />;
   }
 
   return <IosHomeHeader {...props} />;
-}
-
-type HomeHeaderProps = Parameters<typeof HomeHeader>[0];
-
-function checkedMenuState(checked: boolean) {
-  return checked ? ("on" as const) : undefined;
 }
 
 function AndroidHomeHeader(props: HomeHeaderProps) {
@@ -374,39 +351,36 @@ function IosHomeHeader(props: HomeHeaderProps) {
           // Static header config (glass, title, fonts) lives in Stack.tsx
           // (GLASS_HEADER_OPTIONS). Only dynamic values are set here.
           headerTintColor: iconColor,
-          unstable_headerRightItems:
-            Platform.OS === "ios"
-              ? () => [
+          unstable_headerRightItems: () => [
+            withNativeGlassHeaderItem({
+              accessibilityLabel: "Open pull requests",
+              icon: { name: "arrow.triangle.pull", type: "sfSymbol" } as const,
+              identifier: "home-pull-requests",
+              label: "",
+              onPress: props.onOpenPullRequests,
+              type: "button",
+            }),
+            ...(props.onOpenAutomations === null
+              ? []
+              : [
                   withNativeGlassHeaderItem({
-                    accessibilityLabel: "Open pull requests",
-                    icon: { name: "arrow.triangle.pull", type: "sfSymbol" } as const,
-                    identifier: "home-pull-requests",
+                    accessibilityLabel: "Open automations",
+                    icon: { name: "bolt", type: "sfSymbol" } as const,
+                    identifier: "home-automations",
                     label: "",
-                    onPress: props.onOpenPullRequests,
+                    onPress: props.onOpenAutomations,
                     type: "button",
                   }),
-                  ...(props.onOpenAutomations === null
-                    ? []
-                    : [
-                        withNativeGlassHeaderItem({
-                          accessibilityLabel: "Open automations",
-                          icon: { name: "bolt", type: "sfSymbol" } as const,
-                          identifier: "home-automations",
-                          label: "",
-                          onPress: props.onOpenAutomations,
-                          type: "button",
-                        }),
-                      ]),
-                  withNativeGlassHeaderItem({
-                    accessibilityLabel: "Open settings",
-                    icon: { name: "ellipsis", type: "sfSymbol" } as const,
-                    identifier: "home-settings",
-                    label: "",
-                    onPress: props.onOpenSettings,
-                    type: "button",
-                  }),
-                ]
-              : undefined,
+                ]),
+            withNativeGlassHeaderItem({
+              accessibilityLabel: "Open settings",
+              icon: { name: "ellipsis", type: "sfSymbol" } as const,
+              identifier: "home-settings",
+              label: "",
+              onPress: props.onOpenSettings,
+              type: "button",
+            }),
+          ],
           // The keys below are set per-branch (not `undefined`) so a later
           // reapply cannot clobber options owned by NativeHeaderToolbar.
           ...(NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED

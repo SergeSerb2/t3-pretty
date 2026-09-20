@@ -1,7 +1,6 @@
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import {
   StackActions,
   useFocusEffect,
@@ -307,7 +306,8 @@ export function ConnectionsNewRouteScreen({
       actions={[
         {
           accessibilityLabel: showScanner ? "Close scanner" : "Scan QR code",
-          icon: showScanner ? "xmark" : "camera",
+          icon: showScanner ? "xmark" : Platform.OS === "ios" ? "qrcode.viewfinder" : "camera",
+          tintColor: headerIconColor,
           onPress: () => {
             if (showScanner) {
               closeScanner();
@@ -318,45 +318,6 @@ export function ConnectionsNewRouteScreen({
         },
       ]}
     >
-      <NativeStackScreenOptions
-        options={{ title: showScanner ? "Scan QR Code" : "Add Environment" }}
-      />
-      {Platform.OS === "android" ? (
-        <AndroidScreenHeader
-          title={showScanner ? "Scan QR Code" : "Add Environment"}
-          onBack={showScanner ? closeScanner : () => navigation.goBack()}
-          actions={[
-            {
-              accessibilityLabel: showScanner ? "Close scanner" : "Scan QR code",
-              icon: showScanner ? "xmark" : "camera",
-              onPress: () => {
-                if (showScanner) {
-                  closeScanner();
-                } else {
-                  void openScanner();
-                }
-              },
-            },
-          ]}
-        />
-      ) : null}
-      {Platform.OS !== "android" ? (
-        <NativeHeaderToolbar placement="right">
-          <NativeHeaderToolbar.Button
-            accessibilityLabel={showScanner ? "Close scanner" : "Scan QR code"}
-            icon={showScanner ? "xmark" : "qrcode.viewfinder"}
-            onPress={() => {
-              if (showScanner) {
-                closeScanner();
-              } else {
-                void openScanner();
-              }
-            }}
-            separateBackground
-            tintColor={headerIconColor}
-          />
-        </NativeHeaderToolbar>
-      ) : null}
 
       <ScrollView
         automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}

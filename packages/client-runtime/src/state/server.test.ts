@@ -82,6 +82,7 @@ const CONFIG = {
     localTracingEnabled: false,
     otlpTracesEnabled: false,
     otlpMetricsEnabled: false,
+    otlpLogsEnabled: false,
   },
   providers: [],
   settings: DEFAULT_SERVER_SETTINGS,

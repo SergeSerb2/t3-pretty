@@ -183,10 +183,6 @@ export type DesktopSshPasswordPromptResolveError =
   | DesktopSshPromptInvalidRequestIdError
   | DesktopSshPromptExpiredError;
 
-export type DesktopSshPasswordPromptError =
-  | DesktopSshPasswordPromptRequestError
-  | DesktopSshPasswordPromptResolveError;
-
 export const DesktopSshPasswordPromptCancellation = Schema.Union([
   DesktopSshPromptCancelledError,
   DesktopSshPromptWindowClosedError,

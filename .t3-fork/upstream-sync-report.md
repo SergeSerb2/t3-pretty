@@ -1,5 +1,33 @@
 # T3 Pretty upstream integration report
 
+- Parent nightly: `v0.0.43-nightly.20260919.1948`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260918.1895`
+- Conflict resolver: replayed `automation/sync-resolution-cache` @ `f312fe4cd` for all 78 text conflicts from Buildkite #2575 (diff3 key match). No model request in this reconstruction.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `infra/relay/src/zone.ts` — Relay API and managed tunnel zone names continue to pass through T3 Pretty's DNS-name validation and normalization instead of receiving only a non-empty-string check.
+- `infra/relay/src/zone.ts` — The existing RELAY_DOMAIN trimming, fallback, and subsequent DNS validation flow remains intact.
+- 76 other conflicted files reused the checkpointed resolutions from the failed scheduled sync, preserving T3 Pretty hardening at those boundaries.
+
+## Compatible parent behavior integrated
+
+- Effect catalog bump to 4.0.0-rc.115, including Config constructor PascalCase (`Config.NonEmptyString`, `Config.String`).
+- Parent zone/config API changes are composed with the fork DNS wrapper.
+- Parent lockfile taken wholesale; regeneration follows if the merged manifests require it.
+
+## Parent changes omitted
+
+- Fork-owned `.github/workflows` remain T3 Pretty's trusted sync, signing, release, and security boundary.
+- Fork-owned iOS verification / XcodeBuildMCP reverse state. `automation/sync-resolution-cache` @ `f312fe4cd` has no keep-ours or explicit-drop entries for `.agents/skills/ios-debugger-agent`, `.agents/skills/ios-simulator-browser`, `.agents/skills/test-t3-app`, `.agents/skills/test-t3-mobile`, `.mcp.json`, or `.codex/config.toml`, so the nightly merge took Origin's Device-panel rewrite and deletions. Pretty's copies from `6f1755aa676f` were re-applied.
+
+## Post-merge repairs
+
+- `relay-typecheck` — Buildkite #2575 left `Config.mapOrFail` in `dnsNameConfig` after the rc.115 rename to `Config.mapEffect`. That made `yield* dnsNameConfig(...)` resolve to `never` and leaked `unknown` through `RelayDeploymentConfig` / zone Effects. The repair keeps the hardened DNS `ConfigError` path and uses `Config.mapEffect`.
+- `pretty-reverse-state` — Restored T3 Pretty's `ios-debugger-agent`, `ios-simulator-browser`, `.mcp.json`, `.codex/config.toml`, and Pretty `test-t3-app` / `test-t3-mobile` / `pair-client.sh` after the nightly silently took Origin.
+
+## Previous integration notes
+
 - Parent nightly: `v0.0.43-nightly.20260917.1880`
 - Previously integrated parent nightly: `v0.0.43-nightly.20260917.1866`
 - Conflict resolver: replayed `automation/sync-resolution-cache` for the six 1880 files whose diff3 keys still matched (Stack, SettingsProjectGrouping, settings-sheet-targets, Migrations, PullRequestService, UsageService). Manual completions for the remaining eight files, following the Buildkite #2511 resolution notes. UsageService's cached body still named a removed `files` binding; that adjacent identifier was corrected to `listing`.

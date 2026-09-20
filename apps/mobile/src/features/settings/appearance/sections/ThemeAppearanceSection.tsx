@@ -24,6 +24,7 @@ const APPEARANCE_MODES: ReadonlyArray<{
   { id: "dark", label: "Dark" },
 ];
 
+
 function PreviewPane(props: { readonly compact?: boolean }) {
   return (
     <View className="flex-1 overflow-hidden bg-screen">
@@ -104,7 +105,9 @@ function ModeCard(props: {
       accessibilityState={{ checked: props.selected, disabled: props.disabled }}
       className={cn(
         "min-w-0 flex-1 gap-2 rounded-[24px] p-2 active:scale-[0.97]",
-        props.selected ? "border-2 border-primary bg-subtle" : "border border-border bg-card",
+        props.selected
+          ? "border-2 border-primary bg-subtle"
+          : "border border-border bg-grouped-card",
       )}
       disabled={props.disabled}
       onPress={props.onPress}

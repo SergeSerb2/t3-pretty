@@ -52,7 +52,7 @@ export class EnvironmentLinkUserListPersistenceError extends Schema.TaggedError<
   },
 ) {
   override get message(): string {
-    return `Failed to list delivery users for environment '${this.environmentId}'`;
+    return `Failed to list delivery users for environment '${this.environmentId}' via environment link user query 'list-delivery-users'`;
   }
 }
 
@@ -127,23 +127,17 @@ export class EnvironmentLinks extends Context.Service<
   }
 >()("t3code-relay/environments/EnvironmentLinks") {}
 
-function agentAwarenessDeliveryUserCondition(environmentId: string) {
-  return and(
-    eq(relayEnvironmentLinks.environmentId, environmentId),
-    isNull(relayEnvironmentLinks.revokedAt),
-    or(
-      eq(relayEnvironmentLinks.notificationsEnabled, true),
-      eq(relayEnvironmentLinks.liveActivitiesEnabled, true),
-    ),
-  );
-}
-
 function agentAwarenessDeliveryUserKeyCondition(input: {
   readonly environmentId: string;
   readonly environmentPublicKey: string;
 }) {
   return and(
-    agentAwarenessDeliveryUserCondition(input.environmentId),
+    eq(relayEnvironmentLinks.environmentId, input.environmentId),
+    isNull(relayEnvironmentLinks.revokedAt),
+    or(
+      eq(relayEnvironmentLinks.notificationsEnabled, true),
+      eq(relayEnvironmentLinks.liveActivitiesEnabled, true),
+    ),
     eq(relayEnvironmentLinks.environmentPublicKey, input.environmentPublicKey),
   );
 }

@@ -5,7 +5,6 @@ import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable
 
 import {
   buildDiscordReleaseAnnouncement,
-  isDiscordReleaseAnnouncementError,
   postDiscordWebhook,
   redactDiscordWebhookCause,
 } from "./notify-discord-release.ts";

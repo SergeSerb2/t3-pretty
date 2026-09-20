@@ -76,6 +76,12 @@ import * as RelayDb from "../db.ts";
 
 const isRelayCloudUserId = Schema.is(RelayCloudUserId);
 
+// Delegated thread IDs carry escaped command provenance and exceed the router's
+// default 100-character path parameter limit. Match the environment server.
+export const RELAY_HTTP_ROUTER_CONFIG = {
+  maxParamLength: 512,
+} as const;
+
 const relayCorsAllowedMethods = ["GET", "POST", "DELETE", "OPTIONS"] as const;
 const relayCorsAllowedHeaders = [
   "authorization",

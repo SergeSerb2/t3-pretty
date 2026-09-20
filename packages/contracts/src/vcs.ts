@@ -129,6 +129,8 @@ export class VcsProcessExitError extends Schema.TaggedError<VcsProcessExitError>
     exitCode: Schema.Number,
     detail: Schema.String,
     failureKind: Schema.optional(VcsProcessExitFailureKind),
+    /** Process-boundary hint for a recognized transient failure; absence is not retryable. */
+    retryable: Schema.optional(Schema.Boolean),
     stderrLength: Schema.optional(NonNegativeInt),
     stderrTruncated: Schema.optional(Schema.Boolean),
   },
@@ -141,6 +143,7 @@ export class VcsProcessExitError extends Schema.TaggedError<VcsProcessExitError>
     context: VcsProcessErrorContext,
     error: VcsProcessExitFailure,
     failureKind: VcsProcessExitFailureKind,
+    retryable?: boolean,
   ) {
     const detail =
       failureKind === "authentication"
@@ -160,6 +163,7 @@ export class VcsProcessExitError extends Schema.TaggedError<VcsProcessExitError>
       exitCode: error.exitCode,
       detail,
       failureKind,
+      ...(retryable === true ? { retryable: true } : {}),
       stderrLength: error.stderr.length,
       stderrTruncated: error.stderrTruncated,
     });

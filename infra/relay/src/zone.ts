@@ -30,8 +30,8 @@ function validateDnsConfigValue(name: string, value: string) {
 }
 
 function dnsNameConfig(name: string) {
-  return Config.nonEmptyString(name).pipe(
-    Config.mapOrFail((value) => validateDnsConfigValue(name, value)),
+  return Config.NonEmptyString(name).pipe(
+    Config.mapEffect((value) => validateDnsConfigValue(name, value)),
   );
 }
 
@@ -47,7 +47,7 @@ export const RelayDeploymentConfig = Effect.gen(function* () {
   const { stage } = yield* Alchemy.Stack;
   const relayApiZoneName = yield* dnsNameConfig("RELAY_API_ZONE_NAME");
   const managedEndpointZoneName = yield* dnsNameConfig("RELAY_TUNNEL_ZONE_NAME");
-  const relayPublicDomainOverride = yield* Config.string("RELAY_DOMAIN").pipe(
+  const relayPublicDomainOverride = yield* Config.String("RELAY_DOMAIN").pipe(
     Config.option,
     Config.map(
       Option.flatMap((value) => {

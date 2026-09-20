@@ -1,5 +1,5 @@
 import { MaterialListRow } from "../../components/MaterialListRow";
-import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
+import { ScreenHeader } from "../../components/ScreenHeader";
 import { LegendList } from "@legendapp/list/react-native";
 import {
   StackActions,
@@ -9,11 +9,10 @@ import {
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
-import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { MaterialScreenContent } from "../../components/MaterialScreenContent";
 import { MaterialButton } from "../../components/MaterialButton";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
@@ -25,7 +24,7 @@ import { useWorkspaceState } from "../../state/workspace";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
 import { useNewTaskFlow } from "./new-task-flow-provider";
-import { getProjectScopeSelectionTarget } from "./new-task-project-selection";
+import { filterProjectScopes, getProjectScopeSelectionTarget } from "./new-task-project-selection";
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
@@ -86,13 +85,58 @@ export function deriveProjectEmptyState(catalogState: WorkspaceState): {
   };
 }
 
+function NewTaskHeader(props: {
+  readonly title: string;
+  readonly subtitle: string | null;
+  readonly canAddProject: boolean;
+  readonly searchText: string;
+  readonly onSearchTextChange: (text: string) => void;
+}) {
+  const navigation = useNavigation();
+  const { layout } = useAdaptiveWorkspaceLayout();
+  return (
+    <ScreenHeader
+      title={props.title}
+      subtitle={props.subtitle ?? undefined}
+      sidebar={false}
+      hideBottomBorder
+      onBack={() => navigation.goBack()}
+      actions={[
+        ...(Platform.OS === "ios" && layout.usesSplitView
+          ? [
+              {
+                accessibilityLabel: "Close new task",
+                icon: "xmark" as const,
+                onPress: () => navigation.goBack(),
+              },
+            ]
+          : []),
+        ...(props.canAddProject
+          ? [
+              {
+                accessibilityLabel: "Add project",
+                icon: "plus" as const,
+                onPress: () => navigation.dispatch(StackActions.push("AddProject")),
+              },
+            ]
+          : []),
+      ]}
+      search={{
+        value: props.searchText,
+        onChangeText: props.onSearchTextChange,
+        placeholder: "Search projects",
+      }}
+    />
+  );
+}
+
 export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRouteParams | undefined>) {
   const projects = useProjects();
+  const [searchText, setSearchText] = useState("");
   const { projectScopes, selectedEnvironmentId, setProject } = useNewTaskFlow();
   const { state: catalogState } = useWorkspaceState();
   const navigation = useNavigation();
   const isFocused = useIsFocused();
-  const { layout } = useAdaptiveWorkspaceLayout();
   const insets = useSafeAreaInsets();
   const { getShare, releaseShareReservation } = useIncomingShare();
   const routeShareId = Array.isArray(route.params?.incomingShareId)
@@ -108,6 +152,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     : null;
   const screenTitle = incomingShare ? "Start a task" : "Choose project";
   const projectEmptyState = deriveProjectEmptyState(catalogState);
+  const visibleScopes = filterProjectScopes(projectScopes, searchText);
   const resumedDestinationKeyRef = useRef<string | null>(null);
   const reservedDestinationProject = incomingShare?.destination
     ? (projects.find(
@@ -240,121 +285,91 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
-      {Platform.OS === "android" ? (
-        <>
-          {/* Android renders its own in-screen header instead of the native bar. */}
-          <NativeStackScreenOptions options={{ headerShown: false }} />
-          <AndroidScreenHeader
-            title={screenTitle}
-            hideBottomBorder
-            subtitle={incomingShareSubtitle}
-            onBack={() => navigation.goBack()}
-            actions={
-              catalogState.hasReadyEnvironment
-                ? [
-                    {
-                      accessibilityLabel: "Add project",
-                      icon: "plus",
-                      onPress: () => navigation.dispatch(StackActions.push("AddProject")),
-                    },
-                  ]
-                : []
-            }
-          />
-        </>
-      ) : (
-        <>
-          <NativeStackScreenOptions
-            options={{
-              title: screenTitle,
-              unstable_headerSubtitle: incomingShareSubtitle ?? undefined,
-            }}
-          />
-          <NativeHeaderToolbar placement="right">
-            {layout.usesSplitView ? (
-              <NativeHeaderToolbar.Button
-                accessibilityLabel="Close new task"
-                icon="xmark"
-                onPress={() => navigation.goBack()}
-                separateBackground
-              />
-            ) : null}
-            {catalogState.hasReadyEnvironment ? (
-              <NativeHeaderToolbar.Button
-                accessibilityLabel="Add project"
-                icon="plus"
-                onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
-                separateBackground
-              />
-            ) : null}
-          </NativeHeaderToolbar>
-        </>
-      )}
+      <NewTaskHeader
+        title={screenTitle}
+        subtitle={incomingShareSubtitle}
+        canAddProject={catalogState.hasReadyEnvironment}
+        searchText={searchText}
+        onSearchTextChange={setSearchText}
+      />
 
       <MaterialScreenContent>
         <LegendList
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           className="flex-1"
           contentContainerStyle={{
             paddingBottom: Math.max(insets.bottom, 18) + 18,
             paddingHorizontal: Platform.OS === "android" ? 16 : 20,
             paddingTop: Platform.OS === "android" ? 16 : 8,
-            ...(Platform.OS === "android" && projectScopes.length === 0
+            ...(Platform.OS === "android" && visibleScopes.length === 0
               ? { flexGrow: 1, justifyContent: "center" as const }
               : {}),
           }}
-          data={projectScopes}
+          data={visibleScopes}
           estimatedItemSize={56}
           extraData={`${selectedEnvironmentId ?? ""}:${reservedDestinationProject?.environmentId ?? ""}:${reservedDestinationProject?.id ?? ""}`}
           keyExtractor={(scope) => scope.key}
           ListEmptyComponent={
-            <View
-              collapsable={false}
-              className={cn(
-                "items-center gap-3 px-6 py-8",
-                Platform.OS !== "android" && "rounded-[24px] bg-card",
-              )}
-            >
-              {projectEmptyState.loading ? (
-                <ActivityIndicator colorClassName="accent-icon-muted" />
-              ) : null}
-              <Text className="text-center text-lg font-t3-bold text-foreground">
-                {projectEmptyState.title}
-              </Text>
-              <Text className="text-center text-sm leading-normal text-foreground-muted">
-                {projectEmptyState.detail}
-              </Text>
-              {Platform.OS === "android" ? (
-                <MaterialButton
-                  label={catalogState.hasReadyEnvironment ? "Add new project" : "Add environment"}
-                  tone="primary"
-                  onPress={() =>
-                    catalogState.hasReadyEnvironment
-                      ? navigation.dispatch(StackActions.push("AddProject"))
-                      : navigation.navigate("ConnectionsNew")
-                  }
-                />
-              ) : !catalogState.hasReadyEnvironment ? (
-                <Pressable
-                  className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-                  onPress={() => navigation.navigate("ConnectionsNew")}
-                >
-                  <Text className="text-sm font-t3-bold text-primary-foreground">
-                    Add environment
-                  </Text>
-                </Pressable>
-              ) : (
-                <Pressable
-                  className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-                  onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
-                >
-                  <Text className="text-sm font-t3-bold text-primary-foreground">
-                    Add new project
-                  </Text>
-                </Pressable>
-              )}
-            </View>
+            visibleScopes.length === 0 && projectScopes.length > 0 ? (
+              <View className="items-center gap-2 px-6 py-8">
+                <Text className="text-center text-lg font-t3-bold text-foreground">
+                  No matching projects
+                </Text>
+                <Text className="text-center text-sm leading-normal text-foreground-muted">
+                  Try a different project name or workspace path.
+                </Text>
+              </View>
+            ) : (
+              <View
+                collapsable={false}
+                className={cn(
+                  "items-center gap-3 px-6 py-8",
+                  Platform.OS !== "android" && "rounded-[24px] bg-card",
+                )}
+              >
+                {projectEmptyState.loading ? (
+                  <ActivityIndicator colorClassName="accent-icon-muted" />
+                ) : null}
+                <Text className="text-center text-lg font-t3-bold text-foreground">
+                  {projectEmptyState.title}
+                </Text>
+                <Text className="text-center text-sm leading-normal text-foreground-muted">
+                  {projectEmptyState.detail}
+                </Text>
+                {Platform.OS === "android" ? (
+                  <MaterialButton
+                    label={catalogState.hasReadyEnvironment ? "Add new project" : "Add environment"}
+                    tone="primary"
+                    onPress={() =>
+                      catalogState.hasReadyEnvironment
+                        ? navigation.dispatch(StackActions.push("AddProject"))
+                        : navigation.navigate("ConnectionsNew")
+                    }
+                  />
+                ) : !catalogState.hasReadyEnvironment ? (
+                  <Pressable
+                    className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
+                    onPress={() => navigation.navigate("ConnectionsNew")}
+                  >
+                    <Text className="text-sm font-t3-bold text-primary-foreground">
+                      Add environment
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
+                    onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
+                  >
+                    <Text className="text-sm font-t3-bold text-primary-foreground">
+                      Add new project
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            )
           }
           recycleItems
           renderItem={
@@ -370,7 +385,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                       className={cn(
                         "overflow-hidden bg-card",
                         index === 0 && "rounded-t-[28px]",
-                        index === projectScopes.length - 1 && "rounded-b-[28px]",
+                        index === visibleScopes.length - 1 && "rounded-b-[28px]",
                       )}
                     >
                       <MaterialListRow
