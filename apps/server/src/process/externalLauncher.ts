@@ -163,7 +163,6 @@ function resolveCommandEditorArgs(
   }
 }
 
-
 function encodeUtf16LeBase64(input: string): string {
   const bytes = new Uint8Array(input.length * 2);
   for (let index = 0; index < input.length; index += 1) {
@@ -425,12 +424,7 @@ const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors"
       continue;
     }
 
-    const command = yield* resolveEditorExecutable({
-      editorId: editor.id,
-      commands: editor.commands,
-      platform,
-      env,
-    });
+    const command = yield* resolveEditorCommand(editor, env);
     if (Option.isSome(command)) {
       available.push(editor.id);
     }

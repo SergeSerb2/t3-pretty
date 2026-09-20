@@ -328,7 +328,6 @@ export function linkEnvironmentToCloudWithPreference(
       );
   });
 }
-
 export function linkEnvironmentToCloud(
   input: LinkEnvironmentToCloudInput,
 ): Effect.Effect<

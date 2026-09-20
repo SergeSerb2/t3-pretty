@@ -987,7 +987,6 @@ describe("searchSidebarThreads", () => {
     expect(searchSidebarThreads(threads, "   ")).toEqual([]);
   });
 
-
   it("appends content-only matches after every title match", () => {
     expect(searchSidebarThreads(threads, "work", contentKeys("thread-2"))).toEqual([
       threads[0],
