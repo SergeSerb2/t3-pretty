@@ -4,6 +4,8 @@ import type { SavedRemoteConnection } from "../../lib/connection";
 import { linkEnvironmentToCloudWithPreference } from "../cloud/linkEnvironment";
 import { updateAgentAwarenessRegistrationPreferences } from "./remoteRegistration";
 
+const LIVE_ACTIVITY_ENVIRONMENT_UPDATE_CONCURRENCY = 4;
+
 export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEnabled")(
   function* (input: {
     readonly enabled: boolean;
@@ -31,7 +33,7 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
             connection,
             liveActivitiesEnabled: enabled,
           }),
-        { concurrency: "unbounded" },
+        { concurrency: LIVE_ACTIVITY_ENVIRONMENT_UPDATE_CONCURRENCY },
       );
     });
 
@@ -62,7 +64,7 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
               ),
             ),
           ),
-        { concurrency: "unbounded" },
+        { concurrency: LIVE_ACTIVITY_ENVIRONMENT_UPDATE_CONCURRENCY },
       );
     });
 

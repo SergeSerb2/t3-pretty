@@ -49,7 +49,8 @@ interface DiscordWebhookPayload {
 
 const DISCORD_RELEASE_TARGETS = ["prerelease", "latest"] as const;
 const DiscordRoleIdSchema = Schema.String.check(Schema.isPattern(/^\d+$/));
-const DiscordWebhookUrl = Config.url("DISCORD_WEBHOOK_URL");
+const DiscordWebhookUrl = Config.URL("DISCORD_WEBHOOK_URL");
+const DISCORD_WEBHOOK_TIMEOUT = "60 seconds";
 
 const discordReleaseErrorContext = {
   target: Schema.Literals(["prerelease", "latest"]),
@@ -65,7 +66,7 @@ const discordReleaseErrorContext = {
   hasRoleMentionSyntax: Schema.Boolean,
 };
 
-export class DiscordReleaseWebhookRequestError extends Schema.TaggedErrorClass<DiscordReleaseWebhookRequestError>()(
+export class DiscordReleaseWebhookRequestError extends Schema.TaggedError<DiscordReleaseWebhookRequestError>()(
   "DiscordReleaseWebhookRequestError",
   {
     ...discordReleaseErrorContext,
@@ -77,7 +78,7 @@ export class DiscordReleaseWebhookRequestError extends Schema.TaggedErrorClass<D
   }
 }
 
-export class DiscordReleaseWebhookResponseError extends Schema.TaggedErrorClass<DiscordReleaseWebhookResponseError>()(
+export class DiscordReleaseWebhookResponseError extends Schema.TaggedError<DiscordReleaseWebhookResponseError>()(
   "DiscordReleaseWebhookResponseError",
   {
     ...discordReleaseErrorContext,
@@ -89,13 +90,6 @@ export class DiscordReleaseWebhookResponseError extends Schema.TaggedErrorClass<
     return `Discord ${this.target} release webhook for "${this.tag}" returned status ${this.status}.`;
   }
 }
-
-export const DiscordReleaseAnnouncementError = Schema.Union([
-  DiscordReleaseWebhookRequestError,
-  DiscordReleaseWebhookResponseError,
-]);
-export type DiscordReleaseAnnouncementError = typeof DiscordReleaseAnnouncementError.Type;
-export const isDiscordReleaseAnnouncementError = Schema.is(DiscordReleaseAnnouncementError);
 
 const targetLabels = {
   prerelease: "Prerelease",
@@ -122,6 +116,26 @@ function summarizePayload(payload: DiscordWebhookPayload) {
     allowedRoleMentionCount: payload.allowed_mentions.roles.length,
     hasRoleMentionSyntax: payload.content.includes("<@&"),
   } as const;
+}
+
+export function redactDiscordWebhookCause(cause: unknown): Error {
+  const labels: string[] = [];
+  if (typeof cause === "object" && cause !== null && "_tag" in cause) {
+    labels.push(String(cause._tag));
+  }
+  if (
+    typeof cause === "object" &&
+    cause !== null &&
+    "reason" in cause &&
+    typeof cause.reason === "object" &&
+    cause.reason !== null &&
+    "_tag" in cause.reason
+  ) {
+    labels.push(String(cause.reason._tag));
+  }
+  return new Error(
+    labels.length > 0 ? `Discord webhook failed (${labels.join("/")}).` : "Discord webhook failed.",
+  );
 }
 
 export const buildDiscordReleaseAnnouncement = (
@@ -190,11 +204,12 @@ export const postDiscordWebhook = Effect.fn("postDiscordWebhook")(function* (
   const response = yield* HttpClientRequest.post(webhookUrl).pipe(
     HttpClientRequest.bodyJson(payload),
     Effect.flatMap(httpClient.execute),
+    Effect.timeout(DISCORD_WEBHOOK_TIMEOUT),
     Effect.mapError(
       (cause) =>
         new DiscordReleaseWebhookRequestError({
           ...errorContext,
-          cause,
+          cause: redactDiscordWebhookCause(cause),
         }),
     ),
   );
@@ -212,7 +227,7 @@ export const postDiscordWebhook = Effect.fn("postDiscordWebhook")(function* (
         new DiscordReleaseWebhookResponseError({
           ...errorContext,
           status: response.status,
-          cause,
+          cause: redactDiscordWebhookCause(cause),
         }),
     ),
   );
@@ -221,26 +236,26 @@ export const postDiscordWebhook = Effect.fn("postDiscordWebhook")(function* (
 export const notifyDiscordReleaseCommand = Command.make(
   "notify-discord-release",
   {
-    target: Argument.choice("target", DISCORD_RELEASE_TARGETS).pipe(
+    target: Argument.Literals("target", DISCORD_RELEASE_TARGETS).pipe(
       Argument.withDescription("Discord announcement target: prerelease or latest."),
     ),
-    roleId: Flag.string("role-id").pipe(
+    roleId: Flag.String("role-id").pipe(
       Flag.withSchema(DiscordRoleIdSchema),
       Flag.withDescription("Discord role ID to mention in the release announcement."),
     ),
-    releaseName: Flag.string("release-name").pipe(
+    releaseName: Flag.String("release-name").pipe(
       Flag.withSchema(Schema.NonEmptyString),
       Flag.withDescription("Human-readable release name."),
     ),
-    releaseVersion: Flag.string("release-version").pipe(
+    releaseVersion: Flag.String("release-version").pipe(
       Flag.withSchema(Schema.NonEmptyString),
       Flag.withDescription("Release version."),
     ),
-    tag: Flag.string("tag").pipe(
+    tag: Flag.String("tag").pipe(
       Flag.withSchema(Schema.NonEmptyString),
       Flag.withDescription("Git tag for the release."),
     ),
-    releaseUrl: Flag.string("release-url").pipe(
+    releaseUrl: Flag.String("release-url").pipe(
       Flag.withSchema(Schema.URLFromString),
       Flag.withDescription("Public GitHub release URL."),
     ),

@@ -8,6 +8,7 @@ import { hasCustomHomeListOptions, type HomeListOptions } from "./home-list-opti
 
 const defaults: HomeListOptions = {
   selectedEnvironmentId: null,
+  selectedProjectKey: null,
   projectSortOrder:
     DEFAULT_SIDEBAR_PROJECT_SORT_ORDER === "manual"
       ? "updated_at"

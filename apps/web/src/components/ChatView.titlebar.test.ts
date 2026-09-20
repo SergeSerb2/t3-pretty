@@ -5,12 +5,16 @@ import { describe, expect, it } from "vite-plus/test";
 
 describe("thread titlebar layout controls", () => {
   const source = NodeFS.readFileSync(new URL("./ChatView.tsx", import.meta.url), "utf8");
+  const workspacePageHeaderSource = NodeFS.readFileSync(
+    new URL("./WorkspacePageHeader.tsx", import.meta.url),
+    "utf8",
+  );
   const rootStart = source.indexOf(
-    '"relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"',
+    '"relative flex min-h-0 min-w-0 flex-1 overflow-clip bg-background"',
   );
   const headerStart = source.indexOf("data-chat-header", rootStart);
   const headerEnd = source.indexOf("<ChatHeader", headerStart);
-  const headerClose = source.indexOf("</header>", headerStart);
+  const headerClose = source.indexOf("</WorkspacePageHeader>", headerStart);
   const controlsRender = "{parkTitlebarLayoutControls ? panelLayoutControls : null}";
 
   it("keeps the layout-control cluster on the workspace root across right-panel toggles", () => {
@@ -27,27 +31,43 @@ describe("thread titlebar layout controls", () => {
     expect(source).toContain(
       "const parkTitlebarLayoutControls = !(shouldUseRightPanelSheet && rightPanelOpen)",
     );
+    expect(source.slice(rootStart - 280, rootStart)).toContain(
+      "Containing block for the parked titlebar cluster",
+    );
   });
 
   it("lets clicks reach the cluster through the header drag region", () => {
     const clusterStart = source.indexOf("const panelLayoutControls = (");
-    const cluster = source.slice(clusterStart, clusterStart + 900);
+    const cluster = source.slice(clusterStart, clusterStart + 2200);
     const headerSlice = source.slice(headerStart, headerClose);
     const holeIndex = source.indexOf("TitlebarLayoutControlsDragHole", headerStart);
 
     expect(clusterStart).toBeGreaterThanOrEqual(0);
     expect(cluster).toContain("pointer-events-none");
     expect(cluster).toContain("pointer-events-auto");
+    expect(cluster).toContain("pointer-events-none absolute");
+    expect(cluster).not.toContain("pointer-events-none fixed");
+    expect(cluster).toContain(
+      'rightPanelOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"',
+    );
+    expect(cluster).not.toContain("pointer-events-auto flex h-full items-center gap-1");
     expect(headerSlice).toContain("TitlebarLayoutControlsDragHole");
     expect(headerSlice).toContain(
       "isElectron && parkTitlebarLayoutControls && !inlineRightPanelOwnsTitleBar",
     );
     expect(headerSlice).not.toContain("isElectron && !rightPanelOpen");
     expect(headerSlice).not.toContain("w-16");
-    expect(headerSlice).toContain("drag-region relative flex");
+    expect(headerSlice).toContain("electron={isElectron}");
+    expect(workspacePageHeaderSource).toContain('electron && "drag-region"');
     expect(holeIndex).toBeGreaterThan(headerEnd);
     expect(holeIndex).toBeLessThan(headerClose);
-    expect(headerSlice).toContain("controlCount={2}");
+    expect(headerSlice).toContain("controlCount={shouldUseRightPanelSheet ? 2 : 3}");
+    const maximizeIndex = source.indexOf("RightPanelMaximizeControl", clusterStart);
+    const togglesIndex = source.indexOf("{panelToggleControls}", clusterStart);
+    expect(maximizeIndex).toBeGreaterThan(clusterStart);
+    expect(togglesIndex).toBeGreaterThan(maximizeIndex);
+    expect(cluster).toContain("the `relative` workspace root is the");
+    expect(cluster).toContain("containing block");
   });
 
   it("punches the open-panel titlebar instead of the chat/panel seam", () => {
@@ -57,9 +77,11 @@ describe("thread titlebar layout controls", () => {
     const tabbarClose = tabs.indexOf("</div>", layoutControlsIndex);
 
     expect(layoutControlsIndex).toBeGreaterThanOrEqual(0);
+    expect(tabs).toContain('ownsDesktopTitleBar && "relative drag-region"');
     expect(tabs).toContain(
-      "relative drag-region wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]",
+      'props.layoutControls\n              ? "wco:pr-[var(--workspace-native-controls-inset)]"',
     );
+    expect(tabs).toContain(': "wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]"');
     expect(tabs).toContain("data-right-panel-tabbar");
     expect(holeIndex).toBeGreaterThan(layoutControlsIndex);
     expect(holeIndex).toBeLessThan(tabbarClose);
@@ -83,5 +105,15 @@ describe("thread titlebar layout controls", () => {
     );
     expect(hole).toContain("data-titlebar-layout-control-count={controlCount}");
     expect(hole).toContain("[-webkit-app-region:no-drag]");
+  });
+
+  it("does not double-count the collapsed icon rail in the titlebar inset", () => {
+    const inset = NodeFS.readFileSync(new URL("../workspaceTitlebar.ts", import.meta.url), "utf8");
+    expect(inset).toContain(
+      "max(0px,calc(var(--workspace-titlebar-content-left)-var(--sidebar-width-icon)))",
+    );
+    expect(inset).not.toContain(
+      "[[data-sidebar-state=collapsed]_&]:pl-[var(--workspace-titlebar-content-left)]",
+    );
   });
 });

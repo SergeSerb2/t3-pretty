@@ -1,4 +1,8 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -6,14 +10,31 @@ import { vi } from "vite-plus/test";
 
 import type * as Electron from "electron";
 
+const { focusedWebContents, ownerWindow } = vi.hoisted(() => ({
+  focusedWebContents: vi.fn(),
+  ownerWindow: vi.fn(),
+}));
+vi.mock("electron", () => ({
+  webContents: { getFocusedWebContents: focusedWebContents },
+  BrowserWindow: { fromWebContents: ownerWindow },
+}));
+
+import * as DesktopConfig from "../../app/DesktopConfig.ts";
+import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
+import type { DesktopSettings } from "../../settings/DesktopAppSettings.ts";
+import * as DesktopWindow from "../../window/DesktopWindow.ts";
 import {
   getLocalEnvironmentBootstraps,
   getWindowFullscreenState,
+  pasteAsText,
   pickProjectFavicon,
+  probeRemoteEditors,
+  setWindowButtonVisibility,
 } from "./window.ts";
 
 const readyWslConfig: DesktopBackendManager.DesktopBackendStartConfig = {
@@ -38,6 +59,22 @@ const readyWslConfig: DesktopBackendManager.DesktopBackendStartConfig = {
   preflightFailure: Option.none(),
   runningDistro: "Ubuntu",
 };
+
+const desktopEnvironmentInput = {
+  dirname: "/repo/apps/desktop/dist-electron",
+  homeDirectory: "/Users/alice",
+  platform: "darwin",
+  processArch: "arm64",
+  appVersion: "1.2.3",
+  appPath: "/repo",
+  isPackaged: false,
+  resourcesPath: "/repo/resources",
+  runningUnderArm64Translation: false,
+} satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
+
+const desktopEnvironmentLayer = DesktopEnvironment.layer(desktopEnvironmentInput).pipe(
+  Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
+);
 
 const defaultWslInstance: DesktopBackendManager.DesktopBackendInstance = {
   id: DesktopBackendManager.BackendInstanceId("wsl:default"),
@@ -135,6 +172,22 @@ describe("getLocalEnvironmentBootstraps", () => {
       assert.deepEqual(result, []);
     }).pipe(Effect.provide(DesktopBackendPool.layerTest([stoppedInstance])));
   });
+
+  it.effect("caps local bootstraps before desktop IPC encoding", () => {
+    const instances: DesktopBackendManager.DesktopBackendInstance[] = Array.from(
+      { length: 65 },
+      (_, index) => ({
+        ...defaultWslInstance,
+        id: DesktopBackendManager.BackendInstanceId(`wsl:test-${index}`),
+      }),
+    );
+
+    return Effect.gen(function* () {
+      const result = yield* getLocalEnvironmentBootstraps.handler(undefined);
+      if (!Array.isArray(result)) throw new TypeError("Expected a bootstrap array.");
+      assert.equal(result.length, 64);
+    }).pipe(Effect.provide(DesktopBackendPool.layerTest(instances)));
+  });
 });
 
 describe("getWindowFullscreenState", () => {
@@ -153,20 +206,83 @@ describe("getWindowFullscreenState", () => {
   });
 });
 
+describe("setWindowButtonVisibility", () => {
+  it.effect("forwards visibility to the desktop window", () => {
+    const setWindowButtonVisibilityFn = vi.fn((_visible: boolean) => Effect.void);
+
+    return Effect.gen(function* () {
+      yield* setWindowButtonVisibility.handler(false);
+      assert.deepEqual(setWindowButtonVisibilityFn.mock.calls, [[false]]);
+    }).pipe(
+      Effect.provide(
+        Layer.mock(DesktopWindow.DesktopWindow)({
+          setWindowButtonVisibility: (visible) => setWindowButtonVisibilityFn(visible),
+        }),
+      ),
+    );
+  });
+});
+
+describe("pasteAsText", () => {
+  it.effect(
+    "pastes into the focused guest only after the main renderer acknowledges the menu action",
+    () => {
+      const paste = vi.fn();
+      const mainPaste = vi.fn();
+      const window = {
+        webContents: { id: 42, paste: mainPaste },
+        isDestroyed: () => false,
+      } as unknown as Electron.BrowserWindow;
+      focusedWebContents.mockReturnValue({ paste, isDestroyed: () => false });
+      ownerWindow.mockReturnValue(window);
+
+      return Effect.gen(function* () {
+        yield* pasteAsText.handler(undefined, { sender: { id: 42 } });
+        assert.equal(paste.mock.calls.length, 1);
+        assert.equal(mainPaste.mock.calls.length, 0);
+
+        yield* pasteAsText.handler(undefined, { sender: { id: 99 } });
+        assert.equal(paste.mock.calls.length, 1);
+        ownerWindow.mockReturnValue({}); // A focused PiP/other BrowserWindow.
+        yield* pasteAsText.handler(undefined, { sender: { id: 42 } });
+        assert.equal(paste.mock.calls.length, 1);
+        ownerWindow.mockReturnValue(null); // Detached contents.
+        yield* pasteAsText.handler(undefined, { sender: { id: 42 } });
+        assert.equal(paste.mock.calls.length, 1);
+        ownerWindow.mockReturnValue(window);
+        focusedWebContents.mockReturnValue({ paste, isDestroyed: () => true });
+        yield* pasteAsText.handler(undefined, { sender: { id: 42 } });
+        assert.equal(paste.mock.calls.length, 1);
+        focusedWebContents.mockReturnValue(null);
+        yield* pasteAsText.handler(undefined, { sender: { id: 42 } });
+        assert.equal(paste.mock.calls.length, 1);
+      }).pipe(
+        Effect.provide(
+          Layer.mock(ElectronWindow.ElectronWindow)({
+            main: Effect.succeed(Option.some(window)),
+          }),
+        ),
+      );
+    },
+  );
+});
+
 describe("pickProjectFavicon", () => {
+  const pickerLayer = (pickFiles: () => Effect.Effect<Array<string>>, settings?: DesktopSettings) =>
+    Layer.mergeAll(
+      Layer.mock(ElectronDialog.ElectronDialog)({ pickFiles }),
+      Layer.mock(ElectronWindow.ElectronWindow)({
+        focusedMainOrFirst: Effect.succeed(Option.none()),
+      }),
+      DesktopAppSettings.layerTest(settings),
+    );
+
   it.effect("opens a single-image picker from the project directory", () =>
     Effect.gen(function* () {
       const pickFiles = vi.fn(() => Effect.succeed(["/pictures/icon.png"]));
-      const result = yield* pickProjectFavicon.handler("/project").pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            Layer.mock(ElectronDialog.ElectronDialog)({ pickFiles }),
-            Layer.mock(ElectronWindow.ElectronWindow)({
-              focusedMainOrFirst: Effect.succeed(Option.none()),
-            }),
-          ),
-        ),
-      );
+      const result = yield* pickProjectFavicon
+        .handler("/project")
+        .pipe(Effect.provide(pickerLayer(pickFiles)));
 
       assert.strictEqual(result, "/pictures/icon.png");
       assert.deepEqual(pickFiles.mock.calls, [
@@ -186,4 +302,56 @@ describe("pickProjectFavicon", () => {
       ]);
     }),
   );
+
+  it.effect("does not open a picker while the local environment is off", () =>
+    Effect.gen(function* () {
+      const pickFiles = vi.fn(() => Effect.succeed(["/pictures/icon.png"]));
+      const result = yield* pickProjectFavicon.handler("/project").pipe(
+        Effect.provide(
+          pickerLayer(pickFiles, {
+            ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
+            localEnvironmentEnabled: false,
+          }),
+        ),
+      );
+
+      assert.strictEqual(result, null);
+      assert.strictEqual(pickFiles.mock.calls.length, 0);
+    }),
+  );
 });
+
+it.effect.skipIf(HostProcessPlatform.defaultValue() === "win32")(
+  "finds remote editors installed without PATH launchers",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-remote-editors-" });
+      for (const app of ["Cursor", "Visual Studio Code", "WebStorm"]) {
+        const executable = path.join(
+          home,
+          "Applications",
+          `${app}.app`,
+          app === "WebStorm" ? "Contents/MacOS/webstorm" : "Contents/Resources/app/bin/code",
+        );
+        yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
+        yield* fs.writeFileString(executable, "#!/bin/sh\n");
+        yield* fs.chmod(executable, 0o755);
+      }
+      const editors = yield* probeRemoteEditors.handler(undefined).pipe(
+        Effect.provideService(HostProcessEnvironment, {
+          HOME: home,
+          PATH: path.join(home, "empty"),
+        }),
+        Effect.provideService(HostProcessPlatform, "darwin"),
+      );
+      assert.include(editors, "cursor");
+      assert.include(editors, "vscode");
+      assert.notInclude(editors, "webstorm");
+    }).pipe(
+      Effect.provide(desktopEnvironmentLayer),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+    ),
+);

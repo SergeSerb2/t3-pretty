@@ -8,13 +8,14 @@ import { useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
 import { getSceneryPlaceSlot, subscribeSceneryPlaceSlot } from "./sceneryPlaceSlot";
-import { UNSPLASH_UTM, type SceneryPhoto } from "./unsplash";
+import { UNSPLASH_UTM, unsplashProfileAttributionUrl, type SceneryPhoto } from "./unsplash";
 
 export function SceneryPlaceCredit({ photo }: { readonly photo: SceneryPhoto | null }) {
   const slot = useSyncExternalStore(subscribeSceneryPlaceSlot, getSceneryPlaceSlot, () => null);
   if (slot === null || photo === null) {
     return null;
   }
+  const photographerProfileURL = unsplashProfileAttributionUrl(photo.photographerProfileURL);
 
   return createPortal(
     <div className="scenery-place">
@@ -23,10 +24,10 @@ export function SceneryPlaceCredit({ photo }: { readonly photo: SceneryPhoto | n
       </p>
       <p className="scenery-place__credit">
         <span className="scenery-place__prefix">Photo by </span>
-        {photo.photographerProfileURL ? (
+        {photographerProfileURL ? (
           <a
             className="scenery-place__photographer"
-            href={`${photo.photographerProfileURL}${UNSPLASH_UTM}`}
+            href={photographerProfileURL}
             rel="noreferrer"
             target="_blank"
           >

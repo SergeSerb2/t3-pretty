@@ -20,7 +20,7 @@ import {
  */
 export const DEFAULT_MANAGED_TUNNEL_LIMIT = 100;
 
-export class ManagedTunnelLimitPersistenceError extends Schema.TaggedErrorClass<ManagedTunnelLimitPersistenceError>()(
+export class ManagedTunnelLimitPersistenceError extends Schema.TaggedError<ManagedTunnelLimitPersistenceError>()(
   "ManagedTunnelLimitPersistenceError",
   {
     operation: Schema.Literals(["load-limit", "count-tunnels"]),
@@ -33,7 +33,7 @@ export class ManagedTunnelLimitPersistenceError extends Schema.TaggedErrorClass<
   }
 }
 
-export class ManagedTunnelLimitExceeded extends Schema.TaggedErrorClass<ManagedTunnelLimitExceeded>()(
+export class ManagedTunnelLimitExceeded extends Schema.TaggedError<ManagedTunnelLimitExceeded>()(
   "ManagedTunnelLimitExceeded",
   {
     userId: Schema.String,

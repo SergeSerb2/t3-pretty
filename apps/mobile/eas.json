@@ -6,7 +6,8 @@
   },
   "build": {
     "development": {
-      "corepack": true,
+      "node": "24.13.1",
+      "pnpm": "11.10.0",
       "env": {
         "APP_VARIANT": "development",
         "NODE_OPTIONS": "--max-old-space-size=4096"
@@ -16,7 +17,8 @@
       "distribution": "internal"
     },
     "preview": {
-      "corepack": true,
+      "node": "24.13.1",
+      "pnpm": "11.10.0",
       "env": {
         "APP_VARIANT": "preview",
         "NODE_OPTIONS": "--max-old-space-size=4096"
@@ -26,7 +28,8 @@
       "distribution": "internal"
     },
     "preview:dev": {
-      "corepack": true,
+      "node": "24.13.1",
+      "pnpm": "11.10.0",
       "env": {
         "APP_VARIANT": "preview",
         "MOBILE_VERSION_POLICY": "fingerprint",
@@ -40,8 +43,17 @@
         "buildType": "apk"
       }
     },
+    "v2-preview": {
+      "extends": "production",
+      "distribution": "store",
+      "channel": "v2-preview",
+      "env": {
+        "T3CODE_MOBILE_UPDATES_ENABLED": "0"
+      }
+    },
     "production": {
-      "corepack": true,
+      "node": "24.13.1",
+      "pnpm": "11.10.0",
       "env": {
         "APP_VARIANT": "production",
         "NODE_OPTIONS": "--max-old-space-size=4096"
@@ -52,6 +64,13 @@
     }
   },
   "submit": {
+    "v2-preview": {
+      "extends": "production",
+      "android": {
+        "track": "alpha",
+        "releaseStatus": "completed"
+      }
+    },
     "production": {
       "ios": {
         "ascAppId": "6800547056"
