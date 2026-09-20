@@ -1233,3 +1233,5 @@ Local verification on this repair tree. `tsc` printed Effect suggestions only; e
 - `scripts/notify-discord-release.test.ts` — Remove isDiscordReleaseAnnouncementError assertions from both webhook failure tests.. Reason: Those assertions protect T3 Pretty's typed error contract and are compatible with the parent behavior, so removing that regression coverage would weaken the fork.
 - `shared-typecheck` failed after merging `v0.0.43-nightly.20260920.1990`; repaired with `gpt-5.6-sol`: Restores the T3 Pretty environment API imports and favicon schema that were dropped during integration, resolving all reported shared-typecheck errors without changing behavior.
   - edited `packages/contracts/src/ipc.ts`
+- `web-typecheck` failed after merging `v0.0.43-nightly.20260920.1990`; repaired with `gpt-5.6-sol`: Import `renderToStaticMarkup` from `react-dom/server`, resolving all six error-level diagnostics while preserving the merged sidebar tests and behavior.
+  - edited `apps/web/src/components/ui/sidebar.test.tsx`
