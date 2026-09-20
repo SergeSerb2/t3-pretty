@@ -29,6 +29,7 @@ import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
   WorkspaceBreadcrumbSeparator,
+  WorkspaceBreadcrumbText,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
 
@@ -255,12 +256,16 @@ export const ChatHeader = memo(function ChatHeader({
                   }
                 >
                   <ProjectFavicon project={activeProject} className="size-3.5" />
-                  <span className="max-w-36 truncate tracking-tight">{activeProjectName}</span>
+                  <WorkspaceBreadcrumbText className="max-w-36 tracking-tight">
+                    {activeProjectName}
+                  </WorkspaceBreadcrumbText>
                 </TooltipTrigger>
                 <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
-            <WorkspaceBreadcrumbSeparator />
+            <WorkspaceBreadcrumbSeparator>
+              <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
+            </WorkspaceBreadcrumbSeparator>
           </>
         ) : null}
         <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
@@ -294,7 +299,9 @@ export const ChatHeader = memo(function ChatHeader({
                   />
                 }
               >
-                <h2 className="min-w-0 truncate font-medium tracking-tight">{activeThreadTitle}</h2>
+                <h2 className="min-w-0 font-medium tracking-tight">
+                  <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                </h2>
                 <ChevronDownIcon
                   aria-hidden
                   data-thread-title-chevron
@@ -309,12 +316,12 @@ export const ChatHeader = memo(function ChatHeader({
                 render={
                   <h2
                     aria-label={activeThreadTitle}
-                    className="min-w-0 flex-1 truncate font-medium tracking-tight"
-                  >
-                    {activeThreadTitle}
-                  </h2>
+                    className="min-w-0 flex-1 font-medium tracking-tight"
+                  />
                 }
-              />
+              >
+                <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+              </TooltipTrigger>
               <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
             </Tooltip>
           )}

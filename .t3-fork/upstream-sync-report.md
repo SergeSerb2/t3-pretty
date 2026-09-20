@@ -1243,3 +1243,56 @@ Local verification on this repair tree. `tsc` printed Effect suggestions only; e
   - edited `apps/mobile/src/features/cloud/linkEnvironment.ts`
   - edited `apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx`
   - omitted parent change: The duplicate parent TerminalHeader variant using a “Back to chat” chevron in split view.. Reason: It cannot coexist with the same-named implementation and would regress T3 Pretty's authoritative close-terminal xmark with separate background; all shared terminal menu behavior remains in the retained implementation.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260920.2018`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260920.2005`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/GitActionsControl.tsx` — Preserved T3 Pretty's `min-w-64` Git action popup sizing so richer fork-specific menu content, including automated-review presentation carried by the shared `gitItems`, has sufficient width.
+- `apps/web/src/components/GitActionsControl.tsx` — Preserved the fork-aware Git menu behavior through the already shared `gitItems` collection rather than reverting to the base's plain-label duplicated rendering.
+- `apps/web/src/components/WorkspaceBreadcrumb.tsx` — T3 Pretty's breadcrumb separator visual design using the softer `text-muted-foreground/45` color.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Preserved T3 Pretty's slim thread top bar by keeping the removed GitActionsControl import out of ChatHeader.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Preserved T3 Pretty's slim thread top bar by not restoring the legacy responsive breakpoint-fade animation machinery removed by the fork.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Preserved the fork's simplified header architecture by not restoring the removed primary-environment lookup and its associated action-surface assumptions.
+- `apps/web/src/components/chat/ChatHeader.tsx` — The slim thread top bar keeps the project label capped at max-w-36 instead of widening to max-w-40.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Project and thread labels retain T3 Pretty's tight letter spacing.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Thread titles retain T3 Pretty's medium font weight.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Existing tooltip, title-action, and breadcrumb behavior remains intact around the composed changes.
+- `apps/web/src/components/chat/ChatHeader.tsx` — T3 Pretty's slim thread top bar remains free of the project-scripts, Open In, Git actions, and overflow-menu cluster.
+- `apps/web/src/components/chat/ChatHeader.tsx` — T3 Pretty's header-level right-panel clearance and reduced-motion-aware padding animation remain authoritative instead of adding a second action-container padding layer.
+- `apps/web/src/components/pullRequest/PullRequestCodeTab.tsx` — Preserved T3 Pretty's cleanup of obsolete parsed-diff cache entries after slice replacement, refresh, or theme/render-key changes, avoiding stale retained parses.
+- `apps/web/src/components/ui/menu.tsx` — Preserved the `instant` popup option used to skip scale animations for right-click menus.
+- `apps/web/src/components/ui/menu.tsx` — Preserved custom positioner styling through `positionerClassName`.
+- `apps/web/src/components/ui/menu.tsx` — Preserved configurable Base UI positioning behavior through `positionMethod`.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/components/GitActionsControl.tsx` — Integrated the parent refactor that reuses `gitItems` for the desktop Git actions popup, eliminating the duplicated action, publish, warning, and error rendering and keeping menu presentations consistent.
+- `apps/web/src/components/WorkspaceBreadcrumb.tsx` — Workspace breadcrumb separators now render the supplied `children`, retaining the default `/` while supporting custom separator content.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Added the parent's createPortal import from react-dom for its new portal-based header behavior.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Added mobile- and container-width-aware collapsing of header actions, including the 512px narrow-header breakpoint.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Added a persistent DOM action host that is reparented between inline and menu mounts so resizing or phone rotation does not discard unsaved script or Git dialog state.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Added automatic closure of the collapsed actions menu when the header expands.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Project and thread labels now use WorkspaceBreadcrumbText, adopting the parent's centralized breadcrumb text and truncation behavior.
+- `apps/web/src/components/chat/ChatHeader.tsx` — The non-server thread tooltip now uses the parent's child-content TooltipTrigger composition rather than embedding title text directly in the render element.
+- `apps/web/src/components/pullRequest/PullRequestCodeTab.tsx` — Integrated the upstream ignore-whitespace mode into getRenderablePatch.
+- `apps/web/src/components/pullRequest/PullRequestCodeTab.tsx` — Included ignoreWhitespace in each parse-cache key and the useMemo dependency list so toggling the mode produces the correct rendering rather than reusing an incompatible parse.
+- `apps/web/src/components/ui/menu.tsx` — Integrated the upstream `keepMounted` MenuPopup option, defaulting it to false and forwarding it to `MenuPrimitive.Portal`.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/chat/ChatHeader.tsx` — Retain GitActionsControl in ChatHeader.. Reason: T3 Pretty intentionally removed this control as part of its slim thread top bar design; restoring it would regress the fork-specific header UI.
+- `apps/web/src/components/chat/ChatHeader.tsx` — The parent hunk's legacy usePanelAnimationSettings/observeResponsiveBreakpointFade setup.. Reason: T3 Pretty intentionally removed this machinery as part of its slim thread top bar. Restoring it would regress the fork design, and it is not required by the new responsive action-collapse implementation.
+- `apps/web/src/components/chat/ChatHeader.tsx` — The parent hunk's usePrimaryEnvironmentId lookup.. Reason: T3 Pretty removed the primary-environment-dependent header setup; restoring the isolated lookup would reintroduce removed architecture and references a hook no longer imported by this fork.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Increase the project breadcrumb label width to max-w-40.. Reason: T3 Pretty intentionally uses max-w-36 as part of its fork-specific slim thread top bar design.
+- `apps/web/src/components/chat/ChatHeader.tsx` — The parent responsive header-actions overflow menu, including inline/menu portal mounting and the collapsed ellipsis trigger.. Reason: T3 Pretty deliberately removed the trailing action cluster in its slim thread top-bar redesign. Restoring it, even in responsive form, would regress the fork's authoritative navigation and visual design.
+- `apps/web/src/components/chat/ChatHeader.tsx` — The parent action-container right-padding calculation that reserves space for two panel toggles at different breakpoints.. Reason: The fork applies right-panel clearance and its animation to the enclosing header itself. Adding the parent's padding on a restored action container would reintroduce the removed cluster and create a competing layout layer.
+- `web-typecheck` failed after merging `v0.0.43-nightly.20260920.2018`; repaired with `gpt-5.6-sol`: Removed the orphaned upstream header-actions fragment and its supporting imports/state, preserving T3 Pretty's slim thread header while resolving all 24 undefined-name errors.
+  - edited `apps/web/src/components/chat/ChatHeader.tsx`
+  - omitted parent change: Responsive ChatHeader controls for project scripts, Open In, and Git actions, including their collapsed menu/portal infrastructure.. Reason: T3 Pretty's authoritative slim-header change deliberately removed these controls and their entire ChatHeader prop API. The merged upstream fragment was unrendered and could only be completed by restoring the fork-removed controls and changing the slim-header behavior.
