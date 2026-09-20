@@ -82,7 +82,7 @@ function nativeSnapshot(input: {
     }),
   ];
   return {
-    version: 2,
+    version: 3,
     type: "snapshot",
     sequence: input.sequence,
     sampledAtUnixMs: input.sampledAtUnixMs,
@@ -164,7 +164,10 @@ describe("ResourceTelemetry", () => {
         }),
       });
       const desktopLayer = DesktopTelemetryReceiver.layerTest({
-        latest: Effect.succeedSome(desktopSnapshot(sampledAtUnixMs)),
+        latest: Effect.succeedSome({
+          ...desktopSnapshot(sampledAtUnixMs),
+          electronProcessesTruncated: true,
+        }),
         setDiagnosticsDemand: (enabled) =>
           Ref.update(demandChanges, (changes) => [...changes, enabled]),
       });
@@ -180,6 +183,7 @@ describe("ResourceTelemetry", () => {
       ).pipe(Effect.provide(telemetryLayer));
 
       expect(Option.isSome(live)).toBe(true);
+      expect(Option.getOrThrow(live).processesTruncated).toBe(true);
       expect(yield* Ref.get(demandChanges)).toEqual([true, false]);
     }),
   );
@@ -497,7 +501,7 @@ describe("ResourceTelemetry", () => {
       const nativeHealth = yield* Ref.make<NativeTelemetryClient.NativeTelemetryClientHealth>({
         status: "healthy",
         hello: Option.some({
-          version: 2,
+          version: 3,
           type: "hello",
           sidecarVersion: "0.1.0",
           sidecarPid: 9_000,

@@ -56,6 +56,29 @@ describe("canAnimateSceneryInkTransition", () => {
 });
 
 describe("runSceneryInkTransition", () => {
+  it("keeps a new draft live when its wallpaper changes the ink appearance", () => {
+    let captured = false;
+    let committed = false;
+    vi.stubGlobal("document", {
+      documentElement: { dataset: {} },
+      querySelector: (selector: string) =>
+        selector === '[data-chat-composer-overlay][data-composer-placement="hero"]' ? {} : null,
+      startViewTransition: () => {
+        captured = true;
+        return { finished: Promise.resolve() };
+      },
+    });
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
+
+    runSceneryInkTransition((animating) => {
+      expect(animating).toBe(false);
+      committed = true;
+    });
+
+    expect(committed).toBe(true);
+    expect(captured).toBe(false);
+  });
+
   it("uses a document view transition and clears the gate after it finishes", async () => {
     const dataset: Record<string, string> = {};
     let finishTransition: (() => void) | undefined;

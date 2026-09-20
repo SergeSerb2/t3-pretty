@@ -6,9 +6,10 @@ const CONNECT_AUTH_CHALLENGE_PARAM = "challenge";
 const CONNECT_AUTH_PORT_PARAM = "port";
 const CONNECT_AUTH_CODE_SEPARATOR = ".";
 const CONNECT_LOOPBACK_CALLBACK_PATH = "/callback";
+export const CONNECT_AUTH_VALUE_MAX_LENGTH = 8_192;
+export const CONNECT_AUTH_CODE_MAX_LENGTH = 16_384;
 
 const CONNECT_AUTHORIZE_PATH = "/connect";
-const CONNECT_CALLBACK_PATH = "/connect/callback";
 
 /**
  * The CLI prints URLs against this origin and the web bundle uses it to
@@ -28,20 +29,20 @@ export function hostedAppRouteUrl(hostedAppUrl: string, routePath: string): URL 
 }
 
 /**
- * Requested at authorize time by the hosted page and honored by the CLI's
- * token exchange; keep both sides on this single definition.
+ * Requested at authorize time by the hosted page and by the CLI's device
+ * authorization request; keep both sides on this single definition.
+ * `offline_access` asks Clerk for the refresh token the CLI relies on.
  */
-export const CONNECT_OAUTH_SCOPES = ["openid", "profile", "email"] as const;
+export const CONNECT_OAUTH_SCOPES = ["openid", "profile", "email", "offline_access"] as const;
 
 export interface ConnectAuthorizeRequest {
   readonly state: string;
   readonly challenge: string;
   /**
-   * Present when a loopback CLI initiated the request: the hosted /connect
-   * page then asks Clerk to redirect the authorization code straight to
-   * `http://127.0.0.1:<port>/callback` instead of the hosted callback page.
+   * The hosted /connect page asks Clerk to redirect the authorization code
+   * straight to `http://127.0.0.1:<port>/callback` on the waiting CLI.
    */
-  readonly loopbackPort?: number;
+  readonly loopbackPort: number;
 }
 
 /**
@@ -49,26 +50,25 @@ export interface ConnectAuthorizeRequest {
  * `code_challenge` ride the fragment so they never reach the hosted app's
  * server or CDN logs; neither is a secret.
  *
- * Both CLI flows route through the hosted /connect page rather than hitting
+ * The CLI routes through the hosted /connect page rather than hitting
  * Clerk's /oauth/authorize directly: a signed-out browser sent straight to
  * /oauth/authorize goes through Clerk's sign-in redirect, which does not
  * reliably preserve the authorize query parameters (state, response_type,
  * code_challenge). The hosted page waits for a Clerk session first, then
- * forwards the request with the parameters intact.
+ * forwards the request with the parameters intact. Headless hosts use the
+ * OAuth device authorization grant instead and never involve this page.
  */
 export function buildConnectAuthorizeRequestUrl(input: {
   readonly hostedAppUrl: string;
   readonly state: string;
   readonly challenge: string;
-  readonly loopbackPort?: number;
+  readonly loopbackPort: number;
 }): string {
   const url = hostedAppRouteUrl(input.hostedAppUrl, CONNECT_AUTHORIZE_PATH);
   url.hash = new URLSearchParams([
     [CONNECT_AUTH_STATE_PARAM, input.state],
     [CONNECT_AUTH_CHALLENGE_PARAM, input.challenge],
-    ...(input.loopbackPort === undefined
-      ? []
-      : [[CONNECT_AUTH_PORT_PARAM, String(input.loopbackPort)] as [string, string]]),
+    [CONNECT_AUTH_PORT_PARAM, String(input.loopbackPort)],
   ]).toString();
   return url.toString();
 }
@@ -77,18 +77,14 @@ export function readConnectAuthorizeRequest(url: URL): ConnectAuthorizeRequest |
   const params = readHashParams(url);
   const state = params.get(CONNECT_AUTH_STATE_PARAM)?.trim() ?? "";
   const challenge = params.get(CONNECT_AUTH_CHALLENGE_PARAM)?.trim() ?? "";
-  if (!state || !challenge) {
-    return null;
-  }
-  const port = params.get(CONNECT_AUTH_PORT_PARAM);
-  if (port === null) {
-    return { state, challenge };
-  }
-  // A present-but-invalid port means the link was corrupted; reject the whole
-  // request rather than silently downgrading a loopback flow to the
-  // out-of-band one, which would strand the waiting CLI.
-  const loopbackPort = parseLoopbackPort(port.trim());
-  if (loopbackPort === null) {
+  const loopbackPort = parseLoopbackPort(params.get(CONNECT_AUTH_PORT_PARAM)?.trim() ?? "");
+  if (
+    !state ||
+    !challenge ||
+    state.length > CONNECT_AUTH_VALUE_MAX_LENGTH ||
+    challenge.length > CONNECT_AUTH_VALUE_MAX_LENGTH ||
+    loopbackPort === null
+  ) {
     return null;
   }
   return { state, challenge, loopbackPort };
@@ -110,10 +106,6 @@ export function connectLoopbackRedirectUri(port: number): string {
   return `http://127.0.0.1:${port}${CONNECT_LOOPBACK_CALLBACK_PATH}`;
 }
 
-export function connectCallbackUrl(hostedAppUrl: string): string {
-  return hostedAppRouteUrl(hostedAppUrl, CONNECT_CALLBACK_PATH).toString();
-}
-
 export function buildConnectClerkAuthorizeUrl(input: {
   readonly authorizationEndpoint: string;
   readonly clientId: string;
@@ -132,7 +124,6 @@ export function buildConnectClerkAuthorizeUrl(input: {
   url.searchParams.set("code_challenge_method", "S256");
   return url.toString();
 }
-
 export interface ConnectAuthCode {
   readonly code: string;
   readonly state: string;
@@ -170,6 +161,9 @@ export function checkConnectAuthCode(
 }
 
 export function parseConnectAuthCode(blob: string): ConnectAuthCode | null {
+  if (blob.length > CONNECT_AUTH_CODE_MAX_LENGTH) {
+    return null;
+  }
   const trimmed = blob.trim();
   const separatorIndex = trimmed.lastIndexOf(CONNECT_AUTH_CODE_SEPARATOR);
   if (separatorIndex <= 0 || separatorIndex === trimmed.length - 1) {

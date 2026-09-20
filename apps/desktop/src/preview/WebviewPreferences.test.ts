@@ -44,8 +44,9 @@ describe("PREVIEW_WEBVIEW_PREFERENCES", () => {
   const parsed = parseWebPreferences(PREVIEW_WEBVIEW_PREFERENCES);
 
   it("contains exactly the three security-critical keys", () => {
-    expect(Object.keys(parsed).toSorted()).toEqual(
-      ["contextIsolation", "nodeIntegration", "sandbox"].toSorted(),
+    // Array.prototype.toSorted is not available in older V8; use sort() on a copy.
+    expect(Object.keys(parsed).slice().sort()).toEqual(
+      ["contextIsolation", "nodeIntegration", "sandbox"].slice().sort(),
     );
   });
 

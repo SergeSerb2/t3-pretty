@@ -32,10 +32,13 @@ import * as CliTokenManager from "./CliTokenManager.ts";
 import type { RelayLinkProofRequest } from "@t3tools/contracts/relay";
 import { CLOUD_ENDPOINT_RUNTIME_CONFIG, RELAY_URL_SECRET } from "./config.ts";
 import {
+  cloudReplayGuardName,
+  cloudReplayGuardNames,
   consumeCloudReplayGuards,
   isSupportedLinkProviderKind,
   linkProofScopes,
   pendingServiceUpdateExists,
+  RELAY_CLIENT_RESPONSE_MAX_BYTES,
   reconcileDesiredCloudLink,
   releaseManagedTunnelOnShutdown,
 } from "./http.ts";
@@ -118,6 +121,35 @@ describe("consumeCloudReplayGuards", () => {
       expect(error).toBe(failure);
     }),
   );
+});
+
+describe("cloudReplayGuardName", () => {
+  it("maps opaque claims to deterministic, bounded secret names", () => {
+    const prefix = "cloud-mint-jti-";
+    const values = ["../../outside", "..\\outside", "nul\0value", "🧪".repeat(10_000)];
+    const names = values.map((value) => cloudReplayGuardName(prefix, value));
+
+    expect(cloudReplayGuardName(prefix, values[0]!)).toBe(names[0]);
+    expect(new Set(names).size).toBe(values.length);
+    for (const name of names) {
+      expect(name).toMatch(/^cloud-mint-jti-[A-Za-z0-9_-]{43}$/);
+      expect(name).toHaveLength(prefix.length + 43);
+    }
+  });
+
+  it("checks only safe legacy names during the deployment transition", () => {
+    const prefix = "cloud-mint-jti-";
+    expect(cloudReplayGuardNames(prefix, "safe_uuid-123", true)).toEqual([
+      cloudReplayGuardName(prefix, "safe_uuid-123"),
+      `${prefix}safe_uuid-123`,
+    ]);
+    expect(cloudReplayGuardNames(prefix, "../../outside", true)).toEqual([
+      cloudReplayGuardName(prefix, "../../outside"),
+    ]);
+    expect(cloudReplayGuardNames(prefix, "safe_uuid-123", false)).toEqual([
+      cloudReplayGuardName(prefix, "safe_uuid-123"),
+    ]);
+  });
 });
 
 describe("relay request tracing", () => {
@@ -576,6 +608,33 @@ describe("releaseManagedTunnelOnShutdown", () => {
         applyConfigCalls,
         requests,
         respond: () => Response.json({ ok: false }, { status: 503 }),
+      }),
+    );
+  });
+
+  it.effect("rejects an oversized relay response without dropping the stored token", () => {
+    const { store, values } = makeMemorySecretStore(managedLinkSecrets);
+    const applyConfigCalls: Array<unknown> = [];
+    const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(releaseManagedTunnelOnShutdown());
+
+      expect(result._tag).toBe("Failure");
+      expect(requests).toHaveLength(1);
+      expect(values.has(CLOUD_ENDPOINT_RUNTIME_CONFIG)).toBe(true);
+    }).pipe(
+      provideReleaseHarness({
+        store,
+        applyConfigCalls,
+        requests,
+        respond: () =>
+          new Response("x".repeat(RELAY_CLIENT_RESPONSE_MAX_BYTES + 1), {
+            headers: {
+              "content-length": String(RELAY_CLIENT_RESPONSE_MAX_BYTES + 1),
+              "content-type": "application/json",
+            },
+          }),
       }),
     );
   });

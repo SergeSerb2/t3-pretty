@@ -1,6 +1,16 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ProjectId, ScopedProjectRef } from "@t3tools/contracts";
-import type { DraftThreadEnvMode } from "../composerDraftStore";
+import type {
+  EnvironmentId,
+  ModelSelection,
+  ProjectId,
+  ScopedProjectRef,
+} from "@t3tools/contracts";
+import type { ComposerThreadDraftState, DraftThreadEnvMode } from "../composerDraftStore";
+
+type ComposerModelSelectionState = Pick<
+  ComposerThreadDraftState,
+  "activeProvider" | "modelSelectionByProvider" | "modelSelectionExplicit"
+>;
 
 interface ThreadContextLike {
   environmentId: EnvironmentId;
@@ -25,6 +35,8 @@ export interface ChatThreadActionContext {
   readonly activeThread: ThreadContextLike | undefined;
   readonly defaultProjectRef: ScopedProjectRef | null;
   readonly handleNewThread: NewThreadHandler;
+  /** Sidebar project filter, when the thread list is scoped to one project. */
+  readonly scopedProjectRef?: ScopedProjectRef | null;
 }
 
 export function resolveNewDraftStartFromOrigin(input: {
@@ -34,9 +46,36 @@ export function resolveNewDraftStartFromOrigin(input: {
   return input.envMode === "worktree" && input.newWorktreesStartFromOrigin;
 }
 
+export function resolveNewThreadModelSelectionOverride(input: {
+  readonly projectDefaultSelection: ModelSelection | null;
+  readonly carrySelection: ModelSelection | null;
+  readonly carrySourceDraftId: string | null;
+  readonly destinationDraftId: string;
+}): ModelSelection | null {
+  return (
+    input.projectDefaultSelection ??
+    (input.carrySourceDraftId === input.destinationDraftId ? null : input.carrySelection)
+  );
+}
+
+export function hasExplicitComposerModelSelection(
+  draft: ComposerModelSelectionState | null | undefined,
+): boolean {
+  const activeProvider = draft?.activeProvider;
+  return (
+    draft?.modelSelectionExplicit === true &&
+    activeProvider !== null &&
+    activeProvider !== undefined &&
+    draft.modelSelectionByProvider[activeProvider] !== undefined
+  );
+}
+
 export function resolveThreadActionProjectRef(
   context: ChatThreadActionContext,
 ): ScopedProjectRef | null {
+  if (context.scopedProjectRef) {
+    return context.scopedProjectRef;
+  }
   if (context.activeThread) {
     return scopeProjectRef(context.activeThread.environmentId, context.activeThread.projectId);
   }
