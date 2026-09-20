@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { ThreadId } from "@t3tools/contracts";
+import { ENTITY_ID_MAX_LENGTH, ThreadId } from "@t3tools/contracts";
 import { DraftId } from "./composerDraftStore";
 
 import {
@@ -10,6 +10,7 @@ import {
   resolveThreadRouteRenderState,
   resolveThreadRouteRef,
   resolveThreadRouteTarget,
+  shouldRedirectMissingThreadRoute,
 } from "./threadRoutes";
 
 describe("threadRoutes", () => {
@@ -35,6 +36,20 @@ describe("threadRoutes", () => {
 
     expect(resolveThreadRouteRef({ environmentId: "env-1" })).toBeNull();
     expect(resolveThreadRouteRef({ threadId: "thread-1" })).toBeNull();
+  });
+
+  it("rejects non-canonical and oversized external route ids", () => {
+    expect(resolveThreadRouteRef({ environmentId: " env-1", threadId: "thread-1" })).toBeNull();
+    expect(resolveThreadRouteRef({ environmentId: "env-1", threadId: " " })).toBeNull();
+    expect(
+      resolveThreadRouteRef({
+        environmentId: "env-1",
+        threadId: "t".repeat(ENTITY_ID_MAX_LENGTH + 1),
+      }),
+    ).toBeNull();
+    expect(
+      resolveThreadRouteTarget({ draftId: "d".repeat(ENTITY_ID_MAX_LENGTH * 2 + 2) }),
+    ).toBeNull();
   });
 
   it("builds canonical draft route params from a draft id", () => {
@@ -146,6 +161,23 @@ describe("threadRoutes", () => {
         draftThreadExists: false,
       }),
     ).toBe("missing");
+  });
+
+  it("holds the missing-thread redirect until a just-imported thread can appear", () => {
+    const missing = {
+      renderState: "missing" as const,
+      environmentHasAnyThreads: true,
+      transferInProgress: false,
+      threadDeleted: false,
+      missingForMs: 0,
+      graceMs: 100,
+    };
+    expect(shouldRedirectMissingThreadRoute(missing)).toBe(false);
+    expect(shouldRedirectMissingThreadRoute({ ...missing, missingForMs: 100 })).toBe(true);
+    expect(shouldRedirectMissingThreadRoute({ ...missing, transferInProgress: true })).toBe(false);
+    expect(
+      shouldRedirectMissingThreadRoute({ ...missing, threadDeleted: true, missingForMs: 0 }),
+    ).toBe(true);
   });
 
   it("redirects deleted shell-only threads", () => {

@@ -23,6 +23,9 @@ type Environment = Readonly<Record<string, string | undefined>>;
 const REPO_ROOT = NodePath.dirname(
   NodePath.dirname(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url))),
 );
+const MAX_REPO_ENV_BYTES = 1024 * 1024;
+const MAX_RELEASE_TRAIN_MARKER_BYTES = 1024;
+const MAX_PACKAGE_JSON_BYTES = 1024 * 1024;
 
 export function loadRepoEnv({
   baseEnv = process.env,
@@ -121,17 +124,22 @@ export function loadRepoEnv({
  */
 export function readReleaseTrainVersion(repoRoot = REPO_ROOT): string | undefined {
   try {
-    const nightly = NodeFS.readFileSync(
+    const nightly = readUtf8FileBounded(
       NodePath.join(repoRoot, ".t3-fork/upstream-nightly"),
-      "utf8",
-    ).trim();
+      MAX_RELEASE_TRAIN_MARKER_BYTES,
+    )?.trim();
+    if (!nightly) throw new Error("No fork release-train marker");
     if (/^v?\d+\.\d+\.\d+/.test(nightly)) return nightly.replace(/^v/, "");
   } catch {
     // Non-fork and pre-sync checkouts use the package version below.
   }
 
   try {
-    const raw = NodeFS.readFileSync(NodePath.join(repoRoot, "apps/web/package.json"), "utf8");
+    const raw = readUtf8FileBounded(
+      NodePath.join(repoRoot, "apps/web/package.json"),
+      MAX_PACKAGE_JSON_BYTES,
+    );
+    if (!raw) return undefined;
     const version = (JSON.parse(raw) as { version?: unknown }).version;
     return typeof version === "string" ? version : undefined;
   } catch {
@@ -219,5 +227,39 @@ function firstNonEmpty(sources: readonly Environment[], ...names: readonly strin
 }
 
 function readEnvFile(path: string): Record<string, string | undefined> {
-  return NodeFS.existsSync(path) ? NodeUtil.parseEnv(NodeFS.readFileSync(path, "utf8")) : {};
+  const source = readUtf8FileBounded(path, MAX_REPO_ENV_BYTES);
+  return source === undefined ? {} : NodeUtil.parseEnv(source);
+}
+
+function readUtf8FileBounded(path: string, maxBytes: number): string | undefined {
+  let file: number;
+  try {
+    file = NodeFS.openSync(path, "r");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+
+  try {
+    if (NodeFS.fstatSync(file).size > maxBytes) {
+      throw new Error(
+        `Build configuration file exceeds the ${maxBytes}-byte safety limit: ${path}`,
+      );
+    }
+    const bytes = Buffer.alloc(maxBytes + 1);
+    let length = 0;
+    while (length < bytes.byteLength) {
+      const read = NodeFS.readSync(file, bytes, length, bytes.byteLength - length, null);
+      if (read === 0) break;
+      length += read;
+    }
+    if (length > maxBytes) {
+      throw new Error(
+        `Build configuration file exceeds the ${maxBytes}-byte safety limit: ${path}`,
+      );
+    }
+    return bytes.subarray(0, length).toString("utf8");
+  } finally {
+    NodeFS.closeSync(file);
+  }
 }

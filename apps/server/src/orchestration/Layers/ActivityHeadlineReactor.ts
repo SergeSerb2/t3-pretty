@@ -2,14 +2,14 @@
  * ActivityHeadlineReactor - live status headlines for running turns.
  *
  * Raw activity summaries are provider-shaped: full commands, truncated error
- * text, tool payload titles. While a turn runs, this reactor asks the text
- * generation model (the same selection thread titles use) for a short
- * human-readable headline of the latest tool activity and republishes it as a
- * `turn.headline` activity with a stable per-turn id, so the projector
- * replaces the row in place and clients swap the live label without growing
- * the log. Work is coalesced per thread (only the latest activity is
- * summarized) and throttled, so a busy turn costs at most one generation per
- * interval.
+ * text, tool payload titles, and generic agent-task labels. While a turn
+ * runs, this reactor asks the text generation model (the same selection
+ * thread titles use) for a short human-readable headline of the latest tool
+ * or task activity and republishes it as a `turn.headline` activity with a
+ * stable per-turn id, so the projector replaces the row in place and clients
+ * swap the live label without growing the log. Work is coalesced per thread
+ * (only the latest activity is summarized) and throttled, so a busy turn
+ * costs at most one generation per interval.
  *
  * @module ActivityHeadlineReactor
  */
@@ -56,12 +56,21 @@ interface HeadlineJob {
   readonly detail: string | undefined;
 }
 
-/** Kinds worth narrating: tool lifecycle plus error rows. */
+/** Kinds worth narrating: tools, native agent tasks, and error rows. */
 export function activitySeedsHeadline(activity: OrchestrationThreadActivity): boolean {
   if (activity.kind === HEADLINE_ACTIVITY_KIND || activity.turnId === null) {
     return false;
   }
-  return activity.kind.startsWith("tool.") || activity.tone === "error";
+  // Usage-only ticks carry no new work to describe; they would just
+  // re-request the same headline.
+  if (activity.kind === "task.progress" && activity.summary === "Task usage updated") {
+    return false;
+  }
+  return (
+    activity.kind.startsWith("tool.") ||
+    activity.kind.startsWith("task.") ||
+    activity.tone === "error"
+  );
 }
 
 export function headlineJobForActivity(activity: OrchestrationThreadActivity): HeadlineJob | null {
@@ -230,8 +239,12 @@ const make = Effect.gen(function* () {
   const start: ActivityHeadlineReactor["Service"]["start"] = Effect.fn(
     "ActivityHeadlineReactor.start",
   )(function* () {
+    // Subscribe first, then park: Stream.fromPubSub defers subscribe until
+    // the consumer runs, and forkParked waits on ServerActivation before
+    // that — the same race ProviderCommandReactor avoids.
+    const domainEvents = yield* orchestrationEngine.subscribeDomainEvents;
     yield* forkParked(
-      Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
+      Stream.runForEach(domainEvents, (event) => {
         if (event.type !== "thread.activity-appended") {
           return Effect.void;
         }

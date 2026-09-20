@@ -15,8 +15,15 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
 import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
+import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { useCallback, useMemo, useState } from "react";
-import type { EnvironmentId, StorageInventory, StorageWorktreeEntry } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  StorageCleanupSettings,
+  StorageInventory,
+  StorageWorktreeEntry,
+  WorktreeCleanupRules,
+} from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -33,8 +40,10 @@ import { primaryServerAvailableEditorsAtom, serverEnvironment } from "../../stat
 import { shellEnvironment } from "../../state/shell";
 import { threadEnvironment } from "../../state/threads";
 import { vcsEnvironment } from "../../state/vcs";
+import { useStatusPulse } from "../../hooks/useStatusPulse";
 import {
   refreshStorageInventory,
+  STORAGE_INVENTORY_MAX_ENVIRONMENTS,
   useStorageInventories,
   type EnvironmentStorageStatus,
 } from "../../state/storageInventory";
@@ -49,6 +58,15 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import {
+  NumberField,
+  NumberFieldDecrement,
+  NumberFieldGroup,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from "../ui/number-field";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Switch } from "../ui/switch";
+import {
   ConnectionStatusDot,
   connectionPhaseDotClassName,
   connectionPhasePingClassName,
@@ -56,7 +74,15 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingsScopeNotice } from "./SettingsScopeNotice";
+import type { ScopedSettingsTarget } from "./scopedSettings";
+import { useSettingsScope } from "./SettingsScopeContext";
 import { searchableSetting } from "./settingsSearch";
+import {
+  useClearScopedSettings,
+  useScopedSettings,
+  useUpdateScopedSettings,
+} from "./useScopedSettings";
 import {
   archivedDeleteDetail,
   cleanSettledWorktrees,
@@ -70,11 +96,75 @@ import {
   settledWorktrees,
   sortStorageEnvironments,
   storageDeviceStatusText,
+  STORAGE_SETTINGS_ROW_BATCH_SIZE,
+  storageSettingsRowWindow,
+  storageInventoryCoverageWarning,
   summaryCaption,
   type StoragePendingAction,
   worktreeRowDescription,
   worktreeShouldForceRemove,
 } from "./StorageSettings.logic";
+
+function RetentionControl({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [savedValue, setSavedValue] = useState(value);
+  if (savedValue !== value) {
+    setSavedValue(value);
+    setDraft(value);
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      {value !== null ? (
+        <NumberField
+          value={draft}
+          min={1}
+          max={3650}
+          step={1}
+          size="sm"
+          className="w-auto"
+          onValueChange={setDraft}
+          onValueCommitted={(next) => {
+            if (next === null) setDraft(value);
+            else {
+              const days = Math.min(3650, Math.max(1, Math.round(next)));
+              setDraft(days);
+              onChange(days);
+            }
+          }}
+        >
+          <NumberFieldGroup>
+            <NumberFieldDecrement aria-label={`Decrease ${label}`} />
+            <NumberFieldInput
+              aria-label={`${label} in days`}
+              size={new Intl.NumberFormat().format(draft ?? value).length}
+              className="field-sizing-content w-auto min-w-[1ch] grow-0 text-right in-data-[size=sm]:px-1"
+            />
+            <span aria-hidden="true" className="self-center pr-2 text-xs">
+              days
+            </span>
+            <NumberFieldIncrement aria-label={`Increase ${label}`} />
+          </NumberFieldGroup>
+        </NumberField>
+      ) : (
+        <span className="text-xs text-muted-foreground">Off</span>
+      )}
+      <Switch
+        aria-label={label}
+        checked={value !== null}
+        onCheckedChange={(enabled) => onChange(enabled ? 8 : null)}
+      />
+    </div>
+  );
+}
 
 type PendingDialog = {
   readonly environmentId: EnvironmentId;
@@ -89,6 +179,7 @@ function StorageRefreshButton({
   readonly isPending: boolean;
   readonly onRefresh: () => void;
 }) {
+  useStatusPulse(isPending);
   return (
     <Tooltip>
       <TooltipTrigger
@@ -100,7 +191,7 @@ function StorageRefreshButton({
             disabled={isPending}
             onClick={onRefresh}
           >
-            <RefreshCwIcon className={isPending ? "size-3.5 animate-spin" : "size-3.5"} />
+            <RefreshCwIcon className={isPending ? "status-pulse size-3.5" : "size-3.5"} />
           </Button>
         }
       />
@@ -247,8 +338,213 @@ function StorageDeviceCard({
   );
 }
 
-export function StorageSettingsPanel() {
-  const { environments } = useStorageInventories();
+function StorageCleanupPolicySections() {
+  const { scope, connectedEnvironments, targets, target } = useSettingsScope();
+  const scopedSettings = useScopedSettings();
+  const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
+  const settings = {
+    ...scopedSettings.storageCleanup,
+    ...resolveWorktreeCleanup(scopedSettings, null),
+  };
+  const projectMode = (entry: ScopedSettingsTarget | null) =>
+    entry?.sources.worktreeCleanup === "project"
+      ? (entry.settings.worktreeCleanup?.mode ?? "inherit")
+      : "inherit";
+  const mode = projectMode(target);
+  const mixedModes = targets.some((entry) => projectMode(entry) !== mode);
+  const updateSettings = useUpdateScopedSettings();
+  const clearSettings = useClearScopedSettings();
+  const ruleStatus = (key: keyof StorageCleanupSettings) =>
+    targets.some(
+      (target) =>
+        ({ ...target.settings.storageCleanup, ...resolveWorktreeCleanup(target.settings, null) })[
+          key
+        ] !== settings[key],
+    )
+      ? "Mixed across selected machines"
+      : undefined;
+  const update = (patch: Partial<StorageCleanupSettings>) =>
+    updateSettings({ storageCleanup: patch });
+  const updateWorktree = (patch: Partial<WorktreeCleanupRules>) =>
+    isProjectScope
+      ? updateSettings({ worktreeCleanup: { mode: "custom", rules: patch } })
+      : update(patch);
+
+  if (
+    isProjectScope &&
+    connectedEnvironments.some(
+      (environment) =>
+        environment.serverConfig?.environment.capabilities.projectWorktreeCleanup !== true,
+    )
+  ) {
+    return (
+      <SettingsScopeNotice target="all">
+        Update the selected machines to configure project worktree cleanup.
+      </SettingsScopeNotice>
+    );
+  }
+
+  if (
+    connectedEnvironments.some(
+      (environment) => environment.serverConfig?.environment.capabilities.storageCleanup !== true,
+    )
+  ) {
+    return (
+      <SettingsScopeNotice
+        target="environment"
+        eligibleEnvironmentIds={connectedEnvironments
+          .filter(
+            (environment) =>
+              environment.serverConfig?.environment.capabilities.storageCleanup === true,
+          )
+          .map((environment) => environment.environmentId)}
+      >
+        Update the selected environments to use storage cleanup, or choose a machine that supports
+        it.
+      </SettingsScopeNotice>
+    );
+  }
+
+  return (
+    <>
+      <SettingsSection id="storage-worktrees" title="Worktrees">
+        {isProjectScope && (
+          <SettingsRow
+            title="Automatic worktree cleanup"
+            description={
+              mode === "off"
+                ? "Keep this project's worktrees until you delete them manually."
+                : mode === "custom"
+                  ? "Use these rules for this project."
+                  : "Use each machine's worktree cleanup settings."
+            }
+            serverScoped
+            settingKeys={["worktreeCleanup"]}
+            mixed={mixedModes}
+            control={
+              <Select
+                value={mixedModes ? null : mode}
+                onValueChange={(next) => {
+                  if (next === "inherit") clearSettings(["worktreeCleanup"]);
+                  else if (next === "off") updateSettings({ worktreeCleanup: { mode: "off" } });
+                  else if (next === "custom")
+                    updateSettings({ worktreeCleanup: { mode: "custom", rules: {} } });
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Automatic worktree cleanup">
+                  <SelectValue>
+                    {mixedModes
+                      ? "Mixed"
+                      : mode === "inherit"
+                        ? "Inherit"
+                        : mode === "off"
+                          ? "Off"
+                          : "Custom"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="inherit">Inherit</SelectItem>
+                  <SelectItem value="off">Off</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+        )}
+        {(!isProjectScope || (!mixedModes && mode === "custom")) && (
+          <>
+            <SettingsRow
+              title="Delete worktrees with deleted threads"
+              status={ruleStatus("worktreeOnDelete")}
+              description="Remove unused worktrees when active or archived threads are deleted. Worktrees with local changes are kept."
+              serverScoped={!isProjectScope}
+              control={
+                <Switch
+                  aria-label="Delete worktrees with deleted threads"
+                  checked={settings.worktreeOnDelete}
+                  onCheckedChange={(worktreeOnDelete) => updateWorktree({ worktreeOnDelete })}
+                />
+              }
+            />
+            <SettingsRow
+              title="Delete inactive worktrees"
+              status={ruleStatus("worktreeAfterDays")}
+              description="Remove worktrees after their threads have been inactive for this many days. Branches and thread history are kept."
+              serverScoped={!isProjectScope}
+              control={
+                <RetentionControl
+                  label="Delete inactive worktrees"
+                  value={settings.worktreeAfterDays}
+                  onChange={(worktreeAfterDays) => updateWorktree({ worktreeAfterDays })}
+                />
+              }
+            />
+            <SettingsRow
+              title="Delete merged worktrees"
+              status={ruleStatus("worktreeOnMerge")}
+              description="Remove worktrees whose pull request is merged and whose commits are included in the default branch."
+              serverScoped={!isProjectScope}
+              control={
+                <Switch
+                  aria-label="Delete merged worktrees"
+                  checked={settings.worktreeOnMerge}
+                  onCheckedChange={(worktreeOnMerge) => updateWorktree({ worktreeOnMerge })}
+                />
+              }
+            />
+            <SettingsRow
+              title="Delete unchanged worktrees"
+              status={ruleStatus("worktreeUnchanged")}
+              description="Remove worktrees with no commits beyond the default branch."
+              serverScoped={!isProjectScope}
+              control={
+                <Switch
+                  aria-label="Delete unchanged worktrees"
+                  checked={settings.worktreeUnchanged}
+                  onCheckedChange={(worktreeUnchanged) => updateWorktree({ worktreeUnchanged })}
+                />
+              }
+            />
+          </>
+        )}
+      </SettingsSection>
+
+      {!isProjectScope && (
+        <SettingsSection id="storage-artifacts" title="Artifacts and logs">
+          <SettingsRow
+            title="Delete old browser artifacts"
+            status={ruleStatus("browserArtifactsAfterDays")}
+            description="Delete saved browser captures after this many days. Older capture links will no longer open."
+            serverScoped
+            control={
+              <RetentionControl
+                label="Delete old browser artifacts"
+                value={settings.browserArtifactsAfterDays}
+                onChange={(browserArtifactsAfterDays) => update({ browserArtifactsAfterDays })}
+              />
+            }
+          />
+          <SettingsRow
+            title="Delete old rotated logs"
+            status={ruleStatus("logsAfterDays")}
+            description="Delete inactive rotated log files after this many days. Current logs are kept."
+            serverScoped
+            control={
+              <RetentionControl
+                label="Delete old rotated logs"
+                value={settings.logsAfterDays}
+                onChange={(logsAfterDays) => update({ logsAfterDays })}
+              />
+            }
+          />
+        </SettingsSection>
+      )}
+    </>
+  );
+}
+
+function StorageInventorySettings() {
+  const { environments, omittedEnvironmentCount } = useStorageInventories();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const sortedEnvironments = useMemo(
     () => sortStorageEnvironments(environments, primaryEnvironmentId),
@@ -262,7 +558,7 @@ export function StorageSettingsPanel() {
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
   const [pending, setPending] = useState<PendingDialog | null>(null);
   const [isOperating, setIsOperating] = useState(false);
-  const [openingFolderFor, setOpeningFolderFor] = useState<EnvironmentId | null>(null);
+  const [openingFolders, setOpeningFolders] = useState<ReadonlySet<EnvironmentId>>(() => new Set());
   // Raw user intent; the effective selection is re-derived every render so a
   // device that drops out of the catalog falls back without erasing the pick —
   // if it reappears (e.g. after a reconnect) the selection is restored.
@@ -409,19 +705,27 @@ export function StorageSettingsPanel() {
         });
         return;
       }
-      setOpeningFolderFor(environmentId);
-      const result = await openInEditor({
-        environmentId,
-        input: { cwd: folderPath, editor },
-      });
-      setOpeningFolderFor(null);
-      reportFailure("Could not open folder", result);
+      setOpeningFolders((current) => new Set(current).add(environmentId));
+      try {
+        const result = await openInEditor({
+          environmentId,
+          input: { cwd: folderPath, editor },
+        });
+        reportFailure("Could not open folder", result);
+      } finally {
+        setOpeningFolders((current) => {
+          if (!current.has(environmentId)) return current;
+          const next = new Set(current);
+          next.delete(environmentId);
+          return next;
+        });
+      }
     },
     [availableEditors, openInEditor, reportFailure],
   );
 
   return (
-    <SettingsPageContainer>
+    <>
       {sortedEnvironments.length === 0 ? (
         <SettingsSection id={searchableSetting("storage-disk-use").id} title="Disk use">
           <SettingsRow
@@ -455,7 +759,7 @@ export function StorageSettingsPanel() {
               key={selectedEnvironment.environmentId}
               environment={selectedEnvironment}
               isOperating={isOperating}
-              isOpeningFolder={openingFolderFor === selectedEnvironment.environmentId}
+              isOpeningFolder={openingFolders.has(selectedEnvironment.environmentId)}
               onOpenFolder={openManagedFolder}
               onPending={(action, inventory) =>
                 setPending({
@@ -468,6 +772,17 @@ export function StorageSettingsPanel() {
           ) : null}
         </>
       )}
+
+      {omittedEnvironmentCount > 0 ? (
+        <SettingsSection title="Additional environments">
+          <SettingsRow
+            title={`${omittedEnvironmentCount} additional ${
+              omittedEnvironmentCount === 1 ? "environment was" : "environments were"
+            } not measured`}
+            description={`Storage inventory is limited to the first ${STORAGE_INVENTORY_MAX_ENVIRONMENTS} connected environments at once so opening Settings cannot start an unbounded fleet of filesystem scans.`}
+          />
+        </SettingsSection>
+      ) : null}
 
       <AlertDialog
         open={pending !== null}
@@ -497,6 +812,15 @@ export function StorageSettingsPanel() {
           </AlertDialogFooter>
         </AlertDialogPopup>
       </AlertDialog>
+    </>
+  );
+}
+
+export function StorageSettingsPanel() {
+  return (
+    <SettingsPageContainer>
+      <StorageCleanupPolicySections />
+      <StorageInventorySettings />
     </SettingsPageContainer>
   );
 }
@@ -523,6 +847,9 @@ function EnvironmentStorage({
     () => refreshStorageInventory(environment.environmentId),
     [environment.environmentId],
   );
+  const coverageWarning = inventory ? storageInventoryCoverageWarning(inventory) : null;
+  const bulkActionsDisabled = actionsDisabled || coverageWarning !== null;
+  useStatusPulse(scanning);
 
   if (environment.unsupported) {
     return (
@@ -561,7 +888,7 @@ function EnvironmentStorage({
         <div className="rounded-xl px-3 py-3 sm:px-4">
           <div className="flex items-baseline gap-3">
             <p className="inline-flex items-center gap-2 font-medium text-foreground">
-              <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
+              <LoaderIcon className="status-pulse size-3.5 text-muted-foreground" />
               Measuring storage
             </p>
             <p className="text-[13px] text-muted-foreground">
@@ -584,7 +911,7 @@ function EnvironmentStorage({
           <div className="flex items-baseline gap-3">
             <p className="inline-flex items-center gap-2 font-mono text-lg font-semibold tabular-nums text-foreground">
               {scanning ? (
-                <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
+                <LoaderIcon className="status-pulse size-3.5 text-muted-foreground" />
               ) : null}
               {formatStorageBytes(inventory.totalBytes)}
             </p>
@@ -617,6 +944,11 @@ function EnvironmentStorage({
             Sizes are allocated on-disk bytes for this environment's managed worktrees. Project
             checkouts outside that folder are never counted or removed.
           </p>
+          {coverageWarning === null ? null : (
+            <p className="mt-2 max-w-xl text-[13px] leading-[1.45] text-amber-700 dark:text-amber-300">
+              {coverageWarning}
+            </p>
+          )}
         </div>
       </SettingsSection>
 
@@ -631,7 +963,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="outline"
-              disabled={actionsDisabled || cleanSettled.length === 0}
+              disabled={bulkActionsDisabled || cleanSettled.length === 0}
               onClick={() => onPending({ kind: "remove-clean-settled" }, inventory)}
             >
               Run
@@ -645,7 +977,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="outline"
-              disabled={actionsDisabled || allSettled.length === 0}
+              disabled={bulkActionsDisabled || allSettled.length === 0}
               onClick={() => onPending({ kind: "remove-all-settled" }, inventory)}
             >
               Run
@@ -659,7 +991,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="destructive-outline"
-              disabled={actionsDisabled || inventory.archivedWorktrees.length === 0}
+              disabled={bulkActionsDisabled || inventory.archivedWorktrees.length === 0}
               onClick={() => onPending({ kind: "delete-archived" }, inventory)}
             >
               Run
@@ -673,7 +1005,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="outline"
-              disabled={actionsDisabled || inventory.orphanWorktrees.length === 0}
+              disabled={bulkActionsDisabled || inventory.orphanWorktrees.length === 0}
               onClick={() => onPending({ kind: "remove-orphans" }, inventory)}
             >
               Run
@@ -714,28 +1046,11 @@ function EnvironmentStorage({
         {inventory.orphanWorktrees.length === 0 ? (
           <SettingsRow title="No orphan checkouts under the managed worktrees folder." />
         ) : (
-          inventory.orphanWorktrees.map((orphan) => (
-            <SettingsRow
-              key={orphan.path}
-              title={orphan.displayName}
-              description={orphan.path}
-              control={
-                <div className="flex items-center gap-2">
-                  <span className="tabular-nums text-[13px] text-muted-foreground">
-                    {formatStorageBytes(orphan.diskUsageBytes)}
-                  </span>
-                  <Button
-                    size="xs"
-                    variant="destructive-outline"
-                    disabled={actionsDisabled}
-                    onClick={() => onPending({ kind: "remove-orphan", orphan }, inventory)}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              }
-            />
-          ))
+          <OrphanWorktreeRows
+            actionsDisabled={actionsDisabled}
+            inventory={inventory}
+            onPending={onPending}
+          />
         )}
         <SettingsRow
           title="Managed worktrees folder"
@@ -783,6 +1098,12 @@ function WorktreeListSection({
   readonly deleteLabel?: boolean;
   readonly onRemove: (entry: StorageWorktreeEntry) => void;
 }) {
+  const [requestedVisibleCount, setRequestedVisibleCount] = useState(
+    STORAGE_SETTINGS_ROW_BATCH_SIZE,
+  );
+  const rowWindow = storageSettingsRowWindow(entries.length, requestedVisibleCount);
+  const visibleEntries = entries.slice(0, rowWindow.visibleCount);
+
   return (
     <SettingsSection {...(id === undefined ? {} : { id })} title={title}>
       {entries.length === 0 ? (
@@ -795,66 +1116,151 @@ function WorktreeListSection({
           }
         />
       ) : (
-        entries.map((item) => (
-          <SettingsRow
-            key={item.threadId}
-            title={
-              <span className="inline-flex min-w-0 items-center gap-2">
-                {deleteLabel ? (
-                  <ArchiveIcon className="size-3.5 text-muted-foreground" />
-                ) : (
-                  <DirtyIcon isDirty={item.isDirty} />
-                )}
-                <span className="truncate">{item.threadTitle}</span>
-              </span>
-            }
-            description={
-              <>
-                {worktreeRowDescription(item)}
-                {" · "}
-                {formatWorktreePathForDisplay(item.path)}
-              </>
-            }
-            control={
-              <div className="flex items-center gap-2">
-                <span className="tabular-nums text-[13px] text-muted-foreground">
-                  {formatStorageBytes(item.diskUsageBytes)}
+        <>
+          {visibleEntries.map((item) => (
+            <SettingsRow
+              key={item.threadId}
+              title={
+                <span className="inline-flex min-w-0 items-center gap-2">
+                  {deleteLabel ? (
+                    <ArchiveIcon className="size-3.5 text-muted-foreground" />
+                  ) : (
+                    <DirtyIcon isDirty={item.isDirty} />
+                  )}
+                  <span className="truncate">{item.threadTitle}</span>
                 </span>
-                {deleteLabel ? (
-                  <Button
-                    size="xs"
-                    variant="destructive-outline"
-                    disabled={isOperating}
-                    onClick={() => onRemove(item)}
-                  >
-                    Delete
-                  </Button>
-                ) : (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          disabled={isOperating || !item.canRemoveWorktree}
-                          onClick={() => onRemove(item)}
-                        >
-                          Remove
-                        </Button>
-                      }
-                    />
-                    <TooltipPopup side="top">
-                      {item.canRemoveWorktree
-                        ? "Remove this worktree and return the thread to the project checkout"
-                        : "Wait for the thread to settle before removing its worktree"}
-                    </TooltipPopup>
-                  </Tooltip>
-                )}
-              </div>
+              }
+              description={
+                <>
+                  {worktreeRowDescription(item)}
+                  {" · "}
+                  {formatWorktreePathForDisplay(item.path)}
+                </>
+              }
+              control={
+                <div className="flex items-center gap-2">
+                  <span className="tabular-nums text-[13px] text-muted-foreground">
+                    {formatStorageBytes(item.diskUsageBytes)}
+                  </span>
+                  {deleteLabel ? (
+                    <Button
+                      size="xs"
+                      variant="destructive-outline"
+                      disabled={isOperating}
+                      onClick={() => onRemove(item)}
+                    >
+                      Delete
+                    </Button>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={isOperating || !item.canRemoveWorktree}
+                            onClick={() => onRemove(item)}
+                          >
+                            Remove
+                          </Button>
+                        }
+                      />
+                      <TooltipPopup side="top">
+                        {item.canRemoveWorktree
+                          ? "Remove this worktree and return the thread to the project checkout"
+                          : "Wait for the thread to settle before removing its worktree"}
+                      </TooltipPopup>
+                    </Tooltip>
+                  )}
+                </div>
+              }
+            />
+          ))}
+          <StorageRowsRemaining
+            noun="worktrees"
+            remainingCount={rowWindow.remainingCount}
+            onShowMore={() =>
+              setRequestedVisibleCount((current) => current + STORAGE_SETTINGS_ROW_BATCH_SIZE)
             }
           />
-        ))
+        </>
       )}
     </SettingsSection>
+  );
+}
+
+function OrphanWorktreeRows({
+  actionsDisabled,
+  inventory,
+  onPending,
+}: {
+  readonly actionsDisabled: boolean;
+  readonly inventory: StorageInventory;
+  readonly onPending: (action: StoragePendingAction, inventory: StorageInventory) => void;
+}) {
+  const [requestedVisibleCount, setRequestedVisibleCount] = useState(
+    STORAGE_SETTINGS_ROW_BATCH_SIZE,
+  );
+  const rowWindow = storageSettingsRowWindow(
+    inventory.orphanWorktrees.length,
+    requestedVisibleCount,
+  );
+
+  return (
+    <>
+      {inventory.orphanWorktrees.slice(0, rowWindow.visibleCount).map((orphan) => (
+        <SettingsRow
+          key={orphan.path}
+          title={orphan.displayName}
+          description={orphan.path}
+          control={
+            <div className="flex items-center gap-2">
+              <span className="tabular-nums text-[13px] text-muted-foreground">
+                {formatStorageBytes(orphan.diskUsageBytes)}
+              </span>
+              <Button
+                size="xs"
+                variant="destructive-outline"
+                disabled={actionsDisabled}
+                onClick={() => onPending({ kind: "remove-orphan", orphan }, inventory)}
+              >
+                Remove
+              </Button>
+            </div>
+          }
+        />
+      ))}
+      <StorageRowsRemaining
+        noun="orphan checkouts"
+        remainingCount={rowWindow.remainingCount}
+        onShowMore={() =>
+          setRequestedVisibleCount((current) => current + STORAGE_SETTINGS_ROW_BATCH_SIZE)
+        }
+      />
+    </>
+  );
+}
+
+function StorageRowsRemaining({
+  noun,
+  remainingCount,
+  onShowMore,
+}: {
+  readonly noun: string;
+  readonly remainingCount: number;
+  readonly onShowMore: () => void;
+}) {
+  if (remainingCount === 0) return null;
+  const nextBatchCount = Math.min(remainingCount, STORAGE_SETTINGS_ROW_BATCH_SIZE);
+  return (
+    <SettingsRow
+      title={`${remainingCount.toLocaleString()} more ${noun}`}
+      description="Rows are shown in batches so a large inventory keeps Settings responsive."
+      control={
+        <Button size="xs" variant="outline" onClick={onShowMore}>
+          Show {nextBatchCount.toLocaleString()} more
+        </Button>
+      }
+    />
   );
 }

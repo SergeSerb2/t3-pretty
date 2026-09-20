@@ -1,4 +1,15 @@
-import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
+import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
+import {
+  getComposerDraftSnapshot,
+  clearComposerDraftContent,
+} from "../../state/use-composer-drafts";
+import { useWorktreeSetup } from "./use-worktree-setup";
+import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
+import { ScreenHeader } from "../../components/ScreenHeader";
+import { ScreenHeaderButton } from "../../components/ScreenHeaderButton";
+import type { ScreenHeaderAction } from "../../components/ScreenHeader.types";
+import { useThreadHeaderOptions } from "./useThreadHeaderOptions";
 import {
   StackActions,
   useFocusEffect,
@@ -7,66 +18,76 @@ import {
 } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Option from "effect/Option";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
-  canSettle,
-  canSnooze,
-  effectiveSettled,
-  effectiveSnoozed,
-} from "@t3tools/client-runtime/state/thread-settled";
+  CommandId,
+  MessageId,
+  DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
+  ThreadId,
+  type ProjectScript,
+} from "@t3tools/contracts";
 import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
 } from "@t3tools/client-runtime/state/threads";
+import {
+  projectScriptCwd,
+  projectScriptRuntimeEnv,
+  resolveProjectScripts,
+} from "@t3tools/shared/projectScripts";
 import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
+import { useEnvironmentShellState } from "../../state/shell";
+import { restoredNewTaskDraftKey } from "../../state/new-task-draft-key";
+import { clearPendingThreadCreationOutcome } from "../../state/pending-thread-creation";
+import { recoverFailedThreadDraft } from "../../state/recover-failed-thread-draft";
 import { useEnvironmentQuery } from "../../state/query";
 import { dismissGitActionResult, useGitActionProgress } from "../../state/use-vcs-action-state";
 import { vcsEnvironment } from "../../state/vcs";
-
 import { EmptyState } from "../../components/EmptyState";
-import {
-  AndroidScreenHeader,
-  type AndroidHeaderAction,
-} from "../../components/AndroidScreenHeader";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { connectionTone } from "../connection/connectionTone";
-
 import {
   useRemoteConnections,
   useRemoteConnectionStatus,
   useRemoteEnvironmentRuntime,
 } from "../../state/use-remote-environment-registry";
+import { useKnownTerminalSessions } from "../../state/use-terminal-session";
 import { useSelectedThreadDetailState } from "../../state/use-thread-detail";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { GitActionProgressOverlay } from "./GitActionProgressOverlay";
-import { useThreadListActions } from "../home/useThreadListActions";
-import { ThreadDetailScreen } from "./ThreadDetailScreen";
-import { ThreadGitControls, useThreadDetailHeaderActionItems } from "./ThreadGitControls";
-import { resolveThreadListV2SnoozeGateExpiryMs } from "./threadListV2";
+import {
+  buildTerminalMenuSessions,
+  nextOpenTerminalId,
+  resolveProjectScriptTerminalId,
+} from "../terminal/terminalMenu";
+import {
+  resolvePreferredThreadWorktreePath,
+  stagePendingTerminalLaunch,
+} from "../terminal/terminalLaunchContext";
+import { terminalDebugLog } from "../terminal/terminalDebugLog";
+import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
+import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
-import { useSelectedThreadGitOperationLabel } from "../../state/use-selected-thread-git-state";
+import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
 import { useSelectedThreadRequests } from "../../state/use-selected-thread-requests";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { threadEnvironment } from "../../state/threads";
 import { projectThreadContentPresentation } from "./threadContentPresentation";
+import { useThreadListActions } from "../home/useThreadListActions";
+import { useServerConfigs } from "../../state/entities";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import {
   useAdaptiveWorkspaceLayout,
   useAdaptiveWorkspacePaneRole,
   useRegisterWorkspaceInspector,
 } from "../layout/AdaptiveWorkspaceLayout";
-import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
-import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
-import {
-  recordThreadPerformanceSpan,
-  takeThreadOpenDuration,
-} from "../observability/threadPerformance";
 import { ThreadFileNavigatorPane } from "../files/thread-file-navigator-pane";
 import {
   ThreadInspectorContentStack,
@@ -74,13 +95,109 @@ import {
 } from "./thread-inspector-content-stack";
 import { threadChatHeaderSubtitle } from "./threadModelIdentity";
 import { useThreadModelIdentity } from "./use-thread-model-identity";
+import { threadRouteIsHydrating } from "./thread-route-hydration";
 
+function ThreadHeader(
+  props: Parameters<typeof useThreadHeaderOptions>[0] & {
+    readonly hasThreadCwd: boolean;
+    readonly hasWorkspaceRoot: boolean;
+    readonly fileInspectorSupported: boolean;
+    readonly inspectorMode: ThreadInspectorMode | null;
+    readonly onToggleInspector: () => void;
+    readonly onOpenGitInspector: () => void;
+    readonly onOpenFilesInspector: () => void;
+  },
+) {
+  const navigation = useNavigation();
+  const { layout, panes, toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
+  const { onOpenTerminal } = props.gitControls;
+  const native = useThreadHeaderOptions(props);
+  const androidHeaderActions = useMemo<ReadonlyArray<ScreenHeaderAction>>(() => {
+    const actions: ScreenHeaderAction[] = [];
+    if (props.onReturnToThread) {
+      actions.push({
+        accessibilityLabel: "Return to chat",
+        icon: "chevron.left",
+        onPress: props.onReturnToThread,
+      });
+    }
+    if (props.hasThreadCwd) {
+      const filesVisible = props.inspectorMode === "files" && panes.auxiliaryPaneVisible;
+      actions.push({
+        accessibilityLabel: filesVisible ? "Close files" : "Open files",
+        selected: filesVisible,
+        icon: "folder",
+        onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
+      });
+    }
+    if (props.hasWorkspaceRoot) {
+      actions.push({
+        accessibilityLabel: "Open terminal",
+        icon: "terminal",
+        onPress: () => onOpenTerminal?.(null),
+      });
+    }
+    actions.push({
+      accessibilityLabel: "Open git controls",
+      icon: "point.topleft.down.curvedto.point.bottomright.up",
+      onPress: props.onOpenGitInspector,
+    });
+    return actions;
+  }, [
+    props.inspectorMode,
+    panes.auxiliaryPaneVisible,
+    props.onOpenFilesInspector,
+    onOpenTerminal,
+    props.onOpenGitInspector,
+    toggleAuxiliaryPane,
+    props.onReturnToThread,
+    props.hasThreadCwd,
+    props.hasWorkspaceRoot,
+  ]);
+
+  return (
+    <>
+      <ScreenHeader
+        title={props.title}
+        subtitle={props.subtitle}
+        sidebar={native.sidebar}
+        options={native.options}
+        optionsVersion={props.gitControls.projectScripts}
+        trailing={
+          props.fileInspectorSupported && props.hasThreadCwd ? (
+            <ScreenHeaderButton
+              accessibilityLabel={
+                props.inspectorMode !== null && panes.auxiliaryPaneVisible
+                  ? "Hide inspector"
+                  : "Show inspector"
+              }
+              icon="sidebar.right"
+              selected={props.inspectorMode !== null && panes.auxiliaryPaneVisible}
+              onPress={props.onToggleInspector}
+            />
+          ) : null
+        }
+        onBack={
+          layout.usesSplitView
+            ? undefined
+            : () => {
+                // A deep link or cold start has no previous route; Home is the way out.
+                // Read the history at press time: it changes without re-rendering this screen.
+                if (navigation.canGoBack()) navigation.goBack();
+                else navigation.dispatch(StackActions.replace("Home"));
+              }
+        }
+        actions={androidHeaderActions}
+        hideBottomBorder
+      />
+      {native.fallback}
+    </>
+  );
+}
 interface ThreadInspectorSelection {
   readonly routeThreadIdentity: string | null;
   readonly mode: ThreadInspectorMode;
 }
-
-type NativeHeaderItems = ReadonlyArray<Record<string, unknown>>;
 
 function InspectorPaneRoleActivation() {
   useAdaptiveWorkspacePaneRole("inspector");
@@ -109,7 +226,11 @@ interface ThreadRouteScreenProps extends ThreadRouteScreenRouteProps {
   readonly renderInspector?: (headerInset: number) => ReactNode;
 }
 
-function ThreadUnavailableScreen() {
+/** Shows recovery only after the target route has reached a terminal unavailable state. */
+function ThreadUnavailableScreen(props: {
+  readonly actionLabel: string;
+  readonly onAction: () => void;
+}) {
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
@@ -124,6 +245,8 @@ function ThreadUnavailableScreen() {
       <EmptyState
         title="Thread unavailable"
         detail="This thread is not available in the current mobile snapshot."
+        actionLabel={props.actionLabel}
+        onAction={props.onAction}
       />
     </ScrollView>
   );
@@ -138,6 +261,9 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
   const threadIdRaw = firstRouteParam(params.threadId);
   const environmentId = environmentIdRaw ? EnvironmentId.make(environmentIdRaw) : null;
   const routeEnvironmentRuntime = useRemoteEnvironmentRuntime(environmentId);
+  const routeEnvironmentShellState = useEnvironmentShellState(environmentId);
+  const { onReconnectEnvironment } = useRemoteConnections();
+  const navigation = useNavigation();
   const routeConnectionState =
     routeEnvironmentRuntime?.connectionState ?? (environmentId ? "available" : connectionState);
   const routeThreadKey =
@@ -156,22 +282,43 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
 
   // Render the full thread chrome (header, feed, composer) as soon as the
   // thread SHELL is known — no blocking on message detail. The feed shows a
-  // loading overlay while messages fetch, and the composer's connection
-  // pill reports connecting/reconnecting/syncing status.
+  // loading placeholder while messages fetch, the floating pill above the
+  // composer reports loading/syncing, and the composer's connection pill
+  // reports connecting/reconnecting status.
   if (selectedThread !== null && selectedThreadKey === routeThreadKey) {
     return <ThreadRouteContent {...props} selectedThreadDetailState={selectedThreadDetailState} />;
   }
 
-  const stillHydrating =
-    workspaceState.isLoadingConnections ||
-    routeConnectionState === "connecting" ||
-    routeConnectionState === "reconnecting";
+  const stillHydrating = threadRouteIsHydrating({
+    isLoadingConnections: workspaceState.isLoadingConnections,
+    connectionState: routeConnectionState,
+    shellStatus: routeEnvironmentShellState.status,
+    shellHasError: Option.isSome(routeEnvironmentShellState.error),
+    detailStatus: selectedThreadDetailState.status,
+    detailHasError: Option.isSome(selectedThreadDetailState.error),
+  });
 
   if (stillHydrating) {
     return <OpeningThreadLoadingScreen />;
   }
 
-  return <ThreadUnavailableScreen />;
+  return (
+    <ThreadUnavailableScreen
+      actionLabel={
+        routeEnvironmentRuntime === null ? "Manage environments" : "Reconnect environment"
+      }
+      onAction={() => {
+        if (routeEnvironmentRuntime !== null) {
+          onReconnectEnvironment(environmentId);
+          return;
+        }
+        navigation.navigate("SettingsSheet", {
+          screen: "SettingsContent",
+          params: { screen: "SettingsEnvironments" },
+        });
+      }}
+    />
+  );
 }
 
 function ThreadRouteContent(
@@ -179,18 +326,18 @@ function ThreadRouteContent(
     readonly selectedThreadDetailState: ReturnType<typeof useSelectedThreadDetailState>;
   },
 ) {
-  const {
-    fileInspector,
-    layout,
-    panes,
-    showAuxiliaryPane,
-    toggleAuxiliaryPane,
-    togglePrimarySidebar,
-  } = useAdaptiveWorkspaceLayout();
+  const { themeVariables } = useAppearancePreferences();
+  const headerColor = themeVariables["--color-header"];
+  const { fileInspector, layout, panes, showAuxiliaryPane, toggleAuxiliaryPane } =
+    useAdaptiveWorkspaceLayout();
   const { connectionState } = useRemoteConnectionStatus();
   const { onReconnectEnvironment } = useRemoteConnections();
-  const { selectedThread, selectedThreadProject, selectedEnvironmentConnection } =
-    useThreadSelection();
+  const {
+    selectedThread,
+    selectedThreadCreation,
+    selectedThreadProject,
+    selectedEnvironmentConnection,
+  } = useThreadSelection();
   const selectedThreadDetailState = props.selectedThreadDetailState;
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
   // "Load earlier turns" header state for windowed (paginated) thread loads.
@@ -209,11 +356,9 @@ function ThreadRouteContent(
   }, [selectedThread, selectedThreadDetailState]);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const composer = useThreadComposerState();
-  const gitOperationLabel = useSelectedThreadGitOperationLabel();
-  const gitActions = useSelectedThreadGitActions({ loadInitialState: false });
+  const gitState = useSelectedThreadGitState();
+  const gitActions = useSelectedThreadGitActions();
   const requests = useSelectedThreadRequests();
-  const { settleThread, snoozeThread, unsnoozeThread, unsettleThread } = useThreadListActions();
-  const [threadLifecycleTick, bumpThreadLifecycleTick] = useState(0);
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, "thread interrupt");
   const navigation = useNavigation();
   const params = props.route.params;
@@ -222,27 +367,6 @@ function ThreadRouteContent(
   const threadId = firstRouteParam(params.threadId);
   const routeThreadIdentity =
     environmentIdRaw !== null && threadId !== null ? `${environmentIdRaw}:${threadId}` : null;
-  const reportedReadyIdentity = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      environmentIdRaw === null ||
-      threadId === null ||
-      selectedThreadDetail === null ||
-      reportedReadyIdentity.current === routeThreadIdentity
-    ) {
-      return;
-    }
-    reportedReadyIdentity.current = routeThreadIdentity;
-    const openDurationMs = takeThreadOpenDuration(environmentIdRaw, threadId);
-    recordThreadPerformanceSpan("mobile.thread.open.ready", {
-      "thread.environmentId": environmentIdRaw,
-      "thread.id": threadId,
-      "thread.messages": selectedThreadDetail.messages.length,
-      "thread.activities": selectedThreadDetail.activities.length,
-      "thread.open.marked": openDurationMs !== null,
-      ...(openDurationMs === null ? {} : { "thread.open.durationMs": openDurationMs }),
-    });
-  }, [environmentIdRaw, routeThreadIdentity, selectedThreadDetail, threadId]);
   const [inspectorSelection, setInspectorSelection] = useState<ThreadInspectorSelection | null>(
     () => (props.renderInspector ? { routeThreadIdentity, mode: "route" } : null),
   );
@@ -320,7 +444,6 @@ function ThreadRouteContent(
 
   /* ─── Native header theming ──────────────────────────────────────── */
   const usesNativeHeaderGlass = NATIVE_LIQUID_GLASS_SUPPORTED;
-  const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
   const headerLocation = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
@@ -328,11 +451,11 @@ function ThreadRouteContent(
     .filter(Boolean)
     .join(" · ");
   const modelIdentity = useThreadModelIdentity(
-    serverConfig,
+    routeEnvironmentRuntime?.serverConfig ?? null,
     composer.modelSelection ?? selectedThread?.modelSelection ?? null,
   );
-  // Native title + one subtitle. A custom 3-line title view overflows the
-  // iOS 26 editor-style bar and collides with the trailing glass controls.
+  // Native title + one subtitle. The compact model identity leads so
+  // truncation keeps which model this thread is running.
   const headerSubtitle = threadChatHeaderSubtitle({
     identity: modelIdentity,
     location: headerLocation,
@@ -346,6 +469,29 @@ function ThreadRouteContent(
         })
       : null,
   );
+  const knownTerminalSessions = useKnownTerminalSessions({
+    environmentId: selectedThread?.environmentId ?? null,
+    threadId: selectedThread?.id ?? null,
+  });
+  const terminalMenuSessions = useMemo(
+    () =>
+      buildTerminalMenuSessions({
+        knownSessions: knownTerminalSessions,
+        workspaceRoot: selectedThreadProject?.workspaceRoot ?? null,
+      }),
+    [knownTerminalSessions, selectedThreadProject?.workspaceRoot],
+  );
+  const selectedThreadDetailWorktreePath = selectedThreadDetail?.worktreePath ?? null;
+
+  const serverConfigs = useServerConfigs();
+  const { settleThread, snoozeThread, unsnoozeThread, unsettleThread } = useThreadListActions();
+  const settlementSupported =
+    selectedThread != null &&
+    serverConfigs.get(selectedThread.environmentId)?.environment.capabilities.threadSettlement ===
+      true;
+  const snoozeSupported =
+    selectedThread != null &&
+    serverConfigs.get(selectedThread.environmentId)?.environment.capabilities.threadSnooze === true;
   const handleReconnectEnvironment = useCallback(() => {
     if (!environmentId) {
       return;
@@ -443,7 +589,7 @@ function ThreadRouteContent(
   // bar); elsewhere the pane content pads itself below the top inset.
   const safeAreaInsets = useSafeAreaInsets();
   const inspectorHeaderInset = Platform.OS === "ios" ? 0 : safeAreaInsets.top;
-  const GitInspector = useCallback(
+  const GitInspector = useMemo(
     () => (
       <GitOverviewSheet
         headerInset={inspectorHeaderInset}
@@ -453,7 +599,7 @@ function ThreadRouteContent(
     ),
     [inspectorHeaderInset, props.route.params],
   );
-  const FilesInspector = useCallback(
+  const FilesInspector = useMemo(
     () =>
       selectedThread !== null && selectedThreadCwd !== null ? (
         <ThreadFileNavigatorPane
@@ -473,7 +619,7 @@ function ThreadRouteContent(
       selectedThreadProject?.title,
     ],
   );
-  const RouteInspector = useCallback(
+  const RouteInspector = useMemo(
     () => props.renderInspector?.(inspectorHeaderInset),
     [inspectorHeaderInset, props.renderInspector],
   );
@@ -481,17 +627,17 @@ function ThreadRouteContent(
     () =>
       inspectorMode === null ? null : (
         <ThreadInspectorContentStack
-          Files={FilesInspector}
-          Git={GitInspector}
+          files={FilesInspector}
+          git={GitInspector}
           mode={inspectorMode}
-          Route={props.renderInspector ? RouteInspector : undefined}
+          route={props.renderInspector ? RouteInspector : undefined}
         />
       ),
     [FilesInspector, GitInspector, RouteInspector, inspectorMode, props.renderInspector],
   );
   const activeInspectorRenderer = inspectorMode === null ? undefined : renderInspectorStack;
   // Hand the inspector to the workspace so it renders beside the navigator,
-  // outside this screen's native header — the settle/snooze/PR toolbar
+  // outside this screen's native header — the terminal/git/files toolbar
   // stays anchored to the chat pane instead of floating above the inspector.
   useRegisterWorkspaceInspector(activeInspectorRenderer);
 
@@ -506,10 +652,6 @@ function ThreadRouteContent(
     ) {
       return;
     }
-    if (selectedThreadDetail === null && selectedThread.latestTurn === null) {
-      // Local starting overlay: the server thread is not interruptible yet.
-      return;
-    }
     return interruptThreadTurn({
       environmentId: selectedThread.environmentId,
       input: {
@@ -519,102 +661,119 @@ function ThreadRouteContent(
           : {}),
       },
     });
-  }, [interruptThreadTurn, selectedThread, selectedThreadDetail]);
+  }, [interruptThreadTurn, selectedThread]);
 
-  const settlementSupported = serverConfig?.environment.capabilities.threadSettlement === true;
-  const snoozeSupported = serverConfig?.environment.capabilities.threadSnooze === true;
-  const snoozeGateExpiryMs =
-    selectedThread !== null && snoozeSupported
-      ? resolveThreadListV2SnoozeGateExpiryMs(selectedThread, {
-          now: new Date().toISOString(),
-        })
-      : null;
-  const snoozeWakeAtMs =
-    selectedThread?.snoozedUntil != null ? Date.parse(selectedThread.snoozedUntil) : Number.NaN;
-  useEffect(() => {
-    const deadlines = [snoozeGateExpiryMs, Number.isNaN(snoozeWakeAtMs) ? null : snoozeWakeAtMs];
-    const nextDeadlineMs = deadlines.reduce<number | null>((soonest, deadlineMs) => {
-      if (deadlineMs === null) return soonest;
-      const delayMs = deadlineMs - Date.now();
-      if (delayMs <= 0) return soonest;
-      if (soonest === null || delayMs < soonest) return delayMs;
-      return soonest;
-    }, null);
-    if (nextDeadlineMs === null) return;
-    const id = setTimeout(
-      () => bumpThreadLifecycleTick((tick) => tick + 1),
-      Math.min(nextDeadlineMs + 50, 2_147_483_647),
-    );
-    return () => clearTimeout(id);
-  }, [snoozeGateExpiryMs, snoozeWakeAtMs, threadLifecycleTick]);
-  const threadLifecycleNow = useMemo(() => new Date().toISOString(), [threadLifecycleTick]);
-  const changeRequestState =
-    gitStatus.data?.pr?.state === "open" ||
-    gitStatus.data?.pr?.state === "closed" ||
-    gitStatus.data?.pr?.state === "merged"
-      ? gitStatus.data.pr.state
-      : null;
-  const threadSettled =
-    selectedThread !== null &&
-    settlementSupported &&
-    effectiveSettled(selectedThread, {
-      now: threadLifecycleNow,
-      autoSettleAfterDays: 3,
-      changeRequestState,
-    });
-  const threadSnoozed =
-    selectedThread !== null &&
-    snoozeSupported &&
-    effectiveSnoozed(selectedThread, { now: threadLifecycleNow });
-  const canSettleThread =
-    selectedThread !== null && canSettle(selectedThread, { now: threadLifecycleNow });
-  const canSnoozeThread =
-    selectedThread !== null && canSnooze(selectedThread, { now: threadLifecycleNow });
-  // Settle and snooze both park the thread you're done with, so a successful
-  // park dismisses the detail view back to the threads list — the same Home
-  // escape deep links use when no back history exists.
-  const dismissToThreadList = useCallback(() => {
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.dispatch(StackActions.replace("Home"));
-    }
-  }, [navigation]);
-  const handleSettleThread = useCallback(() => {
-    if (selectedThread === null) return;
-    void (async () => {
-      try {
-        if (await settleThread(selectedThread)) dismissToThreadList();
-      } catch {
-        // Handled failures alert inside settleThread; an unexpected rejection
-        // must not surface as an unhandled promise.
-        Alert.alert("Could not settle thread", "The thread could not be settled.");
+  const handleOpenTerminal = useCallback(
+    (nextTerminalId?: string | null) => {
+      terminalDebugLog("terminal-menu:open-existing", {
+        terminalId: nextTerminalId ?? null,
+        hasThread: Boolean(selectedThread),
+        hasWorkspaceRoot: Boolean(selectedThreadProject?.workspaceRoot),
+      });
+
+      if (!selectedThread || !selectedThreadProject?.workspaceRoot) {
+        return;
       }
-    })();
-  }, [selectedThread, settleThread, dismissToThreadList]);
-  const handleUnsettleThread = useCallback(() => {
-    if (selectedThread === null) return;
-    void unsettleThread(selectedThread);
-  }, [selectedThread, unsettleThread]);
-  const handleSnoozeThread = useCallback(
-    (snoozedUntil: string) => {
-      if (selectedThread === null) return;
-      void (async () => {
-        try {
-          if (await snoozeThread(selectedThread, snoozedUntil)) dismissToThreadList();
-        } catch {
-          // Handled failures alert inside snoozeThread; an unexpected rejection
-          // must not surface as an unhandled promise.
-          Alert.alert("Could not snooze thread", "The thread could not be snoozed.");
-        }
-      })();
+
+      void navigation.navigate("ThreadTerminal", {
+        environmentId: String(selectedThread.environmentId),
+        threadId: String(selectedThread.id),
+        ...(nextTerminalId ? { terminalId: nextTerminalId } : {}),
+      });
     },
-    [selectedThread, snoozeThread, dismissToThreadList],
+    [navigation, selectedThread, selectedThreadProject?.workspaceRoot],
   );
-  const handleUnsnoozeThread = useCallback(() => {
-    if (selectedThread === null) return;
-    void unsnoozeThread(selectedThread);
-  }, [selectedThread, unsnoozeThread]);
+
+  const handleOpenNewTerminal = useCallback(() => {
+    terminalDebugLog("terminal-menu:open-new", {
+      hasThread: Boolean(selectedThread),
+      hasWorkspaceRoot: Boolean(selectedThreadProject?.workspaceRoot),
+      listedTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
+    });
+
+    if (!selectedThread || !selectedThreadProject?.workspaceRoot) {
+      return;
+    }
+
+    const nextId = nextOpenTerminalId({
+      listedTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
+    });
+    void navigation.navigate("ThreadTerminal", {
+      environmentId: String(selectedThread.environmentId),
+      threadId: String(selectedThread.id),
+      terminalId: nextId,
+    });
+  }, [navigation, selectedThread, selectedThreadProject?.workspaceRoot, terminalMenuSessions]);
+
+  const handleRunProjectScript = useCallback(
+    async (script: ProjectScript) => {
+      terminalDebugLog("project-script:press", {
+        scriptId: script.id,
+        command: script.command,
+        hasThread: Boolean(selectedThread),
+        hasWorkspaceRoot: Boolean(selectedThreadProject?.workspaceRoot),
+      });
+
+      if (!selectedThread || !selectedThreadProject?.workspaceRoot) {
+        terminalDebugLog("project-script:abort", {
+          scriptId: script.id,
+          reason: "no-thread-or-workspace",
+        });
+        return;
+      }
+
+      const targetTerminalId = resolveProjectScriptTerminalId({
+        existingTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
+        hasRunningTerminal: terminalMenuSessions.some(
+          (session) => session.status === "running" || session.status === "starting",
+        ),
+      });
+      const preferredWorktreePath = resolvePreferredThreadWorktreePath({
+        threadShellWorktreePath: selectedThread.worktreePath ?? null,
+        threadDetailWorktreePath: selectedThreadDetailWorktreePath,
+      });
+      const cwd = projectScriptCwd({
+        project: { cwd: selectedThreadProject.workspaceRoot },
+        worktreePath: preferredWorktreePath,
+      });
+      const env = projectScriptRuntimeEnv({
+        project: { cwd: selectedThreadProject.workspaceRoot },
+        worktreePath: preferredWorktreePath,
+      });
+      stagePendingTerminalLaunch({
+        target: {
+          environmentId: selectedThread.environmentId,
+          threadId: selectedThread.id,
+          terminalId: targetTerminalId,
+        },
+        launch: {
+          cwd,
+          worktreePath: preferredWorktreePath,
+          env,
+          initialInput: `${script.command}\r`,
+        },
+      });
+      terminalDebugLog("project-script:staged", {
+        scriptId: script.id,
+        terminalId: targetTerminalId,
+        cwd,
+        worktreePath: preferredWorktreePath,
+      });
+
+      void navigation.navigate("ThreadTerminal", {
+        environmentId: String(selectedThread.environmentId),
+        threadId: String(selectedThread.id),
+        terminalId: targetTerminalId,
+      });
+    },
+    [
+      navigation,
+      selectedThread,
+      selectedThreadDetailWorktreePath,
+      selectedThreadProject,
+      terminalMenuSessions,
+    ],
+  );
   const threadGitControlProps = {
     environmentId: environmentIdRaw ?? "",
     threadId: threadId ?? "",
@@ -630,146 +789,189 @@ function ThreadRouteContent(
     onOpenGitInspector: fileInspector.supported ? handleOpenGitInspector : undefined,
     currentBranch: selectedThread?.branch ?? null,
     gitStatus: gitStatus.data,
-    gitOperationLabel,
+    gitOperationLabel: gitState.gitOperationLabel,
+    canOpenTerminal: Boolean(selectedThreadProject?.workspaceRoot),
     canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
-    settlementSupported,
-    snoozeSupported,
-    settled: threadSettled,
-    snoozed: threadSnoozed,
-    canSettleThread,
-    canSnoozeThread,
-    onSettle: handleSettleThread,
-    onUnsettle: handleUnsettleThread,
-    onSnooze: handleSnoozeThread,
-    onUnsnooze: handleUnsnoozeThread,
+    projectScripts: selectedThreadProject
+      ? resolveProjectScripts(
+          routeEnvironmentRuntime?.serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS,
+          selectedThreadProject,
+        )
+      : [],
+    terminalSessions: terminalMenuSessions,
+    showDirectFileControl: layout.usesSplitView,
+    onOpenTerminal: handleOpenTerminal,
+    onOpenNewTerminal: handleOpenNewTerminal,
+    onRunProjectScript: handleRunProjectScript,
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,
-  };
-  const threadHeaderActionItems = useThreadDetailHeaderActionItems(threadGitControlProps);
-  const threadRightHeaderItems = useMemo(
-    () =>
-      [
-        threadHeaderActionItems.pr,
-        threadHeaderActionItems.snooze,
-        threadHeaderActionItems.settle,
-      ] as NativeHeaderItems,
-    [threadHeaderActionItems],
-  );
-  const splitLeftHeaderItems = useMemo<NativeHeaderItems>(
-    () => [
-      {
-        // Match Mail's split-view detail toolbar: the first detail action sits
-        // inside the content pane, not flush against the sidebar divider.
-        spacing: 18,
-        type: "spacing" as const,
-      },
-      ...(props.onReturnToThread
-        ? [
-            withNativeGlassHeaderItem({
-              accessibilityLabel: "Return to chat",
-              icon: { name: "chevron.left", type: "sfSymbol" as const },
-              identifier: "thread-left-return",
-              onPress: props.onReturnToThread,
-              type: "button" as const,
-            }),
-          ]
-        : []),
-      withNativeGlassHeaderItem({
-        accessibilityLabel: panes.primarySidebarVisible
-          ? "Maximize content"
-          : "Show thread sidebar",
-        icon: {
-          name: panes.primarySidebarVisible ? "arrow.up.left.and.arrow.down.right" : "sidebar.left",
-          type: "sfSymbol" as const,
-        },
-        identifier: "thread-left-sidebar",
-        onPress: togglePrimarySidebar,
-        type: "button" as const,
-      }),
-      withNativeGlassHeaderItem({
-        accessibilityLabel: "New task",
-        icon: { name: "square.and.pencil", type: "sfSymbol" as const },
-        identifier: "thread-left-new-task",
-        onPress: () => navigation.navigate("NewTaskSheet", { screen: "NewTask" }),
-        type: "button" as const,
-      }),
-    ],
-    [panes.primarySidebarVisible, props.onReturnToThread, navigation, togglePrimarySidebar],
-  );
-  const androidHeaderActions = useMemo<ReadonlyArray<AndroidHeaderAction>>(() => {
-    if (Platform.OS !== "android") return [];
-
-    const headerIcon = (item: Record<string, unknown>): AndroidHeaderAction["icon"] => {
-      const icon = item.icon;
-      if (
-        typeof icon === "object" &&
-        icon !== null &&
-        "name" in icon &&
-        typeof icon.name === "string"
-      ) {
-        return icon.name as AndroidHeaderAction["icon"];
+    settlementSupported,
+    snoozeSupported,
+    settled: selectedThread?.settledAt !== null,
+    snoozed: selectedThread?.snoozedUntil !== null,
+    canSettleThread: selectedThread?.settledAt === null,
+    canSnoozeThread: selectedThread?.snoozedUntil === null,
+    onSettle: () => {
+      if (selectedThread) {
+        void settleThread(selectedThread);
       }
-      return "ellipsis";
-    };
-    const actions: AndroidHeaderAction[] = [];
-    if (props.onReturnToThread) {
-      actions.push({
-        accessibilityLabel: "Return to chat",
-        icon: "chevron.left",
-        onPress: props.onReturnToThread,
-      });
+    },
+    onUnsettle: () => {
+      if (selectedThread) {
+        void unsettleThread(selectedThread);
+      }
+    },
+    onSnooze: (snoozedUntil: string) => {
+      if (selectedThread) {
+        void snoozeThread(selectedThread, snoozedUntil);
+      }
+    },
+    onUnsnooze: () => {
+      if (selectedThread) {
+        void unsnoozeThread(selectedThread);
+      }
+    },
+  };
+  const handleEditFailedCreation = useCallback(async () => {
+    const creation = selectedThreadCreation?.message;
+    if (!creation?.creation || routeThreadIdentity === null) {
+      return;
     }
-    actions.push({
-      accessibilityLabel: String(threadHeaderActionItems.settle.accessibilityLabel),
-      disabled: threadHeaderActionItems.settle.disabled === true,
-      icon: headerIcon(threadHeaderActionItems.settle),
-      onPress: threadHeaderActionItems.settle.onPress as () => void,
-    });
-    actions.push({
-      accessibilityLabel: String(threadHeaderActionItems.snooze.accessibilityLabel),
-      disabled: threadHeaderActionItems.snooze.disabled === true,
-      icon: headerIcon(threadHeaderActionItems.snooze),
-      onPress: threadHeaderActionItems.snooze.onPress as () => void,
-    });
-    actions.push({
-      accessibilityLabel: String(threadHeaderActionItems.pr.accessibilityLabel),
-      disabled: threadHeaderActionItems.pr.disabled === true,
-      icon: headerIcon(threadHeaderActionItems.pr),
-      onPress: threadHeaderActionItems.pr.onPress as () => void,
-    });
-    if (fileInspector.supported && selectedThreadCwd !== null) {
-      actions.push({
-        accessibilityLabel: "Toggle inspector",
-        icon: "sidebar.right",
-        onPress: handleToggleInspector,
-      });
+    // The drain restored the prompt and attachments into the recovery draft
+    // the rejected creation owns. Open that draft by id: without it the sheet
+    // mints a fresh empty one and the restored content is unreachable.
+    try {
+      await recoverFailedThreadDraft(creation);
+    } catch (error) {
+      Alert.alert(
+        "Could not restore draft",
+        error instanceof Error ? error.message : String(error),
+      );
+      return;
     }
-    return actions;
-  }, [
-    fileInspector.supported,
-    handleToggleInspector,
-    props.onReturnToThread,
-    selectedThreadCwd,
-    threadHeaderActionItems,
-  ]);
-
-  // Deep links / cold starts land with Thread as the ONLY route, where the
-  // native back button does not render. Provide an explicit Home escape for
-  // that case; when history exists the native back button is used instead.
-  const canGoBack = navigation.canGoBack();
-  const compactHomeHeaderItems = useMemo<NativeHeaderItems>(
-    () => [
-      withNativeGlassHeaderItem({
-        accessibilityLabel: "Go to threads list",
-        icon: { name: "list.bullet", type: "sfSymbol" as const },
-        identifier: "thread-left-home",
-        onPress: () => navigation.dispatch(StackActions.replace("Home")),
-        type: "button" as const,
+    clearPendingThreadCreationOutcome(routeThreadIdentity);
+    navigation.dispatch(
+      StackActions.replace("NewTaskSheet", {
+        screen: "NewTaskDraft",
+        params: {
+          draftId: restoredNewTaskDraftKey(creation.messageId),
+          environmentId: String(creation.environmentId),
+          projectId: String(creation.creation.projectId),
+          ...(selectedThreadProject ? { title: selectedThreadProject.title } : {}),
+        },
       }),
-    ],
-    [navigation],
-  );
-
+    );
+  }, [navigation, routeThreadIdentity, selectedThreadCreation, selectedThreadProject]);
+  const worktreeSetup = useWorktreeSetup({
+    environmentId: selectedThread?.environmentId ?? null,
+    threadId: selectedThread?.id ?? null,
+    activities: selectedThreadDetail?.activities ?? [],
+    preparing:
+      selectedThreadCreation?.message.creation?.workspaceMode === "worktree" &&
+      selectedThreadCreation.outcome == null,
+    turnStarted: selectedThreadDetail?.latestTurn?.startedAt != null,
+    followUpSent:
+      composer.selectedThreadFeed.filter(
+        (entry) => entry.type === "message" && entry.message.role === "user",
+      ).length +
+        composer.selectedThreadQueuedMessages.length >
+      1,
+  });
+  const awaitingBootstrapTurn =
+    worktreeSetup?.phase === "running" && !worktreeSetupAgentStarted(worktreeSetup);
+  const cancelWorktreeSetup = useAtomCommand(vcsEnvironment.cancelWorktreeSetup);
+  const handleCancelWorktreeSetup = useCallback(() => {
+    if (!selectedThread) return;
+    void cancelWorktreeSetup({
+      environmentId: selectedThread.environmentId,
+      input: { threadId: selectedThread.id },
+    });
+  }, [cancelWorktreeSetup, selectedThread]);
+  const [localResendMessageId, setLocalResendMessageId] = useState<string | null>(null);
+  const handleWorkLocally = useCallback(async () => {
+    if (!selectedThread || !selectedThreadCreation) return;
+    const result = await cancelWorktreeSetup({
+      environmentId: selectedThread.environmentId,
+      input: { threadId: selectedThread.id },
+    });
+    if (result._tag === "Success" && result.value.cancelled) {
+      setLocalResendMessageId(selectedThreadCreation.message.messageId);
+    }
+  }, [cancelWorktreeSetup, selectedThread, selectedThreadCreation]);
+  // Wait for the outbox to restore the cancelled send before queuing its replacement.
+  useEffect(() => {
+    const pending = selectedThreadCreation;
+    if (
+      !localResendMessageId ||
+      pending?.message.messageId !== localResendMessageId ||
+      pending.outcome?.kind !== "failed"
+    )
+      return;
+    setLocalResendMessageId(null);
+    const original = pending.message;
+    if (!original.creation) return;
+    const metadata = makeTurnCommandMetadata();
+    const replacement = {
+      ...original,
+      commandId: CommandId.make(metadata.commandId),
+      messageId: MessageId.make(metadata.messageId),
+      threadId: ThreadId.make(metadata.threadId),
+      createdAt: metadata.createdAt,
+      creation: {
+        ...original.creation,
+        workspaceMode: "local" as const,
+        branch: null,
+        worktreePath: null,
+      },
+    };
+    void enqueueThreadOutboxMessage(replacement)
+      .then(() => {
+        const draftKey = restoredNewTaskDraftKey(original.messageId);
+        const restored = getComposerDraftSnapshot(draftKey);
+        // Leave any edits made during cancellation in their recovery draft.
+        if (
+          restored.text === original.text &&
+          JSON.stringify(restored.context) === JSON.stringify(original.context) &&
+          restored.attachments.length === original.attachments.length &&
+          restored.attachments.every(
+            (attachment, index) => attachment.id === original.attachments[index]?.id,
+          )
+        ) {
+          clearComposerDraftContent(draftKey, { deferAttachmentCleanup: true });
+        }
+        clearPendingThreadCreationOutcome(
+          scopedThreadKey(original.environmentId, original.threadId),
+        );
+        navigation.dispatch(
+          StackActions.replace("Thread", {
+            environmentId: String(replacement.environmentId),
+            threadId: String(replacement.threadId),
+          }),
+        );
+      })
+      .catch((error) =>
+        Alert.alert(
+          "Could not work locally",
+          error instanceof Error ? error.message : String(error),
+        ),
+      );
+  }, [localResendMessageId, navigation, selectedThreadCreation]);
+  const creationState = ((): ThreadDetailScreenProps["creationState"] => {
+    if (selectedThreadCreation === null) {
+      return awaitingBootstrapTurn ? { kind: "preparing", preparingWorktree: true } : null;
+    }
+    if (selectedThreadCreation.outcome?.kind === "failed") {
+      return {
+        kind: "failed",
+        reason: selectedThreadCreation.outcome.reason,
+        onEditTask: handleEditFailedCreation,
+      };
+    }
+    return {
+      kind: "preparing",
+      preparingWorktree: selectedThreadCreation.message.creation?.workspaceMode === "worktree",
+    };
+  })();
   if (!environmentId || !threadId) {
     return <OpeningThreadLoadingScreen />;
   }
@@ -778,20 +980,35 @@ function ThreadRouteContent(
     return <OpeningThreadLoadingScreen />;
   }
 
-  const contentPresentation = projectThreadContentPresentation({
-    hasDetail: selectedThreadDetail !== null,
-    detailError: Option.getOrNull(selectedThreadDetailState.error),
-    detailDeleted: selectedThreadDetailState.status === "deleted",
-    connectionState: routeConnectionState,
-    hasOptimisticContent: selectedThreadDetail === null && composer.selectedThreadFeed.length > 0,
-  });
-  const renderThreadRouteBody = (showActionControls: boolean) => (
+  // A queued creation renders as ready content: its prompt is the whole
+  // conversation until the server creates the thread. The subscription's
+  // not-found error for that window is expected, not a load failure.
+  const contentPresentation =
+    creationState !== null
+      ? { kind: "ready" as const }
+      : projectThreadContentPresentation({
+          hasDetail: selectedThreadDetail !== null,
+          detailError: Option.getOrNull(selectedThreadDetailState.error),
+          detailDeleted: selectedThreadDetailState.status === "deleted",
+          connectionState: routeConnectionState,
+        });
+  const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
+  const renderThreadRouteBody = () => (
     <>
-      <ThreadGitControls {...threadGitControlProps} showActionControls={showActionControls} />
-
       <GitActionProgressOverlay progress={gitActionProgress} onDismiss={dismissGitActionResult} />
 
-      <View className="flex-1 bg-screen">
+      <View
+        className={Platform.OS === "android" ? "flex-1 bg-thread-canvas" : "flex-1 bg-screen"}
+        style={
+          Platform.OS === "android"
+            ? {
+                borderTopLeftRadius: 28,
+                borderTopRightRadius: 28,
+                overflow: "hidden",
+              }
+            : undefined
+        }
+      >
         {routeThreadIdentity !== null ? <SceneryBackdrop threadKey={routeThreadIdentity} /> : null}
         <ThreadDetailScreen
           selectedThread={selectedThreadWithDraftSettings ?? selectedThread}
@@ -799,8 +1016,39 @@ function ThreadRouteContent(
           screenTone={connectionTone(routeConnectionState)}
           connectionError={routeConnectionError}
           environmentLabel={selectedEnvironmentConnection?.environmentLabel ?? null}
+          feedbackSubmissions={composer.feedbackSubmissions}
+          onDismissFeedback={composer.dismissFeedback}
           selectedThreadFeed={composer.selectedThreadFeed}
           activeWorkStartedAt={composer.activeWorkStartedAt}
+          liveHeadline={composer.liveTurnHeadline}
+          isCompacting={composer.isCompacting}
+          creationState={creationState}
+          setupWorkingStartedAt={
+            composer.activeWorkStartedAt !== null &&
+            selectedThreadDetail?.activities.some(
+              (activity) => activity.kind === "worktree-setup",
+            ) &&
+            composer.selectedThreadFeed.filter(
+              (entry) => entry.type === "message" && entry.message.role === "user",
+            ).length <= 1
+              ? composer.activeWorkStartedAt
+              : null
+          }
+          worktreeSetup={
+            worktreeSetup
+              ? {
+                  snapshot: worktreeSetup,
+                  turnStartedAt: selectedThreadDetail?.latestTurn?.startedAt ?? null,
+                  working: composer.activeWorkStartedAt !== null,
+                  turnStarted: selectedThreadDetail?.latestTurn?.startedAt != null,
+                  onCancel: handleCancelWorktreeSetup,
+                  onWorkLocally:
+                    selectedThreadCreation?.outcome == null && selectedThreadCreation
+                      ? handleWorkLocally
+                      : null,
+                }
+              : null
+          }
           activePendingApproval={requests.activePendingApproval}
           respondingApprovalId={requests.respondingApprovalId}
           activePendingUserInput={requests.activePendingUserInput}
@@ -812,23 +1060,23 @@ function ThreadRouteContent(
           connectionStateLabel={routeConnectionState}
           threadSyncStatus={selectedThreadDetailState.status}
           loadEarlier={loadEarlierTurns}
-          activeThreadBusy={composer.activeThreadBusy}
           environmentId={selectedThread.environmentId}
           projectWorkspaceRoot={selectedThreadProject?.workspaceRoot ?? null}
           threadCwd={selectedThreadCwd}
           selectedThreadQueueCount={composer.selectedThreadQueueCount}
-          headQueuedMessageId={composer.headQueuedMessageId}
-          isHeadQueuedMessageRetrying={composer.isHeadQueuedMessageRetrying}
-          isDeliveringQueuedMessage={composer.isDeliveringQueuedMessage}
+          queuedMessages={composer.selectedThreadQueuedMessages}
+          dispatchingMessageId={composer.dispatchingQueuedMessageId}
           layoutVariant={layout.variant}
           usesAutomaticContentInsets={usesNativeHeaderGlass}
           onOpenConnectionEditor={handleOpenConnectionEditor}
           onChangeDraftMessage={composer.onChangeDraftMessage}
-          onPickDraftImages={composer.onPickDraftImages}
+          onPickDraftMedia={composer.onPickDraftMedia}
+          onPickDraftFiles={composer.onPickDraftFiles}
           onNativePasteImages={composer.onNativePasteImages}
+          onNativePasteText={composer.onNativePasteText}
           onRemoveDraftImage={composer.onRemoveDraftImage}
           serverConfig={serverConfig}
-          onStopThread={handleStopThread}
+          onStopThread={awaitingBootstrapTurn ? handleCancelWorktreeSetup : handleStopThread}
           onSendMessage={composer.onSendMessage}
           onReconnectEnvironment={handleReconnectEnvironment}
           onUpdateThreadModelSelection={composer.onUpdateModelSelection}
@@ -838,6 +1086,7 @@ function ThreadRouteContent(
           onSelectUserInputOption={requests.onSelectUserInputOption}
           onChangeUserInputCustomAnswer={requests.onChangeUserInputCustomAnswer}
           onSubmitUserInput={requests.onSubmitUserInput}
+          onDismissUserInput={requests.onDismissUserInput}
         />
       </View>
     </>
@@ -846,50 +1095,23 @@ function ThreadRouteContent(
   return (
     <>
       {activeInspectorRenderer ? <InspectorPaneRoleActivation /> : null}
-      <NativeStackScreenOptions
-        options={{
-          // Android draws its own in-flow header (AndroidScreenHeader below);
-          // the native stack header stays iOS-only.
-          headerShown: Platform.OS !== "android",
-          headerTitle: selectedThread.title,
-          title: selectedThread.title,
-          unstable_headerSubtitle:
-            Platform.OS === "ios" && headerSubtitle.length > 0 ? headerSubtitle : undefined,
-          headerBackVisible: !layout.usesSplitView,
-          // Compact uses the NATIVE back button when a previous route exists;
-          // deep links / cold starts get an explicit Home button instead.
-          // Split view always uses its custom left items.
-          unstable_headerLeftItems:
-            Platform.OS === "ios"
-              ? layout.usesSplitView
-                ? () => splitLeftHeaderItems
-                : canGoBack
-                  ? undefined
-                  : () => compactHomeHeaderItems
-              : undefined,
-          // Search lives in the persistent sidebar, so the split header keeps
-          // settle / snooze / PR on the RIGHT (no center items — center space
-          // is reserved for future breadcrumbs/status).
-          unstable_headerRightItems:
-            Platform.OS === "ios" ? () => threadRightHeaderItems : undefined,
-        }}
+      <ThreadHeader
+        title={selectedThread.title}
+        subtitle={headerSubtitle}
+        headerColor={headerColor}
+        usesNativeHeaderGlass={usesNativeHeaderGlass}
+        gitControls={threadGitControlProps}
+        hasThreadCwd={selectedThreadCwd !== null}
+        hasWorkspaceRoot={Boolean(selectedThreadProject?.workspaceRoot)}
+        fileInspectorSupported={fileInspector.supported}
+        inspectorMode={inspectorMode}
+        onToggleInspector={handleToggleInspector}
+        onOpenGitInspector={handleOpenGitInspector}
+        onOpenFilesInspector={handleOpenFilesInspector}
+        onReturnToThread={props.onReturnToThread}
       />
 
-      {Platform.OS === "android" ? (
-        <AndroidScreenHeader
-          title={selectedThread.title}
-          subtitle={headerLocation}
-          meta={modelIdentity?.summary}
-          onBack={layout.usesSplitView ? undefined : () => navigation.goBack()}
-          actions={androidHeaderActions}
-        />
-      ) : null}
-
-      {/* Android surfaces settle/snooze/PR in its in-flow header above, so
-          the fallback action toolbar stays iOS-only. */}
-      {renderThreadRouteBody(
-        Platform.OS !== "android" && !layout.usesSplitView && !usesNativeHeaderGlass,
-      )}
+      {renderThreadRouteBody()}
     </>
   );
 }

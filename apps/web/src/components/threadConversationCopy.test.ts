@@ -15,6 +15,8 @@ vi.mock("../state/threads", () => ({
   environmentThreads: { stateAtom },
 }));
 
+import { CREATE_PULL_REQUEST_MESSAGE_SUFFIX } from "@t3tools/shared/createPullRequestPrompt";
+
 import { formatThreadConversation, loadThreadConversationText } from "./threadConversationCopy";
 
 describe("formatThreadConversation", () => {
@@ -35,6 +37,18 @@ describe("formatThreadConversation", () => {
         { role: "assistant", text: "hello" },
       ]),
     ).toBe("Thread\n\nAssistant:\nhello");
+  });
+
+  it("hides auto-PR instructions from copied user turns", () => {
+    expect(
+      formatThreadConversation("Thread", [
+        {
+          role: "user",
+          text: `please add steer/queue capabilities${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`,
+        },
+        { role: "assistant", text: "On it." },
+      ]),
+    ).toBe("Thread\n\nUser:\nplease add steer/queue capabilities\n\nAssistant:\nOn it.");
   });
 
   it("returns an empty string when there is nothing to copy", () => {

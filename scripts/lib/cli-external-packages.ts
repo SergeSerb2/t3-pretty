@@ -31,13 +31,8 @@ export const CLI_RUNTIME_EXTERNAL_PREFIXES = [
   "@yuuang/",
   "@ff-labs/",
   "@clerk/electron-passkeys",
-  "@msgpackr-extract/",
-  "msgpackr-extract",
   "node-gyp-build",
   "node-addon-api",
-  // Required by node-gyp-build-optional-packages. Not native, but in the
-  // closure: without it, WSL gets MODULE_NOT_FOUND while Windows is fine.
-  "detect-libc",
   // Attachment feed previews load sharp, which dlopens @img/sharp-<platform>
   // optional bindings. Inlined, that loader searches from the bundle and the
   // Windows sidecar self-check dies with "Could not load the sharp module".
@@ -55,24 +50,6 @@ export const CLI_RUNTIME_EXTERNAL_PREFIXES = [
   "utf-8-validate",
 ] as const;
 
-/**
- * External only so the bundler never has to resolve them.
- *
- * These are reached through a runtime-conditional dynamic import that Node
- * never takes, and they resolve `bun:*` specifiers that do not exist when
- * bundling for Node. Because Node never loads them, their dependency closure
- * does not need to be external — only the entry point must stay unbundled.
- */
-export const CLI_BUILD_ONLY_EXTERNAL_PREFIXES = [
-  "@effect/platform-bun",
-  "@effect/sql-sqlite-bun",
-] as const;
-
-export const CLI_EXTERNAL_PACKAGE_PREFIXES = [
-  ...CLI_RUNTIME_EXTERNAL_PREFIXES,
-  ...CLI_BUILD_ONLY_EXTERNAL_PREFIXES,
-] as const;
-
 export function isRuntimeExternalCliDependency(id: string): boolean {
   return CLI_RUNTIME_EXTERNAL_PREFIXES.some((prefix) => id.startsWith(prefix));
 }
@@ -83,12 +60,12 @@ export function isRuntimeExternalCliDependency(id: string): boolean {
  * This has to be wired to the bundler's `neverBundle`, not just to
  * `alwaysBundle`. `alwaysBundle` only forces packages IN — returning false from
  * it means "no opinion", and the default then applies: a declared dependency
- * stays external, but a transitive one gets bundled. That is how
- * msgpackr-extract, node-gyp-build-optional-packages and detect-libc ended up
- * inlined while node-pty (a declared dependency) stayed external.
+ * stays external, but a transitive one gets bundled. That is how a native
+ * loader such as node-gyp-build ended up inlined while node-pty (a declared
+ * dependency) stayed external.
  */
 export function isExternalCliDependency(id: string): boolean {
-  return CLI_EXTERNAL_PACKAGE_PREFIXES.some((prefix) => id.startsWith(prefix));
+  return isRuntimeExternalCliDependency(id);
 }
 
 /** True when the CLI bundle should inline `id` rather than leave it external. */
@@ -107,14 +84,15 @@ export function selectCliRuntimeExternalDependencies(
 }
 
 /**
- * Scan the modules a bundle chunk inlined for runtime-external packages.
+ * Scan an emitted bundle chunk for runtime-external packages that were inlined.
  *
  * Configuring the bundler is not the same as checking what it produced. The
  * `alwaysBundle` predicate only forces packages IN; returning false from it
  * means "no opinion", so a transitive dependency still gets bundled by default.
- * msgpackr-extract, node-gyp-build-optional-packages and detect-libc were
- * inlined that way while every list-based test passed, which is why this reads
- * the artifact instead.
+ * A native loader and its helper (node-gyp-build-optional-packages and
+ * detect-libc, when msgpackr-extract was still a dependency) were inlined that
+ * way while every list-based test passed, which is why this reads the artifact
+ * instead.
  *
  * `moduleIds` is the chunk's source-map `sources` list: one entry per inlined
  * module. Rolldown also writes `//#region <path>` comments, but the minifier

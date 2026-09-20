@@ -39,7 +39,7 @@ export function SceneryAppearanceSection() {
   }
 
   return (
-    <SettingsSection card title="World Scenery">
+    <SettingsSection title="World Scenery">
       <SettingsSwitchRow
         disabled={!isReady}
         icon="photo.on.rectangle"

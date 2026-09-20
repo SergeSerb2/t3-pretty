@@ -48,13 +48,19 @@ describe("scan cache round trip", () => {
       ["/b.jsonl", 200, [record({ sessionId: "session-b", reportedCostUsd: 1.5 })]],
       ["/c.jsonl", 300, [record({ provider: "grok", model: "grok-4.6", sessionId: "session-g" })]],
     ]);
-
     const restored = decodeScanCache(JSON.parse(JSON.stringify(encodeScanCache(original))));
 
     expect(restored.size).toBe(3);
     expect(restored.get("/a.jsonl")).toEqual(original.get("/a.jsonl"));
     expect(restored.get("/b.jsonl")).toEqual(original.get("/b.jsonl"));
     expect(restored.get("/c.jsonl")).toEqual(original.get("/c.jsonl"));
+  });
+
+  it("rejects a document from the previous cache version", () => {
+    const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record()]]]));
+    const previous = { ...encoded, version: 3 };
+
+    expect(decodeScanCache(JSON.parse(JSON.stringify(previous))).size).toBe(0);
   });
 
   it("interns repeated model and session strings", () => {
@@ -86,11 +92,46 @@ describe("scan cache round trip", () => {
 
   it("rejects the whole cache when an intern table holds a non-string", () => {
     // models: [1] would pass the undefined guard, put a number in a record's
-    // model, and crash normalizeModelName at aggregate time.
+    // model, and crash lookupRate at aggregate time.
     const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record()]]]));
     const poisoned = { ...encoded, models: [1] };
 
     expect(decodeScanCache(JSON.parse(JSON.stringify(poisoned))).size).toBe(0);
+  });
+
+  it("rejects overlong interned fields from an old or corrupt cache", () => {
+    const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record()]]]));
+
+    expect(decodeScanCache({ ...encoded, models: ["m".repeat(513)] }).size).toBe(0);
+    expect(decodeScanCache({ ...encoded, sessions: ["s".repeat(1_025)] }).size).toBe(0);
+  });
+
+  it("rejects caches whose file or record cardinality exceeds hydration limits", () => {
+    const encoded = encodeScanCache(
+      cacheWith([
+        ["/a.jsonl", 100, [record()]],
+        ["/b.jsonl", 200, [record({ dedupeKey: "msg_2:" })]],
+      ]),
+    );
+
+    expect(decodeScanCache(encoded, { maxFiles: 1 }).size).toBe(0);
+    expect(decodeScanCache(encoded, { maxRecords: 1 }).size).toBe(0);
+  });
+
+  it("drops entries with out-of-range cached usage fields", () => {
+    const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record()]]]));
+    const row = encoded.files["/a.jsonl"]!.r[0]!;
+    const poisoned = {
+      ...encoded,
+      files: {
+        "/a.jsonl": {
+          ...encoded.files["/a.jsonl"]!,
+          r: [[...row.slice(0, 3), 10_000_000_001, ...row.slice(4)]],
+        },
+      },
+    };
+
+    expect(decodeScanCache(poisoned).has("/a.jsonl")).toBe(false);
   });
 
   it("drops the whole entry when any row is corrupt, forcing a cold re-parse", () => {
@@ -121,74 +162,17 @@ describe("pruneScanCache", () => {
   it("drops entries older than retention", () => {
     const cache = cacheWith([["/old.jsonl", 500, [record()]]]);
 
-    const removed = pruneScanCache(cache, {
-      livePaths: new Set(),
-      walkedRoots: ["/"],
-      windowStartMs: 400,
-      retentionCutoffMs,
-    });
+    const removed = pruneScanCache(cache, retentionCutoffMs);
 
     expect(removed).toBe(1);
     expect(cache.size).toBe(0);
   });
 
-  it("drops in-window entries whose file has disappeared", () => {
+  it("keeps entries whose file has disappeared", () => {
     const cache = cacheWith([["/gone.jsonl", 5000, [record()]]]);
 
-    pruneScanCache(cache, {
-      livePaths: new Set(),
-      walkedRoots: ["/"],
-      windowStartMs: 4000,
-      retentionCutoffMs,
-    });
+    pruneScanCache(cache, retentionCutoffMs);
 
-    expect(cache.size).toBe(0);
-  });
-
-  it("keeps entries outside the walked window that are still within retention", () => {
-    // Viewing 7 days must not evict the 30-day entries, which that walk never
-    // looked for and so cannot prove are gone.
-    const cache = cacheWith([["/older-but-valid.jsonl", 2000, [record()]]]);
-
-    const removed = pruneScanCache(cache, {
-      livePaths: new Set(),
-      walkedRoots: ["/"],
-      windowStartMs: 4000,
-      retentionCutoffMs,
-    });
-
-    expect(removed).toBe(0);
-    expect(cache.size).toBe(1);
-  });
-
-  it("keeps entries the walk saw", () => {
-    const cache = cacheWith([["/live.jsonl", 5000, [record()]]]);
-
-    pruneScanCache(cache, {
-      livePaths: new Set(["/live.jsonl"]),
-      walkedRoots: ["/"],
-      windowStartMs: 4000,
-      retentionCutoffMs,
-    });
-
-    expect(cache.size).toBe(1);
-  });
-});
-
-describe("pruneScanCache with an unwalked root", () => {
-  it("keeps in-window entries for a provider whose directory was not walked", () => {
-    // A missing provider root or failed settings read leaves livePaths without
-    // that provider's files. Its warm entries must survive the pass.
-    const cache = cacheWith([["/codex/sessions/a.jsonl", 5000, [record()]]]);
-
-    const removed = pruneScanCache(cache, {
-      livePaths: new Set(),
-      walkedRoots: ["/claude/projects"],
-      windowStartMs: 4000,
-      retentionCutoffMs: 1000,
-    });
-
-    expect(removed).toBe(0);
     expect(cache.size).toBe(1);
   });
 });

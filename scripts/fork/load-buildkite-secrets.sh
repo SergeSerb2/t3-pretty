@@ -17,7 +17,7 @@ _t3_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${_t3_here}/ci-env.sh"
 unset _t3_here
 
-export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/share/vite-plus/bin:${HOME}/.local/bin:${PATH}"
 
 # Missing agent is not a hard fail. File-backed secrets still load. An early
 # `exit 0` would skip ~/.config/t3-pretty and leave later steps empty.
