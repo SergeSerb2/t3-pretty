@@ -402,10 +402,6 @@ export const probeRemoteEditors = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PROBE_REMOTE_EDITORS_CHANNEL,
   payload: Schema.Undefined,
   result: Schema.Array(EditorId),
-  // Probes THIS machine (where the renderer runs) for remote-capable editor
-  // CLIs, unlike the server's probe which walks the environment host's PATH.
-  // A Finder-launched app can miss PATH entries; an empty result makes the
-  // renderer fall back to VS Code only, so that fails soft.
   handler: Effect.fn("desktop.ipc.window.probeRemoteEditors")(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const available: Array<EditorId> = [];

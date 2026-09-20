@@ -24,8 +24,6 @@ const APPEARANCE_MODES: ReadonlyArray<{
   { id: "dark", label: "Dark" },
 ];
 
-
-
 function PreviewPane(props: { readonly compact?: boolean }) {
   return (
     <View className="flex-1 overflow-hidden bg-screen">
@@ -141,7 +139,6 @@ export function ThemeAppearanceSection() {
     themeId,
     themeIds,
     themeMode,
-
   } = useAppearancePreferences();
   const { photoSetId, setPhotoSetId } = useScenery();
   const boring = isBoringMobileTheme(themeId);
