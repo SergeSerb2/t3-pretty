@@ -10,10 +10,13 @@ import {
   getMobileThemeColors,
   getMobileThemeVariables,
   DEFAULT_MOBILE_THEME_ID,
+  MOBILE_THEME_VARIABLE_NAMES,
   type MobileThemeAppearance,
+  type MobileThemeVariables,
 } from "../src/lib/mobileTheme.ts";
 
 const APPEARANCES = ["light", "dark"] as const;
+const GLOBAL_CSS_PATH = NodePath.resolve(import.meta.dirname, "../global.css");
 const GENERATED_CSS_PATH = NodePath.resolve(import.meta.dirname, "../generated-uniwind-themes.css");
 const GENERATED_NAMES_PATH = NodePath.resolve(
   import.meta.dirname,
@@ -300,13 +303,14 @@ export const readDefaultThemeVariables = (css: string) =>
   Object.fromEntries(
     APPEARANCES.map((appearance) => {
       const body = readVariantBody(css, appearance);
+      // Nightly token additions land in MOBILE_THEME_VARIABLE_NAMES before
+      // global.css is updated. Keep Pretty CSS values when present; fill gaps
+      // from the current default palette so generate stays aligned with tip APIs.
+      const fallback = getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, appearance);
       const variables = Object.fromEntries(
         MOBILE_THEME_VARIABLE_NAMES.map((name) => {
           const match = new RegExp(`^\\s*${name}:\\s*([^;]+);`, "mu").exec(body);
-          if (!match?.[1]) {
-            throw new Error(`Default ${appearance} theme is missing ${name}.`);
-          }
-          return [name, match[1].trim()];
+          return [name, match?.[1]?.trim() ?? fallback[name]];
         }),
       ) as MobileThemeVariables;
       return [appearance, variables];

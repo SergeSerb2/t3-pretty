@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 import {
+  EnvironmentAuthInvalidError,
   EnvironmentCloudEndpointUnavailableError,
   EnvironmentHttpBadRequestError,
   EnvironmentHttpConflictError,
@@ -10,18 +11,37 @@ import {
   EnvironmentHttpInternalServerError,
   EnvironmentHttpUnauthorizedError,
 } from "@t3tools/contracts";
+import { stripPairingTokenFromUrl } from "@t3tools/shared/remote";
 import {
+  type RelayEnvironmentConnectResponse as RelayEnvironmentConnectResponseType,
   type RelayEnvironmentLinkResponse as RelayEnvironmentLinkResponseType,
+  RelayEnvironmentConnectScope,
+  RelayEnvironmentStatusScope,
+  type RelayDpopAccessTokenScope,
+  type RelayClientEnvironmentRecord,
+  type RelayEnvironmentStatusResponse as RelayEnvironmentStatusResponseType,
   type RelayManagedEndpointProviderKind,
 } from "@t3tools/contracts/relay";
+import { exchangeRemoteDpopAccessToken } from "@t3tools/client-runtime/authorization";
+import { fetchRemoteEnvironmentDescriptor } from "@t3tools/client-runtime/environment";
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
-import { ManagedRelay, relayProtectedErrorMessage } from "@t3tools/client-runtime/relay";
+import {
+  dpopFailureMessage,
+  ManagedRelay,
+  relayProtectedErrorMessage,
+} from "@t3tools/client-runtime/relay";
 import { makeEnvironmentHttpApiClient } from "@t3tools/client-runtime/rpc";
 
+import { authClientMetadata } from "../../lib/authClientMetadata";
 import type { SavedRemoteConnection } from "../../lib/connection";
+import * as MobilePreferences from "../../persistence/mobile-preferences";
 import * as MobileStorage from "../../persistence/mobile-storage";
 import { resolveCloudPublicConfig } from "./publicConfig";
 
+const RELAY_STATUS_AND_CONNECT_SCOPES = [
+  RelayEnvironmentStatusScope,
+  RelayEnvironmentConnectScope,
+] satisfies ReadonlyArray<RelayDpopAccessTokenScope>;
 const CLOUD_STATUS_CONCURRENCY = 6;
 function readRelayUrl(): string | null {
   return resolveCloudPublicConfig().relay.url;
@@ -33,6 +53,12 @@ export class CloudEnvironmentLinkError extends Data.TaggedError("CloudEnvironmen
   readonly traceId?: string;
 }> {}
 
+export interface CloudEnvironmentRecordWithStatus {
+  readonly environment: RelayClientEnvironmentRecord;
+  readonly status: RelayEnvironmentStatusResponseType | null;
+  readonly statusError: string | null;
+}
+
 const isEnvironmentCloudApiError = Schema.is(
   Schema.Union([
     EnvironmentHttpBadRequestError,
@@ -43,19 +69,24 @@ const isEnvironmentCloudApiError = Schema.is(
     EnvironmentCloudEndpointUnavailableError,
   ]),
 );
+const isEnvironmentAuthInvalidError = Schema.is(EnvironmentAuthInvalidError);
 
 const MANAGED_ENDPOINT_PROVIDER_KIND =
   "cloudflare_tunnel" satisfies RelayManagedEndpointProviderKind;
 
-function cloudEnvironmentLinkError(message: string) {
+function cloudEnvironmentLinkError(message: string, options?: { readonly dpop?: boolean }) {
   return (cause: unknown) => {
     const environmentError = findEnvironmentCloudApiError(cause);
     const traceId = findErrorTraceId(cause);
+    const dpopAuthError = options?.dpop ? findEnvironmentAuthInvalidError(cause) : null;
     const detail = environmentError
       ? `${message.replace(/[.:]$/, "")}: ${environmentError.message}`
       : withDevCause(message, cause);
     return new CloudEnvironmentLinkError({
-      message: detail,
+      message:
+        dpopAuthError?.reason === "invalid_credential"
+          ? dpopFailureMessage(detail, dpopAuthError.dpopFailureReason)
+          : detail,
       cause,
       ...(traceId === null ? {} : { traceId }),
     });
@@ -112,6 +143,16 @@ function findEnvironmentCloudApiError(cause: unknown): { readonly message: strin
   return "cause" in cause ? findEnvironmentCloudApiError(cause.cause) : null;
 }
 
+function findEnvironmentAuthInvalidError(cause: unknown): EnvironmentAuthInvalidError | null {
+  if (isEnvironmentAuthInvalidError(cause)) {
+    return cause;
+  }
+  if (typeof cause !== "object" || cause === null) {
+    return null;
+  }
+  return "cause" in cause ? findEnvironmentAuthInvalidError(cause.cause) : null;
+}
+
 function requireRelayUrl(): Effect.Effect<string, CloudEnvironmentLinkError> {
   const relayUrl = readRelayUrl();
   return relayUrl
@@ -140,6 +181,54 @@ function ensureLinkedEnvironmentMatches(input: {
   if (input.link.endpoint.providerKind !== input.expectedProviderKind) {
     return new CloudEnvironmentLinkError({
       message: "Relay returned credentials for a different endpoint provider.",
+    });
+  }
+  return Effect.void;
+}
+
+function endpointMatches(
+  left: RelayClientEnvironmentRecord["endpoint"],
+  right: RelayClientEnvironmentRecord["endpoint"],
+): boolean {
+  return (
+    left.httpBaseUrl === right.httpBaseUrl &&
+    left.wsBaseUrl === right.wsBaseUrl &&
+    left.providerKind === right.providerKind
+  );
+}
+
+function ensureStatusMatchesEnvironment(input: {
+  readonly environment: RelayClientEnvironmentRecord;
+  readonly status: RelayEnvironmentStatusResponseType;
+}): Effect.Effect<void, CloudEnvironmentLinkError> {
+  if (input.status.environmentId !== input.environment.environmentId) {
+    return new CloudEnvironmentLinkError({
+      message: "Relay returned status for a different environment.",
+    });
+  }
+  if (!endpointMatches(input.status.endpoint, input.environment.endpoint)) {
+    return new CloudEnvironmentLinkError({
+      message: "Relay returned status for a different endpoint.",
+    });
+  }
+  if (
+    input.status.descriptor &&
+    input.status.descriptor.environmentId !== input.environment.environmentId
+  ) {
+    return new CloudEnvironmentLinkError({
+      message: "Relay returned status descriptor for a different environment.",
+    });
+  }
+  return Effect.void;
+}
+
+function ensureConnectEndpointMatchesEnvironment(input: {
+  readonly environment: RelayClientEnvironmentRecord;
+  readonly connect: RelayEnvironmentConnectResponseType;
+}): Effect.Effect<void, CloudEnvironmentLinkError> {
+  if (!endpointMatches(input.connect.endpoint, input.environment.endpoint)) {
+    return new CloudEnvironmentLinkError({
+      message: "Relay returned credentials for a different endpoint.",
     });
   }
   return Effect.void;
@@ -239,6 +328,7 @@ export function linkEnvironmentToCloudWithPreference(
       );
   });
 }
+
 export function linkEnvironmentToCloud(
   input: LinkEnvironmentToCloudInput,
 ): Effect.Effect<
