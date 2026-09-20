@@ -1237,3 +1237,9 @@ Local verification on this repair tree. `tsc` printed Effect suggestions only; e
   - edited `apps/web/src/components/ui/sidebar.test.tsx`
 - `desktop-typecheck` failed after merging `v0.0.43-nightly.20260920.1990`; repaired with `gpt-5.6-sol`: Restored T3 Pretty's typed, serialized saved-environment mutation layer, including atomic bounded writes and encrypted-secret preservation, while retaining the parent's relay-managed metadata support. The service contract now contextually types all mutation implementations and tests.
   - edited `apps/desktop/src/settings/DesktopSavedEnvironments.ts`
+- `mobile-typecheck` failed after merging `v0.0.43-nightly.20260920.1990`; repaired with `gpt-5.6-sol`: Restore merge-dropped Pretty imports, fixtures, cloud relay validation helpers, theme generator declarations, and remove the conflicting duplicate terminal header. These focused repairs address all reported mobile TypeScript errors while preserving the parent cloud status/connect additions.
+  - edited `apps/mobile/scripts/generate-uniwind-themes.mts`
+  - edited `apps/mobile/src/features/cloud/linkEnvironment.test.ts`
+  - edited `apps/mobile/src/features/cloud/linkEnvironment.ts`
+  - edited `apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx`
+  - omitted parent change: The duplicate parent TerminalHeader variant using a “Back to chat” chevron in split view.. Reason: It cannot coexist with the same-named implementation and would regress T3 Pretty's authoritative close-terminal xmark with separate background; all shared terminal menu behavior remains in the retained implementation.
