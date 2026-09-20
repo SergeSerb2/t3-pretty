@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260920.2018002612",
+    date: "2026-09-20",
+    items: [
+      {
+        kind: "fixed",
+        title: "IOS typecheck after nightly 1990 merge",
+      },
+      {
+        kind: "fixed",
+        title: "Typecheck after merging v0.0.43-nightly.20260920.1990",
+      },
+      {
+        kind: "fixed",
+        title: "Packaged backend no longer crashes on FileSystem.Size",
+      },
+      {
+        kind: "fixed",
+        title: "Recover tip packaging after v0.0.43-nightly merge",
+      },
+      {
+        kind: "fixed",
+        title: "Typecheck after merging v0.0.43-nightly.20260919.1948",
+      },
+      {
+        kind: "fixed",
+        title: "Windows packaged backend smoke no longer stalls on hung first fetch",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260920.2005002608",
     date: "2026-09-20",
     items: [
