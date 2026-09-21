@@ -210,10 +210,11 @@ describe("glass contract with upstream chrome", () => {
     expect(sidebarRule).not.toContain("isolation: isolate");
     const headerRule =
       indexCssSource.match(
-        /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) \{\s*--workspace-glass-shadow:[^}]+\}/,
+        /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) \{[^}]*position: relative;[^}]*\}/,
       )?.[0] ?? "";
     expect(headerRule).toContain("position: relative;");
     expect(headerRule).toContain("z-index: 20;");
+    expect(headerRule).not.toContain("--workspace-glass-shadow");
     expect(headerRule).not.toContain("isolation: isolate");
     expect(indexCssSource).toContain(".workspace-sidebar-glass > * {\n  z-index: 1;");
     expect(indexCssSource).toMatch(
@@ -228,15 +229,36 @@ describe("glass contract with upstream chrome", () => {
     expect(threadRouteViewSource).not.toContain("overflow-hidden overscroll-y-none");
   });
 
-  it("the L-frame inner corner is a square join, not a masked fillet", () => {
+  it("the top band is one surface and the column edge starts below it", () => {
     expect(indexCssSource).not.toContain("--workspace-frame-fillet");
+    expect(indexCssSource).not.toContain("--workspace-glass-sheen");
+    expect(indexCssSource).not.toContain("--workspace-glass-shadow");
     expect(indexCssSource).not.toContain("[data-workspace-header]::before");
+    expect(indexCssSource).toContain(
+      "--workspace-topbar-height: 52px;\n  /* One hairline for the top band and the column edge under it. Declared\n     here so the right-panel tab bar uses the same line as the title bar. */\n  --workspace-frame-line: color-mix(in srgb, var(--sidebar-foreground) 14%, transparent);",
+    );
+    expect(indexCssSource).toContain(
+      '[data-slot="sidebar-container"].workspace-sidebar-glass::before',
+    );
+    expect(indexCssSource).toContain("top: var(--workspace-topbar-height)");
+    expect(indexCssSource).toContain("box-shadow: inset 0 -1px 0 var(--workspace-frame-line);");
     const headerPlate = indexCssSource.match(
       /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]+\}/s,
     )?.[0];
     expect(headerPlate).toBeTruthy();
     expect(headerPlate).not.toContain("mask-image");
     expect(headerPlate).not.toContain("border-radius");
+    expect(headerPlate).not.toContain("linear-gradient");
+    expect(indexCssSource).toContain("box-shadow: inset 0 -1px 0 var(--workspace-frame-line)");
+    expect(sceneryCssSource).toContain(
+      '[data-slot="sidebar-container"].workspace-sidebar-glass::before',
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-slot="sidebar-container"\]\.workspace-sidebar-glass::before\s*\{\s*background:\s*transparent;/,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-scenery-on\]\s+:is\(\s*\[data-app-sidebar\] \[data-slot="sidebar-header"\],\s*\[data-right-panel-tabbar\]\s*\),\s*html\[data-theme-id\]\[data-theme-id="world-scenery"\]\[data-scenery-on\]\s+:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\)::after\s*\{\s*box-shadow:\s*none;/,
+    );
   });
 
   it("the right panel still exposes the hooks the scenery glass plate targets", () => {
