@@ -126,16 +126,27 @@ func parseLocale() -> String {
 }
 
 var session: DictationSession?
+var pendingCommand: String?
 
 func stopActiveSession(command: String) {
   guard let session else {
-    exit(0)
+    // Permission prompts are still in flight. Remember the command and leave
+    // before the microphone starts, once those prompts settle.
+    pendingCommand = command
+    return
   }
   if command == "cancel" {
     session.cancel()
   } else {
     session.stop()
   }
+}
+
+func abortIfStoppedBeforeStart() {
+  guard pendingCommand != nil else { return }
+  emit(["type": "error", "message": "Dictation stopped before recording started."])
+  emit(["type": "ended"])
+  exit(0)
 }
 
 func requestSpeechAuthorization(
@@ -176,6 +187,7 @@ func requestMicrophoneAccess(_ completion: @escaping (Bool) -> Void) {
 
 func beginDictation() {
   requestSpeechAuthorization { status in
+    abortIfStoppedBeforeStart()
     switch status {
     case .authorized:
       break
@@ -192,6 +204,7 @@ func beginDictation() {
     }
 
     requestMicrophoneAccess { granted in
+      abortIfStoppedBeforeStart()
       if !granted {
         failAndExit(
           "Microphone access was denied. Allow T3 Pretty in System Settings → Privacy & Security → Microphone."
