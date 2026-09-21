@@ -8,6 +8,7 @@ export function WorkspacePageHeader({
   electron = false,
   reserveNativeControls = electron,
   className,
+  children,
   ...props
 }: ComponentPropsWithoutRef<"header"> & {
   readonly electron?: boolean;
@@ -24,6 +25,9 @@ export function WorkspacePageHeader({
       )}
       {...props}
       data-workspace-header=""
-    />
+    >
+      {children}
+      {electron ? <div aria-hidden data-sidebar-peek-drag-hole="" /> : null}
+    </header>
   );
 }

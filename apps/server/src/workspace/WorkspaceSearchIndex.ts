@@ -1,4 +1,7 @@
+import * as NodeFs from "node:fs";
 import * as NodeModule from "node:module";
+import * as NodePath from "node:path";
+import * as NodeUrl from "node:url";
 
 import type {
   DirItem,
@@ -42,7 +45,34 @@ import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 // Node single-executable (only built-ins resolve there), so load it through
 // `require`, which reads from the real filesystem in every runtime.
 const requireForFff = NodeModule.createRequire(import.meta.url);
-const { FileFinder } = requireForFff("@ff-labs/fff-node") as typeof import("@ff-labs/fff-node");
+
+function loadFffNode(): typeof import("@ff-labs/fff-node") {
+  try {
+    return requireForFff("@ff-labs/fff-node") as typeof import("@ff-labs/fff-node");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
+    let dir = NodePath.dirname(NodeUrl.fileURLToPath(import.meta.url));
+    for (;;) {
+      const pkgPath = NodePath.join(dir, "node_modules", "@ff-labs", "fff-node", "package.json");
+      if (NodeFs.existsSync(pkgPath)) {
+        const manifest = JSON.parse(NodeFs.readFileSync(pkgPath, "utf8")) as {
+          exports?: { "."?: { import?: string } };
+          main?: string;
+        };
+        const rel = manifest.exports?.["."]?.import ?? manifest.main;
+        if (rel === undefined) throw error;
+        return requireForFff(
+          NodePath.join(NodePath.dirname(pkgPath), rel),
+        ) as typeof import("@ff-labs/fff-node");
+      }
+      const parent = NodePath.dirname(dir);
+      if (parent === dir) throw error;
+      dir = parent;
+    }
+  }
+}
+
+const { FileFinder } = loadFffNode();
 
 const WORKSPACE_INDEX_MAX_ENTRIES = PROJECT_LIST_ENTRIES_MAX;
 const WORKSPACE_INDEX_PAGE_SIZE = WORKSPACE_INDEX_MAX_ENTRIES + 2;
