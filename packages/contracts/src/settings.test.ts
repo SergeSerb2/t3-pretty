@@ -629,6 +629,18 @@ describe("ClientSettings sidebar", () => {
   });
 });
 
+describe("ServerSettings scenery photo set", () => {
+  it("stays unset until a client publishes a catalog", () => {
+    expect(decodeServerSettings({}).sceneryPhotoSet).toBeNull();
+    expect(decodeServerSettings({ sceneryPhotoSet: " night-cities " }).sceneryPhotoSet).toBe(
+      "night-cities",
+    );
+    expect(decodeServerSettingsPatch({ sceneryPhotoSet: "deep-forest" })).toEqual({
+      sceneryPhotoSet: "deep-forest",
+    });
+  });
+});
+
 describe("ServerSettings project rail folders", () => {
   it("defaults empty and round-trips a named folder for shared-settings sync", () => {
     expect(decodeServerSettings({}).sidebarProjectFolders).toEqual([]);

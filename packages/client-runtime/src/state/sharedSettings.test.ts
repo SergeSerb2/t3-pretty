@@ -349,6 +349,22 @@ describe("filterSharedServerPatch", () => {
     },
   );
 
+  it("shares the scenery catalog only when the target advertises the capability", () => {
+    const patch = { sceneryPhotoSet: "night-cities" as const, sidebarAutoSettleAfterDays: 7 };
+    expect(filterSharedServerPatch(patch, restartCapabilities)).toEqual({
+      sidebarAutoSettleAfterDays: 7,
+    });
+    expect(
+      filterSharedServerPatch(patch, { ...restartCapabilities, sceneryPhotoSet: true }),
+    ).toEqual(patch);
+    expect(
+      pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, {
+        ...restartCapabilities,
+        sceneryPhotoSet: true,
+      }).sceneryPhotoSet,
+    ).toBeNull();
+  });
+
   it("shares global environment only when the target advertises the capability", () => {
     const patch = {
       sidebarAutoSettleAfterDays: 7,

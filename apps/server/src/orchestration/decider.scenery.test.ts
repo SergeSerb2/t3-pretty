@@ -44,7 +44,6 @@ function makeReadModel(input: {
 }): OrchestrationReadModel {
   return {
     snapshotSequence: 0,
-    automations: [],
     projects: [],
     threads: [
       {
@@ -68,6 +67,7 @@ function makeReadModel(input: {
         pinnedAt: null,
         pinOrderKey: null,
         scenery: input.scenery ?? null,
+        pullRequests: [],
         deletedAt: null,
         messages: [],
         proposedPlans: [],
@@ -89,6 +89,7 @@ it.layer(NodeServices.layer)("scenery decider", (it) => {
           commandId: CommandId.make("cmd-scenery"),
           threadId: ThreadId.make("thread-1"),
           scenery: SCENERY_PHOTO,
+          createdAt: NOW,
         },
         readModel: makeReadModel({}),
       });
@@ -112,6 +113,7 @@ it.layer(NodeServices.layer)("scenery decider", (it) => {
           commandId: CommandId.make("cmd-scenery-again"),
           threadId: ThreadId.make("thread-1"),
           scenery: OTHER_SCENERY_PHOTO,
+          createdAt: NOW,
         },
         readModel: makeReadModel({ scenery: EXISTING_ASSIGNMENT }),
       });
@@ -132,11 +134,63 @@ it.layer(NodeServices.layer)("scenery decider", (it) => {
           commandId: CommandId.make("cmd-scenery-archived"),
           threadId: ThreadId.make("thread-1"),
           scenery: SCENERY_PHOTO,
+          createdAt: NOW,
         },
         readModel: makeReadModel({ archivedAt: NOW }),
       });
       const events = Array.isArray(event) ? event : [event];
       expect(events.map((entry) => entry.type)).toEqual(["thread.scenery-assigned"]);
+    }),
+  );
+
+  it.effect("replaces the binding when the photo catalog changes", () =>
+    Effect.gen(function* () {
+      const event = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.scenery.assign",
+          commandId: CommandId.make("cmd-scenery-set"),
+          threadId: ThreadId.make("thread-1"),
+          scenery: { ...OTHER_SCENERY_PHOTO, photoSetId: "night-cities" },
+          createdAt: NOW,
+        },
+        readModel: makeReadModel({
+          scenery: { ...EXISTING_ASSIGNMENT, photoSetId: "world-scenery" },
+        }),
+      });
+      const events = Array.isArray(event) ? event : [event];
+      expect(events[0]?.type).toBe("thread.scenery-assigned");
+      if (events[0]?.type === "thread.scenery-assigned") {
+        expect(events[0].payload.scenery.photoId).toBe(OTHER_SCENERY_PHOTO.photoId);
+        expect(events[0].payload.scenery.photoSetId).toBe("night-cities");
+        expect(events[0].payload.scenery.assignedAt).toBe(events[0].payload.updatedAt);
+        expect(events[0].payload.updatedAt).not.toBe(NOW);
+      }
+    }),
+  );
+
+  it.effect("keeps the first photo when another device assigns the same catalog", () =>
+    Effect.gen(function* () {
+      const event = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.scenery.assign",
+          commandId: CommandId.make("cmd-scenery-same-set"),
+          threadId: ThreadId.make("thread-1"),
+          scenery: { ...OTHER_SCENERY_PHOTO, photoSetId: "night-cities" },
+          createdAt: NOW,
+        },
+        readModel: makeReadModel({
+          scenery: { ...EXISTING_ASSIGNMENT, photoSetId: "night-cities" },
+        }),
+      });
+      const events = Array.isArray(event) ? event : [event];
+      expect(events[0]?.type).toBe("thread.scenery-assigned");
+      if (events[0]?.type === "thread.scenery-assigned") {
+        expect(events[0].payload.scenery).toEqual({
+          ...EXISTING_ASSIGNMENT,
+          photoSetId: "night-cities",
+        });
+        expect(events[0].payload.updatedAt).toBe(NOW);
+      }
     }),
   );
 
@@ -148,6 +202,7 @@ it.layer(NodeServices.layer)("scenery decider", (it) => {
           commandId: CommandId.make("cmd-scenery-missing"),
           threadId: ThreadId.make("thread-missing"),
           scenery: SCENERY_PHOTO,
+          createdAt: NOW,
         },
         readModel: makeReadModel({}),
       }).pipe(Effect.flip);
