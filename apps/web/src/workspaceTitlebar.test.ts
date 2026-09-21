@@ -126,4 +126,28 @@ describe("macOS traffic lights vs collapsed sidebar", () => {
     expect(css).toContain("[data-sidebar-control]");
     expect(css).toContain("transition: translate");
   });
+
+  it("keeps collapsed-sidebar hover alive through the traffic-light band", () => {
+    const css = NodeFS.readFileSync(new URL("./index.css", import.meta.url), "utf8");
+    const header = NodeFS.readFileSync(
+      new URL("./components/WorkspacePageHeader.tsx", import.meta.url),
+      "utf8",
+    );
+    const sidebar = NodeFS.readFileSync(
+      new URL("./components/ui/sidebar.tsx", import.meta.url),
+      "utf8",
+    );
+    const layout = NodeFS.readFileSync(
+      new URL("./components/AppSidebarLayout.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(css).toContain('[data-slot="sidebar"][data-collapsed] [data-slot="sidebar-header"]');
+    expect(css).toContain("-webkit-app-region: no-drag");
+    expect(header).toContain('data-sidebar-peek-drag-hole=""');
+    expect(sidebar).toContain('data-sidebar-peek-hover-bridge=""');
+    expect(sidebar).toContain("data-sidebar-peeking={peekFlyout");
+    expect(layout).toContain("useSidebarPeekPointerBinding");
+    expect(layout).toContain("onPointerEnter={peekPointer.onPointerEnter}");
+  });
 });
