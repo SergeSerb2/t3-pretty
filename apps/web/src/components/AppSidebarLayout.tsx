@@ -60,7 +60,11 @@ import {
   useSidebarVisibility,
   type SidebarResizableOptions,
 } from "./ui/sidebar";
-import { SIDEBAR_PEEK_ANIMATION_MS, SIDEBAR_PEEK_EASE } from "./ui/sidebarPeek";
+import {
+  SIDEBAR_PEEK_ANIMATION_MS,
+  SIDEBAR_PEEK_EASE,
+  useSidebarPeekPointerBinding,
+} from "./ui/sidebarPeek";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 function readInitialThreadSidebarWidth(): number {
@@ -82,7 +86,9 @@ function SidebarControl({
   isWindowFullscreen: boolean;
 }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const { isMobile, open, peeking, toggleSidebar } = useSidebar();
+  const { isMobile, open, peeking, toggleSidebar, onPeekPointerEnter, onPeekPointerLeave } =
+    useSidebar();
+  const peekPointer = useSidebarPeekPointerBinding(onPeekPointerEnter, onPeekPointerLeave);
   const isSidebarVisible = useSidebarVisibility();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const stageBackdropVariant = useSidebarStageBackdropVariant(
@@ -190,7 +196,7 @@ function SidebarControl({
     // the panel), so the trigger mirrors it: both clusters sit one extra pixel
     // off their edge and the titlebar reads symmetric.
     <div
-      className="pointer-events-none fixed left-[calc(env(safe-area-inset-left)+0.75rem)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center"
+      className="pointer-events-auto fixed left-[calc(env(safe-area-inset-left)+0.75rem)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center [-webkit-app-region:no-drag]"
       data-sidebar-control=""
       style={
         {
@@ -198,6 +204,8 @@ function SidebarControl({
           "--sidebar-peek-ease": SIDEBAR_PEEK_EASE,
         } as CSSProperties
       }
+      onPointerEnter={peekPointer.onPointerEnter}
+      onPointerLeave={peekPointer.onPointerLeave}
     >
       <Tooltip>
         <TooltipTrigger

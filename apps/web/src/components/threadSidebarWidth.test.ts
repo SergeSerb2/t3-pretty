@@ -114,7 +114,9 @@ describe("thread sidebar width", () => {
     expect(sidebar).toContain("group-data-present:z-40");
     expect(sidebar).toContain("group-data-present:shadow-[12px_0_40px_rgba(0,0,0,0.12)]");
     expect(sidebar).toContain("data-opening-ready");
-    expect(sidebar).toContain("shouldIgnoreSidebarPeekLeave");
+    expect(sidebar).toContain("useSidebarPeekPointerBinding");
+    expect(sidebar).toContain('data-sidebar-peek-hover-bridge=""');
+    expect(sidebar).toContain("data-sidebar-peeking={peekFlyout");
     expect(sidebar).not.toContain("clip-path");
     expect(sidebar).not.toContain("data-compact");
   });
@@ -140,6 +142,15 @@ describe("thread sidebar width", () => {
     expect(css).not.toContain("--sidebar-peek-duration: 280ms");
     expect(css).toContain("var(--sidebar-peek-duration)");
     expect(css).toContain("var(--sidebar-peek-ease)");
+    expect(css).toContain('[data-slot="sidebar"][data-collapsed] [data-slot="sidebar-header"]');
+    expect(css).toContain(
+      '[data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-slot="sidebar-header"]',
+    );
+    expect(css).toContain("[data-sidebar-peek-drag-hole]");
+    expect(css).toContain("[data-sidebar-peeking] [data-sidebar-peek-drag-hole]");
+    expect(css).toContain("[data-sidebar-peek-hover-bridge]");
+    expect(css).toContain("calc(var(--sidebar-width) - var(--sidebar-width-icon))");
+    expect(css).toContain("calc(var(--sidebar-width) - 100%)");
   });
 
   it("keeps the project rail one column whether the sidebar is icon-only or open", () => {

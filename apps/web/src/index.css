@@ -3384,6 +3384,58 @@ code {
   -webkit-app-region: drag;
 }
 
+/* The collapsed sidebar header is laid out at the expanded width and only
+   clipped visually. Its drag rectangle follows that layout box, so it covers
+   the titlebar above the thread search — the macOS traffic lights and the
+   sidebar toggle — and the peek loses the pointer as soon as it enters.
+   no-drag while icon-collapsed keeps that band in the hover target. A pinned
+   open sidebar restores dragging from its title. At rest the box is pulled
+   back to the icon rail so it does not cover the page titlebar beside it. */
+[data-slot="sidebar"][data-collapsed] [data-slot="sidebar-header"] {
+  -webkit-app-region: no-drag;
+}
+
+[data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-slot="sidebar-header"] {
+  width: var(--sidebar-width-icon);
+  max-width: var(--sidebar-width-icon);
+}
+
+/* no-drag only punches a descendant of a drag node; the peeked sidebar is a
+   sibling painted over the page titlebar and cannot cancel it. This hole is
+   the overlap (full sidebar width past the icon rail) and exists only while
+   the flyout is up, so the rest of the titlebar still drags the window. */
+[data-sidebar-peek-drag-hole] {
+  display: none;
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: max(0px, calc(var(--sidebar-width) - var(--sidebar-width-icon)));
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+[data-sidebar-peeking] [data-sidebar-peek-drag-hole] {
+  display: block;
+}
+
+/* Immediately covers the titlebar the flyout is opening into. The container
+   width catches up over the peek animation; without this strip the pointer
+   leaves as soon as it moves above the search row. */
+[data-sidebar-peek-hover-bridge] {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 100%;
+  z-index: 2;
+  height: var(--workspace-topbar-height);
+  width: max(0px, calc(var(--sidebar-width) - 100%));
+  -webkit-app-region: no-drag;
+}
+
+[data-slot="sidebar"][data-peeking] [data-sidebar-peek-hover-bridge] {
+  display: block;
+}
+
 [data-titlebar-controls-drag-hole] {
   --workspace-titlebar-layout-control-count: 2;
   --workspace-titlebar-layout-cluster-width: calc(
