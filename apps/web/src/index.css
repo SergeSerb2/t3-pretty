@@ -305,6 +305,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   /* One hairline for the top band and the column edge under it. Declared
      here so the right-panel tab bar uses the same line as the title bar. */
   --workspace-frame-line: color-mix(in srgb, var(--sidebar-foreground) 14%, transparent);
+  /* Small inside radius where the column meets the top band. Kept off the
+     glass plates: a radius on either plate leaves a wedge at the seam. */
+  --workspace-frame-radius: 10px;
   --workspace-controls-top: 0px;
   --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
   --workspace-controls-right: calc(env(safe-area-inset-right) + 0.75rem);
@@ -2987,15 +2990,39 @@ html
   border-color: transparent;
 }
 
-/* Column edge only. It starts where the top band ends, so the brand and the
-   breadcrumb stay on one uninterrupted surface. */
-[data-slot="sidebar-container"].workspace-sidebar-glass::before {
-  content: "";
+/* Quarter-round and column edge are siblings of the clip, on the same
+   positioned container. The clip's overflow:hidden (collapsed, peek, open)
+   cannot square the corner or shift the edge onto the wrong box.
+   The disk uses the plate's own glass stack, so it samples the page the
+   sidebar samples instead of a flat mix. */
+.workspace-sidebar-glass [data-sidebar-frame-corner] {
   position: absolute;
-  top: var(--workspace-topbar-height);
+  top: calc(var(--workspace-topbar-height) - 1px);
+  left: 100%;
+  z-index: 3;
+  width: var(--workspace-frame-radius);
+  height: var(--workspace-frame-radius);
+  pointer-events: none;
+  background: color-mix(
+    in srgb,
+    var(--workspace-glass-surface) var(--workspace-glass-opacity, 42%),
+    transparent
+  );
+  -webkit-backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
+    saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
+    saturate(var(--glass-saturation));
+  border-right: 1px solid var(--workspace-frame-line);
+  border-bottom: 1px solid var(--workspace-frame-line);
+  border-bottom-right-radius: var(--workspace-frame-radius);
+}
+
+.workspace-sidebar-glass [data-sidebar-frame-edge] {
+  position: absolute;
+  top: calc(var(--workspace-topbar-height) + var(--workspace-frame-radius) - 1px);
   right: 0;
   bottom: 0;
-  z-index: 2;
+  z-index: 3;
   width: 1px;
   pointer-events: none;
   background: var(--workspace-frame-line);
@@ -3042,8 +3069,8 @@ html
   box-shadow: inset 0 -1px 0 var(--workspace-frame-line);
 }
 
-/* Plates stay square. A radius on either glass plate, convex or a masked
-   concave, leaves a wedge where the band meets the column. */
+/* Plates stay square. The 10px roundness is the corner disk above, not a
+   radius on either glass plate. */
 
 /* Only a missing backdrop-filter implementation may flatten chrome, and both
    bars still share --workspace-glass-surface so they cannot drift apart. */
