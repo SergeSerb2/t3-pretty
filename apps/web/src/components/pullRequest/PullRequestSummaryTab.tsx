@@ -42,8 +42,9 @@ import {
   GrokReviewFindingHeader,
   PullRequestActorLabel,
   PullRequestCheckStatusIcon,
-  PullRequestReviewOutcomeBadge,
   pullRequestCheckStatusLabel,
+  PullRequestLabelChip,
+  PullRequestReviewOutcomeBadge,
   pullRequestReviewOutcomeLabel,
   pullRequestReviewOutcomeRingClassName,
   pullRequestReviewOutcomeStaleLabel,
@@ -74,7 +75,6 @@ import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
 import { PullRequestGlyph } from "./pullRequestIcons";
 import { openPullRequestLinkOnHost } from "./pullRequestLinkContextMenu";
-import { pullRequestLabelColor } from "./pullRequestList.logic";
 import type {
   PullRequestPanelViewSnapshot,
   PullRequestSummarySection,
@@ -1206,22 +1206,14 @@ export function PullRequestSummaryTab({
                 {detail.labels.length === 0 ? (
                   <span className="text-muted-foreground">None</span>
                 ) : (
-                  detail.labels.map((label) => {
-                    const dot = pullRequestLabelColor(label.color);
-                    return (
-                      <span
-                        key={label.name}
-                        className="inline-flex max-w-48 items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 py-0.5 pl-1.5 pr-2 text-xs"
-                      >
-                        <span
-                          aria-hidden
-                          className="size-2 shrink-0 rounded-full bg-muted-foreground"
-                          {...(dot ? { style: { backgroundColor: dot } } : {})}
-                        />
-                        <span className="truncate">{label.name}</span>
-                      </span>
-                    );
-                  })
+                  detail.labels.map((label) => (
+                    <PullRequestLabelChip
+                      key={label.name}
+                      label={label}
+                      size="default"
+                      className="max-w-48 border border-border/70"
+                    />
+                  ))
                 )}
                 {detail.capabilities.labels === true ? (
                   <PullRequestLabelPicker
