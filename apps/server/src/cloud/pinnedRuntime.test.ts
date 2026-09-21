@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -13,12 +13,38 @@ import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
 import * as ProcessRunner from "../processRunner.ts";
 import {
   ensurePinnedRuntimeInstalled,
+  fffNodeRequireExportPatch,
   pinnedRuntimeCommand,
   pinnedRuntimeDownloadSource,
   pinnedRuntimePaths,
   PinnedRuntimeInstallError,
   type PinnedRuntimeProgress,
 } from "./pinnedRuntime.ts";
+
+describe("fffNodeRequireExportPatch", () => {
+  it("adds require when exports only list import", () => {
+    assert.deepEqual(
+      fffNodeRequireExportPatch({
+        exports: { ".": { import: "./dist/src/index.js", types: "./dist/src/index.d.ts" } },
+      }),
+      {
+        exports: {
+          ".": {
+            import: "./dist/src/index.js",
+            types: "./dist/src/index.d.ts",
+            require: "./dist/src/index.js",
+            default: "./dist/src/index.js",
+          },
+        },
+      },
+    );
+  });
+
+  it("leaves a manifest that already has require alone", () => {
+    const manifest = { exports: { ".": { import: "./x.js", require: "./x.js" } } };
+    assert.equal(fffNodeRequireExportPatch(manifest), undefined);
+  });
+});
 
 // Every install fetches the release archive, checks it against SHA256SUMS,
 // and unpacks it with tar. The fake client serves both files; the fake runner
@@ -417,18 +443,39 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-tarball-" });
       const requests: string[] = [];
       const commands: string[] = [];
+      const npmPackages: string[] = [];
       const tarballUrl = forkCliTarballUrl(version, "internal");
       const runner = ProcessRunner.ProcessRunner.of({
         run: (input) =>
           Effect.gen(function* () {
             commands.push(input.command);
             const prefix = input.args[input.args.indexOf("--prefix") + 1];
-            if (input.command !== "npm" || prefix === undefined) {
+            const packageArg = input.args.at(-1);
+            if (input.command !== "npm" || prefix === undefined || packageArg === undefined) {
               return yield* Effect.die(`unexpected command ${input.command}`);
             }
+            npmPackages.push(packageArg);
+            if (
+              path.basename(packageArg) !== `t3-${version}.tgz` ||
+              !(yield* fs.exists(packageArg).pipe(Effect.orDie))
+            ) {
+              return yield* Effect.die(`npm was given ${packageArg}`);
+            }
             const binDir = path.join(prefix, "node_modules", ".bin");
+            const fffDir = path.join(prefix, "node_modules", "@ff-labs", "fff-node");
             yield* fs.makeDirectory(binDir, { recursive: true }).pipe(Effect.orDie);
+            yield* fs.makeDirectory(fffDir, { recursive: true }).pipe(Effect.orDie);
             yield* fs.writeFileString(path.join(binDir, "t3"), "#!/bin/sh\n").pipe(Effect.orDie);
+            yield* fs
+              .writeFileString(
+                path.join(fffDir, "package.json"),
+                `${JSON.stringify({
+                  exports: {
+                    ".": { import: "./dist/src/index.js", types: "./dist/src/index.d.ts" },
+                  },
+                })}\n`,
+              )
+              .pipe(Effect.orDie);
             return {
               stdout: "",
               stderr: "",
@@ -468,8 +515,27 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       assert.equal(paths.entryPath, path.join(paths.versionDir, "t3"));
       assert.deepEqual(requests, [`${tarballUrl}.sha256`, tarballUrl]);
       assert.deepEqual(commands, ["npm"]);
+      assert.equal(npmPackages.length, 1);
+      assert.equal(path.basename(npmPackages[0] ?? ""), `t3-${version}.tgz`);
       assert.equal(yield* fs.readLink(paths.entryPath), path.join("node_modules", ".bin", "t3"));
       assert.equal(yield* fs.readFileString(paths.sentinelPath), `${version}\n`);
+      assert.deepEqual(
+        JSON.parse(
+          yield* fs.readFileString(
+            path.join(paths.versionDir, "node_modules", "@ff-labs", "fff-node", "package.json"),
+          ),
+        ),
+        {
+          exports: {
+            ".": {
+              import: "./dist/src/index.js",
+              types: "./dist/src/index.d.ts",
+              require: "./dist/src/index.js",
+              default: "./dist/src/index.js",
+            },
+          },
+        },
+      );
     }),
   );
 
