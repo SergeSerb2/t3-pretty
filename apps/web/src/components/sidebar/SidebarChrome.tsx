@@ -95,9 +95,9 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      {/* Center the generated mark with the visible capitals, without font ascender/descender space. */}
+      {/* Trim only the cap edge. Trimming the alphabetic baseline clips the y in Pretty. */}
       <span
-        className="inline-flex min-w-0 items-center gap-1 text-sm font-medium tracking-tight"
+        className="inline-flex min-w-0 items-center gap-1 text-sm font-medium leading-none tracking-tight"
         data-sidebar-peek="label"
       >
         <img
@@ -113,7 +113,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
         />
         <span
           className={cn(
-            "truncate [text-box:trim-both_cap_alphabetic]",
+            "truncate [text-box:trim-start_cap]",
             onBackdrop ? "text-white/70" : "text-muted-foreground",
           )}
         >
