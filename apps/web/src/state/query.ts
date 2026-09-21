@@ -14,6 +14,7 @@ const EMPTY_ASYNC_RESULT_ATOM = Atom.make(AsyncResult.initial<never, never>(fals
 
 export interface EnvironmentQueryView<A> {
   readonly data: A | null;
+  readonly dataUpdatedAt: number | null;
   readonly error: string | null;
   readonly isPending: boolean;
   readonly isSuccess: boolean;
@@ -46,6 +47,7 @@ export function useEnvironmentQuery<A, E>(
 
   return {
     data: snapshot.data,
+    dataUpdatedAt: result._tag === "Success" ? result.timestamp : null,
     error: snapshot.error,
     isPending: atom !== null && snapshot.isPending,
     isSuccess: result._tag === "Success",

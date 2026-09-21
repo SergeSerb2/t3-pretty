@@ -59,11 +59,11 @@ function AgentBrowserCursorGlide(props: {
   readonly controller: BrowserController;
 }) {
   const { event, content, zoomFactor, controller } = props;
-  const [active, setActive] = useState(true);
+  const [inactiveSequence, setInactiveSequence] = useState<number | null>(null);
+  const active = inactiveSequence !== event.sequence;
 
   useEffect(() => {
-    setActive(true);
-    const timeout = window.setTimeout(() => setActive(false), CURSOR_ACTIVE_MS);
+    const timeout = window.setTimeout(() => setInactiveSequence(event.sequence), CURSOR_ACTIVE_MS);
     return () => window.clearTimeout(timeout);
   }, [event.sequence]);
 
