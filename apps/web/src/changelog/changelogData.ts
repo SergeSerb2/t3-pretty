@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260921.2071002647",
+    date: "2026-09-21",
+    items: [
+      {
+        kind: "fixed",
+        title: "Typecheck after merging v0.0.43-nightly.20260921.2044",
+      },
+      {
+        kind: "fixed",
+        title: "IOS typecheck after nightly 1990 merge",
+      },
+      {
+        kind: "fixed",
+        title: "Typecheck after merging v0.0.43-nightly.20260920.1990",
+      },
+      {
+        kind: "fixed",
+        title: "Packaged backend no longer crashes on FileSystem.Size",
+      },
+      {
+        kind: "fixed",
+        title: "Recover tip packaging after v0.0.43-nightly merge",
+      },
+      {
+        kind: "fixed",
+        title: "Typecheck after merging v0.0.43-nightly.20260919.1948",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260921.2071002644",
     date: "2026-09-21",
     items: [
