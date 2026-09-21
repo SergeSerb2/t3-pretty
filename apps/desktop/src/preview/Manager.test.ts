@@ -2956,25 +2956,25 @@ describe("PreviewManager", () => {
     () =>
       withManager((manager) =>
         Effect.gen(function* () {
-          const host = makeTestHostWebContents();
-          host.executeJavaScript.mockResolvedValueOnce(false);
+          let failCursorStart = true;
           let cursorActive = false;
           const cursorAtCapture: boolean[] = [];
           const contents = Object.assign(
-            makeTestPreviewWebContents(
-              async () => {
-                cursorAtCapture.push(cursorActive);
-                return {
-                  toJPEG: () => Buffer.from("frame"),
-                  getSize: () => ({ width: 800, height: 600 }),
-                };
-              },
-              42,
-              host,
-            ),
+            makeTestPreviewWebContents(async () => {
+              cursorAtCapture.push(cursorActive);
+              return {
+                toJPEG: () => Buffer.from("frame"),
+                getSize: () => ({ width: 800, height: 600 }),
+              };
+            }, 42),
             {
               send: (channel: string, active: unknown) => {
-                if (channel === "preview:recording-cursor") cursorActive = active === true;
+                if (channel !== "preview:recording-cursor") return;
+                cursorActive = active === true;
+                if (cursorActive && failCursorStart) {
+                  failCursorStart = false;
+                  throw new Error("cursor setup failed");
+                }
               },
             },
           );
@@ -2983,11 +2983,11 @@ describe("PreviewManager", () => {
           yield* manager.registerWebview("tab_cursor", 42);
           const failed = yield* Effect.exit(manager.startRecording("tab_cursor"));
           expect(Exit.isFailure(failed)).toBe(true);
-          expect(cursorAtCapture).toEqual([true]);
+          expect(cursorAtCapture).toEqual([]);
           expect(cursorActive).toBe(false);
 
           yield* manager.startRecording("tab_cursor");
-          expect(cursorAtCapture).toEqual([true, true]);
+          expect(cursorAtCapture).toEqual([true]);
           expect(cursorActive).toBe(true);
           yield* manager.stopRecording("tab_cursor");
           expect(cursorActive).toBe(false);
@@ -4222,7 +4222,7 @@ describe("PreviewManager", () => {
           });
           fromId.mockReturnValue({
             id: 42,
-            hostWebContents: makeTestHostWebContents(),
+            hostWebContents: testHostWebContents,
             capturePage: vi.fn(async () => ({ toPNG: () => Buffer.from("frame") })),
             setBackgroundThrottling: vi.fn(),
             isDestroyed: () => false,
@@ -4631,7 +4631,6 @@ describe("PreviewManager", () => {
         });
         fromId.mockReturnValue({
           id: 42,
-          hostWebContents: makeTestHostWebContents(),
           capturePage: vi.fn(async () => ({ toPNG: () => Buffer.from("frame") })),
           setBackgroundThrottling: vi.fn(),
           isDestroyed: () => false,

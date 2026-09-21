@@ -903,6 +903,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                 tab?.controller,
               ),
             );
+            if (!state.source.webContents.isDestroyed()) {
+              yield* attempt(
+                {
+                  operation: "recording.cursor",
+                  tabId,
+                  webContentsId: state.source.webContents.id,
+                },
+                () => state.source.webContents.send(RECORDING_CURSOR_CHANNEL, false),
+              ).pipe(Effect.ignore);
+            }
           }
           yield* restoreFrameCaptureSource(tabId, state.source).pipe(
             Effect.catch((error) =>
@@ -934,13 +944,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           return [undefined, sessions] as const;
         }
         if (consumer === "recording") {
-          yield* Effect.forEach(current.unthrottledWebContentsIds, (id) =>
-            attempt({ operation: "recording.cursor", tabId, webContentsId: id }, () => {
-              const contents = webContents.fromId(id);
-              if (contents && !contents.isDestroyed())
-                contents.send(RECORDING_CURSOR_CHANNEL, false);
-            }).pipe(Effect.ignore),
-          );
+          const sourceState = yield* SynchronizedRef.get(current.sourceState);
+          if (sourceState._tag === "Active" && !sourceState.source.webContents.isDestroyed()) {
+            yield* attempt(
+              {
+                operation: "recording.cursor",
+                tabId,
+                webContentsId: sourceState.source.webContents.id,
+              },
+              () => sourceState.source.webContents.send(RECORDING_CURSOR_CHANNEL, false),
+            ).pipe(Effect.ignore);
+          }
         }
         const consumers = new Set(current.consumers);
         consumers.delete(consumer);
@@ -3589,7 +3603,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     options: RecordingInputOptions = DEFAULT_RECORDING_INPUT_OPTIONS,
   ) {
+    const wc = yield* requireWebContents(tabId);
     return yield* Effect.gen(function* () {
+      const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+      yield* attempt({ operation: "recording.cursor", tabId, webContentsId: wc.id }, () =>
+        wc.send(RECORDING_CURSOR_CHANNEL, true, options, tab?.controller),
+      );
       yield* startFrameCapture(tabId, "recording");
       yield* SynchronizedRef.update(frameCaptureSessionsRef, (sessions) =>
         replaceMap(sessions, (copy) => {
@@ -3597,12 +3616,19 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           if (current) copy.set(tabId, { ...current, recordingInputOptions: options });
         }),
       );
-      const wc = yield* requireWebContents(tabId);
-      const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
-      yield* attempt({ operation: "recording.cursor", tabId, webContentsId: wc.id }, () =>
-        wc.send(RECORDING_CURSOR_CHANNEL, true, options, tab?.controller),
-      );
-    }).pipe(Effect.onError(() => stopFrameCapture(tabId, "recording").pipe(Effect.ignore)));
+    }).pipe(
+      Effect.onError(() =>
+        Effect.all(
+          [
+            stopFrameCapture(tabId, "recording").pipe(Effect.ignore),
+            attempt({ operation: "recording.cursor", tabId, webContentsId: wc.id }, () =>
+              wc.send(RECORDING_CURSOR_CHANNEL, false),
+            ).pipe(Effect.ignore),
+          ],
+          { concurrency: 2, discard: true },
+        ),
+      ),
+    );
   });
 
   const stopRecording = Effect.fn("PreviewManager.stopRecording")(function* (tabId: string) {
