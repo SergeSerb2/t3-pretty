@@ -14,7 +14,6 @@ import {
   dataTransferHasRailFolder,
   dataTransferHasRailProject,
   folderDropBeforeId,
-  folderRailPreviewProjects,
   RAIL_FOLDER_DRAG_TYPE,
   RAIL_PROJECT_DRAG_TYPE,
   type ProjectRailDropTarget,
@@ -31,73 +30,27 @@ const DynamicIcon = lazy(() =>
   import("lucide-react/dynamic").then((module) => ({ default: module.DynamicIcon })),
 );
 
-/** Faint mosaic of contained project icons, clipped to the frosted folder tile. */
-function FolderRailContentsPreview({
-  projects,
-  collapsed,
-}: {
-  readonly projects: readonly SidebarProjectSnapshot[];
-  readonly collapsed: boolean;
-}) {
-  const previews = folderRailPreviewProjects(projects, collapsed);
-  if (previews.length === 0) return null;
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "pointer-events-none absolute inset-[3px] z-0 grid gap-px overflow-hidden rounded-[3px] opacity-[0.55] saturate-[1.25]",
-        previews.length === 1 ? "grid-cols-1" : "grid-cols-2",
-      )}
-      style={{
-        maskImage: "radial-gradient(circle, transparent 30%, black 78%)",
-        WebkitMaskImage: "radial-gradient(circle, transparent 30%, black 78%)",
-      }}
-    >
-      {previews.map((project) => (
-        <span key={project.projectKey} className="flex min-h-0 min-w-0 overflow-hidden">
-          <ProjectFavicon project={project} className="size-full" />
-        </span>
-      ))}
-    </span>
-  );
-}
-
-const FOLDER_RAIL_GLYPH_CLASS = "relative z-10 drop-shadow-[0_0_1.5px_var(--sidebar)]";
-
 function FolderRailGlyph({ folder }: { readonly folder: SidebarProjectFolder }) {
   const Fallback = folder.collapsed ? FolderIcon : FolderOpenIcon;
   if (folder.icon?.kind === "emoji") {
     return (
       <span
         aria-hidden
-        className={cn(
-          FOLDER_RAIL_GLYPH_CLASS,
-          "inline-flex size-4 shrink-0 items-center justify-center leading-none [container-type:size]",
-        )}
+        className="inline-flex size-4 shrink-0 items-center justify-center leading-none [container-type:size]"
       >
         <span className="text-[length:80cqh] leading-none">{folder.icon.emoji}</span>
       </span>
     );
   }
   if (folder.icon?.kind === "monogram") {
-    // Own positioned wrapper: ProjectMonogram's root is sized, not stacked, so
-    // className alone cannot lift the glyph above the folder's ::after sheen.
-    return (
-      <span aria-hidden className={FOLDER_RAIL_GLYPH_CLASS}>
-        <ProjectMonogram text={folder.icon.text} color={folder.icon.color} />
-      </span>
-    );
+    return <ProjectMonogram text={folder.icon.text} color={folder.icon.color} />;
   }
   if (folder.icon?.kind === "lucide") {
     const colorClassName = projectIconColorClassName(folder.icon.color);
     return (
       <span
         aria-hidden
-        className={cn(
-          FOLDER_RAIL_GLYPH_CLASS,
-          "inline-flex size-4 shrink-0 items-center justify-center",
-          colorClassName,
-        )}
+        className={cn("inline-flex size-4 shrink-0 items-center justify-center", colorClassName)}
       >
         <Suspense fallback={<Fallback className="size-full" />}>
           <DynamicIcon name={folder.icon.name as IconName} className="size-full" />
@@ -105,22 +58,7 @@ function FolderRailGlyph({ folder }: { readonly folder: SidebarProjectFolder }) 
       </span>
     );
   }
-  return <Fallback className={FOLDER_RAIL_GLYPH_CLASS} />;
-}
-
-function FolderRailIcon({
-  folder,
-  projects,
-}: {
-  readonly folder: SidebarProjectFolder;
-  readonly projects: readonly SidebarProjectSnapshot[];
-}) {
-  return (
-    <>
-      <FolderRailContentsPreview projects={projects} collapsed={folder.collapsed} />
-      <FolderRailGlyph folder={folder} />
-    </>
-  );
+  return <Fallback />;
 }
 
 // Slides out from the rail; Base UI then skips this once the next icon is hovered.
@@ -131,8 +69,9 @@ const EMPTY_FOLDER_SETTINGS: SidebarProjectFolderSettings = { folders: [], assig
 const RAIL_DROP_HIGHLIGHT_CLASS = "bg-sidebar-row-hover ring-1 ring-ring/80";
 const RAIL_FOLDER_BEFORE_CLASS = "shadow-[inset_0_2px_0_0_var(--color-ring)]";
 const RAIL_FOLDER_AFTER_CLASS = "shadow-[inset_0_-2px_0_0_var(--color-ring)]";
-/** Frosted control-surface tile; hover/selected `bg-*` still replace the fill. */
-const RAIL_FOLDER_BUTTON_CLASS = "relative project-rail-folder";
+/** Opaque well behind an open folder and the projects that belong to it. */
+const RAIL_FOLDER_TRAY_CLASS =
+  "gap-1 rounded-[calc(var(--control-radius)+0.25rem)] bg-[color-mix(in_srgb,var(--sidebar-foreground)_12%,var(--sidebar))] px-1 py-1";
 
 function railDragTypes(event: DragEvent): readonly string[] {
   return event.dataTransfer === null ? [] : Array.from(event.dataTransfer.types);
@@ -474,7 +413,8 @@ export function SidebarProjectRail({
       <div
         key={item.folder.id}
         className={cn(
-          "flex min-w-0 flex-col items-center gap-0.5 rounded-lg py-0.5",
+          "flex min-w-0 flex-col items-center",
+          !item.folder.collapsed && RAIL_FOLDER_TRAY_CLASS,
           dropHighlight === `folder:${item.folder.id}` && RAIL_DROP_HIGHLIGHT_CLASS,
           dropHighlight === `folder-before:${item.folder.id}` && RAIL_FOLDER_BEFORE_CLASS,
           dropHighlight === `folder-after:${item.folder.id}` && RAIL_FOLDER_AFTER_CLASS,
@@ -525,7 +465,6 @@ export function SidebarProjectRail({
             size="icon"
             aria-label={`${item.folder.collapsed ? "Expand" : "Collapse"} ${item.folder.name}`}
             aria-expanded={!item.folder.collapsed}
-            className={RAIL_FOLDER_BUTTON_CLASS}
             tooltip={{
               className: RAIL_TOOLTIP_CLASS,
               sideOffset: 8,
@@ -544,7 +483,7 @@ export function SidebarProjectRail({
               onFolderContextMenu ? (event) => onFolderContextMenu(event, item.folder) : undefined
             }
           >
-            <FolderRailIcon folder={item.folder} projects={item.projects} />
+            <FolderRailGlyph folder={item.folder} />
           </SidebarMenuButton>
           {item.folder.collapsed && attention ? (
             <span
