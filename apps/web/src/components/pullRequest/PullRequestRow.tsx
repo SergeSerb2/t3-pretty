@@ -209,7 +209,11 @@ function PullRequestRowImpl({
                 <TooltipPopup>{providerName}</TooltipPopup>
               </Tooltip>
             ) : null}
-            <PullRequestRowAuthor actor={entry.author} className="min-w-3.5 max-w-40" />
+            <PullRequestRowAuthor
+              actor={entry.author}
+              className="min-w-3.5 max-w-40"
+              labelClassName="sr-only @xs/pr-row-meta:not-sr-only @xs/pr-row-meta:truncate"
+            />
             {showProjectTitle ? <span className="truncate">{entry.repository}</span> : null}
             {environmentLabel ? (
               <span className="min-w-0 max-w-32 truncate">{environmentLabel}</span>

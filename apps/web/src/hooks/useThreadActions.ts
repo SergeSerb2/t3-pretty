@@ -239,6 +239,7 @@ export function useThreadActions() {
   const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
   const confirmThreadUnpin = useClientSettings((settings) => settings.confirmThreadUnpin);
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
+  const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearDraftThread);
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
   );
@@ -753,12 +754,13 @@ export function useThreadActions() {
             if (pinned._tag !== "Success") return pinned;
           }
           if (snoozedUntil !== null) {
+            const snoozeWritable = readWritableThreadRef(target);
             const snoozed = await snoozeThreadMutation({
-              environmentId: writable.environmentId,
-              input: { threadId: writable.threadId, snoozedUntil },
+              environmentId: snoozeWritable.environmentId,
+              input: { threadId: snoozeWritable.threadId, snoozedUntil },
             });
             if (snoozed._tag === "Success") {
-              await mirrorLifecycleWriteIfRetargeted(target, writable, (ref) =>
+              await mirrorLifecycleWriteIfRetargeted(target, snoozeWritable, (ref) =>
                 snoozeThreadMutation({
                   environmentId: ref.environmentId,
                   input: { threadId: ref.threadId, snoozedUntil },
