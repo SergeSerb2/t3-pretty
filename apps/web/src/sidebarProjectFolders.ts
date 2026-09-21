@@ -95,17 +95,6 @@ export function shouldLiftProjectFolderSettings(input: {
   );
 }
 
-export const FOLDER_RAIL_PREVIEW_LIMIT = 4;
-
-/** Mosaic faces on a collapsed folder tile. Expanded tiles show the real icons instead. */
-export function folderRailPreviewProjects<T>(
-  projects: readonly T[],
-  collapsed: boolean,
-): readonly T[] {
-  if (!collapsed) return [];
-  return projects.slice(0, FOLDER_RAIL_PREVIEW_LIMIT);
-}
-
 export function buildProjectRailItems<T extends { projectKey: string }>(
   projects: readonly T[],
   settings: SidebarProjectFolderSettings,
