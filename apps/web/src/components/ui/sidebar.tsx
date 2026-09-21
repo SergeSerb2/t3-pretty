@@ -23,8 +23,8 @@ import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState
 import {
   SIDEBAR_PEEK_ANIMATION_MS,
   SIDEBAR_PEEK_EASE,
-  shouldIgnoreSidebarPeekLeave,
   useSidebarPeek,
+  useSidebarPeekPointerBinding,
 } from "./sidebarPeek";
 import * as Schema from "effect/Schema";
 
@@ -199,6 +199,7 @@ function SidebarProvider({
           "group/sidebar-wrapper flex min-h-svh w-full max-sm:[--workspace-titlebar-control-size:--spacing(8)]",
           className,
         )}
+        data-sidebar-peeking={peekFlyout ? "" : undefined}
         data-sidebar-state={state}
         data-slot="sidebar-wrapper"
         style={
@@ -293,6 +294,7 @@ function Sidebar({
       window.clearTimeout(timeout);
     };
   }, [iconCollapsed]);
+  const peekPointer = useSidebarPeekPointerBinding(onPeekPointerEnter, onPeekPointerLeave);
 
   if (collapsible === "none") {
     return (
@@ -403,12 +405,11 @@ function Sidebar({
           {...props}
           onPointerEnter={(event) => {
             props.onPointerEnter?.(event);
-            onPeekPointerEnter();
+            peekPointer.onPointerEnter();
           }}
           onPointerLeave={(event) => {
             props.onPointerLeave?.(event);
-            if (shouldIgnoreSidebarPeekLeave(event.currentTarget, event.relatedTarget)) return;
-            onPeekPointerLeave();
+            peekPointer.onPointerLeave(event);
           }}
         >
           <div
@@ -423,6 +424,10 @@ function Sidebar({
               {children}
             </div>
           </div>
+          {/* The container width is still animating when the pointer reaches the
+              titlebar. This strip is the not-yet-revealed band, so moving up
+              toward the traffic lights does not count as leaving. */}
+          <div aria-hidden data-sidebar-peek-hover-bridge="" />
         </div>
       </div>
     </SidebarInstanceContext>
