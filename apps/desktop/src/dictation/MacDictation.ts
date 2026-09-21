@@ -87,13 +87,14 @@ export async function startMacDictation(input: {
     ready = resolve;
     fail = reject;
   });
+  // Speech Recognition consent is answered before the helper emits ready.
   const readyTimeout = setTimeout(() => {
     finish(
       new Error(
         "macOS speech recognition did not start. Check microphone and Speech Recognition permissions.",
       ),
     );
-  }, 30_000);
+  }, 120_000);
 
   const session: MacDictationSession = {
     stop: () => requestStop("stop"),

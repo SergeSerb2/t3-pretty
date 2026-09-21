@@ -1399,6 +1399,27 @@ ${microphoneEntitlement}
 `;
 }
 
+// Hardened Runtime swallows the microphone prompt unless this entitlement is
+// on the app and the dictation helper. Nightly signing skips the passkey
+// profile, so the entitlement cannot live only in that file.
+export function renderMacDictationEntitlements(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+  </dict>
+</plist>
+`;
+}
+
 export function resolveFffNativeDependencies(
   platform: typeof BuildPlatform.Type,
   arch: typeof BuildArch.Type,
@@ -2968,7 +2989,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   macPasskeySigning:
     | {
         readonly entitlementsPath: string;
-        readonly provisioningProfilePath: string;
+        readonly entitlementsInheritPath?: string;
+        readonly provisioningProfilePath?: string;
       }
     | undefined,
   // T3 Pretty's build flavor already occupies this positional slot. Also
@@ -3072,7 +3094,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ...(macPasskeySigning
         ? {
             entitlements: macPasskeySigning.entitlementsPath,
-            provisioningProfile: macPasskeySigning.provisioningProfilePath,
+            ...(macPasskeySigning.entitlementsInheritPath
+              ? { entitlementsInherit: macPasskeySigning.entitlementsInheritPath }
+              : {}),
+            ...(macPasskeySigning.provisioningProfilePath
+              ? { provisioningProfile: macPasskeySigning.provisioningProfilePath }
+              : {}),
           }
         : {}),
     };
@@ -4051,6 +4078,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
+  // The dictation helper is a nested Mach-O. It needs the same microphone
+  // entitlement as the app, or Hardened Runtime denies access before macOS
+  // can show a prompt. Keep associated-domains off this inherited file.
+  const macDictationEntitlementsPath =
+    options.platform === "mac" && buildFlavor === "internal"
+      ? path.join(stageAppDir, "entitlements.mac.inherit.plist")
+      : undefined;
+  if (macDictationEntitlementsPath) {
+    yield* fs.writeFileString(macDictationEntitlementsPath, renderMacDictationEntitlements());
+  }
+
   // Fork: signed builds may ship without the passkey Associated Domains
   // entitlement while no Developer ID provisioning profile exists for the
   // fork bundle id. Passkey login degrades; codesigning and notarization are
@@ -4077,16 +4115,20 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   // relaunched for the grant to take effect. This unsandboxed app needs no
   // entitlement or Info.plist usage key for it, so do not try to "fix"
   // capture issues here at the entitlement layer.
-  const macEntitlementsPath = macPasskeySigning
+  const macPasskeyEntitlementsPath = macPasskeySigning
     ? path.join(stageAppDir, "entitlements.mac.plist")
     : undefined;
-  if (macPasskeySigning && macEntitlementsPath) {
+  const macEntitlementsPath = macPasskeyEntitlementsPath ?? macDictationEntitlementsPath;
+  if (macPasskeySigning && macPasskeyEntitlementsPath) {
     if (!(yield* fs.exists(macPasskeySigning.provisioningProfilePath))) {
       return yield* new MacProvisioningProfileNotFoundError({
         provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
       });
     }
-    yield* fs.writeFileString(macEntitlementsPath, renderMacPasskeyEntitlements(macPasskeySigning));
+    yield* fs.writeFileString(
+      macPasskeyEntitlementsPath,
+      renderMacPasskeyEntitlements(macPasskeySigning),
+    );
   }
 
   // Windows splits dependencies per process: app.asar carries only the
@@ -4128,10 +4170,15 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       options.signed,
       options.mockUpdates,
       options.mockUpdateServerPort,
-      macPasskeySigning && macEntitlementsPath
+      macEntitlementsPath
         ? {
             entitlementsPath: macEntitlementsPath,
-            provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
+            ...(macDictationEntitlementsPath
+              ? { entitlementsInheritPath: macDictationEntitlementsPath }
+              : {}),
+            ...(macPasskeySigning
+              ? { provisioningProfilePath: macPasskeySigning.provisioningProfilePath }
+              : {}),
           }
         : undefined,
       buildFlavor,
