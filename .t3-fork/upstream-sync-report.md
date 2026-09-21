@@ -114,3 +114,107 @@ Re-ran the four landing gates on this repair tree after Buildkite #2622 failed t
 - `apps/web/src/components/pullRequest/PullRequestRow.tsx` — The upstream labelClassName that makes the author text screen-reader-only below the @xs/pr-row-meta breakpoint.. Reason: T3 Pretty's current row presentation intentionally renders PullRequestActorLabel without that responsive hiding behavior. Applying it would regress the fork's visible author-label presentation; the upstream PullRequestRowAuthor abstraction and sizing improvements are otherwise retained.
 - `apps/web/src/hooks/useThreadActions.ts` — The parent side retained the pre-existing `clearComposerDraftForThread` selector.. Reason: T3 Pretty intentionally removed this selector and its corresponding per-thread cleanup path. Restoring the declaration would regress that fork change and leave an obsolete or unused store subscription.
 - `apps/web/src/hooks/useThreadActions.ts` — Remove the local settleThread callback entirely.. Reason: That deletion would regress T3 Pretty's authoritative settlement lifecycle behavior: writable-target retargeting, sidebar departure animation, thrown-error cleanup, mirrored writes, and visited-state tracking. No parent first-party replacement is present in the supplied conflict boundary.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260921.2044`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260921.2044`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/Sidebar.tsx` — Preserved T3 Pretty's compact, redesigned sidebar-thread row structure, including the existing integrated status and action presentation without appending a duplicate title/branch metadata section.
+- `apps/web/src/components/Sidebar.tsx` — Preserved the fork's sidebar visual density and interaction layout around Woke status, snooze, draft discard, and settlement controls.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved T3 Pretty's `composerControlsCompact` calculation for compact footer behavior when controls are not rendered in the resting strip.
+- `apps/web/src/components/chat/ChatComposer.tsx` — The dedicated composerControlsCompact layout remains a single touch-friendly CompactComposerControlsMenu rather than rendering the full resting-control block set.
+- `apps/web/src/components/chat/ChatComposer.tsx` — T3 Pretty's Create PR and review-and-merge/babysit controls remain available in both the dedicated compact menu and the responsive overflow menu, including their toggle callbacks.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Existing compact-mode, interaction-mode, runtime-mode, and provider-traits behavior remains intact.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved the T3 Pretty local speech-recognition dictation dependencies (`dictation.toggle` and `dictation.active`), including correct memo updates when dictation state changes.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved `expandComposerForEditorChange`, which supports the fork's composer expansion behavior.
+- `apps/web/src/components/chat/ComposerBannerStack.test.tsx` — Tests protecting T3 Pretty's in-flow expanded banner layout, hover/focus visibility, and banner ordering.
+- `apps/web/src/components/chat/ComposerBannerStack.test.tsx` — Accessibility coverage for the focusable collapsed-stack cap and singular/plural notice labels.
+- `apps/web/src/components/chat/ComposerBannerStack.test.tsx` — Variant-aware collapsed-cap theming, including Pretty's attached-outline styling for neutral notices.
+- `apps/web/src/components/chat/ComposerBannerStack.test.tsx` — Single-banner Pretty drawer surface, attached styling, compact typography, variant metadata, and no-transform behavior.
+- `apps/web/src/components/chat/ComposerBannerStack.test.tsx` — Support for item-specific surface/action classes and the accessible disabled compaction action with dismiss labeling.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Preserved the explicit three-column pull-request row layout so the glyph, metadata/content, and trailing diff stat occupy separate columns and do not overlap in narrow lists.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Preserved `overflow-hidden` on the pull-request metadata container, protecting T3 Pretty's narrow-list fix that prevents metadata from overlapping the diff stat.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Preserved T3 Pretty's current `PullRequestRowLines` layout, metadata ordering, host-link context menu, provider display, environment label, and row-author component.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved use of T3 Pretty's PullRequestGlyph rather than regressing to restricted Lucide pull-request icons.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved host-aware pull-request link opening and context-menu behavior through openPullRequestLinkOnHost.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved pull-request panel view snapshot and summary-section state used for T3 Pretty navigation and scroll restoration behavior.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — T3 Pretty's pull-request label chips retain the `border border-border/70` visual treatment and existing maximum width.
+- `apps/web/src/components/pullRequest/pullRequestChecks.test.tsx` — Test coverage ensuring pull-request check keys remain stable when host-reported checks reorder or change status.
+- `apps/web/src/components/pullRequest/pullRequestChecks.test.tsx` — Test coverage ensuring repeated host check runs receive unique React list keys.
+- `apps/web/src/hooks/useThreadActions.ts` — Preserved the T3 Pretty `timestampFormat` client-setting lookup used by thread actions.
+- `apps/web/src/hooks/useThreadActions.ts` — Manual unsettle remains documented consistently with T3 Pretty's lifecycle policy: closed pull requests or inactivity may auto-settle, while merely merging a pull request does not.
+- `apps/web/src/hooks/useThreadActions.ts` — Pin writes continue to use the resolved writable environment instead of an obsolete or disconnected same-machine target.
+- `apps/web/src/hooks/useThreadActions.ts` — Successful pin writes continue through the existing result-aware path so `mirrorLifecycleWriteIfRetargeted` can synchronize a retargeted thread and avoid cross-surface state divergence.
+- `apps/web/src/hooks/useThreadActions.ts` — Unpin operations continue to resolve a writable thread target instead of writing to a potentially disconnected same-machine twin.
+- `apps/web/src/hooks/useThreadActions.ts` — Successful unpin and settle lifecycle writes are mirrored back when retargeting occurred, preserving cross-surface and reconnect reliability.
+- `apps/web/src/hooks/useThreadActions.ts` — Undoing settlement restores snooze state through the same writable-target and mirroring safeguards.
+- `apps/web/src/hooks/useThreadActions.ts` — Unpin Undo retains the thread title and original pin order key so restoring the pin does not disturb the fork’s arranged sidebar order.
+- `apps/web/src/hooks/useThreadActions.ts` — Settlement capability checks and unsupported errors use the actual writable environment and thread.
+- `apps/web/src/hooks/useThreadActions.ts` — Optimistic settle departure animation remains active while the lifecycle mutation is in flight.
+- `apps/web/src/hooks/useThreadActions.ts` — Failed or rejected settle mutations clear the departure marker and finish the undo claim, preventing stuck departing rows and stale undo state.
+- `apps/web/src/hooks/useThreadActions.ts` — Settlement continues to use writable-thread retargeting and mirrored lifecycle writes for disconnected same-machine twins.
+- `apps/web/src/hooks/useThreadActions.ts` — Settle Undo continues restoring prior pin and snooze state, with the retained canonical implementation re-reading the writable target before restoring a snooze.
+- `apps/web/src/hooks/useThreadActions.ts` — Pinned-thread reorder continues targeting the current writable thread and mirroring successful writes when retargeted, preserving T3 Pretty's disconnected-twin reliability fix.
+- `apps/web/src/hooks/useThreadActions.ts` — Snooze and unsnooze mutations resolve through readWritableThreadRef so writes avoid a disconnected same-machine twin.
+- `apps/web/src/hooks/useThreadActions.ts` — Successful retargeted lifecycle writes are mirrored for unsnooze operations.
+- `apps/web/src/hooks/useThreadActions.ts` — Snoozing retains the optimistic thread-row departure animation.
+- `apps/web/src/hooks/useThreadActions.ts` — Thrown or failed snooze mutations clear the departure marker and finish the undo action, preventing stale UI state.
+- `apps/web/src/hooks/useThreadActions.ts` — Capability checks and mutation payloads use the resolved writable environment and thread.
+- `apps/web/src/hooks/useThreadActions.ts` — Successful snooze writes remain mirrored when the logical thread target was retargeted to a writable same-machine twin.
+- `apps/web/src/hooks/useThreadActions.ts` — Retarget mirroring also remains active for batch callers that disable individual undo toasts, avoiding lifecycle divergence between thread twins.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/components/chat/ChatComposer.tsx` — Integrated the parent's `expandedControlsLayout.hiddenBlockCount` handling outside the resting controls strip.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Integrated the parent's `iconOnlyBlockCount` calculation for both resting-strip and expanded control layouts.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Resting controls use iconOnlyBlockCount and data-composer-block-icon-only to progressively collapse labels to icons.
+- `apps/web/src/components/chat/ChatComposer.tsx` — The responsive control wrappers and overflow menu now work outside strip mode as well as inside it.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Overflow menu sizing follows composerControlsInStrip, using xs in the strip and sm otherwise.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Hidden resting blocks retain the parent's accessibility and layout handling through aria-hidden, inert, and invisible absolute positioning.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Integrated `resetComposerTrigger` and `setComposerTrigger` into the memo dependency list so upstream composer-trigger behavior does not capture stale callbacks.
+- `apps/web/src/components/chat/ComposerBannerStack.test.tsx` — Parent test coverage ensuring notice details appear only when text, nested content, or positioned content cannot fit.
+- `apps/web/src/components/chat/ComposerBannerStack.test.tsx` — Parent ResizeObserver and MutationObserver regression coverage, including removing the details control when content fits again and avoiding self-sustaining overflow from the details icon.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Integrated the parent refactor that composes the row from the shared PULL_REQUEST_ROW_CLASS and PAGE_ROW_CLASS constants instead of duplicating the base row styling inline.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Integrated the parent's `labelClassName` for `PullRequestRowAuthor`, keeping the author label screen-reader-only at the smallest width and revealing it with truncation at the metadata container's `xs` breakpoint.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Retained the parent's compatible diff-stat placement and matched-description tooltip structure within the current row component.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Integrated upstream's removal of the obsolete pullRequestLabelColor import from pullRequestList.logic.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The parent replacement of hand-built label markup and color-dot handling with the shared `PullRequestLabelChip` component is retained, including the default chip size.
+- `apps/web/src/components/pullRequest/pullRequestChecks.test.tsx` — The parent's expanded documentation explaining that the row-flattening helper traverses React elements supplied through props as well as children.
+- `apps/web/src/hooks/useThreadActions.ts` — Integrated the parent `clearComposerDraftForThread` selector from the composer draft store alongside the fork setting.
+- `apps/web/src/hooks/useThreadActions.ts` — Invalidate stale settle undo state before performing a manual unsettle.
+- `apps/web/src/hooks/useThreadActions.ts` — Invalidate stale pin undo state before performing a pin mutation.
+- `apps/web/src/hooks/useThreadActions.ts` — Integrated the parent’s settlement Undo workflow, including snapshots of prior pin and snooze state and restoration after unsetting.
+- `apps/web/src/hooks/useThreadActions.ts` — Integrated invalidation of stale pin and snooze Undo claims when settlement supersedes those actions.
+- `apps/web/src/hooks/useThreadActions.ts` — Integrated visited-state marking based on the thread wake time after a successful settlement.
+- `apps/web/src/hooks/useThreadActions.ts` — Integrated the parent’s silent batch-settlement option via opts.undoToast.
+- `apps/web/src/hooks/useThreadActions.ts` — Integrated the parent’s failure handling for settlement mutations and Undo restoration steps.
+- `apps/web/src/hooks/useThreadActions.ts` — Retained the parent unpin Undo toast and action-claim lifecycle around the fork’s retarget-safe mutation path.
+- `apps/web/src/hooks/useThreadActions.ts` — The settle callback now uses the complete upstream dependency list rather than the obsolete base dependency on only unpinThreadMutation.
+- `apps/web/src/hooks/useThreadActions.ts` — The upstream canonical settle implementation is retained, including freshly resolving the writable target before restoring a snooze during Undo.
+- `apps/web/src/hooks/useThreadActions.ts` — Pinned-thread reordering invalidates any pending pin Undo before applying a new order, as introduced upstream.
+- `apps/web/src/hooks/useThreadActions.ts` — Unsnooze invalidates an existing snooze undo entry and sends the user-initiated unsnooze mutation.
+- `apps/web/src/hooks/useThreadActions.ts` — Snooze retains the optional undoToast flag used by batch callers to suppress individual undo notifications.
+- `apps/web/src/hooks/useThreadActions.ts` — When undoToast is false after a successful snooze, the undo action is finished and the mutation result is returned without creating a per-thread undo toast.
+- `apps/web/src/hooks/useThreadActions.ts` — Upstream snooze capability checks, client-side snooze invariants, and undo lifecycle remain compatible with the fork implementation.
+- `apps/web/src/hooks/useThreadActions.ts` — Snoozing continues to show the upstream confirmation toast with the formatted wake time, thread title, undo callback, and failure title.
+- `apps/web/src/hooks/useThreadActions.ts` — Batch callers using undoToast=false still finish the undo claim and return without showing a per-thread toast.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/Sidebar.tsx` — Upstream retained the legacy secondary title and metadata rows and changed branch rendering from a tail-truncated span to MiddleTruncate.. Reason: T3 Pretty deliberately removed this entire legacy block as part of its custom sidebar-row redesign. Restoring it would duplicate title and thread metadata beneath the fork's current row content. The MiddleTruncate change cannot be applied at this deleted boundary without inventing an unrelated target elsewhere in the fork layout.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Always render restingBlockDefs and the measured overflow container, including when composerControlsCompact is true.. Reason: That portion would remove T3 Pretty's authoritative dedicated compact/touch-friendly composer layout. The parent responsive implementation is retained for every non-compact layout instead.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — The parent version relies entirely on the shared row class for grid-column sizing and removes the page-row-specific three-column override.. Reason: That would regress T3 Pretty's narrow-list overlap fix by no longer guaranteeing a separate trailing column for the diff stat.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — The parent side sets `metaClassName` to only `@container/pr-row-meta`, dropping `overflow-hidden`.. Reason: Dropping overflow containment would regress T3 Pretty's explicit narrow-list protection and allow pull-request metadata to overlap the diff stat.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The parent's borderless `className="max-w-48"` presentation for pull-request label chips.. Reason: Applying it would remove T3 Pretty's fork-specific bordered label styling; the parent component behavior is otherwise fully preserved.
+- `apps/web/src/hooks/useThreadActions.ts` — The parent comment states that a merged pull request is an auto-settle trigger.. Reason: T3 Pretty deliberately stopped auto-settling threads merely because a pull request merged; retaining that wording would contradict the fork's authoritative lifecycle behavior.
+- `apps/web/src/hooks/useThreadActions.ts` — The parent pin path directly returns `pinThreadMutation` using `target.environmentId`.. Reason: That direct path bypasses T3 Pretty's writable-target resolution and successful-write mirroring, regressing the fork safeguard for disconnected same-machine twins. The parent undo invalidation is retained around the fork-safe mutation path.
+- `apps/web/src/hooks/useThreadActions.ts` — Directly issuing unpin, settle, and snooze-restoration mutations against target.environmentId and target.threadId.. Reason: Those references may identify a disconnected same-machine twin. They were replaced with T3 Pretty’s writable-target routing and mirrored lifecycle writes to avoid regressing established cross-surface reliability.
+- `apps/web/src/hooks/useThreadActions.ts` — The upstream reorder hunk directly returns a mutation addressed to target.environmentId and target.threadId.. Reason: That literal dispatch would bypass T3 Pretty's writable-target selection and eliminate the existing post-success mirror path, regressing the fork's fix for disconnected same-machine twins. The upstream reorder behavior and pin-undo invalidation are retained through the fork-compatible writable target instead.
+- `web-typecheck` failed after merging `v0.0.43-nightly.20260921.2044`; repaired with `gpt-5.6-sol`: The typecheck failure is resolved by deleting only the duplicate function implementation. Suggestion-level diagnostics are intentionally left unchanged.
+  - edited `apps/web/src/components/chat/ComposerBannerStack.tsx`
