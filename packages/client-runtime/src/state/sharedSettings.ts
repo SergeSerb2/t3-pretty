@@ -28,6 +28,7 @@ const SHARED_SERVER_SETTING_KEYS = [
   "sidebarAutoSettleOnMerge",
   "sidebarProjectFolders",
   "sidebarProjectFolderAssignments",
+  "sceneryPhotoSet",
   "newWorktreesStartFromOrigin",
   "sourceControlWritingStyle",
   "textGenerationModelSelection",
@@ -36,7 +37,7 @@ const SHARED_SERVER_SETTING_KEYS = [
 
 export type SharedSettingsCapabilities = Pick<
   ExecutionEnvironmentCapabilities,
-  "threadRestartContinuation" | "globalEnvironment"
+  "threadRestartContinuation" | "globalEnvironment" | "sceneryPhotoSet"
 >;
 
 /** Fill redacted secret values from an operator export so other machines receive them. */
@@ -130,6 +131,9 @@ export function filterSharedServerPatch(
   }
   if (capabilities?.threadRestartContinuation !== true) {
     patch = Struct.omit(patch, ["continueThreadsAfterServerUpdate"]);
+  }
+  if (capabilities?.sceneryPhotoSet !== true) {
+    patch = Struct.omit(patch, ["sceneryPhotoSet"]);
   }
   return capabilities?.globalEnvironment === true
     ? patch

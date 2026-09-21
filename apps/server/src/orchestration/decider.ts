@@ -2265,6 +2265,49 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       return [unsettledEvent, activityAppendedEvent];
     }
 
+    case "thread.scenery.assign": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      if (command.scenery === null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread ${command.threadId} has no scenery assignment to clear.`,
+        });
+      }
+      const existing = thread.scenery ?? null;
+      const incomingSet = command.scenery.photoSetId ?? null;
+      const existingSet = existing?.photoSetId ?? null;
+      // The first photo for a catalog wins. A different catalog replaces it,
+      // so every device showing that catalog converges on the same photo.
+      const keepExisting = existing !== null && existingSet === incomingSet;
+      const occurredAt = yield* nowIso;
+      const { photoSetId, ...photo } = command.scenery;
+      const scenery = keepExisting
+        ? existing
+        : {
+            ...photo,
+            ...(photoSetId !== undefined ? { photoSetId } : {}),
+            assignedAt: occurredAt,
+          };
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.scenery-assigned" as const,
+        payload: {
+          threadId: command.threadId,
+          scenery,
+          updatedAt: keepExisting ? thread.updatedAt : occurredAt,
+        },
+      };
+    }
+
     default: {
       command satisfies never;
       const fallback = command as never as { type: string };

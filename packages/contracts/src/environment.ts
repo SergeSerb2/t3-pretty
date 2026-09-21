@@ -156,6 +156,9 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       snapshots. Absent on older servers, so clients keep scenery assignments
       device-local instead of syncing them. */
   threadScenery: Schema.optionalKey(Schema.Boolean),
+  /** Server stores the shared scenery photo catalog. Absent on older servers,
+      so clients keep the catalog device-local instead of publishing it. */
+  sceneryPhotoSet: Schema.optionalKey(Schema.Boolean),
   /** Server can start a fresh provider session and replay bounded thread
       context when a started thread switches to an incompatible provider. */
   providerHandoff: Schema.optionalKey(Schema.Boolean),

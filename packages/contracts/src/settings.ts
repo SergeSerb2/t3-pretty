@@ -1197,6 +1197,16 @@ export const ServerSettings = Schema.Struct({
   sidebarProjectFolderAssignments: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  /**
+   * The scenery photo catalog (World Scenery, Night Cities, and the other
+   * sets). Null until a client publishes a choice, so connecting a device
+   * does not overwrite a catalog that was only saved on that device.
+   * Clients that participate in shared-settings sync write this to every
+   * connected environment.
+   */
+  sceneryPhotoSet: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(64))).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   backgroundActivity: BackgroundActivitySettings,
   // Legacy flat fields retained for old settings files and old clients. New
   // consumers should resolve `backgroundActivity` instead.
@@ -1533,6 +1543,9 @@ export const ServerSettingsPatch = Schema.Struct({
   sidebarProjectFolders: Schema.optionalKey(Schema.Array(SidebarProjectFolder)),
   sidebarProjectFolderAssignments: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString),
+  ),
+  sceneryPhotoSet: Schema.optionalKey(
+    Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(64))),
   ),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({

@@ -654,6 +654,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             activeOrderKey: null,
             titleRegenerationRequestId: null,
             titleRegenerationStartedAt: null,
+            scenery: null,
             latestUserMessageAt: null,
             pendingApprovalCount: 0,
             pendingUserInputCount: 0,
@@ -1125,6 +1126,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             updatedAt: event.occurredAt,
           });
           yield* refreshThreadShellSummary(event.payload.threadId);
+          return;
+        }
+
+        case "thread.scenery-assigned": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            scenery: event.payload.scenery,
+            updatedAt: event.payload.updatedAt,
+          });
           return;
         }
 

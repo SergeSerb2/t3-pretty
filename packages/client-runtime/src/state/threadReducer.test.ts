@@ -291,12 +291,41 @@ describe("applyThreadDetailEvent", () => {
     });
   });
 
-  // Scenery assignment events are commands only, not events yet
-  // describe("thread.scenery-assigned", () => {
-  //   it("sets scenery", () => {
-  //     ...
-  //   });
-  // });
+  describe("thread.scenery-assigned", () => {
+    it("sets the thread photo", () => {
+      const scenery = {
+        photoId: "unsplash-yosemite",
+        name: "Yosemite Valley, United States",
+        averageColorHex: "#3a5f7a",
+        heroURL: "https://images.unsplash.com/photo-yosemite?w=1080",
+        thumbURL: "https://images.unsplash.com/photo-yosemite?w=200",
+        rawURL: "https://images.unsplash.com/photo-yosemite",
+        downloadLocationURL: "https://api.unsplash.com/photos/yosemite/download",
+        photographerName: "Jane Doe",
+        photographerProfileURL: "https://unsplash.com/@jane",
+        photoSetId: "night-cities",
+        assignedAt: "2026-04-01T05:00:00.000Z",
+      };
+      const result = applyThreadDetailEvent(baseThread, {
+        ...baseEventFields,
+        sequence: 6,
+        occurredAt: scenery.assignedAt,
+        aggregateKind: "thread",
+        aggregateId: baseThread.id,
+        type: "thread.scenery-assigned",
+        payload: {
+          threadId: baseThread.id,
+          scenery,
+          updatedAt: scenery.assignedAt,
+        },
+      });
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.scenery).toEqual(scenery);
+        expect(result.thread.updatedAt).toBe(scenery.assignedAt);
+      }
+    });
+  });
 
   describe("thread.meta-updated", () => {
     it.each(["f", null] as const)(

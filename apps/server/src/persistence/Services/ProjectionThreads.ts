@@ -15,6 +15,7 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
   ThreadLinkedPullRequest,
+  ThreadSceneryAssignment,
   ThreadTitleState,
   ThreadId,
   TurnId,
@@ -56,6 +57,7 @@ export const ProjectionThread = Schema.Struct({
   pendingApprovalCount: NonNegativeInt,
   pendingUserInputCount: NonNegativeInt,
   hasActionableProposedPlan: NonNegativeInt,
+  scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
   deletedAt: Schema.NullOr(IsoDateTime),
 });
 export type ProjectionThread = typeof ProjectionThread.Type;

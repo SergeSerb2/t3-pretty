@@ -1,6 +1,7 @@
 import { cn } from "../../lib/utils";
 import { PHOTO_SETS, type PhotoSetId } from "../../scenery/photoSets";
 import { usePhotoSetStore } from "../../scenery/photoSetStore";
+import { usePublishSceneryPhotoSet } from "../../scenery/useSyncedSceneryPhotoSet";
 import { isBoringChatTheme } from "../../scenery/productTheme";
 import { WORLD_SCENERY_THEME, WORLD_SCENERY_THEME_ID } from "../../scenery/worldSceneryTheme";
 import {
@@ -169,6 +170,7 @@ export function ThemeLibrary({
   const boring = isBoringChatTheme(theme);
   const photoSetId = usePhotoSetStore((state) => state.photoSetId);
   const setPhotoSetId = usePhotoSetStore((state) => state.setPhotoSetId);
+  const publishPhotoSet = usePublishSceneryPhotoSet();
   const schemeTheme = boring ? T3_CHAT_THEME : photoSetTheme(photoSetId);
 
   const setMode = (mode: ThemeMode) => {
@@ -179,6 +181,7 @@ export function ThemeLibrary({
 
   const selectPhotoSet = (next: PhotoSetId) => {
     setPhotoSetId(next);
+    publishPhotoSet(next);
     if (!setTheme(WORLD_SCENERY_THEME_ID)) {
       notifyAppearanceSaveFailure();
     }

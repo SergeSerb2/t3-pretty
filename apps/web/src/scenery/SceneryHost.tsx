@@ -13,6 +13,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { useTheme } from "../hooks/useTheme";
 import { shouldForceWorldSceneryTheme } from "./productTheme";
 import { useSceneryThemeActive } from "./useHtmlAttributes";
+import { useSyncedSceneryPhotoSet } from "./useSyncedSceneryPhotoSet";
 import { ensureWorldSceneryThemeInstalled, WORLD_SCENERY_THEME_ID } from "./worldSceneryTheme";
 
 const ActiveScenery = lazy(() => import("./ActiveScenery"));
@@ -21,6 +22,7 @@ const SceneryMotion = lazy(() => import("./SceneryMotion"));
 export function SceneryHost() {
   const active = useSceneryThemeActive();
   const { theme, setTheme } = useTheme();
+  useSyncedSceneryPhotoSet();
 
   useEffect(() => {
     ensureWorldSceneryThemeInstalled();

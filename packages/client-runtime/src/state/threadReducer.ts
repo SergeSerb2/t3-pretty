@@ -255,6 +255,16 @@ export function applyThreadDetailEvent(
         },
       };
 
+    case "thread.scenery-assigned":
+      return {
+        kind: "updated",
+        thread: {
+          ...thread,
+          scenery: event.payload.scenery,
+          updatedAt: event.payload.updatedAt,
+        },
+      };
+
     // ── Thread metadata ─────────────────────────────────────────────
     case "thread.meta-updated":
       return {
