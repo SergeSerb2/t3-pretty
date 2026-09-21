@@ -237,13 +237,17 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain(
       "--workspace-topbar-height: 52px;\n  /* One hairline for the top band and the column edge under it. Declared\n     here so the right-panel tab bar uses the same line as the title bar. */\n  --workspace-frame-line: color-mix(in srgb, var(--sidebar-foreground) 14%, transparent);",
     );
-    expect(indexCssSource).toContain(
-      '[data-slot="sidebar-container"].workspace-sidebar-glass::before',
-    );
+    expect(indexCssSource).toContain("[data-sidebar-frame-corner]");
+    expect(indexCssSource).toContain("[data-sidebar-frame-edge]");
+    expect(sidebarSource).toContain('data-sidebar-frame-corner=""');
+    expect(sidebarSource).toContain('data-sidebar-frame-edge=""');
     expect(indexCssSource).toContain("--workspace-frame-radius: 10px");
     expect(indexCssSource).toContain("border-bottom-right-radius: var(--workspace-frame-radius)");
     expect(indexCssSource).toContain(
       "top: calc(var(--workspace-topbar-height) + var(--workspace-frame-radius) - 1px)",
+    );
+    expect(indexCssSource).toContain(
+      "backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))",
     );
     expect(indexCssSource).toContain("box-shadow: inset 0 -1px 0 var(--workspace-frame-line);");
     const headerPlate = indexCssSource.match(
@@ -254,13 +258,11 @@ describe("glass contract with upstream chrome", () => {
     expect(headerPlate).not.toContain("border-radius");
     expect(headerPlate).not.toContain("linear-gradient");
     expect(indexCssSource).toContain("box-shadow: inset 0 -1px 0 var(--workspace-frame-line)");
-    expect(sceneryCssSource).toContain(
-      '[data-slot="sidebar-container"].workspace-sidebar-glass::before',
-    );
+    expect(sceneryCssSource).toContain("[data-sidebar-frame-corner]");
+    expect(sceneryCssSource).toContain("[data-sidebar-frame-edge]");
     expect(sceneryCssSource).toMatch(
-      /\[data-slot="sidebar-container"\]\.workspace-sidebar-glass::before\s*\{\s*background:\s*transparent;\s*border-right-color:\s*transparent;\s*border-bottom-color:\s*transparent;/,
+      /:is\(\[data-sidebar-frame-corner\], \[data-sidebar-frame-edge\]\)\s*\{\s*background:\s*transparent;\s*border-right-color:\s*transparent;\s*border-bottom-color:\s*transparent;\s*box-shadow:\s*none;\s*-webkit-backdrop-filter:\s*none;\s*backdrop-filter:\s*none;/,
     );
-    expect(sceneryCssSource).toContain('[data-slot="sidebar-inner"]::before');
     expect(sceneryCssSource).toMatch(
       /\[data-scenery-on\]\s+:is\(\s*\[data-app-sidebar\] \[data-slot="sidebar-header"\],\s*\[data-right-panel-tabbar\]\s*\),\s*html\[data-theme-id\]\[data-theme-id="world-scenery"\]\[data-scenery-on\]\s+:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\)::after\s*\{\s*box-shadow:\s*none;/,
     );

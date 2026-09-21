@@ -2988,40 +2988,41 @@ html
   z-index: 30;
   overflow: visible;
   border-color: transparent;
-  /* Flat composite of the glass over the page, so the corner disk matches
-     the sidebar without a second backdrop-filter (that would blur the edge). */
-  --workspace-frame-fill: color-mix(
-    in srgb,
-    var(--workspace-glass-surface) var(--workspace-glass-opacity, 42%),
-    var(--background)
-  );
 }
 
-/* Quarter-round at the join. It hangs off the container, which stays
-   overflow:visible, so the collapsed inner clip cannot square it off. */
-[data-slot="sidebar-container"].workspace-sidebar-glass::before {
-  content: "";
+/* Quarter-round and column edge are siblings of the clip, on the same
+   positioned container. The clip's overflow:hidden (collapsed, peek, open)
+   cannot square the corner or shift the edge onto the wrong box.
+   The disk uses the plate's own glass stack, so it samples the page the
+   sidebar samples instead of a flat mix. */
+.workspace-sidebar-glass [data-sidebar-frame-corner] {
   position: absolute;
   top: calc(var(--workspace-topbar-height) - 1px);
   left: 100%;
-  z-index: 2;
+  z-index: 3;
   width: var(--workspace-frame-radius);
   height: var(--workspace-frame-radius);
   pointer-events: none;
-  background: var(--workspace-frame-fill);
+  background: color-mix(
+    in srgb,
+    var(--workspace-glass-surface) var(--workspace-glass-opacity, 42%),
+    transparent
+  );
+  -webkit-backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
+    saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
+    saturate(var(--glass-saturation));
   border-right: 1px solid var(--workspace-frame-line);
   border-bottom: 1px solid var(--workspace-frame-line);
   border-bottom-right-radius: var(--workspace-frame-radius);
 }
 
-/* Column edge, starting where the quarter-round ends. */
-.workspace-sidebar-glass [data-slot="sidebar-inner"]::before {
-  content: "";
+.workspace-sidebar-glass [data-sidebar-frame-edge] {
   position: absolute;
   top: calc(var(--workspace-topbar-height) + var(--workspace-frame-radius) - 1px);
   right: 0;
   bottom: 0;
-  z-index: 2;
+  z-index: 3;
   width: 1px;
   pointer-events: none;
   background: var(--workspace-frame-line);

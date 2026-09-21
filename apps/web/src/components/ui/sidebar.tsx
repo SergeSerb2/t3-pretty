@@ -428,6 +428,10 @@ function Sidebar({
               titlebar. This strip is the not-yet-revealed band, so moving up
               toward the traffic lights does not count as leaving. */}
           <div aria-hidden data-sidebar-peek-hover-bridge="" />
+          {/* Outside the clip so a collapsed overflow:hidden cannot square the
+              corner or drop the column edge. */}
+          <div aria-hidden data-sidebar-frame-corner="" />
+          <div aria-hidden data-sidebar-frame-edge="" />
         </div>
       </div>
     </SidebarInstanceContext>

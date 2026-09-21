@@ -688,16 +688,14 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on].dark
    Opaque themes draw a top-band underline and a column edge under it.
    Over a photo both of those lines cut the glass, so they drop out. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-  [data-slot="sidebar-container"].workspace-sidebar-glass::before {
+  .workspace-sidebar-glass
+  :is([data-sidebar-frame-corner], [data-sidebar-frame-edge]) {
   background: transparent;
   border-right-color: transparent;
   border-bottom-color: transparent;
-}
-
-html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-  .workspace-sidebar-glass
-  [data-slot="sidebar-inner"]::before {
-  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
