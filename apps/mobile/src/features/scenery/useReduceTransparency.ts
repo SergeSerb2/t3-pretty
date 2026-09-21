@@ -8,14 +8,29 @@ import { AccessibilityInfo } from "react-native";
 export function useReduceTransparency(): boolean {
   const [reduceTransparency, setReduceTransparency] = useState(false);
   useEffect(() => {
-    void AccessibilityInfo.isReduceTransparencyEnabled()
-      .then(setReduceTransparency)
-      .catch(() => undefined);
+    let active = true;
+    let nativeChangeGeneration = 0;
     const subscription = AccessibilityInfo.addEventListener(
       "reduceTransparencyChanged",
-      setReduceTransparency,
+      (enabled) => {
+        nativeChangeGeneration += 1;
+        if (active) {
+          setReduceTransparency(enabled);
+        }
+      },
     );
-    return () => subscription.remove();
+    const initialGeneration = nativeChangeGeneration;
+    void AccessibilityInfo.isReduceTransparencyEnabled()
+      .then((enabled) => {
+        if (active && nativeChangeGeneration === initialGeneration) {
+          setReduceTransparency(enabled);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      subscription.remove();
+    };
   }, []);
   return reduceTransparency;
 }

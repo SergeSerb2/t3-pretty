@@ -6,19 +6,23 @@
  * keeps it across the draft→server promotion.
  *
  * The thread→photo binding is server-synced (thread.scenery.assign) so every
- * device of one environment renders the same photo. The server keeps the
- * first assignment it sees; the local assignment map only bridges drafts
- * (no server thread yet) and pre-scenery servers.
+ * device of one environment renders the same photo. The first photo for a
+ * catalog wins; choosing another catalog replaces it. The local assignment
+ * map only bridges drafts (no server thread yet) and pre-scenery servers.
  */
 import { useAtomValue } from "@effect/atom-react";
 import { connectionProjectionPhase } from "@t3tools/client-runtime/connection";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  mayPublishThreadScenery,
+  serverSceneryMatchesPhotoSet,
+} from "@t3tools/client-runtime/state/scenery-sync";
+import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
 import { getMediaQueryEntry } from "../hooks/useMediaQuery";
 import { environmentCatalog } from "../connection/catalog";
-import { readEnvironmentSupportsScenery } from "../state/entities";
+import { useServerConfigs } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentThreadShells, threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -26,7 +30,6 @@ import { layerStack } from "./glass";
 import { usePhotoSetStore } from "./photoSetStore";
 import { pickInkVariant, type InkDecisionInput } from "./sceneryInk";
 import { loadSeedPhotos, peekSeedPhotos } from "./scenerySeeds";
-import { SceneryArrival } from "./SceneryArrival";
 import { SceneryLayer } from "./SceneryLayer";
 import { SceneryPlaceCredit } from "./SceneryPlaceCredit";
 import {
@@ -42,6 +45,7 @@ import { preloadWallpaper } from "./sceneryWallpaper";
 import { wallpaperURL } from "./unsplash";
 import { useActiveThreadKey } from "./useActiveThreadKey";
 import { useInkOverride } from "./useInkOverride";
+import { useSyncedSceneryPhotoSet } from "./useSyncedSceneryPhotoSet";
 import "./scenery.css";
 
 const CONTRAST_QUERY = "(prefers-contrast: more)";
@@ -92,6 +96,11 @@ export default function ActiveScenery() {
   );
   const serverScenery = threadShell?.scenery ?? null;
   const serverThreadKnown = threadShell !== null;
+  const serverConfigs = useServerConfigs();
+  const supportsScenery =
+    threadRef !== null &&
+    serverConfigs.get(threadRef.environmentId)?.environment.capabilities.threadScenery === true;
+  const sharedPhotoSetId = useSyncedSceneryPhotoSet();
   // Reactive connection state: reconnecting re-runs the assign effect below,
   // which retries a dispatch that failed while the socket was down.
   const connection = useEnvironmentQuery(
@@ -138,38 +147,43 @@ export default function ActiveScenery() {
     void refreshPoolIfStale();
   }, [photoSetId, refreshPoolIfStale]);
 
+  const serverPhoto = useMemo(() => {
+    if (!serverScenery || !serverSceneryMatchesPhotoSet(serverScenery.photoSetId, photoSetId)) {
+      return null;
+    }
+    return photoFromAssignment(serverScenery);
+  }, [photoSetId, serverScenery]);
+
   useEffect(() => {
     if (!threadKey) {
       return;
     }
-    if (serverScenery && pool.some((entry) => entry.id === serverScenery.photoId)) {
+    if (serverPhoto) {
       return;
     }
     // Local first: the photo shows this tick and covers drafts (no server
-    // thread yet) and pre-scenery servers. Also used when the server photo
-    // belongs to a different photo set than the one on screen.
+    // thread yet), pre-scenery servers, and a catalog change that still
+    // needs a photo from the new set.
     ensureAssignment(threadKey);
-    if (
-      serverScenery ||
-      !threadRef ||
-      !serverThreadKnown ||
-      !connectionReady ||
-      !readEnvironmentSupportsScenery(threadRef.environmentId)
-    ) {
+    if (!threadRef || !serverThreadKnown || !connectionReady || !supportsScenery) {
+      return;
+    }
+    if (!mayPublishThreadScenery({ sharedPhotoSetId, localPhotoSetId: photoSetId })) {
       return;
     }
     // Upload the local pick so the other devices converge on it. The server
-    // keeps the first assignment it sees (write-once), so a raced device
-    // adopts the winner when the shell stream lands. connectionReady is a
-    // dependency, so a dispatch lost to a dropped socket retries on reconnect.
+    // keeps the first photo for this catalog, so a raced device adopts the
+    // winner when the shell stream lands. connectionReady is a dependency, so
+    // a dispatch lost to a dropped socket retries on reconnect.
     const state = useSceneryStore.getState();
     const assignment = state.assignments[threadKey];
     // Resolve exactly what the render path shows for this assignment —
     // including the deterministic fallback when the saved photo left the
     // pool — so the photo on screen is the one other devices converge on.
+    const activeSetId = usePhotoSetStore.getState().photoSetId;
     const poolSnapshot = getSceneryPool(
-      state.fetchedBySet[usePhotoSetStore.getState().photoSetId] ?? EMPTY_FETCHED_PHOTOS,
-      peekSeedPhotos(usePhotoSetStore.getState().photoSetId),
+      state.fetchedBySet[activeSetId] ?? EMPTY_FETCHED_PHOTOS,
+      peekSeedPhotos(activeSetId),
     );
     const photo = assignment
       ? (poolSnapshot.find((entry) => entry.id === assignment.photoId) ??
@@ -180,14 +194,20 @@ export default function ActiveScenery() {
     }
     void assignScenery({
       environmentId: threadRef.environmentId,
-      input: { threadId: threadRef.threadId, scenery: photoToAssignmentPayload(photo) },
+      input: {
+        threadId: threadRef.threadId,
+        scenery: photoToAssignmentPayload(photo, activeSetId),
+      },
     });
   }, [
     threadKey,
     threadRef,
-    serverScenery,
+    serverPhoto,
     serverThreadKnown,
     connectionReady,
+    supportsScenery,
+    sharedPhotoSetId,
+    photoSetId,
     ensureAssignment,
     assignScenery,
     pool,
@@ -196,14 +216,10 @@ export default function ActiveScenery() {
   const assignment = threadKey ? (assignments[threadKey] ?? null) : null;
   const photo = useMemo(() => {
     if (threadKey) {
-      // Server binding wins when that photo still belongs to the active set.
-      // A Night Cities session should not keep painting a World Scenery
-      // assignment just because the server wrote it first.
-      if (serverScenery) {
-        const bound = photoFromAssignment(serverScenery);
-        if (pool.some((entry) => entry.id === bound.id)) {
-          return bound;
-        }
+      // The denormalized server photo renders even when this device's pool
+      // never fetched it. A different catalog falls through and is replaced.
+      if (serverPhoto) {
+        return serverPhoto;
       }
       if (assignment) {
         return (
@@ -215,7 +231,7 @@ export default function ActiveScenery() {
       return null;
     }
     return dailyFeatured(pool, dailySeed());
-  }, [threadKey, serverScenery, assignment, pool]);
+  }, [threadKey, serverPhoto, assignment, pool]);
 
   const seed = threadKey ?? dailySeed();
 
@@ -235,12 +251,6 @@ export default function ActiveScenery() {
     readonly averageColorHex: string | null;
     readonly seed: string;
   } | null>(null);
-  const [displayedPhotoId, setDisplayedPhotoId] = useState<string | null>(null);
-  const pendingToneRef = useRef<{
-    readonly averageColorHex: string | null;
-    readonly seed: string;
-  } | null>(null);
-
   const incomingInk: Omit<InkDecisionInput, "baseAppearance"> = {
     averageColorHex: photo?.averageColorHex ?? null,
     seed,
@@ -304,25 +314,8 @@ export default function ActiveScenery() {
     return null;
   }
 
-  const photoReady = photo !== null && displayedPhotoId === photo.id;
-
   return (
     <>
-      <SceneryArrival
-        photo={photo}
-        threadKey={threadKey}
-        photoReady={photoReady}
-        onPhaseChange={(phase) => {
-          if (phase !== "reveal" && phase !== "settled") {
-            return;
-          }
-          const pending = pendingToneRef.current;
-          if (pending) {
-            pendingToneRef.current = null;
-            setDisplayedTone(pending);
-          }
-        }}
-      />
       <SceneryLayer
         photo={photo}
         seed={seed}
@@ -330,16 +323,10 @@ export default function ActiveScenery() {
         appearanceCrossfade={appearanceCrossfade}
         onPhotoDisplayed={(displayed) => {
           registerDisplayed(displayed);
-          setDisplayedPhotoId(displayed.id);
           const tone = {
             averageColorHex: displayed.averageColorHex,
             seed,
           };
-          if (document.documentElement.dataset.sceneryArrival === "fog") {
-            pendingToneRef.current = tone;
-            return;
-          }
-          pendingToneRef.current = null;
           setDisplayedTone(tone);
         }}
       />

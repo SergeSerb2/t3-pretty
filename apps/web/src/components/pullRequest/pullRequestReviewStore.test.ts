@@ -1,6 +1,16 @@
+import {
+  PULL_REQUEST_REVIEW_MAX_COMMENTS,
+  type EnvironmentId,
+  ProjectId,
+  type PullRequestRef,
+} from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { type PendingReviewComment, usePullRequestReviewStore } from "./pullRequestReviewStore";
+import {
+  type PendingReviewComment,
+  pullRequestReviewKey,
+  usePullRequestReviewStore,
+} from "./pullRequestReviewStore";
 
 function comment(id: string, body = id): PendingReviewComment {
   return { id, body, path: "src/app.ts", position: { kind: "added", newLine: 1 } };
@@ -25,6 +35,18 @@ describe("pull request review drafts", () => {
     ]);
   });
 
+  it("keeps one review draft within the submission contract", () => {
+    const store = usePullRequestReviewStore.getState();
+    for (let index = 0; index < PULL_REQUEST_REVIEW_MAX_COMMENTS; index += 1) {
+      expect(store.addComment("review-a", comment(`comment-${index}`))).toBe(true);
+    }
+
+    expect(store.addComment("review-a", comment("overflow"))).toBe(false);
+    expect(usePullRequestReviewStore.getState().drafts["review-a"]).toHaveLength(
+      PULL_REQUEST_REVIEW_MAX_COMMENTS,
+    );
+  });
+
   it("keeps summary bodies isolated by review key", () => {
     const store = usePullRequestReviewStore.getState();
     store.setSummary("review-a", "Summary A");
@@ -36,6 +58,37 @@ describe("pull request review drafts", () => {
     });
   });
 
+  it("keeps drafts on different hosts separate when a thread reviews the same repository and number", () => {
+    const reference = {
+      projectId: ProjectId.make("project-a"),
+      repository: "owner/repo",
+      number: 7,
+    };
+    const environmentId = "environment-a" as EnvironmentId;
+    const publicKey = pullRequestReviewKey(environmentId, {
+      ...reference,
+      host: "github.com",
+    });
+    const enterpriseKey = pullRequestReviewKey(environmentId, {
+      ...reference,
+      host: "github.example.com",
+    });
+    const store = usePullRequestReviewStore.getState();
+    store.addComment(publicKey, comment("public"));
+    store.setSummary(publicKey, "Public review");
+
+    expect(usePullRequestReviewStore.getState().drafts[enterpriseKey]).toBeUndefined();
+    expect(usePullRequestReviewStore.getState().summaries[enterpriseKey]).toBeUndefined();
+
+    store.addComment(enterpriseKey, comment("enterprise"));
+    store.setSummary(enterpriseKey, "Enterprise review");
+    store.clear(enterpriseKey);
+    store.clearSummary(enterpriseKey, "Enterprise review");
+
+    expect(usePullRequestReviewStore.getState().drafts[publicKey]).toEqual([comment("public")]);
+    expect(usePullRequestReviewStore.getState().summaries[publicKey]).toBe("Public review");
+  });
+
   it("does not clear a summary revised while submission is in flight", () => {
     const store = usePullRequestReviewStore.getState();
     store.setSummary("review-a", "Submitted body");
@@ -43,5 +96,17 @@ describe("pull request review drafts", () => {
     usePullRequestReviewStore.getState().clearSummary("review-a", "Submitted body");
 
     expect(usePullRequestReviewStore.getState().summaries["review-a"]).toBe("Revised body");
+  });
+
+  it("isolates matching pull request identities from different environments", () => {
+    const reference: PullRequestRef = {
+      projectId: "project-1" as ProjectId,
+      repository: "owner/repository",
+      number: 42,
+    };
+
+    expect(pullRequestReviewKey("environment-a" as EnvironmentId, reference)).not.toBe(
+      pullRequestReviewKey("environment-b" as EnvironmentId, reference),
+    );
   });
 });

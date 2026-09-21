@@ -12,7 +12,6 @@ import Animated, {
 import type { ComponentProps } from "react";
 
 import { AppText as Text } from "../../../../components/AppText";
-import { useThemeColor } from "../../../../lib/useThemeColor";
 
 type SymbolName = ComponentProps<typeof SymbolView>["name"];
 
@@ -39,11 +38,6 @@ export function FontSizeSliderRow(props: {
   readonly iconMin?: SymbolName;
   readonly iconMax?: SymbolName;
 }) {
-  const icon = useThemeColor("--color-icon");
-  const iconMuted = String(useThemeColor("--color-icon-muted"));
-  const trackColor = String(useThemeColor("--color-secondary-border"));
-  const fillColor = String(useThemeColor("--color-primary"));
-
   const latest = useRef(props);
   latest.current = props;
 
@@ -61,11 +55,12 @@ export function FontSizeSliderRow(props: {
   }, [dragging, fraction, progress]);
 
   const commit = useCallback((next: number) => {
-    if (next === latest.current.value) {
+    const current = latest.current;
+    if (next === current.value) {
       return;
     }
     Haptics.selectionAsync().catch(() => undefined);
-    latest.current.onChange(next);
+    current.onChange(next);
   }, []);
 
   const gesture = useMemo(() => {
@@ -99,17 +94,19 @@ export function FontSizeSliderRow(props: {
         dragging.value = true;
         const f = fractionAt(event.x);
         progress.value = f;
-        runOnJS(commit)(valueAtFraction(f));
       })
-      .onFinalize(() => {
+      .onFinalize((_event, success) => {
         if (!dragging.value) {
           return;
         }
         dragging.value = false;
-        progress.value = withTiming(
-          fractionOfValue(valueAtFraction(progress.value)),
-          SNAP_ANIMATION,
-        );
+        if (!success) {
+          progress.value = withTiming(fractionOfValue(value), SNAP_ANIMATION);
+          return;
+        }
+        const next = valueAtFraction(progress.value);
+        progress.value = withTiming(fractionOfValue(next), SNAP_ANIMATION);
+        runOnJS(commit)(next);
       });
 
     const tap = Gesture.Tap()
@@ -121,7 +118,7 @@ export function FontSizeSliderRow(props: {
       });
 
     return Gesture.Race(pan, tap);
-  }, [commit, disabled, dragging, max, min, progress, step, trackWidth]);
+  }, [commit, disabled, dragging, max, min, progress, step, trackWidth, value]);
 
   const fillStyle = useAnimatedStyle(() => ({
     width: THUMB_SIZE / 2 + progress.value * Math.max(0, trackWidth.value - THUMB_SIZE),
@@ -144,7 +141,7 @@ export function FontSizeSliderRow(props: {
         <SymbolView
           name={props.icon}
           size={22}
-          tintColor={icon}
+          tintColorClassName={"accent-icon"}
           type="monochrome"
           weight="regular"
         />
@@ -155,7 +152,7 @@ export function FontSizeSliderRow(props: {
         <SymbolView
           name={props.iconMin ?? "textformat.size.smaller"}
           size={15}
-          tintColor={iconMuted}
+          tintColorClassName={"accent-icon-muted"}
           type="monochrome"
           weight="regular"
         />
@@ -176,19 +173,18 @@ export function FontSizeSliderRow(props: {
             }}
           >
             <View
-              className="w-full rounded-full"
-              style={{ backgroundColor: trackColor, height: TRACK_HEIGHT }}
+              className="w-full rounded-full bg-secondary-border"
+              style={{ height: TRACK_HEIGHT }}
             >
               <Animated.View
-                className="absolute inset-y-0 left-0 rounded-full"
-                style={[{ backgroundColor: fillColor }, fillStyle]}
+                className="absolute inset-y-0 left-0 rounded-full bg-primary"
+                style={fillStyle}
               />
             </View>
             <Animated.View
-              className="absolute left-0 rounded-full bg-white"
+              className="absolute left-0 rounded-full border-border bg-primary-foreground"
               style={[
                 {
-                  borderColor: "rgba(0, 0, 0, 0.06)",
                   borderWidth: 1,
                   height: THUMB_SIZE,
                   marginTop: -THUMB_SIZE / 2,
@@ -207,7 +203,7 @@ export function FontSizeSliderRow(props: {
         <SymbolView
           name={props.iconMax ?? "textformat.size.larger"}
           size={22}
-          tintColor={iconMuted}
+          tintColorClassName={"accent-icon-muted"}
           type="monochrome"
           weight="regular"
         />

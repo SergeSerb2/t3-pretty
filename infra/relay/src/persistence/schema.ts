@@ -21,8 +21,9 @@ export const relayMobileDevices = pgTable(
     userId: varchar("user_id", { length: 255 }).notNull(),
     deviceId: varchar("device_id", { length: 255 }).notNull(),
     label: text("label").notNull().default("iOS device"),
-    platform: varchar("platform", { length: 16 }).notNull().$type<"ios">(),
-    iosMajorVersion: integer("ios_major_version").notNull(),
+    platform: varchar("platform", { length: 16 }).notNull().$type<"ios" | "android">(),
+    iosMajorVersion: integer("ios_major_version"),
+    androidApiLevel: integer("android_api_level"),
     appVersion: varchar("app_version", { length: 64 }),
     bundleId: varchar("bundle_id", { length: 255 }),
     apsEnvironment: varchar("aps_environment", { length: 16 }).$type<"sandbox" | "production">(),
@@ -123,6 +124,7 @@ export const relayEnvironmentCredentials = pgTable(
   },
   (table) => [
     uniqueIndex("idx_relay_environment_credentials_hash").on(table.credentialHash),
+    index("idx_relay_environment_credentials_revoked_at").on(table.revokedAt),
     index("idx_relay_environment_credentials_environment").on(table.environmentId, table.revokedAt),
     index("idx_relay_environment_credentials_environment_key").on(
       table.environmentId,
@@ -137,7 +139,7 @@ export const relayAgentActivityRows = pgTable(
   {
     environmentId: varchar("environment_id", { length: 191 }).notNull(),
     environmentPublicKey: text("environment_public_key").notNull(),
-    threadId: varchar("thread_id", { length: 191 }).notNull(),
+    threadId: varchar("thread_id", { length: 512 }).notNull(),
     stateJson: jsonb("state_json").notNull().$type<RelayAgentActivityState>(),
     updatedAt: varchar("updated_at", { length: 64 }).notNull(),
     createdAt: varchar("created_at", { length: 64 }).notNull(),
@@ -155,7 +157,7 @@ export const relayDeliveryAttempts = pgTable(
     createdAt: varchar("created_at", { length: 64 }).notNull(),
     userId: varchar("user_id", { length: 255 }),
     environmentId: varchar("environment_id", { length: 191 }),
-    threadId: varchar("thread_id", { length: 191 }),
+    threadId: varchar("thread_id", { length: 512 }),
     deviceId: varchar("device_id", { length: 255 }),
     kind: varchar("kind", { length: 64 }).notNull(),
     sourceJobId: varchar("source_job_id", { length: 64 }),
@@ -166,6 +168,7 @@ export const relayDeliveryAttempts = pgTable(
     transportError: text("transport_error"),
   },
   (table) => [
+    index("idx_relay_delivery_attempts_created_at").on(table.createdAt),
     index("idx_relay_delivery_attempts_environment").on(
       table.environmentId,
       table.threadId,

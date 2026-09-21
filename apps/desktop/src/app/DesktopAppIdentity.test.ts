@@ -1,3 +1,4 @@
+import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -56,7 +57,6 @@ const makeElectronAppLayer = (calls: ElectronAppCalls) =>
       }),
     setAppUserModelId: () => Effect.void,
     getAppMetrics: Effect.succeed([]),
-    isDefaultProtocolClient: () => Effect.succeed(false),
     setAsDefaultProtocolClient: () => Effect.succeed(true),
     setDesktopName: () => Effect.void,
     setDockIcon: (iconPath) =>
@@ -92,6 +92,7 @@ const makeEnvironmentLayer = (overrides: TestEnvironmentInput = {}) => {
     Layer.provide(
       Layer.mergeAll(
         NodeServices.layer,
+        NodePath.layerPosix,
         DesktopConfig.layerTest({
           ...env,
         }),
@@ -113,6 +114,7 @@ const withIdentity = <A, E, R>(
     readonly calls?: ElectronAppCalls;
     readonly environment?: TestEnvironmentInput;
     readonly legacyPathExists?: boolean;
+    readonly legacyPathType?: "File" | "Directory";
     readonly legacyPathProbeError?: PlatformError.PlatformError;
     readonly packageJson?: string;
     readonly pngIconPath?: Option.Option<string>;
@@ -129,12 +131,24 @@ const withIdentity = <A, E, R>(
       DesktopAppIdentity.layer.pipe(
         Layer.provideMerge(
           FileSystem.layerNoop({
-            exists: (path) =>
-              input.legacyPathProbeError
-                ? Effect.fail(input.legacyPathProbeError)
-                : Effect.succeed(
-                    input.legacyPathExists === true && path.includes("T3 Code (Alpha)"),
-                  ),
+            stat: (path) => {
+              if (input.legacyPathProbeError) {
+                return Effect.fail(input.legacyPathProbeError);
+              }
+              if (input.legacyPathExists === true && path.includes("T3 Code (Alpha)")) {
+                return Effect.succeed({
+                  type: input.legacyPathType ?? "Directory",
+                } as FileSystem.File.Info);
+              }
+              return Effect.fail(
+                PlatformError.systemError({
+                  _tag: "NotFound",
+                  module: "FileSystem",
+                  method: "stat",
+                  pathOrDescriptor: path,
+                }),
+              );
+            },
             readFileString: () =>
               Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
           }),
@@ -148,7 +162,20 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
-  it.effect("keeps using the legacy userData path when it already exists", () =>
+  it.effect("keeps public Pretty user data separate from internal migration paths", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        assert.equal(
+          yield* identity.resolveUserDataPath,
+          "/Users/alice/Library/Application Support/t3pretty",
+        );
+      }),
+      { legacyPathExists: true, environment: { buildFlavor: "public" } },
+    ),
+  );
+
+  it.effect("keeps using the internal build legacy userData path when it already exists", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
@@ -156,16 +183,28 @@ describe("DesktopAppIdentity", () => {
 
         assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Code (Alpha)");
       }),
-      { legacyPathExists: true },
+      { legacyPathExists: true, environment: { buildFlavor: "internal" } },
     ),
   );
 
-  it.effect("preserves failures while inspecting the legacy userData path", () => {
+  it.effect("does not use a regular file as the internal build legacy userData directory", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const userDataPath = yield* identity.resolveUserDataPath;
+
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/t3code");
+      }),
+      { legacyPathExists: true, legacyPathType: "File", environment: { buildFlavor: "internal" } },
+    ),
+  );
+
+  it.effect("preserves failures while inspecting the internal build legacy userData path", () => {
     const legacyPath = "/Users/alice/Library/Application Support/T3 Code (Alpha)";
     const cause = PlatformError.systemError({
       _tag: "PermissionDenied",
       module: "FileSystem",
-      method: "exists",
+      method: "stat",
       description: "permission denied",
       pathOrDescriptor: legacyPath,
     });
@@ -183,7 +222,7 @@ describe("DesktopAppIdentity", () => {
           `Failed to inspect legacy desktop user-data path at "${legacyPath}".`,
         );
       }),
-      { legacyPathProbeError: cause },
+      { legacyPathProbeError: cause, environment: { buildFlavor: "internal" } },
     );
   });
 

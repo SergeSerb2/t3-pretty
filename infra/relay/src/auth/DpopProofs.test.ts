@@ -72,6 +72,61 @@ describe("DpopProofReplay", () => {
     );
   });
 
+  it.effect("hashes replay identifiers that exceed persistence column widths", () => {
+    const insertedValues: Array<{
+      readonly thumbprint: string;
+      readonly jti: string;
+      readonly iat: number;
+      readonly expiresAt: string;
+      readonly createdAt: string;
+    }> = [];
+    const consumed = new Set<string>();
+    const fakeDb = {
+      insert: (table: unknown) => {
+        expect(table).toBe(relayDpopProofs);
+        return {
+          values: (values: (typeof insertedValues)[number]) => {
+            insertedValues.push(values);
+            return {
+              onConflictDoNothing: () => ({
+                returning: () =>
+                  Effect.sync(() => {
+                    const key = `${values.thumbprint}:${values.jti}`;
+                    if (consumed.has(key)) return [];
+                    consumed.add(key);
+                    return [{ jti: values.jti }];
+                  }),
+              }),
+            };
+          },
+        };
+      },
+    } as unknown as RelayDb.RelayDb["Service"];
+    const input = {
+      thumbprint: "public-key".repeat(32),
+      jti: "j".repeat(256),
+      iat: 1_771_000_000,
+      expiresAt: Option.getOrThrow(DateTime.make("2026-05-25T12:00:00.000Z")),
+    };
+
+    return Effect.gen(function* () {
+      const replay = yield* DpopProofs.DpopProofReplay;
+
+      expect(yield* replay.consume(input)).toBe(true);
+      expect(yield* replay.consume(input)).toBe(false);
+      expect(insertedValues).toHaveLength(2);
+      expect(insertedValues[0]?.thumbprint).toMatch(/^sha256:/);
+      expect(insertedValues[0]?.thumbprint).not.toBe(input.thumbprint);
+      expect(insertedValues[0]?.thumbprint.length).toBeLessThanOrEqual(128);
+      expect(insertedValues[0]?.jti).toMatch(/^sha256:/);
+      expect(insertedValues[0]?.jti).not.toBe(input.jti);
+      expect(insertedValues[0]?.jti.length).toBeLessThanOrEqual(255);
+      expect(insertedValues[1]).toEqual(insertedValues[0]);
+    }).pipe(
+      Effect.provide(DpopProofs.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)))),
+    );
+  });
+
   it.effect("prunes expired proof rows from the maintenance path", () => {
     const calls: Array<string> = [];
     const fakeDb = {

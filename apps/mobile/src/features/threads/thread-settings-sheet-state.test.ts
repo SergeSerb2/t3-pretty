@@ -1,19 +1,29 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  EnvironmentId,
   ProviderInstanceId,
+  ServerProvider,
+  type ModelCapabilities,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
 } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 
 import type { ModelOption } from "../../lib/modelOptions";
 import {
+  buildNewTaskThreadSettingsSession,
+  canCommitPendingModel,
   effectiveProviderFilter,
+  favoritesFirst,
   initialProviderFilter,
+  modelFavoriteKey,
   modelMatchesCatalogQuery,
   pendingModelAfterPress,
   presentedSettingsSheetPage,
+  providerSetupCandidates,
   threadSettingsSheetPageForRoute,
+  toggleModelFavorite,
   visibleSheetOptionDescriptors,
 } from "./thread-settings-sheet-state";
 
@@ -24,7 +34,7 @@ function modelOption(
   return {
     key: `codex:${model}`,
     label: model,
-    subtitle: "Codex",
+    subtitle: "",
     providerKey: "codex",
     providerLabel: "Codex",
     providerDriver: "codex",
@@ -40,6 +50,46 @@ function modelOption(
 }
 
 describe("thread settings sheet state", () => {
+  it("keeps favorites in catalog order ahead of other models", () => {
+    const models = [
+      modelOption("first"),
+      modelOption("second"),
+      modelOption("third"),
+      modelOption("fourth"),
+    ];
+    const favorites = new Set([models[2]!.key, models[0]!.key]);
+
+    expect(favoritesFirst(models, favorites).map((model) => model.selection.model)).toEqual([
+      "first",
+      "third",
+      "second",
+      "fourth",
+    ]);
+    expect(models.map((model) => model.selection.model)).toEqual([
+      "first",
+      "second",
+      "third",
+      "fourth",
+    ]);
+  });
+
+  it("adds and removes favorites for one provider instance", () => {
+    const codexModel = modelOption("shared");
+    const otherProvider = ProviderInstanceId.make("codex_personal");
+    const personalModel = {
+      ...codexModel,
+      key: modelFavoriteKey(otherProvider, "shared"),
+      selection: { ...codexModel.selection, instanceId: otherProvider },
+    };
+    const favorites = toggleModelFavorite([], codexModel);
+
+    expect(toggleModelFavorite(favorites, personalModel)).toEqual([
+      { provider: ProviderInstanceId.make("codex"), model: "shared" },
+      { provider: otherProvider, model: "shared" },
+    ]);
+    expect(toggleModelFavorite(favorites, codexModel)).toEqual([]);
+  });
+
   it("matches visible model and provider terms", () => {
     const model = modelOption("gpt-next");
 
@@ -58,6 +108,21 @@ describe("thread settings sheet state", () => {
         query: "   ",
       }),
     ).toBe(true);
+  });
+
+  it("matches the upstream provider's display name", () => {
+    const model = {
+      ...modelOption("opencode/claude-fable-5"),
+      label: "Claude Fable 5",
+      subtitle: "OpenCode Zen",
+    };
+
+    expect(modelMatchesCatalogQuery({ model, providerLabel: "OpenCode", query: " ZEN " })).toBe(
+      true,
+    );
+    expect(modelMatchesCatalogQuery({ model, providerLabel: "OpenCode", query: "copilot" })).toBe(
+      false,
+    );
   });
 
   it("clears staging when the applied model is pressed", () => {
@@ -92,6 +157,96 @@ describe("thread settings sheet state", () => {
         pressedIsApplied: false,
       }),
     ).toBe(pressed);
+  });
+
+  it("cannot save a staged model after sign-out removes it from the catalog", () => {
+    const pending = modelOption("gemini-native");
+    const group = { providerKey: "codex", providerLabel: "Codex", models: [pending] };
+
+    expect(canCommitPendingModel(pending, [group])).toBe(true);
+    expect(canCommitPendingModel(pending, [])).toBe(false);
+    expect(
+      canCommitPendingModel(pending, [
+        {
+          ...group,
+          models: [{ ...pending, isUnavailable: true }],
+        },
+      ]),
+    ).toBe(false);
+  });
+});
+
+const decodeServerProvider = Schema.decodeSync(ServerProvider);
+
+function setupProvider(overrides: Partial<ServerProvider> = {}): ServerProvider {
+  return decodeServerProvider({
+    instanceId: "antigravity",
+    driver: "antigravity",
+    displayName: "Antigravity",
+    enabled: false,
+    installed: false,
+    version: null,
+    status: "disabled",
+    auth: { status: "unauthenticated" },
+    checkedAt: "2026-09-02T00:00:00.000Z",
+    setup: { canAuthenticate: true, canInstall: true },
+    models: [],
+    ...overrides,
+  });
+}
+
+describe("providerSetupCandidates", () => {
+  const unfiltered = { providerFilter: null, query: "" };
+
+  it("offers setup without a selectable model and after sign-out", () => {
+    const disabled = setupProvider();
+    const signedOut = setupProvider({ enabled: true, installed: true });
+
+    expect(providerSetupCandidates({ providers: [disabled], ...unfiltered })).toEqual([disabled]);
+    expect(providerSetupCandidates({ providers: [signedOut], ...unfiltered })).toEqual([signedOut]);
+  });
+
+  it("uses the selected environment's status for identical instance IDs", () => {
+    const offlineAccount = setupProvider();
+    const readyAccount = setupProvider({
+      enabled: true,
+      installed: true,
+      auth: { status: "authenticated" },
+      models: [{ slug: "gemini-native", name: "Gemini", isCustom: false, capabilities: null }],
+    });
+
+    expect(providerSetupCandidates({ providers: [offlineAccount], ...unfiltered })).toHaveLength(1);
+    expect(providerSetupCandidates({ providers: [readyAccount], ...unfiltered })).toEqual([]);
+  });
+
+  it("limits existing threads to their provider and respects search", () => {
+    const personal = setupProvider();
+    const work = setupProvider({
+      instanceId: ProviderInstanceId.make("google_work"),
+      displayName: "Work Google",
+    });
+
+    expect(
+      providerSetupCandidates({
+        providers: [personal, work],
+        ...unfiltered,
+        instanceId: work.instanceId,
+      }),
+    ).toEqual([work]);
+    expect(
+      providerSetupCandidates({
+        providers: [personal, work],
+        providerFilter: work.instanceId,
+        query: "work",
+      }),
+    ).toEqual([work]);
+    expect(
+      providerSetupCandidates({
+        providers: [personal, work],
+        providerFilter: null,
+        query: "no-match",
+      }),
+    ).toEqual([]);
   });
 });
 
@@ -187,6 +342,61 @@ describe("threadSettingsSheetPageForRoute", () => {
     expect(threadSettingsSheetPageForRoute("ThreadSettingsHome")).toBe("home");
     expect(threadSettingsSheetPageForRoute("ThreadSettingsCatalog")).toBe("catalog");
     expect(threadSettingsSheetPageForRoute("ThreadSettingsChoice")).toBeNull();
+  });
+});
+
+describe("buildNewTaskThreadSettingsSession", () => {
+  it("builds a picker session without a thread or selected model", () => {
+    const session = buildNewTaskThreadSettingsSession({
+      environmentId: null,
+      selectedModel: null,
+      selectedModelOption: null,
+      providerGroups: [],
+      runtimeMode: "auto",
+    });
+
+    expect(session.selectedModel).toBeNull();
+    expect(session.providerInstanceId).toBeUndefined();
+    expect(session.providerGroups).toEqual([]);
+    expect(session.optionDescriptors).toEqual([]);
+    expect(session.environmentId).toBeNull();
+    expect(session).not.toHaveProperty("checkpointsThreadRef");
+  });
+
+  it("maps a draft model pick into option descriptors without a thread ref", () => {
+    const capabilities: ModelCapabilities = {
+      optionDescriptors: [
+        {
+          id: "reasoningEffort",
+          label: "Reasoning",
+          type: "select",
+          options: [
+            { id: "medium", label: "Medium", isDefault: true },
+            { id: "high", label: "High" },
+          ],
+          currentValue: "medium",
+        },
+      ],
+    };
+    const option = modelOption("gpt-next", [{ id: "reasoningEffort", value: "high" }]);
+    const selected = { ...option, capabilities };
+    const environmentId = EnvironmentId.make("env-draft");
+    const session = buildNewTaskThreadSettingsSession({
+      environmentId,
+      selectedModel: selected.selection,
+      selectedModelOption: selected,
+      providerGroups: [{ providerKey: "codex", providerLabel: "Codex", models: [selected] }],
+      runtimeMode: "auto",
+    });
+
+    expect(session.environmentId).toBe(environmentId);
+    expect(session.providerInstanceId).toBe(selected.selection.instanceId);
+    expect(session.selectedModel).toEqual(selected.selection);
+    expect(session.optionDescriptors.map((descriptor) => descriptor.id)).toEqual([
+      "reasoningEffort",
+    ]);
+    expect(session.optionDescriptors[0]).toMatchObject({ currentValue: "high" });
+    expect(session).not.toHaveProperty("checkpointsThreadRef");
   });
 });
 
