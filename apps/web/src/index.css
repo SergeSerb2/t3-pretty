@@ -302,6 +302,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --glass-saturation: 1.14;
   --desktop-window-right-resize-inset: 0px;
   --workspace-topbar-height: 52px;
+  /* One hairline for the top band and the column edge under it. Declared
+     here so the right-panel tab bar uses the same line as the title bar. */
+  --workspace-frame-line: color-mix(in srgb, var(--sidebar-foreground) 14%, transparent);
   --workspace-controls-top: 0px;
   --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
   --workspace-controls-right: calc(env(safe-area-inset-right) + 0.75rem);
@@ -2958,7 +2961,6 @@ html
   --workspace-glass-surface: var(--sidebar);
   --workspace-glass-opacity: 42%;
   --workspace-glass-blur: 16px;
-  --workspace-frame-line: color-mix(in srgb, var(--sidebar-foreground) 14%, transparent);
   background-color: transparent;
 }
 
@@ -3001,7 +3003,7 @@ html
 
 [data-app-sidebar] [data-slot="sidebar-header"],
 [data-right-panel-tabbar] {
-  box-shadow: inset 0 -1px 0 var(--workspace-frame-line, var(--sidebar-border));
+  box-shadow: inset 0 -1px 0 var(--workspace-frame-line);
 }
 
 .workspace-sidebar-glass > * {

@@ -181,7 +181,7 @@ describe("glass contract with upstream chrome", () => {
 
   it("sidebar and titlebar share one chrome glass material", () => {
     expect(indexCssSource).toMatch(
-      /html\s+:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\) \{\s*--workspace-glass-surface: var\(--sidebar\);\s*--workspace-glass-opacity: 42%;\s*--workspace-glass-blur: 16px;\s*--workspace-frame-line: color-mix\(in srgb, var\(--sidebar-foreground\) 14%, transparent\);\s*background-color: transparent;/s,
+      /html\s+:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\) \{\s*--workspace-glass-surface: var\(--sidebar\);\s*--workspace-glass-opacity: 42%;\s*--workspace-glass-blur: 16px;\s*background-color: transparent;/s,
     );
     expect(indexCssSource).not.toContain("--workspace-glass-surface: var(--toolbar-background);");
     const sidebarRule = indexCssSource.match(/\.workspace-sidebar-glass \{[^}]+\}/)?.[0] ?? "";
@@ -235,15 +235,13 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).not.toContain("--workspace-glass-shadow");
     expect(indexCssSource).not.toContain("[data-workspace-header]::before");
     expect(indexCssSource).toContain(
-      "--workspace-frame-line: color-mix(in srgb, var(--sidebar-foreground) 14%, transparent)",
+      "--workspace-topbar-height: 52px;\n  /* One hairline for the top band and the column edge under it. Declared\n     here so the right-panel tab bar uses the same line as the title bar. */\n  --workspace-frame-line: color-mix(in srgb, var(--sidebar-foreground) 14%, transparent);",
     );
     expect(indexCssSource).toContain(
       '[data-slot="sidebar-container"].workspace-sidebar-glass::before',
     );
     expect(indexCssSource).toContain("top: var(--workspace-topbar-height)");
-    expect(indexCssSource).toContain(
-      "box-shadow: inset 0 -1px 0 var(--workspace-frame-line, var(--sidebar-border))",
-    );
+    expect(indexCssSource).toContain("box-shadow: inset 0 -1px 0 var(--workspace-frame-line);");
     const headerPlate = indexCssSource.match(
       /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]+\}/s,
     )?.[0];
@@ -257,6 +255,9 @@ describe("glass contract with upstream chrome", () => {
     );
     expect(sceneryCssSource).toMatch(
       /\[data-slot="sidebar-container"\]\.workspace-sidebar-glass::before\s*\{\s*background:\s*transparent;/,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-scenery-on\]\s+:is\(\s*\[data-app-sidebar\] \[data-slot="sidebar-header"\],\s*\[data-right-panel-tabbar\]\s*\),\s*html\[data-theme-id\]\[data-theme-id="world-scenery"\]\[data-scenery-on\]\s+:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\)::after\s*\{\s*box-shadow:\s*none;/,
     );
   });
 
