@@ -212,6 +212,41 @@ describe("terminalUiStateStore actions", () => {
     });
   });
 
+  it("sanitizes malformed persisted terminal state", () => {
+    const threadKey = scopedThreadKey(THREAD_REF);
+    const migrated = migratePersistedTerminalUiStateStoreState(
+      {
+        terminalUiStateByThreadKey: {
+          [threadKey]: {
+            terminalOpen: "yes",
+            terminalHeight: Number.NaN,
+            terminalIds: [" term-1 ", null, "term-1"],
+            activeTerminalId: 42,
+            terminalGroups: [
+              { id: " group-1 ", terminalIds: ["term-1", false], splitDirection: "vertical" },
+              { id: null, terminalIds: ["term-1"] },
+            ],
+            activeTerminalGroupId: {},
+          },
+        },
+      },
+      4,
+    );
+
+    expect(migrated).toEqual({
+      terminalUiStateByThreadKey: {
+        [threadKey]: {
+          terminalOpen: false,
+          terminalHeight: 280,
+          terminalIds: ["term-1"],
+          activeTerminalId: "term-1",
+          terminalGroups: [{ id: "group-1", terminalIds: ["term-1"], splitDirection: "vertical" }],
+          activeTerminalGroupId: "group-1",
+        },
+      },
+    });
+  });
+
   it("resets to default and clears persisted entry when closing the last terminal", () => {
     const store = useTerminalUiStateStore.getState();
     store.newTerminal(THREAD_REF, "terminal-only");

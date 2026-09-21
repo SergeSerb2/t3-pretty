@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.sergeserb.t3code.dictation-helper</string>
+    <key>CFBundleName</key>
+    <string>T3 Pretty Dictation</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>T3 Pretty uses your microphone to dictate messages with macOS speech recognition.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>T3 Pretty turns your speech into composer text with macOS speech recognition.</string>
+  </dict>
+</plist>

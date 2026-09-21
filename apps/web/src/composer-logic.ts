@@ -1,7 +1,16 @@
-import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
-import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
+import type { ClientSettings } from "@t3tools/contracts/settings";
+import type { AssistantCitation } from "@t3tools/contracts";
+import {
+  serializeAssistantCitation,
+  withAssistantCitationComment,
+} from "@t3tools/shared/assistantCitations";
+import {
+  splitPromptIntoComposerSegments,
+  type ComposerPromptSegment,
+} from "./composer-editor-mentions";
+import type { SessionPhase } from "./types";
 
-export type ComposerTriggerKind = "path" | "slash-command" | "skill";
+export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
 /**
  * Built-in composer slash commands. Everything here runs inside the client;
  * provider commands (`/compact`, custom commands) travel to the CLI as text.
@@ -15,7 +24,7 @@ export type ComposerSlashCommand =
   | "settings"
   | "commands"
   | "auto-pr";
-export type ComposerSubmissionIntent = "foreground" | "background";
+export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -24,25 +33,36 @@ export interface ComposerTrigger {
   rangeEnd: number;
 }
 
+export function formatAssistantCitationForComposer(citation: AssistantCitation, comment = "") {
+  return `${serializeAssistantCitation(withAssistantCitationComment(citation, comment))} `;
+}
+
 export function composerSubmissionIntentForEnter(input: {
   isMobileViewport: boolean;
   shiftKey: boolean;
   modifierKey: boolean;
   isDraftThread: boolean;
+  isRunning?: boolean;
+  sendShortcut?: ClientSettings["sendShortcut"];
+  prompt?: string;
 }): ComposerSubmissionIntent | null {
-  if (input.isMobileViewport || input.shiftKey) {
-    return null;
+  const requiresModifier =
+    input.sendShortcut === "mod-enter" ||
+    (input.sendShortcut === "mod-enter-multiline" && /[\r\n]/.test(input.prompt ?? ""));
+  if (input.isMobileViewport || (requiresModifier && !input.modifierKey)) return null;
+  if (input.shiftKey && !(requiresModifier && input.modifierKey && input.isRunning)) return null;
+  if (input.isRunning && input.modifierKey && (!requiresModifier || input.shiftKey)) {
+    return "alternate";
   }
   return input.modifierKey && input.isDraftThread ? "background" : "foreground";
 }
 
-const isInlineTokenSegment = (
-  segment:
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" },
-): boolean => segment.type !== "text";
+/** Session starting is phase "connecting"; the server holds "queue" in both. */
+export function composerTurnIsInProgress(phase: SessionPhase): boolean {
+  return phase === "running" || phase === "connecting";
+}
+
+const isInlineTokenSegment = (segment: ComposerPromptSegment): boolean => segment.type !== "text";
 
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
@@ -50,13 +70,7 @@ function clampCursor(text: string, cursor: number): number {
 }
 
 function isWhitespace(char: string): boolean {
-  return (
-    char === " " ||
-    char === "\n" ||
-    char === "\t" ||
-    char === "\r" ||
-    char === INLINE_TERMINAL_CONTEXT_PLACEHOLDER
-  );
+  return char === " " || char === "\n" || char === "\t" || char === "\r";
 }
 
 function tokenStartForCursor(text: string, cursor: number): number {
@@ -78,7 +92,11 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
   let expandedCursor = 0;
 
   for (const segment of segments) {
-    if (segment.type === "mention") {
+    if (
+      segment.type === "mention" ||
+      segment.type === "citation" ||
+      segment.type === "context-reference"
+    ) {
       const expandedLength = segment.source.length;
       if (remaining <= 1) {
         return expandedCursor + (remaining === 0 ? 0 : expandedLength);
@@ -88,20 +106,12 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
       continue;
     }
     if (segment.type === "skill") {
-      const expandedLength = segment.name.length + 1;
+      const expandedLength = segment.source.length;
       if (remaining <= 1) {
         return expandedCursor + (remaining === 0 ? 0 : expandedLength);
       }
       remaining -= 1;
       expandedCursor += expandedLength;
-      continue;
-    }
-    if (segment.type === "terminal-context") {
-      if (remaining <= 1) {
-        return expandedCursor + remaining;
-      }
-      remaining -= 1;
-      expandedCursor += 1;
       continue;
     }
 
@@ -116,13 +126,7 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
   return expandedCursor;
 }
 
-function collapsedSegmentLength(
-  segment:
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" },
-): number {
+function collapsedSegmentLength(segment: ComposerPromptSegment): number {
   if (segment.type === "text") {
     return segment.text.length;
   }
@@ -130,12 +134,7 @@ function collapsedSegmentLength(
 }
 
 function clampCollapsedComposerCursorForSegments(
-  segments: ReadonlyArray<
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" }
-  >,
+  segments: ReadonlyArray<ComposerPromptSegment>,
   cursorInput: number,
 ): number {
   const collapsedLength = segments.reduce(
@@ -166,7 +165,11 @@ export function collapseExpandedComposerCursor(text: string, cursorInput: number
   let collapsedCursor = 0;
 
   for (const segment of segments) {
-    if (segment.type === "mention") {
+    if (
+      segment.type === "mention" ||
+      segment.type === "citation" ||
+      segment.type === "context-reference"
+    ) {
       const expandedLength = segment.source.length;
       if (remaining === 0) {
         return collapsedCursor;
@@ -179,7 +182,7 @@ export function collapseExpandedComposerCursor(text: string, cursorInput: number
       continue;
     }
     if (segment.type === "skill") {
-      const expandedLength = segment.name.length + 1;
+      const expandedLength = segment.source.length;
       if (remaining === 0) {
         return collapsedCursor;
       }
@@ -187,14 +190,6 @@ export function collapseExpandedComposerCursor(text: string, cursorInput: number
         return collapsedCursor + 1;
       }
       remaining -= expandedLength;
-      collapsedCursor += 1;
-      continue;
-    }
-    if (segment.type === "terminal-context") {
-      if (remaining <= 1) {
-        return collapsedCursor + remaining;
-      }
-      remaining -= 1;
       collapsedCursor += 1;
       continue;
     }
@@ -238,8 +233,6 @@ export function isCollapsedCursorAdjacentToInlineToken(
   return false;
 }
 
-export const isCollapsedCursorAdjacentToMention = isCollapsedCursorAdjacentToInlineToken;
-
 export function detectComposerTrigger(text: string, cursorInput: number): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
   const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
@@ -260,10 +253,20 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
 
   const tokenStart = tokenStartForCursor(text, cursor);
   const token = text.slice(tokenStart, cursor);
-  if (token.startsWith("$")) {
+  const pullRequestMatch = /^#([\p{L}\p{N}][\p{L}\p{N}_-]*)?$/u.exec(token);
+  if (pullRequestMatch) {
+    return {
+      kind: "pull-request",
+      query: pullRequestMatch[1] ?? "",
+      rangeStart: tokenStart,
+      rangeEnd: cursor,
+    };
+  }
+  const skillPrefix = /^\p{Sc}/u.exec(token);
+  if (skillPrefix) {
     return {
       kind: "skill",
-      query: token.slice(1),
+      query: token.slice(skillPrefix[0].length),
       rangeStart: tokenStart,
       rangeEnd: cursor,
     };
@@ -277,6 +280,18 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
     query: token.slice(1),
     rangeStart: tokenStart,
     rangeEnd: cursor,
+  };
+}
+
+/** Caret and trigger after replacing composer text and continuing at the end. */
+export function composerStateAtPromptEnd(text: string): {
+  cursor: number;
+  trigger: ComposerTrigger | null;
+} {
+  const cursor = collapseExpandedComposerCursor(text, text.length);
+  return {
+    cursor,
+    trigger: detectComposerTrigger(text, expandCollapsedComposerCursor(text, cursor)),
   };
 }
 

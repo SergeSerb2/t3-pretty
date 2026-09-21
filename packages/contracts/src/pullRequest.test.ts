@@ -5,15 +5,24 @@ import {
   PullRequestActionInput,
   PullRequestCapabilities,
   PullRequestComment,
+  PullRequestFilesViewedResult,
   PullRequestListInput,
   PullRequestListResult,
+  PULL_REQUEST_REVIEW_MAX_COMMENTS,
   PullRequestReviewerRequestInput,
+  PullRequestSubmitReviewInput,
+  PullRequestSetFilesViewedInput,
+  pullRequestHostOf,
   resolvePullRequestAuthorFilter,
 } from "./pullRequest.ts";
 
 const decodeListResult = Schema.decodeUnknownSync(PullRequestListResult);
 const decodeListInput = Schema.decodeUnknownSync(PullRequestListInput);
 const decodeReviewerRequest = Schema.decodeUnknownSync(PullRequestReviewerRequestInput);
+const decodeSubmitReview = Schema.decodeUnknownSync(PullRequestSubmitReviewInput);
+const decodeAction = Schema.decodeUnknownSync(PullRequestActionInput);
+const decodeSetFilesViewed = Schema.decodeUnknownSync(PullRequestSetFilesViewedInput);
+const decodeFilesViewed = Schema.decodeUnknownSync(PullRequestFilesViewedResult);
 
 const LIST_RESULT: PullRequestListResult = {
   viewers: { "github.com": "bilal", "gitlab.com": "bilal.hassan" },
@@ -65,6 +74,20 @@ const LIST_RESULT: PullRequestListResult = {
 };
 
 describe("PullRequestListResult", () => {
+  it("separates Forgejo HTTP ports while preserving other provider host identities", () => {
+    const identity = {
+      canonicalKey: "forge.example/team/repo",
+      locator: { remoteUrl: "http://forge.example:3000/team/repo.git" },
+    };
+    expect(pullRequestHostOf(identity, "forgejo")).toBe("forge.example:3000");
+    expect(pullRequestHostOf(identity, "gitlab")).toBe("forge.example");
+    expect(
+      pullRequestHostOf(
+        { ...identity, locator: { remoteUrl: "ssh://git@forge.example:2222/team/repo.git" } },
+        "forgejo",
+      ),
+    ).toBe("forge.example");
+  });
   /**
    * The RPC builds this codec at call time, so a shape it cannot lower — an open-keyed record
    * with an optional value, for one — fails as an interrupted request rather than as a schema
@@ -158,6 +181,35 @@ describe("PullRequestReviewerRequestInput", () => {
   });
 });
 
+describe("PullRequestSubmitReviewInput", () => {
+  const reference = { projectId: "p1", repository: "acme/web", number: 1 };
+  const comments = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      path: `src/file-${index}.ts`,
+      position: { kind: "added" as const, newLine: 1 },
+      body: "Review this line.",
+    }));
+
+  it("bounds the review payload and per-comment host mutation fan-out", () => {
+    expect(
+      decodeSubmitReview({
+        ...reference,
+        verdict: "comment",
+        body: "",
+        comments: comments(PULL_REQUEST_REVIEW_MAX_COMMENTS),
+      }).comments,
+    ).toHaveLength(PULL_REQUEST_REVIEW_MAX_COMMENTS);
+    expect(() =>
+      decodeSubmitReview({
+        ...reference,
+        verdict: "comment",
+        body: "",
+        comments: comments(PULL_REQUEST_REVIEW_MAX_COMMENTS + 1),
+      }),
+    ).toThrow();
+  });
+});
+
 describe("PullRequestComment reactions", () => {
   const decodeComment = Schema.decodeUnknownSync(PullRequestComment);
   const comment = {
@@ -193,7 +245,6 @@ describe("PullRequestComment reactions", () => {
 });
 
 describe("updating a branch that has fallen behind its base", () => {
-  const decodeAction = Schema.decodeUnknownSync(PullRequestActionInput);
   const ref = { projectId: "project-1", repository: "acme/web", number: 7 };
 
   it("carries the way the branch should be brought up to date", () => {
@@ -217,7 +268,6 @@ describe("updating a branch that has fallen behind its base", () => {
 });
 
 describe("leaving a merge for the host to make once it is ready", () => {
-  const decodeAction = Schema.decodeUnknownSync(PullRequestActionInput);
   const ref = { projectId: "project-1", repository: "acme/web", number: 7 };
 
   it("carries the strategy the deferred merge should use, as merging now does", () => {
@@ -228,6 +278,33 @@ describe("leaving a merge for the host to make once it is ready", () => {
 
   it("takes the arming back without a strategy, because there is nothing to choose", () => {
     expect(decodeAction({ ...ref, action: "disable-auto-merge" }).mergeMethod).toBeUndefined();
+  });
+});
+
+describe("reverting a merged pull request", () => {
+  it("carries the revert action without merge options", () => {
+    const action = decodeAction({
+      projectId: "project-1",
+      repository: "acme/web",
+      number: 7,
+      action: "revert",
+    });
+
+    expect(action.action).toBe("revert");
+    expect(action.mergeMethod).toBeUndefined();
+  });
+});
+
+describe("approving fork workflows", () => {
+  it("carries workflow approval as its own action", () => {
+    const action = decodeAction({
+      projectId: "project-1",
+      repository: "acme/web",
+      number: 7,
+      action: "approve-workflows",
+    });
+
+    expect(action.action).toBe("approve-workflows");
   });
 });
 
@@ -263,5 +340,68 @@ describe("naming the reader as the author to narrow by", () => {
   it("stands as typed where the host has not said who the reader is", () => {
     expect(resolvePullRequestAuthorFilter("me", null)).toBe("me");
     expect(resolvePullRequestAuthorFilter("me", "  ")).toBe("me");
+  });
+});
+
+describe("naming the file a tick belongs to", () => {
+  // A space on either end of a name is part of the name as far as git is concerned. The patch on
+  // screen and the environment's record of what was cleared are both keyed by it, so a path
+  // tidied in transit ticks a file that does not exist and leaves the one on screen unticked.
+  it("keeps the spaces around a path being ticked", () => {
+    expect(
+      decodeSetFilesViewed({
+        projectId: "p1",
+        repository: "group/project",
+        number: 7,
+        files: [{ path: "docs/readme.md ", viewed: true }],
+      }).files,
+    ).toEqual([{ path: "docs/readme.md ", viewed: true }]);
+  });
+
+  it("keeps the spaces around a path being reported back", () => {
+    expect(
+      decodeFilesViewed({
+        files: [{ path: " leading.md", state: "viewed" }],
+        truncated: false,
+      }).files,
+    ).toEqual([{ path: " leading.md", state: "viewed" }]);
+  });
+
+  it("still refuses a path that is nothing at all", () => {
+    expect(() =>
+      decodeSetFilesViewed({
+        projectId: "p1",
+        repository: "group/project",
+        number: 7,
+        files: [{ path: "", viewed: true }],
+      }),
+    ).toThrow();
+  });
+
+  it("refuses a batch larger than a reader can press", () => {
+    // Every element of a batch is a statement of its own inside one transaction on an
+    // environment-kept host, or a field of its own in one GraphQL document on GitHub, so what a
+    // client may send has to be bounded rather than trusted to be a burst of presses.
+    const press = (path: string) => ({ path, viewed: true });
+    const batch = (count: number) => ({
+      projectId: "p1",
+      repository: "group/project",
+      number: 7,
+      files: Array.from({ length: count }, (_, at) => press(`src/f${at}.ts`)),
+    });
+
+    expect(() => decodeSetFilesViewed(batch(500))).not.toThrow();
+    expect(() => decodeSetFilesViewed(batch(501))).toThrow();
+  });
+
+  it("refuses a path far longer than any real one", () => {
+    expect(() =>
+      decodeSetFilesViewed({
+        projectId: "p1",
+        repository: "group/project",
+        number: 7,
+        files: [{ path: `src/${"a".repeat(4096)}.ts`, viewed: true }],
+      }),
+    ).toThrow();
   });
 });

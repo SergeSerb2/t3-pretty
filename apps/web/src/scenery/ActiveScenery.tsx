@@ -13,12 +13,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import { connectionProjectionPhase } from "@t3tools/client-runtime/connection";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { EnvironmentId } from "@t3tools/contracts";
+import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
 import { getMediaQueryEntry } from "../hooks/useMediaQuery";
 import { environmentCatalog } from "../connection/catalog";
-import { readEnvironmentSupportsScenery } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentThreadShells, threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -26,7 +26,6 @@ import { layerStack } from "./glass";
 import { usePhotoSetStore } from "./photoSetStore";
 import { pickInkVariant, type InkDecisionInput } from "./sceneryInk";
 import { loadSeedPhotos, peekSeedPhotos } from "./scenerySeeds";
-import { SceneryArrival } from "./SceneryArrival";
 import { SceneryLayer } from "./SceneryLayer";
 import { SceneryPlaceCredit } from "./SceneryPlaceCredit";
 import {
@@ -43,6 +42,11 @@ import { wallpaperURL } from "./unsplash";
 import { useActiveThreadKey } from "./useActiveThreadKey";
 import { useInkOverride } from "./useInkOverride";
 import "./scenery.css";
+
+function readEnvironmentSupportsScenery(_environmentId: EnvironmentId): boolean {
+  // TODO: Check capabilities when scenery capability is added
+  return true;
+}
 
 const CONTRAST_QUERY = "(prefers-contrast: more)";
 const TRANSPARENCY_QUERY = "(prefers-reduced-transparency: reduce)";
@@ -201,7 +205,7 @@ export default function ActiveScenery() {
       // assignment just because the server wrote it first.
       if (serverScenery) {
         const bound = photoFromAssignment(serverScenery);
-        if (pool.some((entry) => entry.id === bound.id)) {
+        if (bound && pool.some((entry) => entry.id === bound.id)) {
           return bound;
         }
       }
@@ -235,12 +239,6 @@ export default function ActiveScenery() {
     readonly averageColorHex: string | null;
     readonly seed: string;
   } | null>(null);
-  const [displayedPhotoId, setDisplayedPhotoId] = useState<string | null>(null);
-  const pendingToneRef = useRef<{
-    readonly averageColorHex: string | null;
-    readonly seed: string;
-  } | null>(null);
-
   const incomingInk: Omit<InkDecisionInput, "baseAppearance"> = {
     averageColorHex: photo?.averageColorHex ?? null,
     seed,
@@ -304,25 +302,8 @@ export default function ActiveScenery() {
     return null;
   }
 
-  const photoReady = photo !== null && displayedPhotoId === photo.id;
-
   return (
     <>
-      <SceneryArrival
-        photo={photo}
-        threadKey={threadKey}
-        photoReady={photoReady}
-        onPhaseChange={(phase) => {
-          if (phase !== "reveal" && phase !== "settled") {
-            return;
-          }
-          const pending = pendingToneRef.current;
-          if (pending) {
-            pendingToneRef.current = null;
-            setDisplayedTone(pending);
-          }
-        }}
-      />
       <SceneryLayer
         photo={photo}
         seed={seed}
@@ -330,16 +311,10 @@ export default function ActiveScenery() {
         appearanceCrossfade={appearanceCrossfade}
         onPhotoDisplayed={(displayed) => {
           registerDisplayed(displayed);
-          setDisplayedPhotoId(displayed.id);
           const tone = {
             averageColorHex: displayed.averageColorHex,
             seed,
           };
-          if (document.documentElement.dataset.sceneryArrival === "fog") {
-            pendingToneRef.current = tone;
-            return;
-          }
-          pendingToneRef.current = null;
           setDisplayedTone(tone);
         }}
       />

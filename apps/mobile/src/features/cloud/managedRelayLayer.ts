@@ -28,25 +28,15 @@ const relayDpopSignerLayer = Layer.effect(
       ),
       createProof: Effect.fn("mobile.managedRelayDpopSigner.createProof")(function* (input) {
         const proofKey = yield* loadProofKey.pipe(
-          Effect.mapError(
-            (error) =>
-              new ManagedRelay.ManagedRelayDpopProofCreationError({
-                method: input.method,
-                url: input.url,
-                cause: error,
-              }),
+          Effect.mapError((error) =>
+            ManagedRelay.makeManagedRelayDpopProofCreationError(input, error),
           ),
         );
         return yield* createDpopProof({ ...input, proofKey }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.map((proof) => proof.proof),
-          Effect.mapError(
-            (error) =>
-              new ManagedRelay.ManagedRelayDpopProofCreationError({
-                method: input.method,
-                url: input.url,
-                cause: error,
-              }),
+          Effect.mapError((error) =>
+            ManagedRelay.makeManagedRelayDpopProofCreationError(input, error),
           ),
         );
       }),
