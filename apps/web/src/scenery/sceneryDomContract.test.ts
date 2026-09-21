@@ -240,7 +240,11 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain(
       '[data-slot="sidebar-container"].workspace-sidebar-glass::before',
     );
-    expect(indexCssSource).toContain("top: var(--workspace-topbar-height)");
+    expect(indexCssSource).toContain("--workspace-frame-radius: 10px");
+    expect(indexCssSource).toContain("border-bottom-right-radius: var(--workspace-frame-radius)");
+    expect(indexCssSource).toContain(
+      "top: calc(var(--workspace-topbar-height) + var(--workspace-frame-radius) - 1px)",
+    );
     expect(indexCssSource).toContain("box-shadow: inset 0 -1px 0 var(--workspace-frame-line);");
     const headerPlate = indexCssSource.match(
       /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]+\}/s,
@@ -254,8 +258,9 @@ describe("glass contract with upstream chrome", () => {
       '[data-slot="sidebar-container"].workspace-sidebar-glass::before',
     );
     expect(sceneryCssSource).toMatch(
-      /\[data-slot="sidebar-container"\]\.workspace-sidebar-glass::before\s*\{\s*background:\s*transparent;/,
+      /\[data-slot="sidebar-container"\]\.workspace-sidebar-glass::before\s*\{\s*background:\s*transparent;\s*border-right-color:\s*transparent;\s*border-bottom-color:\s*transparent;/,
     );
+    expect(sceneryCssSource).toContain('[data-slot="sidebar-inner"]::before');
     expect(sceneryCssSource).toMatch(
       /\[data-scenery-on\]\s+:is\(\s*\[data-app-sidebar\] \[data-slot="sidebar-header"\],\s*\[data-right-panel-tabbar\]\s*\),\s*html\[data-theme-id\]\[data-theme-id="world-scenery"\]\[data-scenery-on\]\s+:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\)::after\s*\{\s*box-shadow:\s*none;/,
     );
