@@ -311,7 +311,7 @@ function MetaRow({
   children: ReactNode;
 }) {
   return (
-    <div className="grid min-h-8 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2 py-1.5 text-xs">
+    <div className="grid min-h-8 min-w-0 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2 py-1.5 text-xs">
       <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
         {icon}
         {label}
@@ -639,6 +639,7 @@ export function PullRequestSummaryTab({
   reference,
   detail,
   activityPending,
+  checksStale = false,
   activityError,
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
@@ -651,12 +652,14 @@ export function PullRequestSummaryTab({
   onRefresh,
   restoredView,
   onViewChange,
+  onRefreshChecks = onRefresh,
 }: {
   environmentId: EnvironmentId;
   threadRef: ScopedThreadRef | null;
   reference: PullRequestRef;
   detail: PullRequestDetailView;
   activityPending: boolean;
+  checksStale?: boolean;
   activityError: string | null;
   /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
@@ -674,6 +677,7 @@ export function PullRequestSummaryTab({
   onRefresh: () => void;
   restoredView?: PullRequestPanelViewSnapshot;
   onViewChange?: (patch: PullRequestPanelViewSnapshot) => void;
+  onRefreshChecks?: () => void;
 }) {
   const targetKey = JSON.stringify([
     environmentId,
@@ -1290,7 +1294,14 @@ export function PullRequestSummaryTab({
         defaultOpen={restoredView?.sectionOpen?.checks ?? true}
         onOpenChange={(open) => rememberSection("checks", open)}
       >
-        {detail.checks.length === 0 ? (
+        {checksStale ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Check details are out of date.</span>
+            <Button size="xs" variant="ghost" onClick={onRefreshChecks}>
+              Refresh
+            </Button>
+          </div>
+        ) : detail.checks.length === 0 ? (
           <p className="text-xs text-muted-foreground">No checks reported.</p>
         ) : (
           <div className="space-y-0.5">

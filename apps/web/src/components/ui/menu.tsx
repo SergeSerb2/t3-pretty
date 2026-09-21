@@ -83,6 +83,10 @@ function MenuPopup({
         <MenuPrimitive.Popup
           className={cn(
             "dropdown-glass relative flex min-w-0 origin-(--transform-origin) rounded-lg shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none transition-[scale,opacity] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)] focus:outline-none data-ending-style:scale-[0.97] data-ending-style:opacity-0 data-ending-style:duration-100 data-instant:transition-none data-instant:data-starting-style:scale-100 data-instant:data-starting-style:opacity-100 data-instant:data-ending-style:scale-100 data-instant:data-ending-style:opacity-100 data-starting-style:scale-[0.97] data-starting-style:opacity-0 motion-reduce:transition-opacity dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
+            // Portaled menus can overlap an Electron window drag region (e.g.
+            // the Review panel header). Drag hit-testing ignores z-index, so
+            // the topmost row would stay unhoverable without this opt-out.
+            "[-webkit-app-region:no-drag]",
             !hasExplicitWidthClass && "min-w-32",
             className,
           )}

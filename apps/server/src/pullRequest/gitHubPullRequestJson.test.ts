@@ -122,6 +122,13 @@ describe("pull request list decoding", () => {
           { statusCheckRollup: [{ context: "ci/legacy", state: "ERROR" }] },
           // Neither a pass, a failure nor a wait is no verdict rather than a green tick.
           { statusCheckRollup: [{ name: "lint", status: "COMPLETED", conclusion: "SKIPPED" }] },
+          // Cancelled reads as failing here and in the detail header, so the two never flap.
+          {
+            statusCheckRollup: [
+              { name: "lint", status: "COMPLETED", conclusion: "SUCCESS" },
+              { name: "test", status: "COMPLETED", conclusion: "CANCELLED" },
+            ],
+          },
           { statusCheckRollup: [] },
           {},
         ]),
@@ -133,6 +140,7 @@ describe("pull request list decoding", () => {
       "passing",
       "failing",
       null,
+      "failing",
       null,
       null,
     ]);

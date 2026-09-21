@@ -1296,3 +1296,121 @@ Local verification on this repair tree. `tsc` printed Effect suggestions only; e
 - `web-typecheck` failed after merging `v0.0.43-nightly.20260920.2018`; repaired with `gpt-5.6-sol`: Removed the orphaned upstream header-actions fragment and its supporting imports/state, preserving T3 Pretty's slim thread header while resolving all 24 undefined-name errors.
   - edited `apps/web/src/components/chat/ChatHeader.tsx`
   - omitted parent change: Responsive ChatHeader controls for project scripts, Open In, and Git actions, including their collapsed menu/portal infrastructure.. Reason: T3 Pretty's authoritative slim-header change deliberately removed these controls and their entire ChatHeader prop API. The merged upstream fragment was unrendered and could only be completed by restoring the fork-removed controls and changing the slim-header behavior.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260920.2031`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260920.2018`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/desktop/src/ipc/channels.ts` — T3 Pretty's local speech-recognition dictation IPC contract, including start, stop, cancel, and event channels.
+- `apps/desktop/src/preview/Manager.test.ts` — Preserved the PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES import used by T3 Pretty's bounded accessibility-tree tests and automation safeguards.
+- `apps/desktop/src/preview/Manager.test.ts` — Kept T3 Pretty's removal of the obsolete DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER import rather than restoring a base-era dependency.
+- `apps/desktop/src/preview/Manager.test.ts` — Preserved T3 Pretty's regression coverage that merely registering a guest webview attaches no debugger and enables no CDP domain.
+- `apps/desktop/src/preview/Manager.test.ts` — Kept the existing test body labeled according to the behavior it actually verifies, rather than relabeling it as a recording warmup test.
+- `apps/desktop/src/preview/Manager.test.ts` — Preserved T3 Pretty’s 400 ms TestClock advancement for the automation-click test, covering the fork’s longer pointer-input preparation/press timing rather than regressing to the base 200 ms wait.
+- `apps/desktop/src/preview/Manager.test.ts` — Preserved host-web-contents coverage in the webview mock while adopting the parent’s fresh fixture factory.
+- `apps/desktop/src/preview/Manager.ts` — Preserved T3 Pretty's existing preview-recording architecture by not restoring the legacy DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER import that the fork had deliberately removed.
+- `apps/desktop/src/preview/Manager.ts` — Preserved T3 Pretty's invariant that every frame-capture session owns a non-null closeable scope, maintaining its lifecycle and cleanup safeguards.
+- `apps/desktop/src/preview/Manager.ts` — T3 Pretty's frame-capture source lifecycle remains authoritative, including tracking and restoring each source's original background-throttling value rather than forcing throttling on.
+- `apps/desktop/src/preview/Manager.ts` — Destroyed web contents remain safely ignored during throttling restoration, with tab and web-contents context retained in restoration errors.
+- `apps/desktop/src/preview/Manager.ts` — The active-source state and lease model remains intact, including stale/released-session protection and restoration of the previous source when capture moves to new web contents.
+- `apps/desktop/src/preview/Manager.ts` — T3 Pretty's direct recording startup remains based on `startFrameCapture` rather than restoring the removed display-media arming and renderer-side capture-request flow.
+- `apps/desktop/src/preview/Manager.ts` — The fork's recording path remains free of the removed per-tab lifecycle lock, pending-recording global arm slot, source-warming capture, and host-window capture handshake.
+- `apps/desktop/src/preview/Manager.ts` — Recording startup cleanup is retained for failures introduced by the composed options/cursor preparation, without reintroducing the parent's pending-arm state.
+- `apps/mobile/modules/t3-review-diff/android/src/main/java/expo/modules/t3reviewdiff/T3ReviewDiffView.kt` — T3 Pretty's encapsulated mutable token cache remains authoritative rather than reverting to direct whole-map assignment.
+- `apps/mobile/modules/t3-review-diff/android/src/main/java/expo/modules/t3reviewdiff/T3ReviewDiffView.kt` — T3 Pretty's explicit clearTokens, replaceTokens, and mergeTokens APIs are retained, including incremental token merging and redraw invalidation used for cross-surface reliability.
+- `apps/server/src/cli/pair.ts` — Preserved use of the T3 Pretty-specific SURGE_CONNECT_NAME for branded CLI connection guidance.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — The hero continues to expose the T3 Pretty pull-request attachment selector beneath the heading.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Open pull requests remain scoped to every member project reference in the active logical project group.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Attaching a pull request continues to update the draft context and switch to the pull request's head branch when available.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Detaching a pull request continues to restore the branch that was selected before attachment.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — The selector continues to use the fork-approved PullRequestGlyph and the existing Pretty hero spacing and presentation.
+- `apps/web/src/components/preview/AgentBrowserCursor.tsx` — The cursor remains the T3 Pretty AgentBrowserCursorGlide implementation rather than being renamed back to the parent's event component.
+- `apps/web/src/components/preview/AgentBrowserCursor.tsx` — The glide component is keyed by tabId, resetting interpolation state when the selected browser tab changes without remounting for each event sequence.
+- `apps/web/src/components/preview/AgentBrowserCursor.tsx` — Cursor coordinates continue to account for preview zoom, content scale, surface offsets, and scrolling.
+- `apps/web/src/components/preview/AgentBrowserCursor.tsx` — Glide duration remains attached to the sequence that initiated movement so store, overlay, zoom, and StrictMode rerenders do not cancel the compositor transition.
+- `apps/web/src/components/preview/AgentBrowserCursor.tsx` — The cursor's active action label remains available during the activity window.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — T3 Pretty metadata rows retain their deliberate `min-h-8` height and `py-1.5` vertical spacing.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Metadata labels retain `min-w-0`, allowing the fixed label column to shrink safely without regressing the fork's layout.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved `restoredView` support for restoring pull-request panel state, including comment pagination and Grok review-summary visibility.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved `onViewChange` support for reporting pull-request panel view-state changes.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The Checks section continues to display the number of checks in its section header.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The Checks section continues to restore its saved open state, default to open when no state exists, and persist changes through rememberSection.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — T3 Pretty branding remains authoritative throughout both network-access restart messages.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — T3 Connect remains identified as a tunnel that continues working when local network access is disabled.
+- `apps/web/src/components/ui/menu.tsx` — T3 Pretty's glass menu styling, shadows, and explicit min-width handling remain intact.
+- `apps/web/src/components/ui/menu.tsx` — Menu scale/opacity enter and exit animations, instant-mode overrides for right-click menus, and reduced-motion behavior are preserved.
+- `apps/web/src/state/pullRequests.ts` — Preserved T3 Pretty's five-minute idle TTL constant for merged pull-request queries.
+- `apps/web/src/state/pullRequests.ts` — Interrupted pull-request reads remain tracked per environment and retried through useRetryInterruptedQuery.
+- `apps/web/src/state/pullRequests.ts` — Merged query values continue to come from readAtomQueryResult snapshots, preserving available data across pending or failed query states instead of blanking already loaded pull-request panels.
+- `apps/web/src/state/pullRequests.ts` — The merged pull-request query family retains MERGED_PULL_REQUEST_QUERY_IDLE_TTL_MS so loaded panels survive thread or view switches.
+- `apps/web/src/state/query.ts` — Kept `readAtomQueryResult` as the authoritative source for query data, normalized errors, and pending state.
+- `apps/web/src/state/query.ts` — Preserved the null-atom pending guard and the surrounding one-time interrupted-query retry behavior.
+- `packages/contracts/src/ipc.ts` — Preserved the T3 Pretty desktop preview pointer-event schema, including tab identity, move/click/type/press/scroll phases, coordinates, sequencing, and creation timestamp.
+- `packages/contracts/src/ipc.ts` — Preserved T3 Pretty's desktop preview recording contract in which startScreencast returns DesktopPreviewRecordingSource rather than discarding the selected recording source.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/desktop/src/ipc/channels.ts` — Parent preview recording input IPC channel (`desktop:preview-recording-input`).
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated DesktopPreviewRecordingInputEvent into the contracts type import for the parent's new typed recording-input behavior and tests.
+- `apps/desktop/src/preview/Manager.test.ts` — Retained the shared DesktopPreviewRecordingFrame type import.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated the parent regression test verifying that failed recording startup restores the native cursor and permits a successful retry.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated the parent regression test verifying that navigation restores recording cursor state and options only while recording remains active.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated the parent regression test for recording-decoration option gating, invalid input rejection, and isolation of failing recording-input subscribers.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated the parent’s recording-aware automation-click test, including starting and stopping recording around the click.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated the fresh makeTestHostWebContents fixture and the capturePage and setBackgroundThrottling mocks needed by recording.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated debugger event-listener mocks required by the current preview recording implementation.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated assertions for recording-controller ownership transitions and resolved move/click pointer events being sent to the recording channel.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated the updated test description reflecting that the resolved pointer target is recorded before mouse dispatch.
+- `apps/desktop/src/preview/Manager.ts` — Integrated the parent contracts API addition, DesktopPreviewRecordingInputSchema, for the upstream recording-input validation path.
+- `apps/desktop/src/preview/Manager.ts` — Integrated the parent's optional RecordingInputOptions state into FrameCaptureSession.
+- `apps/desktop/src/preview/Manager.ts` — When newly activated preview web contents participate in an active recording, the recording cursor is enabled through RECORDING_CURSOR_CHANNEL with the current recording input options and tab controller.
+- `apps/desktop/src/preview/Manager.ts` — The upstream cursor behavior is applied only to the current capture session, adapting it to T3 Pretty's sourceState-based lifecycle rather than restoring the removed legacy helper.
+- `apps/desktop/src/preview/Manager.ts` — `startRecording` now accepts `RecordingInputOptions` and defaults them to `DEFAULT_RECORDING_INPUT_OPTIONS`.
+- `apps/desktop/src/preview/Manager.ts` — The selected recording input options are stored on the tab's frame-capture session.
+- `apps/desktop/src/preview/Manager.ts` — The preview web contents receives `RECORDING_CURSOR_CHANNEL` with the active options and tab controller so cursor/input presentation follows the parent behavior.
+- `apps/desktop/src/preview/Manager.ts` — Failure during the newly added recording preparation stops frame capture to avoid leaving a partial recording session active.
+- `apps/mobile/modules/t3-review-diff/android/src/main/java/expo/modules/t3reviewdiff/T3ReviewDiffView.kt` — Token-cache mutations now rebuild row offsets when word wrapping is enabled, preserving correct wrapped row heights.
+- `apps/mobile/modules/t3-review-diff/android/src/main/java/expo/modules/t3reviewdiff/T3ReviewDiffView.kt` — Added upstream prepareRows support for preparing drawing layouts from the current token cache, style, and width.
+- `apps/mobile/modules/t3-review-diff/android/src/main/java/expo/modules/t3reviewdiff/T3ReviewDiffView.kt` — Added upstream useCodeLayouts support for installing a prepared CodeLayoutCache into the drawing layer.
+- `apps/server/src/cli/pair.ts` — Integrated the parent DEFAULT_SIGNAL_EXPORT observability import required by the newest pairing command implementation.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Added a complete-sentence accessible name for the composer hero heading so the inline project picker's widget state does not bleed into the announced heading.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Preserved upstream's distinct accessible labels for resolved-project, project-choice, and add-project states.
+- `apps/web/src/components/preview/AgentBrowserCursor.tsx` — Cursor inactivity is now represented by inactiveSequence and is set only when the current event sequence's timeout expires.
+- `apps/web/src/components/preview/AgentBrowserCursor.tsx` — The activity timeout effect is refreshed and cleaned up whenever event.sequence changes.
+- `apps/web/src/components/preview/AgentBrowserCursor.tsx` — The cursor component remains mounted across pointer-event sequences within the same tab, incorporating the parent's removal of sequence-based remounting.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Added upstream's `min-w-0` to the metadata-row grid container to prevent intrinsic-width overflow.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Integrated the optional `onRefreshChecks` callback.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved upstream's fallback behavior where `onRefreshChecks` defaults to the general `onRefresh` callback.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — When check data is stale, the Checks section now shows the upstream out-of-date message and Refresh button wired to onRefreshChecks before considering the empty-check state.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The enable-network-access message now explains that other devices must be paired to receive access.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The disable-network-access message now warns that locally connected devices will disconnect while T3 Connect and Tailscale HTTPS tunnels continue working.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Both confirmation paths retain the parent's explicit restart warning.
+- `apps/web/src/components/ui/menu.tsx` — Added `-webkit-app-region: no-drag` to portaled menu popups so menu rows remain hoverable and interactive when overlapping Electron window drag regions, including the Review panel header.
+- `apps/web/src/state/pullRequests.ts` — Integrated the exported ObservedPullRequestSummary model, including client arrival timestamps used to order otherwise indistinguishable snapshots from older servers.
+- `apps/web/src/state/pullRequests.ts` — Successful per-environment query results now produce timestamped observations containing the environment ID, value, and AsyncResult timestamp.
+- `apps/web/src/state/pullRequests.ts` — Timestamped observations are included in the merged query view and exposed to callers for shared pull-request summary freshness handling.
+- `apps/web/src/state/query.ts` — Added `dataUpdatedAt`, populated from the successful `AsyncResult` timestamp and set to null for non-success states.
+- `packages/contracts/src/ipc.ts` — Integrated the parent's desktop preview recording-input schema for pointer, key, and clear decorations.
+- `packages/contracts/src/ipc.ts` — Integrated the parent's validation for finite pointer coordinates, positive capture dimensions and key widths, bounded key labels, and held-key state.
+- `packages/contracts/src/ipc.ts` — Integrated the parent's inferred DesktopPreviewRecordingInput type and tab-scoped DesktopPreviewRecordingInputEvent interface.
+- `packages/contracts/src/ipc.ts` — Added the parent's DesktopPreviewRecordingInputEvent subscription API through recording.onInput, including its unsubscribe callback.
+
+## Parent changes intentionally omitted
+
+- `apps/desktop/src/preview/Manager.test.ts` — The parent/base test title "continues native recording when the source warmup fails" for the existing idle-registration test body.. Reason: The shared body never starts recording or exercises source warmup; it only verifies that guest registration does not attach the debugger or issue CDP commands. T3 Pretty's title accurately describes and preserves that regression contract.
+- `apps/desktop/src/preview/Manager.ts` — The parent hunk retained the DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER import.. Reason: This symbol was inherited unchanged from the merge base rather than newly introduced upstream, and T3 Pretty had removed its dependency as part of its fork-specific recording flow. Restoring the import without restoring the superseded behavior would leave an unused legacy dependency and may fail unused-import checks.
+- `apps/desktop/src/preview/Manager.ts` — The parent's exclusive `pendingRecording` arm slot, stale-arm timeout, collision error, and per-session `setDisplayMediaRequestHandler` implementation.. Reason: OURS deliberately replaced this machinery with T3 Pretty's direct frame-capture recording path; restoring the global display-media arm would replace fork-authoritative recording behavior.
+- `apps/desktop/src/preview/Manager.ts` — The parent's closing-tab guard and `withTabLifecycleLock` wrapper around recording startup.. Reason: These were removed by the fork together with the old recording handshake. Reintroducing them would change the fork's direct recording lifecycle rather than merely integrating the new options support.
+- `apps/desktop/src/preview/Manager.ts` — The parent's host-web-contents lookup and main-window/frame-capture-window availability checks.. Reason: They support the removed host-renderer `getDisplayMedia` handshake and are not required by T3 Pretty's direct frame-capture implementation.
+- `apps/desktop/src/preview/Manager.ts` — The parent's `capturePage()` source warm-up, retry, and subsequent web-contents identity validation.. Reason: This preparation belongs to the removed display-media source-selection flow; adding it would alter and delay the fork's direct startup path.
+- `apps/desktop/src/preview/Manager.ts` — The parent's JavaScript `requestRecordingCaptureExpression` execution, capture-availability error, and pending-arm cleanup.. Reason: T3 Pretty no longer asks the host renderer to initiate capture, so this request and its arm-specific cleanup are incompatible with the fork's authoritative recording architecture.
+- `apps/web/src/components/preview/AgentBrowserCursor.tsx` — Keeping the cursor child completely unkeyed across tabId changes.. Reason: That would retain glide state when switching tabs and regress T3 Pretty's explicit tab-change reset fix; the parent intent is narrowed to stable identity across event sequences within a tab.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Upstream's more compact responsive row sizing (`min-h-7 sm:min-h-6`) and removal of T3 Pretty's vertical padding.. Reason: Those classes conflict directly with T3 Pretty's authoritative visual design, which intentionally uses roomier `min-h-8` rows with `py-1.5`; adopting the upstream sizing would weaken that fork-specific presentation.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Use a permanently closed-by-default Checks section via defaultOpen={false}.. Reason: This would regress T3 Pretty's authoritative per-view section-state restoration and its existing open-by-default behavior.
+- `packages/contracts/src/ipc.ts` — The parent's narrower Promise&lt;void&gt; return type for startScreencast.. Reason: Using it would regress T3 Pretty's authoritative recording-source result. The upstream onInput behavior remains fully compatible with the richer return type and was integrated independently.

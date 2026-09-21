@@ -124,3 +124,5 @@ export const START_DICTATION_CHANNEL = "desktop:dictation-start";
 export const STOP_DICTATION_CHANNEL = "desktop:dictation-stop";
 export const CANCEL_DICTATION_CHANNEL = "desktop:dictation-cancel";
 export const DICTATION_EVENT_CHANNEL = "desktop:dictation-event";
+
+export const PREVIEW_RECORDING_INPUT_CHANNEL = "desktop:preview-recording-input";
