@@ -435,7 +435,7 @@ effectIt.effect("stops probing a subscriber's configured paths after its scope c
     yield* Scope.close(docsScope, Exit.void);
 
     requests.length = 0;
-    yield* TestClock.adjust(Duration.seconds(15));
+    yield* TestClock.adjust(Duration.seconds(24));
     expect(requests).toContain(adminUrl);
     expect(requests).not.toContain(docsUrl);
   }).pipe(Effect.scoped, Effect.provide(layer));

@@ -11,6 +11,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -25,6 +26,7 @@ import {
   type QueuedThreadLifecycleCommand,
   type ThreadLifecyclePendingByEnvironment,
   threadLifecycleDomain,
+  threadLifecycleDomainBit,
 } from "./threadLifecycleOutboxModel.ts";
 import { ThreadLifecycleOutboxStore } from "./threadLifecycleOutboxStore.ts";
 
@@ -49,33 +51,76 @@ export function asQueuedThreadLifecycleCommand(
   command: ClientOrchestrationCommand,
 ): QueuedThreadLifecycleCommand | null {
   switch (command.type) {
-    case "thread.settle":
+    case "thread.settle": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.settle" }>;
       return {
         type: "thread.settle",
-        commandId: command.commandId,
-        threadId: command.threadId,
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
       };
-    case "thread.unsettle":
+    }
+    case "thread.unsettle": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.unsettle" }>;
       return {
         type: "thread.unsettle",
-        commandId: command.commandId,
-        threadId: command.threadId,
-        reason: command.reason,
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        reason: cmd.reason,
       };
-    case "thread.snooze":
+    }
+    case "thread.snooze": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.snooze" }>;
       return {
         type: "thread.snooze",
-        commandId: command.commandId,
-        threadId: command.threadId,
-        snoozedUntil: command.snoozedUntil,
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        snoozedUntil: cmd.snoozedUntil,
       };
-    case "thread.unsnooze":
+    }
+    case "thread.unsnooze": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.unsnooze" }>;
       return {
         type: "thread.unsnooze",
-        commandId: command.commandId,
-        threadId: command.threadId,
-        reason: command.reason,
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        reason: cmd.reason,
       };
+    }
+    case "thread.pin": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.pin" }>;
+      return {
+        type: "thread.pin",
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        ...(cmd.orderKey === undefined ? {} : { orderKey: cmd.orderKey }),
+      };
+    }
+    case "thread.unpin": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.unpin" }>;
+      return {
+        type: "thread.unpin",
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+      };
+    }
+    case "thread.pin.reorder": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.pin.reorder" }>;
+      return {
+        type: "thread.pin.reorder",
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        orderKey: cmd.orderKey,
+      };
+    }
+    case "thread.active.reorder": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.active.reorder" }>;
+      return {
+        type: "thread.active.reorder",
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        orderKey: cmd.orderKey,
+      };
+    }
     default:
       return null;
   }
@@ -93,13 +138,76 @@ export function coalescePendingThreadLifecycleEntries(
     if (threadLifecycleDomain(entry.command.type) === nextDomain) {
       return false;
     }
-    // Settling unsnoozes on the server, so a later settle replaces a parked snooze.
-    return !(
+    const domain = threadLifecycleDomain(entry.command.type);
+    // Settling unsnoozes and unpins on the server.
+    if (
       next.command.type === "thread.settle" &&
-      threadLifecycleDomain(entry.command.type) === "snooze"
-    );
+      (domain === "snooze" || domain === "pin" || domain === "pin-order")
+    ) {
+      return false;
+    }
+    // Pinning unsnoozes on the server. Unpin does not.
+    if (next.command.type === "thread.pin" && domain === "snooze") {
+      return false;
+    }
+    // Pin carries an optional slot; unpin clears it. Either replaces a parked reorder.
+    if (
+      (next.command.type === "thread.pin" || next.command.type === "thread.unpin") &&
+      domain === "pin-order"
+    ) {
+      return false;
+    }
+    return true;
   });
   return [...kept, next];
+}
+
+export function coalescePendingThreadLifecycleEntryBatch(
+  entries: ReadonlyArray<PendingThreadLifecycleEntry>,
+): ReadonlyArray<PendingThreadLifecycleEntry> {
+  const seenDomains = new Map<PendingThreadLifecycleEntry["command"]["threadId"], number>();
+  const laterSettle = new Set<PendingThreadLifecycleEntry["command"]["threadId"]>();
+  const laterPin = new Set<PendingThreadLifecycleEntry["command"]["threadId"]>();
+  const laterPromotePin = new Set<PendingThreadLifecycleEntry["command"]["threadId"]>();
+  const retainedReversed: PendingThreadLifecycleEntry[] = [];
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry === undefined) continue;
+    const threadId = entry.command.threadId;
+    // Even a settle superseded by a later unsettle already removed every
+    // earlier snooze when the commands were originally appended.
+    if (entry.command.type === "thread.settle") {
+      laterSettle.add(threadId);
+    }
+    if (entry.command.type === "thread.pin" || entry.command.type === "thread.unpin") {
+      laterPin.add(threadId);
+    }
+    if (entry.command.type === "thread.pin") {
+      laterPromotePin.add(threadId);
+    }
+    const domain = threadLifecycleDomain(entry.command.type);
+    const domainBit = threadLifecycleDomainBit(domain);
+    const seen = seenDomains.get(threadId) ?? 0;
+    if ((seen & domainBit) !== 0) {
+      continue;
+    }
+    if (
+      laterSettle.has(threadId) &&
+      (domain === "snooze" || domain === "pin" || domain === "pin-order")
+    ) {
+      continue;
+    }
+    if (laterPromotePin.has(threadId) && domain === "snooze") {
+      continue;
+    }
+    if (domain === "pin-order" && laterPin.has(threadId)) {
+      continue;
+    }
+    seenDomains.set(threadId, seen | domainBit);
+    retainedReversed.push(entry);
+  }
+  retainedReversed.reverse();
+  return retainedReversed;
 }
 
 export function applyPendingThreadLifecycleToThread<
@@ -112,6 +220,7 @@ export function applyPendingThreadLifecycleToThread<
     | "snoozedAt"
     | "pinnedAt"
     | "pinOrderKey"
+    | "activeOrderKey"
     | "updatedAt"
   >,
 >(thread: T, pending: ReadonlyArray<PendingThreadLifecycleEntry>): T {
@@ -135,6 +244,7 @@ function applyQueuedThreadLifecycleCommand<
     | "snoozedAt"
     | "pinnedAt"
     | "pinOrderKey"
+    | "activeOrderKey"
     | "updatedAt"
   >,
 >(thread: T, entry: PendingThreadLifecycleEntry): T {
@@ -171,6 +281,42 @@ function applyQueuedThreadLifecycleCommand<
         snoozedAt: null,
         updatedAt: entry.queuedAt,
       };
+    case "thread.pin": {
+      const alreadyPinned = thread.pinnedAt != null;
+      return {
+        ...thread,
+        pinnedAt: thread.pinnedAt ?? entry.queuedAt,
+        ...(!alreadyPinned && entry.command.orderKey !== undefined
+          ? { pinOrderKey: entry.command.orderKey }
+          : {}),
+        settledOverride:
+          thread.settledOverride === "settled" ? ("active" as const) : thread.settledOverride,
+        settledAt: thread.settledOverride === "settled" ? null : thread.settledAt,
+        snoozedUntil: null,
+        snoozedAt: null,
+        updatedAt: alreadyPinned ? thread.updatedAt : entry.queuedAt,
+      };
+    }
+    case "thread.unpin":
+      return {
+        ...thread,
+        pinnedAt: null,
+        pinOrderKey: null,
+        updatedAt: thread.pinnedAt == null ? thread.updatedAt : entry.queuedAt,
+      };
+    case "thread.pin.reorder":
+      return {
+        ...thread,
+        pinOrderKey: entry.command.orderKey,
+        updatedAt:
+          thread.pinOrderKey === entry.command.orderKey ? thread.updatedAt : entry.queuedAt,
+      };
+    case "thread.active.reorder":
+      // Arranging the list is not thread activity — same as the server decider.
+      return {
+        ...thread,
+        activeOrderKey: entry.command.orderKey,
+      };
   }
 }
 
@@ -181,9 +327,25 @@ export function applyPendingThreadLifecycleToSnapshot(
   if (pending.length === 0) {
     return snapshot;
   }
+  const pendingByThread = new Map<
+    PendingThreadLifecycleEntry["command"]["threadId"],
+    PendingThreadLifecycleEntry[]
+  >();
+  for (const entry of pending) {
+    const entries = pendingByThread.get(entry.command.threadId);
+    if (entries === undefined) {
+      pendingByThread.set(entry.command.threadId, [entry]);
+    } else {
+      entries.push(entry);
+    }
+  }
   let changed = false;
   const threads = snapshot.threads.map((thread) => {
-    const next = applyPendingThreadLifecycleToThread(thread, pending);
+    const threadPending = pendingByThread.get(thread.id);
+    if (threadPending === undefined) {
+      return thread;
+    }
+    const next = applyPendingThreadLifecycleToThread(thread, threadPending);
     if (next !== thread) {
       changed = true;
     }
@@ -210,8 +372,58 @@ export const makeThreadLifecycleOutbox = Effect.fn("ThreadLifecycleOutbox.make")
     EMPTY_THREAD_LIFECYCLE_PENDING,
   );
   const loaded = yield* Effect.sync(() => new Set<EnvironmentId>());
-  const lock = yield* Semaphore.make(1);
-  const drainLock = yield* Semaphore.make(1);
+  const makeEnvironmentLock = Effect.fn("ThreadLifecycleOutbox.makeEnvironmentLock")(function* () {
+    const locks = yield* Ref.make<
+      ReadonlyMap<
+        EnvironmentId,
+        { readonly semaphore: Semaphore.Semaphore; readonly users: number }
+      >
+    >(new Map());
+    const guard = yield* Semaphore.make(1);
+    return <A, E, R>(
+      environmentId: EnvironmentId,
+      effect: Effect.Effect<A, E, R>,
+    ): Effect.Effect<A, E, R> =>
+      Effect.acquireUseRelease(
+        guard.withPermit(
+          Effect.gen(function* () {
+            const current = yield* Ref.get(locks);
+            const existing = current.get(environmentId);
+            if (existing !== undefined) {
+              yield* Ref.set(
+                locks,
+                new Map(current).set(environmentId, { ...existing, users: existing.users + 1 }),
+              );
+              return existing.semaphore;
+            }
+            const semaphore = yield* Semaphore.make(1);
+            yield* Ref.set(locks, new Map(current).set(environmentId, { semaphore, users: 1 }));
+            return semaphore;
+          }),
+        ),
+        (semaphore) => semaphore.withPermit(effect),
+        (semaphore) =>
+          guard.withPermit(
+            Ref.update(locks, (current) => {
+              const existing = current.get(environmentId);
+              if (existing === undefined || existing.semaphore !== semaphore) {
+                return current;
+              }
+              const next = new Map(current);
+              if (existing.users === 1) {
+                next.delete(environmentId);
+              } else {
+                next.set(environmentId, { semaphore, users: existing.users - 1 });
+              }
+              return next;
+            }),
+          ),
+      );
+  });
+  // A slow environment must not prevent persistence mutation or queued command
+  // draining for every other connected environment.
+  const withMutationLock = yield* makeEnvironmentLock();
+  const withDrainLock = yield* makeEnvironmentLock();
 
   const persist = Effect.fn("ThreadLifecycleOutbox.persist")(function* (
     environmentId: EnvironmentId,
@@ -229,41 +441,10 @@ export const makeThreadLifecycleOutbox = Effect.fn("ThreadLifecycleOutbox.make")
     );
   });
 
-  const ensureLoaded = Effect.fn("ThreadLifecycleOutbox.ensureLoaded")(function* (
-    environmentId: EnvironmentId,
-  ) {
-    if (loaded.has(environmentId)) {
-      return;
-    }
-    const stored = yield* store.load(environmentId).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning("Could not load queued thread lifecycle commands.").pipe(
-          Effect.annotateLogs({
-            environmentId,
-            ...safeErrorLogAttributes(error),
-          }),
-          Effect.as<ReadonlyArray<PendingThreadLifecycleEntry>>([]),
-        ),
-      ),
-    );
-    loaded.add(environmentId);
-    if (stored.length === 0) {
-      return;
-    }
-    yield* SubscriptionRef.update(pending, (current) => {
-      if ((current.get(environmentId)?.length ?? 0) > 0) {
-        return current;
-      }
-      const next = new Map(current);
-      next.set(environmentId, stored);
-      return next;
-    });
-  });
-
   const entriesFor = (current: ThreadLifecyclePendingByEnvironment, environmentId: EnvironmentId) =>
     current.get(environmentId) ?? [];
 
-  const setEntries = Effect.fn("ThreadLifecycleOutbox.setEntries")(function* (
+  const updateEntries = Effect.fn("ThreadLifecycleOutbox.updateEntries")(function* (
     environmentId: EnvironmentId,
     entries: ReadonlyArray<PendingThreadLifecycleEntry>,
   ) {
@@ -280,6 +461,50 @@ export const makeThreadLifecycleOutbox = Effect.fn("ThreadLifecycleOutbox.make")
       }
       return next;
     });
+  });
+
+  const ensureLoadedUnlocked = Effect.fn("ThreadLifecycleOutbox.ensureLoadedUnlocked")(function* (
+    environmentId: EnvironmentId,
+  ) {
+    if (loaded.has(environmentId)) {
+      return true;
+    }
+    const stored = yield* store.load(environmentId).pipe(
+      Effect.map(Option.some),
+      Effect.catch((error) =>
+        Effect.logWarning("Could not load queued thread lifecycle commands.").pipe(
+          Effect.annotateLogs({
+            environmentId,
+            ...safeErrorLogAttributes(error),
+          }),
+          Effect.as(Option.none<ReadonlyArray<PendingThreadLifecycleEntry>>()),
+        ),
+      ),
+    );
+    if (Option.isNone(stored)) {
+      return false;
+    }
+    const current = entriesFor(yield* SubscriptionRef.get(pending), environmentId);
+    const merged = coalescePendingThreadLifecycleEntryBatch([...stored.value, ...current]);
+    loaded.add(environmentId);
+    yield* updateEntries(environmentId, merged);
+    if (current.length > 0) {
+      yield* persist(environmentId, merged);
+    }
+    return true;
+  });
+
+  // Loading and the first enqueue must be serialized. Otherwise a watcher can
+  // mark an environment loaded, an enqueue can persist only its new command,
+  // and the watcher's older stored commands are then skipped and lost.
+  const ensureLoaded = (environmentId: EnvironmentId) =>
+    withMutationLock(environmentId, ensureLoadedUnlocked(environmentId));
+
+  const setEntries = Effect.fn("ThreadLifecycleOutbox.setEntries")(function* (
+    environmentId: EnvironmentId,
+    entries: ReadonlyArray<PendingThreadLifecycleEntry>,
+  ) {
+    yield* updateEntries(environmentId, entries);
     yield* persist(environmentId, entries);
   });
 
@@ -292,18 +517,20 @@ export const makeThreadLifecycleOutbox = Effect.fn("ThreadLifecycleOutbox.make")
       return false;
     }
     const queuedAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
-    yield* lock.withPermits(1)(
+    yield* withMutationLock(
+      environmentId,
       Effect.gen(function* () {
-        yield* ensureLoaded(environmentId);
+        const canPersist = yield* ensureLoadedUnlocked(environmentId);
         const current = entriesFor(yield* SubscriptionRef.get(pending), environmentId);
-        yield* setEntries(
+        const next = coalescePendingThreadLifecycleEntries(current, {
           environmentId,
-          coalescePendingThreadLifecycleEntries(current, {
-            environmentId,
-            queuedAt,
-            command: queued,
-          }),
-        );
+          queuedAt,
+          command: queued,
+        });
+        yield* updateEntries(environmentId, next);
+        if (canPersist) {
+          yield* persist(environmentId, next);
+        }
       }),
     );
     return true;
@@ -313,9 +540,12 @@ export const makeThreadLifecycleOutbox = Effect.fn("ThreadLifecycleOutbox.make")
     supervisor: EnvironmentSupervisor["Service"],
   ) {
     const environmentId = supervisor.target.environmentId;
-    yield* drainLock.withPermits(1)(
+    yield* withDrainLock(
+      environmentId,
       Effect.gen(function* () {
-        yield* ensureLoaded(environmentId);
+        if (!(yield* ensureLoaded(environmentId))) {
+          return;
+        }
         const queued = entriesFor(yield* SubscriptionRef.get(pending), environmentId);
         if (queued.length === 0) {
           return;
@@ -357,7 +587,8 @@ export const makeThreadLifecycleOutbox = Effect.fn("ThreadLifecycleOutbox.make")
     environmentId: EnvironmentId,
     commandId: CommandId,
   ) {
-    yield* lock.withPermits(1)(
+    yield* withMutationLock(
+      environmentId,
       Effect.gen(function* () {
         const current = entriesFor(yield* SubscriptionRef.get(pending), environmentId);
         yield* setEntries(
@@ -409,8 +640,7 @@ export function createThreadLifecyclePendingValueAtom<R, E>(
     )
     .pipe(Atom.keepAlive, Atom.withLabel("thread-lifecycle-outbox:pending"));
 
-  return Atom.make(
-    (get): ThreadLifecyclePendingByEnvironment =>
-      Option.getOrElse(AsyncResult.value(get(pendingAtom)), () => EMPTY_THREAD_LIFECYCLE_PENDING),
+  return Atom.make((get): ThreadLifecyclePendingByEnvironment =>
+    Option.getOrElse(AsyncResult.value(get(pendingAtom)), () => EMPTY_THREAD_LIFECYCLE_PENDING),
   ).pipe(Atom.withLabel("thread-lifecycle-outbox:pending-value"));
 }

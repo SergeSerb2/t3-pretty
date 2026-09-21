@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
+import { PROVIDER_SEND_TURN_MAX_FILE_BYTES } from "@t3tools/contracts";
 import {
   clearSharedPayloads,
   getResolvedSharedPayloadsAsync,
@@ -10,13 +11,17 @@ import {
 import React, { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Platform } from "react-native";
 
+import { deleteComposerPreviewFiles, writeComposerPreviewFile } from "../../lib/composerImages";
+
 import {
   buildIncomingShareDraft,
+  isShareFileUriUnderOwnedRoots,
   type IncomingShareDestination,
   type IncomingShareDraft,
 } from "./incoming-share-model";
 import { createIncomingSharePayloadReader } from "./incoming-share-native";
 import { IncomingShareInbox } from "./incoming-share-inbox";
+import { persistComposerAttachmentFile } from "../../lib/composerImages";
 import {
   loadIncomingShareDrafts,
   removeIncomingShareDraft,
@@ -38,6 +43,7 @@ type IncomingShareContextValue = {
 };
 
 const IncomingShareContext = React.createContext<IncomingShareContextValue | null>(null);
+const INCOMING_SHARE_METADATA_TIMEOUT_MS = 10_000;
 
 function receiveSharingEnabled(): boolean {
   if (Platform.OS === "android") {
@@ -54,9 +60,18 @@ const getIncomingSharePayloads = createIncomingSharePayloadReader({
   readPayloads: getSharedPayloads,
 });
 
-async function resolvedPayloadsForImages(): Promise<ReadonlyArray<ResolvedSharePayload>> {
+async function resolvedPayloadsForFiles(): Promise<ReadonlyArray<ResolvedSharePayload>> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
-    return await getResolvedSharedPayloadsAsync();
+    return await Promise.race([
+      getResolvedSharedPayloadsAsync(),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Shared file metadata resolution timed out.")),
+          INCOMING_SHARE_METADATA_TIMEOUT_MS,
+        );
+      }),
+    ]);
   } catch (error) {
     // iOS already gives the containing app a copied file:// URL, so raw
     // payloads remain usable. Android normally resolves content:// into a
@@ -64,6 +79,10 @@ async function resolvedPayloadsForImages(): Promise<ReadonlyArray<ResolvedShareP
     // resolution fails.
     console.warn("[incoming-share] could not resolve shared file metadata", error);
     return [];
+  } finally {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+    }
   }
 }
 
@@ -79,9 +98,25 @@ async function incomingShareIdForPayloads(payloads: ReadonlyArray<SharePayload>)
   return `share-${digest}`;
 }
 
-async function readBase64(uri: string): Promise<string> {
+async function readBase64(uri: string, maxBytes: number): Promise<string | null> {
   const { File } = await import("expo-file-system");
-  return new File(uri).base64();
+  const file = new File(uri);
+  let size: number | null = null;
+  try {
+    size = file.size;
+  } catch {
+    // Some Android content providers allow reads but not metadata access. The
+    // post-read base64 bound remains the fallback for those URIs.
+  }
+  if (size !== null && size > maxBytes) {
+    return null;
+  }
+  return file.base64();
+}
+
+async function readFileSize(uri: string): Promise<number | null> {
+  const { File } = await import("expo-file-system");
+  return new File(uri).size ?? null;
 }
 
 async function removeOwnedFile(uri: string): Promise<void> {
@@ -89,7 +124,19 @@ async function removeOwnedFile(uri: string): Promise<void> {
     return;
   }
   try {
-    const { File } = await import("expo-file-system");
+    const { File, Paths } = await import("expo-file-system");
+    // Only delete files in directories this app owns: its documents and cache
+    // sandbox and its share-extension App Group container. An iOS
+    // open-in-place share points at the sender's own storage; deleting that
+    // URI would destroy the user's document.
+    const ownedRootUris = [
+      Paths.document.uri,
+      Paths.cache.uri,
+      ...Object.values(Paths.appleSharedContainers ?? {}).map((directory) => directory.uri),
+    ];
+    if (!isShareFileUriUnderOwnedRoots(uri, ownedRootUris)) {
+      return;
+    }
     const file = new File(uri);
     if (file.exists) {
       file.delete();
@@ -99,21 +146,23 @@ async function removeOwnedFile(uri: string): Promise<void> {
   }
 }
 
-async function removeReplayedImagePayloadFiles(
-  payloads: ReadonlyArray<SharePayload>,
-): Promise<void> {
+async function removeReplayedPayloadFiles(payloads: ReadonlyArray<SharePayload>): Promise<void> {
   const uris = new Set<string>();
   for (const payload of payloads) {
-    if (payload.shareType === "image") {
+    if (["image", "file", "audio", "video"].includes(payload.shareType)) {
       uris.add(payload.value);
     }
   }
   if (uris.size === 0) {
     return;
   }
-  const resolvedPayloads = await resolvedPayloadsForImages();
+  const resolvedPayloads = payloads.some((payload) =>
+    ["file", "audio", "video"].includes(payload.shareType),
+  )
+    ? []
+    : await resolvedPayloadsForFiles();
   for (const payload of resolvedPayloads) {
-    if (payload.shareType === "image" && payload.contentUri) {
+    if (["image", "file", "audio", "video"].includes(payload.shareType) && payload.contentUri) {
       uris.add(payload.contentUri);
     }
   }
@@ -131,14 +180,37 @@ const incomingShareInbox = new IncomingShareInbox({
   clearPayloads: clearSharedPayloads,
   buildDraft: async ({ payloads, id, createdAt }) => {
     const cleanupUris = new Set<string>();
-    const resolvedPayloads = payloads.some((payload) => payload.shareType === "image")
-      ? await resolvedPayloadsForImages()
-      : [];
+    const previewUris = new Set<string>();
+    const persistedUris = new Set<string>();
+    const hasGenericFilePayload = payloads.some((payload) =>
+      ["file", "audio", "video"].includes(payload.shareType),
+    );
+    const resolvedPayloads =
+      !hasGenericFilePayload && payloads.some((payload) => payload.shareType === "image")
+        ? await resolvedPayloadsForFiles()
+        : [];
     const draft = await buildIncomingShareDraft({
       payloads,
       resolvedPayloads,
       fileReader: {
         readBase64,
+        writePreviewFile: async (input) => {
+          const uri = await writeComposerPreviewFile(input);
+          if (uri !== null) {
+            previewUris.add(uri);
+          }
+          return uri;
+        },
+        persistFile: async (uri, name) => {
+          const persistedUri = await persistComposerAttachmentFile(
+            uri,
+            name,
+            PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+          );
+          persistedUris.add(persistedUri);
+          return persistedUri;
+        },
+        readSize: readFileSize,
         removeOwnedFile: (uri) => {
           cleanupUris.add(uri);
         },
@@ -151,9 +223,15 @@ const incomingShareInbox = new IncomingShareInbox({
       cleanup: async () => {
         await Promise.all([...cleanupUris].map(removeOwnedFile));
       },
+      rollback: async () => {
+        await Promise.all([
+          deleteComposerPreviewFiles([...previewUris]),
+          ...[...persistedUris].map(removeOwnedFile),
+        ]);
+      },
     };
   },
-  cleanupReplayedPayloads: removeReplayedImagePayloadFiles,
+  cleanupReplayedPayloads: removeReplayedPayloadFiles,
   idForPayloads: incomingShareIdForPayloads,
   now: () => new Date().toISOString(),
   onClearError: (error) => {
@@ -170,6 +248,7 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const trailingRefreshRequestedRef = useRef(false);
   const mountedRef = useRef(false);
 
   useEffect(() => {
@@ -181,30 +260,41 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
 
   const refresh = useCallback(async () => {
     if (refreshPromiseRef.current) {
+      trailingRefreshRequestedRef.current = true;
       return refreshPromiseRef.current;
     }
 
     const operation = (async () => {
       try {
-        const snapshot = await incomingShareInbox.refresh({ ingestNative: enabled });
-        if (mountedRef.current) {
-          setDrafts(snapshot);
-          setError(null);
-        }
-      } catch (cause) {
-        const persisted = await incomingShareInbox
-          .refresh({ ingestNative: false })
-          .catch(() => null);
-        if (mountedRef.current) {
-          if (persisted) {
-            setDrafts(persisted);
+        do {
+          trailingRefreshRequestedRef.current = false;
+          try {
+            const snapshot = await incomingShareInbox.refresh({ ingestNative: enabled });
+            if (mountedRef.current) {
+              setDrafts(snapshot);
+              setError(null);
+            }
+          } catch (cause) {
+            const persisted = await incomingShareInbox
+              .refresh({ ingestNative: false })
+              .catch(() => null);
+            if (mountedRef.current) {
+              if (persisted) {
+                setDrafts(persisted);
+              }
+              setError(
+                cause instanceof Error ? cause : new Error("Could not import shared content."),
+              );
+            }
           }
-          setError(cause instanceof Error ? cause : new Error("Could not import shared content."));
-        }
+        } while (trailingRefreshRequestedRef.current);
+      } finally {
+        // This finally runs inside the owning async operation, with no await
+        // between the final trailing check and releasing ownership. A refresh
+        // arriving afterward sees no owner and starts its own pass.
+        refreshPromiseRef.current = null;
       }
-    })().finally(() => {
-      refreshPromiseRef.current = null;
-    });
+    })();
 
     refreshPromiseRef.current = operation;
     return operation;

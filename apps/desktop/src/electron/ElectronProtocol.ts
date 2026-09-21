@@ -3,8 +3,10 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as NodePath from "node:path";
+import * as Option from "effect/Option";
 import * as NodeTimersPromises from "node:timers/promises";
 import * as NodeURL from "node:url";
+import * as Mime from "effect/unstable/http/Mime";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -12,14 +14,14 @@ import * as Scope from "effect/Scope";
 import * as Electron from "electron";
 
 export const DESKTOP_HOST = "app";
-export const DESKTOP_PRODUCTION_SCHEME = "t3code";
-export const DESKTOP_DEVELOPMENT_SCHEME = "t3code-dev";
+const DESKTOP_PRODUCTION_SCHEME = "t3code";
+const DESKTOP_DEVELOPMENT_SCHEME = "t3code-dev";
 
 export function getDesktopScheme(isDevelopment: boolean): string {
   return isDevelopment ? DESKTOP_DEVELOPMENT_SCHEME : DESKTOP_PRODUCTION_SCHEME;
 }
 
-export function getDesktopOrigin(isDevelopment: boolean): string {
+function getDesktopOrigin(isDevelopment: boolean): string {
   return `${getDesktopScheme(isDevelopment)}://${DESKTOP_HOST}`;
 }
 
@@ -27,7 +29,7 @@ export function getDesktopUrl(isDevelopment: boolean): string {
   return `${getDesktopOrigin(isDevelopment)}/`;
 }
 
-export class ElectronProtocolRegistrationError extends Schema.TaggedErrorClass<ElectronProtocolRegistrationError>()(
+export class ElectronProtocolRegistrationError extends Schema.TaggedError<ElectronProtocolRegistrationError>()(
   "ElectronProtocolRegistrationError",
   {
     scheme: Schema.String,
@@ -39,7 +41,7 @@ export class ElectronProtocolRegistrationError extends Schema.TaggedErrorClass<E
   }
 }
 
-export class ElectronProtocolUnregistrationError extends Schema.TaggedErrorClass<ElectronProtocolUnregistrationError>()(
+export class ElectronProtocolUnregistrationError extends Schema.TaggedError<ElectronProtocolUnregistrationError>()(
   "ElectronProtocolUnregistrationError",
   {
     scheme: Schema.String,
@@ -53,8 +55,11 @@ export class ElectronProtocolUnregistrationError extends Schema.TaggedErrorClass
 
 export interface DesktopProtocolRegistrationInput {
   readonly scheme: string;
-  readonly targetOrigin: URL;
-  readonly backendOrigin: URL;
+  // When omitted, API paths are not proxied (no local backend). Packaged
+  // builds with the local environment disabled serve the client from disk
+  // and let the renderer talk to remote environments directly.
+  readonly targetOrigin?: URL;
+  readonly backendOrigin?: URL;
   readonly clerkFrontendApiHostname: string | undefined;
   // Built renderer on disk (apps/server/dist/client). When set, documents and
   // assets are read straight from disk so the window can load before the
@@ -95,10 +100,13 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     `script-src ${scriptSources.join(" ")}`,
     `connect-src ${connectSources.join(" ")}`,
     `img-src 'self' ${input.scheme}: blob: data: http: https:`,
+    `media-src 'self' ${input.scheme}: blob: http: https:`,
     "style-src 'self' 'unsafe-inline'",
     `font-src 'self' ${input.scheme}: data:`,
     "worker-src 'self' blob:",
-    "frame-src 'self' https://challenges.cloudflare.com",
+    // Document viewers use local Blob URLs and signed assets from runtime environments.
+    // HTML viewers retain their own sandbox; the renderer's script policy stays unchanged.
+    "frame-src 'self' blob: http: https:",
     "form-action 'self'",
   ].join("; ");
 }
@@ -209,16 +217,24 @@ async function handleRendererRequest(
     return new Response(null, { status: 404 });
   }
   const isRead = request.method === "GET" || request.method === "HEAD";
-  if (input.clientDistDir === undefined || !isRead || isProxiedRendererPath(requestUrl.pathname)) {
+  const isApiPath = isProxiedRendererPath(requestUrl.pathname);
+  if (
+    input.targetOrigin !== undefined &&
+    (input.clientDistDir === undefined || !isRead || isApiPath)
+  ) {
     return proxyRequest(request, input.targetOrigin, contentSecurityPolicy);
   }
-  return serveClientDistFile(input.clientDistDir, requestUrl.pathname, contentSecurityPolicy);
+  if (input.clientDistDir !== undefined && isRead && !isApiPath) {
+    return serveClientDistFile(input.clientDistDir, requestUrl.pathname, contentSecurityPolicy);
+  }
+  // No backend to proxy to: the disk-served client talks to remotes itself.
+  return new Response(null, { status: 503 });
 }
 
 /**
  * Must run synchronously during process bootstrap, before Electron emits `ready`.
  */
-export function registerDesktopSchemePrivilegesSync(): void {
+function registerDesktopSchemePrivilegesSync(): void {
   Electron.protocol.registerSchemesAsPrivileged([
     {
       scheme: DESKTOP_PRODUCTION_SCHEME,
@@ -228,6 +244,7 @@ export function registerDesktopSchemePrivilegesSync(): void {
         supportFetchAPI: true,
         corsEnabled: true,
         codeCache: true,
+        stream: true,
       },
     },
     {
@@ -238,6 +255,7 @@ export function registerDesktopSchemePrivilegesSync(): void {
         supportFetchAPI: true,
         corsEnabled: true,
         codeCache: true,
+        stream: true,
       },
     },
   ]);
@@ -255,7 +273,7 @@ async function proxyRequest(
   contentSecurityPolicy: string,
 ): Promise<Response> {
   const requestUrl = new URL(request.url);
-  const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, targetOrigin);
+  const targetUrl = resolveProxyTargetUrl(requestUrl, targetOrigin);
   const headers = new Headers(request.headers);
   const headersToRemove: string[] = [];
   for (const name of headers.keys()) {
@@ -278,6 +296,7 @@ async function proxyRequest(
   const init: RequestInit = {
     method: request.method,
     headers,
+    signal: request.signal,
   };
   if (request.method !== "GET" && request.method !== "HEAD") {
     init.body = request.body;
@@ -290,12 +309,24 @@ async function proxyRequest(
   return withContentSecurityPolicy(response, contentSecurityPolicy);
 }
 
+export function resolveProxyTargetUrl(requestUrl: URL, targetOrigin: URL): URL {
+  const targetUrl = new URL(targetOrigin);
+  // Assign URL components rather than resolving a path-shaped string. A
+  // renderer path beginning with `//` is a network-path reference to the URL
+  // constructor and would otherwise replace the configured backend host.
+  targetUrl.pathname = requestUrl.pathname;
+  targetUrl.search = requestUrl.search;
+  targetUrl.hash = "";
+  return targetUrl;
+}
+
 const TRANSIENT_FETCH_RETRY_DELAYS_MS = [0, 50, 150] as const;
 
 async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<Response> {
   let lastError: unknown;
 
   for (const delayMs of TRANSIENT_FETCH_RETRY_DELAYS_MS) {
+    init.signal?.throwIfAborted();
     if (delayMs > 0) {
       await NodeTimersPromises.setTimeout(delayMs);
     }
@@ -303,6 +334,7 @@ async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<
     try {
       return await Electron.net.fetch(url, init);
     } catch (error) {
+      if (init.signal?.aborted) throw error;
       lastError = error;
     }
   }
@@ -310,6 +342,7 @@ async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<
   throw lastError;
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const registered = yield* Ref.make(false);
 
