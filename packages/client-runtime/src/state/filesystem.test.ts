@@ -1,11 +1,34 @@
+import { EnvironmentId } from "@t3tools/contracts";
+import * as Layer from "effect/Layer";
+import { Atom } from "effect/unstable/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
+  createFilesystemEnvironmentAtoms,
+  FILESYSTEM_BROWSE_IDLE_TTL_MS,
   filterFilesystemBrowseEntries,
   getFilesystemBrowsePath,
 } from "./filesystem.ts";
+
+describe("filesystem environment atoms", () => {
+  it("releases superseded browse queries on a typeahead-sized idle window", () => {
+    const runtime = Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+      EnvironmentRegistry,
+      never
+    >;
+    const atoms = createFilesystemEnvironmentAtoms(runtime);
+
+    expect(
+      atoms.browse({
+        environmentId: EnvironmentId.make("environment-1"),
+        input: { partialPath: "/repo/src", cwd: "/repo" },
+      }).idleTTL,
+    ).toBe(FILESYSTEM_BROWSE_IDLE_TTL_MS);
+  });
+});
 
 describe("filesystem browse model", () => {
   it("derives the browse target and navigation state", () => {

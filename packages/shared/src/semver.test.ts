@@ -46,6 +46,23 @@ describe("semver helpers", () => {
     expect(compareSemverVersions("2.1.111-beta.1", "2.1.111")).toBeLessThan(0);
   });
 
+  it("preserves hyphens inside prerelease identifiers", () => {
+    expect(normalizeSemverVersion("2.1.111-beta-feature.2")).toBe("2.1.111-beta-feature.2");
+    expect(parseSemver("2.1.111-beta-feature.2")?.prerelease).toEqual(["beta-feature", "2"]);
+  });
+
+  it("compares arbitrarily long numeric prerelease identifiers without precision loss", () => {
+    expect(
+      compareSemverVersions("2.1.111-beta.9007199254740993", "2.1.111-beta.9007199254740992"),
+    ).toBeGreaterThan(0);
+  });
+
+  it("rejects unsafe main version numbers instead of comparing rounded values", () => {
+    expect(parseSemver("9007199254740992.0.0")).toBeNull();
+    expect(satisfiesSemverRange("9007199254740992.0.0", ">=1.0.0")).toBe(false);
+    expect(satisfiesSemverRange("1.0.0", ">=9007199254740992.0.0")).toBe(false);
+  });
+
   it("falls back to lexical comparison for malformed numeric segments", () => {
     expect(compareSemverVersions("1.2.3abc", "1.2.10")).toBeGreaterThan(0);
   });
@@ -53,6 +70,12 @@ describe("semver helpers", () => {
   it("supports comparison comparators", () => {
     expect(satisfiesSemverRange("24.9.0", ">=24.0 <24.10")).toBe(true);
     expect(satisfiesSemverRange("24.10.0", ">=24.0 <24.10")).toBe(false);
+  });
+
+  it("orders prerelease runtimes below the matching stable range boundary", () => {
+    expect(satisfiesSemverRange("24.10.0-beta.1", ">=24.10.0")).toBe(false);
+    expect(satisfiesSemverRange("24.10.0-beta.1", "<24.10.0")).toBe(true);
+    expect(satisfiesSemverRange("24.10.0-beta.1", "^24.10.0")).toBe(false);
   });
 
   it("honors caret range upper bounds for zero-major versions", () => {

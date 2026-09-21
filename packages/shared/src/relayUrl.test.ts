@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { isSecureRelayUrl, normalizeSecureRelayUrl } from "./relayUrl.ts";
+import {
+  isSecureRelayUrl,
+  normalizeSecureRelayUrl,
+  SECURE_RELAY_URL_MAX_LENGTH,
+} from "./relayUrl.ts";
 
 describe("normalizeSecureRelayUrl", () => {
   it("normalizes secure relay origins", () => {
@@ -22,5 +26,13 @@ describe("normalizeSecureRelayUrl", () => {
   ])("rejects unsafe relay URL %s", (value) => {
     expect(normalizeSecureRelayUrl(value)).toBeNull();
     expect(isSecureRelayUrl(value)).toBe(false);
+  });
+
+  it("rejects oversized relay URLs before parsing them", () => {
+    expect(
+      normalizeSecureRelayUrl(
+        `https://relay.example.test/${"a".repeat(SECURE_RELAY_URL_MAX_LENGTH)}`,
+      ),
+    ).toBeNull();
   });
 });

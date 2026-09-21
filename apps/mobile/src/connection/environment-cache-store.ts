@@ -15,17 +15,24 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as MobileDatabase from "../persistence/mobile-database";
+import { attachProjectFaviconDatabase, projectFaviconCache } from "../lib/projectFaviconCache";
 
 const SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION = 1;
 // v3 adds windowed (paginated) snapshots carrying `page` metadata; the bump
 // makes pre-pagination clients discard the record instead of decoding a
 // partial thread as complete (rollback safety).
-const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 3;
+// v4 reloads pre-thinking caches whose system-role fallback would otherwise
+// survive afterSequence resume and hide settled reasoning messages.
+const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 4;
 // Windowed thread snapshots can exceed 100KB each, so the per-environment
 // thread cache is LRU-bounded: saving past this many rows evicts the oldest.
 export const THREAD_SNAPSHOT_CACHE_MAX_ENTRIES = 25;
 const SERVER_CONFIG_CACHE_SCHEMA_VERSION = 1;
 const VCS_REFS_CACHE_SCHEMA_VERSION = 1;
+// Branch lists can be large and every visited project/worktree has a distinct
+// cache key. Retain a useful offline working set without growing SQLite for the
+// lifetime of an environment.
+export const VCS_REFS_CACHE_MAX_ENTRIES = 50;
 
 const StoredShellSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION),
@@ -118,6 +125,7 @@ function loadDecodedCache<A, B>(input: {
 
 export const make = Effect.fn("MobileEnvironmentCacheStore.make")(function* () {
   const database = yield* MobileDatabase.MobileDatabase;
+  attachProjectFaviconDatabase(database);
   return EnvironmentCacheStore.of({
     loadShell: Effect.fn("MobileEnvironmentCache.loadShell")((environmentId) =>
       loadDecodedCache({
@@ -129,7 +137,7 @@ export const make = Effect.fn("MobileEnvironmentCacheStore.make")(function* () {
         decode: decodeStoredShellSnapshot,
         select: (stored) =>
           stored.environmentId === environmentId ? Option.some(stored.snapshot) : Option.none(),
-      }),
+      }).pipe(Effect.tap(() => Effect.promise(() => projectFaviconCache.hydrate()))),
     ),
     saveShell: Effect.fn("MobileEnvironmentCache.saveShell")(function* (environmentId, snapshot) {
       const payload = yield* encodeStoredShellSnapshot({
@@ -168,15 +176,17 @@ export const make = Effect.fn("MobileEnvironmentCacheStore.make")(function* () {
         .pipe(Effect.mapError(mapDatabaseError("save-thread")));
       // Eviction is housekeeping: a prune failure must not fail the save that
       // already landed, so log and continue.
-      yield* database.pruneThreadCache(environmentId, THREAD_SNAPSHOT_CACHE_MAX_ENTRIES).pipe(
-        Effect.mapError(mapDatabaseError("save-thread")),
-        Effect.catch((error) =>
-          Effect.logWarning("Could not prune the mobile thread cache.", {
-            environmentId,
-            cause: String(error),
-          }),
-        ),
-      );
+      yield* database
+        .pruneCacheKind(environmentId, "thread", THREAD_SNAPSHOT_CACHE_MAX_ENTRIES)
+        .pipe(
+          Effect.mapError(mapDatabaseError("save-thread")),
+          Effect.catch((error) =>
+            Effect.logWarning("Could not prune the mobile thread cache.", {
+              environmentId,
+              cause: String(error),
+            }),
+          ),
+        );
     }),
     removeThread: Effect.fn("MobileEnvironmentCache.removeThread")((environmentId, threadId) =>
       database
@@ -238,6 +248,18 @@ export const make = Effect.fn("MobileEnvironmentCacheStore.make")(function* () {
         yield* database
           .saveCache(environmentId, "vcs-refs", cwd, VCS_REFS_CACHE_SCHEMA_VERSION, payload)
           .pipe(Effect.mapError(mapDatabaseError("save-vcs-refs")));
+        // Like thread snapshots, VCS refs are a best-effort offline cache. A
+        // housekeeping failure must not turn a successful refresh into an
+        // error for the caller.
+        yield* database.pruneCacheKind(environmentId, "vcs-refs", VCS_REFS_CACHE_MAX_ENTRIES).pipe(
+          Effect.mapError(mapDatabaseError("save-vcs-refs")),
+          Effect.catch((error) =>
+            Effect.logWarning("Could not prune the mobile VCS refs cache.", {
+              environmentId,
+              cause: String(error),
+            }),
+          ),
+        );
       },
     ),
     removeVcsRefs: Effect.fn("MobileEnvironmentCache.removeVcsRefs")((environmentId, cwd) =>
@@ -251,9 +273,10 @@ export const make = Effect.fn("MobileEnvironmentCacheStore.make")(function* () {
         .pipe(Effect.mapError(mapDatabaseError("clear-vcs-refs"))),
     ),
     clear: Effect.fn("MobileEnvironmentCache.clear")((environmentId) =>
-      database
-        .clearEnvironmentCache(environmentId)
-        .pipe(Effect.mapError(mapDatabaseError("clear-environment"))),
+      Effect.promise(() => projectFaviconCache.clearEnvironment(environmentId)).pipe(
+        Effect.andThen(database.clearEnvironmentCache(environmentId)),
+        Effect.mapError(mapDatabaseError("clear-environment")),
+      ),
     ),
   });
 });

@@ -36,7 +36,7 @@ const originCliDecodeErrorContext = {
   cause: Schema.Defect(),
 };
 
-export class OriginCliUnavailableError extends Schema.TaggedErrorClass<OriginCliUnavailableError>()(
+export class OriginCliUnavailableError extends Schema.TaggedError<OriginCliUnavailableError>()(
   "OriginCliUnavailableError",
   originCliExecutionErrorContext,
 ) {
@@ -49,7 +49,7 @@ export class OriginCliUnavailableError extends Schema.TaggedErrorClass<OriginCli
   }
 }
 
-export class OriginCliAuthenticationError extends Schema.TaggedErrorClass<OriginCliAuthenticationError>()(
+export class OriginCliAuthenticationError extends Schema.TaggedError<OriginCliAuthenticationError>()(
   "OriginCliAuthenticationError",
   originCliExecutionErrorContext,
 ) {
@@ -62,7 +62,7 @@ export class OriginCliAuthenticationError extends Schema.TaggedErrorClass<Origin
   }
 }
 
-export class OriginCliRateLimitError extends Schema.TaggedErrorClass<OriginCliRateLimitError>()(
+export class OriginCliRateLimitError extends Schema.TaggedError<OriginCliRateLimitError>()(
   "OriginCliRateLimitError",
   originCliExecutionErrorContext,
 ) {
@@ -75,7 +75,7 @@ export class OriginCliRateLimitError extends Schema.TaggedErrorClass<OriginCliRa
   }
 }
 
-export class OriginPullRequestNotFoundError extends Schema.TaggedErrorClass<OriginPullRequestNotFoundError>()(
+export class OriginPullRequestNotFoundError extends Schema.TaggedError<OriginPullRequestNotFoundError>()(
   "OriginPullRequestNotFoundError",
   {
     ...originCliExecutionErrorContext,
@@ -114,7 +114,7 @@ export class OriginPullRequestNotFoundError extends Schema.TaggedErrorClass<Orig
   }
 }
 
-export class OriginCliCommandError extends Schema.TaggedErrorClass<OriginCliCommandError>()(
+export class OriginCliCommandError extends Schema.TaggedError<OriginCliCommandError>()(
   "OriginCliCommandError",
   originCliExecutionErrorContext,
 ) {
@@ -159,7 +159,7 @@ export class OriginCliCommandError extends Schema.TaggedErrorClass<OriginCliComm
   }
 }
 
-export class OriginPullRequestListDecodeError extends Schema.TaggedErrorClass<OriginPullRequestListDecodeError>()(
+export class OriginPullRequestListDecodeError extends Schema.TaggedError<OriginPullRequestListDecodeError>()(
   "OriginPullRequestListDecodeError",
   {
     ...originCliDecodeErrorContext,
@@ -175,7 +175,7 @@ export class OriginPullRequestListDecodeError extends Schema.TaggedErrorClass<Or
   }
 }
 
-export class OriginPullRequestDecodeError extends Schema.TaggedErrorClass<OriginPullRequestDecodeError>()(
+export class OriginPullRequestDecodeError extends Schema.TaggedError<OriginPullRequestDecodeError>()(
   "OriginPullRequestDecodeError",
   {
     ...originCliDecodeErrorContext,
@@ -192,7 +192,7 @@ export class OriginPullRequestDecodeError extends Schema.TaggedErrorClass<Origin
   }
 }
 
-export class OriginRepositoryDecodeError extends Schema.TaggedErrorClass<OriginRepositoryDecodeError>()(
+export class OriginRepositoryDecodeError extends Schema.TaggedError<OriginRepositoryDecodeError>()(
   "OriginRepositoryDecodeError",
   {
     ...originCliDecodeErrorContext,

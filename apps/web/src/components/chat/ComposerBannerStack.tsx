@@ -1,9 +1,18 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { XIcon } from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { InfoIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
+import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { ComposerBanner, type ComposerBannerVariant } from "./ComposerBanner";
 
 const DISMISS_TRANSITION_MS = 220;
 const frontExitStyle = {
@@ -35,10 +44,12 @@ const stackCapBorderClass: Record<ComposerBannerStackItem["variant"], string> = 
 
 export interface ComposerBannerStackItem {
   readonly id: string;
-  readonly variant: "default" | "error" | "info" | "success" | "warning";
+  readonly variant: ComposerBannerVariant;
   // Ordering hint for stack assemblers: front this banner even though its
   // variant is calm (e.g. live update progress). The stack itself ignores it.
   readonly urgent?: boolean;
+  readonly priority?: number | string;
+  readonly compact?: boolean;
   readonly icon: ReactNode;
   readonly title: ReactNode;
   readonly description?: ReactNode;
@@ -132,6 +143,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
           />
         ) : null}
         <div
+          key={frontItem.id}
           className={cn(
             "relative z-10",
             exitingItemId === frontItem.id ? "pointer-events-none" : null,
@@ -191,6 +203,82 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
   );
 }
 
+/** Keep full descriptions reachable only when their inline copy is clipped. */
+function NoticeDescription({ children, compact }: { children: ReactNode; compact?: boolean }) {
+  const descriptionRef = useRef<HTMLSpanElement>(null);
+  const detailsRef = useRef<HTMLButtonElement>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  useLayoutEffect(() => {
+    const description = descriptionRef.current;
+    if (!description) return;
+    const measure = () => {
+      // Ignore the space taken by the details button itself so it cannot
+      // sustain its own overflow after the description would otherwise fit.
+      const recoveredWidth = detailsRef.current ? detailsRef.current.offsetWidth + 4 : 0;
+      const hidden = getComputedStyle(description).position === "absolute";
+      setShowDetails(
+        hidden ||
+          [description, ...description.querySelectorAll("*")].some(
+            (element) => element.scrollWidth > element.clientWidth + recoveredWidth,
+          ),
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(description);
+    // A child can reveal new text without resizing its clipped box.
+    const mutations = new MutationObserver(measure);
+    mutations.observe(description, { childList: true, subtree: true, characterData: true });
+    return () => {
+      observer.disconnect();
+      mutations.disconnect();
+    };
+  }, []);
+
+  return (
+    <span className={compact ? "contents" : "flex min-w-8 flex-1 items-center gap-1"}>
+      <span
+        ref={descriptionRef}
+        className={cn(
+          "min-w-0 truncate text-muted-foreground",
+          compact && "shrink-[9999] @max-[400px]:sr-only",
+        )}
+      >
+        {children}
+      </span>
+      {showDetails ? (
+        <Popover>
+          <PopoverTrigger
+            openOnHover
+            render={
+              <Button
+                ref={detailsRef}
+                size="icon-xs"
+                variant="ghost-muted"
+                aria-label="Show notice details"
+                className="flex-none"
+              />
+            }
+          >
+            <InfoIcon />
+          </PopoverTrigger>
+          <PopoverPopup
+            aria-label="Notice details"
+            tooltipStyle
+            side="top"
+            className="max-w-80 whitespace-normal text-pretty wrap-anywhere"
+          >
+            <ComposerBanner.Scroll className="max-h-[min(var(--available-height),24rem,40dvh)]">
+              {children}
+            </ComposerBanner.Scroll>
+          </PopoverPopup>
+        </Popover>
+      ) : null}
+    </span>
+  );
+}
+
 function ComposerBannerStackAlert({
   item,
   attached,
@@ -215,32 +303,38 @@ function ComposerBannerStackAlert({
       )}
       data-variant={item.variant}
     >
-      {item.icon}
-      <AlertTitle>{item.title}</AlertTitle>
-      {item.description ? <AlertDescription>{item.description}</AlertDescription> : null}
-      {item.actions || item.onDismiss ? (
-        <AlertAction
-          className={cn(
-            item.actionClassName,
-            dismissOnly
-              ? "max-sm:col-start-3 max-sm:row-start-1 max-sm:mt-0 max-sm:self-start"
-              : undefined,
-          )}
-        >
-          {item.actions}
-          {item.onDismiss ? (
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label={item.dismissLabel ?? "Dismiss warning"}
-              disabled={exiting}
-              onClick={onDismissRequest}
-            >
-              <XIcon className="size-3.5" />
-            </Button>
+      <ComposerBanner.Row layout={item.compact ? "wrap-actions-narrow" : "wrap-actions"}>
+        <ComposerBanner.Icon className="h-(--composer-banner-icon-column) self-start">
+          {item.icon}
+        </ComposerBanner.Icon>
+        <ComposerBanner.Content className="whitespace-nowrap">
+          <span className="min-w-0 truncate font-medium leading-7 sm:leading-6">{item.title}</span>
+          {item.description ? (
+            <NoticeDescription compact={item.compact ?? false}>
+              {item.description}
+            </NoticeDescription>
           ) : null}
-        </AlertAction>
-      ) : null}
+        </ComposerBanner.Content>
+        {item.actions || item.onDismiss ? (
+          <ComposerBanner.Actions
+            className={cn(
+              item.actionClassName,
+              dismissOnly
+                ? "max-sm:col-start-3 max-sm:row-start-1 max-sm:mt-0 max-sm:self-start"
+                : undefined,
+            )}
+          >
+            {item.actions}
+            {item.onDismiss ? (
+              <ComposerBanner.Dismiss
+                aria-label={item.dismissLabel ?? "Dismiss warning"}
+                disabled={exiting}
+                onClick={onDismissRequest}
+              />
+            ) : null}
+          </ComposerBanner.Actions>
+        ) : null}
+      </ComposerBanner.Row>
     </Alert>
   );
 }
