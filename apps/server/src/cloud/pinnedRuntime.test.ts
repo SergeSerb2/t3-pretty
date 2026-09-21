@@ -417,14 +417,23 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-tarball-" });
       const requests: string[] = [];
       const commands: string[] = [];
+      const npmPackages: string[] = [];
       const tarballUrl = forkCliTarballUrl(version, "internal");
       const runner = ProcessRunner.ProcessRunner.of({
         run: (input) =>
           Effect.gen(function* () {
             commands.push(input.command);
             const prefix = input.args[input.args.indexOf("--prefix") + 1];
-            if (input.command !== "npm" || prefix === undefined) {
+            const packageArg = input.args.at(-1);
+            if (input.command !== "npm" || prefix === undefined || packageArg === undefined) {
               return yield* Effect.die(`unexpected command ${input.command}`);
+            }
+            npmPackages.push(packageArg);
+            if (
+              path.basename(packageArg) !== `t3-${version}.tgz` ||
+              !(yield* fs.exists(packageArg).pipe(Effect.orDie))
+            ) {
+              return yield* Effect.die(`npm was given ${packageArg}`);
             }
             const binDir = path.join(prefix, "node_modules", ".bin");
             yield* fs.makeDirectory(binDir, { recursive: true }).pipe(Effect.orDie);
@@ -468,6 +477,8 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       assert.equal(paths.entryPath, path.join(paths.versionDir, "t3"));
       assert.deepEqual(requests, [`${tarballUrl}.sha256`, tarballUrl]);
       assert.deepEqual(commands, ["npm"]);
+      assert.equal(npmPackages.length, 1);
+      assert.equal(path.basename(npmPackages[0] ?? ""), `t3-${version}.tgz`);
       assert.equal(yield* fs.readLink(paths.entryPath), path.join("node_modules", ".bin", "t3"));
       assert.equal(yield* fs.readFileString(paths.sentinelPath), `${version}\n`);
     }),

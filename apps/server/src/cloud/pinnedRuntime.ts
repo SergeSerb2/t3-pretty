@@ -325,7 +325,11 @@ const installFromForkCliTarball = Effect.fn("cloud.pinned_runtime.install_cli_ta
       step: "verifying the t3 CLI tarball checksum",
     });
   }
-  const archivePath = path.join(stagingDir, PINNED_RUNTIME_ARCHIVE_FILE);
+  // npm installs a local path as a package directory unless the name ends
+  // in .tgz or .tar.gz. The release-archive file stays extensionless because
+  // tar identifies gzip without one.
+  const npmTarballName = /\.(?:tgz|tar\.gz)$/i.test(fileName) ? fileName : `${fileName}.tgz`;
+  const archivePath = path.join(stagingDir, npmTarballName);
   yield* fs
     .writeFile(archivePath, archive)
     .pipe(
