@@ -12,6 +12,7 @@ import {
   startMacDictation,
   type MacDictationSession,
 } from "../../dictation/MacDictation.ts";
+import { ensureMacMicrophoneAccess } from "../../dictation/MacMicrophoneAccess.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import * as IpcChannels from "../channels.ts";
 
@@ -82,6 +83,30 @@ export const startDictation = DesktopIpc.makeIpcMethod({
     if (helperPath === undefined) {
       return yield* new DesktopDictationError({
         message: "macOS speech recognition is not available in this desktop build.",
+      });
+    }
+    // macOS shows the microphone dialog for this app only when this process asks.
+    // The helper then records with that grant.
+    const microphoneAccess = yield* Effect.tryPromise({
+      try: () =>
+        ensureMacMicrophoneAccess({
+          getStatus: () => Electron.systemPreferences.getMediaAccessStatus("microphone"),
+          ask: () => Electron.systemPreferences.askForMediaAccess("microphone"),
+        }),
+      catch: (cause) =>
+        new DesktopDictationError({
+          message:
+            cause instanceof Error && cause.message.trim()
+              ? cause.message
+              : "Could not request microphone access.",
+        }),
+    });
+    if (microphoneAccess !== "granted") {
+      return yield* new DesktopDictationError({
+        message:
+          microphoneAccess === "restricted"
+            ? "Microphone access is restricted on this Mac."
+            : "Microphone access was denied. Allow T3 Pretty in System Settings → Privacy & Security → Microphone.",
       });
     }
     const app = yield* ElectronApp.ElectronApp;

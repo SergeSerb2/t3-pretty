@@ -47,6 +47,7 @@ import {
   preflightLinuxDesktopBuild,
   preflightMacDesktopBuild,
   preflightWindowsDesktopBuild,
+  renderMacDictationEntitlements,
   renderMacPasskeyEntitlements,
   resolveClerkPasskeyNativeArtifacts,
   resolveMacPasskeySigningConfiguration,
@@ -2093,6 +2094,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       renderMacPasskeyEntitlements({ ...configuration, appId: "com.sergeserb.t3pretty" }),
       "com.apple.security.device.audio-input",
     );
+    const dictationEntitlements = renderMacDictationEntitlements();
+    assert.include(dictationEntitlements, "<key>com.apple.security.device.audio-input</key>");
+    assert.notInclude(dictationEntitlements, "com.apple.developer.associated-domains");
   });
 
   it("rejects incomplete macOS passkey signing configuration", () => {
@@ -2197,6 +2201,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(mac.target, ["dmg", "zip"]);
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
+      assert.equal(mac.entitlementsInherit, undefined);
       assert.match(
         String((mac.extendInfo as Record<string, unknown>).NSMicrophoneUsageDescription),
         /dictate messages/,
@@ -2209,6 +2214,33 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(mac.protocols, [
         { name: "T3 Pretty Internal", schemes: ["t3code", "t3code-dev"] },
       ]);
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
+  it.effect("signs internal macOS builds for microphone access without a passkey profile", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3-nightly.20260918.1",
+        true,
+        false,
+        undefined,
+        {
+          entitlementsPath: "/tmp/entitlements.mac.inherit.plist",
+          entitlementsInheritPath: "/tmp/entitlements.mac.inherit.plist",
+        },
+        "internal",
+      );
+
+      const mac = config.mac as Record<string, unknown>;
+      assert.equal(mac.entitlements, "/tmp/entitlements.mac.inherit.plist");
+      assert.equal(mac.entitlementsInherit, "/tmp/entitlements.mac.inherit.plist");
+      assert.equal(mac.provisioningProfile, undefined);
+      assert.match(
+        String((mac.extendInfo as Record<string, unknown>).NSMicrophoneUsageDescription),
+        /dictate messages/,
+      );
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 

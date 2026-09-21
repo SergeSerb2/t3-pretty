@@ -125,66 +125,103 @@ func parseLocale() -> String {
   return Locale.current.identifier
 }
 
-func requestSpeechAuthorization() -> SFSpeechRecognizerAuthorizationStatus {
-  let semaphore = DispatchSemaphore(value: 0)
-  var status = SFSpeechRecognizer.authorizationStatus()
-  if status != .notDetermined {
-    return status
-  }
-  SFSpeechRecognizer.requestAuthorization { next in
-    status = next
-    semaphore.signal()
-  }
-  semaphore.wait()
-  return status
-}
+var session: DictationSession?
+var pendingCommand: String?
 
-func requestMicrophoneAccess() -> Bool {
-  let semaphore = DispatchSemaphore(value: 0)
-  var granted = false
-  if #available(macOS 14.0, *) {
-    AVAudioApplication.requestRecordPermission { allowed in
-      granted = allowed
-      semaphore.signal()
-    }
+func stopActiveSession(command: String) {
+  guard let session else {
+    // Permission prompts are still in flight. Remember the command and leave
+    // before the microphone starts, once those prompts settle.
+    pendingCommand = command
+    return
+  }
+  if command == "cancel" {
+    session.cancel()
   } else {
-    AVCaptureDevice.requestAccess(for: .audio) { allowed in
-      granted = allowed
-      semaphore.signal()
+    session.stop()
+  }
+}
+
+func abortIfStoppedBeforeStart() {
+  guard pendingCommand != nil else { return }
+  emit(["type": "error", "message": "Dictation stopped before recording started."])
+  emit(["type": "ended"])
+  exit(0)
+}
+
+func requestSpeechAuthorization(
+  _ completion: @escaping (SFSpeechRecognizerAuthorizationStatus) -> Void
+) {
+  let status = SFSpeechRecognizer.authorizationStatus()
+  if status != .notDetermined {
+    completion(status)
+    return
+  }
+  // The completion can arrive on any queue. Hop to the main run loop so the
+  // system speech-recognition dialog can be presented and answered.
+  SFSpeechRecognizer.requestAuthorization { next in
+    DispatchQueue.main.async {
+      completion(next)
     }
   }
-  semaphore.wait()
-  return granted
 }
 
-switch requestSpeechAuthorization() {
-case .authorized:
-  break
-case .denied:
-  failAndExit(
-    "Speech recognition was denied. Allow T3 Pretty in System Settings → Privacy & Security → Speech Recognition."
-  )
-case .restricted:
-  failAndExit("Speech recognition is restricted on this Mac.")
-case .notDetermined:
-  failAndExit("Speech recognition permission was not granted.")
-@unknown default:
-  failAndExit("Speech recognition is unavailable.")
+func requestMicrophoneAccess(_ completion: @escaping (Bool) -> Void) {
+  switch AVCaptureDevice.authorizationStatus(for: .audio) {
+  case .authorized:
+    completion(true)
+  case .denied, .restricted:
+    completion(false)
+  case .notDetermined:
+    // AVAudioApplication.requestRecordPermission does not present a dialog for
+    // this helper. AVCaptureDevice.requestAccess is the prompt macOS shows.
+    AVCaptureDevice.requestAccess(for: .audio) { granted in
+      DispatchQueue.main.async {
+        completion(granted)
+      }
+    }
+  @unknown default:
+    completion(false)
+  }
 }
 
-if !requestMicrophoneAccess() {
-  failAndExit(
-    "Microphone access was denied. Allow T3 Pretty in System Settings → Privacy & Security → Microphone."
-  )
-}
+func beginDictation() {
+  requestSpeechAuthorization { status in
+    abortIfStoppedBeforeStart()
+    switch status {
+    case .authorized:
+      break
+    case .denied:
+      failAndExit(
+        "Speech recognition was denied. Allow T3 Pretty in System Settings → Privacy & Security → Speech Recognition."
+      )
+    case .restricted:
+      failAndExit("Speech recognition is restricted on this Mac.")
+    case .notDetermined:
+      failAndExit("Speech recognition permission was not granted.")
+    @unknown default:
+      failAndExit("Speech recognition is unavailable.")
+    }
 
-let session = DictationSession(localeIdentifier: parseLocale())
+    requestMicrophoneAccess { granted in
+      abortIfStoppedBeforeStart()
+      if !granted {
+        failAndExit(
+          "Microphone access was denied. Allow T3 Pretty in System Settings → Privacy & Security → Microphone."
+        )
+      }
+      let created = DictationSession(localeIdentifier: parseLocale())
+      session = created
+      created.start()
+    }
+  }
+}
 
 let stdin = FileHandle.standardInput
 stdin.readabilityHandler = { handle in
   let data = handle.availableData
   if data.isEmpty {
-    DispatchQueue.main.async { session.stop() }
+    DispatchQueue.main.async { stopActiveSession(command: "stop") }
     return
   }
   guard let text = String(data: data, encoding: .utf8) else { return }
@@ -195,14 +232,10 @@ stdin.readabilityHandler = { handle in
           let command = json["cmd"] as? String
     else { continue }
     DispatchQueue.main.async {
-      if command == "cancel" {
-        session.cancel()
-      } else {
-        session.stop()
-      }
+      stopActiveSession(command: command)
     }
   }
 }
 
-DispatchQueue.main.async { session.start() }
+DispatchQueue.main.async { beginDictation() }
 RunLoop.main.run()

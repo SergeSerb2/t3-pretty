@@ -2,8 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
   <dict>
-    <key>CFBundleIdentifier</key>
-    <string>com.sergeserb.t3code.dictation-helper</string>
+    <!-- Microphone and speech consent belong to the desktop app that spawns this helper. -->
     <key>CFBundleName</key>
     <string>T3 Pretty Dictation</string>
     <key>CFBundleVersion</key>
