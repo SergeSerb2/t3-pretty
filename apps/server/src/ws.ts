@@ -3801,6 +3801,7 @@ const makeWsRpcLayer = (
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+    const secretRequestBroker = yield* SecretRequestBroker.SecretRequestBroker;
     const baseServerSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const config = yield* ServerConfig.ServerConfig;
     const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
@@ -3873,6 +3874,11 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               Layer.provide(AgentSessionScanner.layer),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
+              // Captured at layer build like the preview broker: the per-connection RPC layer
+              // does not see makeRoutesLayer's services, so a request-time lookup fails the upgrade.
+              Layer.provide(
+                Layer.succeed(SecretRequestBroker.SecretRequestBroker, secretRequestBroker),
+              ),
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),

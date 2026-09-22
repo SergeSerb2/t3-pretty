@@ -121,6 +121,7 @@ import * as GitManager from "./git/GitManager.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as Keybindings from "./keybindings.ts";
+import * as HomeSuggestions from "./homeSuggestions/HomeSuggestionsService.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
@@ -781,6 +782,17 @@ const buildAppUnderTest = (options?: {
             current: Effect.succeed([]),
             streamChanges: Stream.empty,
             ...options?.layers?.environmentTheme,
+          }),
+          Layer.mock(HomeSuggestions.HomeSuggestionsService)({
+            current: Effect.succeed({
+              status: "idle",
+              generatedAt: null,
+              nextRunAt: null,
+              timeZone: "UTC",
+              error: null,
+              suggestions: [],
+            }),
+            streamChanges: Stream.empty,
           }),
           Layer.mock(UsageLimitSources.UsageLimitSources)({
             current: Effect.succeed([]),
