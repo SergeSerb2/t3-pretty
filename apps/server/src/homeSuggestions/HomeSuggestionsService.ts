@@ -34,13 +34,13 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
-import * as Result from "effect/Result";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
@@ -213,7 +213,10 @@ export const make = Effect.gen(function* () {
     yield* publish((snapshot) => ({ ...snapshot, status: "generating", error: null }));
     yield* Effect.logInfo("home suggestions generating", { reason });
 
-    const result = yield* Effect.gen(function* () {
+    // `exit`, not `result`: a defect (a failing id generator, a projection
+    // bug) must still land on `failed`, or the status stays `generating` and
+    // every later tick and refresh refuses to enqueue.
+    const exit = yield* Effect.gen(function* () {
       const { projects, threads } = yield* readDigestThreads();
       if (projects.length === 0) {
         return [] as ReadonlyArray<HomeSuggestion>;
@@ -234,13 +237,16 @@ export const make = Effect.gen(function* () {
         projectsByKey: digest.projectsByKey,
         makeId: (index) => `${batchId}:${index}`,
       });
-    }).pipe(Effect.result);
+    }).pipe(Effect.exit);
 
     // The due time always moves past this attempt, so a failing provider is
     // retried tomorrow (or by hand), not every minute.
     const generatedAt = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
-    if (Result.isFailure(result)) {
-      const failure = result.failure;
+    if (Exit.isFailure(exit)) {
+      if (Cause.hasInterruptsOnly(exit.cause)) {
+        return yield* Effect.interrupt;
+      }
+      const failure = Cause.squash(exit.cause);
       const error = failure instanceof Error ? failure.message : String(failure);
       yield* Effect.logWarning("home suggestions generation failed", { reason, error });
       const state = yield* Ref.updateAndGet(stored, (previous) => ({ ...previous, generatedAt }));
@@ -253,7 +259,7 @@ export const make = Effect.gen(function* () {
       }));
       return;
     }
-    const suggestions = result.success;
+    const suggestions = exit.value;
     const state = yield* Ref.updateAndGet(stored, (previous) => ({
       generatedAt,
       suggestions,

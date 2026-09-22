@@ -329,6 +329,32 @@ describe("HomeSuggestionsService", () => {
     ),
   );
 
+  it.effect("a defect during generation still lands on failed and unblocks refresh", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        let calls = 0;
+        const harness = yield* makeHarness(baseDir, {
+          generate: () =>
+            ++calls === 1
+              ? Effect.die(new Error("boom"))
+              : Effect.succeed({ suggestions: generatedCards }),
+        });
+        const snapshot = yield* withService(harness, (service) =>
+          Effect.gen(function* () {
+            const afterDefect = yield* service.current;
+            assert.strictEqual(afterDefect.status, "failed");
+            assert.include(afterDefect.error ?? "", "boom");
+            yield* service.refresh;
+            yield* service.drain;
+            return yield* service.current;
+          }),
+        );
+        assert.strictEqual(snapshot.status, "ready");
+        assert.deepStrictEqual(titles(snapshot), ["Finish the home screen", "Build a CLI timer"]);
+      }),
+    ),
+  );
+
   it.effect("dismiss removes a card, survives a restart, and feeds the avoid-list", () =>
     run((baseDir) =>
       Effect.gen(function* () {

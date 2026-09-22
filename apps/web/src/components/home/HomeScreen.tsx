@@ -199,6 +199,7 @@ function EnvironmentSuggestions({
 }) {
   const result = useAtomValue(homeSuggestionsEnvironment.snapshot({ environmentId, input: {} }));
   const snapshot = Option.getOrNull(AsyncResult.value(result));
+  const subscriptionFailed = AsyncResult.isFailure(result) && snapshot === null;
   const refresh = useAtomCommand(homeSuggestionsEnvironment.refresh, { reportFailure: false });
   const dismiss = useAtomCommand(homeSuggestionsEnvironment.dismiss, { reportFailure: false });
   const handleNewThread = useNewThreadHandler();
@@ -267,7 +268,7 @@ function EnvironmentSuggestions({
       <SectionHeading
         title={label ? `Suggestions · ${label}` : "Suggestions"}
         icon={SparklesIcon}
-        description={describeSnapshot(snapshot, enabled)}
+        description={describeSnapshot(snapshot, enabled, subscriptionFailed)}
         action={
           <div className="flex items-center gap-1.5">
             <Button
@@ -290,7 +291,11 @@ function EnvironmentSuggestions({
           </div>
         }
       />
-      {snapshot === null ? (
+      {subscriptionFailed ? (
+        <div className="rounded-2xl border border-dashed border-border/70 px-6 py-10 text-center text-sm text-muted-foreground/78">
+          Suggestions could not be loaded from this environment. Check the connection, then refresh.
+        </div>
+      ) : snapshot === null ? (
         <CardGrid>
           {Array.from({ length: 3 }, (_, index) => (
             <Skeleton key={index} className="min-h-40 rounded-2xl" />
@@ -373,8 +378,13 @@ function EnvironmentSuggestions({
   );
 }
 
-function describeSnapshot(snapshot: HomeSuggestionsSnapshot | null, enabled: boolean): string {
+function describeSnapshot(
+  snapshot: HomeSuggestionsSnapshot | null,
+  enabled: boolean,
+  failed: boolean,
+): string {
   if (!enabled) return "Daily suggestions are off. Turn them on in Settings → General.";
+  if (failed) return "Unavailable";
   if (snapshot === null) return "Loading…";
   const parts: string[] = [];
   if (snapshot.status === "generating") parts.push("Generating a fresh batch");
@@ -391,15 +401,22 @@ function describeSnapshot(snapshot: HomeSuggestionsSnapshot | null, enabled: boo
 }
 
 function formatNextRun(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "soon";
-  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  const today = new Date();
-  const sameDay =
-    date.getFullYear() === today.getFullYear() &&
-    date.getMonth() === today.getMonth() &&
-    date.getDate() === today.getDate();
-  return sameDay ? `today at ${time}` : `tomorrow at ${time}`;
+  const runMs = Date.parse(iso);
+  if (Number.isNaN(runMs)) return "soon";
+  const now = new Date();
+  if (runMs <= now.getTime()) return "any moment now";
+  const run = new Date(runMs);
+  const time = run.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayOffset = Math.floor((runMs - startOfToday) / 86_400_000);
+  if (dayOffset === 0) return `today at ${time}`;
+  if (dayOffset === 1) return `tomorrow at ${time}`;
+  const day = run.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  return `${day} at ${time}`;
 }
 
 function EmptySuggestions({
