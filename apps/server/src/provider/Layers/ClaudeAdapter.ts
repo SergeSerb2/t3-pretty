@@ -4441,9 +4441,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const sessionId = existingResumeSessionId ?? newSessionId;
       if (input.nativeSessionId === undefined && resumeState?.resume !== undefined) {
         // The thread may have last run under another Claude account.
-        yield* importClaudeSessionTranscript({
+        const sourceConfigDir = resumeState.configDir ?? defaultClaudeConfigDir;
+        const imported = yield* importClaudeSessionTranscript({
           sessionId: resumeState.resume,
-          sourceConfigDir: resumeState.configDir ?? defaultClaudeConfigDir,
+          sourceConfigDir,
           targetConfigDir: claudeConfigDir,
         }).pipe(
           Effect.provideService(FileSystem.FileSystem, fileSystem),
@@ -4451,12 +4452,25 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           Effect.catch((cause) =>
             Effect.logWarning("claude.session.transcript-import-failed", {
               threadId: input.threadId,
-              sourceConfigDir: resumeState.configDir ?? defaultClaudeConfigDir,
+              sourceConfigDir,
               targetConfigDir: claudeConfigDir,
               cause,
-            }),
+            }).pipe(Effect.as(false)),
           ),
         );
+        // Legacy cursors only guess the source, so a miss there is expected.
+        if (
+          !imported &&
+          resumeState.configDir !== undefined &&
+          path.resolve(resumeState.configDir) !== claudeConfigDir
+        ) {
+          yield* Effect.logWarning("claude.session.transcript-missing", {
+            threadId: input.threadId,
+            sessionId: resumeState.resume,
+            sourceConfigDir,
+            targetConfigDir: claudeConfigDir,
+          });
+        }
       }
 
       const runtimeContext = yield* Effect.context<never>();
