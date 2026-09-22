@@ -76,6 +76,7 @@ export interface SettingsSearchItem {
   readonly primaryOnly?: boolean;
   // Its row only renders when the primary server exposes automations.
   readonly requiresAutomations?: boolean;
+  readonly requiresHomeSuggestions?: boolean;
 }
 
 export interface SettingsSearchAvailability {
@@ -87,6 +88,7 @@ export interface SettingsSearchAvailability {
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
   readonly hasAutomations: boolean;
+  readonly hasHomeSuggestions?: boolean;
 }
 
 /**
@@ -541,6 +543,34 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Live activity headlines",
     to: "/settings/general",
     searchTerms: ["rewrite tool call human readable status line generated headline"],
+  },
+  {
+    id: "home-suggestions-enabled",
+    title: "Daily home suggestions",
+    to: "/settings/general",
+    searchTerms: ["home screen prompt cards ideas daily suggestions auto prompts"],
+    requiresHomeSuggestions: true,
+  },
+  {
+    id: "home-suggestions-model",
+    title: "Home suggestions model",
+    to: "/settings/general",
+    searchTerms: ["home screen suggestion model astra reasoning cards"],
+    requiresHomeSuggestions: true,
+  },
+  {
+    id: "home-suggestions-time",
+    title: "Home suggestions time",
+    to: "/settings/general",
+    searchTerms: ["home screen suggestions schedule daily time 9am"],
+    requiresHomeSuggestions: true,
+  },
+  {
+    id: "home-suggestions-generate",
+    title: "Generate suggestions now",
+    to: "/settings/general",
+    searchTerms: ["home screen suggestions refresh regenerate now"],
+    requiresHomeSuggestions: true,
   },
   {
     id: "diagnostics",
@@ -1060,6 +1090,46 @@ interface AutoSettlementSearchEnvironment {
   } | null;
 }
 
+interface HomeSuggestionsSearchEnvironment {
+  readonly environmentId: EnvironmentId;
+  readonly connection: { readonly phase: EnvironmentConnectionPhase };
+  readonly serverConfig: {
+    readonly environment: {
+      readonly capabilities: { readonly homeSuggestions?: boolean };
+    };
+  } | null;
+}
+
+/**
+ * Discovery and the selected page both need one capable host. Mixed fleets
+ * still show Home suggestions (same per-env filter as the home page), unlike
+ * auto-settlement which hides the section unless every target supports it.
+ */
+export function getHomeSuggestionsSettingsAvailability(
+  environments: readonly HomeSuggestionsSearchEnvironment[],
+  scope?: Pick<ResolvedSettingsScope, "kind" | "environmentIds">,
+) {
+  const connected = environments.filter(
+    (environment) =>
+      environment.connection.phase === "connected" && environment.serverConfig !== null,
+  );
+  const eligibleEnvironmentIds = connected
+    .filter(
+      (environment) => environment.serverConfig?.environment.capabilities.homeSuggestions === true,
+    )
+    .map((environment) => environment.environmentId);
+  const selected = connected.filter((environment) =>
+    scope?.environmentIds.includes(environment.environmentId),
+  );
+  return {
+    eligibleEnvironmentIds,
+    isTargetAvailable:
+      scope !== undefined &&
+      scope.kind !== "unavailable" &&
+      selected.some((environment) => eligibleEnvironmentIds.includes(environment.environmentId)),
+  };
+}
+
 /** Discovery needs one capable environment; the selected page needs every connected target to support it. */
 export function getThreadAutoSettlementSearchAvailability(
   environments: readonly AutoSettlementSearchEnvironment[],
@@ -1151,7 +1221,8 @@ export function filterAvailableSettingsSearchItems(
       (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
       (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
-      (!item.requiresAutomations || availability.hasAutomations),
+      (!item.requiresAutomations || availability.hasAutomations) &&
+      (!item.requiresHomeSuggestions || availability.hasHomeSuggestions === true),
   );
 }
 

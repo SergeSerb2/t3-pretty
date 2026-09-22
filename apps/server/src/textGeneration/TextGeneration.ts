@@ -100,6 +100,30 @@ export interface ActivityHeadlineGenerationResult {
   headline: string;
 }
 
+export interface HomeSuggestionsGenerationInput {
+  cwd: string;
+  /** Digest of projects and recent threads; see `HomeSuggestionsContext.ts`. */
+  context: string;
+  projectCount: number;
+  exploreCount: number;
+  previousTitles: ReadonlyArray<string>;
+  /** What model and provider to use for generation. */
+  modelSelection: ModelSelection;
+}
+
+export interface GeneratedHomeSuggestion {
+  kind: "project" | "explore";
+  /** Project key from the digest; empty for explore cards. */
+  projectKey: string;
+  title: string;
+  summary: string;
+  prompt: string;
+}
+
+export interface HomeSuggestionsGenerationResult {
+  suggestions: ReadonlyArray<GeneratedHomeSuggestion>;
+}
+
 export interface ProjectIconGenerationInput {
   cwd: string;
   projectTitle: string;
@@ -148,6 +172,11 @@ export class TextGeneration extends Context.Service<
       input: ActivityHeadlineGenerationInput,
     ) => Effect.Effect<ActivityHeadlineGenerationResult, TextGenerationError>;
 
+    /** Generate the home screen's daily prompt cards from a workspace digest. */
+    readonly generateHomeSuggestions: (
+      input: HomeSuggestionsGenerationInput,
+    ) => Effect.Effect<HomeSuggestionsGenerationResult, TextGenerationError>;
+
     /** Generate a square project icon and save it to `outputPath`. */
     readonly generateProjectIcon: (
       input: ProjectIconGenerationInput,
@@ -184,6 +213,7 @@ export const makeUnsupportedTextGeneration = (providerLabel: string): TextGenera
     generateBranchName: () => unsupported("generateBranchName"),
     generateThreadTitle: () => unsupported("generateThreadTitle"),
     generateActivityHeadline: () => unsupported("generateActivityHeadline"),
+    generateHomeSuggestions: () => unsupported("generateHomeSuggestions"),
     generateProjectIcon: () => unsupported("generateProjectIcon"),
   };
 };
@@ -194,6 +224,7 @@ type TextGenerationOp =
   | "generateBranchName"
   | "generateThreadTitle"
   | "generateActivityHeadline"
+  | "generateHomeSuggestions"
   | "generateProjectIcon";
 
 const resolveInstance = (
@@ -351,6 +382,14 @@ export const make = Effect.gen(function* () {
         input.modelSelection,
         (textGeneration, modelSelection) =>
           textGeneration.generateActivityHeadline({ ...input, modelSelection }),
+      ),
+    generateHomeSuggestions: (input) =>
+      runWithTextGenerationFallback(
+        registry,
+        "generateHomeSuggestions",
+        input.modelSelection,
+        (textGeneration, modelSelection) =>
+          textGeneration.generateHomeSuggestions({ ...input, modelSelection }),
       ),
     generateProjectIcon: (input) =>
       runWithTextGenerationFallback(

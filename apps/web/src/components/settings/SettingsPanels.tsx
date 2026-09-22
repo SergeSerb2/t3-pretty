@@ -58,6 +58,7 @@ import {
 } from "../../components/desktopUpdate.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
+import { HomeSuggestionsSettingsSection } from "./HomeSuggestionsSettings";
 import {
   resolveEnvironmentIdentificationPillLabel,
   useEnvironmentStageLabel,
@@ -3268,6 +3269,8 @@ export function GeneralSettingsPanel() {
           }
         />
       </SettingsSection>
+
+      <HomeSuggestionsSettingsSection />
 
       <SettingsSection id="about" title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (

@@ -12,6 +12,7 @@ import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
 import {
   filterAvailableSettingsSearchItems,
+  getHomeSuggestionsSettingsAvailability,
   getThreadAutoSettlementSearchAvailability,
 } from "./settingsSearch";
 
@@ -53,6 +54,8 @@ export function useAvailableSettingsSearchItems() {
         hasThreadAutoSettlement:
           getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
         hasAutomations: primaryServerConfig?.environment.capabilities.automations === true,
+        hasHomeSuggestions:
+          getHomeSuggestionsSettingsAvailability(environments).eligibleEnvironmentIds.length > 0,
       }),
     [
       canManageLocalBackend,

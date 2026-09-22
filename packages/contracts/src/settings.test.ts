@@ -770,6 +770,17 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     });
   });
 
+  it("defaults home suggestions to a daily 09:00 batch planned by Astra at low effort", () => {
+    expect(DEFAULT_SERVER_SETTINGS.homeSuggestionsEnabled).toBe(true);
+    expect(DEFAULT_SERVER_SETTINGS.homeSuggestionsTime).toBe("09:00");
+    expect(DEFAULT_SERVER_SETTINGS.homeSuggestionsModelSelection).toEqual({
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-6-astra",
+      options: [{ id: "reasoningEffort", value: "low" }],
+    });
+    expect(() => decodeServerSettings({ homeSuggestionsTime: "9am" })).toThrow();
+  });
+
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
     expect(DEFAULT_SERVER_SETTINGS.globalEnvironment).toEqual([]);

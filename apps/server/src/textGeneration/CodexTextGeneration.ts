@@ -26,6 +26,7 @@ import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildActivityHeadlinePrompt,
+  buildHomeSuggestionsPrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
@@ -114,6 +115,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generateBranchName"
       | "generateThreadTitle"
       | "generateActivityHeadline"
+      | "generateHomeSuggestions"
       | "generateProjectIcon",
     value: unknown,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -135,6 +137,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generateBranchName"
       | "generateThreadTitle"
       | "generateActivityHeadline"
+      | "generateHomeSuggestions"
       | "generateProjectIcon",
     attachments: TextGeneration.BranchNameGenerationInput["attachments"],
   ): Effect.fn.Return<MaterializedImageAttachments, TextGenerationError> {
@@ -180,6 +183,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generateBranchName"
       | "generateThreadTitle"
       | "generateActivityHeadline"
+      | "generateHomeSuggestions"
       | "generateProjectIcon";
     cwd: string;
     prompt: string;
@@ -484,12 +488,35 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       return { path: path.length > 0 ? path : input.outputPath };
     });
 
+  const generateHomeSuggestions: TextGeneration.TextGeneration["Service"]["generateHomeSuggestions"] =
+    Effect.fn("CodexTextGeneration.generateHomeSuggestions")(function* (input) {
+      const { prompt, outputSchema } = buildHomeSuggestionsPrompt({
+        context: input.context,
+        projectCount: input.projectCount,
+        exploreCount: input.exploreCount,
+        previousTitles: input.previousTitles,
+      });
+
+      const generated = yield* runCodexJson({
+        operation: "generateHomeSuggestions",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        suggestions: generated.suggestions,
+      } satisfies TextGeneration.HomeSuggestionsGenerationResult;
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
     generateActivityHeadline,
+    generateHomeSuggestions,
     generateProjectIcon,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

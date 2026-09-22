@@ -315,6 +315,10 @@ function createTextGeneration(
       Effect.succeed({
         headline: "",
       }),
+    generateHomeSuggestions: () =>
+      Effect.succeed({
+        suggestions: [],
+      }),
     generateProjectIcon: () =>
       Effect.succeed({
         path: "/tmp/icon.png",
@@ -373,6 +377,17 @@ function createTextGeneration(
           (cause) =>
             new TextGenerationError({
               operation: "generateActivityHeadline",
+              detail: "fake text generation failed",
+              ...(cause !== undefined ? { cause } : {}),
+            }),
+        ),
+      ),
+    generateHomeSuggestions: (input) =>
+      implementation.generateHomeSuggestions(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation: "generateHomeSuggestions",
               detail: "fake text generation failed",
               ...(cause !== undefined ? { cause } : {}),
             }),

@@ -87,6 +87,7 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
+import * as HomeSuggestions from "./homeSuggestions/HomeSuggestionsService.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import {
@@ -543,6 +544,7 @@ const makeWsRpcLayer = (
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const environmentTheme = yield* EnvironmentTheme.EnvironmentThemeService;
+      const homeSuggestions = yield* HomeSuggestions.HomeSuggestionsService;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
@@ -3411,6 +3413,24 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "terminal" },
           ),
+        [WS_METHODS.homeSuggestionsGet]: (_input) =>
+          observeRpcEffect(WS_METHODS.homeSuggestionsGet, homeSuggestions.current, {
+            "rpc.aggregate": "home-suggestions",
+          }),
+        [WS_METHODS.homeSuggestionsRefresh]: (_input) =>
+          observeRpcEffect(WS_METHODS.homeSuggestionsRefresh, homeSuggestions.refresh, {
+            "rpc.aggregate": "home-suggestions",
+          }),
+        [WS_METHODS.homeSuggestionsDismiss]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.homeSuggestionsDismiss,
+            homeSuggestions.dismiss(input.suggestionId),
+            { "rpc.aggregate": "home-suggestions" },
+          ),
+        [WS_METHODS.subscribeHomeSuggestions]: (_input) =>
+          observeRpcStream(WS_METHODS.subscribeHomeSuggestions, homeSuggestions.streamChanges, {
+            "rpc.aggregate": "home-suggestions",
+          }),
         [WS_METHODS.subscribeTerminalMetadata]: (_input) =>
           observeRpcStream(
             WS_METHODS.subscribeTerminalMetadata,
