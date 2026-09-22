@@ -1,4 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type {
   EnvironmentProject,
@@ -197,7 +197,9 @@ function EnvironmentSuggestions({
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
 }) {
-  const result = useAtomValue(homeSuggestionsEnvironment.snapshot({ environmentId, input: {} }));
+  const snapshotAtom = homeSuggestionsEnvironment.snapshot({ environmentId, input: {} });
+  const result = useAtomValue(snapshotAtom);
+  const resubscribe = useAtomRefresh(snapshotAtom);
   const snapshot = Option.getOrNull(AsyncResult.value(result));
   const subscriptionFailed = AsyncResult.isFailure(result) && snapshot === null;
   const refresh = useAtomCommand(homeSuggestionsEnvironment.refresh, { reportFailure: false });
@@ -249,6 +251,8 @@ function EnvironmentSuggestions({
   );
 
   const onRefresh = useCallback(async () => {
+    // A dead subscription would never deliver the batch this request starts.
+    if (subscriptionFailed) resubscribe();
     const outcome = await refresh({ environmentId, input: {} });
     if (outcome._tag === "Failure") {
       toastManager.add({
@@ -257,7 +261,11 @@ function EnvironmentSuggestions({
         description: describeCommandFailure(outcome),
       });
     }
-  }, [environmentId, refresh]);
+  }, [environmentId, refresh, resubscribe, subscriptionFailed]);
+
+  // Nothing here can be started without a project, and the server has
+  // nothing to digest either.
+  if (environmentProjects.length === 0) return null;
 
   const projectCards = snapshot?.suggestions.filter((card) => card.kind === "project") ?? [];
   const exploreCards = snapshot?.suggestions.filter((card) => card.kind === "explore") ?? [];
@@ -274,7 +282,7 @@ function EnvironmentSuggestions({
             <Button
               size="sm"
               variant="outline"
-              disabled={!enabled || generating || snapshot === null}
+              disabled={!enabled || generating || (snapshot === null && !subscriptionFailed)}
               onClick={() => void onRefresh()}
             >
               <RefreshIcon className={cn("size-4", generating && "animate-spin")} />
@@ -292,8 +300,12 @@ function EnvironmentSuggestions({
         }
       />
       {subscriptionFailed ? (
-        <div className="rounded-2xl border border-dashed border-border/70 px-6 py-10 text-center text-sm text-muted-foreground/78">
-          Suggestions could not be loaded from this environment. Check the connection, then refresh.
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/70 px-6 py-10 text-center text-sm text-muted-foreground/78">
+          Suggestions could not be loaded from this environment.
+          <Button size="sm" variant="outline" onClick={resubscribe}>
+            <RefreshIcon className="size-4" />
+            Try again
+          </Button>
         </div>
       ) : snapshot === null ? (
         <CardGrid>

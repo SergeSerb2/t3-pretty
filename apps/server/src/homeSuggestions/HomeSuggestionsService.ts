@@ -65,9 +65,18 @@ import {
 export const HOME_SUGGESTIONS_TICK_INTERVAL = Duration.minutes(1);
 export const HOME_SUGGESTIONS_FILE_NAME = "home-suggestions.json";
 
-/** What survives a restart. Status and the next due time are recomputed. */
+/**
+ * What survives a restart. `generatedAt` is the last successful batch;
+ * `lastAttemptAt` and `lastError` describe the most recent attempt, so a
+ * failure is still shown after a restart and the schedule can tell "never
+ * succeeded" from "succeeded, then failed".
+ */
 const StoredState = Schema.Struct({
   generatedAt: Schema.NullOr(Schema.String),
+  lastAttemptAt: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  lastError: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   suggestions: Schema.Array(HomeSuggestion),
   previousTitles: Schema.Array(Schema.String),
 });
@@ -78,9 +87,14 @@ const encodeStoredState = Schema.encodeEffect(Schema.fromJsonString(StoredState)
 
 const EMPTY_STORED_STATE: StoredState = {
   generatedAt: null,
+  lastAttemptAt: null,
+  lastError: null,
   suggestions: [],
   previousTitles: [],
 };
+
+/** A fresh install whose first batch failed retries this often, not tomorrow. */
+export const HOME_SUGGESTIONS_FIRST_BATCH_RETRY = Duration.hours(1);
 
 type Job = { readonly kind: "tick" } | { readonly kind: "generate"; readonly reason: string };
 
@@ -140,19 +154,27 @@ export const make = Effect.gen(function* () {
       return [next, next];
     }).pipe(Effect.tap((next) => PubSub.publish(changes, next)));
 
-  // Never generated: due right away, so a fresh install fills in on first
-  // start. Otherwise the first instant after the last batch, which is in
-  // the past after a long sleep and therefore runs once on the next tick.
-  const nextRunAtFor = (current: ServerSettings, state: StoredState, nowMs: number) =>
-    !current.homeSuggestionsEnabled
-      ? null
-      : state.generatedAt === null
-        ? nowMs
-        : nextHomeSuggestionsRunAt({
-            time: current.homeSuggestionsTime,
-            afterMs: Date.parse(state.generatedAt),
-            timeZone,
-          });
+  // Never attempted: due right away, so a fresh install fills in on first
+  // start. Never succeeded: retry an hour after the last attempt rather
+  // than waiting for tomorrow's slot. Otherwise the first slot after the
+  // last attempt, which is in the past after a long sleep and therefore
+  // runs once on the next tick.
+  const nextRunAtFor = (current: ServerSettings, state: StoredState, nowMs: number) => {
+    if (!current.homeSuggestionsEnabled) return null;
+    if (state.lastAttemptAt === null) return nowMs;
+    const lastAttemptMs = Date.parse(state.lastAttemptAt);
+    if (state.generatedAt === null) {
+      return lastAttemptMs + Duration.toMillis(HOME_SUGGESTIONS_FIRST_BATCH_RETRY);
+    }
+    return nextHomeSuggestionsRunAt({
+      time: current.homeSuggestionsTime,
+      afterMs: Math.max(lastAttemptMs, Date.parse(state.generatedAt)),
+      timeZone,
+    });
+  };
+
+  const statusOf = (state: StoredState): HomeSuggestionsSnapshot["status"] =>
+    state.lastError !== null ? "failed" : state.generatedAt === null ? "idle" : "ready";
 
   const isoOrNull = (millis: number | null) =>
     millis === null ? null : DateTime.formatIso(DateTime.makeUnsafe(millis));
@@ -239,9 +261,9 @@ export const make = Effect.gen(function* () {
       });
     }).pipe(Effect.exit);
 
-    // The due time always moves past this attempt, so a failing provider is
-    // retried tomorrow (or by hand), not every minute.
-    const generatedAt = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
+    // The attempt time always moves past this run, so a failing provider is
+    // retried at the next slot (or by hand), not every minute.
+    const attemptedAt = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
     if (Exit.isFailure(exit)) {
       if (Cause.hasInterruptsOnly(exit.cause)) {
         return yield* Effect.interrupt;
@@ -249,7 +271,11 @@ export const make = Effect.gen(function* () {
       const failure = Cause.squash(exit.cause);
       const error = failure instanceof Error ? failure.message : String(failure);
       yield* Effect.logWarning("home suggestions generation failed", { reason, error });
-      const state = yield* Ref.updateAndGet(stored, (previous) => ({ ...previous, generatedAt }));
+      const state = yield* Ref.updateAndGet(stored, (previous) => ({
+        ...previous,
+        lastAttemptAt: attemptedAt,
+        lastError: error,
+      }));
       yield* persist(state);
       yield* publish((snapshot) => ({
         ...snapshot,
@@ -261,14 +287,16 @@ export const make = Effect.gen(function* () {
     }
     const suggestions = exit.value;
     const state = yield* Ref.updateAndGet(stored, (previous) => ({
-      generatedAt,
+      generatedAt: attemptedAt,
+      lastAttemptAt: attemptedAt,
+      lastError: null,
       suggestions,
       previousTitles: rememberTitles(previous.previousTitles, suggestions),
     }));
     yield* persist(state);
     yield* publish(() => ({
       status: "ready",
-      generatedAt,
+      generatedAt: attemptedAt,
       nextRunAt: isoOrNull(nextRunAtFor(current, state, nowMs)),
       error: null,
       suggestions,
@@ -314,10 +342,10 @@ export const make = Effect.gen(function* () {
     const current = yield* settings;
     const nowMs = yield* Clock.currentTimeMillis;
     yield* publish(() => ({
-      status: state.generatedAt === null ? "idle" : "ready",
+      status: statusOf(state),
       generatedAt: state.generatedAt,
       nextRunAt: isoOrNull(nextRunAtFor(current, state, nowMs)),
-      error: null,
+      error: state.lastError,
       suggestions: state.suggestions,
     }));
     yield* forkParked(

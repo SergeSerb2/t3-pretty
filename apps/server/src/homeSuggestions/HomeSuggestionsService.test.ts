@@ -329,6 +329,50 @@ describe("HomeSuggestionsService", () => {
     ),
   );
 
+  it.effect("a failed first batch retries within the hour and the failure survives a restart", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        let calls = 0;
+        const flaky = yield* makeHarness(baseDir, {
+          generate: () =>
+            ++calls === 1
+              ? Effect.fail(
+                  new TextGenerationError({
+                    operation: "generateHomeSuggestions",
+                    detail: "quota",
+                  }),
+                )
+              : Effect.succeed({ suggestions: generatedCards }),
+        });
+        yield* withService(flaky, (service) =>
+          Effect.gen(function* () {
+            assert.strictEqual((yield* service.current).status, "failed");
+            yield* TestClock.adjust("30 minutes");
+            yield* service.tickOnce;
+            yield* service.drain;
+            assert.strictEqual((yield* service.current).status, "failed");
+          }),
+        );
+        assert.strictEqual((yield* Ref.get(flaky.generations)).length, 1);
+
+        const restarted = yield* makeHarness(baseDir);
+        const snapshot = yield* withService(restarted, (service) =>
+          Effect.gen(function* () {
+            const loaded = yield* service.current;
+            assert.strictEqual(loaded.status, "failed");
+            assert.include(loaded.error ?? "", "quota");
+            yield* TestClock.adjust("31 minutes");
+            yield* service.tickOnce;
+            yield* service.drain;
+            return yield* service.current;
+          }),
+        );
+        assert.strictEqual(snapshot.status, "ready");
+        assert.strictEqual((yield* Ref.get(restarted.generations)).length, 1);
+      }),
+    ),
+  );
+
   it.effect("a defect during generation still lands on failed and unblocks refresh", () =>
     run((baseDir) =>
       Effect.gen(function* () {
