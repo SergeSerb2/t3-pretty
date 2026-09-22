@@ -1076,10 +1076,11 @@ html[data-window-inactive]
   }
 
   /* Navigation flips data-panel-animations for a frame. That utility rewrites
-     transition-property on the shell and restarts the peek width. While the
-     rail is collapsed, the peek timing owns the shell outright. */
+     transition-property on the shell and restarts the peek width. Only while
+     the flyout is up: a plain collapse keeps the panel timing. */
   @media (prefers-reduced-motion: no-preference) {
-    [data-slot="sidebar"][data-collapsed] [data-slot="sidebar-container"] {
+    [data-slot="sidebar"][data-collapsed]:is([data-peeking], [data-present])
+      [data-slot="sidebar-container"] {
       transition-property: width, box-shadow !important;
       transition-duration: var(--sidebar-peek-duration, 280ms) !important;
       transition-timing-function: var(

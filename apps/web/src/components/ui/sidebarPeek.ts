@@ -218,6 +218,15 @@ function findSidebarPeekContainer(target: EventTarget | null): HTMLElement | nul
   return sidebarPeekContainerElement();
 }
 
+function pointerStillOverSidebarPeek(point: SidebarPeekPoint | null): boolean {
+  const container = sidebarPeekContainerElement();
+  return pointerStillInsideSidebarPeek({
+    point,
+    rects: container ? readSidebarPeekHitRects(container) : [],
+    hovered: sidebarPeekSurfaceIsHovered(),
+  });
+}
+
 export function useSidebarPeekPointerBinding(
   onEnter: () => void,
   onLeave: () => void,
@@ -371,9 +380,11 @@ export function useSidebarPeek(enabled: boolean) {
   }, [applyIntent]);
   const onPeekPointerLeave = useCallback(() => {
     // The collapse click synthesizes a leave while the pointer is still on
-    // the trigger. Keep suppression until a later event actually sees it
-    // outside, otherwise the flyout opens again under that same pointer.
-    if (suppressHoverOpenRef.current && sidebarPeekSurfaceIsHovered()) return;
+    // the rail. :hover is often false there until the next move, so geometry
+    // has to agree before suppression can drop.
+    if (suppressHoverOpenRef.current && pointerStillOverSidebarPeek(lastPointerRef.current)) {
+      return;
+    }
     suppressHoverOpenRef.current = false;
     setSuppressHoverOpen(false);
     applyIntent("pointer-leave");
@@ -432,13 +443,7 @@ export function useSidebarPeek(enabled: boolean) {
   useEffect(() => {
     if (!suppressHoverOpen) return;
     const releaseIfPointerLeft = (point: SidebarPeekPoint | null) => {
-      const container = sidebarPeekContainerElement();
-      const inside = pointerStillInsideSidebarPeek({
-        point,
-        rects: container ? readSidebarPeekHitRects(container) : [],
-        hovered: sidebarPeekSurfaceIsHovered(),
-      });
-      if (inside) return;
+      if (pointerStillOverSidebarPeek(point)) return;
       suppressHoverOpenRef.current = false;
       setSuppressHoverOpen(false);
     };
