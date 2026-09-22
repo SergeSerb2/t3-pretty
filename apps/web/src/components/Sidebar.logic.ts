@@ -1310,6 +1310,72 @@ export const PROJECT_ATTENTION_LABELS: ReadonlySet<ThreadStatusPill["label"]> = 
   "Completed",
 ]);
 
+/**
+ * Live work on a project-rail icon. Working includes a session that is
+ * running or still connecting, plus background fleets. Monitoring is a watch
+ * loop with nothing else live. Waiting-on-you states stay on
+ * ProjectRailAttention, so a running count never stands in for an approval.
+ */
+export interface ProjectRailActivity {
+  readonly working: number;
+  readonly monitoring: number;
+}
+
+export function addProjectRailActivity(
+  current: ProjectRailActivity | undefined,
+  pill: ThreadStatusPill | null,
+): ProjectRailActivity | undefined {
+  if (pill === null) return current;
+  const bucket =
+    pill.label === "Working" || pill.label === "Connecting"
+      ? "working"
+      : pill.label === "Monitoring"
+        ? "monitoring"
+        : null;
+  if (bucket === null) return current;
+  const base = current ?? { working: 0, monitoring: 0 };
+  if (bucket === "working") {
+    return { working: base.working + 1, monitoring: base.monitoring };
+  }
+  return { working: base.working, monitoring: base.monitoring + 1 };
+}
+
+export function mergeProjectRailActivity(
+  activities: readonly (ProjectRailActivity | null | undefined)[],
+): ProjectRailActivity | null {
+  let working = 0;
+  let monitoring = 0;
+  for (const activity of activities) {
+    if (!activity) continue;
+    working += activity.working;
+    monitoring += activity.monitoring;
+  }
+  if (working === 0 && monitoring === 0) return null;
+  return { working, monitoring };
+}
+
+export function formatProjectRailActivity(
+  activity: ProjectRailActivity | null | undefined,
+  separator = " · ",
+): string | null {
+  const working = activity?.working ?? 0;
+  const monitoring = activity?.monitoring ?? 0;
+  const parts: string[] = [];
+  if (working > 0) parts.push(`${working} working`);
+  if (monitoring > 0) parts.push(`${monitoring} monitoring`);
+  return parts.length > 0 ? parts.join(separator) : null;
+}
+
+/** One number for the icon. Working wins the tone when any thread is in motion. */
+export function projectRailActivityMark(
+  activity: ProjectRailActivity | null | undefined,
+): { readonly count: number; readonly tone: "working" | "monitoring" } | null {
+  if (!activity) return null;
+  const count = activity.working + activity.monitoring;
+  if (count <= 0) return null;
+  return { count, tone: activity.working > 0 ? "working" : "monitoring" };
+}
+
 export function resolveProjectAttentionIndicator(
   statuses: ReadonlyArray<ThreadStatusPill | null>,
 ): ThreadStatusPill | null {

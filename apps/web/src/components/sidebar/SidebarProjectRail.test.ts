@@ -19,4 +19,11 @@ describe("project rail folders", () => {
     expect(railSource).not.toContain("folderRailPreviewProjects");
     expect(indexCssSource).not.toContain("project-rail-folder");
   });
+
+  it("shows a live thread count instead of shortcut indexes", () => {
+    expect(railSource).not.toContain("visibleProjectJumpNumbers");
+    expect(railSource).not.toContain("jumpNumber");
+    expect(railSource).toContain("projectRailActivityMark");
+    expect(railSource).toContain("formatProjectRailActivity");
+  });
 });
