@@ -317,6 +317,19 @@ export const make = Effect.gen(function* () {
     );
   const worker = yield* makeDrainableWorker(processJob);
 
+  const claimGenerate = (reason: string) =>
+    Effect.gen(function* () {
+      const snapshot = (yield* Ref.get(published)).snapshot;
+      if (snapshot.status === "generating") return snapshot;
+      const generating = yield* publish((previous) => ({
+        ...previous,
+        status: "generating" as const,
+        error: null,
+      }));
+      yield* worker.enqueue({ kind: "generate", reason });
+      return generating.snapshot;
+    });
+
   const tick = Effect.fn("HomeSuggestionsService.tick")(function* () {
     const current = yield* settings;
     const state = yield* Ref.get(stored);
@@ -327,9 +340,12 @@ export const make = Effect.gen(function* () {
     if (snapshot.nextRunAt !== nextRunAt && snapshot.status !== "generating") {
       yield* publish((previous) => ({ ...previous, nextRunAt }));
     }
-    if (dueAt === null || dueAt > nowMs || snapshot.status === "generating") return;
+    if (dueAt === null || dueAt > nowMs) return;
     if (yield* hostSuspended) return;
-    yield* worker.enqueue({ kind: "generate", reason: "schedule" });
+    // Claim generating before enqueue so a second tick (settings change,
+    // the 1-minute repeat, start+tickOnce) cannot queue another LLM batch
+    // while this one is still waiting on the worker.
+    yield* claimGenerate("schedule");
   });
 
   const enqueueAndDrain = (job: Job) => worker.enqueue(job).pipe(Effect.andThen(worker.drain));
@@ -363,20 +379,12 @@ export const make = Effect.gen(function* () {
 
   const refresh: HomeSuggestionsService["Service"]["refresh"] = Effect.gen(function* () {
     const current = yield* settings;
-    const snapshot = (yield* Ref.get(published)).snapshot;
-    if (snapshot.status === "generating") return snapshot;
     if (!current.homeSuggestionsEnabled) {
       return yield* new HomeSuggestionsError({
         detail: "Home suggestions are turned off in Settings.",
       });
     }
-    const generating = yield* publish((previous) => ({
-      ...previous,
-      status: "generating",
-      error: null,
-    }));
-    yield* worker.enqueue({ kind: "generate", reason: "manual" });
-    return generating.snapshot;
+    return yield* claimGenerate("manual");
   });
 
   const dismiss: HomeSuggestionsService["Service"]["dismiss"] = (suggestionId) =>

@@ -218,6 +218,38 @@ describe("searchSettings", () => {
     expect(browser).toContain("publish-agent-activity");
   });
 
+  it("hides home suggestion settings until a server advertises the capability", () => {
+    const hidden = filterAvailableSettingsSearchItems({
+      hasCloudPublicConfig: false,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      canManageLocalBackend: false,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+      hasAutomations: false,
+    });
+    expect(hidden.map((item) => item.id).filter((id) => id.startsWith("home-suggestions"))).toEqual(
+      [],
+    );
+
+    const shown = filterAvailableSettingsSearchItems({
+      hasCloudPublicConfig: false,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      canManageLocalBackend: false,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+      hasAutomations: false,
+      hasHomeSuggestions: true,
+    });
+    expect(shown.map((item) => item.id).filter((id) => id.startsWith("home-suggestions"))).toEqual([
+      "home-suggestions-enabled",
+      "home-suggestions-model",
+      "home-suggestions-time",
+      "home-suggestions-generate",
+    ]);
+  });
+
   it("shows automatic settlement settings when the server supports them", () => {
     const available = filterAvailableSettingsSearchItems({
       hasCloudPublicConfig: false,

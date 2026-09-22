@@ -53,6 +53,10 @@ export function useAvailableSettingsSearchItems() {
         hasThreadAutoSettlement:
           getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
         hasAutomations: primaryServerConfig?.environment.capabilities.automations === true,
+        hasHomeSuggestions: environments.some(
+          (environment) =>
+            environment.serverConfig?.environment.capabilities.homeSuggestions === true,
+        ),
       }),
     [
       canManageLocalBackend,

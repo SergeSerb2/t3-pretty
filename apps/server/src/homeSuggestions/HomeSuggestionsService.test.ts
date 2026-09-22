@@ -273,6 +273,35 @@ describe("HomeSuggestionsService", () => {
     ),
   );
 
+  it.effect("a tick or refresh while generating does not start a second batch", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        const begun = yield* Deferred.make<void>();
+        const gate = yield* Deferred.make<void>();
+        const harness = yield* makeHarness(baseDir, {
+          generate: () =>
+            Deferred.succeed(begun, undefined).pipe(
+              Effect.andThen(Deferred.await(gate)),
+              Effect.andThen(Effect.succeed({ suggestions: generatedCards })),
+            ),
+        });
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const service = yield* HomeSuggestions.HomeSuggestionsService;
+            yield* service.start();
+            yield* Deferred.succeed(harness.activation, undefined);
+            yield* Deferred.await(begun);
+            const overlapping = yield* service.refresh;
+            assert.strictEqual(overlapping.status, "generating");
+            yield* Deferred.succeed(gate, undefined);
+            yield* service.drain;
+          }).pipe(Effect.provide(harness.layer)),
+        );
+        assert.strictEqual((yield* Ref.get(harness.generations)).length, 1);
+      }),
+    ),
+  );
+
   it.effect("refresh generates by hand and streams the change", () =>
     run((baseDir) =>
       Effect.gen(function* () {

@@ -76,6 +76,7 @@ export interface SettingsSearchItem {
   readonly primaryOnly?: boolean;
   // Its row only renders when the primary server exposes automations.
   readonly requiresAutomations?: boolean;
+  readonly requiresHomeSuggestions?: boolean;
 }
 
 export interface SettingsSearchAvailability {
@@ -87,6 +88,7 @@ export interface SettingsSearchAvailability {
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
   readonly hasAutomations: boolean;
+  readonly hasHomeSuggestions?: boolean;
 }
 
 /**
@@ -553,24 +555,28 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Daily home suggestions",
     to: "/settings/general",
     searchTerms: ["home screen prompt cards ideas daily suggestions auto prompts"],
+    requiresHomeSuggestions: true,
   },
   {
     id: "home-suggestions-model",
     title: "Home suggestions model",
     to: "/settings/general",
     searchTerms: ["home screen suggestion model astra reasoning cards"],
+    requiresHomeSuggestions: true,
   },
   {
     id: "home-suggestions-time",
     title: "Home suggestions time",
     to: "/settings/general",
     searchTerms: ["home screen suggestions schedule daily time 9am"],
+    requiresHomeSuggestions: true,
   },
   {
     id: "home-suggestions-generate",
     title: "Generate suggestions now",
     to: "/settings/general",
     searchTerms: ["home screen suggestions refresh regenerate now"],
+    requiresHomeSuggestions: true,
   },
   {
     id: "diagnostics",
@@ -1181,7 +1187,8 @@ export function filterAvailableSettingsSearchItems(
       (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
       (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
-      (!item.requiresAutomations || availability.hasAutomations),
+      (!item.requiresAutomations || availability.hasAutomations) &&
+      (!item.requiresHomeSuggestions || availability.hasHomeSuggestions === true),
   );
 }
 

@@ -63,6 +63,11 @@ export function HomeSuggestionsSettingsSection() {
   const { environment, connectedEnvironments } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
   const hasServerTargets = connectedEnvironments.length > 0;
+  const supportsHomeSuggestions =
+    connectedEnvironments.length > 0 &&
+    connectedEnvironments.every(
+      (target) => target.serverConfig?.environment.capabilities.homeSuggestions === true,
+    );
   const serverProviders = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
   const refresh = useAtomCommand(homeSuggestionsEnvironment.refresh, { reportFailure: false });
   const [generating, setGenerating] = useState(false);
@@ -114,6 +119,8 @@ export function HomeSuggestionsSettingsSection() {
       description: "The new cards will appear on the home screen in a minute or two.",
     });
   }, [environmentId, refresh]);
+
+  if (!supportsHomeSuggestions) return null;
 
   return (
     <SettingsSection id="home-suggestions" title="Home suggestions">
