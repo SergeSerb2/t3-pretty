@@ -327,6 +327,7 @@ export const make = Effect.gen(function* () {
       status: "ready",
       generatedAt: attemptedAt,
       nextRunAt: isoOrNull(nextRunAtFor(current, state, nowMs)),
+      timeZone,
       error: null,
       suggestions,
     }));
@@ -402,6 +403,7 @@ export const make = Effect.gen(function* () {
       status: statusOf(state),
       generatedAt: state.generatedAt,
       nextRunAt: isoOrNull(nextRunAtFor(current, state, nowMs)),
+      timeZone,
       error: state.lastError,
       suggestions: state.suggestions,
     }));
