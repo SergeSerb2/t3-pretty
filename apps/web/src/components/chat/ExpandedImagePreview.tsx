@@ -49,6 +49,8 @@ export async function resolveMarkdownMediaPreview(input: {
   cwd?: string | undefined;
   threadRef?: ScopedThreadRef | undefined;
   httpBaseUrl?: string | undefined;
+  /** Local server that may have minted the URL when the thread environment has no file. */
+  allowedHttpBaseUrl?: string | null | undefined;
   onOpenFile?: ((relativePath: string) => void) | undefined;
   createAssetUrl: (input: {
     environmentId: EnvironmentId;
@@ -78,7 +80,11 @@ export async function resolveMarkdownMediaPreview(input: {
       input: { resource: asset.resource },
     });
     if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    const assetUrl = resolveAssetUrl(input.httpBaseUrl, result.value.relativeUrl);
+    const assetUrl = resolveAssetUrl(
+      input.httpBaseUrl,
+      result.value.relativeUrl,
+      input.allowedHttpBaseUrl,
+    );
     if (assetUrl === null) throw new Error("The environment returned an invalid media URL.");
     src = assetUrl + media.srcFragment;
   }

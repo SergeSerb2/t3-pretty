@@ -10,7 +10,7 @@ import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useMemo } from "react";
 
-import { assetEnvironment } from "~/state/assets";
+import { assetEnvironment, localMediaEnvironment } from "~/state/assets";
 import { usePreparedConnection } from "~/state/session";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
@@ -46,6 +46,7 @@ export function useAssetUrlState(
   resource: AssetResource | null,
 ): AssetUrlState {
   const preparedConnection = usePreparedConnection(environmentId);
+  const localMedia = useAtomValue(localMediaEnvironment);
   const result = useAtomValue(
     environmentId === null || resource === null
       ? EMPTY_ASSET_URL_ATOM
@@ -54,6 +55,7 @@ export function useAssetUrlState(
   return assetUrlStateFromResult(
     result,
     preparedConnection._tag === "Some" ? preparedConnection.value.httpBaseUrl : null,
+    localMedia?.httpBaseUrl,
   );
 }
 
@@ -63,6 +65,8 @@ export function useAssetUrlRefresh(
 ): () => Promise<string | null> {
   const connection = usePreparedConnection(environmentId);
   const httpBaseUrl = connection._tag === "Some" ? connection.value.httpBaseUrl : null;
+  const localMedia = useAtomValue(localMediaEnvironment);
+  const allowedHttpBaseUrl = localMedia?.httpBaseUrl;
   const refresh = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
     refresh: true,
@@ -71,8 +75,8 @@ export function useAssetUrlRefresh(
     if (environmentId === null || resource === null || httpBaseUrl === null) return null;
     const result = await refresh({ environmentId, input: { resource } });
     if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    return resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
-  }, [environmentId, resource, refresh, httpBaseUrl]);
+    return resolveAssetUrl(httpBaseUrl, result.value.relativeUrl, allowedHttpBaseUrl);
+  }, [environmentId, resource, refresh, httpBaseUrl, allowedHttpBaseUrl]);
 }
 
 export function useAssetUrls(
@@ -80,6 +84,8 @@ export function useAssetUrls(
   resources: ReadonlyArray<AssetResource>,
 ): ReadonlyArray<string | null> {
   const preparedConnection = usePreparedConnection(environmentId);
+  const localMedia = useAtomValue(localMediaEnvironment);
+  const allowedHttpBaseUrl = localMedia?.httpBaseUrl;
   const results = useAtomValue(
     assetEnvironment.createUrls({
       environmentId,
@@ -92,9 +98,13 @@ export function useAssetUrls(
         ? resources.map(() => null)
         : results.map((result) =>
             AsyncResult.isSuccess(result)
-              ? resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl)
+              ? resolveAssetUrl(
+                  preparedConnection.value.httpBaseUrl,
+                  result.value.relativeUrl,
+                  allowedHttpBaseUrl,
+                )
               : null,
           ),
-    [preparedConnection, resources, results],
+    [allowedHttpBaseUrl, preparedConnection, resources, results],
   );
 }

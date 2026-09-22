@@ -54,11 +54,24 @@ export function parseAssetCollectionKey(
   }
 }
 
-export function resolveAssetUrl(httpBaseUrl: string, relativeUrl: string): string | null {
+export function resolveAssetUrl(
+  httpBaseUrl: string,
+  relativeUrl: string,
+  /**
+   * Origin that may serve the file when the thread's environment cannot.
+   * Only the client's own local server is passed here; a remote relative URL
+   * still has to stay on the thread origin.
+   */
+  allowedHttpBaseUrl?: string | null,
+): string | null {
   try {
     const baseUrl = new URL(httpBaseUrl);
     const resolvedUrl = new URL(relativeUrl, baseUrl);
-    return resolvedUrl.origin === baseUrl.origin ? resolvedUrl.toString() : null;
+    if (resolvedUrl.origin === baseUrl.origin) return resolvedUrl.toString();
+    if (allowedHttpBaseUrl && resolvedUrl.origin === new URL(allowedHttpBaseUrl).origin) {
+      return resolvedUrl.toString();
+    }
+    return null;
   } catch {
     return null;
   }
@@ -83,10 +96,11 @@ export type AssetUrlState =
 export function assetUrlStateFromResult(
   result: AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>,
   httpBaseUrl: string | null,
+  allowedHttpBaseUrl?: string | null,
 ): AssetUrlState {
   if (result._tag === "Failure") return { _tag: "Failure" };
   if (httpBaseUrl === null || result._tag !== "Success") return { _tag: "Loading" };
-  const url = resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
+  const url = resolveAssetUrl(httpBaseUrl, result.value.relativeUrl, allowedHttpBaseUrl);
   if (url === null) return { _tag: "Failure" };
   return {
     _tag: "Success",

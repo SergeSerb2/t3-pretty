@@ -52,6 +52,7 @@ import {
 import { inlineCodeFilePathCandidate } from "@t3tools/client-runtime/markdown-links";
 import { mediaFileReference, mediaUrlReference } from "@t3tools/client-runtime/media-reference";
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
+import { matchGeneratedImagePath } from "@t3tools/shared/imageTool";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import React, {
@@ -164,7 +165,7 @@ import { useRightPanelStore } from "../rightPanelStore";
 import { readThreadShell, useProjects } from "../state/entities";
 import { serverEnvironment } from "../state/server";
 import { shellEnvironment } from "../state/shell";
-import { assetEnvironment } from "../state/assets";
+import { assetEnvironment, localMediaEnvironment } from "../state/assets";
 import { usePreparedConnection } from "../state/session";
 import { previewEnvironment } from "../state/preview";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -228,7 +229,14 @@ interface ChatMarkdownProps {
       text nests under the heading that introduces it, such as a chat message's
       author. Rendered tags and their styling are unchanged. */
   headingLevelOffset?: number | undefined;
+  /**
+   * Imagine files from this message's turn. A markdown `images/N.jpg` link
+   * names the session file, not a path in the workspace.
+   */
+  generatedImagePaths?: ReadonlyArray<string> | undefined;
 }
+
+const EMPTY_GENERATED_IMAGE_PATHS: ReadonlyArray<string> = [];
 
 export interface ChatMarkdownContextReference {
   kind: string;
@@ -2264,11 +2272,14 @@ function useChatMarkdownState({
   renderContextReference,
   headingLevelOffset = 0,
   githubMedia = false,
+  generatedImagePaths = EMPTY_GENERATED_IMAGE_PATHS,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const [localMediaPreview, setLocalMediaPreview] = useState<ExpandedImagePreview | null>(null);
   const markdownRef = useRef<HTMLDivElement>(null);
   const expandMedia = onImageExpand ?? setLocalMediaPreview;
+  const localMedia = useAtomValue(localMediaEnvironment);
+  const localMediaHttpBaseUrl = localMedia?.httpBaseUrl;
   const mediaRequestId = useRef(0);
   useEffect(() => {
     setLocalMediaPreview(null);
@@ -2305,6 +2316,7 @@ function useChatMarkdownState({
         threadRef,
         httpBaseUrl:
           preparedConnection._tag === "Some" ? preparedConnection.value.httpBaseUrl : undefined,
+        allowedHttpBaseUrl: localMediaHttpBaseUrl,
         createAssetUrl,
         onOpenFile: threadRef
           ? (path) => useRightPanelStore.getState().openFile(threadRef, path)
@@ -2335,7 +2347,7 @@ function useChatMarkdownState({
         },
       );
     },
-    [createAssetUrl, cwd, expandMedia, preparedConnection, threadRef],
+    [createAssetUrl, cwd, expandMedia, localMediaHttpBaseUrl, preparedConnection, threadRef],
   );
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const projects = useProjects();
@@ -2661,6 +2673,7 @@ function useChatMarkdownState({
       environmentId,
       expandMedia,
       fileLinkChip,
+      generatedImagePaths,
       githubMedia,
       renderContextReference,
       headingLevelOffset,
@@ -2691,6 +2704,7 @@ function useChatMarkdownState({
       environmentId,
       expandMedia,
       fileLinkChip,
+      generatedImagePaths,
       githubMedia,
       renderContextReference,
       headingLevelOffset,
@@ -3109,6 +3123,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       cwd,
       environmentId,
       githubMedia,
+      generatedImagePaths,
       imageBaseDir,
       threadRef,
       renderContextReference,
@@ -3136,7 +3151,17 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const copyMarkdown = markdownImageCopy(altText, srcString, authoredTitle);
     const { className, style: _style, width, height, ...imageProps } = props;
     const authoredSizeStyle = authoredImageSizeStyle(width, height);
-    const imageSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);
+    const classifiedSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);
+    const matchedGeneratedPath =
+      classifiedSource._tag === "Direct" || generatedImagePaths.length === 0
+        ? undefined
+        : matchGeneratedImagePath(
+            classifiedSource._tag === "WorkspaceFile" ? classifiedSource.path : srcString,
+            generatedImagePaths,
+          );
+    const imageSource = matchedGeneratedPath
+      ? { _tag: "WorkspaceFile" as const, path: matchedGeneratedPath }
+      : classifiedSource;
     const kind = mediaKindFromPath(classifiedSrc) ?? "image";
     const directUri = imageSource._tag === "Direct" ? imageSource.uri : null;
     const githubMediaUrl =
