@@ -46,6 +46,13 @@ interface PendingXAiPromptCompletion {
 const completedXAiPromptIdLimit = 128;
 const xAiStopReasonMissingMetaKey = "xAiStopReasonMissing";
 const xAiRateLimitedErrorCode = -32003;
+/**
+ * Grok's `rate_limit` completion omits the 429 body. `session/prompt` still carries it.
+ * Wait this long before failing from the completion alone.
+ */
+const xAiRateLimitDetailGraceMs = 1_000;
+const genericGrokUsageLimitMessage = "Grok usage limit reached. Try again later.";
+const isAcpRequestError = Schema.is(EffectAcpErrors.AcpRequestError);
 
 const XAiAskUserQuestionOption = Schema.Struct({
   label: Schema.String.check(
@@ -497,7 +504,15 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
           } satisfies Omit<EffectAcpSchema.PromptRequest, "sessionId">;
 
           return yield* Effect.raceFirst(
-            runtime.prompt(requestPayload, promptOptions),
+            runtime
+              .prompt(requestPayload, promptOptions)
+              .pipe(
+                Effect.mapError((error) =>
+                  isXAiRateLimitError(error)
+                    ? grokRateLimitRequestError(rateLimitDetailFromError(error))
+                    : error,
+                ),
+              ),
             Deferred.await(fallback.deferred),
           ).pipe(
             Effect.tap((response) =>
@@ -614,13 +629,21 @@ const settleXAiPromptCompletion = (
   notification: XAiPromptCompleteNotification,
 ) => {
   if (notification.stopReason === "rate_limit") {
-    return Deferred.fail(
-      deferred,
-      new EffectAcpErrors.AcpRequestError({
-        code: xAiRateLimitedErrorCode,
-        errorMessage: "Grok usage limit reached. Try again later.",
-      }),
-    ).pipe(Effect.asVoid);
+    const detail = xAiAgentResultMessage(notification.agentResult);
+    // The prompt RPC carries the 429 body. Fail from this notice only if that
+    // response does not arrive, and do not interrupt a pending Deferred.await.
+    const fail = Deferred.fail(deferred, grokRateLimitRequestError(detail)).pipe(
+      Effect.ignore,
+      Effect.asVoid,
+    );
+    if (detail !== undefined) {
+      return fail;
+    }
+    // Detach so the notification fiber can keep reading, and so this fiber
+    // ending does not cancel the grace period.
+    return Effect.promise(
+      () => new Promise((resolve) => setTimeout(resolve, xAiRateLimitDetailGraceMs)),
+    ).pipe(Effect.andThen(fail), Effect.forkDetach, Effect.asVoid);
   }
   if (notification.stopReason === "error") {
     return Deferred.fail(
@@ -642,6 +665,104 @@ function xAiAgentResultMessage(value: unknown): string | undefined {
   }
   const message = "message" in value ? value.message : undefined;
   return typeof message === "string" ? trimmed(message) : undefined;
+}
+
+function isXAiRateLimitError(
+  error: EffectAcpErrors.AcpError,
+): error is EffectAcpErrors.AcpRequestError {
+  return isAcpRequestError(error) && error.code === xAiRateLimitedErrorCode;
+}
+
+function rateLimitDetailFromError(error: EffectAcpErrors.AcpRequestError): string | undefined {
+  return textFromUnknown(error.data);
+}
+
+function textFromUnknown(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return trimmed(value);
+  }
+  if (value !== null && typeof value === "object" && "message" in value) {
+    const message = value.message;
+    return typeof message === "string" ? trimmed(message) : undefined;
+  }
+  return undefined;
+}
+
+function grokRateLimitRequestError(detail: string | undefined) {
+  return new EffectAcpErrors.AcpRequestError({
+    code: xAiRateLimitedErrorCode,
+    errorMessage: grokRateLimitUserMessage(detail),
+    ...(detail !== undefined ? { data: detail } : {}),
+  });
+}
+
+/**
+ * Grok reports every HTTP 429 as `rate_limit`, including a model's rolling included
+ * window. That window can be exhausted while the weekly allowance still has room.
+ */
+export function grokRateLimitUserMessage(detail: string | undefined): string {
+  const included = parseGrokIncludedModelUsage(detail);
+  if (included !== undefined) {
+    const counts =
+      included.used !== undefined && included.limit !== undefined
+        ? ` (${formatTokenCount(included.used)} of ${formatTokenCount(included.limit)} tokens)`
+        : "";
+    const window =
+      included.rollingHours === undefined
+        ? "included usage window"
+        : `rolling ${included.rollingHours}-hour window`;
+    return `Grok stopped this turn because ${included.model} has used its included allowance${counts} for the ${window}. Send the message again after that window moves, or switch models.`;
+  }
+  const text = readableRateLimitDetail(detail);
+  if (text === undefined) {
+    return genericGrokUsageLimitMessage;
+  }
+  return `Grok rate limit reached. ${text}`;
+}
+
+interface GrokIncludedModelUsage {
+  readonly model: string;
+  readonly used?: number;
+  readonly limit?: number;
+  readonly rollingHours?: number;
+}
+
+function parseGrokIncludedModelUsage(
+  detail: string | undefined,
+): GrokIncludedModelUsage | undefined {
+  if (detail === undefined) return undefined;
+  if (!detail.includes("free-usage-exhausted") && !/included free usage/i.test(detail)) {
+    return undefined;
+  }
+  const model = /model ([A-Za-z0-9][A-Za-z0-9._-]*)/.exec(detail)?.[1] ?? "this model";
+  const tokens = /tokens \(actual\/limit\): (\d+)\/(\d+)/.exec(detail);
+  const hours = /rolling (\d+)-hour/.exec(detail);
+  const used = tokens?.[1] !== undefined ? Number(tokens[1]) : undefined;
+  const limit = tokens?.[2] !== undefined ? Number(tokens[2]) : undefined;
+  const rollingHours = hours?.[1] !== undefined ? Number(hours[1]) : undefined;
+  return {
+    model,
+    ...(used !== undefined && Number.isSafeInteger(used) ? { used } : {}),
+    ...(limit !== undefined && Number.isSafeInteger(limit) ? { limit } : {}),
+    ...(rollingHours !== undefined && Number.isSafeInteger(rollingHours) ? { rollingHours } : {}),
+  };
+}
+
+function readableRateLimitDetail(detail: string | undefined): string | undefined {
+  const text = detail
+    ?.replace(/^API error \(status [^)]+\):\s*/i, "")
+    .replace(/^subscription:free-usage-exhausted:\s*/i, "")
+    .replace(/\s*Upgrade to a Grok subscription[\s\S]*$/i, "")
+    .replace(/\s*https:\/\/grok\.com\/\S+/g, "")
+    .trim();
+  if (text === undefined || text.length === 0 || text === "Rate limited") {
+    return undefined;
+  }
+  return text;
+}
+
+function formatTokenCount(value: number): string {
+  return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 const rememberCompletedXAiPromptId = (
