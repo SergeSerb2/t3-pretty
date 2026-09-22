@@ -8,6 +8,7 @@ import type { EnvironmentId, HomeSuggestion, HomeSuggestionsSnapshot } from "@t3
 import { Link } from "@tanstack/react-router";
 import { AsyncResult } from "effect/unstable/reactivity";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import {
   CompassIcon,
   FolderCodeIcon,
@@ -16,13 +17,14 @@ import {
   SparklesIcon,
   XIcon,
 } from "lucide-react";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 
 import { APP_DISPLAY_NAME } from "~/branding";
 import { cn } from "~/lib/utils";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { isElectron } from "../../env";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { homeSuggestionsEnvironment } from "../../state/homeSuggestions";
@@ -30,6 +32,7 @@ import { environmentServerConfigsAtom } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { rememberExploreProjectId, resolveExploreProjectId } from "./HomeScreen.logic";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { sortScopedProjectsForSidebar } from "../Sidebar.logic";
 import { Button } from "../ui/button";
@@ -42,6 +45,9 @@ import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 
 const RECENT_THREAD_COUNT = 6;
+const HOME_EXPLORE_PROJECT_STORAGE_KEY = "t3code:home-explore-project:v1";
+const HomeExploreProjectPreference = Schema.Record(Schema.String, Schema.String);
+const EMPTY_EXPLORE_PROJECT_PREFERENCE: Record<string, string> = {};
 
 const CARD_CLASS =
   "group flex min-h-40 flex-col gap-2 rounded-2xl border border-border/55 bg-card/20 p-4 text-left shadow-sm/5 transition-colors hover:border-border hover:bg-card/40";
@@ -206,6 +212,11 @@ function EnvironmentSuggestions({
   const dismiss = useAtomCommand(homeSuggestionsEnvironment.dismiss, { reportFailure: false });
   const handleNewThread = useNewThreadHandler();
   const setPrompt = useComposerDraftStore((store) => store.setPrompt);
+  const [exploreProjectByEnvironment, setExploreProjectByEnvironment] = useLocalStorage(
+    HOME_EXPLORE_PROJECT_STORAGE_KEY,
+    EMPTY_EXPLORE_PROJECT_PREFERENCE,
+    HomeExploreProjectPreference,
+  );
 
   const environmentProjects = useMemo(
     () =>
@@ -223,12 +234,14 @@ function EnvironmentSuggestions({
       ),
     [environmentProjects],
   );
-  // Explore cards belong to no project; the user picks where the agent
-  // starts, defaulting to the project they touched last.
-  const [exploreProjectId, setExploreProjectId] = useState<string | null>(null);
-  const chosenExploreProject =
-    exploreProjectId === null ? undefined : projectsById.get(exploreProjectId);
-  const exploreProject = chosenExploreProject ?? environmentProjects[0] ?? null;
+  // Explore cards belong to no project. Remember the last "Start in"
+  // choice per environment; fall back to the project they touched last.
+  const exploreProjectId = resolveExploreProjectId(
+    exploreProjectByEnvironment[environmentId],
+    environmentProjects.map((project) => project.id),
+  );
+  const exploreProject =
+    exploreProjectId === null ? null : (projectsById.get(exploreProjectId) ?? null);
 
   const start = useCallback(
     async (card: HomeSuggestion) => {
@@ -347,7 +360,12 @@ function EnvironmentSuggestions({
                 {environmentProjects.length > 1 ? (
                   <Select
                     value={exploreProject?.id ?? null}
-                    onValueChange={(value) => setExploreProjectId(value)}
+                    onValueChange={(value) => {
+                      if (value === null) return;
+                      setExploreProjectByEnvironment((current) =>
+                        rememberExploreProjectId(current, environmentId, value),
+                      );
+                    }}
                   >
                     <SelectTrigger size="sm" className="w-56" aria-label="Project for new ideas">
                       <span className="text-muted-foreground">Start in</span>
