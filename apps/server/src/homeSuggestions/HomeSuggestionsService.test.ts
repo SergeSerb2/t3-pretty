@@ -100,6 +100,7 @@ const generatedCards = [
 interface HarnessOptions {
   readonly settings?: Partial<ServerSettings>;
   readonly projects?: ReadonlyArray<OrchestrationProjectShell>;
+  readonly projectsRef?: Ref.Ref<ReadonlyArray<OrchestrationProjectShell>>;
   readonly generate?: (
     input: HomeSuggestionsGenerationInput,
   ) => Effect.Effect<{ suggestions: typeof generatedCards }, TextGenerationError>;
@@ -118,7 +119,17 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     ServerSettingsService.layerTest(options.settings ?? {}),
     Layer.mock(ProjectionSnapshotQuery)({
       getShellSnapshot: () =>
-        Effect.succeed({ snapshotSequence: 1, projects, threads: [thread], updatedAt: NOW }),
+        (options.projectsRef === undefined
+          ? Effect.succeed(projects)
+          : Ref.get(options.projectsRef)
+        ).pipe(
+          Effect.map((list) => ({
+            snapshotSequence: 1,
+            projects: list,
+            threads: [thread],
+            updatedAt: NOW,
+          })),
+        ),
       getThreadDetailById: () =>
         Effect.succeed(
           Option.some({
@@ -208,6 +219,7 @@ describe("HomeSuggestionsService", () => {
         );
         assert.strictEqual(snapshot.status, "ready");
         assert.strictEqual(snapshot.generatedAt, NOW);
+        assert.isTrue(snapshot.timeZone.length > 0);
         assert.deepStrictEqual(titles(snapshot), ["Finish the home screen", "Build a CLI timer"]);
         assert.strictEqual(snapshot.suggestions[0]?.projectId, PROJECT_ID);
         assert.strictEqual(snapshot.suggestions[1]?.projectId, null);
@@ -253,6 +265,39 @@ describe("HomeSuggestionsService", () => {
         assert.strictEqual(generations[0]?.cwd, project.workspaceRoot);
         assert.include(generations[0]?.context, "## P1: T3 Pretty");
         assert.include(generations[0]?.context, "## P2: Older");
+      }),
+    ),
+  );
+
+  it.effect("an empty-project run does not consume the first-start slot", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        const projects = yield* Ref.make<ReadonlyArray<OrchestrationProjectShell>>([]);
+        const harness = yield* makeHarness(baseDir, { projects: [], projectsRef: projects });
+        yield* withService(harness, (service) =>
+          Effect.gen(function* () {
+            const empty = yield* service.current;
+            assert.strictEqual(empty.status, "idle");
+            assert.isNull(empty.generatedAt);
+            yield* service.refresh;
+            yield* service.drain;
+            const afterRefresh = yield* service.current;
+            assert.strictEqual(afterRefresh.status, "idle");
+            assert.isNull(afterRefresh.generatedAt);
+            assert.strictEqual((yield* Ref.get(harness.generations)).length, 0);
+
+            yield* Ref.set(projects, [project]);
+            yield* service.tickOnce;
+            yield* service.drain;
+            const ready = yield* service.current;
+            assert.strictEqual(ready.status, "ready");
+            assert.deepStrictEqual(titles(ready), [
+              "Finish the home screen",
+              "Build a CLI timer",
+            ]);
+          }),
+        );
+        assert.strictEqual((yield* Ref.get(harness.generations)).length, 1);
       }),
     ),
   );

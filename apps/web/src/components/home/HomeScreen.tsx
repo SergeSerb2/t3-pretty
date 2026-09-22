@@ -32,7 +32,11 @@ import { environmentServerConfigsAtom } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
-import { rememberExploreProjectId, resolveExploreProjectId } from "./HomeScreen.logic";
+import {
+  formatNextRun,
+  rememberExploreProjectId,
+  resolveExploreProjectId,
+} from "./HomeScreen.logic";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { sortScopedProjectsForSidebar } from "../Sidebar.logic";
 import { Button } from "../ui/button";
@@ -425,28 +429,9 @@ function describeSnapshot(
     parts.push(`Last attempt failed: ${snapshot.error}`);
   }
   if (snapshot.nextRunAt !== null) {
-    parts.push(`next batch ${formatNextRun(snapshot.nextRunAt)}`);
+    parts.push(`next batch ${formatNextRun(snapshot.nextRunAt, snapshot.timeZone)}`);
   }
   return parts.join(" · ");
-}
-
-function formatNextRun(iso: string): string {
-  const runMs = Date.parse(iso);
-  if (Number.isNaN(runMs)) return "soon";
-  const now = new Date();
-  if (runMs <= now.getTime()) return "any moment now";
-  const run = new Date(runMs);
-  const time = run.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const dayOffset = Math.floor((runMs - startOfToday) / 86_400_000);
-  if (dayOffset === 0) return `today at ${time}`;
-  if (dayOffset === 1) return `tomorrow at ${time}`;
-  const day = run.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-  return `${day} at ${time}`;
 }
 
 function EmptySuggestions({

@@ -7,6 +7,7 @@
  * A card is a ready-to-send prompt: "project" cards continue work in an
  * existing project, "explore" cards start something new.
  */
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { IsoDateTime, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
@@ -39,6 +40,11 @@ export const HomeSuggestionsSnapshot = Schema.Struct({
   generatedAt: Schema.NullOr(IsoDateTime),
   /** The next scheduled generation, null while suggestions are turned off. */
   nextRunAt: Schema.NullOr(IsoDateTime),
+  /**
+   * IANA zone `nextRunAt` was computed in. Clients format the clock in this
+   * zone so a remote browser does not relabel 09:00 as the user's midnight.
+   */
+  timeZone: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("UTC"))),
   /** Why the last generation failed; cleared by the next successful batch. */
   error: Schema.NullOr(Schema.String),
   suggestions: Schema.Array(HomeSuggestion),
@@ -49,6 +55,7 @@ export const EMPTY_HOME_SUGGESTIONS_SNAPSHOT: HomeSuggestionsSnapshot = {
   status: "idle",
   generatedAt: null,
   nextRunAt: null,
+  timeZone: "UTC",
   error: null,
   suggestions: [],
 };

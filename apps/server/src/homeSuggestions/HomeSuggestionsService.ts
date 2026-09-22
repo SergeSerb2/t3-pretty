@@ -151,7 +151,8 @@ export const make = Effect.gen(function* () {
 
   const publish = (update: (snapshot: HomeSuggestionsSnapshot) => HomeSuggestionsSnapshot) =>
     Ref.modify(published, (previous): readonly [Published, Published] => {
-      const next = { seq: previous.seq + 1, snapshot: update(previous.snapshot) };
+      const snapshot = { ...update(previous.snapshot), timeZone };
+      const next = { seq: previous.seq + 1, snapshot };
       return [next, next];
     }).pipe(Effect.tap((next) => PubSub.publish(changes, next)));
 
@@ -248,8 +249,10 @@ export const make = Effect.gen(function* () {
     // every later tick and refresh refuses to enqueue.
     const exit = yield* Effect.gen(function* () {
       const { projects, threads } = yield* readDigestThreads();
+      // No projects is not a batch. Leave generatedAt/lastAttemptAt alone so
+      // the first real workspace still gets the first-start slot.
       if (projects.length === 0) {
-        return [] as ReadonlyArray<HomeSuggestion>;
+        return { kind: "empty" as const };
       }
       const digest = buildHomeSuggestionsDigest({ projects, threads, nowMs });
       const state = yield* Ref.get(stored);
@@ -266,11 +269,14 @@ export const make = Effect.gen(function* () {
         modelSelection: current.homeSuggestionsModelSelection,
       });
       const batchId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
-      return mapGeneratedSuggestions({
-        generated: generated.suggestions,
-        projectsByKey: digest.projectsByKey,
-        makeId: (index) => `${batchId}:${index}`,
-      });
+      return {
+        kind: "batch" as const,
+        suggestions: mapGeneratedSuggestions({
+          generated: generated.suggestions,
+          projectsByKey: digest.projectsByKey,
+          makeId: (index) => `${batchId}:${index}`,
+        }),
+      };
     }).pipe(Effect.exit);
 
     // The attempt time always moves past this run, so a failing provider is
@@ -297,7 +303,18 @@ export const make = Effect.gen(function* () {
       }));
       return;
     }
-    const suggestions = exit.value;
+    if (exit.value.kind === "empty") {
+      const state = yield* Ref.get(stored);
+      yield* publish((snapshot) => ({
+        ...snapshot,
+        status: statusOf(state),
+        error: null,
+        nextRunAt: isoOrNull(nextRunAtFor(current, state, nowMs)),
+        suggestions: state.suggestions,
+      }));
+      return;
+    }
+    const suggestions = exit.value.suggestions;
     const state = yield* Ref.updateAndGet(stored, (previous) => ({
       generatedAt: attemptedAt,
       lastAttemptAt: attemptedAt,
@@ -354,6 +371,10 @@ export const make = Effect.gen(function* () {
     }
     if (dueAt === null || dueAt > nowMs) return;
     if (yield* hostSuspended) return;
+    const shell = yield* projection.getShellSnapshot().pipe(
+      Effect.orElseSucceed(() => ({ projects: [] as const })),
+    );
+    if (shell.projects.length === 0) return;
     // Claim generating before enqueue so a second tick (settings change,
     // the 1-minute repeat, start+tickOnce) cannot queue another LLM batch
     // while this one is still waiting on the worker.
