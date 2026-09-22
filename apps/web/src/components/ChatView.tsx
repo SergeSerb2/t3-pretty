@@ -10249,23 +10249,20 @@ export default function ChatView(props: ChatViewProps) {
 
             {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise.
                 World Scenery new threads use a column so the place credit can sit in the lower
-                band instead of stacking on the composer. */}
+                band. The headline and suggestion shelves stay in that column, so the landing
+                is centered as one stack instead of hanging above a centered composer. */}
             <div
               ref={setComposerOverlayElement}
               inert={isRevertingCheckpoint}
               data-chat-composer-overlay="true"
               data-composer-placement={isDraftHeroState ? "hero" : "docked"}
               className={
-                isDraftHeroState && sceneryThemeActive
+                isDraftHeroState
                   ? "pointer-events-none absolute inset-0 z-20 flex flex-col"
-                  : isDraftHeroState
-                    ? "pointer-events-none absolute inset-0 z-20 flex items-center"
-                    : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
+                  : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >
-              {isDraftHeroState && sceneryThemeActive ? (
-                <div aria-hidden className="min-h-0 flex-1" />
-              ) : null}
+              {isDraftHeroState ? <div aria-hidden className="min-h-0 flex-1" /> : null}
               <div
                 ref={attachDraftHeroTransitionGroupRef}
                 className="w-full shrink-0 ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
@@ -10276,10 +10273,9 @@ export default function ChatView(props: ChatViewProps) {
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-3xl"
                 >
                   {isDraftHeroState ? (
-                    <div className="absolute inset-x-0 bottom-full z-0">
+                    <div className="pb-10 group-has-data-[composer-shoulder-tab]/composer-stack:pb-5 sm:pb-14">
                       <div
                         ref={draftHeroHeadlineRef}
-                        className="pb-8 group-has-data-[composer-shoulder-tab]/composer-stack:pb-4"
                         data-scenery-hero-chrome="headline"
                         style={
                           forceExpandedMobileComposer
@@ -10294,12 +10290,12 @@ export default function ChatView(props: ChatViewProps) {
                           activeProjectRef={activeProjectRef}
                           activeProjectTitle={activeProject?.title ?? null}
                         />
-                        <HomeSuggestionsPanel
-                          environmentId={environmentId}
-                          draftId={draftId}
-                          activeProjectRef={activeProjectRef}
-                        />
                       </div>
+                      <HomeSuggestionsPanel
+                        environmentId={environmentId}
+                        draftId={draftId}
+                        activeProjectRef={activeProjectRef}
+                      />
                     </div>
                   ) : null}
                   <div
@@ -10534,6 +10530,8 @@ export default function ChatView(props: ChatViewProps) {
                     className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
                   />
                 </div>
+              ) : isDraftHeroState ? (
+                <div aria-hidden className="min-h-0 flex-1" />
               ) : null}
             </div>
 

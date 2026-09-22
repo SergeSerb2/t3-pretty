@@ -2,8 +2,8 @@
 
 Opening T3 Pretty with nothing selected, clicking the T3 Pretty mark in the top left, or running
 **Go to home** from the command palette lands you on a fresh draft in your most recent project:
-the "What should we build in …?" page with the composer. Above the composer sits a row of
-suggested prompts for the day.
+the "What should we build in …?" page with the composer. Above the composer, suggested prompts
+for the day sit in horizontal rows.
 
 ## Suggestions
 
@@ -18,8 +18,11 @@ next and writes it up as cards:
 
 Click a card and its prompt is typed into the composer. Nothing is sent until you press send, so
 edit it first if you like. A card for another project opens a draft there instead. Dismiss a card
-with the **×** in its corner; it stays gone until the next batch. Scroll the row sideways to see
-every card.
+with the **×** in its corner; it stays gone until the next batch.
+
+Project cards and new ideas are separate rows when a batch has both. Each row scrolls sideways.
+The last visible card is cut off, and the arrow at the edge of the row brings the next cards
+into view.
 
 The batch regenerates at **09:00** in the environment's local time. If the machine was asleep at
 that moment, the batch runs once when it is back. The refresh icon beside the row, or

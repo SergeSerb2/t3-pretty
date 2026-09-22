@@ -6,7 +6,7 @@ import type { EnvironmentId, HomeSuggestion, ScopedProjectRef } from "@t3tools/c
 import { Link } from "@tanstack/react-router";
 import { AsyncResult } from "effect/unstable/reactivity";
 import * as Option from "effect/Option";
-import { CompassIcon, SettingsIcon, SparklesIcon, XIcon } from "lucide-react";
+import { SettingsIcon, SparklesIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { cn } from "~/lib/utils";
@@ -16,10 +16,11 @@ import { useProjects } from "../../state/entities";
 import { homeSuggestionsEnvironment } from "../../state/homeSuggestions";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { RefreshIcon } from "../ui/refresh-icon";
 import { toastManager } from "../ui/toast";
+import { HomeSuggestionShelfView } from "./HomeSuggestionShelf";
+import { groupHomeSuggestionShelves } from "./homeSuggestionShelves";
 
 function describeCommandFailure(result: Parameters<typeof squashAtomCommandFailure>[0]): string {
   const error = squashAtomCommandFailure(result);
@@ -28,10 +29,11 @@ function describeCommandFailure(result: Parameters<typeof squashAtomCommandFailu
 
 /**
  * The day's suggested prompts, shown on the draft landing between the
- * headline and the composer. Picking a card types its prompt into the open
- * draft; a card for another project opens a draft there first. The panel
- * stays quiet (renders nothing) whenever there is nothing worth showing, so
- * the landing never loses its calm to a loading or error state.
+ * headline and the composer. Project cards and new ideas are separate
+ * horizontal shelves. Picking a card types its prompt into the open draft; a
+ * card for another project opens a draft there first. The panel stays quiet
+ * (renders nothing) whenever there is nothing worth showing, so the landing
+ * never loses its calm to a loading or error state.
  */
 export function HomeSuggestionsPanel({
   environmentId,
@@ -131,12 +133,14 @@ function EnvironmentSuggestionsStrip({
   const cards = snapshot.suggestions;
   if (cards.length === 0 && !generating) return null;
 
+  const shelves = groupHomeSuggestionShelves(cards);
+
   return (
     <section
       aria-label="Suggested prompts"
-      className="pointer-events-auto mx-auto mb-6 flex w-full flex-col gap-2"
+      className="pointer-events-auto mt-8 flex w-full flex-col gap-3.5 sm:mt-10"
     >
-      <div className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1.5 px-0.5 text-xs text-muted-foreground">
         <SparklesIcon className="size-3.5" />
         <span>{generating ? "Planning today's suggestions…" : "Suggested for today"}</span>
         <div className="ml-auto flex items-center">
@@ -159,73 +163,22 @@ function EnvironmentSuggestionsStrip({
           </Button>
         </div>
       </div>
-      {cards.length > 0 ? (
-        <ul className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {cards.map((card) => (
-            <li key={card.id} className="w-64 shrink-0 snap-start">
-              <SuggestionCard
-                card={card}
-                project={
-                  card.projectId === null ? null : (projectsById.get(card.projectId) ?? null)
-                }
-                onStart={() => void start(card)}
-                onDismiss={() => void onDismiss(card.id)}
-              />
-            </li>
+      {shelves.length > 0 ? (
+        <div className="flex flex-col gap-4">
+          {shelves.map((shelf) => (
+            <HomeSuggestionShelfView
+              key={shelf.kind}
+              shelf={shelf}
+              showLabel={shelves.length > 1}
+              projectFor={(projectId) =>
+                projectId === null ? null : (projectsById.get(projectId) ?? null)
+              }
+              onStart={(card) => void start(card)}
+              onDismiss={(card) => void onDismiss(card.id)}
+            />
           ))}
-        </ul>
+        </div>
       ) : null}
     </section>
-  );
-}
-
-function SuggestionCard({
-  card,
-  project,
-  onStart,
-  onDismiss,
-}: {
-  readonly card: HomeSuggestion;
-  readonly project: EnvironmentProject | null;
-  readonly onStart: () => void;
-  readonly onDismiss: () => void;
-}) {
-  return (
-    <div className="group relative h-full">
-      <button
-        type="button"
-        onClick={onStart}
-        className="flex h-full w-full flex-col gap-1 rounded-xl border border-border/55 bg-card/40 px-3 py-2.5 text-left transition-colors hover:border-border hover:bg-card/70 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <span className="flex items-center gap-1.5 pr-5 text-[.6875rem] text-muted-foreground">
-          {project ? (
-            <>
-              <ProjectFavicon project={project} className="size-3.5 shrink-0" />
-              <span className="truncate">{project.title}</span>
-            </>
-          ) : (
-            <>
-              <CompassIcon className="size-3.5 shrink-0" />
-              <span>New idea</span>
-            </>
-          )}
-        </span>
-        <span className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
-          {card.title}
-        </span>
-        <span className="line-clamp-2 text-xs leading-relaxed text-muted-foreground/78">
-          {card.summary}
-        </span>
-      </button>
-      <Button
-        size="icon-xs"
-        variant="ghost-muted"
-        className="absolute top-1.5 right-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-        aria-label={`Dismiss ${card.title}`}
-        onClick={onDismiss}
-      >
-        <XIcon className="size-3" />
-      </Button>
-    </div>
   );
 }
