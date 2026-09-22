@@ -107,6 +107,18 @@ describe("macOS traffic lights vs collapsed sidebar", () => {
     expect(order).toEqual(["hide-started", "release"]);
   });
 
+  it("hides the sidebar toggle while the project rail is at rest", () => {
+    const css = NodeFS.readFileSync(new URL("./index.css", import.meta.url), "utf8");
+
+    expect(css).toContain(
+      `[data-slot="sidebar"][data-collapsed]:not([data-peeking]) ~ [data-sidebar-control] {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}`,
+    );
+  });
+
   it("slides the sidebar toggle with the traffic-light inset", () => {
     const layout = NodeFS.readFileSync(
       new URL("./components/AppSidebarLayout.tsx", import.meta.url),
@@ -124,7 +136,8 @@ describe("macOS traffic lights vs collapsed sidebar", () => {
     expect(css).toContain("html[data-macos-traffic-lights]");
     expect(css).toContain("var(--desktop-window-controls-inset, 90px)");
     expect(css).toContain("[data-sidebar-control]");
-    expect(css).toContain("transition: translate");
+    expect(css).toContain("translate var(--sidebar-peek-duration, 280ms)");
+    expect(css).toContain("opacity var(--sidebar-peek-duration, 280ms)");
   });
 
   it("keeps collapsed-sidebar hover alive through the traffic-light band", () => {
