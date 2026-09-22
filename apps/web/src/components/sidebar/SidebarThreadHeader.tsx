@@ -15,7 +15,7 @@ import { SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface SidebarThreadHeaderProps {
-  /** Project the rail selected. Omitted when the list shows every project. */
+  /** Project or folder the rail selected. Omitted when the list shows every project. */
   scopeTitle?: ReactNode | undefined;
   /** Receives the click so Shift+click can skip the project picker. */
   onNewThread: (event: ReactMouseEvent) => void;

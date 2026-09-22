@@ -415,3 +415,44 @@ export function parseProjectFolderMenuAction(id: string): ProjectFolderMenuActio
   }
   return null;
 }
+
+// The sidebar scope is one persisted key: a project key, or a folder id
+// behind this prefix. Project keys are repository or environment keys, so
+// the prefix cannot collide with them.
+const FOLDER_SCOPE_PREFIX = "project-folder:";
+
+export function projectFolderScopeKey(folderId: string): string {
+  return `${FOLDER_SCOPE_PREFIX}${folderId}`;
+}
+
+export type SidebarProjectScope<T extends { projectKey: string }> =
+  | { readonly kind: "project"; readonly project: T }
+  | {
+      readonly kind: "folder";
+      readonly folder: SidebarProjectFolder;
+      readonly projects: readonly T[];
+    };
+
+/**
+ * Resolves the persisted scope key. A folder scope covers the projects
+ * currently assigned to it; a folder with no loaded members resolves to
+ * null, like a project that is gone.
+ */
+export function resolveSidebarProjectScope<T extends { projectKey: string }>(
+  scopeKey: string | null,
+  projects: readonly T[],
+  settings: SidebarProjectFolderSettings,
+): SidebarProjectScope<T> | null {
+  if (scopeKey === null) return null;
+  if (!scopeKey.startsWith(FOLDER_SCOPE_PREFIX)) {
+    const project = projects.find((candidate) => candidate.projectKey === scopeKey);
+    return project === undefined ? null : { kind: "project", project };
+  }
+  const folderId = scopeKey.slice(FOLDER_SCOPE_PREFIX.length);
+  const folder = settings.folders.find((candidate) => candidate.id === folderId);
+  if (folder === undefined) return null;
+  const members = projects.filter(
+    (project) => settings.assignments[project.projectKey] === folderId,
+  );
+  return members.length === 0 ? null : { kind: "folder", folder, projects: members };
+}
