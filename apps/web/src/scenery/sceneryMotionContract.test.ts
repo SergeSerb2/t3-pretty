@@ -321,13 +321,10 @@ describe("changed-files card contract", () => {
     expect(changedFilesSource).toContain("data-changed-files-state");
   });
 
-  it("the expanded header stays sticky on the card's glass instead of an opaque slab", () => {
-    expect(changedFilesSource).toContain(
-      "bg-secondary p-2 dark:border-transparent dark:bg-input/32",
-    );
-    expect(changedFilesSource).toContain(
-      '"sticky top-2 z-10 mb-2 bg-secondary dark:bg-neutral-900"',
-    );
+  it("the sticky header wears the scenery frost instead of an opaque slab", () => {
+    expect(changedFilesSource).toContain("sticky top-2 z-10");
+    expect(changedFilesSource).toContain("data-changed-files-header");
+    expect(sceneryStylesSource).toContain("[data-scenery-on] [data-changed-files-header]");
     expect(changedFilesSource).not.toContain("var(--contrast-foreground)_2.5%");
     expect(changedFilesSource).not.toContain("backdrop-blur-md");
   });
