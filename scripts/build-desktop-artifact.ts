@@ -41,6 +41,7 @@ import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -2405,7 +2406,7 @@ export function resolveHostTempDirectory(env: NodeJS.ProcessEnv = process.env): 
   if (configured && configured.trim() !== "") {
     return configured;
   }
-  return env.SystemRoot ? NodePath.join(env.SystemRoot, "Temp") : "/tmp";
+  return env.SystemRoot ? NodePath.win32.join(env.SystemRoot, "Temp") : "/tmp";
 }
 
 export function resolveElectronBuilderMacOutDirName(arch: string): string {
@@ -2480,33 +2481,27 @@ export function applyElectronBuilderIsolationEnv(
   };
 }
 
-export async function removeStaleElectronBuilderToolsetLock(
-  tmpDir: string,
-  nowMs = Date.now(),
-  staleMs = ELECTRON_BUILDER_TOOLSET_LOCK_STALE_MS,
-): Promise<boolean> {
+export const removeStaleElectronBuilderToolsetLock = Effect.fn(
+  "removeStaleElectronBuilderToolsetLock",
+)(function* (tmpDir: string, staleMs = ELECTRON_BUILDER_TOOLSET_LOCK_STALE_MS) {
+  const fs = yield* FileSystem.FileSystem;
   const { lockFile, lockDir } = resolveElectronBuilderToolsetLockPaths(tmpDir);
-  let lockStat;
-  try {
-    lockStat = await NodeFSP.stat(lockDir);
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
-  if (!isElectronBuilderToolsetLockStale(lockStat.mtimeMs, nowMs, staleMs)) {
+  const lockStat = yield* fs.stat(lockDir).pipe(Effect.orElseSucceed(() => null));
+  if (!lockStat) {
     return false;
   }
-  await NodeFSP.rm(lockDir, { recursive: true, force: true });
-  await NodeFSP.rm(lockFile, { force: true }).catch((error: unknown) => {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return;
-    }
-    throw error;
-  });
+  const mtime = Option.getOrUndefined(lockStat.mtime);
+  if (mtime === undefined) {
+    return false;
+  }
+  const nowMs = yield* Clock.currentTimeMillis;
+  if (!isElectronBuilderToolsetLockStale(mtime.getTime(), nowMs, staleMs)) {
+    return false;
+  }
+  yield* fs.remove(lockDir, { recursive: true, force: true });
+  yield* fs.remove(lockFile, { force: true }).pipe(Effect.ignore);
   return true;
-}
+});
 
 export const stageLinuxCaptureHelper = Effect.fn("stageLinuxCaptureHelper")(function* (input: {
   readonly backend: "kde" | "hyprland";
@@ -4443,10 +4438,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   );
 
   for (const packagingTarget of packagingTargets) {
-    const removedStaleLock = yield* Effect.tryPromise({
-      try: () => removeStaleElectronBuilderToolsetLock(builderTmpDir),
-      catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-    }).pipe(
+    const removedStaleLock = yield* removeStaleElectronBuilderToolsetLock(builderTmpDir).pipe(
       Effect.tapError((error) =>
         Effect.logWarning("Could not inspect electron-builder toolset lock.", {
           tmpDir: builderTmpDir,
@@ -4466,7 +4458,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       build: withDesktopPackagingTarget(stagePackageJson.build, options.platform, packagingTarget),
     };
     const targetPackageJsonString = yield* encodeJsonString(targetPackageJson);
-    yield* fs.writeFileString(path.join(stageAppDir, "package.json"), `${targetPackageJsonString}\n`);
+    yield* fs.writeFileString(
+      path.join(stageAppDir, "package.json"),
+      `${targetPackageJsonString}\n`,
+    );
 
     const prepackagedAppPath = resolveElectronBuilderPrepackagedAppPath({
       platform: options.platform,

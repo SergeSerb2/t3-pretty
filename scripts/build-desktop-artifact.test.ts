@@ -2466,12 +2466,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       const { lockFile, lockDir } = resolveElectronBuilderToolsetLockPaths(tmpDir);
       yield* fs.makeDirectory(lockDir, { recursive: true });
       yield* fs.writeFileString(lockFile, "");
-      assert.isFalse(yield* Effect.promise(() => removeStaleElectronBuilderToolsetLock(tmpDir)));
+      assert.isFalse(yield* removeStaleElectronBuilderToolsetLock(tmpDir));
       assert.isTrue(yield* fs.exists(lockDir));
-      const staleNow = Date.now() + ELECTRON_BUILDER_TOOLSET_LOCK_STALE_MS + 1;
-      assert.isTrue(
-        yield* Effect.promise(() => removeStaleElectronBuilderToolsetLock(tmpDir, staleNow)),
-      );
+      // Pin mtime to epoch so the lock is older than both the live clock and
+      // @effect/vitest's TestClock (which starts at 0).
+      yield* fs.utimes(lockDir, 0, 0);
+      assert.isTrue(yield* removeStaleElectronBuilderToolsetLock(tmpDir, 0));
       assert.isFalse(yield* fs.exists(lockDir));
       assert.isFalse(yield* fs.exists(lockFile));
     }),
