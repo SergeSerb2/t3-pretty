@@ -4,6 +4,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  type HomeSuggestionsTime,
   type OrchestrationProjectShell,
   type OrchestrationThreadShell,
 } from "@t3tools/contracts";
@@ -279,7 +280,8 @@ describe("nextHomeSuggestionsRunAt", () => {
       timeZone: "Europe/Berlin",
     });
     // 09:00 CEST is 07:00 UTC.
-    expect(DateTime.formatIso(DateTime.makeUnsafe(next))).toBe("2026-09-21T07:00:00.000Z");
+    expect(next).not.toBeNull();
+    expect(DateTime.formatIso(DateTime.makeUnsafe(next ?? 0))).toBe("2026-09-21T07:00:00.000Z");
   });
 
   it("rolls to tomorrow once today's instant has passed", () => {
@@ -288,7 +290,8 @@ describe("nextHomeSuggestionsRunAt", () => {
       afterMs: Date.parse("2026-09-21T07:00:00.000Z"),
       timeZone: "Europe/Berlin",
     });
-    expect(DateTime.formatIso(DateTime.makeUnsafe(next))).toBe("2026-09-22T07:00:00.000Z");
+    expect(next).not.toBeNull();
+    expect(DateTime.formatIso(DateTime.makeUnsafe(next ?? 0))).toBe("2026-09-22T07:00:00.000Z");
   });
 
   it("falls back to UTC for an unknown zone", () => {
@@ -297,6 +300,16 @@ describe("nextHomeSuggestionsRunAt", () => {
       afterMs: Date.parse("2026-09-21T23:00:00.000Z"),
       timeZone: "Mars/Olympus",
     });
-    expect(DateTime.formatIso(DateTime.makeUnsafe(next))).toBe("2026-09-21T23:30:00.000Z");
+    expect(next).not.toBeNull();
+    expect(DateTime.formatIso(DateTime.makeUnsafe(next ?? 0))).toBe("2026-09-21T23:30:00.000Z");
+  });
+
+  it("treats a corrupt clock time as not due", () => {
+    const next = nextHomeSuggestionsRunAt({
+      time: "9" as HomeSuggestionsTime,
+      afterMs: Date.parse("2026-09-21T06:30:00.000Z"),
+      timeZone: "Europe/Berlin",
+    });
+    expect(next).toBeNull();
   });
 });

@@ -280,6 +280,20 @@ function EnvironmentSuggestions({
     }
   }, [environmentId, refresh, resubscribe, subscriptionFailed]);
 
+  const onDismiss = useCallback(
+    async (suggestionId: HomeSuggestion["id"]) => {
+      const outcome = await dismiss({ environmentId, input: { suggestionId } });
+      if (outcome._tag === "Failure") {
+        toastManager.add({
+          type: "error",
+          title: "Could not dismiss suggestion",
+          description: describeCommandFailure(outcome),
+        });
+      }
+    },
+    [dismiss, environmentId],
+  );
+
   // Nothing here can be started without a project, and the server has
   // nothing to digest either.
   if (environmentProjects.length === 0) return null;
@@ -346,9 +360,7 @@ function EnvironmentSuggestions({
                       card.projectId === null ? null : (projectsById.get(card.projectId) ?? null)
                     }
                     onStart={() => void start(card)}
-                    onDismiss={() =>
-                      void dismiss({ environmentId, input: { suggestionId: card.id } })
-                    }
+                    onDismiss={() => void onDismiss(card.id)}
                   />
                 ))}
               </CardGrid>
@@ -398,9 +410,7 @@ function EnvironmentSuggestions({
                     card={card}
                     project={null}
                     onStart={() => void start(card)}
-                    onDismiss={() =>
-                      void dismiss({ environmentId, input: { suggestionId: card.id } })
-                    }
+                    onDismiss={() => void onDismiss(card.id)}
                   />
                 ))}
               </CardGrid>

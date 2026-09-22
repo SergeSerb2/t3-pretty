@@ -11,6 +11,7 @@
 import {
   HOME_SUGGESTIONS_EXPLORE_COUNT,
   HOME_SUGGESTIONS_PROJECT_COUNT,
+  HOME_SUGGESTIONS_TIME_PATTERN,
   HomeSuggestionId,
   type HomeSuggestion,
   type HomeSuggestionsTime,
@@ -218,10 +219,19 @@ export function nextHomeSuggestionsRunAt(input: {
   readonly time: HomeSuggestionsTime;
   readonly afterMs: number;
   readonly timeZone: string;
-}): number {
+}): number | null {
   const [hoursText, minutesText] = input.time.split(":");
   const hours = Number(hoursText);
   const minutes = Number(minutesText);
+  // Settings already constrain this to HH:mm, but a corrupt stored value
+  // must not look due (`NaN > now` is false) and claim a batch every tick.
+  if (
+    !HOME_SUGGESTIONS_TIME_PATTERN.test(input.time) ||
+    !Number.isFinite(hours) ||
+    !Number.isFinite(minutes)
+  ) {
+    return null;
+  }
   const zoned = inNamedZone(input.afterMs, input.timeZone);
   const wallClock = { hour: hours, minute: minutes, second: 0, millisecond: 0 };
   const candidate = DateTime.setParts(zoned, wallClock);
