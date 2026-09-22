@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260922.2083002745",
+    date: "2026-09-22",
+    items: [
+      {
+        kind: "new",
+        title: "Frost changed-files and plan cards under World Scenery",
+      },
+      {
+        kind: "fixed",
+        title: "Let threads switch between Claude accounts",
+      },
+      {
+        kind: "fixed",
+        title: "Load images agents link in a thread",
+      },
+      {
+        kind: "fixed",
+        title: "Provide SecretRequestBroker to the /ws RPC layer",
+      },
+      {
+        kind: "fixed",
+        title: "Show suggested prompts on the draft landing instead of a page",
+      },
+      {
+        kind: "new",
+        title: "A home screen with daily suggested prompts",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260922.2083002736",
     date: "2026-09-22",
     items: [
