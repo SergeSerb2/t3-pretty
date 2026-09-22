@@ -1461,11 +1461,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             );
           }
         }
-        const effectiveResumeCursor =
-          input.resumeCursor ??
-          (persistedBinding?.providerInstanceId === resolvedInstanceId
-            ? persistedBinding.resumeCursor
-            : undefined);
+        // Past the check above, a same-driver binding is resumable here even
+        // when it was written by another instance (e.g. another account).
+        const persistedResumeCursor =
+          persistedBinding?.provider === resolvedProvider
+            ? (persistedBinding.resumeCursor ?? undefined)
+            : undefined;
+        const effectiveResumeCursor = input.resumeCursor ?? persistedResumeCursor;
         const effectiveCwd =
           input.cwd ??
           (persistedBinding?.providerInstanceId === resolvedInstanceId
@@ -1476,8 +1478,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.resume_cursor.source":
             input.resumeCursor !== undefined
               ? "request"
-              : effectiveResumeCursor !== undefined &&
-                  persistedBinding?.providerInstanceId === resolvedInstanceId
+              : persistedResumeCursor !== undefined
                 ? "persisted"
                 : "none",
           "provider.resume_cursor.present": effectiveResumeCursor !== undefined,

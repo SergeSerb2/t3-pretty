@@ -2,7 +2,9 @@ import * as NodeOS from "node:os";
 
 import type { ClaudeSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import type * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import { expandHomePath } from "../../pathExpansion.ts";
@@ -53,13 +55,50 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
   };
 });
 
-export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationGroupKey")(
-  function* (
-    config: Pick<ClaudeSettings, "homePath">,
-    environment?: NodeJS.ProcessEnv,
-  ): Effect.fn.Return<string, never, Path.Path> {
-    const resolvedHomePath = yield* resolveClaudeHomePath(config, environment);
-    return `claude:home:${resolvedHomePath}`;
+/**
+ * Every Claude instance can continue every Claude thread: switching accounts
+ * resumes the same native session after its transcript is copied into the
+ * new config directory (see `importClaudeSessionTranscript`).
+ */
+export const CLAUDE_CONTINUATION_GROUP_KEY = "claude:portable-transcripts";
+
+/**
+ * Copy a Claude session transcript between config directories so a Claude
+ * instance signed into another account can resume it. Claude stores sessions
+ * at `projects/<cwd slug>/<session id>.jsonl` plus an optional sidecar
+ * directory (subagents, tool results). The slug is copied verbatim rather
+ * than recomputed so it always matches what the CLI wrote. The source is the
+ * directory that ran the latest turn, so it overwrites any older copy.
+ */
+export const importClaudeSessionTranscript = Effect.fn("importClaudeSessionTranscript")(
+  function* (input: {
+    readonly sessionId: string;
+    readonly sourceConfigDir: string;
+    readonly targetConfigDir: string;
+  }): Effect.fn.Return<boolean, PlatformError.PlatformError, FileSystem.FileSystem | Path.Path> {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const sourceProjects = path.resolve(input.sourceConfigDir, "projects");
+    const targetProjects = path.resolve(input.targetConfigDir, "projects");
+    if (sourceProjects === targetProjects) return false;
+    if (!(yield* fileSystem.exists(sourceProjects))) return false;
+
+    const transcriptName = `${input.sessionId}.jsonl`;
+    for (const projectSlug of yield* fileSystem.readDirectory(sourceProjects)) {
+      const sourceTranscript = path.join(sourceProjects, projectSlug, transcriptName);
+      if (!(yield* fileSystem.exists(sourceTranscript))) continue;
+      const targetProject = path.join(targetProjects, projectSlug);
+      yield* fileSystem.makeDirectory(targetProject, { recursive: true });
+      yield* fileSystem.copyFile(sourceTranscript, path.join(targetProject, transcriptName));
+      const sourceSidecar = path.join(sourceProjects, projectSlug, input.sessionId);
+      if (yield* fileSystem.exists(sourceSidecar)) {
+        yield* fileSystem.copy(sourceSidecar, path.join(targetProject, input.sessionId), {
+          overwrite: true,
+        });
+      }
+      return true;
+    }
+    return false;
   },
 );
 
