@@ -140,6 +140,13 @@ export interface ProviderAdapterShape<TError> {
   ) => Effect.Effect<ProviderThreadSnapshot, TError>;
 
   /**
+   * Called on the instance that wrote a resume cursor before another instance
+   * in its continuation group resumes it. Adds what the other instance needs
+   * to find this instance's native session state. Identity when omitted.
+   */
+  readonly exportResumeCursor?: (resumeCursor: unknown) => unknown;
+
+  /**
    * Upload a thread to the provider when the adapter supports feedback.
    */
   readonly uploadFeedback?: (

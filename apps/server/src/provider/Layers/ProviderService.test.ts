@@ -1186,7 +1186,14 @@ const workClaudeInstanceId = ProviderInstanceId.make("claude-work");
 const sharedClaudeRouting = makeProviderServiceLayer({
   registry: {
     ...makeAdapterRegistryMock({}),
-    getByInstance: () => Effect.succeed(sharedClaude.adapter),
+    getByInstance: (instanceId) =>
+      Effect.succeed({
+        ...sharedClaude.adapter,
+        exportResumeCursor: (resumeCursor: unknown) => ({
+          ...(resumeCursor as object),
+          exportedBy: instanceId,
+        }),
+      }),
     getInstanceInfo: (instanceId) =>
       Effect.succeed({
         instanceId,
@@ -1225,7 +1232,11 @@ sharedClaudeRouting.layer("ProviderServiceLive shared continuation", (it) => {
 
       const startInput = sharedClaude.startSession.mock.calls.at(-1)?.[0];
       assert.equal(startInput?.providerInstanceId, workClaudeInstanceId);
-      assert.deepEqual(startInput?.resumeCursor, resumeCursor);
+      // The instance that wrote the cursor exports it for the new one.
+      assert.deepEqual(startInput?.resumeCursor, {
+        ...resumeCursor,
+        exportedBy: personalClaudeInstanceId,
+      });
       assert.equal(startInput?.cwd, fixtureCwd("project"));
     }),
   );

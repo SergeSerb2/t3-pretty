@@ -701,6 +701,42 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("exports legacy resume cursors with this instance's config dir", () => {
+    const harness = makeHarness({ claudeConfig: { homePath: "~/.claude-work" } });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const configDir = NodePath.join(NodeOS.homedir(), ".claude-work");
+      assert.deepEqual(adapter.exportResumeCursor?.({ resume: "session" }), {
+        resume: "session",
+        configDir,
+      });
+      const stamped = { resume: "session", configDir: "/elsewhere" };
+      assert.equal(adapter.exportResumeCursor?.(stamped), stamped);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("keeps pointing at the source config dir when the transcript is missing", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-account-missing-"));
+    const personal = NodePath.join(root, "personal");
+    const harness = makeHarness({ claudeConfig: { homePath: NodePath.join(root, "work") } });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        resumeCursor: { resume: "550e8400-e29b-41d4-a716-446655440000", configDir: personal },
+        runtimeMode: "full-access",
+      });
+
+      // A retry after the source becomes readable must attempt the copy again.
+      assert.equal((session.resumeCursor as { configDir?: string }).configDir, personal);
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => NodeFS.rmSync(root, { recursive: true, force: true }))),
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("resumes a session that last ran under another Claude config dir", () => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-account-switch-"));
     const personal = NodePath.join(root, "personal");
