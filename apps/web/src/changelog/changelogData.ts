@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260922.2083002723",
+    date: "2026-09-22",
+    items: [
+      {
+        kind: "fixed",
+        title: "Provide SecretRequestBroker to the /ws RPC layer",
+      },
+      {
+        kind: "fixed",
+        title: "Show suggested prompts on the draft landing instead of a page",
+      },
+      {
+        kind: "new",
+        title: "A home screen with daily suggested prompts",
+      },
+      {
+        kind: "new",
+        title: "Let agents request an API key from the user securely",
+      },
+      {
+        kind: "fixed",
+        title: "Sidebar peek suppress and leave on rail geometry",
+      },
+      {
+        kind: "new",
+        title: "The T3 mark on the collapsed project rail",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260922.2083002720",
     date: "2026-09-22",
     items: [
