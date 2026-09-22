@@ -10,7 +10,13 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-export type McpCapability = "automations" | "computer-use" | "device" | "preview" | "pull-requests";
+export type McpCapability =
+  | "automations"
+  | "computer-use"
+  | "device"
+  | "preview"
+  | "pull-requests"
+  | "secrets";
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;

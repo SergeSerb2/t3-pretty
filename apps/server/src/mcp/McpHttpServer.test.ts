@@ -20,6 +20,7 @@ import * as ServerConfig from "../config.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import * as SecretRequestBroker from "./SecretRequestBroker.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -60,6 +61,18 @@ const PullRequestsTestLayer = McpHttpServer.PullRequestsToolkitRegistrationLive.
         getThreadShellById: () => Effect.succeed(Option.none()),
       }),
       Layer.mock(OrchestrationEngineService)({}),
+      NodeServices.layer,
+    ),
+  ),
+);
+
+const SecretsTestLayer = McpHttpServer.SecretsToolkitRegistrationLive.pipe(
+  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provide(
+    Layer.mergeAll(
+      Layer.mock(SecretRequestBroker.SecretRequestBroker)({
+        request: () => Effect.succeed({ status: "declined", name: "KEY" } as const),
+      }),
       NodeServices.layer,
     ),
   ),
@@ -399,6 +412,44 @@ it.effect(
         { type: "text", text: "MCP credential does not grant the pull-requests capability." },
       ]);
     }).pipe(Effect.provide(PullRequestsTestLayer)),
+);
+
+it.effect("registers request_api_key and gates it on the secrets capability", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const tool = server.tools.find(({ tool }) => tool.name === "request_api_key");
+    expect(tool?.tool.annotations?.destructiveHint).toBe(false);
+    expect(tool?.tool.description).toContain("never returned to you");
+
+    const denied = yield* server
+      .callTool({
+        name: "request_api_key",
+        arguments: { name: "OPENAI_API_KEY", purpose: "Call the API." },
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(denied.isError).toBe(true);
+    expect(denied.content).toEqual([
+      { type: "text", text: "MCP credential does not grant the secrets capability." },
+    ]);
+
+    const granted = yield* server
+      .callTool({
+        name: "request_api_key",
+        arguments: { name: "OPENAI_API_KEY", purpose: "Call the API." },
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...invocation,
+          capabilities: new Set(["secrets"] as const),
+        }),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(granted.isError).toBeFalsy();
+    expect(granted.structuredContent).toMatchObject({ status: "declined", name: "KEY" });
+  }).pipe(Effect.provide(SecretsTestLayer)),
 );
 
 it.effect("keeps the snapshot text under the agent's output ceiling", () =>

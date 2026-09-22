@@ -10,6 +10,12 @@ describe("buildRuntimeInstructions", () => {
     expect(instructions).toContain("call list_thread_pull_requests and link any PR");
   });
 
+  it("points agents at request_api_key for secrets", () => {
+    const instructions = buildRuntimeInstructions({ harness: "Claude Code" });
+    expect(instructions).toContain("call request_api_key instead of asking for it in a message");
+    expect(instructions).toContain("Never print, log, or commit a secret value");
+  });
+
   it("keeps known model and effort metadata on one line", () => {
     expect(
       buildRuntimeInstructions({

@@ -25,6 +25,7 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
   ThreadId,
+  ThreadSecretRequestResponse,
   TurnDeliveryMode,
   UsageLimitsReport,
   UserInputQuestion,
@@ -82,11 +83,13 @@ import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import type {
   PendingApproval,
+  PendingSecretRequest,
   PendingUserInput,
   PendingUserInputDraftAnswer,
   ThreadFeedEntry,
 } from "../../lib/threadActivity";
 import { PendingApprovalCard } from "./PendingApprovalCard";
+import { PendingSecretRequestCard } from "./PendingSecretRequestCard";
 import { ComposerFeedback } from "./ComposerFeedback";
 import { ComposerUsageLimits } from "./ComposerUsageLimits";
 import { PendingUserInputCard } from "./PendingUserInputCard";
@@ -137,6 +140,12 @@ export interface ThreadDetailScreenProps {
     | null;
   readonly activePendingApproval: PendingApproval | null;
   readonly respondingApprovalId: ApprovalRequestId | null;
+  readonly activePendingSecretRequest: PendingSecretRequest | null;
+  readonly respondingSecretRequestId: ApprovalRequestId | null;
+  readonly onRespondToSecretRequest: (
+    requestId: ApprovalRequestId,
+    response: ThreadSecretRequestResponse,
+  ) => Promise<unknown>;
   readonly activePendingUserInput: PendingUserInput | null;
   readonly activePendingUserInputDrafts: Record<string, PendingUserInputDraftAnswer>;
   readonly activePendingUserInputAnswers: Record<string, string | ReadonlyArray<string>> | null;
@@ -382,7 +391,11 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     if (connectionStatus !== null) {
       return connectionStatus;
     }
-    if (props.activePendingApproval !== null || props.activePendingUserInput !== null) {
+    if (
+      props.activePendingApproval !== null ||
+      props.activePendingSecretRequest !== null ||
+      props.activePendingUserInput !== null
+    ) {
       return null;
     }
     if (props.creationState?.kind === "preparing") {
@@ -455,7 +468,10 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     selectedThreadKey,
     props.selectedThread.modelSelection.instanceId,
     props.selectedThread.latestTurn?.turnId ?? "",
-    props.activePendingApproval?.requestId ?? props.activePendingUserInput?.requestId ?? "",
+    props.activePendingApproval?.requestId ??
+      props.activePendingSecretRequest?.requestId ??
+      props.activePendingUserInput?.requestId ??
+      "",
   ].join(":");
   // Drop the snapshot as soon as the key changes so it cannot resurface stale.
   if (usageLimitsPanel !== null && usageLimitsPanel.key !== usageLimitsKey) {
@@ -1007,13 +1023,15 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                     />
                   </Animated.View>
                 ) : null}
-                {props.activePendingApproval || props.activePendingUserInput ? (
+                {props.activePendingApproval ||
+                props.activePendingSecretRequest ||
+                props.activePendingUserInput ? (
                   <Animated.View
                     className="shrink-0 gap-3 px-4 pb-3"
                     // The questionnaire replaces the composer, so it must pad
                     // the home indicator the composer normally covers.
                     style={
-                      activeUserInputRequestId !== null
+                      activeUserInputRequestId !== null || props.activePendingSecretRequest !== null
                         ? { paddingBottom: composerBottomInset }
                         : undefined
                     }
@@ -1025,6 +1043,14 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                         approval={props.activePendingApproval}
                         respondingApprovalId={props.respondingApprovalId}
                         onRespond={props.onRespondToApproval}
+                      />
+                    ) : null}
+                    {props.activePendingSecretRequest ? (
+                      <PendingSecretRequestCard
+                        key={props.activePendingSecretRequest.requestId}
+                        request={props.activePendingSecretRequest}
+                        respondingRequestId={props.respondingSecretRequestId}
+                        onRespond={props.onRespondToSecretRequest}
                       />
                     ) : null}
                     {props.activePendingUserInput ? (

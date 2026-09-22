@@ -263,6 +263,13 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
+    // Not an orchestration command: the value must never enter the event log.
+    respondToSecretRequest: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:thread:respond-to-secret-request",
+      tag: WS_METHODS.threadSecretRequestRespond,
+      scheduler,
+      concurrency,
+    }),
     revertCheckpoint: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:revert-checkpoint",
       execute: (input: RevertThreadCheckpointInput) => revertThreadCheckpoint(input),

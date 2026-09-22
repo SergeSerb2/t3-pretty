@@ -134,6 +134,14 @@ export interface ProviderServiceShape {
    * Fan-out is owned by ProviderService (not by a standalone event-bus service).
    */
   readonly streamEvents: Stream.Stream<ProviderRuntimeEvent>;
+
+  /**
+   * Publish a server-originated runtime event for a thread, as if the provider
+   * had emitted it. Used by built-in MCP tools that open a prompt for the user
+   * (an agent's API key request) so ingestion, projections and clients treat
+   * it like any provider question.
+   */
+  readonly publishRuntimeEvent: (event: ProviderRuntimeEvent) => Effect.Effect<void>;
 }
 
 /**

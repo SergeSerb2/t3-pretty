@@ -1051,6 +1051,9 @@ function ThreadRouteContent(
           }
           activePendingApproval={requests.activePendingApproval}
           respondingApprovalId={requests.respondingApprovalId}
+          activePendingSecretRequest={requests.activePendingSecretRequest}
+          respondingSecretRequestId={requests.respondingSecretRequestId}
+          onRespondToSecretRequest={requests.onRespondToSecretRequest}
           activePendingUserInput={requests.activePendingUserInput}
           activePendingUserInputDrafts={requests.activePendingUserInputDrafts}
           activePendingUserInputAnswers={requests.activePendingUserInputAnswers}

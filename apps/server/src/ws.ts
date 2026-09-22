@@ -121,6 +121,7 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import { withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
+import * as SecretRequestBroker from "./mcp/SecretRequestBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -566,6 +567,7 @@ const makeWsRpcLayer = (
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const secretRequestBroker = yield* SecretRequestBroker.SecretRequestBroker;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -2554,6 +2556,14 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.serverExportGlobalEnvironment,
             serverSettings.getSettings.pipe(Effect.map((settings) => settings.globalEnvironment)),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.threadSecretRequestRespond]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.threadSecretRequestRespond,
+            secretRequestBroker.respond(input),
             {
               "rpc.aggregate": "server",
             },

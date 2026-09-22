@@ -6,7 +6,7 @@ import {
   type LoadBalancingHost,
 } from "../loadBalancingEligibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
-import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
+import type { ThreadSecretRequestResponse, UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import {
   collectProviderUsageLimits,
   hasProviderUsageLimits,
@@ -14,7 +14,10 @@ import {
 } from "@t3tools/shared/usageLimits";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
-import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import {
+  derivePendingRequests,
+  splitPendingUserInputs,
+} from "@t3tools/client-runtime/pending-requests";
 import {
   questionAttachmentDraftId,
   questionAttachmentDraftPrefix,
@@ -1622,6 +1625,9 @@ export default function ChatView(props: ChatViewProps) {
   const dismissThreadUserInput = useAtomCommand(threadEnvironment.dismissUserInput, {
     reportFailure: false,
   });
+  const respondToThreadSecretRequest = useAtomCommand(threadEnvironment.respondToSecretRequest, {
+    reportFailure: false,
+  });
   const revertThreadCheckpoint = useAtomCommand(threadEnvironment.revertCheckpoint, {
     reportFailure: false,
   });
@@ -3039,11 +3045,16 @@ export default function ChatView(props: ChatViewProps) {
       }),
     [agentSessionLive, threadActivities],
   );
-  const { approvals: pendingApprovals, userInputs: pendingUserInputs } = useMemo(
-    () => derivePendingRequests(threadActivities),
-    [threadActivities],
-  );
+  const {
+    approvals: pendingApprovals,
+    userInputs: pendingUserInputs,
+    secretRequests: pendingSecretRequests,
+  } = useMemo(() => {
+    const requests = derivePendingRequests(threadActivities);
+    return { approvals: requests.approvals, ...splitPendingUserInputs(requests.userInputs) };
+  }, [threadActivities]);
   const activePendingUserInput = pendingUserInputs[0] ?? null;
+  const activePendingSecretRequest = pendingSecretRequests[0] ?? null;
   const activePendingRequestKey = JSON.stringify([
     environmentId,
     activeThreadId,
@@ -9012,6 +9023,30 @@ export default function ChatView(props: ChatViewProps) {
     [activeThreadId, dismissThreadUserInput, environmentId, setThreadError],
   );
 
+  // API key prompts answer over their own RPC so the value never reaches the event log.
+  const onRespondToSecretRequest = useCallback(
+    async (requestId: ApprovalRequestId, response: ThreadSecretRequestResponse) => {
+      if (!activeThreadId) return;
+      setRespondingRequestIds((existing) =>
+        existing.includes(requestId) ? existing : [...existing, requestId],
+      );
+      const result = await respondToThreadSecretRequest({
+        environmentId,
+        input: { threadId: activeThreadId, requestId, response },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThreadId,
+          error instanceof Error ? error.message : "Failed to save the API key.",
+        );
+      }
+      setRespondingRequestIds((existing) => existing.filter((id) => id !== requestId));
+      return result;
+    },
+    [activeThreadId, environmentId, respondToThreadSecretRequest, setThreadError],
+  );
+
   const setActivePendingUserInputQuestionIndex = useCallback(
     (nextQuestionIndex: number) => {
       if (!activePendingUserInput) {
@@ -10341,6 +10376,7 @@ export default function ChatView(props: ChatViewProps) {
                             activePendingApproval={activePendingApproval}
                             pendingApprovals={pendingApprovals}
                             pendingUserInputs={pendingUserInputs}
+                            activePendingSecretRequest={activePendingSecretRequest}
                             activePendingProgress={activePendingProgress}
                             activePendingResolvedAnswers={activePendingResolvedAnswers}
                             activePendingIsResponding={activePendingIsResponding}
@@ -10406,6 +10442,7 @@ export default function ChatView(props: ChatViewProps) {
                             }
                             onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
                             onDismissActivePendingUserInput={onDismissUserInput}
+                            onRespondToSecretRequest={onRespondToSecretRequest}
                             onPreviousActivePendingUserInputQuestion={
                               onPreviousActivePendingUserInputQuestion
                             }

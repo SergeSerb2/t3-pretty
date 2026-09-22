@@ -89,6 +89,8 @@ const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
 const isCodexResumeCursorSchema = Schema.is(CodexResumeCursorSchema);
 
 const PROVIDER = ProviderDriverKind.make("codex");
+/** Long enough for a user to answer an MCP prompt such as request_api_key. */
+const CODEX_MCP_TOOL_TIMEOUT_SEC = 660;
 const CODEX_RUNTIME_EVENT_QUEUE_CAPACITY = 512;
 
 export interface CodexAdapterLiveOptions {
@@ -2277,11 +2279,15 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   T3_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
                 },
                 // One env var serves every server: they all share the session bearer.
+                // Codex gives MCP tools 60s by default; request_api_key and the
+                // preview waits legitimately outlast that while the user answers.
                 appServerArgs: mcpSession.servers.flatMap((server) => [
                   "-c",
                   `mcp_servers.${server.name}.url=${server.url}`,
                   "-c",
                   `mcp_servers.${server.name}.bearer_token_env_var="T3_MCP_BEARER_TOKEN"`,
+                  "-c",
+                  `mcp_servers.${server.name}.tool_timeout_sec=${CODEX_MCP_TOOL_TIMEOUT_SEC}`,
                 ]),
                 mcpCapabilities: mcpSession.capabilities,
               }

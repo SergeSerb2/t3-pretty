@@ -107,6 +107,17 @@ it.layer(NodeServices.layer)("question attachment answers", (it) => {
       });
     }),
   );
+  it.effect("rejects a regular answer to an API key prompt", () =>
+    Effect.gen(function* () {
+      const question = { ...request.payload.questions[0], secret: { name: "OPENAI_API_KEY" } };
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        command: { ...command, answers: { q: "sk-secret" }, attachmentsByQuestionId: undefined },
+        userInputActivity: { ...request, payload: { ...request.payload, questions: [question] } },
+      }).pipe(Effect.result);
+      expect(result._tag).toBe("Failure");
+    }),
+  );
   it.effect("rejects attachments for a resolved or unknown request", () =>
     Effect.gen(function* () {
       const result = yield* decideOrchestrationCommand({ readModel, command }).pipe(Effect.result);

@@ -134,6 +134,11 @@ import {
 } from "./review.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
+  SecretRequestError,
+  ThreadSecretRequestRespondInput,
+  ThreadSecretRequestRespondResult,
+} from "./secretRequest.ts";
+import {
   ClientOrchestrationCommand,
   ORCHESTRATION_WS_METHODS,
   OrchestrationDispatchCommandError,
@@ -455,6 +460,7 @@ export const WS_METHODS = {
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverExportGlobalEnvironment: "server.exportGlobalEnvironment",
+  threadSecretRequestRespond: "thread.secretRequest.respond",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
@@ -674,6 +680,12 @@ const WsServerExportGlobalEnvironmentRpc = Rpc.make(WS_METHODS.serverExportGloba
   payload: Schema.Struct({}),
   success: ProviderInstanceEnvironment,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+const WsThreadSecretRequestRespondRpc = Rpc.make(WS_METHODS.threadSecretRequestRespond, {
+  payload: ThreadSecretRequestRespondInput,
+  success: ThreadSecretRequestRespondResult,
+  error: Schema.Union([SecretRequestError, EnvironmentAuthorizationError]),
 });
 
 const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
@@ -1657,6 +1669,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerExportGlobalEnvironmentRpc,
+  WsThreadSecretRequestRespondRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,

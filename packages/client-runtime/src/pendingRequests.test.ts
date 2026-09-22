@@ -1,6 +1,6 @@
 import { EventId, TurnId, type OrchestrationThreadActivity } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { derivePendingRequests } from "./pendingRequests.ts";
+import { derivePendingRequests, splitPendingUserInputs } from "./pendingRequests.ts";
 
 let nextActivityId = 0;
 
@@ -512,5 +512,62 @@ describe.each(["approval", "user-input"])("%s request completion", (requestKind)
       approvals: [],
       userInputs: [],
     });
+  });
+});
+
+describe("pending secret requests", () => {
+  const secretQuestion = {
+    id: "OPENAI_API_KEY",
+    header: "OpenAI API key",
+    question: "Call the OpenAI API.",
+    options: [],
+    allowCustomAnswer: true,
+    multiSelect: false,
+    secret: { name: "OPENAI_API_KEY" },
+  };
+
+  it("keeps the secret marker and splits the prompt from regular questions", () => {
+    const activities = [
+      makeActivity({
+        kind: "user-input.requested",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        payload: { requestId: "secret-1", questions: [secretQuestion] },
+      }),
+      makeActivity({
+        kind: "user-input.requested",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        payload: {
+          requestId: "question-1",
+          questions: [{ ...secretQuestion, id: "plain", secret: undefined }],
+        },
+      }),
+    ];
+    const { userInputs, secretRequests } = splitPendingUserInputs(
+      derivePendingRequests(activities).userInputs,
+    );
+    expect(secretRequests).toEqual([
+      {
+        requestId: "secret-1",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        name: "OPENAI_API_KEY",
+        header: "OpenAI API key",
+        purpose: "Call the OpenAI API.",
+      },
+    ]);
+    expect(userInputs.map((input) => input.requestId)).toEqual(["question-1"]);
+  });
+
+  it("closes the prompt once the server resolves it", () => {
+    const activities = [
+      makeActivity({
+        kind: "user-input.requested",
+        payload: { requestId: "secret-1", questions: [secretQuestion] },
+      }),
+      makeActivity({
+        kind: "user-input.resolved",
+        payload: { requestId: "secret-1", answers: {} },
+      }),
+    ];
+    expect(derivePendingRequests(activities).userInputs).toEqual([]);
   });
 });

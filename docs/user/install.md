@@ -209,6 +209,18 @@ Connect environments you are connected to, so you set a key once and agents on
 those machines can use it. A machine that joins later receives the secrets the
 next time you save the list while it is connected.
 
+### When an Agent Asks for a Key
+
+An agent that needs an API key or token for its task can ask for it directly.
+A masked prompt appears above the composer naming the variable, for example
+`OPENAI_API_KEY`, and why the agent wants it. Paste the value and save, or
+decline. The value is stored as a sensitive global environment variable and
+handed to agent and terminal processes. It is never added to the conversation
+or written to the thread history; the running agent loads it from a protected
+file on the server rather than seeing it in chat. The prompt closes on its
+own if the turn stops or you leave it unanswered for ten minutes. Edit or remove
+the key later under **Settings → Providers → Global environment variables**.
+
 ### When Auth Is Needed
 
 Provider auth is required before you start a session with that provider, not before you start

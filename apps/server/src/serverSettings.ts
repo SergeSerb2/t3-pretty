@@ -153,7 +153,7 @@ function usageLimitSourceSecretName(sourceId: string): string {
   return `usage-limit-source-${Buffer.from(sourceId, "utf8").toString("base64url")}`;
 }
 
-function globalEnvironmentSecretName(name: string): string {
+export function globalEnvironmentSecretName(name: string): string {
   return `global-env-${Buffer.from(name, "utf8").toString("base64url")}`;
 }
 

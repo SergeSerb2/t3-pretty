@@ -40,7 +40,11 @@ import { commandProgramName } from "@t3tools/client-runtime/work-log/command-lab
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 
-export type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
+export type {
+  PendingApproval,
+  PendingSecretRequest,
+  PendingUserInput,
+} from "@t3tools/client-runtime/pending-requests";
 
 export interface PendingUserInputDraftAnswer {
   readonly selectedOptionValues?: ReadonlyArray<string>;

@@ -1,4 +1,7 @@
-import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import {
+  derivePendingRequests,
+  splitPendingUserInputs,
+} from "@t3tools/client-runtime/pending-requests";
 import { useServerConfigs } from "./entities";
 import { Alert } from "react-native";
 import {
@@ -18,6 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApprovalRequestId,
   type ProviderApprovalDecision,
+  type ThreadSecretRequestResponse,
   type UserInputQuestion,
 } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
@@ -90,6 +94,10 @@ export function useSelectedThreadRequests() {
     threadEnvironment.dismissUserInput,
     "thread user input dismissal",
   );
+  const respondToSecretRequest = useAtomCommand(
+    threadEnvironment.respondToSecretRequest,
+    "thread API key response",
+  );
   const { selectedThread: selectedThreadShell } = useThreadSelection();
   const selectedThread = useSelectedThreadDetail();
   const userInputDraftsByRequestKey = useAtomValue(userInputDraftsByRequestKeyAtom);
@@ -98,13 +106,20 @@ export function useSelectedThreadRequests() {
   const [respondingUserInputId, setRespondingUserInputId] = useState<ApprovalRequestId | null>(
     null,
   );
+  const [respondingSecretRequestId, setRespondingSecretRequestId] =
+    useState<ApprovalRequestId | null>(null);
 
-  const { approvals: activePendingApprovals, userInputs: activePendingUserInputs } = useMemo(
-    () => derivePendingRequests(selectedThread?.activities ?? []),
-    [selectedThread?.activities],
-  );
+  const {
+    approvals: activePendingApprovals,
+    userInputs: activePendingUserInputs,
+    secretRequests: activePendingSecretRequests,
+  } = useMemo(() => {
+    const requests = derivePendingRequests(selectedThread?.activities ?? []);
+    return { approvals: requests.approvals, ...splitPendingUserInputs(requests.userInputs) };
+  }, [selectedThread?.activities]);
   const activePendingApproval = activePendingApprovals[0] ?? null;
   const activePendingUserInput = activePendingUserInputs[0] ?? null;
+  const activePendingSecretRequest = activePendingSecretRequests[0] ?? null;
   const questionServerConfigs = useServerConfigs();
   const attachmentDrafts = useAtomValue(composerDraftsAtom);
   const preparationCounts = useAtomValue(questionAttachmentPreparationAtom);
@@ -328,14 +343,35 @@ export function useSelectedThreadRequests() {
     return result;
   }, [activePendingUserInput, dismissUserInput, selectedThreadShell]);
 
+  // API key prompts answer over their own RPC so the value never reaches the event log.
+  const onRespondToSecretRequest = useCallback(
+    async (requestId: ApprovalRequestId, response: ThreadSecretRequestResponse) => {
+      if (!selectedThreadShell) {
+        return;
+      }
+
+      setRespondingSecretRequestId(requestId);
+      const result = await respondToSecretRequest({
+        environmentId: selectedThreadShell.environmentId,
+        input: { threadId: selectedThreadShell.id, requestId, response },
+      });
+      setRespondingSecretRequestId((current) => (current === requestId ? null : current));
+      return result;
+    },
+    [respondToSecretRequest, selectedThreadShell],
+  );
+
   return {
     activePendingApproval,
+    activePendingSecretRequest,
     activePendingUserInput,
     activePendingUserInputDrafts,
     activePendingUserInputAnswers,
     respondingApprovalId,
+    respondingSecretRequestId,
     respondingUserInputId,
     onRespondToApproval,
+    onRespondToSecretRequest,
     onSelectUserInputOption,
     onChangeUserInputCustomAnswer,
     onSubmitUserInput,

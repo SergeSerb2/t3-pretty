@@ -15,7 +15,11 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInteractionOpaquePayload, ProviderUserInputAnswers } from "./orchestration.ts";
-import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
+import {
+  ProviderInstanceId,
+  ProviderDriverKind,
+  ProviderInstanceEnvironmentVariableName,
+} from "./providerInstance.ts";
 import { ProviderUsageLimitsUpdate } from "./providerUsageLimits.ts";
 import { ProviderApprovalOption } from "./orchestration.ts";
 
@@ -528,6 +532,12 @@ const UserInputQuestionOption = Schema.Struct({
 });
 export type UserInputQuestionOption = typeof UserInputQuestionOption.Type;
 
+export const UserInputSecretQuestion = Schema.Struct({
+  /** Environment variable name the value is stored under. */
+  name: ProviderInstanceEnvironmentVariableName,
+});
+export type UserInputSecretQuestion = typeof UserInputSecretQuestion.Type;
+
 export const UserInputQuestion = Schema.Struct({
   id: TrimmedNonEmptyStringSchema.check(
     Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH),
@@ -545,6 +555,12 @@ export const UserInputQuestion = Schema.Struct({
   multiSelect: Schema.optional(Schema.Boolean).pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
   ),
+  /**
+   * Set when the question asks for a secret such as an API key. Clients render
+   * a masked input and answer through `thread.secretRequest.respond`, never
+   * through the regular user-input reply, so the value stays out of the event log.
+   */
+  secret: Schema.optional(UserInputSecretQuestion),
 });
 export type UserInputQuestion = typeof UserInputQuestion.Type;
 

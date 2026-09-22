@@ -36,6 +36,8 @@ import {
 } from "./toolkits/preview/tools.ts";
 import { PullRequestsToolkitHandlersLive } from "./toolkits/pullRequests/handlers.ts";
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
+import { SecretsToolkitHandlersLive } from "./toolkits/secrets/handlers.ts";
+import { SecretsToolkit } from "./toolkits/secrets/tools.ts";
 import {
   DeviceScreenshotToolkitHandlersLive,
   DeviceStandardToolkitHandlersLive,
@@ -124,7 +126,7 @@ export const normalizeMcpHttpResponse = (
     : response;
 };
 
-const makeMcpAuthMiddleware = (capability: McpInvocationContext.McpCapability) =>
+const makeMcpAuthMiddleware = (capability: McpInvocationContext.McpCapability | undefined) =>
   McpSessionRegistry.McpSessionRegistry.pipe(
     Effect.map((registry): McpAuthMiddleware =>
       Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
@@ -147,7 +149,12 @@ const makeMcpAuthMiddleware = (capability: McpInvocationContext.McpCapability) =
           });
           return unauthorized;
         }
-        if (!McpInvocationContext.hasMcpCapability(invocation, capability)) return forbidden;
+        if (
+          capability !== undefined &&
+          !McpInvocationContext.hasMcpCapability(invocation, capability)
+        ) {
+          return forbidden;
+        }
         // Keep the platform request's cached body reader. Building a second reader from
         // `request.stream` races the router's reader and can turn valid JSON into an empty body.
         return yield* httpEffect.pipe(
@@ -161,7 +168,7 @@ const makeMcpAuthMiddleware = (capability: McpInvocationContext.McpCapability) =
     Effect.withSpan("McpHttpServer.makeAuthMiddleware"),
   );
 
-const mcpAuthMiddlewareLive = (capability: McpInvocationContext.McpCapability) =>
+const mcpAuthMiddlewareLive = (capability?: McpInvocationContext.McpCapability) =>
   HttpRouter.middleware<{
     provides: McpInvocationContext.McpInvocationContext;
   }>()(makeMcpAuthMiddleware(capability)).layer;
@@ -669,6 +676,10 @@ export const PullRequestsToolkitRegistrationLive = McpServer.toolkit(PullRequest
   Layer.provide(PullRequestsToolkitHandlersLive),
 );
 
+export const SecretsToolkitRegistrationLive = McpServer.toolkit(SecretsToolkit).pipe(
+  Layer.provide(SecretsToolkitHandlersLive),
+);
+
 const DeviceStandardToolkitRegistrationLive = McpServer.toolkit(DeviceStandardToolkit).pipe(
   Layer.provide(DeviceStandardToolkitHandlersLive),
 );
@@ -684,7 +695,7 @@ export const DeviceToolkitRegistrationLive = Layer.mergeAll(
 
 const mcpTransportLive = (
   path: HttpRouter.PathInput,
-  capability: McpInvocationContext.McpCapability,
+  capability?: McpInvocationContext.McpCapability,
 ) =>
   McpServer.layerHttp({
     name: "T3 Code",
@@ -693,11 +704,15 @@ const mcpTransportLive = (
     protocols: [McpProtocol.v2025_06_18],
   }).pipe(Layer.provide(mcpAuthMiddlewareLive(capability)));
 
+// The base server carries toolkits every credential can use (pull requests,
+// API key requests) beside capability-gated ones, so the transport admits any
+// valid credential and each tool checks its own capability.
 const PreviewMcpServerLive = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
+  SecretsToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
-).pipe(Layer.provide(mcpTransportLive("/mcp", "preview")));
+).pipe(Layer.provide(mcpTransportLive("/mcp")));
 
 const ComputerUseMcpServerLive = ComputerUseToolkitRegistrationLive.pipe(
   Layer.provide(mcpTransportLive("/mcp/computer-use", "computer-use")),

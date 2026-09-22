@@ -56,6 +56,14 @@ const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeUserInputRequestedPayload = Schema.decodeUnknownOption(UserInputRequestedPayload);
 const threadPullRequestLinksEqual = Schema.toEquivalence(Schema.NullOr(ThreadLinkedPullRequest));
 
+/** Whether a user-input request carries an API key question (see SecretRequestBroker). */
+function isSecretQuestionRequest(payload: unknown): boolean {
+  if (!Predicate.isObject(payload) || !Array.isArray(payload.questions)) return false;
+  return payload.questions.some(
+    (question) => Predicate.isObject(question) && Predicate.isObject(question.secret),
+  );
+}
+
 /**
  * Blocked-on-you work derived from the thread's retained activities: an
  * approval or user-input request with no later resolution for the same
@@ -1669,6 +1677,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         threadId: command.threadId,
       });
       const request = userInputActivity;
+      // An API key prompt is answered over thread.secretRequest.respond so the
+      // value stays out of the event log; a regular answer would persist it.
+      if (request?.kind === "user-input.requested" && isSecretQuestionRequest(request.payload)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "This question asks for a secret. Answer it with the API key prompt.",
+        });
+      }
       const attachments = Object.values(command.attachmentsByQuestionId ?? {}).flat();
       let questionTextById: Record<string, string> = {};
       if (attachments.length > 0) {

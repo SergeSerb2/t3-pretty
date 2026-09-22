@@ -26,6 +26,44 @@ export interface PendingUserInput {
   readonly dismissible: boolean;
 }
 
+/** An agent's `request_api_key` prompt: one masked question answered outside the event log. */
+export interface PendingSecretRequest {
+  readonly requestId: ApprovalRequestId;
+  readonly createdAt: string;
+  /** Environment variable the value is stored under. */
+  readonly name: string;
+  readonly header: string;
+  readonly purpose: string;
+}
+
+/** The secret prompt a user-input request carries, if it is one. */
+export function pendingSecretRequestOf(input: PendingUserInput): PendingSecretRequest | null {
+  const question = input.questions[0];
+  if (!question?.secret || input.questions.length !== 1) return null;
+  return {
+    requestId: input.requestId,
+    createdAt: input.createdAt,
+    name: question.secret.name,
+    header: question.header,
+    purpose: question.question,
+  };
+}
+
+/** Splits secret prompts (own UI, own reply path) from regular questions. */
+export function splitPendingUserInputs(inputs: ReadonlyArray<PendingUserInput>): {
+  readonly userInputs: PendingUserInput[];
+  readonly secretRequests: PendingSecretRequest[];
+} {
+  const userInputs: PendingUserInput[] = [];
+  const secretRequests: PendingSecretRequest[] = [];
+  for (const input of inputs) {
+    const secret = pendingSecretRequestOf(input);
+    if (secret) secretRequests.push(secret);
+    else userInputs.push(input);
+  }
+  return { userInputs, secretRequests };
+}
+
 const isRequestId = Schema.is(ApprovalRequestId);
 const isProviderRequestKind = Schema.is(ProviderRequestKind);
 const isProviderApprovalOption = Schema.is(ProviderApprovalOption);
@@ -81,6 +119,7 @@ function parseQuestions(value: unknown): UserInputQuestion[] {
       ...(typeof question.allowCustomAnswer === "boolean"
         ? { allowCustomAnswer: question.allowCustomAnswer }
         : {}),
+      ...(Predicate.isObject(question.secret) ? { secret: question.secret } : {}),
     });
     return Option.isSome(parsed) ? [parsed.value] : [];
   });

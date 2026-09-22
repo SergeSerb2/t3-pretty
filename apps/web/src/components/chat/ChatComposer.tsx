@@ -253,6 +253,7 @@ import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
+import { ComposerPendingSecretPanel } from "./ComposerPendingSecretPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import {
@@ -968,6 +969,8 @@ import {
 } from "./composerPromptHistory";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
+import type { PendingSecretRequest } from "@t3tools/client-runtime/pending-requests";
+import type { ThreadSecretRequestResponse } from "@t3tools/contracts";
 import type { ContextWindowSnapshot } from "../../lib/contextWindow";
 import {
   formatProviderSkillDisplayName,
@@ -1484,6 +1487,7 @@ export interface ChatComposerProps {
   activePendingApproval: PendingApproval | null;
   pendingApprovals: PendingApproval[];
   pendingUserInputs: PendingUserInput[];
+  activePendingSecretRequest: PendingSecretRequest | null;
   activePendingProgress: {
     questionIndex: number;
     isLastQuestion: boolean;
@@ -1581,6 +1585,10 @@ export interface ChatComposerProps {
   onSelectActivePendingUserInputOption: (questionId: string, optionValue: string) => void;
   onAdvanceActivePendingUserInput: () => void;
   onDismissActivePendingUserInput: (requestId: ApprovalRequestId) => void;
+  onRespondToSecretRequest: (
+    requestId: ApprovalRequestId,
+    response: ThreadSecretRequestResponse,
+  ) => void;
   onPreviousActivePendingUserInputQuestion: () => void;
   onChangeActivePendingUserInputCustomAnswer: (
     questionId: string,
@@ -1644,6 +1652,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activePendingApproval,
     pendingApprovals,
     pendingUserInputs,
+    activePendingSecretRequest,
     activePendingProgress,
     activePendingResolvedAnswers,
     activePendingIsResponding,
@@ -1699,6 +1708,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onSelectActivePendingUserInputOption,
     onAdvanceActivePendingUserInput,
     onDismissActivePendingUserInput,
+    onRespondToSecretRequest,
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
@@ -2664,6 +2674,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
   const showComposerTopDrawer =
     isComposerApprovalState ||
+    activePendingSecretRequest !== null ||
     pendingUserInputs.length > 0 ||
     (!isComposerCollapsedMobile && showPlanFollowUpPrompt && activeProposedPlan !== null);
   const showCollapsedMobilePromptRow =
@@ -4895,7 +4906,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, []);
   const hasBannerItems = props.bannerItems.length > 0;
   const hasBlockingComposerTopDrawer =
-    activePendingApproval !== null || pendingUserInputs.length > 0;
+    activePendingApproval !== null ||
+    activePendingSecretRequest !== null ||
+    pendingUserInputs.length > 0;
   const showInlineTasksBadge =
     activeTasksProgress !== null &&
     activeTaskSteps !== null &&
@@ -6497,6 +6510,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       />
                     </ComposerBanner.Actions>
                   </ComposerBanner.Row>
+                ) : activePendingSecretRequest ? (
+                  <ComposerPendingSecretPanel
+                    key={activePendingSecretRequest.requestId}
+                    request={activePendingSecretRequest}
+                    isResponding={respondingRequestIds.includes(
+                      activePendingSecretRequest.requestId,
+                    )}
+                    onProvide={(requestId, value) =>
+                      onRespondToSecretRequest(requestId, { kind: "provided", value })
+                    }
+                    onDecline={(requestId) =>
+                      onRespondToSecretRequest(requestId, { kind: "declined" })
+                    }
+                  />
                 ) : !isComposerCollapsedMobile && pendingUserInputs.length > 0 ? (
                   <ComposerPendingUserInputPanel
                     pendingUserInputs={pendingUserInputs}
