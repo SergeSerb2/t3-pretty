@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260921.2071002691",
+    date: "2026-09-22",
+    items: [
+      {
+        kind: "fixed",
+        title: "Sidebar peek suppress and leave on rail geometry",
+      },
+      {
+        kind: "new",
+        title: "The T3 mark on the collapsed project rail",
+      },
+      {
+        kind: "new",
+        title: "Scenery threads follow the chosen color scheme, never the photo",
+      },
+      {
+        kind: "fixed",
+        title: "Grok 4.7 Fast when auto-balancing a new thread",
+      },
+      {
+        kind: "fixed",
+        title: "Rail folder badges visible while the folder opens",
+      },
+      {
+        kind: "fixed",
+        title: "Animate project rail folders as they open and close",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260921.2071002681",
     date: "2026-09-22",
     items: [
