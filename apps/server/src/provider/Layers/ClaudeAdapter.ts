@@ -2093,11 +2093,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const claudeConfigDir = yield* resolveClaudeHomePath(claudeSettings, claudeEnvironment).pipe(
     Effect.provideService(Path.Path, path),
   );
-  // Cursors from before account switching carry no config dir; those threads
-  // could only have run in their own instance or the default one.
-  const defaultClaudeConfigDir = yield* resolveClaudeHomePath({ homePath: "" }, process.env).pipe(
-    Effect.provideService(Path.Path, path),
-  );
   const claudeSdkExecutablePath = yield* resolveClaudeSdkExecutablePath(
     claudeSettings.binaryPath,
     claudeEnvironment,
@@ -4439,9 +4434,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const existingResumeSessionId = input.nativeSessionId ?? resumeState?.resume;
       const newSessionId = existingResumeSessionId === undefined ? yield* randomUUIDv4 : undefined;
       const sessionId = existingResumeSessionId ?? newSessionId;
-      if (input.nativeSessionId === undefined && resumeState?.resume !== undefined) {
+      const sourceConfigDir = resumeState?.configDir;
+      // Where this session's transcript lives. A failed import keeps pointing
+      // at the source so the next start retries the copy.
+      let transcriptConfigDir = claudeConfigDir;
+      if (
+        input.nativeSessionId === undefined &&
+        resumeState?.resume !== undefined &&
+        sourceConfigDir !== undefined
+      ) {
         // The thread may have last run under another Claude account.
-        const sourceConfigDir = resumeState.configDir ?? defaultClaudeConfigDir;
         const imported = yield* importClaudeSessionTranscript({
           sessionId: resumeState.resume,
           sourceConfigDir,
@@ -4458,12 +4460,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             }).pipe(Effect.as(false)),
           ),
         );
-        // Legacy cursors only guess the source, so a miss there is expected.
-        if (
-          !imported &&
-          resumeState.configDir !== undefined &&
-          path.resolve(resumeState.configDir) !== claudeConfigDir
-        ) {
+        if (!imported && path.resolve(sourceConfigDir) !== claudeConfigDir) {
+          transcriptConfigDir = sourceConfigDir;
           yield* Effect.logWarning("claude.session.transcript-missing", {
             threadId: input.threadId,
             sessionId: resumeState.resume,
@@ -5069,7 +5067,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         resumeCursor: {
           ...(threadId ? { threadId } : {}),
           ...(sessionId ? { resume: sessionId } : {}),
-          configDir: claudeConfigDir,
+          configDir: transcriptConfigDir,
           ...(resumeState?.resumeSessionAt ? { resumeSessionAt: resumeState.resumeSessionAt } : {}),
           turnCount: resumeState?.turnCount ?? 0,
           ...(resumeState?.turnStartMessageIds
@@ -5635,6 +5633,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     listSessions,
     hasSession,
     stopAll,
+    // Cursors from before account switching lack a config dir; the instance
+    // that wrote one knows where its transcript lives.
+    exportResumeCursor: (resumeCursor) =>
+      typeof resumeCursor === "object" &&
+      resumeCursor !== null &&
+      !Array.isArray(resumeCursor) &&
+      !("configDir" in resumeCursor)
+        ? { ...resumeCursor, configDir: claudeConfigDir }
+        : resumeCursor,
     get streamEvents() {
       return Stream.fromQueue(runtimeEventQueue);
     },

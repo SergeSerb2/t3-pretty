@@ -1444,6 +1444,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         // A binding is resumable by its own instance, or by another instance
         // in the same continuation group (e.g. another Claude account). The
         // cwd travels with the cursor: providers key session storage by it.
+        let exportResumeCursor: ((resumeCursor: unknown) => unknown) | undefined;
         let resumableBinding =
           persistedBinding?.provider === resolvedProvider &&
           persistedBinding.providerInstanceId === resolvedInstanceId
@@ -1469,9 +1470,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             );
           }
           resumableBinding = persistedBinding;
+          exportResumeCursor = (yield* registry.getByInstance(previousInstanceId))
+            .exportResumeCursor;
         }
         const persistedResumeCursor = resumableBinding?.resumeCursor ?? undefined;
-        const effectiveResumeCursor = input.resumeCursor ?? persistedResumeCursor;
+        const requestedResumeCursor = input.resumeCursor ?? persistedResumeCursor;
+        const effectiveResumeCursor =
+          requestedResumeCursor !== undefined && exportResumeCursor !== undefined
+            ? exportResumeCursor(requestedResumeCursor)
+            : requestedResumeCursor;
         const persistedCwd =
           resumableBinding !== undefined
             ? readPersistedCwd(resumableBinding.runtimePayload)
