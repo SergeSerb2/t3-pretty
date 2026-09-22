@@ -236,6 +236,27 @@ describe("HomeSuggestionsService", () => {
     ),
   );
 
+  it.effect("runs the model in the most recently active project's directory", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        const stale: OrchestrationProjectShell = {
+          ...project,
+          id: ProjectId.make("project-0"),
+          title: "Older",
+          workspaceRoot: "/workspace/older",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        };
+        // Listed first, but the thread activity belongs to `project`.
+        const harness = yield* makeHarness(baseDir, { projects: [stale, project] });
+        yield* withService(harness, (service) => service.drain);
+        const generations = yield* Ref.get(harness.generations);
+        assert.strictEqual(generations[0]?.cwd, project.workspaceRoot);
+        assert.include(generations[0]?.context, "## P1: T3 Pretty");
+        assert.include(generations[0]?.context, "## P2: Older");
+      }),
+    ),
+  );
+
   it.effect("does not generate again before the next scheduled time", () =>
     run((baseDir) =>
       Effect.gen(function* () {

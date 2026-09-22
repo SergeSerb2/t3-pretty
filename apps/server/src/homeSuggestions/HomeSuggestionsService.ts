@@ -43,6 +43,7 @@ import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
@@ -193,8 +194,14 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  const persist = (state: StoredState) =>
-    encodeStoredState(state).pipe(
+  // Dismiss runs on the RPC fiber while generation runs on the worker. Each
+  // writes the *current* Ref value under one permit, so whichever write is
+  // last still reflects both updates instead of a stale copy.
+  const persistLock = yield* Semaphore.make(1);
+  const persistCurrent = persistLock.withPermits(1)(Ref.get(stored).pipe(Effect.flatMap(persist)));
+
+  function persist(state: StoredState) {
+    return encodeStoredState(state).pipe(
       Effect.flatMap((contents) => writeFileStringAtomically({ filePath, contents })),
       Effect.catchCause((cause) =>
         Effect.logWarning("home suggestions state could not be written", {
@@ -205,6 +212,7 @@ export const make = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
     );
+  }
 
   const readDigestThreads = Effect.fn("HomeSuggestionsService.readDigestThreads")(function* () {
     const shell = yield* projection.getShellSnapshot();
@@ -246,7 +254,11 @@ export const make = Effect.gen(function* () {
       const digest = buildHomeSuggestionsDigest({ projects, threads, nowMs });
       const state = yield* Ref.get(stored);
       const generated = yield* textGeneration.generateHomeSuggestions({
-        cwd: projects[0]?.workspaceRoot ?? process.cwd(),
+        // Providers bind a run to its cwd; use the digest's most recently
+        // active project (P1) rather than whatever the snapshot lists first.
+        cwd:
+          projects.find((project) => project.id === digest.projectsByKey.get("P1"))
+            ?.workspaceRoot ?? process.cwd(),
         context: digest.context,
         projectCount: HOME_SUGGESTIONS_PROJECT_COUNT,
         exploreCount: HOME_SUGGESTIONS_EXPLORE_COUNT,
@@ -276,7 +288,7 @@ export const make = Effect.gen(function* () {
         lastAttemptAt: attemptedAt,
         lastError: error,
       }));
-      yield* persist(state);
+      yield* persistCurrent;
       yield* publish((snapshot) => ({
         ...snapshot,
         status: "failed",
@@ -293,7 +305,7 @@ export const make = Effect.gen(function* () {
       suggestions,
       previousTitles: rememberTitles(previous.previousTitles, suggestions),
     }));
-    yield* persist(state);
+    yield* persistCurrent;
     yield* publish(() => ({
       status: "ready",
       generatedAt: attemptedAt,
@@ -393,7 +405,7 @@ export const make = Effect.gen(function* () {
         ...previous,
         suggestions: previous.suggestions.filter((card) => card.id !== suggestionId),
       }));
-      yield* persist(state);
+      yield* persistCurrent;
       const next = yield* publish((previous) => ({
         ...previous,
         suggestions: state.suggestions,
