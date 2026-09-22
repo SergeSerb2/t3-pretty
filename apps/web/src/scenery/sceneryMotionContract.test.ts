@@ -16,6 +16,9 @@ import chatViewLogicSource from "../components/ChatView.logic.ts?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import changedFilesSource from "../components/chat/ChangedFilesTree.tsx?raw";
 import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
+import chatHeaderSource from "../components/chat/ChatHeader.tsx?raw";
+import composerBannerSource from "../components/chat/ComposerBanner.tsx?raw";
+import composerBannerStackSource from "../components/chat/ComposerBannerStack.tsx?raw";
 import pendingUserInputSource from "../components/chat/ComposerPendingUserInputPanel.tsx?raw";
 import primaryActionsSource from "../components/chat/ComposerPrimaryActions.tsx?raw";
 import draftHeroSource from "../components/chat/DraftHeroHeadline.tsx?raw";
@@ -23,7 +26,6 @@ import expandedImageSource from "../components/chat/ExpandedImageDialog.tsx?raw"
 import messagesTimelineSource from "../components/chat/MessagesTimeline.tsx?raw";
 import providerBannerSource from "../components/chat/ProviderStatusBanner.tsx?raw";
 import threadSyncPillSource from "../components/chat/ThreadSyncStatusPill.tsx?raw";
-import toolCallExpandedBodySource from "../components/chat/ToolCallExpandedBody.tsx?raw";
 import gitActionsSource from "../components/GitActionsControl.tsx?raw";
 import noActiveThreadSource from "../components/NoActiveThreadState.tsx?raw";
 import quitHoldSource from "../components/QuitHoldOverlay.tsx?raw";
@@ -31,10 +33,13 @@ import rightPanelTabsSource from "../components/RightPanelTabs.tsx?raw";
 import connectionsSettingsSource from "../components/settings/ConnectionsSettings.tsx?raw";
 import settingsLayoutSource from "../components/settings/settingsLayout.tsx?raw";
 import themeEditorSource from "../components/settings/ThemeEditorPanel.tsx?raw";
+import sidebarLogicSource from "../components/Sidebar.logic.ts?raw";
 import sidebarSource from "../components/Sidebar.tsx?raw";
 import providerUpdatePillSource from "../components/sidebar/SidebarProviderUpdatePill.tsx?raw";
 import alertSource from "../components/ui/alert.tsx?raw";
+import autocompleteSource from "../components/ui/autocomplete.tsx?raw";
 import checkboxSource from "../components/ui/checkbox.tsx?raw";
+import comboboxSource from "../components/ui/combobox.tsx?raw";
 import dialogSource from "../components/ui/dialog.tsx?raw";
 import emptySource from "../components/ui/empty.tsx?raw";
 import radioGroupSource from "../components/ui/radio-group.tsx?raw";
@@ -93,7 +98,8 @@ describe("row arrival contract with the messages timeline", () => {
 describe("working-row thinking indicator contract", () => {
   it("the working row renders the shimmer Thinking indicator, not the pulse dots", () => {
     expect(messagesTimelineSource).toContain('"working"');
-    expect(messagesTimelineSource).toContain("<ThinkingActivityRow />");
+    expect(messagesTimelineSource).toContain("<ThinkingTimelineRow />");
+    expect(messagesTimelineSource).toContain('iconName="brain" active shimmer');
     expect(messagesTimelineSource).not.toContain("status-pulse-wave");
   });
 
@@ -124,16 +130,35 @@ describe("working-row thinking indicator contract", () => {
   });
 });
 
-describe("tool card disclosure contract", () => {
-  it("the expanded body still mounts under the ms-7 indent wrapper", () => {
-    // The wrapper moved from MessagesTimeline into ToolCallExpandedBody.
-    expect(toolCallExpandedBodySource).toContain("mb-1 ms-7 mt-0.5");
+describe("disclosure reveal contract", () => {
+  it("timeline disclosures still announce their state with aria-expanded", () => {
+    // Turn folds, tool groups, live tool rows and activity groups.
+    expect(messagesTimelineSource).toContain("aria-expanded={row.expanded}");
+    // Thinking traces and agent spawns.
+    expect(messagesTimelineSource).toContain("aria-expanded={expanded}");
+    // Tool entries: the role=button row holds the body it opens.
+    expect(messagesTimelineSource).toContain('"aria-expanded": expanded');
+    expect(changedFilesSource).toContain("aria-expanded={isExpanded}");
   });
 
-  it("status verdict icons still live in the gap-1 indicator cluster, wrapped in a span", () => {
-    expect(messagesTimelineSource).toContain("gap-1 text-icon-muted");
-    expect(messagesTimelineSource).toContain('aria-label="Tool call failed"');
-    expect(motionStylesSource).toContain('[class*="gap-1 text-icon-muted"]');
+  it("reveals key on the open gesture, not on mount", () => {
+    expect(motionDriverSource).toContain(
+      'document.addEventListener("click", onRevealGesture, true)',
+    );
+    expect(motionDriverSource).toContain(
+      'document.addEventListener("keydown", onRevealGesture, true)',
+    );
+    expect(motionStylesSource).toContain("[data-timeline-root].scenery-row-reveal > *");
+    expect(motionStylesSource).toContain("html[data-scenery-motion] .scenery-reveal {");
+    // The old per-mount tool body rule replayed on every thread switch.
+    expect(motionStylesSource).not.toContain('div[class*="ms-7"]');
+  });
+
+  it("failed tool calls keep their accessible marker", () => {
+    expect(messagesTimelineSource).toContain(
+      'aria-label={showFailedIndicator ? "Tool call failed"',
+    );
+    expect(motionStylesSource).not.toContain('[class*="gap-1 text-icon-muted"]');
   });
 });
 
@@ -169,9 +194,30 @@ describe("composer contract", () => {
     expect(primaryActionsSource).toContain('data-chat-composer-implement-actions="true"');
   });
 
-  it("draft attachments still own a direct-child Remove button inside the editor chrome", () => {
-    expect(chatComposerSource).toContain('data-chat-composer-editor-chrome="true"');
+  it("draft attachments still own a direct-child Remove button inside the composer surface", () => {
+    expect(chatComposerSource).toContain('data-chat-composer-surface="true"');
     expect(chatComposerSource).toContain("aria-label={`Remove ${image.name}`}");
+    expect(motionStylesSource).toContain('[data-chat-composer-surface="true"]');
+    expect(motionStylesSource).not.toContain("data-chat-composer-editor-chrome");
+  });
+
+  it("the send arrow returns as a direct submit child of the right-hand actions", () => {
+    expect(chatComposerSource).toContain('data-chat-composer-actions="right"');
+    expect(primaryActionsSource).toContain('type="submit"');
+    expect(primaryActionsSource).toContain('data-chat-composer-send-while-running="true"');
+  });
+
+  it("composer menus and the stash drawer are glass surfaces inside the drawer layer", () => {
+    expect(chatComposerSource).toContain('data-composer-drawer-layer="true"');
+    expect(composerBannerSource).toContain("data-composer-banner-surface={placement}");
+    // The glass paints on ::before, which is why only the host slides.
+    expect(composerBannerSource).toContain("before:backdrop-blur-(--glass-blur)");
+  });
+
+  it("composer notices stay on the banner stack's own rise", () => {
+    expect(composerBannerStackSource).toContain('"mount-rise-in group/banner-stack');
+    expect(composerBannerStackSource).toContain('data-composer-banner-drawer="true"');
+    expect(motionStylesSource).toContain(":not([data-composer-banner-drawer] *)");
   });
 
   it("the agent-question option check still swaps in as a lucide CheckIcon inside the collapsible", () => {
@@ -192,10 +238,13 @@ describe("timeline and lightbox contract", () => {
     expect(changedFilesSource).toContain('data-changed-files-header=""');
   });
 
-  it("the minimap preview and lightbox still carry their hooks", () => {
+  it("the minimap preview still carries its hook", () => {
     expect(messagesTimelineSource).toContain("data-minimap-preview");
-    expect(expandedImageSource).toContain("aria-label={`Expanded ${mediaLabel} preview`}");
-    expect(expandedImageSource).toContain('<div className="relative isolate z-10');
+  });
+
+  it("the lightbox animates as the Dialog primitive", () => {
+    expect(expandedImageSource).toContain('variant="media"');
+    expect(motionStylesSource).not.toContain("Expanded image preview");
   });
 });
 
@@ -208,7 +257,6 @@ describe("sidebar motion contract", () => {
   it("thread rows and the woke pill still carry their hooks", () => {
     expect(sidebarSource).toContain('data-testid="sidebar-row-card"');
     expect(sidebarSource).toContain('aria-label="Dismiss Woke notification"');
-    expect(sidebarSource).toContain('"opacity-70 transition-opacity hover:opacity-100"');
   });
 
   it("the provider update pill still exits with the translate/opacity pair the entry mirrors", () => {
@@ -250,6 +298,13 @@ describe("dialog contract", () => {
 });
 
 describe("primitive and settings contract", () => {
+  it("combobox and autocomplete popups still wrap the popup in a styled span", () => {
+    expect(comboboxSource).toContain('data-slot="combobox-positioner"');
+    expect(comboboxSource).toContain('"dropdown-glass relative flex max-h-full');
+    expect(autocompleteSource).toContain('data-slot="autocomplete-positioner"');
+    expect(motionStylesSource).not.toContain('[data-slot="select-button"]');
+  });
+
   it("checkbox / radio indicators and toast icons still expose data-slots", () => {
     expect(checkboxSource).toContain('data-slot="checkbox-indicator"');
     expect(radioGroupSource).toContain('data-slot="radio-indicator"');
@@ -292,22 +347,30 @@ describe("hero and sidebar contract", () => {
     expect(draftHeroSource).toContain("<h1");
   });
 
-  it("the new-thread button still carries its aria-label", () => {
-    expect(sidebarSource).toContain('aria-label="New thread"');
-  });
-
-  it("working sidebar rows keep a quiet text-only status label", () => {
+  it("working sidebar rows keep a quiet status label", () => {
     expect(sidebarSource).toContain("data-thread-item");
-    expect(sidebarSource).toContain('label: "Working"');
-    expect(sidebarSource).not.toContain("CircleDashedIcon");
+    expect(sidebarLogicSource).toContain('working: { label: "Working"');
     expect(motionDriverSource).not.toContain("scenery-orb-slot--sidebar");
     expect(motionStylesSource).not.toContain("scenery-orb-slot--sidebar");
   });
 
-  it("keeps the working label quiet without an infinite animation", () => {
-    expect(sidebarSource).toContain("data-sidebar-working-label");
-    expect(motionStylesSource).toContain("[data-sidebar-working-label]");
+  it("slides a status in only when it changes in place, without an infinite animation", () => {
+    // The role=status region persists; only the label inside it is keyed.
+    expect(sidebarSource).toContain('<span key={props.status.icon} className="inline-block">');
+    expect(sidebarSource).toContain('data-sidebar-status-change={props.changed ? "" : undefined}');
+    expect(sidebarSource).toContain("useInPlaceChange(topStatus?.icon ?? null, threadKey)");
+    expect(motionStylesSource).toContain(
+      '[data-sidebar-status-change]\n  > [role="status"]\n  > span',
+    );
     expect(motionStylesSource).not.toContain("scenery-sidebar-working-breathe");
+  });
+
+  it("fades a thread title in only when it changes in place", () => {
+    expect(sidebarSource).toContain("key={thread.title}");
+    expect(sidebarSource).toContain('data-title-swap={titleChanged ? "" : undefined}');
+    expect(chatHeaderSource).toContain("key={activeThreadTitle}");
+    expect(chatHeaderSource).toContain('data-title-swap={titleChanged ? "" : undefined}');
+    expect(motionStylesSource).toContain("html[data-scenery-motion] [data-title-swap]");
   });
 
   it("pops the done check the sidebar row renders when a turn ends", () => {

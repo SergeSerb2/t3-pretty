@@ -259,6 +259,7 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
+import { useInPlaceChange } from "../scenery/useInPlaceChange";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -306,9 +307,14 @@ function JumpHintBadge(props: { label: string }) {
 function SidebarThreadTopStatusMark(props: {
   status: SidebarThreadTopStatus;
   workingStartedAt?: string | null | undefined;
+  /** The status changed while the row was on screen (fork motion hook). */
+  changed?: boolean;
 }) {
   return (
-    <span className={cn("inline-flex items-center gap-1", props.status.className)}>
+    <span
+      className={cn("inline-flex items-center gap-1", props.status.className)}
+      data-sidebar-status-change={props.changed ? "" : undefined}
+    >
       {props.status.icon === "working" ? (
         <CircleDashedIcon aria-hidden className="size-3 shrink-0" />
       ) : props.status.icon === "input" ? (
@@ -322,7 +328,13 @@ function SidebarThreadTopStatusMark(props: {
       ) : props.status.icon === "done" ? (
         <CircleCheckIcon aria-hidden className="size-3 shrink-0" />
       ) : null}
-      <span role="status">{props.status.label}</span>
+      {/* The live region stays mounted so screen readers announce the change;
+          the keyed label inside it remounts so the change can animate. */}
+      <span role="status">
+        <span key={props.status.icon} className="inline-block">
+          {props.status.label}
+        </span>
+      </span>
       {props.status.icon === "working" && props.workingStartedAt !== undefined ? (
         <span aria-hidden className="hidden @min-[22rem]/sidebar-list:inline">
           <WorkingDuration startedAt={props.workingStartedAt} />
@@ -1212,6 +1224,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     changeRequestMerged,
   });
   const isWokeStatus = topStatus?.icon === "woke";
+  // Fork motion: a keyed title or status animates only when it changed in place.
+  const titleChanged = useInPlaceChange(thread.title, threadKey);
+  const statusChanged = useInPlaceChange(topStatus?.icon ?? null, threadKey);
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
@@ -1502,6 +1517,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     />
   ) : (
     <span
+      key={thread.title}
+      data-title-swap={titleChanged ? "" : undefined}
       className={cn(
         "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none",
         shouldRecede ? "font-normal" : "font-medium",
@@ -1751,7 +1768,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   ) : variantAction === "unsettle" ? (
                     <span className="text-xs">{settledTimeLabel(thread)}</span>
                   ) : topStatus ? (
-                    <SidebarThreadTopStatusMark status={topStatus} />
+                    <SidebarThreadTopStatusMark status={topStatus} changed={statusChanged} />
                   ) : (
                     <span className="text-xs">{threadTimeLabel(thread)}</span>
                   )}
@@ -1985,6 +2002,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       ) : (
                         <SidebarThreadTopStatusMark
                           status={topStatus}
+                          changed={statusChanged}
                           workingStartedAt={
                             status === "working" ? resolveWorkingStartedAt(thread) : undefined
                           }
