@@ -47,8 +47,10 @@ type SidebarContextProps = {
   peeking: boolean;
   peekFlyout: boolean;
   peekNow: () => void;
+  retainPeekIfHovered: () => void;
   onPeekPointerEnter: () => void;
   onPeekPointerLeave: () => void;
+  onPeekPointerHold: () => void;
 };
 
 type SidebarResizableOptions = {
@@ -149,17 +151,30 @@ function SidebarProvider({
     [setOpenProp, open],
   );
 
-  // Helper to toggle the sidebar.
-  const toggleSidebar = React.useCallback(() => {
-    return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
-  }, [isMobile, setOpen]);
-
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
   const state = resolveSidebarState({ isMobile, open, openMobile });
-  const { peeking, peekFlyout, peekNow, onPeekPointerEnter, onPeekPointerLeave } = useSidebarPeek(
-    !isMobile && !open,
-  );
+  const {
+    peeking,
+    peekFlyout,
+    peekNow,
+    noteUserCollapsedSidebar,
+    retainPeekIfHovered,
+    onPeekPointerEnter,
+    onPeekPointerLeave,
+    onPeekPointerHold,
+  } = useSidebarPeek(!isMobile && !open);
+
+  // Helper to toggle the sidebar.
+  const toggleSidebar = React.useCallback(() => {
+    if (isMobile) {
+      setOpenMobile((open) => !open);
+      return;
+    }
+    // Collapsing while the pointer rests on the trigger is not a new hover.
+    if (open) noteUserCollapsedSidebar();
+    setOpen((open) => !open);
+  }, [isMobile, noteUserCollapsedSidebar, open, setOpen, setOpenMobile]);
 
   const contextValue = React.useMemo<SidebarContextProps>(
     () => ({
@@ -173,8 +188,10 @@ function SidebarProvider({
       peeking,
       peekFlyout,
       peekNow,
+      retainPeekIfHovered,
       onPeekPointerEnter,
       onPeekPointerLeave,
+      onPeekPointerHold,
     }),
     [
       state,
@@ -186,8 +203,10 @@ function SidebarProvider({
       peeking,
       peekFlyout,
       peekNow,
+      retainPeekIfHovered,
       onPeekPointerEnter,
       onPeekPointerLeave,
+      onPeekPointerHold,
     ],
   );
 
@@ -242,6 +261,7 @@ function Sidebar({
     peekFlyout,
     onPeekPointerEnter,
     onPeekPointerLeave,
+    onPeekPointerHold,
   } = useSidebar();
   const teslaTouch = useTeslaTouchUi();
   const resolvedResizable = React.useMemo<SidebarResolvedResizableOptions | null>(() => {
@@ -294,7 +314,11 @@ function Sidebar({
       window.clearTimeout(timeout);
     };
   }, [iconCollapsed]);
-  const peekPointer = useSidebarPeekPointerBinding(onPeekPointerEnter, onPeekPointerLeave);
+  const peekPointer = useSidebarPeekPointerBinding(
+    onPeekPointerEnter,
+    onPeekPointerLeave,
+    onPeekPointerHold,
+  );
 
   if (collapsible === "none") {
     return (

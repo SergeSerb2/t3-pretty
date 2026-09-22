@@ -67,6 +67,31 @@ import {
 } from "./ui/sidebarPeek";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
+function SidebarPeekNavigationGuard() {
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const { retainPeekIfHovered } = useSidebar();
+  const retainRef = useRef(retainPeekIfHovered);
+  retainRef.current = retainPeekIfHovered;
+
+  useLayoutEffect(() => {
+    // Thread switches replace the row under the cursor and synthesize a leave
+    // while the pointer is still in the hover surface. Re-assert before paint,
+    // and once more after the browser has dispatched that leave.
+    retainRef.current();
+    let timer = 0;
+    const frame = window.requestAnimationFrame(() => {
+      retainRef.current();
+      timer = window.setTimeout(() => retainRef.current(), 0);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [pathname]);
+
+  return null;
+}
+
 function readInitialThreadSidebarWidth(): number {
   try {
     return resolveInitialThreadSidebarWidth(
@@ -86,9 +111,20 @@ function SidebarControl({
   isWindowFullscreen: boolean;
 }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const { isMobile, open, peeking, toggleSidebar, onPeekPointerEnter, onPeekPointerLeave } =
-    useSidebar();
-  const peekPointer = useSidebarPeekPointerBinding(onPeekPointerEnter, onPeekPointerLeave);
+  const {
+    isMobile,
+    open,
+    peeking,
+    toggleSidebar,
+    onPeekPointerEnter,
+    onPeekPointerLeave,
+    onPeekPointerHold,
+  } = useSidebar();
+  const peekPointer = useSidebarPeekPointerBinding(
+    onPeekPointerEnter,
+    onPeekPointerLeave,
+    onPeekPointerHold,
+  );
   const isSidebarVisible = useSidebarVisibility();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const stageBackdropVariant = useSidebarStageBackdropVariant(
@@ -371,6 +407,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         style={sidebarProviderStyle}
       >
         <ProjectProjectionRetention />
+        <SidebarPeekNavigationGuard />
         <Sidebar
           side="left"
           collapsible="icon"

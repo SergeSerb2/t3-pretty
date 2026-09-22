@@ -2,8 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   pointerInSidebarNativeChrome,
+  pointerStillInsideSidebarPeek,
+  resolveSidebarPeekHold,
   resolveSidebarPeekIntent,
   resolveSidebarPeekLeave,
+  shouldRetainSidebarPeek,
   SIDEBAR_PEEK_ANIMATION_MS,
   SIDEBAR_PEEK_CLOSE_DELAY_MS,
   SIDEBAR_PEEK_NATIVE_CHROME_HEIGHT_PX,
@@ -49,6 +52,77 @@ describe("sidebar peek", () => {
 
   it("does not ignore a leave into nowhere", () => {
     expect(shouldIgnoreSidebarPeekLeave(null, null)).toBe(false);
+  });
+
+  it("holds the flyout when a leave fires while the pointer is still inside", () => {
+    const anchor = { left: 0, top: 0 };
+    expect(
+      resolveSidebarPeekLeave({
+        currentTarget: null,
+        relatedTarget: null,
+        pointer: { x: 24, y: 200 },
+        anchor,
+        pointerOverSurface: true,
+      }),
+    ).toBe("hold");
+    expect(
+      pointerStillInsideSidebarPeek({
+        point: { x: 24, y: 200 },
+        rects: [{ left: 0, top: 0, right: 48, bottom: 800 }],
+        hovered: false,
+      }),
+    ).toBe(true);
+    expect(
+      pointerStillInsideSidebarPeek({
+        point: { x: 80, y: 200 },
+        rects: [{ left: 0, top: 0, right: 48, bottom: 800 }],
+        hovered: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a hovered flyout across navigation and ignores the collapse click", () => {
+    expect(
+      shouldRetainSidebarPeek({
+        enabled: true,
+        suppressUntilExit: false,
+        peeking: true,
+        flyoutPresent: true,
+        hovered: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRetainSidebarPeek({
+        enabled: true,
+        suppressUntilExit: false,
+        peeking: true,
+        flyoutPresent: true,
+        hovered: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRetainSidebarPeek({
+        enabled: true,
+        suppressUntilExit: true,
+        peeking: false,
+        flyoutPresent: false,
+        hovered: true,
+      }),
+    ).toBe(false);
+    expect(
+      resolveSidebarPeekHold({
+        peeking: true,
+        flyoutPresent: true,
+        suppressUntilExit: false,
+      }),
+    ).toBe("keep-open");
+    expect(
+      resolveSidebarPeekHold({
+        peeking: false,
+        flyoutPresent: false,
+        suppressUntilExit: true,
+      }),
+    ).toBe("stay-closed");
   });
 
   it("holds the flyout when the pointer enters the macOS traffic-light pad", () => {
