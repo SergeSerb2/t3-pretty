@@ -153,6 +153,39 @@ describe("ChatMarkdown workspace images", () => {
     expect(html).not.toContain("Image unavailable");
   });
 
+  it("keeps a literal %2F session directory when an agent links that image", () => {
+    const imagePath =
+      "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
+    renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/Users/serge/Documents/General"
+        threadRef={threadRef}
+        text={`![Verdict](${imagePath})`}
+      />,
+    );
+
+    expect(testState.resources).toEqual([
+      { _tag: "media-file", threadId: threadRef.threadId, path: imagePath },
+    ]);
+  });
+
+  it("maps a markdown images/1.jpg link to the generating session file", () => {
+    const imagePath =
+      "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
+    renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/Users/serge/Documents/General"
+        threadRef={threadRef}
+        generatedImagePaths={[imagePath]}
+        text={"![Verdict](images/1.jpg)"}
+      />,
+    );
+
+    expect(testState.resources).toEqual([
+      { _tag: "media-file", threadId: threadRef.threadId, path: imagePath },
+    ]);
+  });
+
   it("loads a POSIX absolute path and file URI through a signed asset URL", () => {
     const html = renderToStaticMarkup(
       <ChatMarkdown

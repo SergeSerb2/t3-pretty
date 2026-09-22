@@ -104,6 +104,10 @@ import {
 } from "../../lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "../../lib/syntaxHighlighting";
 import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
+import {
+  generatedImagePathsByTurnFromWorkEntries,
+  generatedImageWorkEntryPath,
+} from "./GeneratedImageCard";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Root, RootContent } from "mdast";
@@ -309,6 +313,7 @@ interface TimelineRowSharedState {
   onSteerQueuedMessage: (id: string) => void;
   steerQueuedMessageShortcutLabel: string | null;
   onRemoveQueuedMessage: (id: string) => void;
+  generatedImagePathsByTurn: ReadonlyMap<string, ReadonlyArray<string>>;
 }
 
 interface TimelineRowActivityState {
@@ -334,6 +339,7 @@ interface TimelineRowActivityState {
 }
 
 const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);
+const EMPTY_GENERATED_IMAGE_PATHS_BY_TURN = new Map<string, ReadonlyArray<string>>();
 const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(null!);
 
 interface WorkGroupViewState {
@@ -1147,6 +1153,30 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     };
   }, [timelineViewportElement, rows.length, reportContentOverflow]);
 
+  const generatedImagePathsKeyRef = useRef("");
+  const generatedImagePathsRef = useRef<ReadonlyMap<string, ReadonlyArray<string>>>(
+    EMPTY_GENERATED_IMAGE_PATHS_BY_TURN,
+  );
+  const generatedImagePathsByTurn = useMemo(() => {
+    const workEntries = timelineEntries.flatMap((entry) =>
+      entry.kind === "work" ? [entry.entry] : [],
+    );
+    const parts: string[] = [];
+    for (const entry of workEntries) {
+      const path = generatedImageWorkEntryPath(entry);
+      if (path && entry.turnId) parts.push(`${entry.turnId}\0${path}`);
+    }
+    const key = parts.join("\n");
+    if (key === generatedImagePathsKeyRef.current) return generatedImagePathsRef.current;
+    generatedImagePathsKeyRef.current = key;
+    const next =
+      key.length === 0
+        ? EMPTY_GENERATED_IMAGE_PATHS_BY_TURN
+        : generatedImagePathsByTurnFromWorkEntries(workEntries);
+    generatedImagePathsRef.current = next;
+    return next;
+  }, [timelineEntries]);
+
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
       citationRequest: readyCitationRequest,
@@ -1184,6 +1214,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onSteerQueuedMessage,
       steerQueuedMessageShortcutLabel,
       onRemoveQueuedMessage,
+      generatedImagePathsByTurn,
     }),
     [
       readyCitationRequest,
@@ -1220,6 +1251,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onSteerQueuedMessage,
       steerQueuedMessageShortcutLabel,
       onRemoveQueuedMessage,
+      generatedImagePathsByTurn,
     ],
   );
   const backgroundWorktreeSetup =
@@ -2385,6 +2417,9 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const generatedImagePaths = row.message.turnId
+    ? ctx.generatedImagePathsByTurn.get(row.message.turnId)
+    : undefined;
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
 
   return (
@@ -2408,6 +2443,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             headingLevelOffset={MESSAGE_HEADING_LEVEL}
             onUseArtifactTemplate={ctx.onUseArtifactTemplate}
             onImageExpand={ctx.onImageExpand}
+            generatedImagePaths={generatedImagePaths}
           />
         </AssistantCitationSource>
         <AssistantChangedFilesSection

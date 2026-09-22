@@ -37,6 +37,12 @@ describe("classifyMarkdownImageSource", () => {
     ["file:///C:/Users/dara/project/image.png", null, "C:/Users/dara/project/image.png"],
     ["file://localhost/C:/Users/dara/project/image.png", null, "C:/Users/dara/project/image.png"],
     ["file://server/share/image.png", null, "\\\\server\\share\\image.png"],
+    [
+      "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg",
+      null,
+      "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg",
+    ],
+    ["/tmp/image%20one.png", null, "/tmp/image one.png"],
   ])("maps %s to a workspace file", (source, workspaceRoot, path) => {
     expect(classifyMarkdownImageSource(source, workspaceRoot)).toEqual({
       _tag: "WorkspaceFile",

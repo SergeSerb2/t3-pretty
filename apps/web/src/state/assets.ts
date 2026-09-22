@@ -10,7 +10,7 @@ import { isElectron } from "../env";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentSession } from "./session";
 
-const localMediaEnvironment = Atom.make((get) => {
+export const localMediaEnvironment = Atom.make((get) => {
   if (!isElectron) return null;
   const environmentId = get(primaryEnvironmentIdAtom);
   if (environmentId === null) return null;
