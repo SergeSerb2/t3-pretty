@@ -34,15 +34,14 @@
   transition-duration: 200ms;
 }
 
+/* Badges and the new-thread button hang up to 5px outside the icons. The
+   negative margins keep that band out of layout while the padding keeps it
+   inside the clip, so nothing pops into view once the well stops growing. */
 .rail-folder-projects-clip {
   min-height: 0;
   overflow: hidden;
-}
-
-/* Badges and the new-thread button hang off the icon. Leave them clipped
-   only while the well is changing height. */
-.rail-folder-tray[data-open="true"][data-settled="true"] .rail-folder-projects-clip {
-  overflow: visible;
+  margin: 0 -6px -6px;
+  padding: 0 6px 6px;
 }
 
 .rail-folder-project {
@@ -123,10 +122,6 @@
   .rail-folder-projects,
   .rail-folder-tray[data-open="true"] > .rail-folder-projects {
     transition: none;
-  }
-
-  .rail-folder-tray[data-open="true"] .rail-folder-projects-clip {
-    overflow: visible;
   }
 
   .rail-folder-project,

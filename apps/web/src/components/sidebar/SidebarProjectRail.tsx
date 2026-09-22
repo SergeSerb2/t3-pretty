@@ -1,15 +1,5 @@
 import { FolderIcon, FolderOpenIcon, FolderPlusIcon, LayersIcon, PlusIcon } from "lucide-react";
-import {
-  lazy,
-  Suspense,
-  useEffect,
-  useRef,
-  useState,
-  type DragEvent,
-  type MouseEvent,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { lazy, Suspense, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import type { IconName } from "lucide-react/dynamic";
 
 import "./projectRailFolder.css";
@@ -87,48 +77,6 @@ function FolderRailGlyph({ folder }: { readonly folder: SidebarProjectFolder }) 
 
 type RailFolderDrop = "in" | "before" | "after" | null;
 
-/** Unclip badges after the well finishes growing. 320ms covers the 200ms open. */
-const RAIL_FOLDER_SETTLE_MS = 320;
-
-function useFolderTraySettled(open: boolean): {
-  readonly settled: boolean;
-  readonly projectsRef: RefObject<HTMLDivElement | null>;
-} {
-  const projectsRef = useRef<HTMLDivElement>(null);
-  const [phase, setPhase] = useState(() => ({ open, settled: open }));
-  if (phase.open !== open) {
-    setPhase({ open, settled: false });
-  }
-  const settled = phase.settled && phase.open === open;
-
-  useEffect(() => {
-    if (!open || settled) return;
-    const node = projectsRef.current;
-    let cancelled = false;
-    const finish = () => {
-      if (cancelled) return;
-      cancelled = true;
-      setPhase((current) => (current.open ? { open: true, settled: true } : current));
-    };
-    const timeout = window.setTimeout(finish, RAIL_FOLDER_SETTLE_MS);
-    const onEnd = (event: TransitionEvent) => {
-      if (node === null || event.target !== node || event.propertyName !== "grid-template-rows") {
-        return;
-      }
-      window.clearTimeout(timeout);
-      finish();
-    };
-    node?.addEventListener("transitionend", onEnd);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeout);
-      node?.removeEventListener("transitionend", onEnd);
-    };
-  }, [open, settled]);
-
-  return { settled, projectsRef };
-}
-
 function RailFolderFrame({
   open,
   drop,
@@ -146,11 +94,9 @@ function RailFolderFrame({
   readonly button: ReactNode;
   readonly projects: ReactNode;
 }) {
-  const { settled, projectsRef } = useFolderTraySettled(open);
   return (
     <div
       data-open={open ? "true" : "false"}
-      data-settled={settled ? "true" : "false"}
       data-drop={drop ?? undefined}
       className={cn(
         "rail-folder-tray relative isolate flex w-8 shrink-0 flex-col items-center",
@@ -163,11 +109,10 @@ function RailFolderFrame({
     >
       <div
         aria-hidden
-        className="rail-folder-tray-bg pointer-events-none absolute inset-0 rounded-[var(--control-radius)] bg-[color-mix(in_srgb,var(--sidebar-foreground)_12%,var(--sidebar))]"
+        className="rail-folder-tray-bg pointer-events-none absolute inset-0 rounded-[var(--control-radius)] bg-[color-mix(in_srgb,var(--sidebar-foreground)_12%,var(--sidebar))] ring-1 ring-sidebar-border"
       />
       <div className="relative z-[1] w-full">{button}</div>
       <div
-        ref={projectsRef}
         className="rail-folder-projects relative z-[1]"
         inert={!open}
         aria-hidden={open ? undefined : true}
@@ -620,6 +565,7 @@ export function SidebarProjectRail({
           >
             <SidebarMenuButton
               size="icon"
+              variant="outline"
               aria-label={activityAccessibleLabel(
                 `${item.folder.collapsed ? "Expand" : "Collapse"} ${item.folder.name}`,
                 item.folder.collapsed ? activity : null,
