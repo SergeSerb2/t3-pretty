@@ -148,6 +148,40 @@ describe("browser composer dictation", () => {
     expect(reportError).not.toHaveBeenCalled();
   });
 
+  it("appends a later phrase instead of replacing words already shown", async () => {
+    await act(async () => {
+      await dictation.toggle();
+    });
+    await act(() => {
+      Recognition.instances[0]?.emit("I need to update the sidebar");
+    });
+    await act(() => {
+      Recognition.instances[0]?.emit("update the sidebar padding");
+    });
+    expect(value).toBe("Before I need to update the sidebar padding after");
+    await act(async () => {
+      await dictation.toggle();
+    });
+    expect(value).toBe("Before I need to update the sidebar padding after");
+  });
+
+  it("cleans a repeated phrase when dictation stops", async () => {
+    await act(async () => {
+      await dictation.toggle();
+    });
+    await act(() => {
+      Recognition.instances[0]?.emit("go to the store");
+    });
+    await act(() => {
+      Recognition.instances[0]?.emit("go to the store go to the store tomorrow");
+    });
+    expect(value).toBe("Before go to the store go to the store tomorrow after");
+    await act(async () => {
+      await dictation.toggle();
+    });
+    expect(value).toBe("Before go to the store tomorrow after");
+  });
+
   it("cancels a preview without allowing a late result to reinsert text", async () => {
     await act(async () => {
       await dictation.toggle();
@@ -300,6 +334,13 @@ describe("macOS desktop dictation", () => {
       dictationListeners[0]?.({ type: "transcript", text: "native speech" });
     });
     expect(value).toBe("Before native speech after");
+    await act(() => {
+      dictationListeners[0]?.({
+        type: "transcript",
+        text: "native speech keeps the earlier words",
+      });
+    });
+    expect(value).toBe("Before native speech keeps the earlier words after");
     await act(async () => {
       await dictation.toggle();
     });
@@ -308,7 +349,7 @@ describe("macOS desktop dictation", () => {
       dictationListeners[0]?.({ type: "ended" });
     });
     expect(dictation.phase).toBe("idle");
-    expect(value).toBe("Before native speech after");
+    expect(value).toBe("Before native speech keeps the earlier words after");
   });
 
   it("hides Electron dictation off macOS", async () => {
