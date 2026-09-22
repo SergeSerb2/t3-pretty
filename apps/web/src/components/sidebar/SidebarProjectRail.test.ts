@@ -31,4 +31,11 @@ describe("project rail folders", () => {
     expect(folderCssSource).toContain("@media (prefers-reduced-motion: reduce)");
     expect(folderCssSource).not.toContain("scale(0)");
   });
+
+  it("shows a live thread count instead of shortcut indexes", () => {
+    expect(railSource).not.toContain("visibleProjectJumpNumbers");
+    expect(railSource).not.toContain("jumpNumber");
+    expect(railSource).toContain("projectRailActivityMark");
+    expect(railSource).toContain("formatProjectRailActivity");
+  });
 });

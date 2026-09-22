@@ -173,6 +173,7 @@ import {
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
   type SidebarDropVerb,
+  addProjectRailActivity,
   addProjectRailAttention,
   resolveProjectStatusIndicator,
   resolveSidebarThreadStatus,
@@ -197,6 +198,7 @@ import {
   type SidebarListItem,
   type SidebarListMarker,
   type SidebarSection,
+  type ProjectRailActivity,
   type ProjectRailAttention,
   type SidebarThreadNest,
   type SidebarThreadTopStatus,
@@ -2052,7 +2054,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 </span>
               )}
             </div>
-
           </div>
           {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
         </TooltipTrigger>
@@ -3465,6 +3466,27 @@ export default function Sidebar() {
     }
     return map;
   }, [activeThreads, logicalProjectKeyByMember, pinnedThreads, threadLastVisitedAtById]);
+  // Live threads on every rail icon, including projects the open list is not
+  // scoped to. Selecting one project must not blank the others.
+  const activityByProjectKey = useMemo(() => {
+    const map = new Map<string, ProjectRailActivity>();
+    for (const thread of threads) {
+      if (thread.archivedAt !== null) continue;
+      const projectKey = logicalProjectKeyByMember.get(
+        `${thread.environmentId}:${thread.projectId}`,
+      );
+      if (projectKey === undefined) continue;
+      const next = addProjectRailActivity(
+        map.get(projectKey),
+        threadStatusPillFor(
+          thread,
+          threadLastVisitedAtById[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
+        ),
+      );
+      if (next) map.set(projectKey, next);
+    }
+    return map;
+  }, [logicalProjectKeyByMember, threadLastVisitedAtById, threads]);
   useEffect(() => {
     if (
       dragState !== null &&
@@ -4647,6 +4669,7 @@ export default function Sidebar() {
           projects={projectGroups}
           selectedProjectKey={projectScopeKey}
           attentionByProjectKey={attentionByProjectKey}
+          activityByProjectKey={activityByProjectKey}
           onNewThreadInProject={startNewThreadInProject}
           onProjectContextMenu={handleProjectContextMenu}
           folders={projectFolders.settings}

@@ -185,6 +185,7 @@ import {
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
   nextSidebarProjectScopeKey,
+  addProjectRailActivity,
   addProjectRailAttention,
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
@@ -194,6 +195,7 @@ import {
   sortProjectsForSidebar,
   useSidebarRowSubscriptionLease,
   useThreadJumpHintVisibility,
+  type ProjectRailActivity,
   type ProjectRailAttention,
   ThreadStatusPill,
 } from "./Sidebar.logic";
@@ -3329,28 +3331,30 @@ export default function LegacySidebar() {
     }
     return next;
   }, [sidebarThreads, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
-  const attentionByProjectKey = useMemo(() => {
-    const map = new Map<string, ProjectRailAttention>();
-    for (const [projectKey, threads] of threadsByProjectKey) {
+  const { attentionByProjectKey, activityByProjectKey } = useMemo(() => {
+    const attentionMap = new Map<string, ProjectRailAttention>();
+    const activityMap = new Map<string, ProjectRailActivity>();
+    for (const [projectKey, projectThreads] of threadsByProjectKey) {
       let attention: ProjectRailAttention | undefined;
-      for (const thread of threads) {
+      let activity: ProjectRailActivity | undefined;
+      for (const thread of projectThreads) {
         if (thread.archivedAt !== null) continue;
-        attention = addProjectRailAttention(
-          attention,
-          resolveThreadStatusPill({
-            thread: {
-              ...thread,
-              lastVisitedAt:
-                threadLastVisitedAtById[
-                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
-                ],
-            },
-          }),
-        );
+        const pill = resolveThreadStatusPill({
+          thread: {
+            ...thread,
+            lastVisitedAt:
+              threadLastVisitedAtById[
+                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
+              ],
+          },
+        });
+        attention = addProjectRailAttention(attention, pill);
+        activity = addProjectRailActivity(activity, pill);
       }
-      if (attention) map.set(projectKey, attention);
+      if (attention) attentionMap.set(projectKey, attention);
+      if (activity) activityMap.set(projectKey, activity);
     }
-    return map;
+    return { attentionByProjectKey: attentionMap, activityByProjectKey: activityMap };
   }, [threadLastVisitedAtById, threadsByProjectKey]);
   const getCurrentSidebarShortcutContext = useCallback(
     () => ({
@@ -3915,6 +3919,7 @@ export default function LegacySidebar() {
             projects={sortedProjects}
             selectedProjectKey={activeRouteProjectKey}
             attentionByProjectKey={attentionByProjectKey}
+            activityByProjectKey={activityByProjectKey}
             onNewThreadInProject={startNewThreadInProject}
             onProjectContextMenu={handleProjectRailContextMenu}
             folders={projectFolders.settings}
