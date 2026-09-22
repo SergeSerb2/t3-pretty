@@ -119,6 +119,36 @@ describe("macOS traffic lights vs collapsed sidebar", () => {
     );
   });
 
+  it("keeps the brand mark on the resting rail and folds only the wordmark", () => {
+    const css = NodeFS.readFileSync(new URL("./index.css", import.meta.url), "utf8");
+    const header = NodeFS.readFileSync(
+      new URL("./components/sidebar/SidebarChrome.tsx", import.meta.url),
+      "utf8",
+    );
+
+    // The brand no longer rides the peek label fade, so the mark stays put.
+    const brand = header.slice(
+      header.indexOf("function SidebarBrand("),
+      header.indexOf("type SidebarUtilityMenuOrientation"),
+    );
+    expect(brand).toContain('data-sidebar-brand=""');
+    expect(brand).toContain('data-sidebar-brand-word=""');
+    expect(brand).not.toContain('data-sidebar-peek="label"');
+
+    expect(css).toContain(
+      `[data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-sidebar-brand],
+  [data-slot="sidebar"][data-opening]:not([data-opening-ready]) [data-sidebar-brand] {
+    margin-left: calc((var(--sidebar-width-icon) - var(--sidebar-brand-mark-width)) / 2);
+  }`,
+    );
+    expect(css).toContain(
+      `[data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-sidebar-brand-word],
+  [data-slot="sidebar"][data-opening]:not([data-opening-ready]) [data-sidebar-brand-word] {
+    grid-template-columns: 0fr;
+    opacity: 0;`,
+    );
+  });
+
   it("slides the sidebar toggle with the traffic-light inset", () => {
     const layout = NodeFS.readFileSync(
       new URL("./components/AppSidebarLayout.tsx", import.meta.url),

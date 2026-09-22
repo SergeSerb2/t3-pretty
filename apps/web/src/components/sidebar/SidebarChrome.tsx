@@ -85,40 +85,41 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   );
 });
 
+// The mark stays on the resting icon rail; only the wordmark folds away. The
+// link's margin and the word's grid track are owned by `index.css` so the
+// collapse can transition them, since utilities would outrank the components
+// layer.
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <Link
       aria-label="Go to threads"
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
+        "relative z-10 hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
+      data-sidebar-brand=""
       to="/"
     >
+      <img
+        alt=""
+        aria-hidden="true"
+        className={cn(
+          "h-5 w-7 shrink-0 object-contain",
+          // The sage mark carries the brand on plain chrome in both themes. Over
+          // scenery photo backdrops it washes out, so fall back to a white glyph.
+          onBackdrop && "brightness-0 invert",
+        )}
+        src="/t3-pretty-mark.png"
+      />
       {/* Trim only the cap edge. Trimming the alphabetic baseline clips the y in Pretty. */}
       <span
-        className="inline-flex min-w-0 items-center gap-1 text-sm font-medium leading-none tracking-tight"
-        data-sidebar-peek="label"
+        className={cn(
+          "grid min-w-0 overflow-hidden text-sm font-medium leading-none tracking-tight",
+          onBackdrop ? "text-white/70" : "text-muted-foreground",
+        )}
+        data-sidebar-brand-word=""
       >
-        <img
-          alt=""
-          aria-hidden="true"
-          className={cn(
-            "h-5 w-auto shrink-0 object-contain",
-            // The sage mark carries the brand on plain chrome in both themes. Over
-            // scenery photo backdrops it washes out, so fall back to a white glyph.
-            onBackdrop && "brightness-0 invert",
-          )}
-          src="/t3-pretty-mark.png"
-        />
-        <span
-          className={cn(
-            "truncate [text-box:trim-start_cap]",
-            onBackdrop ? "text-white/70" : "text-muted-foreground",
-          )}
-        >
-          Pretty
-        </span>
+        <span className="min-w-0 truncate pl-1 [text-box:trim-start_cap]">Pretty</span>
       </span>
     </Link>
   );
