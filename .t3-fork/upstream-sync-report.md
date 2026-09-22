@@ -218,3 +218,36 @@ Re-ran the four landing gates on this repair tree after Buildkite #2622 failed t
 - `apps/web/src/hooks/useThreadActions.ts` — The upstream reorder hunk directly returns a mutation addressed to target.environmentId and target.threadId.. Reason: That literal dispatch would bypass T3 Pretty's writable-target selection and eliminate the existing post-success mirror path, regressing the fork's fix for disconnected same-machine twins. The upstream reorder behavior and pin-undo invalidation are retained through the fork-compatible writable target instead.
 - `web-typecheck` failed after merging `v0.0.43-nightly.20260921.2044`; repaired with `gpt-5.6-sol`: The typecheck failure is resolved by deleting only the duplicate function implementation. Suggestion-level diagnostics are intentionally left unchanged.
   - edited `apps/web/src/components/chat/ComposerBannerStack.tsx`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260922.2083`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260921.2071`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/app.config.ts` — T3 Pretty mobile versions continue to come from resolveMobileAppVersion(), keeping binaries and the in-app changelog aligned with the fork's release train instead of the parent's static mobile version.
+- `apps/mobile/app.config.ts` — T3 Pretty's pinnedRuntimeVersion remains authoritative when configured, protecting the fork-owned OTA boundary from runtime fingerprint drift.
+- `apps/mobile/app.config.ts` — Development continues to avoid expensive native-project fingerprint calculation, while preview and production use the configured fingerprint policy when no explicit runtime pin is present.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Kept the `useAtomSet` and `useAtomValue` imports added by T3 Pretty for its atom-backed mobile task-flow preferences and state handling.
+- `apps/web/src/components/chat/MessageCopyButton.tsx` — Preserved caller-configurable copy labels for reuse across message-copy surfaces.
+- `apps/web/src/components/chat/MessageCopyButton.tsx` — Preserved accessible “Copied” feedback in both the button aria-label and tooltip after a successful copy.
+- `apps/web/src/hooks/useHandleNewThread.ts` — Preserved `resolveSidebarScopedProjectRef`, which supports creating new threads in the project selected by the filtered T3 Pretty sidebar.
+- `packages/contracts/src/t3ProjectFile.ts` — Preserved T3 Pretty's shared maximum-length constants for project script names, commands, and preview URLs, retaining the fork's schema hardening and validation behavior.
+- `packages/contracts/src/t3ProjectFile.ts` — Preserved the existing ProjectScriptIcon and ThreadEnvMode integrations.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/app.config.ts` — Retained the parent's runtimeVersion policy behavior as the fallback beneath T3 Pretty's explicit pinned runtime version support.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Removed the legacy `isDefaultThreadEnvModeSettled` and `resolveDefaultThreadEnvMode` imports as done by the newest parent implementation.
+- `apps/web/src/components/chat/MessageCopyButton.tsx` — Integrated the parent’s corrected “Copy message” wording through the component’s existing default label, replacing the older “Copy link” and “Copy to clipboard” defaults.
+- `apps/web/src/hooks/useHandleNewThread.ts` — Adopted the parent runtime's `readT3ProjectFile` API in place of the older specialized `readT3ProjectFileDefaultThreadEnvMode` import.
+- `packages/contracts/src/t3ProjectFile.ts` — Integrated the upstream WorktreeSubmodules environment schema import used by the new t3.json worktree-submodule configuration.
+- `packages/contracts/src/t3ProjectFile.ts` — Integrated upstream type-only imports for ProjectScopedServerSettingKey and ServerSettings so the parent project-scoped settings schema/API changes remain available.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/app.config.ts` — Change the mobile app's static version from 1.2.1 to the parent release version 1.3.0.. Reason: T3 Pretty intentionally derives its mobile app version from its own release train via resolveMobileAppVersion(); adopting the parent's static version would regress fork release identity and changelog versioning.
