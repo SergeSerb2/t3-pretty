@@ -135,6 +135,7 @@ describe("buildHomeSuggestionsDigest", () => {
         },
       ],
       nowMs: NOW,
+      timeZone: "UTC",
     });
 
     expect(digest.projectsByKey.get("P1")).toBe("busy");
@@ -145,6 +146,23 @@ describe("buildHomeSuggestionsDigest", () => {
     expect(digest.context).not.toContain("secret");
     expect(digest.context).toContain("Outcome: Done, the retry was racing the cookie write.");
     expect(digest.context).toContain("## P2: quiet (folder: quiet)\nNo recent threads.");
+  });
+});
+
+describe("buildHomeSuggestionsDigest day labels", () => {
+  it("counts days on the schedule's calendar rather than UTC", () => {
+    // 23:30 local in Berlin (21:30Z) on the 20th, viewed at 01:00 local on the 21st (23:00Z on the 20th).
+    const digest = buildHomeSuggestionsDigest({
+      projects: [makeProject("p")],
+      threads: [
+        { shell: makeThread("late", "p", "2026-09-20T21:30:00.000Z"), messages: [] },
+        { shell: makeThread("older", "p", "2026-09-17T21:30:00.000Z"), messages: [] },
+      ],
+      nowMs: Date.parse("2026-09-20T23:00:00.000Z"),
+      timeZone: "Europe/Berlin",
+    });
+    expect(digest.context).toContain("Thread late (yesterday,");
+    expect(digest.context).toContain("Thread older (4 days ago,");
   });
 });
 

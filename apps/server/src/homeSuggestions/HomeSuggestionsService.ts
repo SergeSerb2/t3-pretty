@@ -254,7 +254,7 @@ export const make = Effect.gen(function* () {
       if (projects.length === 0) {
         return { kind: "empty" as const };
       }
-      const digest = buildHomeSuggestionsDigest({ projects, threads, nowMs });
+      const digest = buildHomeSuggestionsDigest({ projects, threads, nowMs, timeZone });
       const state = yield* Ref.get(stored);
       const generated = yield* textGeneration.generateHomeSuggestions({
         // Providers bind a run to its cwd; use the digest's most recently
@@ -346,17 +346,25 @@ export const make = Effect.gen(function* () {
     );
   const worker = yield* makeDrainableWorker(processJob);
 
+  // One `Ref.modify` decides who claims the run: a tick and a refresh that
+  // race each other cannot both see "not generating" and enqueue two batches.
   const claimGenerate = (reason: string) =>
     Effect.gen(function* () {
-      const snapshot = (yield* Ref.get(published)).snapshot;
-      if (snapshot.status === "generating") return snapshot;
-      const generating = yield* publish((previous) => ({
-        ...previous,
-        status: "generating" as const,
-        error: null,
-      }));
+      const [claimed, next] = yield* Ref.modify(
+        published,
+        (previous): readonly [readonly [boolean, Published], Published] => {
+          if (previous.snapshot.status === "generating") return [[false, previous], previous];
+          const generating = {
+            seq: previous.seq + 1,
+            snapshot: { ...previous.snapshot, status: "generating" as const, error: null },
+          };
+          return [[true, generating], generating];
+        },
+      );
+      if (!claimed) return next.snapshot;
+      yield* PubSub.publish(changes, next);
       yield* worker.enqueue({ kind: "generate", reason });
-      return generating.snapshot;
+      return next.snapshot;
     });
 
   const tick = Effect.fn("HomeSuggestionsService.tick")(function* () {
@@ -371,9 +379,9 @@ export const make = Effect.gen(function* () {
     }
     if (dueAt === null || dueAt > nowMs) return;
     if (yield* hostSuspended) return;
-    const shell = yield* projection.getShellSnapshot().pipe(
-      Effect.orElseSucceed(() => ({ projects: [] as const })),
-    );
+    const shell = yield* projection
+      .getShellSnapshot()
+      .pipe(Effect.orElseSucceed(() => ({ projects: [] as const })));
     if (shell.projects.length === 0) return;
     // Claim generating before enqueue so a second tick (settings change,
     // the 1-minute repeat, start+tickOnce) cannot queue another LLM batch

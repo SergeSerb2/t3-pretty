@@ -81,9 +81,23 @@ function messageText(message: Pick<OrchestrationMessage, "role" | "text">): stri
   return text.replace(/\s+/g, " ").trim();
 }
 
-function relativeDay(nowMs: number, iso: string): string {
-  const days = Math.floor((nowMs - Date.parse(iso)) / 86_400_000);
-  if (!Number.isFinite(days) || days <= 0) return "today";
+/** Calendar day number in `timeZone`, so "yesterday" follows the user's clock, not UTC's. */
+function calendarDayNumber(ms: number, timeZone: string): number | null {
+  if (!Number.isFinite(ms)) return null;
+  const utc = DateTime.makeUnsafe(ms);
+  const zoned = Option.getOrElse(DateTime.setZoneNamed(utc, timeZone), () =>
+    DateTime.setZoneNamed(utc, "UTC").pipe(Option.getOrThrow),
+  );
+  const parts = DateTime.toParts(zoned);
+  return Math.floor(Date.UTC(parts.year, parts.month - 1, parts.day) / 86_400_000);
+}
+
+function relativeDay(nowMs: number, iso: string, timeZone: string): string {
+  const today = calendarDayNumber(nowMs, timeZone);
+  const day = calendarDayNumber(Date.parse(iso), timeZone);
+  if (today === null || day === null) return "today";
+  const days = today - day;
+  if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   return `${days} days ago`;
 }
@@ -101,6 +115,8 @@ export function buildHomeSuggestionsDigest(input: {
   readonly projects: ReadonlyArray<OrchestrationProjectShell>;
   readonly threads: ReadonlyArray<DigestThread>;
   readonly nowMs: number;
+  /** The schedule's zone, so day labels match the user's calendar. */
+  readonly timeZone: string;
 }): { readonly context: string; readonly projectsByKey: ReadonlyMap<string, ProjectId> } {
   const latestByProject = new Map<ProjectId, number>();
   for (const thread of input.threads) {
@@ -130,7 +146,7 @@ export function buildHomeSuggestionsDigest(input: {
       const last = thread.messages.findLast((message) => message.role === "assistant");
       const status = thread.shell.latestTurn?.state ?? "idle";
       lines.push(
-        `- ${clip(thread.shell.title, TITLE_MAX_CHARS)} (${relativeDay(input.nowMs, thread.shell.updatedAt)}, last turn ${status})`,
+        `- ${clip(thread.shell.title, TITLE_MAX_CHARS)} (${relativeDay(input.nowMs, thread.shell.updatedAt, input.timeZone)}, last turn ${status})`,
       );
       const firstText = first ? messageText(first) : "";
       if (firstText) lines.push(`  Asked: ${clip(firstText, FIRST_MESSAGE_MAX_CHARS)}`);

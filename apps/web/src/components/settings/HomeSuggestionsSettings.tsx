@@ -63,11 +63,11 @@ export function HomeSuggestionsSettingsSection() {
   const { environment, connectedEnvironments } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
   const hasServerTargets = connectedEnvironments.length > 0;
+  // Gate on the environment this section represents, like the home page
+  // does per environment; one older host in a mixed fleet must not hide the
+  // section for the servers that do support it.
   const supportsHomeSuggestions =
-    connectedEnvironments.length > 0 &&
-    connectedEnvironments.every(
-      (target) => target.serverConfig?.environment.capabilities.homeSuggestions === true,
-    );
+    environment?.serverConfig?.environment.capabilities.homeSuggestions === true;
   const serverProviders = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
   const refresh = useAtomCommand(homeSuggestionsEnvironment.refresh, { reportFailure: false });
   const [generating, setGenerating] = useState(false);

@@ -291,10 +291,7 @@ describe("HomeSuggestionsService", () => {
             yield* service.drain;
             const ready = yield* service.current;
             assert.strictEqual(ready.status, "ready");
-            assert.deepStrictEqual(titles(ready), [
-              "Finish the home screen",
-              "Build a CLI timer",
-            ]);
+            assert.deepStrictEqual(titles(ready), ["Finish the home screen", "Build a CLI timer"]);
           }),
         );
         assert.strictEqual((yield* Ref.get(harness.generations)).length, 1);
