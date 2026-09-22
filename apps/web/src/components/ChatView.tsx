@@ -10252,7 +10252,8 @@ export default function ChatView(props: ChatViewProps) {
                 band. The headline and suggestion shelves stay in that column, so the landing
                 is centered as one stack instead of hanging above a centered composer.
                 The hero overlay is clipped to the chat column. A long prompt scrolls inside
-                the composer; the shelves above it scroll instead of shifting the page. */}
+                the composer; the shelves above it scroll instead of shifting the page, faded at
+                both ends rather than showing a scrollbar. */}
             <div
               ref={setComposerOverlayElement}
               inert={isRevertingCheckpoint}
@@ -10283,7 +10284,7 @@ export default function ChatView(props: ChatViewProps) {
                   {isDraftHeroState ? (
                     <div
                       data-home-hero-body="true"
-                      className="min-h-0 overflow-y-auto overscroll-y-contain"
+                      className="min-h-0 overflow-y-auto overscroll-y-contain py-4 mask-y-from-[calc(100%-1rem)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                     >
                       <div
                         ref={draftHeroHeadlineRef}

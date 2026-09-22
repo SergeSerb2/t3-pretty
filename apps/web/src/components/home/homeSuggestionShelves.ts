@@ -11,7 +11,7 @@ const SHELF_LABEL: Record<HomeSuggestionKind, string> = {
   explore: "New ideas",
 };
 
-/** Project work and new ideas each get their own horizontal shelf, in that order. */
+/** Project work and new ideas each get their own shelf, in that order. */
 export function groupHomeSuggestionShelves<T extends { readonly kind: HomeSuggestionKind }>(
   cards: readonly T[],
 ): readonly HomeSuggestionShelf<T>[] {
@@ -47,16 +47,12 @@ export function suggestionScrollEdges(
   };
 }
 
-/**
- * Fades the cut-off side of a shelf. The right fade starts early enough that
- * the peeking card's text dissolves before the forward arrow, instead of
- * ending in a hard clip under the button.
- */
+/** Fades the cut-off side of a shelf so the peeking card dissolves instead of clipping. */
 export function suggestionShelfMask(edges: {
   readonly left: boolean;
   readonly right: boolean;
 }): string | undefined {
-  const fadeRight = "#000 calc(100% - 5.25rem), transparent calc(100% - 0.75rem)";
+  const fadeRight = "#000 calc(100% - 4rem), transparent";
   if (edges.left && edges.right) {
     return `linear-gradient(to right, transparent, #000 1.75rem, ${fadeRight})`;
   }
