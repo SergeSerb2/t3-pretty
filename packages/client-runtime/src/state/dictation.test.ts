@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  appendDictationHypothesis,
   appendDictationSegment,
+  finishDictationText,
   formatDictationInsertion,
   replaceDictationInsertion,
 } from "./dictation.ts";
@@ -52,5 +54,66 @@ describe("dictation composer insertion", () => {
         next: " dictated text ",
       }),
     ).toBeNull();
+  });
+});
+
+describe("append-only dictation hypotheses", () => {
+  it("grows when the next hypothesis extends the text already shown", () => {
+    const first = appendDictationHypothesis("", "hello");
+    const second = appendDictationHypothesis(first, "hello there");
+    expect(appendDictationHypothesis(second, "hello there friend")).toBe("hello there friend");
+  });
+
+  it("keeps the beginning when the engine slides forward to a later window", () => {
+    expect(
+      appendDictationHypothesis("I need to update the sidebar", "update the sidebar padding"),
+    ).toBe("I need to update the sidebar padding");
+  });
+
+  it("keeps earlier words when a new hypothesis rewrites them", () => {
+    expect(
+      appendDictationHypothesis(
+        "I need to update the sidebar tonight",
+        "Can you update the sidebar tonight now",
+      ),
+    ).toBe("I need to update the sidebar tonight now");
+  });
+
+  it("revises only the words still being recognized", () => {
+    expect(
+      appendDictationHypothesis(
+        "please update the sidebar tonight",
+        "please update the sidebar tomorrow",
+      ),
+    ).toBe("please update the sidebar tomorrow");
+  });
+
+  it("ignores a shorter restatement of words already shown", () => {
+    expect(appendDictationHypothesis("hello there friend", "hello there")).toBe(
+      "hello there friend",
+    );
+  });
+
+  it("appends a later phrase that does not overlap", () => {
+    expect(appendDictationHypothesis("first thought", "padding only")).toBe(
+      "first thought padding only",
+    );
+  });
+});
+
+describe("dictation cleanup", () => {
+  it("drops an immediate repeated phrase and keeps punctuation from the final hypothesis", () => {
+    expect(
+      finishDictationText("go to the store go to the store tomorrow", "go to the store tomorrow."),
+    ).toBe("go to the store tomorrow.");
+  });
+
+  it("does not replace the dictated text with a short trailing window", () => {
+    expect(
+      finishDictationText(
+        "I need to update the sidebar padding tonight please",
+        "padding tonight please",
+      ),
+    ).toBe("I need to update the sidebar padding tonight please");
   });
 });

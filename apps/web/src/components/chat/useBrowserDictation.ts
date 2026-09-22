@@ -1,4 +1,6 @@
 import {
+  appendDictationHypothesis,
+  finishDictationText,
   formatDictationInsertion,
   replaceDictationInsertion,
 } from "@t3tools/client-runtime/state/dictation";
@@ -23,6 +25,8 @@ interface DictationSession {
   readonly start: number;
   readonly before: string;
   readonly after: string;
+  transcript: string;
+  latestHypothesis: string;
   insertion: string;
   recognition: SpeechRecognitionLike | null;
   unsubscribe: (() => void) | null;
@@ -127,33 +131,66 @@ export function useBrowserDictation(input: {
     return current.replaceInsertion(session.start, session.insertion, next);
   }, []);
 
-  const applyTranscript = useCallback(
-    (session: DictationSession, transcript: string) => {
+  const writeTranscript = useCallback(
+    (session: DictationSession, transcript: string, reportConflict: boolean) => {
       if (session.cancelled || session.closed) return false;
       const insertion = formatDictationInsertion({
         before: session.before,
         after: session.after,
         transcript,
       });
+      if (insertion === session.insertion) {
+        session.transcript = transcript;
+        return true;
+      }
       if (!replaceSessionInsertion(session, insertion)) {
-        session.error = new Error("The composer changed while dictation was running.");
+        if (reportConflict) {
+          session.error = new Error("The composer changed while dictation was running.");
+        }
         return false;
       }
+      session.transcript = transcript;
       session.insertion = insertion;
       return true;
     },
     [replaceSessionInsertion],
   );
 
+  const applyTranscript = useCallback(
+    (session: DictationSession, hypothesis: string) => {
+      if (session.cancelled || session.closed) return false;
+      const trimmed = hypothesis.trim();
+      if (trimmed.length === 0) return true;
+      session.latestHypothesis = hypothesis;
+      return writeTranscript(
+        session,
+        appendDictationHypothesis(session.transcript, hypothesis),
+        true,
+      );
+    },
+    [writeTranscript],
+  );
+
+  const cleanupTranscript = useCallback(
+    (session: DictationSession) => {
+      if (session.cancelled || session.closed || session.transcript.length === 0) return;
+      const cleaned = finishDictationText(session.transcript, session.latestHypothesis);
+      if (cleaned === session.transcript) return;
+      writeTranscript(session, cleaned, false);
+    },
+    [writeTranscript],
+  );
+
   const finishSession = useCallback(
     (session: DictationSession) => {
       if (session.closed) return;
+      if (!session.cancelled) cleanupTranscript(session);
       if (session.error && !session.cancelled) {
         inputRef.current.reportError(errorMessage(session.error));
       }
       closeSession(session);
     },
-    [closeSession],
+    [cleanupTranscript, closeSession],
   );
 
   const requestEngineStop = useCallback(
@@ -239,6 +276,8 @@ export function useBrowserDictation(input: {
       start: snapshot.cursor,
       before: snapshot.value.slice(0, snapshot.cursor),
       after: snapshot.value.slice(snapshot.cursor),
+      transcript: "",
+      latestHypothesis: "",
       insertion: "",
       recognition: null,
       unsubscribe: null,
