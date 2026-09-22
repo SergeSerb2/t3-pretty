@@ -1462,17 +1462,17 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           }
         }
         // Past the check above, a same-driver binding is resumable here even
-        // when it was written by another instance (e.g. another account).
-        const persistedResumeCursor =
-          persistedBinding?.provider === resolvedProvider
-            ? (persistedBinding.resumeCursor ?? undefined)
-            : undefined;
+        // when it was written by another instance (e.g. another account). The
+        // cwd travels with the cursor: providers key session storage by it.
+        const resumableBinding =
+          persistedBinding?.provider === resolvedProvider ? persistedBinding : undefined;
+        const persistedResumeCursor = resumableBinding?.resumeCursor ?? undefined;
         const effectiveResumeCursor = input.resumeCursor ?? persistedResumeCursor;
-        const effectiveCwd =
-          input.cwd ??
-          (persistedBinding?.providerInstanceId === resolvedInstanceId
-            ? readPersistedCwd(persistedBinding.runtimePayload)
-            : undefined);
+        const persistedCwd =
+          resumableBinding !== undefined
+            ? readPersistedCwd(resumableBinding.runtimePayload)
+            : undefined;
+        const effectiveCwd = input.cwd ?? persistedCwd;
         yield* Effect.annotateCurrentSpan({
           "provider.kind": resolvedProvider,
           "provider.resume_cursor.source":
@@ -1483,12 +1483,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
                 : "none",
           "provider.resume_cursor.present": effectiveResumeCursor !== undefined,
           "provider.cwd.source":
-            input.cwd !== undefined
-              ? "request"
-              : effectiveCwd !== undefined &&
-                  persistedBinding?.providerInstanceId === resolvedInstanceId
-                ? "persisted"
-                : "none",
+            input.cwd !== undefined ? "request" : persistedCwd !== undefined ? "persisted" : "none",
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         if (effectiveCwd !== undefined) {

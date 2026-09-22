@@ -87,8 +87,15 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         );
         // An older copy from a previous switch must not win over the latest turns.
         yield* fileSystem.makeDirectory(path.join(work, "projects", "-repo"), { recursive: true });
+        yield* fileSystem.makeDirectory(path.join(work, "projects", "-repo", sessionId), {
+          recursive: true,
+        });
         yield* fileSystem.writeFileString(
           path.join(work, "projects", "-repo", `${sessionId}.jsonl`),
+          "stale\n",
+        );
+        yield* fileSystem.writeFileString(
+          path.join(work, "projects", "-repo", sessionId, "stale.json"),
           "stale\n",
         );
 
@@ -108,6 +115,7 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
             path.join(target, sessionId, "subagents", "agent.jsonl"),
           ),
         ).toBe("subagent\n");
+        expect(yield* fileSystem.exists(path.join(target, sessionId, "stale.json"))).toBe(false);
         expect(
           yield* importClaudeSessionTranscript({
             sessionId,

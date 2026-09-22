@@ -1214,6 +1214,7 @@ sharedClaudeRouting.layer("ProviderServiceLive shared continuation", (it) => {
         status: "stopped",
         runtimeMode: "approval-required",
         resumeCursor,
+        runtimePayload: { cwd: fixtureCwd("project") },
       });
 
       yield* provider.startSession(threadId, {
@@ -1225,6 +1226,7 @@ sharedClaudeRouting.layer("ProviderServiceLive shared continuation", (it) => {
       const startInput = sharedClaude.startSession.mock.calls.at(-1)?.[0];
       assert.equal(startInput?.providerInstanceId, workClaudeInstanceId);
       assert.deepEqual(startInput?.resumeCursor, resumeCursor);
+      assert.equal(startInput?.cwd, fixtureCwd("project"));
     }),
   );
 });

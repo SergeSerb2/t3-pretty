@@ -68,7 +68,7 @@ export const CLAUDE_CONTINUATION_GROUP_KEY = "claude:portable-transcripts";
  * at `projects/<cwd slug>/<session id>.jsonl` plus an optional sidecar
  * directory (subagents, tool results). The slug is copied verbatim rather
  * than recomputed so it always matches what the CLI wrote. The source is the
- * directory that ran the latest turn, so it overwrites any older copy.
+ * directory that ran the latest turn, so it replaces any older copy.
  */
 export const importClaudeSessionTranscript = Effect.fn("importClaudeSessionTranscript")(
   function* (input: {
@@ -90,11 +90,12 @@ export const importClaudeSessionTranscript = Effect.fn("importClaudeSessionTrans
       const targetProject = path.join(targetProjects, projectSlug);
       yield* fileSystem.makeDirectory(targetProject, { recursive: true });
       yield* fileSystem.copyFile(sourceTranscript, path.join(targetProject, transcriptName));
+      // Replace, not merge: leftovers from an older copy must not resurface.
       const sourceSidecar = path.join(sourceProjects, projectSlug, input.sessionId);
+      const targetSidecar = path.join(targetProject, input.sessionId);
+      yield* fileSystem.remove(targetSidecar, { recursive: true, force: true });
       if (yield* fileSystem.exists(sourceSidecar)) {
-        yield* fileSystem.copy(sourceSidecar, path.join(targetProject, input.sessionId), {
-          overwrite: true,
-        });
+        yield* fileSystem.copy(sourceSidecar, targetSidecar);
       }
       return true;
     }
