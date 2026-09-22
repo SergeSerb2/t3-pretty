@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260921.2071002663",
+    date: "2026-09-22",
+    items: [
+      {
+        kind: "fixed",
+        title: "Rail folder badges visible while the folder opens",
+      },
+      {
+        kind: "fixed",
+        title: "Animate project rail folders as they open and close",
+      },
+      {
+        kind: "fixed",
+        title: "Typecheck after merging v0.0.43-nightly.20260921.2044",
+      },
+      {
+        kind: "fixed",
+        title: "IOS typecheck after nightly 1990 merge",
+      },
+      {
+        kind: "fixed",
+        title: "Typecheck after merging v0.0.43-nightly.20260920.1990",
+      },
+      {
+        kind: "fixed",
+        title: "Packaged backend no longer crashes on FileSystem.Size",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260921.2071002661",
     date: "2026-09-22",
     items: [
