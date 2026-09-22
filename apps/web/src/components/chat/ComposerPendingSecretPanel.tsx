@@ -1,6 +1,6 @@
 import { type ApprovalRequestId } from "@t3tools/contracts";
 import { type PendingSecretRequest } from "@t3tools/client-runtime/pending-requests";
-import { memo, useState } from "react";
+import { memo, useState, type KeyboardEvent } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { ComposerBanner } from "./ComposerBanner";
@@ -28,6 +28,17 @@ export const ComposerPendingSecretPanel = memo(function ComposerPendingSecretPan
   const submit = () => {
     if (!canSubmit) return;
     onProvide(request.requestId, trimmed);
+  };
+  // The composer is already a form. A nested form's submit event does not
+  // bubble, so React never sees it and Enter reloads the window. Claim Enter
+  // here, before that implicit submit, and keep this control out of the
+  // composer form's submit buttons.
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
+    submit();
   };
 
   return (
@@ -57,15 +68,10 @@ export const ComposerPendingSecretPanel = memo(function ComposerPendingSecretPan
           thread history. The agent loads it from a protected file for this session and gets it as
           an environment variable from then on.
         </p>
-        <form
-          className="mt-2 flex items-center gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
+        <div className="mt-2 flex items-center gap-2">
           <div className="min-w-0 flex-1 rounded-md border border-border/60 bg-background/70">
             <Input
+              nativeInput
               type="password"
               autoComplete="off"
               spellCheck={false}
@@ -75,13 +81,20 @@ export const ComposerPendingSecretPanel = memo(function ComposerPendingSecretPan
               value={value}
               disabled={isResponding}
               onChange={(event) => setValue(event.target.value)}
+              onKeyDown={onKeyDown}
               data-pending-secret-input
             />
           </div>
-          <Button type="submit" size="sm" disabled={!canSubmit} data-pending-secret-submit>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!canSubmit}
+            data-pending-secret-submit
+            onClick={submit}
+          >
             {isResponding ? "Saving…" : "Save key"}
           </Button>
-        </form>
+        </div>
       </ComposerBanner.Body>
     </>
   );
