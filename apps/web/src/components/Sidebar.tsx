@@ -113,6 +113,7 @@ import {
   projectGroupsSpanEnvironments,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
+import { projectFolderScopeKey, resolveSidebarProjectScope } from "../sidebarProjectFolders";
 import {
   legacyProjectCwdPreferenceKey,
   resolveProjectExpanded,
@@ -126,7 +127,7 @@ import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings } from "../hooks/useSettings";
+import { useClientSettings, useClientSettingsHydrated } from "../hooks/useSettings";
 import { useSidebarProjectFolders } from "../hooks/useSidebarProjectFolders";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -246,7 +247,7 @@ import {
   SidebarChromeHeader,
   SidebarUtilityMenu,
 } from "./sidebar/SidebarChrome";
-import { SidebarProjectRail } from "./sidebar/SidebarProjectRail";
+import { FolderRailGlyph, SidebarProjectRail } from "./sidebar/SidebarProjectRail";
 import { SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -2440,10 +2441,10 @@ export default function Sidebar() {
   // fresh clock whenever it recomputes.
   const [snoozeWakeTick, bumpSnoozeWakeTick] = useState(0);
 
-  // Project scope: the rail picks one project or all of them. The selection
-  // lives in the persisted UI store next to the other sidebar project
-  // preferences, so routes that unmount the sidebar (Settings) and app
-  // restarts keep it.
+  // Project scope: the rail picks one project, one project folder, or all of
+  // them. The selection lives in the persisted UI store next to the other
+  // sidebar project preferences, so routes that unmount the sidebar
+  // (Settings) and app restarts keep it.
   const projectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
   const setProjectScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
   // Same-named projects on two machines are only told apart by where they
@@ -2453,33 +2454,45 @@ export default function Sidebar() {
     () => projectGroupsSpanEnvironments(projectGroups),
     [projectGroups],
   );
-  const scopedProjectGroup = useMemo(
-    () =>
-      projectScopeKey === null
-        ? null
-        : (projectGroups.find((project) => project.projectKey === projectScopeKey) ?? null),
-    [projectGroups, projectScopeKey],
+  const projectScope = useMemo(
+    () => resolveSidebarProjectScope(projectScopeKey, projectGroups, projectFolders.settings),
+    [projectFolders.settings, projectGroups, projectScopeKey],
   );
-  const scopedProjectKeys = useMemo(
-    () =>
-      scopedProjectGroup === null
-        ? null
-        : new Set(
-            scopedProjectGroup.memberProjectRefs.map(
-              (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
-            ),
-          ),
-    [scopedProjectGroup],
-  );
-  // A persisted scope whose project is gone falls back to all projects, but
-  // only after every catalog environment has a live project snapshot. Cached
-  // or disconnected environments cannot establish that the project is gone.
+  const scopedProjectGroup = projectScope?.kind === "project" ? projectScope.project : null;
+  const scopedFolder = projectScope?.kind === "folder" ? projectScope.folder : null;
+  const scopedProjectKeys = useMemo(() => {
+    if (projectScope === null) return null;
+    const groups = projectScope.kind === "project" ? [projectScope.project] : projectScope.projects;
+    return new Set(
+      groups.flatMap((group) =>
+        group.memberProjectRefs.map(
+          (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
+        ),
+      ),
+    );
+  }, [projectScope]);
+  // A persisted scope whose project or folder is gone falls back to all
+  // projects, but only after every catalog environment has a live project
+  // snapshot and local folder settings have loaded. Cached or disconnected
+  // environments cannot establish that the project is gone.
   const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
+  const clientSettingsHydrated = useClientSettingsHydrated();
   useEffect(() => {
-    if (projectScopeKey !== null && allProjectSnapshotsReady && scopedProjectGroup === null) {
+    if (
+      projectScopeKey !== null &&
+      allProjectSnapshotsReady &&
+      clientSettingsHydrated &&
+      projectScope === null
+    ) {
       setProjectScopeKey(null);
     }
-  }, [allProjectSnapshotsReady, projectScopeKey, scopedProjectGroup, setProjectScopeKey]);
+  }, [
+    allProjectSnapshotsReady,
+    clientSettingsHydrated,
+    projectScope,
+    projectScopeKey,
+    setProjectScopeKey,
+  ]);
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from
@@ -4488,12 +4501,24 @@ export default function Sidebar() {
     (project: SidebarProjectSnapshot) => {
       if (isMobile) setOpenMobile(false);
       // A scoped list follows the project you just started work in, so the
-      // new draft row is not hidden behind another project's filter.
-      if (projectScopeKey !== null) setProjectScopeKey(project.projectKey);
+      // new draft row is not hidden behind another project's filter. A folder
+      // scope that already shows the project stays put.
+      const scopeShowsProject =
+        projectScope?.kind === "folder" &&
+        projectScope.projects.some((member) => member.projectKey === project.projectKey);
+      if (projectScopeKey !== null && !scopeShowsProject) setProjectScopeKey(project.projectKey);
       peekNow();
       void newThreadContext.handleNewThread(scopeProjectRef(project.environmentId, project.id));
     },
-    [isMobile, newThreadContext, peekNow, projectScopeKey, setOpenMobile, setProjectScopeKey],
+    [
+      isMobile,
+      newThreadContext,
+      peekNow,
+      projectScope,
+      projectScopeKey,
+      setOpenMobile,
+      setProjectScopeKey,
+    ],
   );
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
   const removeProjectGroup = useCallback(
@@ -4664,6 +4689,19 @@ export default function Sidebar() {
             setThreadSearchQuery("");
             peekNow();
           }}
+          // Folders scope the same way. Picking a closed folder opens it so its
+          // projects are one click away for narrowing further.
+          selectedFolderId={scopedFolder?.id ?? null}
+          onSelectFolder={(folder) => {
+            const nextKey = nextSidebarProjectScopeKey(
+              projectScopeKey,
+              projectFolderScopeKey(folder.id),
+            );
+            if (nextKey !== null && folder.collapsed) projectFolders.toggleCollapsed(folder.id);
+            setProjectScopeKey(nextKey);
+            setThreadSearchQuery("");
+            peekNow();
+          }}
           footer={<SidebarUtilityMenu orientation="vertical" />}
         />
         <div
@@ -4678,7 +4716,12 @@ export default function Sidebar() {
               <SidebarGroup className="relative z-[1] p-[var(--sidebar-content-inset)] pt-1">
                 <SidebarThreadHeader
                   scopeTitle={
-                    scopedProjectGroup ? (
+                    scopedFolder ? (
+                      <>
+                        <FolderRailGlyph folder={scopedFolder} />
+                        <span className="min-w-0 truncate">{scopedFolder.name}</span>
+                      </>
+                    ) : scopedProjectGroup ? (
                       <>
                         <ProjectFavicon
                           project={scopedProjectGroup}
@@ -5136,6 +5179,8 @@ export default function Sidebar() {
                         Add project
                       </button>
                     </>
+                  ) : scopedFolder ? (
+                    `No threads in ${scopedFolder.name} yet`
                   ) : scopedProjectGroup ? (
                     `No threads in ${scopedProjectGroup.displayName} yet`
                   ) : (

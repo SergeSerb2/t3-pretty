@@ -9,6 +9,7 @@ import {
   deleteProjectFolder,
   moveProjectFolder,
   parseProjectFolderMenuAction,
+  projectFolderScopeKey,
   projectFolderHeaderMenuItems,
   projectFolderMenuItems,
   RAIL_PROJECT_DRAG_TYPE,
@@ -19,6 +20,7 @@ import {
   unassignProjectFromFolder,
   folderDropBeforeId,
   resolveProjectFolderSettings,
+  resolveSidebarProjectScope,
   shouldLiftProjectFolderSettings,
   type SidebarProjectFolderSettings,
 } from "./sidebarProjectFolders";
@@ -280,5 +282,42 @@ describe("project folder menus", () => {
     });
     expect(parseProjectFolderMenuAction("remove")).toBeNull();
     expect(parseProjectFolderMenuAction("project-folder:move:")).toBeNull();
+  });
+});
+
+describe("resolveSidebarProjectScope", () => {
+  const settings: SidebarProjectFolderSettings = {
+    folders: [
+      { id: "work", name: "Work", collapsed: true },
+      { id: "home", name: "Personal", collapsed: false },
+    ],
+    assignments: { w1: "work", w2: "work", gone: "home" },
+  };
+  const projects = [project("w2"), project("loose"), project("w1")];
+
+  it("resolves a project key to that project", () => {
+    expect(resolveSidebarProjectScope("loose", projects, settings)).toEqual({
+      kind: "project",
+      project: project("loose"),
+    });
+  });
+
+  it("resolves a folder key to its loaded members in project order", () => {
+    expect(resolveSidebarProjectScope(projectFolderScopeKey("work"), projects, settings)).toEqual({
+      kind: "folder",
+      folder: settings.folders[0],
+      projects: [project("w2"), project("w1")],
+    });
+  });
+
+  it("drops scopes whose project, folder, or folder members are gone", () => {
+    expect(resolveSidebarProjectScope(null, projects, settings)).toBeNull();
+    expect(resolveSidebarProjectScope("missing", projects, settings)).toBeNull();
+    expect(
+      resolveSidebarProjectScope(projectFolderScopeKey("home"), projects, settings),
+    ).toBeNull();
+    expect(
+      resolveSidebarProjectScope(projectFolderScopeKey("deleted"), projects, settings),
+    ).toBeNull();
   });
 });

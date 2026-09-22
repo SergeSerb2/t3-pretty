@@ -140,11 +140,14 @@ icons also show 1–9 so the rail is easy to scan.
 Hover a project icon and use its **+** to start a thread there without the
 project picker. Right-click an icon for **New thread**, **Settle idle threads**,
 **Move to folder**, **Project settings**, **Copy path**, and **Remove project**.
-Use **Move to folder** to group projects such as personal and work, then click
-the folder to collapse or expand it. Drag a project onto a folder to file it,
-or onto **All projects** / the ungrouped list to take it out. Drag a folder to
-move it among the other folders. Right-click the folder to change its icon,
-rename, reorder, or delete it; deleting a folder does not remove the projects.
+Use **Move to folder** to group projects such as personal and work. Pick a
+folder to see the threads of every project in it, and pick one of its projects
+to narrow further; pick the folder again to go back to every project. Hover a
+folder and use its chevron to collapse or expand it. Drag a project onto a
+folder to file it, or onto **All projects** / the ungrouped list to take it
+out. Drag a folder to move it among the other folders. Right-click the folder to
+change its icon, rename, reorder, or delete it; deleting a folder does not
+remove the projects.
 Folders, their icons, and which projects they hold are saved on the server and
 copied to connected environments that support shared settings, the same way
 settlement rules are.
