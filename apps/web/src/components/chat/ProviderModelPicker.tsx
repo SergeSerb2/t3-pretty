@@ -19,6 +19,7 @@ import {
   getTriggerDisplayModelName,
 } from "./providerIconUtils";
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
+import { providerRetainsUnlistedModel } from "../../modelSelection";
 import {
   ComposerControl,
   ComposerControlChevron,
@@ -82,7 +83,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       model: props.model,
       options: selectedInstanceOptions,
     }) ??
-    (activeEntry?.driverKind === "opencode" || activeEntry?.driverKind === "antigravity"
+    (providerRetainsUnlistedModel(activeEntry?.driverKind)
       ? undefined
       : selectedInstanceOptions[0]);
   const triggerTitle = selectedModel

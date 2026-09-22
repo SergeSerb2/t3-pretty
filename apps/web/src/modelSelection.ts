@@ -91,6 +91,18 @@ export interface AppModelOption {
   isUnavailable?: boolean;
 }
 
+/**
+ * These drivers discover models per machine. A selection that the current
+ * catalog does not list must stay visible; substituting the first listed
+ * model hides what the user picked (Grok 4.7 Fast on a machine that only
+ * advertises Grok 4.7).
+ */
+export function providerRetainsUnlistedModel(
+  driver: ProviderDriverKind | null | undefined,
+): boolean {
+  return driver === "opencode" || driver === "antigravity" || driver === "grok";
+}
+
 function appendUnavailableDynamicModelSelection(
   options: AppModelOption[],
   rawModels: ReadonlyArray<ServerProvider["models"][number]>,
@@ -98,7 +110,7 @@ function appendUnavailableDynamicModelSelection(
   selectedModel: string | null | undefined,
   hiddenModels: ReadonlyArray<string>,
 ): AppModelOption[] {
-  if (provider !== "opencode" && provider !== "antigravity") return options;
+  if (!providerRetainsUnlistedModel(provider)) return options;
   const slug = normalizeCustomModelSlug(selectedModel);
   if (!slug) return options;
   if (provider === "antigravity" && slug === ANTIGRAVITY_DEFAULT_MODEL) return options;
@@ -308,7 +320,7 @@ export function resolveAppModelSelectionForInstance(
   }
   if (
     resolutionOptions?.preserveUnavailableSelection &&
-    (entry.driverKind === "opencode" || entry.driverKind === "antigravity")
+    providerRetainsUnlistedModel(entry.driverKind)
   ) {
     const unavailableSelection = normalizeCustomModelSlug(selectedModel);
     const hiddenModels = readInstanceModelPreferences(settings, entry.instanceId).hiddenModels;

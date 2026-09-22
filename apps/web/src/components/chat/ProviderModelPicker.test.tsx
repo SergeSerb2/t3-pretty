@@ -99,8 +99,8 @@ describe("ProviderModelPicker", () => {
     },
   );
 
-  it.each(["opencode", "antigravity"])(
-    "keeps the selected model label when the %s account catalog does not contain it",
+  it.each(["opencode", "antigravity", "grok"])(
+    "keeps the selected model label when the %s catalog does not contain it",
     (driver) => {
       const markup = renderPicker({
         instanceId: "team_runtime",
@@ -114,7 +114,7 @@ describe("ProviderModelPicker", () => {
     },
   );
 
-  it.each(["codex", "claudeAgent", "cursor", "grok"])(
+  it.each(["codex", "claudeAgent", "cursor"])(
     "uses the first option label for a missing %s model",
     (driver) => {
       const markup = renderPicker({
