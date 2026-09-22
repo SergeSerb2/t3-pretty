@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   enterDelayMs,
-  isSceneryInkTransitionActive,
   shouldAnimateRowArrival,
   shouldDeferThreadSeed,
   STAGGER_CAP,
@@ -12,7 +11,6 @@ import {
 const visibleArrival = {
   firstPaintForThread: false,
   silentWindowActive: false,
-  inkTransitionActive: false,
   noTransitions: false,
   top: 400,
   maxSeenTop: 200,
@@ -41,9 +39,8 @@ describe("shouldAnimateRowArrival", () => {
     expect(shouldAnimateRowArrival({ ...visibleArrival, firstPaintForThread: true })).toBe(false);
   });
 
-  it("seeds during the silent window, an ink view transition, or no-transitions", () => {
+  it("seeds during the silent window or under no-transitions", () => {
     expect(shouldAnimateRowArrival({ ...visibleArrival, silentWindowActive: true })).toBe(false);
-    expect(shouldAnimateRowArrival({ ...visibleArrival, inkTransitionActive: true })).toBe(false);
     expect(shouldAnimateRowArrival({ ...visibleArrival, noTransitions: true })).toBe(false);
   });
 
@@ -63,14 +60,5 @@ describe("enterDelayMs", () => {
     expect(enterDelayMs(0)).toBe(0);
     expect(enterDelayMs(2)).toBe(2 * STAGGER_MS);
     expect(enterDelayMs(STAGGER_CAP + 8)).toBe(STAGGER_CAP * STAGGER_MS);
-  });
-});
-
-describe("isSceneryInkTransitionActive", () => {
-  it("reads the view-transition gate off the document element", () => {
-    const root = { dataset: {} } as HTMLElement;
-    expect(isSceneryInkTransitionActive(root)).toBe(false);
-    root.dataset.sceneryInkTransition = "true";
-    expect(isSceneryInkTransitionActive(root)).toBe(true);
   });
 });

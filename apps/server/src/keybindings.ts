@@ -42,10 +42,11 @@ import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "./config.ts";
 import { writeFileStringAtomically } from "./atomicWrite.ts";
+import { readTextWithinLimit } from "./boundedFileRead.ts";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
 import {
   DEFAULT_KEYBINDINGS,
-  DEFAULT_RESOLVED_KEYBINDINGS,
+  mergeWithDefaultKeybindings,
   compileResolvedKeybindingRule,
   compileResolvedKeybindingsConfig,
   parseKeybindingShortcut,
@@ -58,10 +59,12 @@ export {
   parseKeybindingShortcut,
 };
 
+const KEYBINDINGS_CONFIG_MAX_BYTES = 256 * 1024;
+
 export const ResolvedKeybindingFromConfig = KeybindingRule.pipe(
   Schema.decodeTo(
     Schema.toType(ResolvedKeybindingRule),
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (rule) =>
         Effect.succeed(compileResolvedKeybindingRule(rule)).pipe(
           Effect.filterOrFail(
@@ -94,10 +97,6 @@ export const ResolvedKeybindingFromConfig = KeybindingRule.pipe(
         }),
     }),
   ),
-);
-
-export const ResolvedKeybindingsFromConfig = Schema.Array(ResolvedKeybindingFromConfig).check(
-  Schema.isMaxLength(MAX_KEYBINDINGS_COUNT),
 );
 
 function isSameKeybindingRule(left: KeybindingRule, right: KeybindingRule): boolean {
@@ -205,25 +204,6 @@ function invalidEntryIssue(index: number, detail: string): ServerConfigIssue {
   };
 }
 
-function mergeWithDefaultKeybindings(custom: ResolvedKeybindingsConfig): ResolvedKeybindingsConfig {
-  if (custom.length === 0) {
-    return [...DEFAULT_RESOLVED_KEYBINDINGS];
-  }
-
-  const overriddenCommands = new Set(custom.map((binding) => binding.command));
-  const retainedDefaults = DEFAULT_RESOLVED_KEYBINDINGS.filter(
-    (binding) => !overriddenCommands.has(binding.command),
-  );
-  const merged = [...retainedDefaults, ...custom];
-
-  if (merged.length <= MAX_KEYBINDINGS_COUNT) {
-    return merged;
-  }
-
-  // Keep the latest rules when the config exceeds max size; later rules have higher precedence.
-  return merged.slice(-MAX_KEYBINDINGS_COUNT);
-}
-
 /**
  * Keybindings - Service tag for keybinding configuration operations.
  */
@@ -267,6 +247,13 @@ export class Keybindings extends Context.Service<
      */
     readonly streamChanges: Stream.Stream<KeybindingsChangeEvent>;
 
+    /** Acquire a live subscription before loading a related snapshot. */
+    readonly subscribeChanges: Effect.Effect<
+      Stream.Stream<KeybindingsChangeEvent>,
+      never,
+      Scope.Scope
+    >;
+
     /**
      * Upsert a keybinding rule and persist the resulting configuration.
      *
@@ -292,7 +279,12 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const upsertSemaphore = yield* Semaphore.make(1);
   const resolvedConfigCacheKey = "resolved" as const;
-  const changesPubSub = yield* PubSub.unbounded<KeybindingsChangeEvent>();
+  // Every event is a complete current snapshot, so a slow subscriber only
+  // needs the newest value rather than an unbounded history of stale configs.
+  const changesPubSub = yield* Effect.acquireRelease(
+    PubSub.sliding<KeybindingsChangeEvent>(1),
+    PubSub.shutdown,
+  );
   const startedRef = yield* Ref.make(false);
   const startedDeferred = yield* Deferred.make<void, KeybindingsConfigError>();
   const watcherScope = yield* Scope.make("sequential");
@@ -311,7 +303,11 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  const readRawConfig = fs.readFileString(keybindingsConfigPath).pipe(
+  const readRawConfig = readTextWithinLimit(
+    fs,
+    keybindingsConfigPath,
+    KEYBINDINGS_CONFIG_MAX_BYTES,
+  ).pipe(
     Effect.mapError(
       (cause) =>
         new KeybindingsConfigError({
@@ -638,6 +634,11 @@ const make = Effect.gen(function* () {
     getSnapshot: loadConfigStateFromCacheOrDisk,
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub);
+    },
+    get subscribeChanges() {
+      return PubSub.subscribe(changesPubSub).pipe(
+        Effect.map((subscription) => Stream.fromSubscription(subscription)),
+      );
     },
     upsertKeybindingRule: (input) =>
       upsertSemaphore.withPermits(1)(

@@ -1,7 +1,7 @@
 /**
- * The fork's motion driver: watches upstream's chat DOM through the same
- * MutationObserver pattern as ComposerAttachControl and gives the thread its
- * animation layer without touching upstream files.
+ * The fork's motion driver: watches upstream's chat DOM through a
+ * MutationObserver and gives the thread its animation layer without touching
+ * upstream files.
  *
  * Two jobs:
  *
@@ -27,7 +27,6 @@ import {
   ENTER_CLEAR_MS,
   ENTER_DELAY_PROP,
   enterDelayMs,
-  isSceneryInkTransitionActive,
   shouldAnimateRowArrival,
   shouldDeferThreadSeed,
   SILENT_WINDOW_MS,
@@ -76,6 +75,7 @@ export function SceneryMotion() {
     const seenRowIds = seenRowIdsRef.current;
     const enterCleanups = new Set<() => void>();
     let queued = false;
+    let syncFrame: number | null = null;
 
     const clearEnter = (wrapper: HTMLElement) => {
       wrapper.classList.remove(ENTER_CLASS);
@@ -109,7 +109,6 @@ export function SceneryMotion() {
       const firstPaintForThread = seededThreadKeyRef.current !== currentThreadKey;
       const root = document.documentElement;
       const silentWindowActive = performance.now() < silentUntilRef.current;
-      const inkTransitionActive = isSceneryInkTransitionActive(root);
       const noTransitions = root.classList.contains("no-transitions");
       let maxSeenTop = Number.NEGATIVE_INFINITY;
       const unseen: Array<{ wrapper: HTMLElement; id: string; top: number }> = [];
@@ -142,7 +141,6 @@ export function SceneryMotion() {
         const animate = shouldAnimateRowArrival({
           firstPaintForThread,
           silentWindowActive,
-          inkTransitionActive,
           noTransitions,
           top,
           maxSeenTop,
@@ -161,6 +159,7 @@ export function SceneryMotion() {
 
     const sync = () => {
       queued = false;
+      syncFrame = null;
       syncRowArrivals();
     };
 
@@ -170,7 +169,7 @@ export function SceneryMotion() {
       }
       if (!queued) {
         queued = true;
-        requestAnimationFrame(sync);
+        syncFrame = requestAnimationFrame(sync);
       }
     });
     observer.observe(document.body, {
@@ -183,6 +182,9 @@ export function SceneryMotion() {
 
     return () => {
       observer.disconnect();
+      if (syncFrame !== null) {
+        cancelAnimationFrame(syncFrame);
+      }
       for (const cleanup of enterCleanups) {
         cleanup();
       }

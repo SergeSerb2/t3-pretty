@@ -3,16 +3,21 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-
-  yield* sql`
-    ALTER TABLE projection_thread_activities
-    ADD COLUMN projection_group_key TEXT
+  const columns = yield* sql<{ readonly name: string }>`
+    PRAGMA table_info(projection_thread_activities)
   `;
-
-  yield* sql`
-    ALTER TABLE projection_thread_activities
-    ADD COLUMN context_used_tokens REAL
-  `;
+  if (!columns.some((column) => column.name === "projection_group_key")) {
+    yield* sql`
+      ALTER TABLE projection_thread_activities
+      ADD COLUMN projection_group_key TEXT
+    `;
+  }
+  if (!columns.some((column) => column.name === "context_used_tokens")) {
+    yield* sql`
+      ALTER TABLE projection_thread_activities
+      ADD COLUMN context_used_tokens REAL
+    `;
+  }
 
   // Existing rows overwhelmingly carry the adapter's explicit tool-call id.
   // Backfill that lossless identity in SQLite so upgrading a large database
@@ -22,6 +27,7 @@ export default Effect.gen(function* () {
     UPDATE projection_thread_activities
     SET projection_group_key = 'id:' || TRIM(json_extract(payload_json, '$.data.toolCallId'))
     WHERE kind IN ('tool.updated', 'tool.completed')
+      AND projection_group_key IS NULL
       AND json_type(payload_json, '$.data.toolCallId') = 'text'
       AND LENGTH(TRIM(json_extract(payload_json, '$.data.toolCallId'))) > 0
   `;
@@ -30,6 +36,7 @@ export default Effect.gen(function* () {
     UPDATE projection_thread_activities
     SET context_used_tokens = json_extract(payload_json, '$.usedTokens')
     WHERE kind = 'context-window.updated'
+      AND context_used_tokens IS NULL
       AND json_type(payload_json, '$.usedTokens') IN ('integer', 'real')
       AND json_extract(payload_json, '$.usedTokens') >= 0
   `;

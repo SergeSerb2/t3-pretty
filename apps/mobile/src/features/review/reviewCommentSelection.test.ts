@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  clearReviewCommentTarget,
+  clearReviewCommentTargetIfCurrent,
   countReviewCommentContexts,
   formatReviewCommentContext,
   parseReviewCommentMessageSegments,
   parseReviewInlineComments,
+  setReviewCommentTarget,
   type ReviewCommentTarget,
 } from "./reviewCommentSelection";
 
@@ -43,6 +46,44 @@ function makeTarget(): ReviewCommentTarget {
 }
 
 describe("review comment serialization", () => {
+  it("does not let an old sheet clear a newer comment target", () => {
+    const oldTarget = makeTarget();
+    const newTarget = { ...makeTarget(), sectionId: "section-2" };
+
+    setReviewCommentTarget(oldTarget);
+    setReviewCommentTarget(newTarget);
+
+    expect(clearReviewCommentTargetIfCurrent(oldTarget)).toBe(false);
+    expect(clearReviewCommentTargetIfCurrent(newTarget)).toBe(true);
+    clearReviewCommentTarget();
+  });
+
+  it("keeps closing-tag text inside a chip label within a real review body", () => {
+    const body = "Before [</review_comment>](t3-context://v1/mention/context-1) after";
+    const serialized = `<review_comment sectionId="s" filePath="app.ts" startIndex="0" endIndex="0">${body}</review_comment>`;
+    const segments = parseReviewCommentMessageSegments(`${serialized} tail`);
+    expect(segments).toEqual([
+      { kind: "review-comment", comment: expect.objectContaining({ text: body }) },
+      { kind: "text", id: `review-comment-text:${serialized.length}`, text: " tail" },
+    ]);
+  });
+
+  it("keeps a closing tag inside a chip label out of the inline comment body", () => {
+    const body = "Before [</review_comment>](t3-context://v1/mention/context-1) after";
+    const serialized = `<review_comment sectionId="s" filePath="app.ts" startIndex="0" endIndex="0">${body}</review_comment>`;
+
+    expect(parseReviewInlineComments(serialized)).toEqual([
+      expect.objectContaining({ text: body }),
+    ]);
+  });
+
+  it("treats legacy markup inside a context label as opaque text", () => {
+    const text =
+      '[<review_comment sectionId="s" filePath="app.ts" startIndex="0" endIndex="0">Review this</review_comment>](t3-context://v1/mention/context-1)';
+    expect(parseReviewCommentMessageSegments(text)).toEqual([
+      { kind: "text", id: "review-comment-text:0", text },
+    ]);
+  });
   it("preserves enough metadata for inline diff rendering", () => {
     const serialized = formatReviewCommentContext(makeTarget(), "Please keep this configurable.");
 

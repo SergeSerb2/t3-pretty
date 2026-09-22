@@ -7,26 +7,12 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 
 import { SettingResetButton, SettingsRow } from "../components/settings/settingsLayout";
 import { searchableSetting } from "../components/settings/settingsSearch";
-import {
-  Select,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
 import { DEFAULT_TRANSLUCENCY, TRANSLUCENCY_RANGE } from "./glass";
 import { useMotionStore } from "./motionStore";
-import { BLUR_RANGE, DEFAULT_BLUR, useSceneryStore, type SceneryInkMode } from "./sceneryStore";
+import { BLUR_RANGE, DEFAULT_BLUR, useSceneryStore } from "./sceneryStore";
 
 const BLUR_COMMIT_DELAY_MS = 250;
-
-const INK_OPTIONS: ReadonlyArray<{ mode: SceneryInkMode; label: string }> = [
-  { mode: "auto", label: "Auto" },
-  { mode: "light", label: "White" },
-  { mode: "dark", label: "Black" },
-  { mode: "off", label: "App" },
-];
 
 const { lowerBound: T_MIN, upperBound: T_MAX } = TRANSLUCENCY_RANGE;
 const DEFAULT_PHOTO_PRESENCE = translucencyToPercent(DEFAULT_TRANSLUCENCY);
@@ -49,27 +35,32 @@ function sliderStyle(ratio: number): CSSProperties {
 export default function SceneryAppearanceSettings() {
   const blur = useSceneryStore((state) => state.blur);
   const translucency = useSceneryStore((state) => state.translucency);
-  const inkMode = useSceneryStore((state) => state.inkMode);
   const setBlur = useSceneryStore((state) => state.setBlur);
   const setTranslucency = useSceneryStore((state) => state.setTranslucency);
-  const setInkMode = useSceneryStore((state) => state.setInkMode);
   const motionEnabled = useMotionStore((state) => state.enabled);
   const setMotionEnabled = useMotionStore((state) => state.setEnabled);
 
   const [blurDraft, setBlurDraft] = useState(blur);
   useEffect(() => setBlurDraft(blur), [blur]);
   const blurTimer = useRef<number | null>(null);
+  const cancelPendingBlurCommit = () => {
+    if (blurTimer.current === null) return;
+    window.clearTimeout(blurTimer.current);
+    blurTimer.current = null;
+  };
   const onBlurInput = (value: number) => {
     setBlurDraft(value);
-    if (blurTimer.current !== null) {
-      window.clearTimeout(blurTimer.current);
-    }
-    blurTimer.current = window.setTimeout(() => setBlur(value), BLUR_COMMIT_DELAY_MS);
+    cancelPendingBlurCommit();
+    blurTimer.current = window.setTimeout(() => {
+      blurTimer.current = null;
+      setBlur(value);
+    }, BLUR_COMMIT_DELAY_MS);
   };
   useEffect(
     () => () => {
       if (blurTimer.current !== null) {
         window.clearTimeout(blurTimer.current);
+        blurTimer.current = null;
       }
     },
     [],
@@ -91,6 +82,7 @@ export default function SceneryAppearanceSettings() {
             <SettingResetButton
               label="photo blur"
               onClick={() => {
+                cancelPendingBlurCommit();
                 setBlurDraft(DEFAULT_BLUR);
                 setBlur(DEFAULT_BLUR);
               }}
@@ -160,7 +152,7 @@ export default function SceneryAppearanceSettings() {
 
       <SettingsRow
         {...searchableSetting("setting-scenery-motion")}
-        description="Animate arriving messages and the new-thread fog sequence. Turn this off if you prefer a still thread."
+        description="Animate new threads and arriving messages. Turn this off if you prefer a still thread."
         resetAction={
           !motionEnabled ? (
             <SettingResetButton label="thread motion" onClick={() => setMotionEnabled(true)} />
@@ -172,39 +164,6 @@ export default function SceneryAppearanceSettings() {
             checked={motionEnabled}
             onCheckedChange={(checked) => setMotionEnabled(Boolean(checked))}
           />
-        }
-      />
-
-      <SettingsRow
-        {...searchableSetting("setting-scenery-text-color")}
-        description="Chat ink over the photo. Auto picks per thread from the landscape; App follows the appearance setting."
-        resetAction={
-          inkMode !== "auto" ? (
-            <SettingResetButton label="scenery text color" onClick={() => setInkMode("auto")} />
-          ) : null
-        }
-        control={
-          <Select
-            value={inkMode}
-            onValueChange={(value) => {
-              if (value === "auto" || value === "light" || value === "dark" || value === "off") {
-                setInkMode(value);
-              }
-            }}
-          >
-            <SelectTrigger className="w-full sm:w-40" aria-label="Scenery text color">
-              <SelectValue>
-                {INK_OPTIONS.find((option) => option.mode === inkMode)?.label ?? "Auto"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              {INK_OPTIONS.map((option) => (
-                <SelectItem hideIndicator key={option.mode} value={option.mode}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
         }
       />
     </>

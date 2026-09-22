@@ -23,6 +23,7 @@ import type {
   ProviderStopSessionInput,
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
+  MessageId,
   ThreadId,
   ProviderTurnStartResult,
 } from "@t3tools/contracts";
@@ -52,6 +53,12 @@ export interface ProviderServiceShape {
   readonly sendTurn: (
     input: ProviderSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, ProviderServiceError>;
+
+  readonly compactThread: (
+    threadId: ThreadId,
+    modelSelection?: ProviderSendTurnInput["modelSelection"],
+    requestId?: MessageId,
+  ) => Effect.Effect<void, ProviderServiceError>;
 
   /**
    * Interrupt a running provider turn.
@@ -100,6 +107,13 @@ export interface ProviderServiceShape {
   ) => Effect.Effect<ProviderInstanceRoutingInfo, ProviderServiceError>;
 
   /**
+   * Reject unsupported rewind before files change, without resuming the session.
+   */
+  readonly assertConversationRollbackSupported: (
+    threadId: ThreadId,
+  ) => Effect.Effect<void, ProviderServiceError>;
+
+  /**
    * Roll back provider conversation state by a number of turns.
    */
   readonly rollbackConversation: (input: {
@@ -120,6 +134,14 @@ export interface ProviderServiceShape {
    * Fan-out is owned by ProviderService (not by a standalone event-bus service).
    */
   readonly streamEvents: Stream.Stream<ProviderRuntimeEvent>;
+
+  /**
+   * Publish a server-originated runtime event for a thread, as if the provider
+   * had emitted it. Used by built-in MCP tools that open a prompt for the user
+   * (an agent's API key request) so ingestion, projections and clients treat
+   * it like any provider question.
+   */
+  readonly publishRuntimeEvent: (event: ProviderRuntimeEvent) => Effect.Effect<void>;
 }
 
 /**

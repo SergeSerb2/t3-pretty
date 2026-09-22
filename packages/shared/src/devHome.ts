@@ -13,6 +13,33 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
+const GIT_POINTER_MAX_BYTES = 64 * 1024;
+
+const readGitPointer = Effect.fnUntraced(function* (
+  fileSystem: FileSystem.FileSystem,
+  filePath: string,
+) {
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const handle = yield* fileSystem.open(filePath, { flag: "r" });
+      const info = yield* handle.stat;
+      if (info.size > BigInt(GIT_POINTER_MAX_BYTES)) return "";
+
+      const bytes = new Uint8Array(Number(info.size));
+      let offset = 0;
+      while (offset < bytes.length) {
+        const bytesRead = Number(yield* handle.read(bytes.subarray(offset)));
+        if (bytesRead === 0) break;
+        offset += bytesRead;
+      }
+      // Refuse a pointer that grew after stat instead of parsing a stale prefix as a complete
+      // worktree path.
+      if (Option.isSome(yield* handle.readAlloc(1))) return "";
+      return new TextDecoder().decode(bytes.subarray(0, offset));
+    }),
+  );
+});
+
 /**
  * A `.git` file points at the real git directory. A linked worktree's lives at
  * `<common-dir>/worktrees/<name>`; a submodule's at
@@ -72,9 +99,9 @@ export const resolveGitWorktreePath = (
         }
         // A submodule also has a `.git` file, but it is not a worktree of this
         // repository and gets no worktree-local home.
-        const contents = yield* fileSystem
-          .readFileString(gitPath)
-          .pipe(Effect.orElseSucceed(() => ""));
+        const contents = yield* readGitPointer(fileSystem, gitPath).pipe(
+          Effect.orElseSucceed(() => ""),
+        );
         return pointsAtLinkedWorktree(contents, path) ? directory : undefined;
       }
       const parent = path.dirname(directory);

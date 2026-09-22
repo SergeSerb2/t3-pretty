@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   PreviewAutomationRecordingNotActiveError,
+  PreviewAutomationRequestTimeoutError,
   PreviewAutomationTargetUnavailableError,
   PreviewAutomationViewportTimeoutError,
 } from "./previewAutomationErrors";
@@ -149,6 +150,34 @@ describe("previewAutomationRequestConsumer", () => {
       "request-2",
     ]);
     expect(responses.map((response) => response.requestId)).toEqual(["request-1", "request-2"]);
+    registry.dispose();
+  });
+
+  it("does not repeat a side effect when the same stream event replays", async () => {
+    const requestsAtom = Atom.make<AsyncResult.AsyncResult<PreviewAutomationStreamEvent, Error>>(
+      AsyncResult.initial<PreviewAutomationStreamEvent, Error>(false),
+    );
+    const handleRequest = vi.fn(async () => "done");
+    const respond = vi.fn(async () => undefined);
+    const state = consumerState(handleRequest);
+    const consumerAtom = createPreviewAutomationRequestConsumerAtom({
+      requestsAtom,
+      clientId,
+      connectionAtom: state.connectionAtom,
+      environmentId,
+      requestHandlerAtom: state.requestHandlerAtom,
+      respond,
+      label: "test:preview-automation-request-replay",
+    });
+    const registry = AtomRegistry.make();
+    registry.mount(consumerAtom);
+    const replayed = AsyncResult.success(requestEvent("request-replayed"));
+
+    registry.set(requestsAtom, replayed);
+    registry.set(requestsAtom, replayed);
+
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
+    expect(handleRequest).toHaveBeenCalledTimes(1);
     registry.dispose();
   });
 
@@ -291,6 +320,38 @@ describe("previewAutomationRequestConsumer", () => {
     });
   });
 
+  it("preserves whole-request deadlines as timeout responses", () => {
+    const error = new PreviewAutomationRequestTimeoutError({
+      requestId: "request-timeout",
+      operation: "snapshot",
+      environmentId,
+      threadId,
+      tabId,
+      timeoutMs: 1_500,
+    });
+
+    expect(
+      serializePreviewAutomationError(error, {
+        requestId: "request-timeout",
+        operation: "snapshot",
+        environmentId,
+        threadId,
+        tabId,
+      }),
+    ).toEqual({
+      _tag: "PreviewAutomationTimeoutError",
+      message: "Preview automation snapshot request request-timeout did not finish within 1500ms.",
+      detail: {
+        requestId: "request-timeout",
+        operation: "snapshot",
+        environmentId: "environment-1",
+        threadId: "thread-1",
+        tabId: "tab-1",
+        timeoutMs: 1_500,
+      },
+    });
+  });
+
   it("maps desktop non-editable targets to the public typed response", () => {
     expect(
       serializePreviewAutomationError(
@@ -402,6 +463,34 @@ describe("previewAutomationRequestConsumer", () => {
       },
     });
     expect(JSON.stringify(responses[0])).not.toContain("do-not-return");
+    registry.dispose();
+  });
+
+  it("contains response rejection after a connection is replaced", async () => {
+    const requestsAtom = Atom.make<AsyncResult.AsyncResult<PreviewAutomationStreamEvent, Error>>(
+      AsyncResult.initial<PreviewAutomationStreamEvent, Error>(false),
+    );
+    const handleRequest = vi.fn(async (value: PreviewAutomationRequest) => value.requestId);
+    const respond = vi.fn(async () => {
+      throw new Error("connection closed");
+    });
+    const state = consumerState(handleRequest);
+    const consumerAtom = createPreviewAutomationRequestConsumerAtom({
+      requestsAtom,
+      clientId,
+      connectionAtom: state.connectionAtom,
+      environmentId,
+      requestHandlerAtom: state.requestHandlerAtom,
+      respond,
+      label: "test:preview-automation-response-rejection",
+    });
+    const registry = AtomRegistry.make();
+    registry.mount(consumerAtom);
+
+    registry.set(requestsAtom, AsyncResult.success(requestEvent("request-rejected")));
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
+    registry.set(requestsAtom, AsyncResult.success(requestEvent("request-after-rejection")));
+    await vi.waitFor(() => expect(handleRequest).toHaveBeenCalledTimes(2));
     registry.dispose();
   });
 });

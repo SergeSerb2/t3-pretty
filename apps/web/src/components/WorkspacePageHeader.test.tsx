@@ -10,7 +10,17 @@ describe("WorkspacePageHeader", () => {
     );
 
     expect(html.startsWith("<header")).toBe(true);
+    expect(html).toContain('data-workspace-header=""');
     expect(html).toContain("data-pull-requests-header");
     expect(html).toContain("data-chat-header");
+    expect(html).not.toContain("data-sidebar-peek-drag-hole");
+  });
+
+  it("punches the desktop titlebar where a peeked sidebar covers it", () => {
+    const html = renderToStaticMarkup(<WorkspacePageHeader electron>Threads</WorkspacePageHeader>);
+
+    expect(html).toContain("drag-region");
+    expect(html).toContain('data-sidebar-peek-drag-hole=""');
+    expect(html.indexOf("Threads")).toBeLessThan(html.indexOf("data-sidebar-peek-drag-hole"));
   });
 });

@@ -27,17 +27,11 @@ export function shouldDeferThreadSeed(firstPaintForThread: boolean, wrapperCount
 export function shouldAnimateRowArrival(input: {
   readonly firstPaintForThread: boolean;
   readonly silentWindowActive: boolean;
-  readonly inkTransitionActive: boolean;
   readonly noTransitions: boolean;
   readonly top: number;
   readonly maxSeenTop: number;
 }): boolean {
-  if (
-    input.firstPaintForThread ||
-    input.silentWindowActive ||
-    input.inkTransitionActive ||
-    input.noTransitions
-  ) {
+  if (input.firstPaintForThread || input.silentWindowActive || input.noTransitions) {
     return false;
   }
   return input.top >= input.maxSeenTop - SEEN_TOP_SLACK_PX;
@@ -45,8 +39,4 @@ export function shouldAnimateRowArrival(input: {
 
 export function enterDelayMs(batchIndex: number): number {
   return Math.min(batchIndex, STAGGER_CAP) * STAGGER_MS;
-}
-
-export function isSceneryInkTransitionActive(root: HTMLElement): boolean {
-  return root.dataset.sceneryInkTransition === "true";
 }

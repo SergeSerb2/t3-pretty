@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import { createPullRequestEnvironmentAtoms } from "@t3tools/client-runtime/state/pull-requests";
+import {
+  createLinkedPullRequestSummaryAtomFamily,
+  createPullRequestEnvironmentAtoms,
+  createPullRequestStackAtomFamily,
+} from "@t3tools/client-runtime/state/pull-requests";
 import {
   isSettledAtomQueryInterrupt,
   readAtomQueryResult,
@@ -8,9 +12,13 @@ import type {
   EnvironmentId,
   PullRequestListInput,
   PullRequestListStatsInput,
+  PullRequestListEntry,
+  PullRequestRef,
+  PullRequestSummary,
 } from "@t3tools/contracts";
+import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback, useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -22,6 +30,159 @@ import {
 import { useRetryInterruptedQuery } from "./query";
 
 export const pullRequestEnvironment = createPullRequestEnvironmentAtoms(connectionAtomRuntime);
+export const linkedPullRequestDetailAtom = createLinkedPullRequestSummaryAtomFamily(
+  connectionAtomRuntime,
+  pullRequestEnvironment.refreshes,
+);
+
+const MERGED_PULL_REQUEST_QUERY_IDLE_TTL_MS = 5 * 60_000;
+
+export interface ObservedPullRequestSummary {
+  readonly summary: PullRequestSummary;
+  /** Client arrival time, the only ordering older servers leave us for same-dated snapshots. */
+  readonly observedAt: number;
+}
+
+const observedPullRequestSummaryAtom = Atom.family((key: string) =>
+  Atom.make<ObservedPullRequestSummary | null>(null).pipe(
+    Atom.setIdleTTL(5 * 60_000),
+    Atom.withLabel(`web-pull-requests:observed-summary:${key}`),
+  ),
+);
+
+/**
+ * Positive when `incoming` is the newer snapshot. Merged is final. Then the host's own update
+ * time, then the server's read-start time, which survives its caches; a snapshot without one
+ * never beats a stamped read. Zero when neither side carries a read time.
+ */
+function compareSummaries(current: PullRequestSummary, incoming: PullRequestSummary): number {
+  const merged = Number(incoming.state === "merged") - Number(current.state === "merged");
+  if (merged !== 0) return merged;
+  const updated = Date.parse(incoming.updatedAt) - Date.parse(current.updatedAt);
+  if (updated !== 0) return updated;
+  if (current.observedAt === undefined && incoming.observedAt === undefined) return 0;
+  return (incoming.observedAt ?? -Infinity) - (current.observedAt ?? -Infinity);
+}
+
+export function newestPullRequestSummary(
+  current: PullRequestSummary | null,
+  observed: PullRequestSummary | null,
+): PullRequestSummary | null {
+  if (current === null) return observed;
+  if (observed === null) return current;
+  return compareSummaries(current, observed) >= 0 ? observed : current;
+}
+
+/** Reuse list status without treating its deferred line-count placeholders as real stats. */
+export function pullRequestListEntryToSummary(entry: PullRequestListEntry): PullRequestSummary {
+  return {
+    provider: entry.provider,
+    projectId: entry.projectId,
+    repository: entry.repository,
+    number: entry.number,
+    title: entry.title,
+    url: entry.url,
+    state: entry.state,
+    isDraft: entry.isDraft,
+    headBranch: entry.headBranch,
+    baseBranch: entry.baseBranch,
+    updatedAt: entry.updatedAt,
+    ...(entry.observedAt === undefined ? {} : { observedAt: entry.observedAt }),
+    author: entry.author,
+    ...(entry.reviewDecision === undefined ? {} : { reviewDecision: entry.reviewDecision }),
+    ...(entry.checksState === undefined ? {} : { checksState: entry.checksState }),
+    mergeability: entry.mergeability,
+  };
+}
+
+// A project has one remote, so its id already pins the host. Leaving the host out lets a list
+// row, a hostless legacy reference and a URL-derived thread reference share one entry.
+function pullRequestSummaryKey(environmentId: EnvironmentId, reference: PullRequestRef): string {
+  return JSON.stringify([
+    environmentId,
+    reference.projectId,
+    reference.repository.toLowerCase(),
+    reference.number,
+  ]);
+}
+
+/** The observation to hold after `incoming` arrives. Returns `current` itself on a tie. */
+export function newestPullRequestObservation(
+  current: ObservedPullRequestSummary | null,
+  incoming: ObservedPullRequestSummary | null,
+): ObservedPullRequestSummary | null {
+  if (current === null) return incoming;
+  if (incoming === null) return current;
+  let order = compareSummaries(current.summary, incoming.summary);
+  // Client clocks only break ties between snapshots that both lack a server read time.
+  if (
+    order === 0 &&
+    current.summary.observedAt === undefined &&
+    incoming.summary.observedAt === undefined
+  ) {
+    order = incoming.observedAt - current.observedAt;
+  }
+  if (!(order > 0)) return current;
+  // A sparse summary must not erase known status, or carry old detail stats into a new list read.
+  return {
+    ...incoming,
+    summary: {
+      ...incoming.summary,
+      isDraft: incoming.summary.isDraft ?? current.summary.isDraft,
+      mergeability: incoming.summary.mergeability ?? current.summary.mergeability,
+      reviewDecision:
+        incoming.summary.reviewDecision === undefined
+          ? current.summary.reviewDecision
+          : incoming.summary.reviewDecision,
+      checksState:
+        incoming.summary.checksState === undefined
+          ? current.summary.checksState
+          : incoming.summary.checksState,
+    },
+  };
+}
+
+function observePullRequestSummary(
+  environmentId: EnvironmentId,
+  reference: PullRequestRef,
+  summary: PullRequestSummary,
+  observedAt: number,
+): void {
+  const atom = observedPullRequestSummaryAtom(pullRequestSummaryKey(environmentId, reference));
+  appAtomRegistry.modify(atom, (previous) => {
+    const next = newestPullRequestObservation(previous, { summary, observedAt });
+    return next === previous ? [false, previous] : [true, next];
+  });
+}
+
+export function useSharedPullRequestSummary(
+  environmentId: EnvironmentId | null,
+  reference: PullRequestRef | null,
+  current: PullRequestSummary | null,
+  observedAt: number | null = null,
+): PullRequestSummary | null {
+  const key =
+    environmentId === null || reference === null
+      ? "none"
+      : pullRequestSummaryKey(environmentId, reference);
+  const atom = observedPullRequestSummaryAtom(key);
+  const observed = useAtomValue(atom);
+  useLayoutEffect(() => {
+    if (environmentId === null || reference === null || current === null || observedAt === null)
+      return;
+    observePullRequestSummary(environmentId, reference, current, observedAt);
+  }, [current, environmentId, reference, observedAt]);
+  return (
+    newestPullRequestObservation(
+      observed,
+      current === null || observedAt === null ? null : { summary: current, observedAt },
+    )?.summary ?? current
+  );
+}
+export const pullRequestStackAtom = createPullRequestStackAtomFamily(
+  connectionAtomRuntime,
+  pullRequestEnvironment.refreshes,
+);
 
 export interface EnvironmentQueryTarget<Input> {
   readonly environmentId: EnvironmentId;
@@ -34,6 +195,7 @@ interface MergedEnvironmentQueryView<A, Input> {
   /** The first environment that failed. Others may still have answered — this is not fatal. */
   readonly error: string | null;
   readonly isPending: boolean;
+  readonly observations: ReadonlyArray<readonly [EnvironmentId, A, number]>;
   readonly retryTargets: ReadonlyArray<EnvironmentQueryTarget<Input>>;
 }
 
@@ -55,6 +217,7 @@ function createMergedEnvironmentQuery<Input, A>(
     Atom.make((get): MergedEnvironmentQueryView<A, Input> => {
       const targets = JSON.parse(key) as ReadonlyArray<EnvironmentQueryTarget<Input>>;
       const values: Array<readonly [EnvironmentId, A]> = [];
+      const observations: Array<readonly [EnvironmentId, A, number]> = [];
       const retryTargets: Array<EnvironmentQueryTarget<Input>> = [];
       let error: string | null = null;
       let isPending = false;
@@ -66,13 +229,20 @@ function createMergedEnvironmentQuery<Input, A>(
           error = snapshot.error;
         }
         if (snapshot.data !== null) values.push([target.environmentId, snapshot.data]);
+        if (result._tag === "Success") {
+          observations.push([target.environmentId, result.value, result.timestamp]);
+        }
         if (isSettledAtomQueryInterrupt(result)) retryTargets.push(target);
       }
-      return { values, error, isPending, retryTargets };
-    }).pipe(Atom.withLabel(`${label}:${key}`)),
+      return { values, error, isPending, observations, retryTargets };
+    }).pipe(
+      Atom.setIdleTTL(MERGED_PULL_REQUEST_QUERY_IDLE_TTL_MS),
+      Atom.withLabel(`${label}:${key}`),
+    ),
   );
   const empty = Atom.make<MergedEnvironmentQueryView<A, Input>>({
     values: [],
+    observations: [],
     error: null,
     isPending: false,
     retryTargets: [],
@@ -80,14 +250,20 @@ function createMergedEnvironmentQuery<Input, A>(
   return function useMergedQuery(targets: ReadonlyArray<EnvironmentQueryTarget<Input>>) {
     const key = JSON.stringify(targets);
     const view = useAtomValue(targets.length === 0 ? empty : family(key));
-    const refresh = useCallback(() => {
-      for (const target of JSON.parse(key) as ReadonlyArray<EnvironmentQueryTarget<Input>>) {
-        appAtomRegistry.refresh(atomFor(target));
-      }
-    }, [key]);
+    const refresh = useCallback(
+      (override?: ReadonlyArray<EnvironmentQueryTarget<Input>>) => {
+        const refreshTargets =
+          override ?? (JSON.parse(key) as ReadonlyArray<EnvironmentQueryTarget<Input>>);
+        for (const atom of new Set(refreshTargets.map(atomFor))) {
+          appAtomRegistry.refresh(atom);
+        }
+      },
+      [key],
+    );
     useRetryInterruptedQuery(view.retryTargets.length > 0, refresh, key);
     return {
       values: view.values,
+      observations: view.observations,
       error: view.error,
       isPending: view.isPending,
       refresh,
@@ -105,11 +281,30 @@ const usePullRequestStatsQuery = createMergedEnvironmentQuery(
   pullRequestEnvironment.listStats,
 );
 
+const usePullRequestTurnRefreshQuery = createMergedEnvironmentQuery(
+  "web-pull-requests:turn-refreshes",
+  ({ environmentId }: EnvironmentQueryTarget<Readonly<Record<string, never>>>) =>
+    pullRequestEnvironment.refreshes({ environmentId, input: {} }),
+);
+
+export function usePullRequestTurnRefreshes(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): ReadonlyArray<readonly [EnvironmentId, number]> {
+  return usePullRequestTurnRefreshQuery(
+    environmentIds.map((environmentId) => ({ environmentId, input: {} })),
+  ).values;
+}
+
+export function usePullRequestTurnRefresh(environmentId: EnvironmentId): number | null {
+  const result = useAtomValue(pullRequestEnvironment.refreshes({ environmentId, input: {} }));
+  return Option.getOrNull(AsyncResult.value(result));
+}
+
 export interface MergedPullRequestListView {
   readonly data: MergedPullRequestList | null;
   readonly error: string | null;
   readonly isPending: boolean;
-  readonly refresh: () => void;
+  readonly refresh: (targets?: ReadonlyArray<EnvironmentQueryTarget<PullRequestListInput>>) => void;
 }
 
 /** One listing per environment, merged into the single list the page renders. */
@@ -117,6 +312,23 @@ export function usePullRequestList(
   targets: ReadonlyArray<EnvironmentQueryTarget<PullRequestListInput>>,
 ): MergedPullRequestListView {
   const query = usePullRequestListsQuery(targets);
+  useLayoutEffect(() => {
+    for (const [environmentId, answer, observedAt] of query.observations) {
+      for (const entry of answer.entries) {
+        observePullRequestSummary(
+          environmentId,
+          {
+            projectId: entry.projectId,
+            host: entry.host,
+            repository: entry.repository,
+            number: entry.number,
+          },
+          pullRequestListEntryToSummary(entry),
+          observedAt,
+        );
+      }
+    }
+  }, [query.observations]);
   const data = useMemo(() => mergePullRequestLists(query.values), [query.values]);
   return { data, error: query.error, isPending: query.isPending, refresh: query.refresh };
 }
@@ -126,6 +338,7 @@ export function usePullRequestListStats(
   targets: ReadonlyArray<EnvironmentQueryTarget<PullRequestListStatsInput>>,
 ): {
   readonly stats: ReadonlyArray<EnvironmentPullRequestStat> | null;
+  readonly isPending: boolean;
   readonly refresh: () => void;
 } {
   const query = usePullRequestStatsQuery(targets);
@@ -138,5 +351,5 @@ export function usePullRequestListStats(
           ),
     [query.values],
   );
-  return { stats, refresh: query.refresh };
+  return { stats, isPending: query.isPending, refresh: query.refresh };
 }

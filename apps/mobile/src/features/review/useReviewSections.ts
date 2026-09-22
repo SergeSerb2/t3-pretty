@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react";
+import * as DateTime from "effect/DateTime";
 
 import type { EnvironmentId, OrchestrationCheckpointSummary, ThreadId } from "@t3tools/contracts";
 
@@ -66,13 +67,14 @@ export function useReviewSections(input: {
     () =>
       buildReviewSectionItems({
         checkpoints: readyCheckpoints,
-        gitSections: reviewCache.gitSections,
+        gitSections: diffPreview.data?.sources ?? reviewCache.gitSections,
         turnDiffById: reviewCache.turnDiffById,
         loadingTurnIds,
         loadingGitSections: diffPreview.isPending,
       }),
     [
       diffPreview.isPending,
+      diffPreview.data?.sources,
       loadingTurnIds,
       readyCheckpoints,
       reviewCache.gitSections,
@@ -114,10 +116,8 @@ export function useReviewSections(input: {
     selectedSectionIdExists,
   ]);
 
-  let activeCheckpoint = readyCheckpoints[0] ?? null;
-  if (selectedSection?.kind === "turn") {
-    activeCheckpoint = checkpointBySectionId[selectedSection.id] ?? activeCheckpoint;
-  }
+  const activeCheckpoint =
+    selectedSection?.kind === "turn" ? (checkpointBySectionId[selectedSection.id] ?? null) : null;
   const activeSectionId = activeCheckpoint
     ? getReviewSectionIdForCheckpoint(activeCheckpoint)
     : null;
@@ -134,7 +134,11 @@ export function useReviewSections(input: {
     if (!reviewCache.threadKey || !activeSectionId) {
       return;
     }
-    setReviewTurnDiffLoading(reviewCache.threadKey, activeSectionId, activeTurnDiff.isPending);
+    const threadKey = reviewCache.threadKey;
+    setReviewTurnDiffLoading(threadKey, activeSectionId, activeTurnDiff.isPending);
+    return () => {
+      setReviewTurnDiffLoading(threadKey, activeSectionId, false);
+    };
   }, [activeSectionId, activeTurnDiff.isPending, reviewCache.threadKey]);
 
   useEffect(() => {
@@ -173,7 +177,12 @@ export function useReviewSections(input: {
 
   return {
     error: diffPreview.error ?? activeTurnDiff.error ?? reviewCache.asyncState.error,
+    isSelectedSectionPending:
+      selectedSection?.kind === "turn" ? activeTurnDiff.isPending : diffPreview.isPending,
     loadingGitDiffs: diffPreview.isPending,
+    diffPreviewRevision: diffPreview.data
+      ? DateTime.formatIso(diffPreview.data.generatedAt)
+      : undefined,
     loadingTurnIds,
     reviewSections,
     selectedSection,

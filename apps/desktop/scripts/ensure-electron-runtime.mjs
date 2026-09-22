@@ -2,6 +2,7 @@ import * as NodeFS from "node:fs";
 import * as NodeModule from "node:module";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 import * as NodeChildProcess from "node:child_process";
 
 const require = NodeModule.createRequire(import.meta.url);
@@ -39,6 +40,34 @@ function repairPathFile(electronDir, platformPath) {
 
   if (currentPath !== platformPath) {
     NodeFS.writeFileSync(pathFile, platformPath);
+  }
+}
+
+function patchMacElectronInfoPlist(plistPath) {
+  if (!NodeFS.existsSync(plistPath)) {
+    return;
+  }
+
+  const usage = {
+    NSMicrophoneUsageDescription:
+      "T3 Pretty uses your microphone to dictate messages with macOS speech recognition.",
+    NSSpeechRecognitionUsageDescription:
+      "T3 Pretty turns your speech into composer text with macOS speech recognition.",
+  };
+  let xml = NodeFS.readFileSync(plistPath, "utf8");
+  let changed = false;
+  for (const [key, value] of Object.entries(usage)) {
+    if (xml.includes(`<key>${key}</key>`)) continue;
+    const escaped = value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    const insertion = `  <key>${key}</key>\n  <string>${escaped}</string>\n`;
+    if (!/<\/dict>\s*<\/plist>\s*$/.test(xml)) {
+      throw new Error(`Electron Info.plist is missing a closing dict: ${plistPath}`);
+    }
+    xml = xml.replace(/<\/dict>\s*<\/plist>\s*$/, `${insertion}</dict>\n</plist>\n`);
+    changed = true;
+  }
+  if (changed) {
+    NodeFS.writeFileSync(plistPath, xml);
   }
 }
 
@@ -172,11 +201,17 @@ export function ensureElectronRuntime() {
 
   ensureExecutable(electronPath);
   repairPathFile(electronDir, platformPath);
+  if (hostPlatform === "darwin") {
+    patchMacElectronInfoPlist(
+      NodePath.join(electronDir, "dist", "Electron.app", "Contents", "Info.plist"),
+    );
+  }
 
   return electronPath;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// `file://${argv[1]}` never matches on Windows (drive letters need `file:///C:/`).
+if (process.argv[1] && NodeURL.pathToFileURL(process.argv[1]).href === import.meta.url) {
   const electronPath = ensureElectronRuntime();
   process.stdout.write(`${electronPath}\n`);
 }

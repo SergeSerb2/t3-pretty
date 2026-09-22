@@ -11,10 +11,17 @@ import {
 import type { SourceControlProviderKind } from "@t3tools/contracts";
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
+import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
 import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
+import * as BitbucketApi from "./BitbucketApi.ts";
 import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
+import * as GitHubCli from "./GitHubCli.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
+import * as GitLabCli from "./GitLabCli.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
+import * as ForgejoCli from "./ForgejoCli.ts";
+import * as ForgejoSourceControlProvider from "./ForgejoSourceControlProvider.ts";
+import * as OriginCli from "./OriginCli.ts";
 import * as OriginSourceControlProvider from "./OriginSourceControlProvider.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 import {
@@ -43,6 +50,7 @@ export interface SourceControlProviderHandle {
 export class SourceControlProviderRegistry extends Context.Service<
   SourceControlProviderRegistry,
   {
+    readonly resolveLink: SourceControlProvider.ResolveSourceControlLink;
     readonly get: (
       kind: SourceControlProviderKind,
     ) => Effect.Effect<
@@ -162,6 +170,7 @@ function bindProviderContext(
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: provider.kind,
+    ...(provider.resolveLink ? { resolveLink: provider.resolveLink } : {}),
     listChangeRequests: (input) =>
       provider.listChangeRequests({
         ...input,
@@ -207,6 +216,7 @@ function bindProviderContext(
   });
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWithProviders")(
   function* (registrations: ReadonlyArray<SourceControlProviderRegistration>) {
     const config = yield* ServerConfig;
@@ -288,6 +298,13 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
       );
 
     return SourceControlProviderRegistry.of({
+      resolveLink: (input) => {
+        if (input.url.protocol !== "https:" || input.url.username || input.url.password) {
+          return undefined;
+        }
+        const kind = detectSourceControlProviderFromRemoteUrl(input.url.href)?.kind;
+        return kind ? providers.get(kind)?.resolveLink?.(input) : undefined;
+      },
       get,
       resolveHandle,
       resolve: (input) => resolveHandle(input).pipe(Effect.map((handle) => handle.provider)),
@@ -305,10 +322,24 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
   },
 );
 
+/** CLI/API clients the live registry constructs during boot. Origin and
+ * Forgejo were registered in `make` but omitted from this provide-merge,
+ * which died with `Service not found` during packaged desktop backend boot. */
+export const sourceControlProviderCliLayers = Layer.mergeAll(
+  AzureDevOpsCli.layer,
+  BitbucketApi.layer,
+  GitHubCli.layer,
+  GitLabCli.layer,
+  OriginCli.layer,
+  ForgejoCli.layer,
+);
+
 export const make = Effect.gen(function* () {
   const github = yield* GitHubSourceControlProvider.make;
   const gitlab = yield* GitLabSourceControlProvider.make;
   const origin = yield* OriginSourceControlProvider.make;
+  const forgejo = yield* ForgejoSourceControlProvider.make;
+  const forgejoDiscovery = yield* ForgejoSourceControlProvider.makeDiscovery;
   const bitbucket = yield* BitbucketSourceControlProvider.make;
   const bitbucketDiscovery = yield* BitbucketSourceControlProvider.makeDiscovery;
   const azureDevOps = yield* AzureDevOpsSourceControlProvider.make;
@@ -338,6 +369,7 @@ export const make = Effect.gen(function* () {
       provider: origin,
       discovery: OriginSourceControlProvider.discovery,
     },
+    { kind: "forgejo", provider: forgejo, discovery: forgejoDiscovery },
   ]);
 });
 

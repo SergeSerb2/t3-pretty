@@ -8,6 +8,7 @@ import {
   ProviderDriverKind,
   type OrchestrationEvent,
   type OrchestrationThread,
+  type ProviderApprovalDecision,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -21,22 +22,22 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as Tracer from "effect/Tracer";
 
 import * as CheckpointStore from "../src/checkpointing/CheckpointStore.ts";
-import { TextGeneration, type TextGenerationShape } from "../src/textGeneration/TextGeneration.ts";
+import { TextGeneration } from "../src/textGeneration/TextGeneration.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../src/persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../src/persistence/Layers/OrchestrationEventStore.ts";
-import { ProjectionCheckpointRepositoryLive } from "../src/persistence/Layers/ProjectionCheckpoints.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../src/persistence/Layers/ProjectionPendingApprovals.ts";
-import { ProviderSessionRuntimeRepositoryLive } from "../src/persistence/Layers/ProviderSessionRuntime.ts";
+import * as ProviderSessionRuntime from "../src/persistence/ProviderSessionRuntime.ts";
 import { makeSqlitePersistenceLive } from "../src/persistence/Layers/Sqlite.ts";
-import { ProjectionCheckpointRepository } from "../src/persistence/Services/ProjectionCheckpoints.ts";
 import { ProjectionPendingApprovalRepository } from "../src/persistence/Services/ProjectionPendingApprovals.ts";
 import { makeAdapterRegistryMock } from "../src/provider/testUtils/providerAdapterRegistryMock.ts";
 import { ProviderAdapterRegistry } from "../src/provider/Services/ProviderAdapterRegistry.ts";
 import { makeProviderRegistryLayer } from "../src/provider/testUtils/providerRegistryMock.ts";
 import { ProviderSessionDirectoryLive } from "../src/provider/Layers/ProviderSessionDirectory.ts";
 import { ServerSettingsService } from "../src/serverSettings.ts";
+import * as StorageCleanup from "../src/storageCleanup.ts";
 import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.ts";
 import { makeCodexAdapter } from "../src/provider/Layers/CodexAdapter.ts";
 import {
@@ -44,7 +45,8 @@ import {
   ProviderEventLoggers,
 } from "../src/provider/Layers/ProviderEventLoggers.ts";
 import { ProviderService } from "../src/provider/Services/ProviderService.ts";
-import { AnalyticsService } from "../src/telemetry/Services/AnalyticsService.ts";
+import { ProviderAuthService } from "../src/provider/Services/ProviderAuthService.ts";
+import { AnalyticsService } from "../src/telemetry/AnalyticsService.ts";
 import { CheckpointReactorLive } from "../src/orchestration/Layers/CheckpointReactor.ts";
 import * as RepositoryIdentityResolver from "../src/project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "../src/orchestration/Layers/OrchestrationEngine.ts";
@@ -56,7 +58,7 @@ import * as ToolProgress from "../src/orchestration/ToolProgress.ts";
 import { RuntimeReceiptBusTest } from "../src/orchestration/Layers/RuntimeReceiptBus.ts";
 import { OrchestrationReactorLive } from "../src/orchestration/Layers/OrchestrationReactor.ts";
 import { ProviderCommandReactorLive } from "../src/orchestration/Layers/ProviderCommandReactor.ts";
-import { SkillMaterializer } from "../src/skills/SkillMaterializer.ts";
+import { SkillLibrary } from "../src/skills/SkillLibrary.ts";
 import { ProviderRuntimeIngestionLive } from "../src/orchestration/Layers/ProviderRuntimeIngestion.ts";
 import { CheckpointReactor } from "../src/orchestration/Services/CheckpointReactor.ts";
 import { ProviderRuntimeIngestionService } from "../src/orchestration/Services/ProviderRuntimeIngestion.ts";
@@ -68,6 +70,11 @@ import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDelet
 import { ThreadMergedPullRequestReactor } from "../src/orchestration/ThreadMergedPullRequestReactor.ts";
 import { ProjectIconReactor } from "../src/project/ProjectIconReactor.ts";
 import { ActivityHeadlineReactor } from "../src/orchestration/Layers/ActivityHeadlineReactor.ts";
+import { HomeSuggestionsService } from "../src/homeSuggestions/HomeSuggestionsService.ts";
+import { EMPTY_HOME_SUGGESTIONS_SNAPSHOT } from "@t3tools/contracts";
+import * as ThreadSettlementReactor from "../src/orchestration/ThreadSettlementReactor.ts";
+import * as PullRequestSyncReactor from "../src/orchestration/PullRequestSyncReactor.ts";
+import * as ThreadPullRequestReactor from "../src/orchestration/ThreadPullRequestReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -87,6 +94,7 @@ import { VcsStatusBroadcaster } from "../src/vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../src/git/GitWorkflowService.ts";
 import * as VcsProcess from "../src/vcs/VcsProcess.ts";
 import * as AgentAwarenessRelay from "../src/relay/AgentAwarenessRelay.ts";
+import * as PullRequestService from "../src/pullRequest/PullRequestService.ts";
 
 const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
 
@@ -122,12 +130,9 @@ export function gitShowFileAtRef(cwd: string, ref: string, filePath: string): st
   return runGit(cwd, ["show", `${ref}:${filePath}`]);
 }
 
-class WaitForTimeoutError extends Schema.TaggedErrorClass<WaitForTimeoutError>()(
-  "WaitForTimeoutError",
-  {
-    description: Schema.String,
-  },
-) {}
+class WaitForTimeoutError extends Schema.TaggedError<WaitForTimeoutError>()("WaitForTimeoutError", {
+  description: Schema.String,
+}) {}
 
 function waitFor<A, E>(
   read: Effect.Effect<A, E>,
@@ -166,7 +171,7 @@ function waitFor<A, E>(
   );
 }
 
-class OrchestrationHarnessRuntimeError extends Schema.TaggedErrorClass<OrchestrationHarnessRuntimeError>()(
+class OrchestrationHarnessRuntimeError extends Schema.TaggedError<OrchestrationHarnessRuntimeError>()(
   "OrchestrationHarnessRuntimeError",
   {
     operation: Schema.String,
@@ -189,7 +194,6 @@ export interface OrchestrationIntegrationHarness {
   readonly snapshotQuery: ProjectionSnapshotQuery["Service"];
   readonly providerService: ProviderService["Service"];
   readonly checkpointStore: CheckpointStore.CheckpointStore["Service"];
-  readonly checkpointRepository: ProjectionCheckpointRepository["Service"];
   readonly pendingApprovalRepository: ProjectionPendingApprovalRepository["Service"];
   readonly waitForThread: (
     threadId: string,
@@ -204,14 +208,14 @@ export interface OrchestrationIntegrationHarness {
     requestId: string,
     predicate: (row: {
       readonly status: "pending" | "resolved";
-      readonly decision: "accept" | "acceptForSession" | "decline" | "cancel" | null;
+      readonly decision: ProviderApprovalDecision | null;
       readonly resolvedAt: string | null;
     }) => boolean,
     timeoutMs?: number,
   ) => Effect.Effect<
     {
       readonly status: "pending" | "resolved";
-      readonly decision: "accept" | "acceptForSession" | "decline" | "cancel" | null;
+      readonly decision: ProviderApprovalDecision | null;
       readonly resolvedAt: string | null;
     },
     never
@@ -234,6 +238,8 @@ export interface OrchestrationIntegrationHarness {
 interface MakeOrchestrationIntegrationHarnessOptions {
   readonly provider?: ProviderDriverKind;
   readonly realCodex?: boolean;
+  /** Tracer for every fiber the harness runtime runs, including reactors. */
+  readonly tracer?: Tracer.Tracer;
 }
 
 export const makeOrchestrationIntegrationHarness = (
@@ -274,7 +280,7 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provide(OrchestrationCommandReceiptRepositoryLive),
     );
     const providerSessionDirectoryLayer = ProviderSessionDirectoryLive.pipe(
-      Layer.provide(ProviderSessionRuntimeRepositoryLive),
+      Layer.provide(ProviderSessionRuntime.layer),
     );
     const realCodexRegistry = Layer.effect(
       ProviderAdapterRegistry,
@@ -311,7 +317,6 @@ export const makeOrchestrationIntegrationHarness = (
     const runtimeServicesLayer = Layer.mergeAll(
       projectionSnapshotQueryLayer,
       orchestrationLayer.pipe(Layer.provide(projectionSnapshotQueryLayer)),
-      ProjectionCheckpointRepositoryLive,
       ProjectionPendingApprovalRepositoryLive,
       checkpointStoreLayer,
       providerLayer,
@@ -337,21 +342,32 @@ export const makeOrchestrationIntegrationHarness = (
       generateBranchName: () => Effect.succeed({ branch: "update" }),
       generateThreadTitle: () => Effect.succeed({ title: "New thread" }),
       generateProjectIcon: () => Effect.succeed({ path: "/tmp/icon.png" }),
-    } as unknown as TextGenerationShape);
+    } as unknown as TextGeneration["Service"]);
     const providerCommandReactorLayer = ProviderCommandReactorLive.pipe(
+      Layer.provide(
+        Layer.mock(ProviderAuthService)({
+          tryHandlePromptCommand: () => Effect.succeed(false),
+        }),
+      ),
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(gitWorkflowLayer),
       Layer.provideMerge(textGenerationLayer),
       Layer.provideMerge(serverSettingsLayer),
       Layer.provideMerge(
-        Layer.succeed(SkillMaterializer, {
-          materialize: () => Effect.succeed({ written: [], removed: [], loaded: [] }),
+        Layer.mock(SkillLibrary)({
+          resolveDocuments: () => Effect.succeed([]),
           resolveMentions: () => Effect.succeed([]),
+          removeManagedWorkspaceCopies: () => Effect.void,
         }),
       ),
     );
     const checkpointReactorLayer = CheckpointReactorLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),
+      Layer.provideMerge(
+        Layer.mock(PullRequestService.PullRequestService)({
+          refreshAfterTurn: () => Effect.void,
+        }),
+      ),
       Layer.provideMerge(
         Layer.succeed(VcsStatusBroadcaster, {
           getStatus: () => Effect.die("getStatus should not be called in this test"),
@@ -366,6 +382,8 @@ export const makeOrchestrationIntegrationHarness = (
               workingTree: { files: [], insertions: 0, deletions: 0 },
             }),
           refreshStatus: () => Effect.die("refreshStatus should not be called in this test"),
+          refreshPullRequestStatus: () =>
+            Effect.die("refreshPullRequestStatus should not be called in this test"),
           streamStatus: () => Stream.empty,
         }),
       ),
@@ -380,6 +398,12 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(VcsProcess.layer),
     );
     const orchestrationReactorLayer = OrchestrationReactorLive.pipe(
+      Layer.provideMerge(
+        Layer.succeed(StorageCleanup.StorageCleanup, {
+          start: () => Effect.void,
+          drain: Effect.void,
+        }),
+      ),
       Layer.provideMerge(runtimeIngestionLayer),
       Layer.provideMerge(providerCommandReactorLayer),
       Layer.provideMerge(checkpointReactorLayer),
@@ -392,7 +416,26 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(
         Layer.succeed(ThreadDeletionReactor, {
           start: () => Effect.void,
+          drainThrough: () => Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(ThreadPullRequestReactor.ThreadPullRequestReactor, {
+          start: () => Effect.void,
           drain: Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(ThreadSettlementReactor.ThreadSettlementReactor, {
+          start: () => Effect.void,
+          drain: Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(PullRequestSyncReactor.PullRequestSyncReactor, {
+          start: () => Effect.void,
+          drain: Effect.void,
+          requestSync: () => Effect.void,
         }),
       ),
       Layer.provideMerge(
@@ -411,6 +454,17 @@ export const makeOrchestrationIntegrationHarness = (
           start: () => Effect.void,
         }),
       ),
+      Layer.provideMerge(
+        Layer.succeed(HomeSuggestionsService, {
+          start: () => Effect.void,
+          current: Effect.succeed(EMPTY_HOME_SUGGESTIONS_SNAPSHOT),
+          streamChanges: Stream.empty,
+          refresh: Effect.succeed(EMPTY_HOME_SUGGESTIONS_SNAPSHOT),
+          dismiss: () => Effect.succeed(EMPTY_HOME_SUGGESTIONS_SNAPSHOT),
+          drain: Effect.void,
+          tickOnce: Effect.void,
+        }),
+      ),
     );
     const layer = Layer.empty.pipe(
       Layer.provideMerge(runtimeServicesLayer),
@@ -421,6 +475,9 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(ServerConfig.layerTest(workspaceDir, rootDir)),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(
+        options?.tracer ? Layer.succeed(Tracer.Tracer, options.tracer) : Layer.empty,
+      ),
     );
 
     const runtime = ManagedRuntime.make(layer);
@@ -445,10 +502,6 @@ export const makeOrchestrationIntegrationHarness = (
     ).pipe(Effect.orDie);
     const checkpointStore = yield* tryRuntimePromise("load CheckpointStore service", () =>
       runtime.runPromise(Effect.service(CheckpointStore.CheckpointStore)),
-    ).pipe(Effect.orDie);
-    const checkpointRepository = yield* tryRuntimePromise(
-      "load ProjectionCheckpointRepository service",
-      () => runtime.runPromise(Effect.service(ProjectionCheckpointRepository)),
     ).pipe(Effect.orDie);
     const pendingApprovalRepository = yield* tryRuntimePromise(
       "load ProjectionPendingApprovalRepository service",
@@ -523,7 +576,7 @@ export const makeOrchestrationIntegrationHarness = (
           row,
         ): row is {
           readonly status: "pending" | "resolved";
-          readonly decision: "accept" | "acceptForSession" | "decline" | "cancel" | null;
+          readonly decision: ProviderApprovalDecision | null;
           readonly resolvedAt: string | null;
         } => row !== null && predicate(row),
         `pending approval '${requestId}'`,
@@ -531,7 +584,7 @@ export const makeOrchestrationIntegrationHarness = (
       ) as Effect.Effect<
         {
           readonly status: "pending" | "resolved";
-          readonly decision: "accept" | "acceptForSession" | "decline" | "cancel" | null;
+          readonly decision: ProviderApprovalDecision | null;
           readonly resolvedAt: string | null;
         },
         never
@@ -595,7 +648,6 @@ export const makeOrchestrationIntegrationHarness = (
       snapshotQuery,
       providerService,
       checkpointStore,
-      checkpointRepository,
       pendingApprovalRepository,
       waitForThread,
       waitForDomainEvent,

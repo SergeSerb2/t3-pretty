@@ -1,8 +1,7 @@
 /**
  * Settings → Appearance section for the World Scenery theme: the mobile
- * counterpart of the desktop's quick-settings dock (enable, blur, photo
- * presence). Text color (ink) modes stay desktop-only for now — the mobile
- * wash follows the system appearance.
+ * counterpart of the desktop's scenery rows (enable, blur, photo presence).
+ * The wash follows the chosen color scheme, as on desktop.
  */
 import { isBoringMobileTheme } from "../../../../lib/mobileTheme";
 import { BLUR_RANGE, TRANSLUCENCY_RANGE } from "../../../scenery/sceneryLogic";
@@ -39,7 +38,7 @@ export function SceneryAppearanceSection() {
   }
 
   return (
-    <SettingsSection card title="World Scenery">
+    <SettingsSection title="World Scenery">
       <SettingsSwitchRow
         disabled={!isReady}
         icon="photo.on.rectangle"
