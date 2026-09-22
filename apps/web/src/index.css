@@ -305,9 +305,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   /* One hairline for the top band and the column edge under it. Declared
      here so the right-panel tab bar uses the same line as the title bar. */
   --workspace-frame-line: color-mix(in srgb, var(--sidebar-foreground) 14%, transparent);
-  /* Slight ease where the column meets the top band. Kept off the glass
-     plates: a radius on either plate leaves a wedge at the seam. */
-  --workspace-frame-radius: 6px;
+  /* Corner radius of the thread pane where it meets the sidebar. Kept off
+     the glass plates: a radius on either plate leaves a wedge at the seam. */
+  --workspace-frame-radius: 12px;
   --workspace-controls-top: 0px;
   --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
   --workspace-controls-right: calc(env(safe-area-inset-right) + 0.75rem);
@@ -3061,11 +3061,14 @@ html
   border-color: transparent;
 }
 
-/* Quarter-round and column edge are siblings of the clip, on the same
+/* Corner piece and column edge are siblings of the clip, on the same
    positioned container. The clip's overflow:hidden (collapsed, peek, open)
    cannot square the corner or shift the edge onto the wrong box.
-   The disk uses the plate's own glass stack, so it samples the page the
-   sidebar samples instead of a flat mix. */
+   The piece uses the plate's own glass stack, so it samples the page the
+   sidebar samples instead of a flat mix. The mask keeps chrome only in the
+   wedge outside a circle centered in the thread pane, which is an ordinary
+   rounded corner of that pane. A radius on the piece itself bows the other
+   way and reads as a bump. */
 .workspace-sidebar-glass [data-sidebar-frame-corner] {
   position: absolute;
   top: calc(var(--workspace-topbar-height) - 1px);
@@ -3083,9 +3086,20 @@ html
     saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
     saturate(var(--glass-saturation));
-  border-right: 1px solid var(--workspace-frame-line);
-  border-bottom: 1px solid var(--workspace-frame-line);
-  border-bottom-right-radius: var(--workspace-frame-radius);
+  -webkit-mask-image: radial-gradient(
+    circle at 100% 100%,
+    transparent var(--workspace-frame-radius),
+    #000 var(--workspace-frame-radius)
+  );
+  mask-image: radial-gradient(
+    circle at 100% 100%,
+    transparent var(--workspace-frame-radius),
+    #000 var(--workspace-frame-radius)
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
 }
 
 .workspace-sidebar-glass [data-sidebar-frame-edge] {
@@ -3140,8 +3154,8 @@ html
   box-shadow: inset 0 -1px 0 var(--workspace-frame-line);
 }
 
-/* Plates stay square. The slight ease is the corner disk above, not a radius
-   on either glass plate. */
+/* Plates stay square. The rounded corner is the masked wedge above, not a
+   radius on either glass plate. */
 
 /* Only a missing backdrop-filter implementation may flatten chrome, and both
    bars still share --workspace-glass-surface so they cannot drift apart. */

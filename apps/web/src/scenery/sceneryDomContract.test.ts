@@ -239,8 +239,11 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain("[data-sidebar-frame-edge]");
     expect(sidebarSource).toContain('data-sidebar-frame-corner=""');
     expect(sidebarSource).toContain('data-sidebar-frame-edge=""');
-    expect(indexCssSource).toContain("--workspace-frame-radius: 6px");
-    expect(indexCssSource).toContain("border-bottom-right-radius: var(--workspace-frame-radius)");
+    expect(indexCssSource).toContain("--workspace-frame-radius: 12px");
+    expect(indexCssSource).toContain("circle at 100% 100%");
+    expect(indexCssSource).not.toContain(
+      "border-bottom-right-radius: var(--workspace-frame-radius)",
+    );
     expect(indexCssSource).toContain(
       "top: calc(var(--workspace-topbar-height) + var(--workspace-frame-radius) - 1px)",
     );
@@ -256,18 +259,13 @@ describe("glass contract with upstream chrome", () => {
     expect(headerPlate).not.toContain("border-radius");
     expect(headerPlate).not.toContain("linear-gradient");
     expect(indexCssSource).toContain("box-shadow: inset 0 -1px 0 var(--workspace-frame-line)");
-    expect(sceneryCssSource).toContain("[data-sidebar-frame-corner]");
+    expect(sceneryCssSource).not.toMatch(
+      /\[data-sidebar-frame-corner\][^{]*\{[^}]*background:\s*transparent/,
+    );
     expect(sceneryCssSource).toContain("[data-sidebar-frame-edge]");
     expect(sceneryCssSource).toMatch(
       /\[data-sidebar-frame-edge\]\s*\{\s*background:\s*transparent;\s*box-shadow:\s*none;\s*\}/,
     );
-    expect(sceneryCssSource).toMatch(
-      /\[data-sidebar-frame-corner\]\s*\{\s*border-right-color:\s*transparent;\s*border-bottom-color:\s*transparent;\s*box-shadow:\s*none;\s*\}/,
-    );
-    const sceneryCornerRule =
-      sceneryCssSource.match(/\[data-sidebar-frame-corner\]\s*\{[^}]+\}/)?.[0] ?? "";
-    expect(sceneryCornerRule).not.toContain("background:");
-    expect(sceneryCornerRule).not.toContain("backdrop-filter");
     expect(sceneryCssSource).toMatch(
       /\[data-scenery-on\]\s+:is\(\s*\[data-app-sidebar\] \[data-slot="sidebar-header"\],\s*\[data-right-panel-tabbar\]\s*\),\s*html\[data-theme-id\]\[data-theme-id="world-scenery"\]\[data-scenery-on\]\s+:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\)::after\s*\{\s*box-shadow:\s*none;/,
     );
