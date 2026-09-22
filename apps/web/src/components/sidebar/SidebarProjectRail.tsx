@@ -1,6 +1,18 @@
 import { FolderIcon, FolderOpenIcon, FolderPlusIcon, LayersIcon, PlusIcon } from "lucide-react";
-import { lazy, Suspense, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import type { IconName } from "lucide-react/dynamic";
+
+import "./projectRailFolder.css";
 
 import type { SidebarProjectFolder } from "@t3tools/contracts/settings";
 
@@ -20,7 +32,14 @@ import {
   type SidebarProjectFolderSettings,
 } from "../../sidebarProjectFolders";
 import { ProjectFavicon } from "../ProjectFavicon";
-import { resolveProjectStatusIndicator, type ProjectRailAttention } from "../Sidebar.logic";
+import {
+  formatProjectRailActivity,
+  mergeProjectRailActivity,
+  projectRailActivityMark,
+  resolveProjectStatusIndicator,
+  type ProjectRailActivity,
+  type ProjectRailAttention,
+} from "../Sidebar.logic";
 import { SidebarMenuButton } from "../ui/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
 
@@ -58,7 +77,109 @@ function FolderRailGlyph({ folder }: { readonly folder: SidebarProjectFolder }) 
       </span>
     );
   }
-  return <Fallback />;
+  return (
+    <span aria-hidden className="rail-folder-glyph" data-open={folder.collapsed ? "false" : "true"}>
+      <FolderIcon className="rail-folder-glyph-closed size-4" />
+      <FolderOpenIcon className="rail-folder-glyph-open size-4" />
+    </span>
+  );
+}
+
+type RailFolderDrop = "in" | "before" | "after" | null;
+
+/** Unclip badges after the well finishes growing. 320ms covers the 200ms open. */
+const RAIL_FOLDER_SETTLE_MS = 320;
+
+function useFolderTraySettled(open: boolean): {
+  readonly settled: boolean;
+  readonly projectsRef: RefObject<HTMLDivElement | null>;
+} {
+  const projectsRef = useRef<HTMLDivElement>(null);
+  const [phase, setPhase] = useState(() => ({ open, settled: open }));
+  if (phase.open !== open) {
+    setPhase({ open, settled: false });
+  }
+  const settled = phase.settled && phase.open === open;
+
+  useEffect(() => {
+    if (!open || settled) return;
+    const node = projectsRef.current;
+    let cancelled = false;
+    const finish = () => {
+      if (cancelled) return;
+      cancelled = true;
+      setPhase((current) => (current.open ? { open: true, settled: true } : current));
+    };
+    const timeout = window.setTimeout(finish, RAIL_FOLDER_SETTLE_MS);
+    const onEnd = (event: TransitionEvent) => {
+      if (node === null || event.target !== node || event.propertyName !== "grid-template-rows") {
+        return;
+      }
+      window.clearTimeout(timeout);
+      finish();
+    };
+    node?.addEventListener("transitionend", onEnd);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      node?.removeEventListener("transitionend", onEnd);
+    };
+  }, [open, settled]);
+
+  return { settled, projectsRef };
+}
+
+function RailFolderFrame({
+  open,
+  drop,
+  dragging,
+  onDragOver,
+  onDrop,
+  button,
+  projects,
+}: {
+  readonly open: boolean;
+  readonly drop: RailFolderDrop;
+  readonly dragging: boolean;
+  readonly onDragOver: (event: DragEvent<HTMLDivElement>) => void;
+  readonly onDrop: (event: DragEvent<HTMLDivElement>) => void;
+  readonly button: ReactNode;
+  readonly projects: ReactNode;
+}) {
+  const { settled, projectsRef } = useFolderTraySettled(open);
+  return (
+    <div
+      data-open={open ? "true" : "false"}
+      data-settled={settled ? "true" : "false"}
+      data-drop={drop ?? undefined}
+      className={cn(
+        "rail-folder-tray relative isolate flex w-8 shrink-0 flex-col items-center",
+        dragging && "opacity-50",
+        drop === "before" && RAIL_FOLDER_BEFORE_CLASS,
+        drop === "after" && RAIL_FOLDER_AFTER_CLASS,
+      )}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
+      <div
+        aria-hidden
+        className="rail-folder-tray-bg pointer-events-none absolute inset-0 rounded-[var(--control-radius)] bg-[color-mix(in_srgb,var(--sidebar-foreground)_12%,var(--sidebar))]"
+      />
+      <div className="relative z-[1] w-full">{button}</div>
+      <div
+        ref={projectsRef}
+        className="rail-folder-projects relative z-[1]"
+        inert={!open}
+        aria-hidden={open ? undefined : true}
+      >
+        <div className="rail-folder-projects-clip">
+          <div className={cn("flex flex-col gap-1 pt-1", !open && "pointer-events-none")}>
+            {projects}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // Slides out from the rail; Base UI then skips this once the next icon is hovered.
@@ -69,9 +190,6 @@ const EMPTY_FOLDER_SETTINGS: SidebarProjectFolderSettings = { folders: [], assig
 const RAIL_DROP_HIGHLIGHT_CLASS = "bg-sidebar-row-hover ring-1 ring-ring/80";
 const RAIL_FOLDER_BEFORE_CLASS = "shadow-[inset_0_2px_0_0_var(--color-ring)]";
 const RAIL_FOLDER_AFTER_CLASS = "shadow-[inset_0_-2px_0_0_var(--color-ring)]";
-/** Opaque well behind an open folder and the projects that belong to it. */
-const RAIL_FOLDER_TRAY_CLASS =
-  "gap-1 rounded-[calc(var(--control-radius)+0.25rem)] bg-[color-mix(in_srgb,var(--sidebar-foreground)_12%,var(--sidebar))] px-1 py-1";
 
 function railDragTypes(event: DragEvent): readonly string[] {
   return event.dataTransfer === null ? [] : Array.from(event.dataTransfer.types);
@@ -81,22 +199,6 @@ function projectRailEnvironmentLine(project: SidebarProjectSnapshot): string | n
   if (project.remoteEnvironmentLabels.length === 0) return null;
   const labels = project.remoteEnvironmentLabels.join(", ");
   return project.environmentPresence === "mixed" ? `Also on ${labels}` : `On ${labels}`;
-}
-
-function visibleProjectJumpNumbers(
-  items: ReturnType<typeof buildProjectRailItems<SidebarProjectSnapshot>>,
-): ReadonlyMap<string, number> {
-  const jumpByProjectKey = new Map<string, number>();
-  let jump = 0;
-  for (const item of items) {
-    const visible =
-      item.kind === "project" ? [item.project] : item.folder.collapsed ? [] : item.projects;
-    for (const project of visible) {
-      jump += 1;
-      if (jump <= 9) jumpByProjectKey.set(project.projectKey, jump);
-    }
-  }
-  return jumpByProjectKey;
 }
 
 function folderRailAttention(
@@ -117,12 +219,62 @@ function folderRailAttention(
   return result ?? null;
 }
 
+function folderRailActivity(
+  projects: readonly SidebarProjectSnapshot[],
+  activityByProjectKey?: ReadonlyMap<string, ProjectRailActivity>,
+): ProjectRailActivity | null {
+  return mergeProjectRailActivity(
+    projects.map((project) => activityByProjectKey?.get(project.projectKey)),
+  );
+}
+
+function activityAccessibleLabel(label: string, activity: ProjectRailActivity | null): string {
+  const detail = formatProjectRailActivity(activity, ", ");
+  return detail === null ? label : `${label}, ${detail}`;
+}
+
+function ProjectRailActivityMark({ activity }: { activity: ProjectRailActivity | null }) {
+  const mark = projectRailActivityMark(activity);
+  if (mark === null) return null;
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "pointer-events-none absolute -bottom-0.5 -left-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[9px] font-semibold tabular-nums ring-2 ring-sidebar",
+        mark.tone === "working"
+          ? "bg-sky-700 text-white dark:bg-sky-400 dark:text-sky-950"
+          : "bg-sidebar-foreground text-sidebar",
+      )}
+    >
+      {mark.count}
+    </span>
+  );
+}
+
+function ProjectRailActivityLine({ activity }: { activity: ProjectRailActivity | null }) {
+  const label = formatProjectRailActivity(activity);
+  if (label === null) return null;
+  return (
+    <span
+      className={
+        activity !== null && activity.working > 0
+          ? "text-sky-700 dark:text-sky-300"
+          : "text-muted-foreground"
+      }
+    >
+      {label}
+    </span>
+  );
+}
+
 function ProjectRailTooltip({
   project,
   attention,
+  activity,
 }: {
   project: SidebarProjectSnapshot;
   attention: ProjectRailAttention | null;
+  activity: ProjectRailActivity | null;
 }): ReactNode {
   const environmentLine = projectRailEnvironmentLine(project);
   return (
@@ -133,6 +285,7 @@ function ProjectRailTooltip({
       {project.groupedProjectCount > 1 ? (
         <span className="text-muted-foreground">{project.groupedProjectCount} projects</span>
       ) : null}
+      <ProjectRailActivityLine activity={activity} />
       {attention ? (
         <span className={attention.colorClass}>
           {attention.label}
@@ -148,11 +301,13 @@ function FolderRailTooltip({
   projects,
   collapsed,
   attention,
+  activity,
 }: {
   name: string;
   projects: readonly SidebarProjectSnapshot[];
   collapsed: boolean;
   attention: ProjectRailAttention | null;
+  activity: ProjectRailActivity | null;
 }): ReactNode {
   return (
     <span className="flex min-w-0 w-full flex-col gap-0.5 py-0.5 text-left">
@@ -161,6 +316,7 @@ function FolderRailTooltip({
         {projects.length} {projects.length === 1 ? "project" : "projects"}
         {collapsed ? " · collapsed" : ""}
       </span>
+      <ProjectRailActivityLine activity={activity} />
       {attention ? (
         <span className={attention.colorClass}>
           {attention.label}
@@ -173,7 +329,7 @@ function FolderRailTooltip({
 
 function ProjectRailItem({
   project,
-  jumpNumber,
+  activity,
   selected,
   attention,
   onSelectProject,
@@ -185,7 +341,7 @@ function ProjectRailItem({
   onDragEnd,
 }: {
   project: SidebarProjectSnapshot;
-  jumpNumber: number | null;
+  activity: ProjectRailActivity | null;
   selected: boolean;
   attention: ProjectRailAttention | null;
   onSelectProject: (project: SidebarProjectSnapshot) => void;
@@ -212,11 +368,13 @@ function ProjectRailItem({
     >
       <SidebarMenuButton
         size="icon"
-        aria-label={`Show ${label} threads`}
+        aria-label={activityAccessibleLabel(`Show ${label} threads`, activity)}
         tooltip={{
           className: RAIL_TOOLTIP_CLASS,
           sideOffset: 8,
-          children: <ProjectRailTooltip project={project} attention={attention} />,
+          children: (
+            <ProjectRailTooltip project={project} attention={attention} activity={activity} />
+          ),
         }}
         isActive={selected}
         aria-pressed={selected}
@@ -227,14 +385,7 @@ function ProjectRailItem({
       >
         <ProjectFavicon project={project} className="size-4 shrink-0" />
       </SidebarMenuButton>
-      {jumpNumber !== null ? (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -bottom-0.5 -left-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-sm border border-border/80 bg-background/95 px-0.5 font-mono text-[9px] font-semibold tabular-nums text-foreground shadow-sm"
-        >
-          {jumpNumber}
-        </span>
-      ) : null}
+      <ProjectRailActivityMark activity={activity} />
       {attention ? (
         <span
           aria-hidden
@@ -278,6 +429,7 @@ export function SidebarProjectRail({
   onSelectProject,
   onSelectAll,
   attentionByProjectKey,
+  activityByProjectKey,
   onNewThreadInProject,
   onProjectContextMenu,
   folders = EMPTY_FOLDER_SETTINGS,
@@ -293,6 +445,8 @@ export function SidebarProjectRail({
   onSelectAll?: () => void;
   /** Strongest waiting-on-you / finished-PR status, plus a count, per project. */
   attentionByProjectKey?: ReadonlyMap<string, ProjectRailAttention>;
+  /** Working and monitoring threads per project. Idle projects stay unmarked. */
+  activityByProjectKey?: ReadonlyMap<string, ProjectRailActivity>;
   onNewThreadInProject?: (project: SidebarProjectSnapshot) => void;
   onProjectContextMenu?: (event: MouseEvent<HTMLElement>, project: SidebarProjectSnapshot) => void;
   folders?: SidebarProjectFolderSettings;
@@ -303,7 +457,6 @@ export function SidebarProjectRail({
   footer?: ReactNode;
 }) {
   const items = buildProjectRailItems(projects, folders);
-  const jumpByProjectKey = visibleProjectJumpNumbers(items);
   const [draggingProjectKey, setDraggingProjectKey] = useState<string | null>(null);
   const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
   const [dropHighlight, setDropHighlight] = useState<string | null>(null);
@@ -381,7 +534,7 @@ export function SidebarProjectRail({
     <ProjectRailItem
       key={project.projectKey}
       project={project}
-      jumpNumber={jumpByProjectKey.get(project.projectKey) ?? null}
+      activity={activityByProjectKey?.get(project.projectKey) ?? null}
       selected={selectedProjectKey === project.projectKey}
       attention={attentionByProjectKey?.get(project.projectKey) ?? null}
       onSelectProject={onSelectProject}
@@ -406,20 +559,24 @@ export function SidebarProjectRail({
     if (item.kind === "project") return renderProject(item.project);
 
     const attention = folderRailAttention(item.projects, attentionByProjectKey);
+    const activity = folderRailActivity(item.projects, activityByProjectKey);
     const containsSelected = item.projects.some(
       (project) => project.projectKey === selectedProjectKey,
     );
+    const drop: RailFolderDrop =
+      dropHighlight === `folder:${item.folder.id}`
+        ? "in"
+        : dropHighlight === `folder-before:${item.folder.id}`
+          ? "before"
+          : dropHighlight === `folder-after:${item.folder.id}`
+            ? "after"
+            : null;
     return (
-      <div
+      <RailFolderFrame
         key={item.folder.id}
-        className={cn(
-          "flex min-w-0 flex-col items-center",
-          !item.folder.collapsed && RAIL_FOLDER_TRAY_CLASS,
-          dropHighlight === `folder:${item.folder.id}` && RAIL_DROP_HIGHLIGHT_CLASS,
-          dropHighlight === `folder-before:${item.folder.id}` && RAIL_FOLDER_BEFORE_CLASS,
-          dropHighlight === `folder-after:${item.folder.id}` && RAIL_FOLDER_AFTER_CLASS,
-          draggingFolderId === item.folder.id && "opacity-50",
-        )}
+        open={!item.folder.collapsed}
+        drop={drop}
+        dragging={draggingFolderId === item.folder.id}
         onDragOver={(event) => {
           if (acceptFolderDrag(event)) {
             event.stopPropagation();
@@ -445,60 +602,70 @@ export function SidebarProjectRail({
           }
           finishDrop(event, { kind: "folder", folderId: item.folder.id });
         }}
-      >
-        <div
-          className={cn("relative shrink-0", canDragFolder && "cursor-grab")}
-          draggable={canDragFolder}
-          onDragStart={(event) => {
-            event.dataTransfer.setData(RAIL_FOLDER_DRAG_TYPE, item.folder.id);
-            event.dataTransfer.setData("text/plain", item.folder.id);
-            event.dataTransfer.effectAllowed = "move";
-            setDraggingFolderId(item.folder.id);
-            event.stopPropagation();
-          }}
-          onDragEnd={() => {
-            setDraggingFolderId(null);
-            setDropHighlight(null);
-          }}
-        >
-          <SidebarMenuButton
-            size="icon"
-            aria-label={`${item.folder.collapsed ? "Expand" : "Collapse"} ${item.folder.name}`}
-            aria-expanded={!item.folder.collapsed}
-            tooltip={{
-              className: RAIL_TOOLTIP_CLASS,
-              sideOffset: 8,
-              children: (
-                <FolderRailTooltip
-                  name={item.folder.name}
-                  projects={item.projects}
-                  collapsed={item.folder.collapsed}
-                  attention={attention}
-                />
-              ),
+        button={
+          <div
+            className={cn("relative w-full shrink-0", canDragFolder && "cursor-grab")}
+            draggable={canDragFolder}
+            onDragStart={(event) => {
+              event.dataTransfer.setData(RAIL_FOLDER_DRAG_TYPE, item.folder.id);
+              event.dataTransfer.setData("text/plain", item.folder.id);
+              event.dataTransfer.effectAllowed = "move";
+              setDraggingFolderId(item.folder.id);
+              event.stopPropagation();
             }}
-            isActive={containsSelected && item.folder.collapsed}
-            onClick={() => onToggleFolder?.(item.folder.id)}
-            onContextMenu={
-              onFolderContextMenu ? (event) => onFolderContextMenu(event, item.folder) : undefined
-            }
+            onDragEnd={() => {
+              setDraggingFolderId(null);
+              setDropHighlight(null);
+            }}
           >
-            <FolderRailGlyph folder={item.folder} />
-          </SidebarMenuButton>
-          {item.folder.collapsed && attention ? (
-            <span
-              aria-hidden
-              className={cn(
-                "pointer-events-none absolute -right-0.5 -top-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[9px] font-semibold tabular-nums text-white ring-2 ring-sidebar",
-                attention.dotClass,
+            <SidebarMenuButton
+              size="icon"
+              aria-label={activityAccessibleLabel(
+                `${item.folder.collapsed ? "Expand" : "Collapse"} ${item.folder.name}`,
+                item.folder.collapsed ? activity : null,
               )}
+              aria-expanded={!item.folder.collapsed}
+              tooltip={{
+                className: RAIL_TOOLTIP_CLASS,
+                sideOffset: 8,
+                children: (
+                  <FolderRailTooltip
+                    name={item.folder.name}
+                    projects={item.projects}
+                    collapsed={item.folder.collapsed}
+                    attention={attention}
+                    activity={activity}
+                  />
+                ),
+              }}
+              isActive={containsSelected && item.folder.collapsed}
+              onClick={() => onToggleFolder?.(item.folder.id)}
+              onContextMenu={
+                onFolderContextMenu ? (event) => onFolderContextMenu(event, item.folder) : undefined
+              }
             >
-              {attention.count}
-            </span>
-          ) : null}
-        </div>
-        {item.folder.collapsed ? null : item.projects.map(renderProject)}
-      </div>
+              <FolderRailGlyph folder={item.folder} />
+            </SidebarMenuButton>
+            {item.folder.collapsed ? <ProjectRailActivityMark activity={activity} /> : null}
+            {item.folder.collapsed && attention ? (
+              <span
+                aria-hidden
+                className={cn(
+                  "pointer-events-none absolute -right-0.5 -top-0.5 z-10 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[9px] font-semibold tabular-nums text-white ring-2 ring-sidebar",
+                  attention.dotClass,
+                )}
+              >
+                {attention.count}
+              </span>
+            ) : null}
+          </div>
+        }
+        projects={item.projects.map((project) => (
+          <div key={project.projectKey} className="rail-folder-project w-full">
+            {renderProject(project)}
+          </div>
+        ))}
+      />
     );
   });
 

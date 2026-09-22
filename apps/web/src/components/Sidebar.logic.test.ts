@@ -26,6 +26,10 @@ import {
   resolveProjectStatusIndicator,
   resolveThreadRowClassName,
   addProjectRailAttention,
+  addProjectRailActivity,
+  formatProjectRailActivity,
+  mergeProjectRailActivity,
+  projectRailActivityMark,
   resolveSidebarThreadStatus,
   resolveSidebarThreadTopStatus,
   isSettledThreadPastArchiveAge,
@@ -2462,6 +2466,75 @@ describe("addProjectRailAttention", () => {
         }),
       ),
     ).toMatchObject({ label: "Pending Approval", count: 1 });
+  });
+});
+
+describe("addProjectRailActivity", () => {
+  const idle = {
+    hasActionableProposedPlan: false,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    interactionMode: "default" as const,
+    latestTurn: null,
+    session: null,
+  };
+
+  function session(status: "running" | "starting") {
+    return {
+      threadId: ThreadId.make("thread-1"),
+      status,
+      providerName: "Codex",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      runtimeMode: DEFAULT_RUNTIME_MODE,
+      activeTurnId: "turn-1" as never,
+      lastError: null,
+      updatedAt: "2026-03-09T10:00:00.000Z",
+    };
+  }
+
+  function pill(overrides: Partial<Parameters<typeof resolveThreadStatusPill>[0]["thread"]> = {}) {
+    return resolveThreadStatusPill({ thread: { ...idle, ...overrides } });
+  }
+
+  it("counts running, connecting, and background work, and ignores idle threads", () => {
+    const running = addProjectRailActivity(undefined, pill({ session: session("running") }));
+    const connecting = addProjectRailActivity(running, pill({ session: session("starting") }));
+    const fleet = addProjectRailActivity(connecting, pill({ backgroundLiveness: "working" }));
+    const withIdle = addProjectRailActivity(fleet, pill());
+    expect(withIdle).toEqual({ working: 3, monitoring: 0 });
+  });
+
+  it("counts monitoring separately and keeps approvals on the attention badge", () => {
+    const monitoring = addProjectRailActivity(
+      undefined,
+      pill({ backgroundLiveness: "monitoring" }),
+    );
+    const approval = addProjectRailActivity(
+      monitoring,
+      pill({ hasPendingApprovals: true, session: session("running") }),
+    );
+    expect(approval).toEqual({ working: 0, monitoring: 1 });
+    expect(projectRailActivityMark(approval)).toEqual({ count: 1, tone: "monitoring" });
+  });
+
+  it("shows one live total, and uses the working tone when any thread is working", () => {
+    const activity = { working: 1, monitoring: 2 };
+    expect(projectRailActivityMark(activity)).toEqual({ count: 3, tone: "working" });
+    expect(formatProjectRailActivity(activity)).toBe("1 working · 2 monitoring");
+    expect(formatProjectRailActivity(activity, ", ")).toBe("1 working, 2 monitoring");
+    expect(formatProjectRailActivity(null)).toBeNull();
+    expect(projectRailActivityMark({ working: 0, monitoring: 0 })).toBeNull();
+  });
+
+  it("sums folder projects and skips projects with nothing live", () => {
+    expect(
+      mergeProjectRailActivity([
+        { working: 2, monitoring: 0 },
+        null,
+        { working: 0, monitoring: 1 },
+      ]),
+    ).toEqual({ working: 2, monitoring: 1 });
+    expect(mergeProjectRailActivity([null, undefined])).toBeNull();
   });
 });
 

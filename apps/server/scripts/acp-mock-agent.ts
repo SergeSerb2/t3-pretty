@@ -27,6 +27,7 @@ const emitXAiExitPlanMode = process.env.T3_ACP_EMIT_XAI_EXIT_PLAN_MODE === "1";
 const emitXAiPlanMdWrite = process.env.T3_ACP_EMIT_XAI_PLAN_MD_WRITE === "1";
 const emitXAiPromptCompleteThenHang = process.env.T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG === "1";
 const emitXAiRateLimitThenHang = process.env.T3_ACP_EMIT_XAI_RATE_LIMIT_THEN_HANG === "1";
+const emitXAiRateLimitWithDetail = process.env.T3_ACP_EMIT_XAI_RATE_LIMIT_WITH_DETAIL === "1";
 const emitXAiAskUserQuestionThenHang =
   process.env.T3_ACP_EMIT_XAI_ASK_USER_QUESTION_THEN_HANG === "1";
 const emitContentThenHang = process.env.T3_ACP_EMIT_CONTENT_THEN_HANG === "1";
@@ -790,14 +791,24 @@ const program = Effect.gen(function* () {
         return yield* Effect.never;
       }
 
-      if (emitXAiRateLimitThenHang) {
+      if (emitXAiRateLimitWithDetail || emitXAiRateLimitThenHang) {
         writeJsonRpcNotification("_x.ai/session/prompt_complete", {
           sessionId: requestedSessionId,
           promptId: promptIdFromRequestMeta(request) ?? "mock-xai-rate-limit-prompt-1",
           stopReason: "rate_limit",
           agentResult: null,
         });
-        return yield* Effect.never;
+        if (emitXAiRateLimitThenHang) {
+          return yield* Effect.never;
+        }
+        // Grok drops this body from prompt_complete and keeps it on the session/prompt error.
+        return yield* Effect.fail(
+          new AcpError.AcpRequestError({
+            code: -32003,
+            errorMessage: "Rate limited",
+            data: "API error (status 429 Too Many Requests): subscription:free-usage-exhausted: You've used all the included free usage for model grok-4.7 for now. Usage resets over a rolling 24-hour window — tokens (actual/limit): 554789/500000. Upgrade to a Grok subscription for higher limits: https://grok.com/supergrok",
+          }),
+        );
       }
 
       if (emitContentThenHang) {
