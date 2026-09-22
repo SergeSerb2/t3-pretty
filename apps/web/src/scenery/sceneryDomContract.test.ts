@@ -31,8 +31,6 @@ import sceneryAppearanceSettingsSource from "./SceneryAppearanceSettings.tsx?raw
 import sceneryHostSource from "./SceneryHost.tsx?raw";
 import activeScenerySource from "./ActiveScenery.tsx?raw";
 import primeWorldScenerySource from "./primeWorldScenery.ts?raw";
-import useInkOverrideSource from "./useInkOverride.ts?raw";
-import sceneryInkTransitionSource from "./sceneryInkTransition.ts?raw";
 
 // ?raw on a .css module yields "" under the test pipeline (the CSS transform
 // wins), so the stylesheet contract reads the file straight from disk.
@@ -411,13 +409,10 @@ describe("scenery draft markup contract", () => {
   });
 });
 
-describe("ink override contract with upstream appearance handling", () => {
-  it("useTheme still memoizes applies, so the override survives re-renders", () => {
-    expect(useThemeSource).toContain("lastAppliedTheme?.theme === theme");
-  });
-
+describe("scenery appearance contract with upstream theme handling", () => {
   it("useTheme still expresses appearance as the html dark class", () => {
-    expect(useThemeSource).toContain('classList.toggle("dark", isDark)');
+    // ActiveScenery and usePaintedAppearance read the wash variant off it.
+    expect(useThemeSource).toContain('classList.toggle("dark", resolvedAppearance === "dark")');
   });
 
   it("theme swap view transitions run only when transitions are not suppressed", () => {
@@ -425,33 +420,11 @@ describe("ink override contract with upstream appearance handling", () => {
     expect(useThemeSource).not.toContain("if (!suppressTransitions)");
   });
 
-  it("applies ink in layout so a photo view transition captures the new palette", () => {
-    expect(useInkOverrideSource).toContain("useLayoutEffect");
-  });
-
-  it("light scenery code plates are sage frost, not blown white", () => {
-    expect(sceneryCssSource).toContain("--code-background: rgb(232 238 233 / 88%)");
-    expect(sceneryCssSource).toContain("--code-foreground: #161a17");
-  });
-
-  it("flattens a mismatched dark highlighter onto a light code plate", () => {
-    expect(sceneryCssSource).toContain(".shiki.pierre-dark");
-    expect(sceneryCssSource).toContain("color: var(--code-foreground) !important");
-  });
-});
-
-describe("scenery light/dark appearance crossfade", () => {
-  it("holds ink on the displayed photo until the next one has decoded", () => {
-    expect(activeScenerySource).toContain("displayedTone");
-    expect(activeScenerySource).toContain("appearanceCrossfade");
-    expect(activeScenerySource).toContain("delayedInk");
-  });
-
-  it("commits an appearance-flipping photo swap inside a view transition", () => {
-    expect(sceneryLayerSource).toContain("runSceneryInkTransition");
-    expect(sceneryLayerSource).toContain("flushSync(commit)");
-    expect(sceneryLayerSource).toContain("appearanceCrossfadeRef.current");
-    expect(sceneryLayerSource).toContain("if (cancelled)");
+  it("the wash follows the painted appearance, never the photo", () => {
+    expect(activeScenerySource).toContain("usePaintedAppearance()");
+    expect(activeScenerySource).not.toContain("averageColorHex");
+    expect(sceneryLayerSource).not.toContain("startViewTransition");
+    expect(sceneryCssSource).not.toContain("data-scenery-ink-transition");
   });
 
   it("crossfades wash by opacity instead of snapping rgb() channels", () => {
@@ -465,38 +438,14 @@ describe("scenery light/dark appearance crossfade", () => {
     );
   });
 
-  it("dissolves the ink view transition with normal blend so light/dark does not flash", () => {
-    expect(sceneryCssSource).toContain("html[data-scenery-ink-transition]");
-    expect(sceneryCssSource).toContain("mix-blend-mode: normal");
-    expect(sceneryInkTransitionSource).toContain("sceneryInkTransition");
+  it("light scenery code plates are sage frost, not blown white", () => {
+    expect(sceneryCssSource).toContain("--code-background: rgb(232 238 233 / 88%)");
+    expect(sceneryCssSource).toContain("--code-foreground: #161a17");
   });
 
-  it("keeps the chat transcript out of the ink view-transition overlay", () => {
-    expect(sceneryCssSource).toContain("view-transition-name: scenery-chat-transcript");
-    expect(sceneryCssSource).toContain(
-      "html[data-scenery-ink-transition]::view-transition-old(scenery-chat-transcript)",
-    );
-    expect(sceneryCssSource).toContain("display: none");
-    expect(sceneryCssSource).toContain(
-      "html[data-scenery-ink-transition] [data-chat-transcript-active]",
-    );
-    expect(sceneryCssSource).not.toContain(
-      "html[data-scenery-ink-transition] [data-chat-transcript] {",
-    );
-    expect(chatViewSource).toContain('data-chat-transcript="true"');
-    expect(chatViewSource).toContain('data-chat-transcript-active="true"');
-    expect(sceneryInkTransitionSource).toContain("document.hidden");
-    expect(sceneryInkTransitionSource).toContain("pinActiveChatTranscript");
-    expect(sceneryInkTransitionSource).toContain("generation !== inkTransitionGeneration");
-  });
-
-  it("parks the CSS layers only when the view transition really animates", () => {
-    // Fallbacks (no API, reduced motion, a skipped start) must keep the CSS
-    // dissolve; parking layers for a snapshot that never happens hard-cuts
-    // the swap on browsers without View Transitions.
-    expect(sceneryInkTransitionSource).toContain("runUpdate(true)");
-    expect(sceneryInkTransitionSource).toContain("runUpdate(false)");
-    expect(sceneryLayerSource).toContain("inkAnimating = animating");
+  it("flattens a mismatched dark highlighter onto a light code plate", () => {
+    expect(sceneryCssSource).toContain(".shiki.pierre-dark");
+    expect(sceneryCssSource).toContain("color: var(--code-foreground) !important");
   });
 });
 

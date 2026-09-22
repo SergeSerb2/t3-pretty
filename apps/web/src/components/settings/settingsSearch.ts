@@ -288,12 +288,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     sceneryOnly: true,
   },
   {
-    id: "setting-scenery-text-color",
-    title: "Scenery text color",
-    to: "/settings/appearance",
-    sceneryOnly: true,
-  },
-  {
     id: "diff-color-scheme",
     title: "Diff colors",
     to: "/settings/appearance",

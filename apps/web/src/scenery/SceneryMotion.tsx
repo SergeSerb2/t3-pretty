@@ -27,7 +27,6 @@ import {
   ENTER_CLEAR_MS,
   ENTER_DELAY_PROP,
   enterDelayMs,
-  isSceneryInkTransitionActive,
   shouldAnimateRowArrival,
   shouldDeferThreadSeed,
   SILENT_WINDOW_MS,
@@ -110,7 +109,6 @@ export function SceneryMotion() {
       const firstPaintForThread = seededThreadKeyRef.current !== currentThreadKey;
       const root = document.documentElement;
       const silentWindowActive = performance.now() < silentUntilRef.current;
-      const inkTransitionActive = isSceneryInkTransitionActive(root);
       const noTransitions = root.classList.contains("no-transitions");
       let maxSeenTop = Number.NEGATIVE_INFINITY;
       const unseen: Array<{ wrapper: HTMLElement; id: string; top: number }> = [];
@@ -143,7 +141,6 @@ export function SceneryMotion() {
         const animate = shouldAnimateRowArrival({
           firstPaintForThread,
           silentWindowActive,
-          inkTransitionActive,
           noTransitions,
           top,
           maxSeenTop,
