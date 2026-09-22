@@ -1,11 +1,16 @@
+// @effect-diagnostics nodeBuiltinImport:off - Source contract reads sidebarPeek.ts from disk.
+import * as NodeFS from "node:fs";
+
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  findSidebarPeekContainer,
   pointerInSidebarNativeChrome,
   pointerStillInsideSidebarPeek,
   resolveSidebarPeekHold,
   resolveSidebarPeekIntent,
   resolveSidebarPeekLeave,
+  shouldKeepSidebarPeekCollapseSuppress,
   shouldRetainSidebarPeek,
   SIDEBAR_PEEK_ANIMATION_MS,
   SIDEBAR_PEEK_CLOSE_DELAY_MS,
@@ -54,6 +59,83 @@ describe("sidebar peek", () => {
     expect(shouldIgnoreSidebarPeekLeave(null, null)).toBe(false);
   });
 
+  it("keeps collapse suppress while the last point is still inside the rail", () => {
+    const rail = [{ left: 0, top: 0, right: 48, bottom: 800 }];
+    expect(
+      shouldKeepSidebarPeekCollapseSuppress({
+        suppressUntilExit: true,
+        point: { x: 24, y: 200 },
+        rects: rail,
+        hovered: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldKeepSidebarPeekCollapseSuppress({
+        suppressUntilExit: true,
+        point: { x: 80, y: 200 },
+        rects: rail,
+        hovered: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldKeepSidebarPeekCollapseSuppress({
+        suppressUntilExit: false,
+        point: { x: 24, y: 200 },
+        rects: rail,
+        hovered: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not treat leaving-node :hover as inside on collapse leave", () => {
+    const rail = [{ left: 0, top: 0, right: 48, bottom: 800 }];
+    // Collapse leave passes hovered: false. A point outside the rail drops
+    // the gate; the leaving node's :hover is not consulted.
+    expect(
+      shouldKeepSidebarPeekCollapseSuppress({
+        suppressUntilExit: true,
+        point: { x: 80, y: 200 },
+        rects: rail,
+        hovered: false,
+      }),
+    ).toBe(false);
+
+    const source = NodeFS.readFileSync(new URL("./sidebarPeek.ts", import.meta.url), "utf8");
+    const leave = source.slice(
+      source.indexOf("const onPeekPointerLeave"),
+      source.indexOf("const onPeekPointerHold"),
+    );
+    expect(leave).toContain("hovered: false");
+    expect(leave).not.toContain("sidebarPeekSurfaceIsHovered()");
+
+    const release = source.slice(
+      source.indexOf("if (!suppressHoverOpen) return"),
+      source.indexOf("}, [suppressHoverOpen]"),
+    );
+    expect(release).toContain("hovered: false");
+    expect(release).not.toContain("sidebarPeekSurfaceIsHovered()");
+  });
+
+  it("forwards the pointer event on both peek enter and leave", () => {
+    const sidebar = NodeFS.readFileSync(new URL("./sidebar.tsx", import.meta.url), "utf8");
+    expect(sidebar).toContain("peekPointer.onPointerEnter(event)");
+    expect(sidebar).toContain("peekPointer.onPointerLeave(event)");
+  });
+
+  it("walks only the event target chain for the peek container", () => {
+    const source = NodeFS.readFileSync(new URL("./sidebarPeek.ts", import.meta.url), "utf8");
+    expect(source).toContain("target.closest(\"[data-slot='sidebar-container']\")");
+    expect(source).not.toContain("document.querySelector(\"[data-slot='sidebar-container']\")");
+    expect(findSidebarPeekContainer(null)).toBeNull();
+    expect(
+      pointerStillInsideSidebarPeek({
+        point: { x: 10, y: 10 },
+        rects: [],
+        hovered: false,
+      }),
+    ).toBe(false);
+  });
+
   it("holds the flyout when a leave fires while the pointer is still inside", () => {
     const anchor = { left: 0, top: 0 };
     expect(
@@ -62,9 +144,26 @@ describe("sidebar peek", () => {
         relatedTarget: null,
         pointer: { x: 24, y: 200 },
         anchor,
-        pointerOverSurface: true,
+        pointerOverSurface: pointerStillInsideSidebarPeek({
+          point: { x: 24, y: 200 },
+          rects: [{ left: 0, top: 0, right: 48, bottom: 800 }],
+          hovered: false,
+        }),
       }),
     ).toBe("hold");
+    expect(
+      resolveSidebarPeekLeave({
+        currentTarget: null,
+        relatedTarget: null,
+        pointer: { x: 80, y: 200 },
+        anchor,
+        pointerOverSurface: pointerStillInsideSidebarPeek({
+          point: { x: 80, y: 200 },
+          rects: [{ left: 0, top: 0, right: 48, bottom: 800 }],
+          hovered: false,
+        }),
+      }),
+    ).toBe("close");
     expect(
       pointerStillInsideSidebarPeek({
         point: { x: 24, y: 200 },
@@ -82,13 +181,16 @@ describe("sidebar peek", () => {
   });
 
   it("keeps a hovered flyout across navigation and ignores the collapse click", () => {
+    const rail = [{ left: 0, top: 0, right: 48, bottom: 800 }];
     expect(
       shouldRetainSidebarPeek({
         enabled: true,
         suppressUntilExit: false,
         peeking: true,
         flyoutPresent: true,
-        hovered: true,
+        hovered: false,
+        point: { x: 24, y: 200 },
+        rects: rail,
       }),
     ).toBe(true);
     expect(
@@ -98,6 +200,8 @@ describe("sidebar peek", () => {
         peeking: true,
         flyoutPresent: true,
         hovered: false,
+        point: { x: 80, y: 200 },
+        rects: rail,
       }),
     ).toBe(false);
     expect(
@@ -106,9 +210,19 @@ describe("sidebar peek", () => {
         suppressUntilExit: true,
         peeking: false,
         flyoutPresent: false,
-        hovered: true,
+        hovered: false,
+        point: { x: 24, y: 200 },
+        rects: rail,
       }),
     ).toBe(false);
+
+    const source = NodeFS.readFileSync(new URL("./sidebarPeek.ts", import.meta.url), "utf8");
+    const retain = source.slice(
+      source.indexOf("const retainPeekIfHovered"),
+      source.indexOf("useEffect(() => {\n    if (!enabled) hideNow();"),
+    );
+    expect(retain).toContain("hovered: false");
+    expect(retain).not.toContain("sidebarPeekSurfaceIsHovered()");
     expect(
       resolveSidebarPeekHold({
         peeking: true,

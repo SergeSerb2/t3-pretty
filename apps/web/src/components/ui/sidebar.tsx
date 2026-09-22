@@ -48,8 +48,8 @@ type SidebarContextProps = {
   peekFlyout: boolean;
   peekNow: () => void;
   retainPeekIfHovered: () => void;
-  onPeekPointerEnter: () => void;
-  onPeekPointerLeave: () => void;
+  onPeekPointerEnter: (event?: React.PointerEvent<Element>) => void;
+  onPeekPointerLeave: (event?: React.PointerEvent<Element>) => void;
   onPeekPointerHold: () => void;
 };
 
@@ -429,7 +429,7 @@ function Sidebar({
           {...props}
           onPointerEnter={(event) => {
             props.onPointerEnter?.(event);
-            peekPointer.onPointerEnter();
+            peekPointer.onPointerEnter(event);
           }}
           onPointerLeave={(event) => {
             props.onPointerLeave?.(event);

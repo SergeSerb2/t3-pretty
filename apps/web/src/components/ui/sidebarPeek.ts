@@ -162,12 +162,18 @@ export function shouldRetainSidebarPeek(input: {
   readonly peeking: boolean;
   readonly flyoutPresent: boolean;
   readonly hovered: boolean;
+  readonly point?: SidebarPeekPoint | null;
+  readonly rects?: readonly SidebarPeekRect[];
 }): boolean {
   return (
     input.enabled &&
     !input.suppressUntilExit &&
-    input.hovered &&
-    (input.peeking || input.flyoutPresent)
+    (input.peeking || input.flyoutPresent) &&
+    pointerStillInsideSidebarPeek({
+      point: input.point ?? null,
+      rects: input.rects ?? [],
+      hovered: input.hovered,
+    })
   );
 }
 
@@ -196,7 +202,8 @@ function readSidebarPeekHitRects(container: HTMLElement): readonly SidebarPeekRe
     const bridgeRect = sidebarPeekRectOf(bridge);
     if (bridgeRect) rects.push(bridgeRect);
   }
-  const control = document.querySelector("[data-sidebar-control]");
+  const wrapper = container.closest("[data-slot='sidebar-wrapper']");
+  const control = wrapper?.querySelector("[data-sidebar-control]");
   if (control instanceof HTMLElement) {
     const controlRect = sidebarPeekRectOf(control);
     if (controlRect) rects.push(controlRect);
@@ -204,32 +211,54 @@ function readSidebarPeekHitRects(container: HTMLElement): readonly SidebarPeekRe
   return rects;
 }
 
-function sidebarPeekContainerElement(): HTMLElement | null {
-  if (typeof document === "undefined") return null;
-  const found = document.querySelector("[data-slot='sidebar-container']");
-  return found instanceof HTMLElement ? found : null;
+/** Walk only the event target's ancestors. Never pick the first sidebar in the document. */
+export function findSidebarPeekContainer(target: EventTarget | null): HTMLElement | null {
+  if (typeof Element === "undefined" || !(target instanceof Element)) return null;
+  const closest = target.closest("[data-slot='sidebar-container']");
+  return closest instanceof HTMLElement ? closest : null;
 }
 
-function findSidebarPeekContainer(target: EventTarget | null): HTMLElement | null {
-  if (typeof Element !== "undefined" && target instanceof Element) {
-    const closest = target.closest("[data-slot='sidebar-container']");
-    if (closest instanceof HTMLElement) return closest;
+function liveSidebarPeekContainer(container: HTMLElement | null): HTMLElement | null {
+  return container?.isConnected ? container : null;
+}
+
+function findSidebarPeekContainerInWrapper(target: EventTarget | null): HTMLElement | null {
+  if (typeof Element === "undefined" || !(target instanceof Element)) return null;
+  const wrapper = target.closest("[data-slot='sidebar-wrapper']");
+  const scoped = wrapper?.querySelector("[data-slot='sidebar-container']");
+  return scoped instanceof HTMLElement ? scoped : null;
+}
+
+function findSidebarPeekContainerAtPoint(point: SidebarPeekPoint | null): HTMLElement | null {
+  if (
+    !point ||
+    typeof document === "undefined" ||
+    typeof document.elementFromPoint !== "function"
+  ) {
+    return null;
   }
-  return sidebarPeekContainerElement();
+  return findSidebarPeekContainer(document.elementFromPoint(point.x, point.y));
 }
 
-function pointerStillOverSidebarPeek(point: SidebarPeekPoint | null): boolean {
-  const container = sidebarPeekContainerElement();
-  return pointerStillInsideSidebarPeek({
-    point,
-    rects: container ? readSidebarPeekHitRects(container) : [],
-    hovered: sidebarPeekSurfaceIsHovered(),
-  });
+export function shouldKeepSidebarPeekCollapseSuppress(input: {
+  readonly suppressUntilExit: boolean;
+  readonly point: SidebarPeekPoint | null;
+  readonly rects: readonly SidebarPeekRect[];
+  readonly hovered: boolean;
+}): boolean {
+  return (
+    input.suppressUntilExit &&
+    pointerStillInsideSidebarPeek({
+      point: input.point,
+      rects: input.rects,
+      hovered: input.hovered,
+    })
+  );
 }
 
 export function useSidebarPeekPointerBinding(
-  onEnter: () => void,
-  onLeave: () => void,
+  onEnter: (event?: ReactPointerEvent<Element>) => void,
+  onLeave: (event?: ReactPointerEvent<Element>) => void,
   onHold: () => void = () => {},
 ) {
   const onEnterRef = useRef(onEnter);
@@ -250,10 +279,13 @@ export function useSidebarPeekPointerBinding(
 
   useEffect(() => stopWatch, [stopWatch]);
 
-  const onPointerEnter = useCallback(() => {
-    stopWatch();
-    onEnterRef.current();
-  }, [stopWatch]);
+  const onPointerEnter = useCallback(
+    (event?: ReactPointerEvent<Element>) => {
+      stopWatch();
+      onEnterRef.current(event);
+    },
+    [stopWatch],
+  );
 
   const onPointerLeave = useCallback(
     (event: ReactPointerEvent<Element>) => {
@@ -265,10 +297,12 @@ export function useSidebarPeekPointerBinding(
         relatedTarget: event.relatedTarget,
         pointer,
         anchor: anchorRect ? { left: anchorRect.left, top: anchorRect.top } : null,
+        // :hover is still true on the node being left. Hold only for a peek
+        // relatedTarget or a point that is still inside this rail's rects.
         pointerOverSurface: pointerStillInsideSidebarPeek({
           point: pointer,
           rects: container ? readSidebarPeekHitRects(container) : [],
-          hovered: sidebarPeekSurfaceIsHovered(),
+          hovered: false,
         }),
       });
       if (action === "ignore" || action === "hold") {
@@ -294,7 +328,7 @@ export function useSidebarPeekPointerBinding(
       }
       if (action === "hold") return;
       stopWatch();
-      onLeaveRef.current();
+      onLeaveRef.current(event);
     },
     [stopWatch],
   );
@@ -315,8 +349,21 @@ export function useSidebarPeek(enabled: boolean) {
   const presentRef = useRef(present);
   const suppressHoverOpenRef = useRef(false);
   const lastPointerRef = useRef<SidebarPeekPoint | null>(null);
+  const lastContainerRef = useRef<HTMLElement | null>(null);
   peekingRef.current = peeking;
   presentRef.current = present;
+
+  const rememberSidebarPeekRail = useCallback(
+    (target: EventTarget | null, point: SidebarPeekPoint | null) => {
+      const found =
+        findSidebarPeekContainer(target) ??
+        findSidebarPeekContainerInWrapper(target) ??
+        findSidebarPeekContainerAtPoint(point);
+      if (found) lastContainerRef.current = found;
+      return liveSidebarPeekContainer(lastContainerRef.current);
+    },
+    [],
+  );
 
   const clearTimers = useCallback(() => {
     window.clearTimeout(timersRef.current.open);
@@ -374,21 +421,42 @@ export function useSidebarPeek(enabled: boolean) {
 
   const peekNow = useCallback(() => applyIntent("peek-now"), [applyIntent]);
   const hideNow = useCallback(() => applyIntent("hide-now"), [applyIntent]);
-  const onPeekPointerEnter = useCallback(() => {
-    if (suppressHoverOpenRef.current) return;
-    applyIntent("pointer-enter");
-  }, [applyIntent]);
-  const onPeekPointerLeave = useCallback(() => {
-    // The collapse click synthesizes a leave while the pointer is still on
-    // the rail. :hover is often false there until the next move, so geometry
-    // has to agree before suppression can drop.
-    if (suppressHoverOpenRef.current && pointerStillOverSidebarPeek(lastPointerRef.current)) {
-      return;
-    }
-    suppressHoverOpenRef.current = false;
-    setSuppressHoverOpen(false);
-    applyIntent("pointer-leave");
-  }, [applyIntent]);
+  const onPeekPointerEnter = useCallback(
+    (event?: ReactPointerEvent<Element>) => {
+      if (event) {
+        const point = { x: event.clientX, y: event.clientY };
+        lastPointerRef.current = point;
+        rememberSidebarPeekRail(event.currentTarget, point);
+      }
+      if (suppressHoverOpenRef.current) return;
+      applyIntent("pointer-enter");
+    },
+    [applyIntent, rememberSidebarPeekRail],
+  );
+  const onPeekPointerLeave = useCallback(
+    (event?: ReactPointerEvent<Element>) => {
+      const pointer = event ? { x: event.clientX, y: event.clientY } : lastPointerRef.current;
+      if (event) lastPointerRef.current = pointer;
+      const container = rememberSidebarPeekRail(event?.currentTarget ?? null, pointer);
+      // :hover stays true on the node being left, same as the bind leave
+      // path. Keep the gate only while the last point is still inside this
+      // rail's hit rects.
+      if (
+        shouldKeepSidebarPeekCollapseSuppress({
+          suppressUntilExit: suppressHoverOpenRef.current,
+          point: pointer,
+          rects: container ? readSidebarPeekHitRects(container) : [],
+          hovered: false,
+        })
+      ) {
+        return;
+      }
+      suppressHoverOpenRef.current = false;
+      setSuppressHoverOpen(false);
+      applyIntent("pointer-leave");
+    },
+    [applyIntent, rememberSidebarPeekRail],
+  );
   const onPeekPointerHold = useCallback(() => {
     clearTimers();
     if (
@@ -409,20 +477,26 @@ export function useSidebarPeek(enabled: boolean) {
     hideNow();
   }, [hideNow]);
   const retainPeekIfHovered = useCallback(() => {
+    const pointer = lastPointerRef.current;
+    const container = rememberSidebarPeekRail(null, pointer);
     if (
       !shouldRetainSidebarPeek({
         enabled,
         suppressUntilExit: suppressHoverOpenRef.current,
         peeking: peekingRef.current,
         flyoutPresent: presentRef.current,
-        hovered: sidebarPeekSurfaceIsHovered(),
+        // A row swap can leave :hover true on the replaced node. Keep the
+        // flyout only when the last point is still inside this rail.
+        hovered: false,
+        point: pointer,
+        rects: container ? readSidebarPeekHitRects(container) : [],
       })
     ) {
       return;
     }
     clearTimers();
     showFlyout();
-  }, [clearTimers, enabled, showFlyout]);
+  }, [clearTimers, enabled, rememberSidebarPeekRail, showFlyout]);
 
   useEffect(() => {
     if (!enabled) hideNow();
@@ -443,7 +517,22 @@ export function useSidebarPeek(enabled: boolean) {
   useEffect(() => {
     if (!suppressHoverOpen) return;
     const releaseIfPointerLeft = (point: SidebarPeekPoint | null) => {
-      if (pointerStillOverSidebarPeek(point)) return;
+      const container =
+        liveSidebarPeekContainer(lastContainerRef.current) ??
+        findSidebarPeekContainerAtPoint(point);
+      if (container) lastContainerRef.current = container;
+      if (
+        shouldKeepSidebarPeekCollapseSuppress({
+          suppressUntilExit: true,
+          point,
+          rects: container ? readSidebarPeekHitRects(container) : [],
+          // :hover stays true on the node being left. Release only when the
+          // last point is outside this rail's hit rects.
+          hovered: false,
+        })
+      ) {
+        return;
+      }
       suppressHoverOpenRef.current = false;
       setSuppressHoverOpen(false);
     };
@@ -452,9 +541,8 @@ export function useSidebarPeek(enabled: boolean) {
       lastPointerRef.current = point;
       releaseIfPointerLeft(point);
     };
-    // The rail finishes collapsing under a stationary pointer. :hover often
-    // stays false on the rail until the next move, so judge the last point
-    // against the container rects instead of hover alone.
+    // The rail finishes collapsing under a stationary pointer. Judge the
+    // last point against this rail, not live :hover.
     const releaseTimer = window.setTimeout(
       () => releaseIfPointerLeft(lastPointerRef.current),
       SIDEBAR_PEEK_ANIMATION_MS,

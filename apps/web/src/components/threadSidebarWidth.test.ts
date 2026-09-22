@@ -142,6 +142,14 @@ describe("thread sidebar width", () => {
     expect(css).not.toContain("--sidebar-peek-duration: 280ms");
     expect(css).toContain("var(--sidebar-peek-duration)");
     expect(css).toContain("var(--sidebar-peek-ease)");
+    // Peek !important width/shadow is already scoped in index.css. This lock
+    // fails if that rule is widened to every collapsed rail or dropped.
+    expect(css).toContain(
+      '[data-slot="sidebar"][data-collapsed]:is([data-peeking], [data-present])',
+    );
+    expect(css).not.toContain(
+      '[data-slot="sidebar"][data-collapsed] [data-slot="sidebar-container"]',
+    );
     expect(css).toContain('[data-slot="sidebar"][data-collapsed] [data-slot="sidebar-header"]');
     expect(css).toContain(
       '[data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-slot="sidebar-header"]',
