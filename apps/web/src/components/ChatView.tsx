@@ -10273,17 +10273,18 @@ export default function ChatView(props: ChatViewProps) {
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-3xl"
                 >
                   {isDraftHeroState ? (
-                    <div
-                      className="pb-10 group-has-data-[composer-shoulder-tab]/composer-stack:pb-5 sm:pb-14"
-                      style={
-                        forceExpandedMobileComposer
-                          ? {
-                              viewTransitionName: MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
-                            }
-                          : undefined
-                      }
-                    >
-                      <div ref={draftHeroHeadlineRef} data-scenery-hero-chrome="headline">
+                    <div className="pb-10 group-has-data-[composer-shoulder-tab]/composer-stack:pb-5 sm:pb-14">
+                      <div
+                        ref={draftHeroHeadlineRef}
+                        data-scenery-hero-chrome="headline"
+                        style={
+                          forceExpandedMobileComposer
+                            ? {
+                                viewTransitionName: MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
+                              }
+                            : undefined
+                        }
+                      >
                         <DraftHeroHeadline
                           draftId={draftId}
                           activeProjectRef={activeProjectRef}

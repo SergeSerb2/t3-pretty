@@ -43,6 +43,14 @@ export function HomeSuggestionShelfView({
     setEdges((current) =>
       current.left === next.left && current.right === next.right ? current : next,
     );
+    const active = document.activeElement;
+    // The arrows are siblings of the scroller, so the focused control is
+    // outside `node`. Move focus onto the row before that arrow hides.
+    if (!(active instanceof HTMLElement) || !node.parentElement?.contains(active)) return;
+    const direction = active.dataset.shelfScroll;
+    const exhausted =
+      (direction === "back" && !next.left) || (direction === "forward" && !next.right);
+    if (exhausted) node.focus({ preventScroll: true });
   }, []);
 
   useLayoutEffect(() => {
@@ -86,8 +94,9 @@ export function HomeSuggestionShelfView({
       <div className="relative rounded-2xl bg-foreground/[0.04] p-1.5 ring-1 ring-foreground/15 backdrop-blur-[2px]">
         <ul
           ref={scrollerRef}
+          tabIndex={-1}
           data-home-suggestion-shelf={shelf.kind}
-          className="flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain py-0.5 outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           style={
             mask
               ? {
@@ -108,19 +117,21 @@ export function HomeSuggestionShelfView({
             </li>
           ))}
         </ul>
-        {edges.left ? (
-          <ShelfScrollButton
-            direction={-1}
-            label={`Previous ${shelf.label} cards`}
-            onClick={() => scrollShelf(-1)}
-          />
-        ) : null}
-        {edges.right ? (
-          <ShelfScrollButton
-            direction={1}
-            label={`More ${shelf.label} cards`}
-            onClick={() => scrollShelf(1)}
-          />
+        {edges.left || edges.right ? (
+          <>
+            <ShelfScrollButton
+              direction={-1}
+              available={edges.left}
+              label={`Previous ${shelf.label} cards`}
+              onClick={() => scrollShelf(-1)}
+            />
+            <ShelfScrollButton
+              direction={1}
+              available={edges.right}
+              label={`More ${shelf.label} cards`}
+              onClick={() => scrollShelf(1)}
+            />
+          </>
         ) : null}
       </div>
     </div>
@@ -129,10 +140,12 @@ export function HomeSuggestionShelfView({
 
 function ShelfScrollButton({
   direction,
+  available,
   label,
   onClick,
 }: {
   readonly direction: -1 | 1;
+  readonly available: boolean;
   readonly label: string;
   readonly onClick: () => void;
 }) {
@@ -141,12 +154,18 @@ function ShelfScrollButton({
     <Button
       size="icon-sm"
       variant="glass"
+      data-shelf-scroll={direction < 0 ? "back" : "forward"}
+      aria-disabled={!available}
+      tabIndex={available ? 0 : -1}
       className={cn(
         "absolute top-1/2 z-10 -translate-y-1/2 rounded-full bg-background/85 shadow-md",
         direction < 0 ? "left-1.5" : "right-2",
+        !available && "pointer-events-none invisible",
       )}
       aria-label={label}
-      onClick={onClick}
+      onClick={() => {
+        if (available) onClick();
+      }}
     >
       <Icon className="size-4" />
     </Button>
