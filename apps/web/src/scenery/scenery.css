@@ -691,6 +691,21 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   backdrop-filter: blur(14px) saturate(1.1);
 }
 
+/* Timeline cards (changed files, proposed plans) wear the chrome frost
+   instead of their opaque card tokens. The changed-files header is sticky,
+   so it needs the blur to hide the rows scrolling under it; the card body
+   stays a light tint so the header's backdrop is not nested in another. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-changed-files-state] {
+  background-color: color-mix(in srgb, var(--sidebar) 22%, transparent);
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-changed-files-header],
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-proposed-plan-card] {
+  background-color: var(--scenery-chrome-fill);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  backdrop-filter: blur(14px) saturate(1.1);
+}
+
 /* User bubbles and code blocks ride translucent plates instead of opaque
    tokens: a fixed alpha can promise a contrast floor where a blur material
    cannot. Values are pinned by sceneryContrast.test.ts. */
@@ -746,6 +761,11 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
   }
 
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-pull-requests-panel] {
+    background-color: var(--scenery-chrome-fill-solid);
+  }
+
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-changed-files-header],
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-proposed-plan-card] {
     background-color: var(--scenery-chrome-fill-solid);
   }
 
