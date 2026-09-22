@@ -239,7 +239,7 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain("[data-sidebar-frame-edge]");
     expect(sidebarSource).toContain('data-sidebar-frame-corner=""');
     expect(sidebarSource).toContain('data-sidebar-frame-edge=""');
-    expect(indexCssSource).toContain("--workspace-frame-radius: 16px");
+    expect(indexCssSource).toContain("--workspace-frame-radius: 6px");
     expect(indexCssSource).toContain("border-bottom-right-radius: var(--workspace-frame-radius)");
     expect(indexCssSource).toContain(
       "top: calc(var(--workspace-topbar-height) + var(--workspace-frame-radius) - 1px)",
