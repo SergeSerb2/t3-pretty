@@ -22,6 +22,9 @@ import { toastManager } from "../ui/toast";
 import { HomeSuggestionShelfView } from "./HomeSuggestionShelf";
 import { groupHomeSuggestionShelves } from "./homeSuggestionShelves";
 
+const projectRefKey = (environmentId: EnvironmentId, projectId: string) =>
+  `${environmentId}\u0000${projectId}`;
+
 function describeCommandFailure(result: Parameters<typeof squashAtomCommandFailure>[0]): string {
   const error = squashAtomCommandFailure(result);
   return error instanceof Error ? error.message : "An error occurred.";
@@ -31,7 +34,9 @@ function describeCommandFailure(result: Parameters<typeof squashAtomCommandFailu
  * The day's suggested prompts, shown on the draft landing between the
  * headline and the composer. Project cards and new ideas are separate
  * horizontal shelves. Picking a card types its prompt into the open draft; a
- * card for another project opens a draft there first. The panel stays quiet
+ * card for another project opens a draft there first, on whichever connected
+ * environment owns it (linked machines share one batch). A project card whose
+ * environment this client cannot see is hidden. The panel stays quiet
  * (renders nothing) whenever there is nothing worth showing, so the landing
  * never loses its calm to a loading or error state.
  */
@@ -73,31 +78,40 @@ function EnvironmentSuggestionsStrip({
   const handleNewThread = useNewThreadHandler();
   const setPrompt = useComposerDraftStore((store) => store.setPrompt);
   const projects = useProjects();
-  const projectsById = useMemo(
+  const projectsByRef = useMemo(
     () =>
       new Map<string, EnvironmentProject>(
-        projects
-          .filter((project) => project.environmentId === environmentId)
-          .map((project) => [project.id, project]),
+        projects.map((project) => [projectRefKey(project.environmentId, project.id), project]),
       ),
-    [environmentId, projects],
+    [projects],
+  );
+  const projectFor = useCallback(
+    (card: HomeSuggestion) =>
+      card.projectId === null
+        ? null
+        : (projectsByRef.get(projectRefKey(card.environmentId ?? environmentId, card.projectId)) ??
+          null),
+    [environmentId, projectsByRef],
   );
 
   const start = useCallback(
     async (card: HomeSuggestion) => {
+      const target =
+        card.projectId === null
+          ? activeProjectRef
+          : scopeProjectRef(card.environmentId ?? environmentId, card.projectId);
       const sameProject =
         card.projectId === null ||
         (activeProjectRef !== null &&
-          activeProjectRef.environmentId === environmentId &&
-          activeProjectRef.projectId === card.projectId);
+          target !== null &&
+          activeProjectRef.environmentId === target.environmentId &&
+          activeProjectRef.projectId === target.projectId);
       if (sameProject && draftId !== null) {
         setPrompt(draftId, card.prompt);
         return;
       }
-      const target = card.projectId === null ? activeProjectRef : null;
-      const projectId = card.projectId ?? target?.projectId ?? null;
-      if (projectId === null) return;
-      const opened = await handleNewThread(scopeProjectRef(environmentId, projectId));
+      if (target === null) return;
+      const opened = await handleNewThread(target);
       if (opened !== null) setPrompt(opened.draftId, card.prompt);
     },
     [activeProjectRef, draftId, environmentId, handleNewThread, setPrompt],
@@ -130,7 +144,9 @@ function EnvironmentSuggestionsStrip({
 
   if (snapshot === null) return null;
   const generating = snapshot.status === "generating";
-  const cards = snapshot.suggestions;
+  const cards = snapshot.suggestions.filter(
+    (card) => card.projectId === null || projectFor(card) !== null,
+  );
   if (cards.length === 0 && !generating) return null;
 
   const shelves = groupHomeSuggestionShelves(cards);
@@ -170,9 +186,7 @@ function EnvironmentSuggestionsStrip({
               key={shelf.kind}
               shelf={shelf}
               showLabel={shelves.length > 1}
-              projectFor={(projectId) =>
-                projectId === null ? null : (projectsById.get(projectId) ?? null)
-              }
+              projectFor={projectFor}
               onStart={(card) => void start(card)}
               onDismiss={(card) => void onDismiss(card.id)}
             />

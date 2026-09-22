@@ -49,7 +49,7 @@ describe("relay postgres migration snapshots", () => {
         const referenced = new Set(entries.flatMap(({ snapshot }) => snapshot.prevIds));
         const heads = entries.filter(({ snapshot }) => !referenced.has(snapshot.id));
 
-        expect(heads.map(({ name }) => name)).toEqual(["20260918175607_long_thread_ids"]);
+        expect(heads.map(({ name }) => name)).toEqual(["20260922120000_home_suggestions"]);
 
         const parent = new Map<string, string[]>();
         for (const { name, snapshot } of entries) {
@@ -75,7 +75,7 @@ describe("relay postgres migration snapshots", () => {
       withNodeServices(
         Effect.gen(function* () {
           const latest = (yield* loadSnapshots).at(-1);
-          expect(latest?.name).toBe("20260918175607_long_thread_ids");
+          expect(latest?.name).toBe("20260922120000_home_suggestions");
 
           const names = new Set(
             (latest?.snapshot.ddl ?? []).map((item) =>

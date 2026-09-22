@@ -31,6 +31,7 @@ import {
   relayEnvironmentAuthLayer,
   relayNotFoundRoute,
   serverApi,
+  homeSuggestionsApi,
   serveRelayHttpRequestWith,
   tokenApi,
   withoutCapturedParentSpan,
@@ -68,6 +69,7 @@ import * as ApnsDeliveries from "./agentActivity/ApnsDeliveries.ts";
 import * as EnvironmentConnector from "./environments/EnvironmentConnector.ts";
 import * as EnvironmentLinker from "./environments/EnvironmentLinker.ts";
 import * as EnvironmentPublishSignatures from "./environments/EnvironmentPublishSignatures.ts";
+import * as HomeSuggestionsStore from "./homeSuggestions/HomeSuggestionsStore.ts";
 import * as ManagedEndpointProvider from "./environments/ManagedEndpointProvider.ts";
 import * as ManagedTunnelLimits from "./environments/ManagedTunnelLimits.ts";
 import * as MobileRegistrations from "./agentActivity/MobileRegistrations.ts";
@@ -104,6 +106,7 @@ const relayApiLayer = Layer.mergeAll(
   tokenApi,
   dpopClientApi,
   serverApi,
+  homeSuggestionsApi,
 );
 
 const CloudMintKeyPair = Alchemy.KeyPair("CloudMintKeyPair");
@@ -250,7 +253,9 @@ export const ApiLive = Api.make(
       Layer.provideMerge(
         ApnsDeliveryQueue.layerCloudflareQueues(apnsDeliveryQueueSender, alchemyRuntimeContext),
       ),
-      Layer.provideMerge(Layer.mergeAll(AgentActivityRows.layer, Devices.layer)),
+      Layer.provideMerge(
+        Layer.mergeAll(AgentActivityRows.layer, Devices.layer, HomeSuggestionsStore.layer),
+      ),
       Layer.provideMerge(EnvironmentCredentials.layer),
       Layer.provideMerge(
         Layer.mergeAll(

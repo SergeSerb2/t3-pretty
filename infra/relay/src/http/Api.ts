@@ -24,6 +24,7 @@ import * as HttpApiError from "effect/unstable/httpapi/HttpApiError";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
 import { httpHeaderRedactionLayer } from "@t3tools/shared/httpObservability";
 
+import type { EnvironmentId } from "@t3tools/contracts";
 import {
   RelayApi,
   RelayAgentActivityPublishProofExpiredError,
@@ -71,6 +72,7 @@ import * as ManagedEndpointProvider from "../environments/ManagedEndpointProvide
 import * as ManagedEndpointAllocations from "../environments/ManagedEndpointAllocations.ts";
 import * as EnvironmentPublishSignatures from "../environments/EnvironmentPublishSignatures.ts";
 import * as MobileRegistrations from "../agentActivity/MobileRegistrations.ts";
+import * as HomeSuggestionsStore from "../homeSuggestions/HomeSuggestionsStore.ts";
 import { withSpanAttributes } from "../observability.ts";
 import * as RelayDb from "../db.ts";
 
@@ -1079,6 +1081,70 @@ export const serverApi = HttpApiBuilder.group(
         mapRelayCommonApiErrors("not_authorized"),
       ),
     );
+  }),
+);
+
+export const homeSuggestionsApi = HttpApiBuilder.group(
+  RelayApi,
+  "homeSuggestions",
+  Effect.fnUntraced(function* (handlers) {
+    const store = yield* HomeSuggestionsStore.HomeSuggestionsStore;
+    const principalFor = Effect.fnUntraced(function* (environmentId: EnvironmentId) {
+      const principal = yield* RelayEnvironmentPrincipal;
+      if (principal.environmentId !== environmentId) {
+        return yield* new HttpApiError.Unauthorized({});
+      }
+      return { environmentId, environmentPublicKey: principal.environmentPublicKey };
+    });
+    return handlers
+      .handle(
+        "syncHomeSuggestions",
+        Effect.fn("relay.api.homeSuggestions.sync")(
+          function* ({ params, payload }) {
+            const principal = yield* principalFor(params.environmentId);
+            return yield* store.sync({ ...principal, request: payload });
+          },
+          mapErrorTags({
+            HomeSuggestionsEnvironmentNotLinked: (_error, traceId) =>
+              new RelayAuthInvalidError({
+                code: "auth_invalid",
+                reason: "not_authorized",
+                traceId,
+              }),
+            HomeSuggestionsStorePersistenceError: (_error, traceId) =>
+              new RelayInternalError({
+                code: "internal_error",
+                reason: "persistence_failed",
+                traceId,
+              }),
+          }),
+          mapRelayCommonApiErrors("not_authorized"),
+        ),
+      )
+      .handle(
+        "publishHomeSuggestions",
+        Effect.fn("relay.api.homeSuggestions.publish")(
+          function* ({ params, payload }) {
+            const principal = yield* principalFor(params.environmentId);
+            return yield* store.publish({ ...principal, request: payload });
+          },
+          mapErrorTags({
+            HomeSuggestionsEnvironmentNotLinked: (_error, traceId) =>
+              new RelayAuthInvalidError({
+                code: "auth_invalid",
+                reason: "not_authorized",
+                traceId,
+              }),
+            HomeSuggestionsStorePersistenceError: (_error, traceId) =>
+              new RelayInternalError({
+                code: "internal_error",
+                reason: "persistence_failed",
+                traceId,
+              }),
+          }),
+          mapRelayCommonApiErrors("not_authorized"),
+        ),
+      );
   }),
 );
 

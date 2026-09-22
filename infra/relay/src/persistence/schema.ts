@@ -1,7 +1,9 @@
+import type { HomeSuggestionsDigest } from "@t3tools/contracts";
 import type {
   RelayAgentActivityAggregateState,
   RelayAgentActivityState,
   RelayAgentAwarenessPreferences,
+  RelayHomeSuggestionsBatch,
 } from "@t3tools/contracts/relay";
 import {
   boolean,
@@ -191,4 +193,27 @@ export const relayDpopProofs = pgTable(
     primaryKey({ columns: [table.thumbprint, table.jti] }),
     index("idx_relay_dpop_proofs_expires_at").on(table.expiresAt),
   ],
+);
+
+/** One shared home suggestions batch per account, plus the generation lease. */
+export const relayHomeSuggestions = pgTable("relay_home_suggestions", {
+  userId: varchar("user_id", { length: 191 }).primaryKey(),
+  batchJson: jsonb("batch_json").$type<RelayHomeSuggestionsBatch>(),
+  generatedAt: varchar("generated_at", { length: 64 }),
+  leaseEnvironmentId: varchar("lease_environment_id", { length: 191 }),
+  leaseExpiresAt: varchar("lease_expires_at", { length: 64 }),
+  createdAt: varchar("created_at", { length: 64 }).notNull(),
+  updatedAt: varchar("updated_at", { length: 64 }).notNull(),
+});
+
+/** Each linked environment's latest digest, read by whoever generates next. */
+export const relayHomeSuggestionDigests = pgTable(
+  "relay_home_suggestion_digests",
+  {
+    userId: varchar("user_id", { length: 191 }).notNull(),
+    environmentId: varchar("environment_id", { length: 191 }).notNull(),
+    digestJson: jsonb("digest_json").notNull().$type<HomeSuggestionsDigest>(),
+    updatedAt: varchar("updated_at", { length: 64 }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.environmentId] })],
 );

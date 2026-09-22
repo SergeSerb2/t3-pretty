@@ -24,11 +24,13 @@ import {
 import {
   DpopFailureReason,
   EnvironmentId,
+  IsoDateTime,
   NonNegativeInt,
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import { HomeSuggestion, HomeSuggestionId, HomeSuggestionsDigest } from "./homeSuggestions.ts";
 
 export const SECURE_RELAY_URL_MAX_LENGTH = 8_192;
 export const RELAY_PUBLIC_KEY_MAX_LENGTH = AUTH_CREDENTIAL_MAX_LENGTH;
@@ -121,9 +123,7 @@ export const RelayDeviceRegistrationRequest = Schema.Struct({
   label: AuthClientLabel,
   platform: RelayAgentAwarenessPlatform,
   iosMajorVersion: Schema.optional(
-    Schema.Int.check(
-      Schema.isBetween({ minimum: 18, maximum: RELAY_IOS_MAJOR_VERSION_MAX }),
-    ),
+    Schema.Int.check(Schema.isBetween({ minimum: 18, maximum: RELAY_IOS_MAJOR_VERSION_MAX })),
   ),
   androidApiLevel: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(24))),
   appVersion: Schema.optional(RelayAppVersion),
@@ -153,9 +153,7 @@ export const RelayClientDeviceRecord = Schema.Struct({
   label: AuthClientLabel,
   platform: RelayAgentAwarenessPlatform,
   iosMajorVersion: Schema.NullOr(
-    Schema.Int.check(
-      Schema.isBetween({ minimum: 18, maximum: RELAY_IOS_MAJOR_VERSION_MAX }),
-    ),
+    Schema.Int.check(Schema.isBetween({ minimum: 18, maximum: RELAY_IOS_MAJOR_VERSION_MAX })),
   ),
   androidApiLevel: Schema.optional(Schema.NullOr(Schema.Int)),
   appVersion: Schema.NullOr(RelayAppVersion),
@@ -1246,6 +1244,102 @@ const RelayServerGroup = HttpApiGroup.make("server")
   .annotate(OpenApi.Description, "Environment-authenticated activity publication.")
   .middleware(RelayEnvironmentAuth);
 
+export const RELAY_HOME_SUGGESTIONS_MAX_CARDS = 32;
+export const RELAY_HOME_SUGGESTIONS_TITLE_MEMORY = 64;
+export const RELAY_HOME_SUGGESTIONS_MAX_DIGESTS = 16;
+
+const RelayHomeSuggestionCards = Schema.Array(HomeSuggestion).check(
+  Schema.isMaxLength(RELAY_HOME_SUGGESTIONS_MAX_CARDS),
+);
+const RelayHomeSuggestionTitles = Schema.Array(
+  Schema.String.check(Schema.isMaxLength(RELAY_DETAIL_MAX_LENGTH)),
+).check(Schema.isMaxLength(RELAY_HOME_SUGGESTIONS_TITLE_MEMORY));
+
+/** The account's shared home suggestions; `generatedAt` is relay time. */
+export const RelayHomeSuggestionsBatch = Schema.Struct({
+  generatedAt: IsoDateTime,
+  generatedByEnvironmentId: RelayEnvironmentId,
+  suggestions: RelayHomeSuggestionCards,
+  previousTitles: RelayHomeSuggestionTitles,
+});
+export type RelayHomeSuggestionsBatch = typeof RelayHomeSuggestionsBatch.Type;
+
+/**
+ * "scheduled" is granted only when the shared batch is a day old, so linked
+ * environments with different schedules still generate once a day. "manual"
+ * is granted unless another environment is generating right now.
+ */
+export const RelayHomeSuggestionsClaim = Schema.Literals(["scheduled", "manual"]);
+export type RelayHomeSuggestionsClaim = typeof RelayHomeSuggestionsClaim.Type;
+
+export const RelayHomeSuggestionsSyncRequest = Schema.Struct({
+  /** This environment's digest, or null to keep the stored one. */
+  digest: Schema.NullOr(HomeSuggestionsDigest),
+  claim: Schema.NullOr(RelayHomeSuggestionsClaim),
+  dismissedSuggestionIds: Schema.Array(HomeSuggestionId).check(
+    Schema.isMaxLength(RELAY_HOME_SUGGESTIONS_MAX_CARDS),
+  ),
+});
+export type RelayHomeSuggestionsSyncRequest = typeof RelayHomeSuggestionsSyncRequest.Type;
+
+/** "granted": generate now. "held": another environment is generating. */
+export const RelayHomeSuggestionsLease = Schema.Literals(["none", "granted", "held"]);
+export type RelayHomeSuggestionsLease = typeof RelayHomeSuggestionsLease.Type;
+
+export const RelayHomeSuggestionsSyncResponse = Schema.Struct({
+  batch: Schema.NullOr(RelayHomeSuggestionsBatch),
+  lease: RelayHomeSuggestionsLease,
+  /** The other environments' recent digests; only sent with a granted lease. */
+  digests: Schema.Array(HomeSuggestionsDigest).check(
+    Schema.isMaxLength(RELAY_HOME_SUGGESTIONS_MAX_DIGESTS),
+  ),
+});
+export type RelayHomeSuggestionsSyncResponse = typeof RelayHomeSuggestionsSyncResponse.Type;
+
+export const RelayHomeSuggestionsPublishRequest = Schema.Struct({
+  suggestions: RelayHomeSuggestionCards,
+  previousTitles: RelayHomeSuggestionTitles,
+});
+export type RelayHomeSuggestionsPublishRequest = typeof RelayHomeSuggestionsPublishRequest.Type;
+
+export const RelayHomeSuggestionsPublishResponse = Schema.Struct({
+  /** The stored batch, or null when another environment took the lease. */
+  batch: Schema.NullOr(RelayHomeSuggestionsBatch),
+});
+export type RelayHomeSuggestionsPublishResponse = typeof RelayHomeSuggestionsPublishResponse.Type;
+
+const RelayHomeSuggestionsErrors = [RelayAuthInvalidError, RelayInternalError] as const;
+const RelayHomeSuggestionsParams = Schema.Struct({ environmentId: RelayEnvironmentId });
+
+const RelayHomeSuggestionsGroup = HttpApiGroup.make("homeSuggestions")
+  .add(
+    HttpApiEndpoint.post(
+      "syncHomeSuggestions",
+      "/v1/environments/:environmentId/home-suggestions/sync",
+      {
+        params: RelayHomeSuggestionsParams,
+        payload: RelayHomeSuggestionsSyncRequest,
+        success: RelayHomeSuggestionsSyncResponse,
+        error: RelayHomeSuggestionsErrors,
+      },
+    ).annotate(OpenApi.Summary, "Sync home suggestions"),
+    HttpApiEndpoint.post(
+      "publishHomeSuggestions",
+      "/v1/environments/:environmentId/home-suggestions/batch",
+      {
+        params: RelayHomeSuggestionsParams,
+        payload: RelayHomeSuggestionsPublishRequest,
+        success: RelayHomeSuggestionsPublishResponse,
+        error: RelayHomeSuggestionsErrors,
+      },
+    ).annotate(OpenApi.Summary, "Publish home suggestions"),
+  )
+  .annotate(
+    OpenApi.Description,
+    "One home suggestions batch per account, generated by one linked environment.",
+  )
+  .middleware(RelayEnvironmentAuth);
+
 export const RelayApi = HttpApi.make("RelayApi")
   .add(
     RelayHealthGroup,
@@ -1255,6 +1349,7 @@ export const RelayApi = HttpApi.make("RelayApi")
     RelayTokenGroup,
     RelayDpopClientGroup,
     RelayServerGroup,
+    RelayHomeSuggestionsGroup,
   )
   .annotate(OpenApi.Title, "T3 Code Relay API")
   .annotate(OpenApi.Version, "1.0.0")

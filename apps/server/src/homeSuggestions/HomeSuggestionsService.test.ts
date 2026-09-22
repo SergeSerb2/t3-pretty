@@ -1,16 +1,25 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
   HomeSuggestionId,
   ProjectId,
   ProviderInstanceId,
   TextGenerationError,
   ThreadId,
+  type HomeSuggestion,
+  type HomeSuggestionsDigest,
   type HomeSuggestionsSnapshot,
   type OrchestrationProjectShell,
   type OrchestrationThread,
   type OrchestrationThreadShell,
   type ServerSettings,
 } from "@t3tools/contracts";
+import type {
+  RelayHomeSuggestionsBatch,
+  RelayHomeSuggestionsPublishRequest,
+  RelayHomeSuggestionsSyncRequest,
+  RelayHomeSuggestionsSyncResponse,
+} from "@t3tools/contracts/relay";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
@@ -28,6 +37,7 @@ import { TestClock } from "effect/testing";
 
 import { BackgroundPolicy } from "../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../config.ts";
+import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerActivation } from "../serverActivation.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -35,10 +45,19 @@ import {
   TextGeneration,
   type HomeSuggestionsGenerationInput,
 } from "../textGeneration/TextGeneration.ts";
+import { HomeSuggestionsMesh } from "./HomeSuggestionsMesh.ts";
 import * as HomeSuggestions from "./HomeSuggestionsService.ts";
 
 const NOW = "2026-09-21T12:00:00.000Z";
 const PROJECT_ID = ProjectId.make("project-1");
+const ENVIRONMENT_ID = EnvironmentId.make("env-laptop");
+const DESKTOP_ID = EnvironmentId.make("env-desktop");
+
+const unlinkedMesh: HomeSuggestionsMesh["Service"] = {
+  linked: Effect.succeed(false),
+  sync: () => Effect.succeedNone,
+  publish: () => Effect.succeedNone,
+};
 
 let uuidCounter = 0;
 const testCrypto = Crypto.make({
@@ -105,6 +124,7 @@ interface HarnessOptions {
     input: HomeSuggestionsGenerationInput,
   ) => Effect.Effect<{ suggestions: typeof generatedCards }, TextGenerationError>;
   readonly suspended?: boolean;
+  readonly mesh?: HomeSuggestionsMesh["Service"];
 }
 
 const makeHarness = Effect.fn("makeHarness")(function* (
@@ -167,6 +187,11 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     }),
     Layer.succeed(ServerActivation, Deferred.await(activation)),
     Layer.succeed(Crypto.Crypto, testCrypto),
+    Layer.succeed(HomeSuggestionsMesh, options.mesh ?? unlinkedMesh),
+    Layer.mock(ServerEnvironment)({
+      getEnvironmentId: Effect.succeed(ENVIRONMENT_ID),
+      getDescriptor: Effect.succeed({ environmentId: ENVIRONMENT_ID, label: "Laptop" } as never),
+    }),
   ).pipe(Layer.provideMerge(NodeServices.layer));
   return {
     activation,
@@ -204,6 +229,68 @@ const run = <A, E>(
 
 const titles = (snapshot: HomeSuggestionsSnapshot) =>
   snapshot.suggestions.map((card) => card.title);
+
+const desktopDigest: HomeSuggestionsDigest = {
+  environmentId: DESKTOP_ID,
+  environmentLabel: "Desktop",
+  projects: [
+    {
+      id: ProjectId.make("engine"),
+      title: "Engine",
+      folder: "engine",
+      lastActiveAt: "2026-09-21T11:00:00.000Z",
+    },
+  ],
+  threads: [
+    {
+      projectId: ProjectId.make("engine"),
+      title: "Profile the GC",
+      updatedAt: "2026-09-21T11:00:00.000Z",
+      status: "completed",
+      asked: "Why is the GC slow?",
+      outcome: "Found a leak.",
+    },
+  ],
+};
+
+const sharedCard: HomeSuggestion = {
+  id: HomeSuggestionId.make("shared:0"),
+  kind: "project",
+  projectId: ProjectId.make("engine"),
+  environmentId: DESKTOP_ID,
+  title: "Fix the GC leak",
+  summary: "Found yesterday.",
+  prompt: "Fix the leak.",
+};
+
+/** An in-memory relay: records every call and answers with `respond`. */
+const makeFakeRelay = Effect.fn("makeFakeRelay")(function* (
+  respond: (request: RelayHomeSuggestionsSyncRequest) => RelayHomeSuggestionsSyncResponse,
+) {
+  const syncs = yield* Ref.make<ReadonlyArray<RelayHomeSuggestionsSyncRequest>>([]);
+  const publishes = yield* Ref.make<ReadonlyArray<RelayHomeSuggestionsPublishRequest>>([]);
+  const mesh: HomeSuggestionsMesh["Service"] = {
+    linked: Effect.succeed(true),
+    sync: (request) =>
+      Ref.update(syncs, (previous) => [...previous, request]).pipe(
+        Effect.as(Option.some(respond(request))),
+      ),
+    publish: (request) =>
+      Ref.update(publishes, (previous) => [...previous, request]).pipe(
+        Effect.as(
+          Option.some<RelayHomeSuggestionsBatch>({
+            generatedAt: SHARED_AT,
+            generatedByEnvironmentId: ENVIRONMENT_ID,
+            suggestions: request.suggestions,
+            previousTitles: request.previousTitles,
+          }),
+        ),
+      ),
+  };
+  return { syncs, publishes, mesh };
+});
+
+const SHARED_AT = "2026-09-21T12:00:05.000Z";
 
 describe("HomeSuggestionsService", () => {
   it.effect("generates the first batch on the first tick and persists it", () =>
@@ -634,6 +721,122 @@ describe("HomeSuggestionsService", () => {
           "Build a CLI timer",
         ]);
         assert.isFalse(HomeSuggestionId.make("x") === dismissed.suggestions[0]?.id);
+      }),
+    ),
+  );
+  it.effect("the lease holder generates once from every machine's digest and publishes", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        const relay = yield* makeFakeRelay((request) => ({
+          batch: null,
+          lease: request.claim === null ? "none" : "granted",
+          digests: request.claim === null ? [] : [desktopDigest],
+        }));
+        const harness = yield* makeHarness(baseDir, { mesh: relay.mesh });
+        const snapshot = yield* withService(harness, (service) =>
+          Effect.gen(function* () {
+            yield* service.tickOnce;
+            yield* service.drain;
+            return yield* service.current;
+          }),
+        );
+
+        const generations = yield* Ref.get(harness.generations);
+        assert.strictEqual(generations.length, 1);
+        assert.include(generations[0]?.context, "## P1: T3 Pretty (folder: t3-pretty, on Laptop)");
+        assert.include(generations[0]?.context, "## P2: Engine (folder: engine, on Desktop)");
+        const syncs = yield* Ref.get(relay.syncs);
+        assert.strictEqual(syncs[0]?.claim, "scheduled");
+        assert.strictEqual(syncs[0]?.digest?.environmentId, ENVIRONMENT_ID);
+        const publishes = yield* Ref.get(relay.publishes);
+        assert.strictEqual(publishes.length, 1);
+        assert.strictEqual(publishes[0]?.suggestions[0]?.environmentId, ENVIRONMENT_ID);
+        // The relay's stamp is the batch time every machine agrees on.
+        assert.strictEqual(snapshot.generatedAt, SHARED_AT);
+        assert.deepStrictEqual(titles(snapshot), ["Finish the home screen", "Build a CLI timer"]);
+      }),
+    ),
+  );
+
+  it.effect("adopts today's shared batch instead of generating, then stays quiet", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        const relay = yield* makeFakeRelay(() => ({
+          batch: {
+            generatedAt: "2026-09-21T09:00:00.000Z",
+            generatedByEnvironmentId: DESKTOP_ID,
+            suggestions: [sharedCard],
+            previousTitles: [sharedCard.title],
+          },
+          lease: "none",
+          digests: [],
+        }));
+        const harness = yield* makeHarness(baseDir, { mesh: relay.mesh });
+        const snapshot = yield* withService(harness, (service) =>
+          Effect.gen(function* () {
+            yield* service.tickOnce;
+            yield* service.drain;
+            // A minute later: not due, and the relay poll interval has not passed.
+            yield* TestClock.adjust("1 minute");
+            yield* service.tickOnce;
+            return yield* service.current;
+          }),
+        );
+
+        assert.strictEqual((yield* Ref.get(harness.generations)).length, 0);
+        assert.strictEqual((yield* Ref.get(relay.syncs)).length, 1);
+        assert.strictEqual(snapshot.status, "ready");
+        assert.deepStrictEqual(titles(snapshot), ["Fix the GC leak"]);
+        assert.strictEqual(snapshot.suggestions[0]?.environmentId, DESKTOP_ID);
+        assert.isTrue(Date.parse(snapshot.nextRunAt ?? "") > Date.parse(NOW));
+      }),
+    ),
+  );
+
+  it.effect("waits while another machine generates, and refresh says so", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        const relay = yield* makeFakeRelay(() => ({ batch: null, lease: "held", digests: [] }));
+        const harness = yield* makeHarness(baseDir, { mesh: relay.mesh });
+        const refreshed = yield* withService(harness, (service) =>
+          Effect.gen(function* () {
+            yield* service.tickOnce;
+            yield* service.drain;
+            return yield* Effect.flip(service.refresh);
+          }),
+        );
+
+        assert.strictEqual((yield* Ref.get(harness.generations)).length, 0);
+        assert.include(refreshed.detail, "Another connected machine");
+      }),
+    ),
+  );
+
+  it.effect("a dismissal reaches the relay", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        const relay = yield* makeFakeRelay(() => ({
+          batch: {
+            generatedAt: "2026-09-21T09:00:00.000Z",
+            generatedByEnvironmentId: DESKTOP_ID,
+            suggestions: [sharedCard],
+            previousTitles: [],
+          },
+          lease: "none",
+          digests: [],
+        }));
+        const harness = yield* makeHarness(baseDir, { mesh: relay.mesh });
+        yield* withService(harness, (service) =>
+          Effect.gen(function* () {
+            yield* service.tickOnce;
+            yield* service.drain;
+            yield* service.dismiss(sharedCard.id);
+            yield* service.drain;
+          }),
+        );
+
+        const syncs = yield* Ref.get(relay.syncs);
+        assert.deepStrictEqual(syncs.at(-1)?.dismissedSuggestionIds, [sharedCard.id]);
       }),
     ),
   );

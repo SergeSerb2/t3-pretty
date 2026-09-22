@@ -25,7 +25,7 @@ export function HomeSuggestionShelfView({
 }: {
   readonly shelf: HomeSuggestionShelfModel<HomeSuggestion>;
   readonly showLabel: boolean;
-  readonly projectFor: (projectId: HomeSuggestion["projectId"]) => EnvironmentProject | null;
+  readonly projectFor: (card: HomeSuggestion) => EnvironmentProject | null;
   readonly onStart: (card: HomeSuggestion) => void;
   readonly onDismiss: (card: HomeSuggestion) => void;
 }) {
@@ -110,7 +110,7 @@ export function HomeSuggestionShelfView({
             <li key={card.id} className="snap-start" style={{ flex: SHELF_CARD_FLEX }}>
               <SuggestionCard
                 card={card}
-                project={projectFor(card.projectId)}
+                project={projectFor(card)}
                 onStart={() => onStart(card)}
                 onDismiss={() => onDismiss(card)}
               />
