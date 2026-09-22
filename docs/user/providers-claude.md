@@ -29,10 +29,11 @@ custom setting changes `CLAUDE_CONFIG_DIR`, leaving `HOME` and the system keycha
 location intact. Use the same variable for the login command. Setting `HOME`
 instead can put credentials where this provider will not find them.
 
-Check the account reported in provider settings after signing in. Existing
-threads can switch only between Claude instances with the same config directory.
-Separate account directories stay isolated, including their local conversation
-state. Claude does not have Codex's shared-home and shadow-home arrangement.
+Check the account reported in provider settings after signing in. To move an
+existing thread to another account, pick that Claude instance in the thread's model
+picker and send your next message. T3 Code copies the Claude session into that
+instance's config directory and resumes it there, so the conversation continues
+under the new account. Other Claude sessions stay in their own directories.
 
 For presets that differ only in API keys or endpoints, use the instance's
 **Environment variables**. Variable assignments do not belong in **Launch arguments**.

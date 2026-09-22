@@ -1441,6 +1441,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           );
         }
         const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
+        // A binding is resumable by its own instance, or by another instance
+        // in the same continuation group (e.g. another Claude account). The
+        // cwd travels with the cursor: providers key session storage by it.
+        let resumableBinding =
+          persistedBinding?.provider === resolvedProvider &&
+          persistedBinding.providerInstanceId === resolvedInstanceId
+            ? persistedBinding
+            : undefined;
         if (
           persistedBinding?.provider === resolvedProvider &&
           persistedBinding.providerInstanceId !== resolvedInstanceId &&
@@ -1460,34 +1468,26 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               `Thread '${threadId}' cannot switch from instance '${previousInstanceId}' to '${resolvedInstanceId}' because their provider resume state is incompatible.`,
             );
           }
+          resumableBinding = persistedBinding;
         }
-        const effectiveResumeCursor =
-          input.resumeCursor ??
-          (persistedBinding?.providerInstanceId === resolvedInstanceId
-            ? persistedBinding.resumeCursor
-            : undefined);
-        const effectiveCwd =
-          input.cwd ??
-          (persistedBinding?.providerInstanceId === resolvedInstanceId
-            ? readPersistedCwd(persistedBinding.runtimePayload)
-            : undefined);
+        const persistedResumeCursor = resumableBinding?.resumeCursor ?? undefined;
+        const effectiveResumeCursor = input.resumeCursor ?? persistedResumeCursor;
+        const persistedCwd =
+          resumableBinding !== undefined
+            ? readPersistedCwd(resumableBinding.runtimePayload)
+            : undefined;
+        const effectiveCwd = input.cwd ?? persistedCwd;
         yield* Effect.annotateCurrentSpan({
           "provider.kind": resolvedProvider,
           "provider.resume_cursor.source":
             input.resumeCursor !== undefined
               ? "request"
-              : effectiveResumeCursor !== undefined &&
-                  persistedBinding?.providerInstanceId === resolvedInstanceId
+              : persistedResumeCursor !== undefined
                 ? "persisted"
                 : "none",
           "provider.resume_cursor.present": effectiveResumeCursor !== undefined,
           "provider.cwd.source":
-            input.cwd !== undefined
-              ? "request"
-              : effectiveCwd !== undefined &&
-                  persistedBinding?.providerInstanceId === resolvedInstanceId
-                ? "persisted"
-                : "none",
+            input.cwd !== undefined ? "request" : persistedCwd !== undefined ? "persisted" : "none",
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         if (effectiveCwd !== undefined) {

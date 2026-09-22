@@ -90,7 +90,12 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
-import { claudeSignedOutMessage, makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
+import {
+  claudeSignedOutMessage,
+  importClaudeSessionTranscript,
+  makeClaudeEnvironment,
+  resolveClaudeHomePath,
+} from "../Drivers/ClaudeHome.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
@@ -252,6 +257,8 @@ type PromptQueueItem =
 interface ClaudeResumeState {
   readonly threadId?: ThreadId;
   readonly resume?: string;
+  /** Config dir holding the transcript; absent on cursors written before accounts could switch. */
+  readonly configDir?: string;
   readonly resumeSessionAt?: string;
   readonly turnCount?: number;
   readonly turnStartMessageIds?: ReadonlyArray<string | null>;
@@ -974,6 +981,7 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
     threadId?: unknown;
     resume?: unknown;
     sessionId?: unknown;
+    configDir?: unknown;
     resumeSessionAt?: unknown;
     turnCount?: unknown;
     turnStartMessageIds?: unknown;
@@ -991,6 +999,7 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
         ? cursor.sessionId
         : undefined;
   const resume = resumeCandidate && isUuid(resumeCandidate) ? resumeCandidate : undefined;
+  const configDir = typeof cursor.configDir === "string" ? cursor.configDir : undefined;
   const resumeSessionAt =
     typeof cursor.resumeSessionAt === "string" ? cursor.resumeSessionAt : undefined;
   const turnCountValue = typeof cursor.turnCount === "number" ? cursor.turnCount : undefined;
@@ -1003,6 +1012,7 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
   return {
     ...(threadId ? { threadId } : {}),
     ...(resume ? { resume } : {}),
+    ...(configDir ? { configDir } : {}),
     ...(resumeSessionAt ? { resumeSessionAt } : {}),
     ...(turnStartMessageIds ? { turnStartMessageIds } : {}),
     ...(turnCountValue !== undefined && Number.isInteger(turnCountValue) && turnCountValue >= 0
@@ -2080,6 +2090,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, options?.environment).pipe(
     Effect.provideService(Path.Path, path),
   );
+  const claudeConfigDir = yield* resolveClaudeHomePath(claudeSettings, claudeEnvironment).pipe(
+    Effect.provideService(Path.Path, path),
+  );
+  // Cursors from before account switching carry no config dir; those threads
+  // could only have run in their own instance or the default one.
+  const defaultClaudeConfigDir = yield* resolveClaudeHomePath({ homePath: "" }, process.env).pipe(
+    Effect.provideService(Path.Path, path),
+  );
   const claudeSdkExecutablePath = yield* resolveClaudeSdkExecutablePath(
     claudeSettings.binaryPath,
     claudeEnvironment,
@@ -2192,6 +2210,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const resumeCursor = {
       threadId,
       ...(context.resumeSessionId ? { resume: context.resumeSessionId } : {}),
+      configDir: claudeConfigDir,
       ...(context.lastAssistantUuid ? { resumeSessionAt: context.lastAssistantUuid } : {}),
       turnCount: context.turnStartMessageIds.length,
       turnStartMessageIds: [...context.turnStartMessageIds],
@@ -4420,6 +4439,39 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const existingResumeSessionId = input.nativeSessionId ?? resumeState?.resume;
       const newSessionId = existingResumeSessionId === undefined ? yield* randomUUIDv4 : undefined;
       const sessionId = existingResumeSessionId ?? newSessionId;
+      if (input.nativeSessionId === undefined && resumeState?.resume !== undefined) {
+        // The thread may have last run under another Claude account.
+        const sourceConfigDir = resumeState.configDir ?? defaultClaudeConfigDir;
+        const imported = yield* importClaudeSessionTranscript({
+          sessionId: resumeState.resume,
+          sourceConfigDir,
+          targetConfigDir: claudeConfigDir,
+        }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+          Effect.catch((cause) =>
+            Effect.logWarning("claude.session.transcript-import-failed", {
+              threadId: input.threadId,
+              sourceConfigDir,
+              targetConfigDir: claudeConfigDir,
+              cause,
+            }).pipe(Effect.as(false)),
+          ),
+        );
+        // Legacy cursors only guess the source, so a miss there is expected.
+        if (
+          !imported &&
+          resumeState.configDir !== undefined &&
+          path.resolve(resumeState.configDir) !== claudeConfigDir
+        ) {
+          yield* Effect.logWarning("claude.session.transcript-missing", {
+            threadId: input.threadId,
+            sessionId: resumeState.resume,
+            sourceConfigDir,
+            targetConfigDir: claudeConfigDir,
+          });
+        }
+      }
 
       const runtimeContext = yield* Effect.context<never>();
       const runFork = Effect.runForkWith(runtimeContext);
@@ -5017,6 +5069,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         resumeCursor: {
           ...(threadId ? { threadId } : {}),
           ...(sessionId ? { resume: sessionId } : {}),
+          configDir: claudeConfigDir,
           ...(resumeState?.resumeSessionAt ? { resumeSessionAt: resumeState.resumeSessionAt } : {}),
           turnCount: resumeState?.turnCount ?? 0,
           ...(resumeState?.turnStartMessageIds

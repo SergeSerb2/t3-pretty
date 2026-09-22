@@ -243,6 +243,10 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
   }
 }
 
+const DEFAULT_CLAUDE_CONFIG_DIR = NodePath.resolve(
+  process.env.CLAUDE_CONFIG_DIR?.trim() || NodePath.join(NodeOS.homedir(), ".claude"),
+);
+
 function makeHarness(config?: {
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: ClaudeAdapterLiveOptions["nativeEventLogger"];
@@ -692,6 +696,39 @@ describe("ClaudeAdapterLive", () => {
         NodePath.join(NodeOS.homedir(), ".claude-work"),
       );
     }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("resumes a session that last ran under another Claude config dir", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-account-switch-"));
+    const personal = NodePath.join(root, "personal");
+    const work = NodePath.join(root, "work");
+    const sessionId = "550e8400-e29b-41d4-a716-446655440000";
+    NodeFS.mkdirSync(NodePath.join(personal, "projects", "-repo"), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(personal, "projects", "-repo", `${sessionId}.jsonl`),
+      "turns\n",
+    );
+    const harness = makeHarness({ claudeConfig: { homePath: work } });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        resumeCursor: { resume: sessionId, configDir: personal },
+        runtimeMode: "full-access",
+      });
+
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(work, "projects", "-repo", `${sessionId}.jsonl`), "utf8"),
+        "turns\n",
+      );
+      assert.equal(harness.getLastCreateQueryInput()?.options.resume, sessionId);
+      assert.equal((session.resumeCursor as { configDir?: string }).configDir, work);
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => NodeFS.rmSync(root, { recursive: true, force: true }))),
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
     );
@@ -6490,6 +6527,7 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual(session.resumeCursor, {
         threadId: RESUME_THREAD_ID,
         resume: "550e8400-e29b-41d4-a716-446655440000",
+        configDir: DEFAULT_CLAUDE_CONFIG_DIR,
         resumeSessionAt: "assistant-99",
         turnCount: 3,
       });
@@ -6851,6 +6889,7 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual((yield* adapter.listSessions())[0]?.resumeCursor, {
         threadId: session.threadId,
         resume: "550e8400-e29b-41d4-a716-446655440020",
+        configDir: DEFAULT_CLAUDE_CONFIG_DIR,
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
       });
@@ -6926,6 +6965,7 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual((yield* adapter.listSessions())[0]?.resumeCursor, {
         threadId: session.threadId,
         resume: CLAUDE_FORK_SESSION_ID,
+        configDir: DEFAULT_CLAUDE_CONFIG_DIR,
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
       });
@@ -6985,6 +7025,7 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual((yield* adapter.listSessions())[0]?.resumeCursor, {
         threadId: session.threadId,
         resume: CLAUDE_FORK_SESSION_ID,
+        configDir: DEFAULT_CLAUDE_CONFIG_DIR,
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
       });
@@ -7050,6 +7091,7 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual((yield* adapter.listSessions())[0]?.resumeCursor, {
         threadId: session.threadId,
         resume: CLAUDE_FORK_SESSION_ID,
+        configDir: DEFAULT_CLAUDE_CONFIG_DIR,
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
       });
@@ -7140,6 +7182,7 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual((yield* adapter.listSessions())[0]?.resumeCursor, {
         threadId: session.threadId,
         resume: CLAUDE_FORK_SESSION_ID,
+        configDir: DEFAULT_CLAUDE_CONFIG_DIR,
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
       });
@@ -7201,6 +7244,7 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual((yield* adapter.listSessions())[0]?.resumeCursor, {
         threadId: session.threadId,
         resume: CLAUDE_FORK_SESSION_ID,
+        configDir: DEFAULT_CLAUDE_CONFIG_DIR,
         turnCount: 1,
         turnStartMessageIds: [`fork-${firstTurnId}`],
       });
@@ -7278,6 +7322,7 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual((yield* adapter.listSessions())[0]?.resumeCursor, {
         threadId: session.threadId,
         resume: CLAUDE_FORK_SESSION_ID,
+        configDir: DEFAULT_CLAUDE_CONFIG_DIR,
         turnCount: 2,
         turnStartMessageIds: [`fork-${firstTurnId}`, `fork-${secondTurnId}`],
       });

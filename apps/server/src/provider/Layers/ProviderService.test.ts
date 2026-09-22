@@ -1180,6 +1180,57 @@ antigravityInstanceRouting.layer("ProviderServiceLive instance-owned conversatio
   );
 });
 
+const sharedClaude = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
+const personalClaudeInstanceId = ProviderInstanceId.make("claude-personal");
+const workClaudeInstanceId = ProviderInstanceId.make("claude-work");
+const sharedClaudeRouting = makeProviderServiceLayer({
+  registry: {
+    ...makeAdapterRegistryMock({}),
+    getByInstance: () => Effect.succeed(sharedClaude.adapter),
+    getInstanceInfo: (instanceId) =>
+      Effect.succeed({
+        instanceId,
+        driverKind: CLAUDE_AGENT_DRIVER,
+        displayName: undefined,
+        enabled: true,
+        continuationIdentity: {
+          driverKind: CLAUDE_AGENT_DRIVER,
+          continuationKey: "claude:shared",
+        },
+      }),
+  },
+});
+sharedClaudeRouting.layer("ProviderServiceLive shared continuation", (it) => {
+  it.effect("resumes a stopped conversation on another instance in the same group", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const threadId = asThreadId("thread-claude-account-switch");
+      const resumeCursor = { resume: "native-session" };
+      yield* directory.upsert({
+        threadId,
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: personalClaudeInstanceId,
+        status: "stopped",
+        runtimeMode: "approval-required",
+        resumeCursor,
+        runtimePayload: { cwd: fixtureCwd("project") },
+      });
+
+      yield* provider.startSession(threadId, {
+        providerInstanceId: workClaudeInstanceId,
+        threadId,
+        runtimeMode: "approval-required",
+      });
+
+      const startInput = sharedClaude.startSession.mock.calls.at(-1)?.[0];
+      assert.equal(startInput?.providerInstanceId, workClaudeInstanceId);
+      assert.deepEqual(startInput?.resumeCursor, resumeCursor);
+      assert.equal(startInput?.cwd, fixtureCwd("project"));
+    }),
+  );
+});
+
 const unsupportedRollback = makeProviderServiceLayer({ supportsConversationRollback: false });
 unsupportedRollback.layer("ProviderServiceLive unsupported rewind", (it) => {
   it.effect("rejects rewind without starting or changing the provider conversation", () =>
