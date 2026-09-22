@@ -305,9 +305,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   /* One hairline for the top band and the column edge under it. Declared
      here so the right-panel tab bar uses the same line as the title bar. */
   --workspace-frame-line: color-mix(in srgb, var(--sidebar-foreground) 14%, transparent);
-  /* Small inside radius where the column meets the top band. Kept off the
-     glass plates: a radius on either plate leaves a wedge at the seam. */
-  --workspace-frame-radius: 10px;
+  /* Inside radius where the column meets the top band. Kept off the glass
+     plates: a radius on either plate leaves a wedge at the seam. */
+  --workspace-frame-radius: 16px;
   --workspace-controls-top: 0px;
   --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
   --workspace-controls-right: calc(env(safe-area-inset-right) + 0.75rem);
@@ -3140,8 +3140,8 @@ html
   box-shadow: inset 0 -1px 0 var(--workspace-frame-line);
 }
 
-/* Plates stay square. The 10px roundness is the corner disk above, not a
-   radius on either glass plate. */
+/* Plates stay square. The roundness is the corner disk above, not a radius
+   on either glass plate. */
 
 /* Only a missing backdrop-filter implementation may flatten chrome, and both
    bars still share --workspace-glass-surface so they cannot drift apart. */

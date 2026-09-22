@@ -630,16 +630,22 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on].dark
 /* Chrome seams: glass layers meet without a 1px divider. The sidebar
    rail stays invisible; the resize cursor is the only remaining cue.
    Opaque themes draw a top-band underline and a column edge under it.
-   Over a photo both of those lines cut the glass, so they drop out. */
+   Over a photo those strokes cut the glass, so they drop out. The
+   quarter-round stays filled: it is the chrome of the inside corner, and
+   clearing it leaves the photo meeting the sidebar at a hard right angle. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   .workspace-sidebar-glass
-  :is([data-sidebar-frame-corner], [data-sidebar-frame-edge]) {
+  [data-sidebar-frame-edge] {
   background: transparent;
+  box-shadow: none;
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  .workspace-sidebar-glass
+  [data-sidebar-frame-corner] {
   border-right-color: transparent;
   border-bottom-color: transparent;
   box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
 }
 
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
