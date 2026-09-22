@@ -1957,6 +1957,58 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     }),
   );
 
+  it.effect("names Grok's model window when a rate limit is not the weekly allowance", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("grok-model-window-limit");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({
+          T3_ACP_EMIT_XAI_RATE_LIMIT_WITH_DETAIL: "1",
+        }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+      const runtimeEvents: ProviderRuntimeEvent[] = [];
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => {
+          runtimeEvents.push(event);
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("grok"), model: "grok-build" },
+      });
+
+      const error = yield* Effect.flip(
+        adapter.sendTurn({
+          threadId,
+          input: "hit the model window",
+          attachments: [],
+        }),
+      );
+      const terminalEvents = runtimeEvents.filter(
+        (event) => event.type === "turn.completed" && event.threadId === threadId,
+      );
+
+      assert.equal(error._tag, "ProviderAdapterRequestError");
+      assert.include(
+        error.message,
+        "grok-4.7 has used its included allowance (554,789 of 500,000 tokens) for the rolling 24-hour window",
+      );
+      assert.lengthOf(terminalEvents, 1);
+      const [terminalEvent] = terminalEvents;
+      if (terminalEvent?.type === "turn.completed") {
+        assert.equal(terminalEvent.payload.state, "failed");
+        assert.include(terminalEvent.payload.errorMessage ?? "", "rolling 24-hour window");
+      }
+
+      yield* Fiber.interrupt(runtimeEventsFiber);
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("resumes a Grok session by native session id", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-native-resume");

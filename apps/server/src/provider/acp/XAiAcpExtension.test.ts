@@ -18,6 +18,7 @@ import {
   extractGrokPlanMarkdownFromToolCallData,
   extractXAiAskUserQuestions,
   extractXAiExitPlanMarkdown,
+  grokRateLimitUserMessage,
   isGrokPlanMarkdownPath,
   makeXAiAskUserQuestionCancelledResponse,
   makeXAiAskUserQuestionResponse,
@@ -49,7 +50,20 @@ const makePromptCompletionRuntime = (env: NodeJS.ProcessEnv) =>
 
 const decodeXAiAskUserQuestionRequest = Schema.decodeUnknownSync(XAiAskUserQuestionRequest);
 
+const grok47IncludedUsageDetail =
+  "API error (status 429 Too Many Requests): subscription:free-usage-exhausted: You've used all the included free usage for model grok-4.7 for now. Usage resets over a rolling 24-hour window — tokens (actual/limit): 554789/500000. Upgrade to a Grok subscription for higher limits: https://grok.com/supergrok";
+
 describe("XAiAcpExtension", () => {
+  it("names a model included-usage window instead of the weekly allowance", () => {
+    expect(grokRateLimitUserMessage(undefined)).toBe("Grok usage limit reached. Try again later.");
+    expect(grokRateLimitUserMessage("Rate limited")).toBe(
+      "Grok usage limit reached. Try again later.",
+    );
+    expect(grokRateLimitUserMessage(grok47IncludedUsageDetail)).toBe(
+      "Grok stopped this turn because grok-4.7 has used its included allowance (554,789 of 500,000 tokens) for the rolling 24-hour window. Send the message again after that window moves, or switch models.",
+    );
+  });
+
   it("rejects question and option collections beyond runtime event limits", () => {
     const baseQuestion = { question: "Prompt", options: [] };
     expect(() =>
@@ -351,6 +365,27 @@ describe("XAiAcpExtension", () => {
           promptId,
           requestId: promptId,
         },
+      });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("uses the prompt error body when a rate-limit completion omits it", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makePromptCompletionRuntime({
+        T3_ACP_EMIT_XAI_RATE_LIMIT_WITH_DETAIL: "1",
+      });
+      yield* runtime.start();
+
+      const error = yield* Effect.flip(
+        runtime.prompt({
+          prompt: [{ type: "text", text: "hi" }],
+        }),
+      );
+
+      expect(error).toMatchObject({
+        _tag: "AcpRequestError",
+        code: -32003,
+        errorMessage: grokRateLimitUserMessage(grok47IncludedUsageDetail),
       });
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
