@@ -233,9 +233,16 @@ export function ThemeLibrary({
       </div>
 
       <div className="space-y-3">
-        <h3 className="px-3 text-sm font-medium tracking-[-0.005em] text-foreground sm:px-4">
-          {searchableSetting("color-scheme").title}
-        </h3>
+        <div className="space-y-1 px-3 sm:px-4">
+          <h3 className="text-sm font-medium tracking-[-0.005em] text-foreground">
+            {searchableSetting("color-scheme").title}
+          </h3>
+          <p className="text-[13px] leading-[1.45] text-muted-foreground/80">
+            {boring
+              ? "Light and Dark stay put. System follows your device."
+              : "Every thread sits on its photo in this scheme. Light and Dark stay put whatever the landscape looks like; System follows your device."}
+          </p>
+        </div>
         <div
           aria-label="Appearance mode"
           className="mx-auto grid w-full max-w-[56rem] grid-cols-3 gap-3 px-3 sm:px-4"

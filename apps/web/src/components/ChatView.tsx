@@ -10105,12 +10105,10 @@ export default function ChatView(props: ChatViewProps) {
                 }}
               />
             </div>
-            {/* Messages Wrapper. data-chat-transcript-active is the ink view-transition group. */}
+            {/* Messages Wrapper */}
             <div
               data-chat-messages=""
               data-chrome-fade-top=""
-              data-chat-transcript="true"
-              data-chat-transcript-active="true"
               className="relative flex min-h-0 flex-1 flex-col bg-background"
             >
               {/* Messages — LegendList handles virtualization and scrolling internally */}

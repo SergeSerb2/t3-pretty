@@ -51,17 +51,6 @@ export function clampBlur(value: number): number {
 }
 
 /**
- * How chat ink (text color) is chosen while the theme is active:
- * - auto  — per thread, from the photo's average color + blur + translucency
- * - light — always white text (the dark variant stack)
- * - dark  — always black text (the light variant stack)
- * - off   — follow the app appearance, the pre-ink behavior
- */
-export type SceneryInkMode = "auto" | "light" | "dark" | "off";
-
-const INK_MODES: ReadonlySet<SceneryInkMode> = new Set(["auto", "light", "dark", "off"]);
-
-/**
  * How many of the most recent assignments a random pick avoids repeating.
  * Capped at half the pool so extra themes (~100+ photos) still have
  * candidates; World Scenery (~950) keeps the full 120.
@@ -115,14 +104,11 @@ interface SceneryStoreState {
   translucency: number;
   /** CDN pre-blur strength 0–100 applied to the wallpaper render. */
   blur: number;
-  /** Chat ink selection policy (see SceneryInkMode). */
-  inkMode: SceneryInkMode;
   ensureAssignment: (threadKey: string) => void;
   registerDisplayed: (photo: SceneryPhoto) => void;
   refreshPoolIfStale: () => Promise<void>;
   setTranslucency: (value: number) => void;
   setBlur: (value: number) => void;
-  setInkMode: (mode: SceneryInkMode) => void;
   removeThread: (threadKey: string) => void;
 }
 
@@ -135,7 +121,6 @@ type PersistedSceneryStoreState = Pick<
   | "registeredDownloads"
   | "translucency"
   | "blur"
-  | "inkMode"
 >;
 
 export function activePhotoSetId(): PhotoSetId {
@@ -394,10 +379,6 @@ export function migratePersistedSceneryState(persistedState: unknown): Persisted
         ? clampTranslucency(candidate.translucency)
         : DEFAULT_TRANSLUCENCY,
     blur: typeof candidate.blur === "number" ? clampBlur(candidate.blur) : DEFAULT_BLUR,
-    inkMode:
-      typeof candidate.inkMode === "string" && INK_MODES.has(candidate.inkMode as SceneryInkMode)
-        ? (candidate.inkMode as SceneryInkMode)
-        : "auto",
   };
 }
 
@@ -421,7 +402,6 @@ export const useSceneryStore = create<SceneryStoreState>()(
       registeredDownloads: [],
       translucency: DEFAULT_TRANSLUCENCY,
       blur: DEFAULT_BLUR,
-      inkMode: "auto",
       ensureAssignment: (threadKey) =>
         set((state) => {
           const pool = poolForActiveSet(state);
@@ -545,7 +525,6 @@ export const useSceneryStore = create<SceneryStoreState>()(
       },
       setTranslucency: (value) => set(() => ({ translucency: clampTranslucency(value) })),
       setBlur: (value) => set(() => ({ blur: clampBlur(value) })),
-      setInkMode: (mode) => set(() => ({ inkMode: INK_MODES.has(mode) ? mode : "auto" })),
       removeThread: (threadKey) =>
         set((state) => {
           if (!(threadKey in state.assignments)) {
@@ -567,7 +546,6 @@ export const useSceneryStore = create<SceneryStoreState>()(
         registeredDownloads: state.registeredDownloads,
         translucency: state.translucency,
         blur: state.blur,
-        inkMode: state.inkMode,
       }),
       migrate: migratePersistedSceneryState,
       merge: mergePersistedSceneryState,

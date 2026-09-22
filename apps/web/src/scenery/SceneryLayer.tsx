@@ -14,18 +14,12 @@
  * not. Blur-only swaps (same photo, new CDN variant) keep the hold — the old
  * variant stays put until the decoded one crossfades in, or slider drags
  * would pulse the photo toward the gradient. Under reduced motion nothing
- * fades: swaps commit as hard cuts once the image is ready. When the new
- * photo also flips the ink appearance, the commit is wrapped in a view
- * transition so the palette, wash, and wallpaper dissolve together — and the
- * CSS layers are parked (settled, no outgoing) so nothing re-animates when
- * the snapshot finishes.
+ * fades: swaps commit as hard cuts once the image is ready.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 
 import { useMotionStore } from "./motionStore";
 import { gradientCss } from "./palette";
-import { runSceneryInkTransition } from "./sceneryInkTransition";
 import { planScenerySwap } from "./scenerySwap";
 import { isWallpaperReady, preloadWallpaper } from "./sceneryWallpaper";
 import {
@@ -65,7 +59,6 @@ export function SceneryLayer({
   photo,
   seed,
   blur,
-  appearanceCrossfade = false,
   onPhotoDisplayed,
 }: {
   photo: SceneryPhoto | null;
@@ -73,20 +66,10 @@ export function SceneryLayer({
   seed: string;
   /** CDN pre-blur strength (0–100); a change cross-fades like a photo swap. */
   blur: number;
-  /**
-   * The incoming photo will also flip light↔dark ink. Commit the decoded
-   * swap inside a view transition so chrome and wash don't snap first.
-   */
-  appearanceCrossfade?: boolean;
   onPhotoDisplayed?: (photo: SceneryPhoto) => void;
 }) {
   const [displayed, setDisplayed] = useState<DisplayedPhoto | null>(null);
   const [outgoing, setOutgoing] = useState<DisplayedPhoto | null>(null);
-  // A photo committed inside an ink view transition mounts settled: the
-  // snapshot already crossfaded it, so a CSS fade would replay afterwards.
-  const [settledKey, setSettledKey] = useState<string | null>(null);
-  const appearanceCrossfadeRef = useRef(appearanceCrossfade);
-  appearanceCrossfadeRef.current = appearanceCrossfade;
   const onPhotoDisplayedRef = useRef(onPhotoDisplayed);
   onPhotoDisplayedRef.current = onPhotoDisplayed;
 
@@ -134,44 +117,15 @@ export function SceneryLayer({
         photographerName: photo.photographerName,
         photographerProfileURL: unsplashProfileAttributionUrl(photo.photographerProfileURL),
       };
-      // True only while the commit runs inside a live view transition.
-      // The fallbacks (no API, reduced motion, a skipped start) commit the
-      // same way a normal swap does, keeping the CSS dissolve.
-      let inkAnimating = false;
-      const commit = () => {
-        if (inkAnimating) {
-          // The snapshot is the crossfade: park the CSS layers so they do
-          // not re-animate when the view transition hands back the live DOM.
-          setOutgoing(null);
-          setSettledKey(displayedPhotoKey(next));
-        } else {
-          // Blur-only swaps held the old variant through the download;
-          // crossfade it out now. Thread swaps already demoted theirs.
-          const held = displayedRef.current;
-          if (held !== null && held.id === next.id && held.blur !== next.blur) {
-            setOutgoing(held);
-          }
-          // A normal commit always fades in; only ink-transition commits
-          // mount settled (set above, cleared here on the next swap).
-          setSettledKey(null);
-        }
-        displayedRef.current = next;
-        setDisplayed(next);
-        onPhotoDisplayedRef.current?.(photo);
-      };
-      if (appearanceCrossfadeRef.current) {
-        // The view-transition callback must mutate the DOM before it
-        // returns, so React's photo + ink state have to flush together.
-        runSceneryInkTransition((animating) => {
-          if (cancelled) {
-            return;
-          }
-          inkAnimating = animating;
-          flushSync(commit);
-        });
-        return;
+      // Blur-only swaps held the old variant through the download;
+      // crossfade it out now. Thread swaps already demoted theirs.
+      const held = displayedRef.current;
+      if (held !== null && held.id === next.id && held.blur !== next.blur) {
+        setOutgoing(held);
       }
-      commit();
+      displayedRef.current = next;
+      setDisplayed(next);
+      onPhotoDisplayedRef.current?.(photo);
     };
     if (isWallpaperReady(url)) {
       commitDecoded();
@@ -216,11 +170,7 @@ export function SceneryLayer({
           ) : null}
           {displayed ? (
             <div
-              className={
-                displayedPhotoKey(displayed) === settledKey
-                  ? "scenery-layer__photo"
-                  : "scenery-layer__photo scenery-layer__photo--current"
-              }
+              className="scenery-layer__photo scenery-layer__photo--current"
               key={displayedPhotoKey(displayed)}
               style={{ backgroundImage: `url(${displayed.url})` }}
             />

@@ -21,6 +21,7 @@ import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } f
 import { Atom } from "effect/unstable/reactivity";
 
 import { getMediaQueryEntry } from "../hooks/useMediaQuery";
+import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
 import { environmentCatalog } from "../connection/catalog";
 import { useServerConfigs } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
@@ -28,7 +29,6 @@ import { environmentThreadShells, threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { layerStack } from "./glass";
 import { usePhotoSetStore } from "./photoSetStore";
-import { pickInkVariant, type InkDecisionInput } from "./sceneryInk";
 import { loadSeedPhotos, peekSeedPhotos } from "./scenerySeeds";
 import { SceneryLayer } from "./SceneryLayer";
 import { SceneryPlaceCredit } from "./SceneryPlaceCredit";
@@ -44,7 +44,6 @@ import {
 import { preloadWallpaper } from "./sceneryWallpaper";
 import { wallpaperURL } from "./unsplash";
 import { useActiveThreadKey } from "./useActiveThreadKey";
-import { useInkOverride } from "./useInkOverride";
 import { useSyncedSceneryPhotoSet } from "./useSyncedSceneryPhotoSet";
 import "./scenery.css";
 
@@ -115,7 +114,6 @@ export default function ActiveScenery() {
   );
   const translucency = useSceneryStore((state) => state.translucency);
   const blur = useSceneryStore((state) => state.blur);
-  const inkMode = useSceneryStore((state) => state.inkMode);
   const ensureAssignment = useSceneryStore((state) => state.ensureAssignment);
   const registerDisplayed = useSceneryStore((state) => state.registerDisplayed);
   const refreshPoolIfStale = useSceneryStore((state) => state.refreshPoolIfStale);
@@ -242,45 +240,17 @@ export default function ActiveScenery() {
     void preloadWallpaper(wallpaperURL(photo, blur));
   }, [photo, blur]);
 
-  // Ink follows the photo that is actually on screen. Using the incoming
-  // assignment would flip chrome/wash while the outgoing wallpaper is still
-  // dissolving (SceneryLayer only commits the new photo once decoded). Until
-  // the first photo has displayed, the assignment is the right source so the
-  // opening gradient already has matching ink.
-  const [displayedTone, setDisplayedTone] = useState<{
-    readonly averageColorHex: string | null;
-    readonly seed: string;
-  } | null>(null);
-  const incomingInk: Omit<InkDecisionInput, "baseAppearance"> = {
-    averageColorHex: photo?.averageColorHex ?? null,
-    seed,
-    translucency,
-    blur,
-    inkMode,
-  };
-  const delayedInk: Omit<InkDecisionInput, "baseAppearance"> = {
-    averageColorHex:
-      displayedTone !== null ? displayedTone.averageColorHex : incomingInk.averageColorHex,
-    seed: displayedTone !== null ? displayedTone.seed : incomingInk.seed,
-    translucency,
-    blur,
-    inkMode,
-  };
-
-  // Per-thread ink: repaint the palette in whichever variant reads best over
-  // this thread's photo. Off under reduced transparency — the photo is not
-  // shown, so the appearance preference should win unchallenged.
-  const { base: inkBase } = useInkOverride(reducedTransparency ? null : delayedInk);
-  const delayedVariant = pickInkVariant({ ...delayedInk, baseAppearance: inkBase });
-  const incomingVariant = pickInkVariant({ ...incomingInk, baseAppearance: inkBase });
-  const appearanceCrossfade = photo !== null && incomingVariant !== delayedVariant;
+  // The wash follows the app appearance (Settings → Appearance → Color
+  // scheme). A thread's photo never flips it: bright and dark landscapes
+  // both sit behind the light or dark variant the user chose.
+  const appearance = usePaintedAppearance();
 
   // Publish the layer alphas the CSS reads, plus the positive activation
   // attribute the transparent-surface rules are gated on. A positive gate —
   // rather than :not([data-scenery-reduced]) — means the first painted frame
   // (before this effect) keeps the stock opaque surfaces, which is exactly
-  // right under prefers-reduced-transparency. Layout so a view-transition
-  // photo commit captures the matching wash in the same frame as the ink.
+  // right under prefers-reduced-transparency. Layout so the wash lands in the
+  // same frame as the palette after an appearance switch.
   useLayoutEffect(() => {
     const root = document.documentElement;
     if (reducedTransparency) {
@@ -289,11 +259,11 @@ export default function ActiveScenery() {
     }
     const darkStack = layerStack(translucency, "dark", increasedContrast);
     const lightStack = layerStack(translucency, "light", increasedContrast);
-    const activeStack = delayedVariant === "dark" ? darkStack : lightStack;
+    const activeStack = appearance === "dark" ? darkStack : lightStack;
     root.style.setProperty("--scenery-wash-dark-alpha", String(darkStack.washAlpha));
     root.style.setProperty("--scenery-wash-light-alpha", String(lightStack.washAlpha));
-    root.style.setProperty("--scenery-wash-dark-opacity", delayedVariant === "dark" ? "1" : "0");
-    root.style.setProperty("--scenery-wash-light-opacity", delayedVariant === "light" ? "1" : "0");
+    root.style.setProperty("--scenery-wash-dark-opacity", appearance === "dark" ? "1" : "0");
+    root.style.setProperty("--scenery-wash-light-opacity", appearance === "light" ? "1" : "0");
     root.style.setProperty("--scenery-photo-opacity", String(activeStack.photoOpacity));
     root.style.setProperty("--scenery-edge-top-alpha", String(activeStack.edgeTopAlpha));
     root.style.setProperty("--scenery-edge-bottom-alpha", String(activeStack.edgeBottomAlpha));
@@ -308,7 +278,7 @@ export default function ActiveScenery() {
       root.style.removeProperty("--scenery-edge-bottom-alpha");
       root.removeAttribute("data-scenery-on");
     };
-  }, [translucency, delayedVariant, increasedContrast, reducedTransparency]);
+  }, [translucency, appearance, increasedContrast, reducedTransparency]);
 
   if (reducedTransparency) {
     return null;
@@ -316,20 +286,7 @@ export default function ActiveScenery() {
 
   return (
     <>
-      <SceneryLayer
-        photo={photo}
-        seed={seed}
-        blur={blur}
-        appearanceCrossfade={appearanceCrossfade}
-        onPhotoDisplayed={(displayed) => {
-          registerDisplayed(displayed);
-          const tone = {
-            averageColorHex: displayed.averageColorHex,
-            seed,
-          };
-          setDisplayedTone(tone);
-        }}
-      />
+      <SceneryLayer photo={photo} seed={seed} blur={blur} onPhotoDisplayed={registerDisplayed} />
       <SceneryPlaceCredit photo={photo} />
     </>
   );
