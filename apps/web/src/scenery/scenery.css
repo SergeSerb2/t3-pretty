@@ -157,62 +157,6 @@ html[data-theme-id="world-scenery"] {
   opacity: var(--scenery-wash-light-opacity, 0);
 }
 
-/* Light↔dark ink flip: the view transition crossfades the scenery snapshot,
-   so the CSS photo fade and wash opacity tween would double-animate. The
-   default plus-lighter blend also flashes a bright frame between a light
-   and a dark snapshot — normal blend is the dissolve we actually want.
-   Chat text is a named group that cuts instead of dissolving (below). */
-html[data-scenery-ink-transition] .scenery-layer__group,
-html[data-scenery-ink-transition] .scenery-layer__wash,
-html[data-scenery-ink-transition] .scenery-layer__edges {
-  transition: none;
-}
-
-/* --outgoing is deliberately NOT parked: the attribute is set before the old
-   snapshot is captured, and stripping the dissolve there would snap a
-   half-faded photo back to full opacity in that snapshot. The commit drops
-   the outgoing layer from the live DOM anyway, so it never outlives the
-   transition. */
-html[data-scenery-ink-transition] .scenery-layer__photo--current {
-  animation: none;
-}
-
-html[data-scenery-ink-transition]::view-transition-group(root) {
-  animation-duration: 0.3s;
-  animation-timing-function: cubic-bezier(0.77, 0, 0.175, 1);
-}
-
-html[data-scenery-ink-transition]::view-transition-image-pair(root) {
-  isolation: isolate;
-}
-
-html[data-scenery-ink-transition]::view-transition-old(root),
-html[data-scenery-ink-transition]::view-transition-new(root) {
-  animation-duration: 0.3s;
-  animation-timing-function: cubic-bezier(0.77, 0, 0.175, 1);
-  mix-blend-mode: normal;
-}
-
-/* Thread switches capture two different transcripts in the root snapshot.
-   Isolating the list and hiding the outgoing copy stops the plus-lighter
-   overlay that reads as missing/doubled letters. The name is only on the
-   active column so cousin ChatViews (split panes) cannot share it. */
-html[data-scenery-ink-transition] [data-chat-transcript-active] {
-  view-transition-name: scenery-chat-transcript;
-}
-
-html[data-scenery-ink-transition]::view-transition-group(scenery-chat-transcript) {
-  animation: none;
-}
-
-html[data-scenery-ink-transition]::view-transition-old(scenery-chat-transcript) {
-  display: none;
-}
-
-html[data-scenery-ink-transition]::view-transition-new(scenery-chat-transcript) {
-  animation: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .scenery-layer__group,
   .scenery-layer__wash,
@@ -699,10 +643,7 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
 }
 
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-  :is(
-    [data-app-sidebar] [data-slot="sidebar-header"],
-    [data-right-panel-tabbar]
-  ),
+  :is([data-app-sidebar] [data-slot="sidebar-header"], [data-right-panel-tabbar]),
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   :is([data-workspace-header], [data-chat-header], [data-pull-requests-header])::after {
   box-shadow: none;
@@ -758,9 +699,9 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]:not(.dark) {
   --code-foreground: #161a17;
 }
 
-/* Ink can paint a light plate while Shiki still emits pierre-dark tokens
-   (white ink on frost). Flatten the mismatched highlighter to the plate
-   foreground so the block stays readable until the painted theme lands. */
+/* An appearance switch can paint a light plate while Shiki still emits
+   pierre-dark tokens (white text on frost). Flatten the mismatched
+   highlighter to the plate foreground until the highlighter re-renders. */
 html[data-theme-id="world-scenery"]:not(.dark) .chat-markdown-shiki .shiki.pierre-dark,
 html[data-theme-id="world-scenery"]:not(.dark) .tool-call-shiki .shiki.pierre-dark {
   color: var(--code-foreground) !important;
