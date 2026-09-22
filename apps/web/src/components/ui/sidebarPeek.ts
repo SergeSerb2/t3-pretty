@@ -204,14 +204,18 @@ function readSidebarPeekHitRects(container: HTMLElement): readonly SidebarPeekRe
   return rects;
 }
 
-function findSidebarPeekContainer(target: EventTarget | null): HTMLElement | null {
+function sidebarPeekContainerElement(): HTMLElement | null {
   if (typeof document === "undefined") return null;
+  const found = document.querySelector("[data-slot='sidebar-container']");
+  return found instanceof HTMLElement ? found : null;
+}
+
+function findSidebarPeekContainer(target: EventTarget | null): HTMLElement | null {
   if (typeof Element !== "undefined" && target instanceof Element) {
     const closest = target.closest("[data-slot='sidebar-container']");
     if (closest instanceof HTMLElement) return closest;
   }
-  const found = document.querySelector("[data-slot='sidebar-container']");
-  return found instanceof HTMLElement ? found : null;
+  return sidebarPeekContainerElement();
 }
 
 export function useSidebarPeekPointerBinding(
@@ -301,6 +305,7 @@ export function useSidebarPeek(enabled: boolean) {
   const peekingRef = useRef(peeking);
   const presentRef = useRef(present);
   const suppressHoverOpenRef = useRef(false);
+  const lastPointerRef = useRef<SidebarPeekPoint | null>(null);
   peekingRef.current = peeking;
   presentRef.current = present;
 
@@ -413,9 +418,21 @@ export function useSidebarPeek(enabled: boolean) {
   }, [enabled, hideNow]);
 
   useEffect(() => {
+    const remember = (event: PointerEvent) => {
+      lastPointerRef.current = { x: event.clientX, y: event.clientY };
+    };
+    window.addEventListener("pointerdown", remember, { passive: true });
+    window.addEventListener("pointermove", remember, { passive: true });
+    return () => {
+      window.removeEventListener("pointerdown", remember);
+      window.removeEventListener("pointermove", remember);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!suppressHoverOpen) return;
     const releaseIfPointerLeft = (point: SidebarPeekPoint | null) => {
-      const container = findSidebarPeekContainer(null);
+      const container = sidebarPeekContainerElement();
       const inside = pointerStillInsideSidebarPeek({
         point,
         rects: container ? readSidebarPeekHitRects(container) : [],
@@ -426,12 +443,15 @@ export function useSidebarPeek(enabled: boolean) {
       setSuppressHoverOpen(false);
     };
     const onMove = (event: PointerEvent) => {
-      releaseIfPointerLeft({ x: event.clientX, y: event.clientY });
+      const point = { x: event.clientX, y: event.clientY };
+      lastPointerRef.current = point;
+      releaseIfPointerLeft(point);
     };
-    // The rail finishes collapsing under a stationary pointer. Hover updates
-    // without a move once the width animation no longer covers that point.
+    // The rail finishes collapsing under a stationary pointer. :hover often
+    // stays false on the rail until the next move, so judge the last point
+    // against the container rects instead of hover alone.
     const releaseTimer = window.setTimeout(
-      () => releaseIfPointerLeft(null),
+      () => releaseIfPointerLeft(lastPointerRef.current),
       SIDEBAR_PEEK_ANIMATION_MS,
     );
     window.addEventListener("pointermove", onMove);
