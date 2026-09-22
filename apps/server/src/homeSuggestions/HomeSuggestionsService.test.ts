@@ -335,6 +335,48 @@ describe("HomeSuggestionsService", () => {
     ),
   );
 
+  it.effect("a stored batch without lastAttemptAt is not a first-start", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const config = yield* ServerConfig.ServerConfig.pipe(
+          Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
+          Effect.orDie,
+        );
+        yield* fs.makeDirectory(config.stateDir, { recursive: true });
+        yield* fs.writeFileString(
+          path.join(config.stateDir, HomeSuggestions.HOME_SUGGESTIONS_FILE_NAME),
+          JSON.stringify({
+            generatedAt: NOW,
+            suggestions: [
+              {
+                id: "kept",
+                kind: "explore",
+                projectId: null,
+                title: "Already generated",
+                summary: "From an older file.",
+                prompt: "Keep going.",
+              },
+            ],
+            previousTitles: ["Already generated"],
+          }),
+        );
+        const harness = yield* makeHarness(baseDir);
+        const snapshot = yield* withService(harness, (service) =>
+          Effect.gen(function* () {
+            yield* service.tickOnce;
+            yield* service.drain;
+            return yield* service.current;
+          }),
+        );
+        assert.strictEqual(snapshot.status, "ready");
+        assert.deepStrictEqual(titles(snapshot), ["Already generated"]);
+        assert.strictEqual((yield* Ref.get(harness.generations)).length, 0);
+      }),
+    ),
+  );
+
   it.effect("does not generate again before the next scheduled time", () =>
     run((baseDir) =>
       Effect.gen(function* () {

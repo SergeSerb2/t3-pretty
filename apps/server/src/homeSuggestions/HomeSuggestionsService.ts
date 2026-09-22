@@ -156,15 +156,18 @@ export const make = Effect.gen(function* () {
       return [next, next];
     }).pipe(Effect.tap((next) => PubSub.publish(changes, next)));
 
-  // Never attempted: due right away, so a fresh install fills in on first
-  // start. Never succeeded: retry an hour after the last attempt rather
-  // than waiting for tomorrow's slot. Otherwise the first slot after the
-  // last attempt, which is in the past after a long sleep and therefore
-  // runs once on the next tick.
+  // Never attempted and never succeeded: due right away, so a fresh
+  // install fills in on first start. A file that already has a batch
+  // but dropped lastAttemptAt (older shape, partial write) is not a
+  // first start — schedule from generatedAt. Never succeeded: retry an
+  // hour after the last attempt rather than waiting for tomorrow's slot.
+  // Otherwise the first slot after the last attempt, which is in the
+  // past after a long sleep and therefore runs once on the next tick.
   const nextRunAtFor = (current: ServerSettings, state: StoredState, nowMs: number) => {
     if (!current.homeSuggestionsEnabled) return null;
-    if (state.lastAttemptAt === null) return nowMs;
-    const lastAttemptMs = Date.parse(state.lastAttemptAt);
+    if (state.lastAttemptAt === null && state.generatedAt === null) return nowMs;
+    const lastAttemptMs = Date.parse(state.lastAttemptAt ?? state.generatedAt ?? "");
+    if (!Number.isFinite(lastAttemptMs)) return null;
     if (state.generatedAt === null) {
       return lastAttemptMs + Duration.toMillis(HOME_SUGGESTIONS_FIRST_BATCH_RETRY);
     }
