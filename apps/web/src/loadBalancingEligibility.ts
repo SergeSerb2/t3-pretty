@@ -60,17 +60,16 @@ function catalogListsModel(provider: LoadBalancingHostProvider, model: string): 
 }
 
 /**
- * A probe that has not finished leaves version null and auth unknown.
- * `ready` / `error`, a parsed version, or any decided auth state means the
- * catalog is the one the machine will keep.
+ * `ready` and `error` are finished probes. A `warning` snapshot that still
+ * only lists the built-in `grok-build` stub is the first probe, even after
+ * version or auth has been filled in. A warning snapshot that lists any
+ * other model has a real catalog.
  */
 function catalogSettled(provider: LoadBalancingHostProvider): boolean {
-  return (
-    provider.status === "ready" ||
-    provider.status === "error" ||
-    provider.version !== null ||
-    provider.authStatus !== "unknown"
-  );
+  if (provider.status === "ready" || provider.status === "error") return true;
+  const listsMoreThanStub = provider.models.some((model) => model.slug !== "grok-build");
+  if (!listsMoreThanStub) return false;
+  return provider.version !== null || provider.authStatus !== "unknown";
 }
 
 export function loadBalancingHostVerdict(

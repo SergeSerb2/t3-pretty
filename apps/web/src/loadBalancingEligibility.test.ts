@@ -87,6 +87,23 @@ describe("loadBalancingHostVerdict", () => {
     ).toBe("pending");
   });
 
+  it("keeps waiting when version and auth arrive before any model besides grok-build", () => {
+    expect(
+      loadBalancingHostVerdict(
+        host(
+          "linux-box",
+          grokProvider({
+            status: "warning",
+            authStatus: "authenticated",
+            version: "1.0.40",
+            models: [{ slug: "grok-build" }],
+          }),
+        ),
+        grokFastTarget,
+      ),
+    ).toBe("pending");
+  });
+
   it("does not wait on a finished probe that never listed the model", () => {
     expect(
       loadBalancingHostVerdict(

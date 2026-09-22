@@ -1,6 +1,7 @@
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import {
   loadBalancedAssignmentIsStale,
+  loadBalancingHostVerdict,
   partitionLoadBalancingHosts,
   type LoadBalancingHost,
 } from "../loadBalancingEligibility";
@@ -4039,7 +4040,6 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
   const loadBalancingHosts = useMemo((): ReadonlyArray<LoadBalancingHost> => {
-    if (!automaticEnvironment) return [];
     return logicalProjectEnvironments.flatMap((candidate) => {
       const environment = environmentById.get(candidate.environmentId);
       if (!environment) return [];
@@ -4065,12 +4065,17 @@ export default function ChatView(props: ChatViewProps) {
         },
       ];
     });
-  }, [
-    automaticEnvironment,
-    environmentById,
-    loadBalancingSettings.loadBalancingWeights,
-    logicalProjectEnvironments,
-  ]);
+  }, [environmentById, loadBalancingSettings.loadBalancingWeights, logicalProjectEnvironments]);
+  const currentEnvironmentCannotRunModel = useMemo(() => {
+    if (!draftThread || draftThread.environmentSelection === "manual") return false;
+    const host = loadBalancingHosts.find(
+      (candidate) => candidate.environmentId === draftThread.environmentId,
+    );
+    return (
+      host !== undefined &&
+      loadBalancingHostVerdict(host, loadBalancingModelTarget) === "ineligible"
+    );
+  }, [draftThread, loadBalancingHosts, loadBalancingModelTarget]);
   const loadBalancingPartition = useMemo(
     () => partitionLoadBalancingHosts(loadBalancingHosts, loadBalancingModelTarget),
     [loadBalancingHosts, loadBalancingModelTarget],
@@ -4104,9 +4109,18 @@ export default function ChatView(props: ChatViewProps) {
     ) {
       return;
     }
-    const target = logicalProjectEnvironments.find(
+    const scoredTarget = logicalProjectEnvironments.find(
       (environment) => environment.environmentId === loadBalancing.environmentId,
     );
+    // A saturated eligible machine can still run the model. Staying on a
+    // machine whose catalog dropped it cannot.
+    const eligibleFallback =
+      assignedEnvironmentIsStale || currentEnvironmentCannotRunModel
+        ? logicalProjectEnvironments.find((environment) =>
+            loadBalancingPartition.eligibleEnvironmentIds.includes(environment.environmentId),
+          )
+        : undefined;
+    const target = scoredTarget ?? eligibleFallback;
     if (target) {
       if (
         draftThread?.loadBalancedEnvironmentId === target.environmentId &&
@@ -4137,6 +4151,9 @@ export default function ChatView(props: ChatViewProps) {
     draftThread?.loadBalancedEnvironmentId,
     draftThread?.environmentId,
     draftThread?.environmentSelection,
+    assignedEnvironmentIsStale,
+    currentEnvironmentCannotRunModel,
+    loadBalancingPartition.eligibleEnvironmentIds,
     logicalProjectEnvironments,
     setDraftThreadContext,
   ]);
@@ -7463,7 +7480,7 @@ export default function ChatView(props: ChatViewProps) {
       notifyDirectAnnotationAttached();
       return;
     }
-    if (needsLoadBalancing) {
+    if (needsLoadBalancing || currentEnvironmentCannotRunModel) {
       toastManager.add({
         type: "warning",
         title: loadBalancing.pending
@@ -7471,7 +7488,9 @@ export default function ChatView(props: ChatViewProps) {
           : "Choose a machine to continue",
         description: loadBalancing.pending
           ? "Resource checks are still running. You can choose a machine in the composer."
-          : "No eligible machine has available resources. Choose a machine in the composer to override.",
+          : currentEnvironmentCannotRunModel
+            ? "This machine does not offer the selected model. Choose another machine in the composer."
+            : "No eligible machine has available resources. Choose a machine in the composer to override.",
       });
       return;
     }
@@ -8826,6 +8845,7 @@ export default function ChatView(props: ChatViewProps) {
     isRevertingCheckpoint ||
     threadDetailLoading ||
     needsLoadBalancing ||
+    currentEnvironmentCannotRunModel ||
     activeProviderStatus === null;
   useEffect(() => {
     if (!nextQueuedMessage || isSendBusy || queueBlockedByPendingRequest || queueSendGate) return;
@@ -9632,6 +9652,7 @@ export default function ChatView(props: ChatViewProps) {
     !threadDetailLoading &&
     clientSettingsHydrated &&
     !needsLoadBalancing &&
+    !currentEnvironmentCannotRunModel &&
     !activeEnvironmentUnavailable &&
     !activePendingProgress &&
     !feedbackUploading;
