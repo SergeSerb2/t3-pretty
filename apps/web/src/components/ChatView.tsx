@@ -375,6 +375,7 @@ import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { HomeSuggestionsPanel } from "./home/HomeSuggestionsPanel";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -10304,6 +10305,11 @@ export default function ChatView(props: ChatViewProps) {
                           draftId={draftId}
                           activeProjectRef={activeProjectRef}
                           activeProjectTitle={activeProject?.title ?? null}
+                        />
+                        <HomeSuggestionsPanel
+                          environmentId={environmentId}
+                          draftId={draftId}
+                          activeProjectRef={activeProjectRef}
                         />
                       </div>
                     </div>

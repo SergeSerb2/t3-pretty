@@ -1,34 +1,36 @@
 # Home
 
-The home screen is what you see when nothing is open: click the T3 Pretty mark in the top left,
-run **Go to home** from the command palette, or open the app fresh. It shows the threads you
-touched last and a set of suggested prompts for the day.
+Opening T3 Pretty with nothing selected, clicking the T3 Pretty mark in the top left, or running
+**Go to home** from the command palette lands you on a fresh draft in your most recent project:
+the "What should we build in …?" page with the composer. Above the composer sits a row of
+suggested prompts for the day.
 
 ## Suggestions
 
-Once a day T3 Pretty reads your projects and their recent threads and proposes prompt cards:
+Once a day T3 Pretty reads your projects and their recent threads, then an agent plans what to do
+next and writes it up as cards:
 
-- **Keep going** cards continue work in a specific project: the natural next step after what an
+- **Project cards** continue work in a specific project: the natural next step after what an
   agent just built, something a thread left broken, missing tests, or debt the threads exposed.
-- **Something new** cards are ideas outside your current work: a tool worth building, an
-  experiment, or a fresh project. Pick the project they should start in with the **Start in**
-  chooser; the prompt tells the agent where to create files.
+- **New idea** cards are ideas outside your current work: a tool worth building, an experiment,
+  or a fresh project. They start in whichever project the draft is open for; switch projects from
+  the headline first if you want them elsewhere.
 
-**Start** opens a new thread in that project with the prompt already typed. Nothing is sent until
-you press send, so edit it first if you like. Dismiss a card with the **×** in its corner; it stays
-gone until the next batch.
+Click a card and its prompt is typed into the composer. Nothing is sent until you press send, so
+edit it first if you like. A card for another project opens a draft there instead. Dismiss a card
+with the **×** in its corner; it stays gone until the next batch. Scroll the row sideways to see
+every card.
 
 The batch regenerates at **09:00** in the environment's local time. If the machine was asleep at
-that moment, the batch runs once when it is back. **Refresh** on the home screen, or **Generate
-now** in Settings, makes a new batch right away. Each environment generates its own cards; when
-several are connected they appear one after another.
+that moment, the batch runs once when it is back. The refresh icon beside the row, or
+**Generate now** in Settings, makes a new batch right away. Each environment generates its own
+cards; the row shows the ones for the environment the draft belongs to.
 
 ## Settings
 
 **Settings → General → Home suggestions**:
 
-- **Daily home suggestions** turns the schedule off or on. Cards already on the screen stay until
-  the next batch.
+- **Daily home suggestions** turns the schedule off or on. Off also hides the row.
 - **Home suggestions model** is the model that plans the cards. It reads a digest of every recent
   thread at once, so it defaults to GPT-6 Astra at low reasoning rather than the cheaper model used
   for thread titles. Any text generation provider works here.
