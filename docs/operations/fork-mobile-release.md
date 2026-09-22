@@ -90,8 +90,13 @@ App Store Connect, not App Store review) only when the native fingerprint
 changed. A GitHub Actions-era `.t3-fork/ios-production-fingerprint` is
 enough to skip Xcode. The job does not force an IPA just because
 `.t3-fork/ios-native-submit` is missing. Hosted M4 images ship a full
-Xcode; if a worker has no full Xcode at all, the job compiles on EAS
-cloud (`eas build --wait --json`, then `eas submit --id` of that build). Set `T3CODE_FORCE_IOS=1` (or
+Xcode. On self-hosted `macos-release`, local `eas build --local` is the
+default IPA compile path. If the worker has no usable full Xcode (Command
+Line Tools only, leftover unrunnable `Xcode.app`, or a stale beta), the
+job fails with a Buildkite annotation instead of spending EAS Free/paid
+quota. Set `T3CODE_IOS_ALLOW_EAS_CLOUD=1` on a rebuild to opt into the
+cloud IPA path (`eas build --wait --json`). OTA (`eas update`) is
+unchanged. Set `T3CODE_FORCE_IOS=1` (or
 `T3CODE_MOBILE_MODE=build`) on a Buildkite rebuild to compile and submit
 even when the fingerprint matches. The runner writes
 `~/.cache/t3-pretty-release/ios-native-submit` after a successful IPA
@@ -159,17 +164,18 @@ of reporting a green release that shipped nothing. To activate:
    normal mobile releases are fully non-interactive. Do not use a cloud
    `eas build` for this bootstrap unless you intend to spend an Expo iOS
    build credit.
-5. Hosted `macos-large` compiles the IPA with the Xcode that Buildkite's
-   hosted macOS image ships. That is not the leftover self-hosted
-   `Xcode-beta.app` / Xcode 27 beta used on m5-dev. The publisher still
-   probes `Xcode.app` or `Xcode-beta.app` and skips a leftover `Xcode.app`
-   that cannot run, so a self-hosted fallback keeps working. Command Line
-   Tools cannot compile an IPA. The script retries
-   `xcode-select` with passwordless sudo when the selected Xcode is
-   usable. Local EAS on macOS 26 / Xcode 27 also needs the `security`
-   PATH shim in `scripts/fork/security-eas-local-keychain` so Prepare
-   credentials does not reject a successfully imported distribution
-   certificate.
+5. Self-hosted `macos-release` compiles the IPA with local
+   `Xcode.app` (or the accepted `Xcode-beta.app` build). Hosted
+   `macos-large` also ships a full Xcode when that queue is restored.
+   The publisher probes `Xcode.app` or `Xcode-beta.app` and skips a
+   leftover `Xcode.app` that cannot run. Command Line Tools cannot
+   compile an IPA; without a usable Xcode the job fails instead of
+   spending EAS quota. Opt into cloud with `T3CODE_IOS_ALLOW_EAS_CLOUD=1`.
+   The script retries `xcode-select` with passwordless sudo when the
+   selected Xcode is usable. Local EAS on macOS 26 / Xcode 27 also needs
+   the `security` PATH shim in `scripts/fork/security-eas-local-keychain`
+   so Prepare credentials does not reject a successfully imported
+   distribution certificate.
 6. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
    `T3CODE_MOBILE_EAS_PROJECT_ID`, `T3CODE_MOBILE_EXPO_OWNER`,
    optionally `T3CODE_MOBILE_EXPO_SLUG`.

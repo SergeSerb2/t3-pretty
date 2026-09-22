@@ -361,6 +361,7 @@ ${setup}
     assert.include(iosStep, "queue: macos-large");
     assert.notInclude(iosStep, "os: macos");
     assert.include(iosStep, "publish-mobile-release.sh");
+    assert.include(iosStep, "T3CODE_IOS_ALLOW_EAS_CLOUD");
     assert.include(mobileRelease, "hosted macos-large (M4)");
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
     assert.include(mobileRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
@@ -436,6 +437,9 @@ ${setup}
     assert.include(mobileRelease, 'DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version');
     assert.include(mobileRelease, "This is not App Store review");
     assert.include(mobileRelease, "ipa_via_cloud");
+    assert.include(mobileRelease, "allow_eas_cloud_ios");
+    assert.include(mobileRelease, "T3CODE_IOS_ALLOW_EAS_CLOUD");
+    assert.include(mobileRelease, "Cloud IPA builds are opt-in");
     assert.include(mobileRelease, "--wait");
     assert.include(mobileRelease, '--json > "$cloud_build_json"');
     assert.include(mobileRelease, "completed build with an id and archive");
