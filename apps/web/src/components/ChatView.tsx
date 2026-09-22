@@ -10250,7 +10250,9 @@ export default function ChatView(props: ChatViewProps) {
             {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise.
                 World Scenery new threads use a column so the place credit can sit in the lower
                 band. The headline and suggestion shelves stay in that column, so the landing
-                is centered as one stack instead of hanging above a centered composer. */}
+                is centered as one stack instead of hanging above a centered composer.
+                The hero overlay is clipped to the chat column. A long prompt scrolls inside
+                the composer; the shelves above it scroll instead of shifting the page. */}
             <div
               ref={setComposerOverlayElement}
               inert={isRevertingCheckpoint}
@@ -10258,22 +10260,31 @@ export default function ChatView(props: ChatViewProps) {
               data-composer-placement={isDraftHeroState ? "hero" : "docked"}
               className={
                 isDraftHeroState
-                  ? "pointer-events-none absolute inset-0 z-20 flex flex-col"
+                  ? "pointer-events-none absolute inset-0 z-20 flex min-h-0 flex-col overflow-clip"
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >
               {isDraftHeroState ? <div aria-hidden className="min-h-0 flex-1" /> : null}
               <div
                 ref={attachDraftHeroTransitionGroupRef}
-                className="w-full shrink-0 ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
+                className={cn(
+                  "w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]",
+                  isDraftHeroState ? "flex min-h-0 flex-col" : "shrink-0",
+                )}
               >
                 <div
                   ref={draftArrivalRef}
                   data-chat-composer-stack="true"
-                  className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-3xl"
+                  className={cn(
+                    "group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-3xl",
+                    isDraftHeroState && "flex min-h-0 flex-col",
+                  )}
                 >
                   {isDraftHeroState ? (
-                    <div className="pb-10 group-has-data-[composer-shoulder-tab]/composer-stack:pb-5 sm:pb-14">
+                    <div
+                      data-home-hero-body="true"
+                      className="min-h-0 overflow-y-auto overscroll-y-contain"
+                    >
                       <div
                         ref={draftHeroHeadlineRef}
                         data-scenery-hero-chrome="headline"
@@ -10298,8 +10309,15 @@ export default function ChatView(props: ChatViewProps) {
                       />
                     </div>
                   ) : null}
+                  {isDraftHeroState ? (
+                    <div
+                      aria-hidden
+                      className="h-10 shrink-0 group-has-data-[composer-shoulder-tab]/composer-stack:h-5 sm:h-14"
+                    />
+                  ) : null}
                   <div
-                    className="relative"
+                    className={cn("relative", isDraftHeroState && "shrink-0")}
+                    data-home-hero-composer={isDraftHeroState ? "true" : undefined}
                     data-scenery-hero-chrome="composer"
                     style={
                       forceExpandedMobileComposer
@@ -10523,7 +10541,7 @@ export default function ChatView(props: ChatViewProps) {
                 </div>
               </div>
               {isDraftHeroState && sceneryThemeActive ? (
-                <div className="flex min-h-0 flex-1 flex-col justify-end ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] pt-10 sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]">
+                <div className="flex flex-1 flex-col justify-end ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] pt-10 sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]">
                   <div ref={bindSceneryPlaceSlot} data-scenery-place-slot="" />
                   <div
                     aria-hidden

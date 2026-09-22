@@ -382,8 +382,8 @@ describe("scenery attribution contract", () => {
   });
 
   it("pins the hero place credit to the bottom band, not the centered composer", () => {
-    expect(chatViewSource).toContain("absolute inset-0 z-20 flex flex-col");
-    expect(chatViewSource).toContain("min-h-0 flex-1 flex-col justify-end");
+    expect(chatViewSource).toContain("absolute inset-0 z-20 flex min-h-0 flex-col overflow-clip");
+    expect(chatViewSource).toContain("flex flex-1 flex-col justify-end");
     expect(chatViewSource).toContain('data-scenery-place-slot=""');
     expect(sceneryCssSource).toMatch(/\.scenery-place\s*\{[^}]*margin: 0 auto;/s);
     expect(sceneryCssSource).toMatch(
