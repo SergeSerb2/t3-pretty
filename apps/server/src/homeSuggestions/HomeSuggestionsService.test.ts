@@ -299,6 +299,42 @@ describe("HomeSuggestionsService", () => {
     ),
   );
 
+  it.effect("an empty-project run keeps the previous batch and does not persist empty", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        const projects = yield* Ref.make<ReadonlyArray<OrchestrationProjectShell>>([project]);
+        const harness = yield* makeHarness(baseDir, { projectsRef: projects });
+        yield* withService(harness, (service) =>
+          Effect.gen(function* () {
+            const ready = yield* service.current;
+            assert.strictEqual(ready.status, "ready");
+            const generatedAt = ready.generatedAt;
+            yield* Ref.set(projects, []);
+            yield* service.refresh;
+            yield* service.drain;
+            const kept = yield* service.current;
+            assert.strictEqual(kept.status, "ready");
+            assert.strictEqual(kept.generatedAt, generatedAt);
+            assert.isNull(kept.error);
+            assert.deepStrictEqual(titles(kept), ["Finish the home screen", "Build a CLI timer"]);
+          }),
+        );
+        assert.strictEqual((yield* Ref.get(harness.generations)).length, 1);
+
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const config = yield* ServerConfig.ServerConfig.pipe(
+          Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
+          Effect.orDie,
+        );
+        const stored = yield* fs.readFileString(
+          path.join(config.stateDir, HomeSuggestions.HOME_SUGGESTIONS_FILE_NAME),
+        );
+        assert.include(stored, "Finish the home screen");
+      }),
+    ),
+  );
+
   it.effect("does not generate again before the next scheduled time", () =>
     run((baseDir) =>
       Effect.gen(function* () {
@@ -361,6 +397,40 @@ describe("HomeSuggestionsService", () => {
           }).pipe(Effect.provide(harness.layer)),
         );
         assert.strictEqual((yield* Ref.get(harness.generations)).length, 1);
+      }),
+    ),
+  );
+
+  it.effect("concurrent refreshes claim only one generation", () =>
+    run((baseDir) =>
+      Effect.gen(function* () {
+        let calls = 0;
+        const begun = yield* Deferred.make<void>();
+        const gate = yield* Deferred.make<void>();
+        const harness = yield* makeHarness(baseDir, {
+          generate: () => {
+            if (++calls === 1) return Effect.succeed({ suggestions: generatedCards });
+            return Deferred.succeed(begun, undefined).pipe(
+              Effect.andThen(Deferred.await(gate)),
+              Effect.andThen(Effect.succeed({ suggestions: generatedCards })),
+            );
+          },
+        });
+        yield* withService(harness, (service) =>
+          Effect.gen(function* () {
+            assert.strictEqual((yield* Ref.get(harness.generations)).length, 1);
+            const claimed = yield* Effect.all([service.refresh, service.refresh], {
+              concurrency: "unbounded",
+            });
+            assert.isTrue(claimed.every((snapshot) => snapshot.status === "generating"));
+            yield* Deferred.await(begun);
+            const overlapping = yield* service.refresh;
+            assert.strictEqual(overlapping.status, "generating");
+            yield* Deferred.succeed(gate, undefined);
+            yield* service.drain;
+          }),
+        );
+        assert.strictEqual((yield* Ref.get(harness.generations)).length, 2);
       }),
     ),
   );

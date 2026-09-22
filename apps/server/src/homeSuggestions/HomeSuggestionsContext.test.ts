@@ -147,6 +147,44 @@ describe("buildHomeSuggestionsDigest", () => {
     expect(digest.context).toContain("Outcome: Done, the retry was racing the cookie write.");
     expect(digest.context).toContain("## P2: quiet (folder: quiet)\nNo recent threads.");
   });
+
+  it("labels today/yesterday on the configured timezone calendar, not elapsed UTC days", () => {
+    const thread = {
+      shell: makeThread("t1", "busy", "2026-09-21T04:00:00.000Z", { title: "Night work" }),
+      messages: [],
+    };
+    const nowMs = Date.parse("2026-09-21T12:00:00.000Z");
+    const pacific = buildHomeSuggestionsDigest({
+      projects: [makeProject("busy")],
+      threads: [thread],
+      nowMs,
+      timeZone: "America/Los_Angeles",
+    });
+    // 04:00 UTC is still Sep 20 in PDT; elapsed-ms math would have said "today".
+    expect(pacific.context).toContain("Night work (yesterday, last turn idle)");
+
+    const utc = buildHomeSuggestionsDigest({
+      projects: [makeProject("busy")],
+      threads: [thread],
+      nowMs,
+      timeZone: "UTC",
+    });
+    expect(utc.context).toContain("Night work (today, last turn idle)");
+
+    const twoDays = buildHomeSuggestionsDigest({
+      projects: [makeProject("busy")],
+      threads: [
+        {
+          shell: makeThread("t2", "busy", "2026-09-20T01:00:00.000Z", { title: "Older work" }),
+          messages: [],
+        },
+      ],
+      nowMs: Date.parse("2026-09-21T22:00:00.000Z"),
+      timeZone: "America/Los_Angeles",
+    });
+    // Elapsed ~45h is "yesterday"; PDT calendar is Sep 21 vs Sep 19.
+    expect(twoDays.context).toContain("Older work (2 days ago, last turn idle)");
+  });
 });
 
 describe("buildHomeSuggestionsDigest day labels", () => {

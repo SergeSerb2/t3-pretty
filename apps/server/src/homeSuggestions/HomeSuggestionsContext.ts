@@ -81,14 +81,18 @@ function messageText(message: Pick<OrchestrationMessage, "role" | "text">): stri
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** Same zone fallback as `nextHomeSuggestionsRunAt`: named IANA zone, else UTC. */
+function inNamedZone(ms: number, timeZone: string) {
+  const instant = DateTime.makeUnsafe(ms);
+  return Option.getOrElse(DateTime.setZoneNamed(instant, timeZone), () =>
+    DateTime.setZoneNamed(instant, "UTC").pipe(Option.getOrThrow),
+  );
+}
+
 /** Calendar day number in `timeZone`, so "yesterday" follows the user's clock, not UTC's. */
 function calendarDayNumber(ms: number, timeZone: string): number | null {
   if (!Number.isFinite(ms)) return null;
-  const utc = DateTime.makeUnsafe(ms);
-  const zoned = Option.getOrElse(DateTime.setZoneNamed(utc, timeZone), () =>
-    DateTime.setZoneNamed(utc, "UTC").pipe(Option.getOrThrow),
-  );
-  const parts = DateTime.toParts(zoned);
+  const parts = DateTime.toParts(inNamedZone(ms, timeZone));
   return Math.floor(Date.UTC(parts.year, parts.month - 1, parts.day) / 86_400_000);
 }
 
@@ -218,10 +222,7 @@ export function nextHomeSuggestionsRunAt(input: {
   const [hoursText, minutesText] = input.time.split(":");
   const hours = Number(hoursText);
   const minutes = Number(minutesText);
-  const after = DateTime.makeUnsafe(input.afterMs);
-  const zoned = Option.getOrElse(DateTime.setZoneNamed(after, input.timeZone), () =>
-    DateTime.setZoneNamed(after, "UTC").pipe(Option.getOrThrow),
-  );
+  const zoned = inNamedZone(input.afterMs, input.timeZone);
   const wallClock = { hour: hours, minute: minutes, second: 0, millisecond: 0 };
   const candidate = DateTime.setParts(zoned, wallClock);
   const next =

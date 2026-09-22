@@ -1096,6 +1096,46 @@ interface AutoSettlementSearchEnvironment {
   } | null;
 }
 
+interface HomeSuggestionsSearchEnvironment {
+  readonly environmentId: EnvironmentId;
+  readonly connection: { readonly phase: EnvironmentConnectionPhase };
+  readonly serverConfig: {
+    readonly environment: {
+      readonly capabilities: { readonly homeSuggestions?: boolean };
+    };
+  } | null;
+}
+
+/**
+ * Discovery and the selected page both need one capable host. Mixed fleets
+ * still show Home suggestions (same per-env filter as the home page), unlike
+ * auto-settlement which hides the section unless every target supports it.
+ */
+export function getHomeSuggestionsSettingsAvailability(
+  environments: readonly HomeSuggestionsSearchEnvironment[],
+  scope?: Pick<ResolvedSettingsScope, "kind" | "environmentIds">,
+) {
+  const connected = environments.filter(
+    (environment) =>
+      environment.connection.phase === "connected" && environment.serverConfig !== null,
+  );
+  const eligibleEnvironmentIds = connected
+    .filter(
+      (environment) => environment.serverConfig?.environment.capabilities.homeSuggestions === true,
+    )
+    .map((environment) => environment.environmentId);
+  const selected = connected.filter((environment) =>
+    scope?.environmentIds.includes(environment.environmentId),
+  );
+  return {
+    eligibleEnvironmentIds,
+    isTargetAvailable:
+      scope !== undefined &&
+      scope.kind !== "unavailable" &&
+      selected.some((environment) => eligibleEnvironmentIds.includes(environment.environmentId)),
+  };
+}
+
 /** Discovery needs one capable environment; the selected page needs every connected target to support it. */
 export function getThreadAutoSettlementSearchAvailability(
   environments: readonly AutoSettlementSearchEnvironment[],

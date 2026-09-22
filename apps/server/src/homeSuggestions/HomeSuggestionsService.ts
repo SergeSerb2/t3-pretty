@@ -195,14 +195,13 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  // Dismiss runs on the RPC fiber while generation runs on the worker. Each
-  // writes the *current* Ref value under one permit, so whichever write is
-  // last still reflects both updates instead of a stale copy.
+  // Dismiss runs on the RPC fiber while generation runs on the worker. Hold
+  // the permit across the Ref update and the atomic write so a generate
+  // cannot persist a pre-dismiss snapshot after dismiss already wrote.
   const persistLock = yield* Semaphore.make(1);
-  const persistCurrent = persistLock.withPermits(1)(Ref.get(stored).pipe(Effect.flatMap(persist)));
 
-  function persist(state: StoredState) {
-    return encodeStoredState(state).pipe(
+  const persist = (state: StoredState) =>
+    encodeStoredState(state).pipe(
       Effect.flatMap((contents) => writeFileStringAtomically({ filePath, contents })),
       Effect.catchCause((cause) =>
         Effect.logWarning("home suggestions state could not be written", {
@@ -213,7 +212,9 @@ export const make = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
     );
-  }
+
+  const persistUpdate = (update: (previous: StoredState) => StoredState) =>
+    persistLock.withPermits(1)(Ref.updateAndGet(stored, update).pipe(Effect.tap(persist)));
 
   const readDigestThreads = Effect.fn("HomeSuggestionsService.readDigestThreads")(function* () {
     const shell = yield* projection.getShellSnapshot();
@@ -289,12 +290,11 @@ export const make = Effect.gen(function* () {
       const failure = Cause.squash(exit.cause);
       const error = failure instanceof Error ? failure.message : String(failure);
       yield* Effect.logWarning("home suggestions generation failed", { reason, error });
-      const state = yield* Ref.updateAndGet(stored, (previous) => ({
+      const state = yield* persistUpdate((previous) => ({
         ...previous,
         lastAttemptAt: attemptedAt,
         lastError: error,
       }));
-      yield* persistCurrent;
       yield* publish((snapshot) => ({
         ...snapshot,
         status: "failed",
@@ -308,21 +308,20 @@ export const make = Effect.gen(function* () {
       yield* publish((snapshot) => ({
         ...snapshot,
         status: statusOf(state),
-        error: null,
+        error: state.lastError,
         nextRunAt: isoOrNull(nextRunAtFor(current, state, nowMs)),
         suggestions: state.suggestions,
       }));
       return;
     }
     const suggestions = exit.value.suggestions;
-    const state = yield* Ref.updateAndGet(stored, (previous) => ({
+    const state = yield* persistUpdate((previous) => ({
       generatedAt: attemptedAt,
       lastAttemptAt: attemptedAt,
       lastError: null,
       suggestions,
       previousTitles: rememberTitles(previous.previousTitles, suggestions),
     }));
-    yield* persistCurrent;
     yield* publish(() => ({
       status: "ready",
       generatedAt: attemptedAt,
@@ -357,7 +356,12 @@ export const make = Effect.gen(function* () {
           if (previous.snapshot.status === "generating") return [[false, previous], previous];
           const generating = {
             seq: previous.seq + 1,
-            snapshot: { ...previous.snapshot, status: "generating" as const, error: null },
+            snapshot: {
+              ...previous.snapshot,
+              status: "generating" as const,
+              error: null,
+              timeZone,
+            },
           };
           return [[true, generating], generating];
         },
@@ -432,11 +436,10 @@ export const make = Effect.gen(function* () {
 
   const dismiss: HomeSuggestionsService["Service"]["dismiss"] = (suggestionId) =>
     Effect.gen(function* () {
-      const state = yield* Ref.updateAndGet(stored, (previous) => ({
+      const state = yield* persistUpdate((previous) => ({
         ...previous,
         suggestions: previous.suggestions.filter((card) => card.id !== suggestionId),
       }));
-      yield* persistCurrent;
       const next = yield* publish((previous) => ({
         ...previous,
         suggestions: state.suggestions,

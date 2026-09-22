@@ -42,7 +42,7 @@ import {
   SettingsRow,
   SettingsSection,
 } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { getHomeSuggestionsSettingsAvailability, searchableSetting } from "./settingsSearch";
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKindSchema.make("codex");
 
@@ -60,14 +60,15 @@ export function HomeSuggestionsSettingsSection() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
-  const { environment, connectedEnvironments } = useSettingsScope();
+  const { scope, environment, connectedEnvironments } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
   const hasServerTargets = connectedEnvironments.length > 0;
-  // Gate on the environment this section represents, like the home page
-  // does per environment; one older host in a mixed fleet must not hide the
-  // section for the servers that do support it.
-  const supportsHomeSuggestions =
-    environment?.serverConfig?.environment.capabilities.homeSuggestions === true;
+  const { isTargetAvailable: supportsHomeSuggestions, eligibleEnvironmentIds } =
+    getHomeSuggestionsSettingsAvailability(connectedEnvironments, scope);
+  const generateEnvironmentId =
+    environmentId !== null && eligibleEnvironmentIds.includes(environmentId)
+      ? environmentId
+      : (eligibleEnvironmentIds[0] ?? null);
   const serverProviders = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
   const refresh = useAtomCommand(homeSuggestionsEnvironment.refresh, { reportFailure: false });
   const [generating, setGenerating] = useState(false);
@@ -101,9 +102,9 @@ export function HomeSuggestionsSettingsSection() {
   const isTimeDirty = settings.homeSuggestionsTime !== DEFAULT_UNIFIED_SETTINGS.homeSuggestionsTime;
 
   const generateNow = useCallback(async () => {
-    if (environmentId === null) return;
+    if (generateEnvironmentId === null) return;
     setGenerating(true);
-    const outcome = await refresh({ environmentId, input: {} });
+    const outcome = await refresh({ environmentId: generateEnvironmentId, input: {} });
     setGenerating(false);
     if (outcome._tag === "Failure") {
       toastManager.add({
@@ -118,7 +119,7 @@ export function HomeSuggestionsSettingsSection() {
       title: "Generating suggestions",
       description: "The new cards will appear on the home screen in a minute or two.",
     });
-  }, [environmentId, refresh]);
+  }, [generateEnvironmentId, refresh]);
 
   if (!supportsHomeSuggestions) return null;
 
@@ -291,7 +292,9 @@ export function HomeSuggestionsSettingsSection() {
           <Button
             size="sm"
             variant="outline"
-            disabled={environmentId === null || !settings.homeSuggestionsEnabled || generating}
+            disabled={
+              generateEnvironmentId === null || !settings.homeSuggestionsEnabled || generating
+            }
             onClick={() => void generateNow()}
           >
             <RefreshIcon className="size-4" />

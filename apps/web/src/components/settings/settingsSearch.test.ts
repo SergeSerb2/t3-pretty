@@ -4,6 +4,7 @@ import { SURGE_CODE_ACCOUNT_NAME } from "@t3tools/shared/connectBranding";
 
 import {
   filterAvailableSettingsSearchItems,
+  getHomeSuggestionsSettingsAvailability,
   getSettingsSearchTargetScope,
   getThreadAutoSettlementSearchAvailability,
   isSettingsOverviewVisible,
@@ -486,6 +487,60 @@ describe("settings search targets", () => {
     for (const id of ["legacy-plan-mode", "legacy-context-window-indicator", "legacy-sidebar"]) {
       expect(getSettingsSearchTargetScope(id)!.scope).toBeNull();
     }
+  });
+});
+
+describe("home suggestions settings availability", () => {
+  function environment(id: string, { connected = true, loaded = true, supported = true } = {}) {
+    return {
+      environmentId: EnvironmentId.make(id),
+      connection: { phase: connected ? ("connected" as const) : ("offline" as const) },
+      serverConfig: loaded
+        ? { environment: { capabilities: { homeSuggestions: supported } } }
+        : null,
+    };
+  }
+
+  const capable = environment("capable");
+  const unsupported = environment("unsupported", { supported: false });
+  const offline = environment("offline", { connected: false });
+  const loading = environment("loading", { loaded: false });
+  const environments = [capable, unsupported, offline, loading];
+
+  it("keeps the section visible when any connected environment supports it", () => {
+    expect(
+      getHomeSuggestionsSettingsAvailability(environments, {
+        kind: "all",
+        environmentIds: environments.map((entry) => entry.environmentId),
+      }),
+    ).toEqual({ eligibleEnvironmentIds: [capable.environmentId], isTargetAvailable: true });
+  });
+
+  it("hides the section only when the selected environment cannot host it", () => {
+    expect(
+      getHomeSuggestionsSettingsAvailability(environments, {
+        kind: "environment",
+        environmentIds: [unsupported.environmentId],
+      }).isTargetAvailable,
+    ).toBe(false);
+    expect(
+      getHomeSuggestionsSettingsAvailability(environments, {
+        kind: "environment",
+        environmentIds: [capable.environmentId],
+      }).isTargetAvailable,
+    ).toBe(true);
+  });
+
+  it("does not treat offline or unloaded hosts as capable", () => {
+    expect(getHomeSuggestionsSettingsAvailability(environments).eligibleEnvironmentIds).toEqual([
+      capable.environmentId,
+    ]);
+    expect(
+      getHomeSuggestionsSettingsAvailability([unsupported, offline, loading], {
+        kind: "all",
+        environmentIds: [unsupported.environmentId, offline.environmentId, loading.environmentId],
+      }),
+    ).toEqual({ eligibleEnvironmentIds: [], isTargetAvailable: false });
   });
 });
 
