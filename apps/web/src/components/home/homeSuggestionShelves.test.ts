@@ -60,6 +60,8 @@ describe("suggestionShelfMask", () => {
     expect(suggestionShelfMask({ left: false, right: false })).toBeUndefined();
     expect(suggestionShelfMask({ left: false, right: true })).toContain("to right");
     expect(suggestionShelfMask({ left: true, right: false })).toContain("transparent, #000");
-    expect(suggestionShelfMask({ left: true, right: true })).toContain("calc(100% - 5.25rem)");
+    expect(suggestionShelfMask({ left: true, right: true })).toContain(
+      "transparent, #000 1.75rem, #000 calc(100% - 4rem)",
+    );
   });
 });
