@@ -50,6 +50,7 @@ import {
   FileSearchIcon,
   FolderIcon,
   FolderPlusIcon,
+  HouseIcon,
   LinkIcon,
   MessageSquareIcon,
   MicIcon,
@@ -2089,6 +2090,17 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:home",
+    searchTerms: ["home", "start", "suggestions", "today", "ideas", "landing"],
+    title: "Go to home",
+    icon: <HouseIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/" });
+    },
+  });
 
   actionItems.push({
     kind: "action",

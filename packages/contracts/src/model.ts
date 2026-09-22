@@ -283,6 +283,12 @@ export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
   "gpt-5.6-terra",
 ];
 export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-5.6-luna";
+/**
+ * Home suggestions read every recent thread at once and plan a day of work
+ * from them, so they default to the strongest Codex model rather than the
+ * cheap one titles use.
+ */
+export const DEFAULT_HOME_SUGGESTIONS_MODEL = "gpt-6-astra";
 /** Keep the official Antigravity session's current model. Never send this ID to ACP. */
 export const ANTIGRAVITY_DEFAULT_MODEL = "antigravity-default";
 export const DEFAULT_TEXT_GENERATION_REASONING_EFFORT = "low";

@@ -23,6 +23,7 @@ import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildActivityHeadlinePrompt,
+  buildHomeSuggestionsPrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
@@ -122,7 +123,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generatePrContent"
       | "generateBranchName"
       | "generateThreadTitle"
-      | "generateActivityHeadline",
+      | "generateActivityHeadline"
+      | "generateHomeSuggestions",
     value: unknown,
     detail: string,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -153,7 +155,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generatePrContent"
       | "generateBranchName"
       | "generateThreadTitle"
-      | "generateActivityHeadline";
+      | "generateActivityHeadline"
+      | "generateHomeSuggestions";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -459,12 +462,35 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       };
     });
 
+  const generateHomeSuggestions: TextGeneration.TextGeneration["Service"]["generateHomeSuggestions"] =
+    Effect.fn("ClaudeTextGeneration.generateHomeSuggestions")(function* (input) {
+      const { prompt, outputSchema } = buildHomeSuggestionsPrompt({
+        context: input.context,
+        projectCount: input.projectCount,
+        exploreCount: input.exploreCount,
+        previousTitles: input.previousTitles,
+      });
+
+      const generated = yield* runClaudeJson({
+        operation: "generateHomeSuggestions",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        suggestions: generated.suggestions,
+      } satisfies TextGeneration.HomeSuggestionsGenerationResult;
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
     generateActivityHeadline,
+    generateHomeSuggestions,
     generateProjectIcon: TextGeneration.unsupportedProjectIconGeneration("Claude"),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

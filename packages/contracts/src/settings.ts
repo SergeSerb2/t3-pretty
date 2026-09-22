@@ -14,6 +14,7 @@ import { EnvironmentMachineKind, ThreadEnvMode } from "./environment.ts";
 import { KeybindingShortcut } from "./keybindings.ts";
 import {
   CustomModelSetting,
+  DEFAULT_HOME_SUGGESTIONS_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
   ProviderOptionSelections,
@@ -44,6 +45,7 @@ import { SkillId, SkillsSettings } from "./skills.ts";
 import { SubagentPolicyChildren, SubagentPolicySettings } from "./subagentPolicy.ts";
 import { AppsSettings } from "./apps.ts";
 import { AutomationsSettings } from "./automations.ts";
+import { DEFAULT_HOME_SUGGESTIONS_TIME, HomeSuggestionsTime } from "./homeSuggestions.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
@@ -1134,6 +1136,33 @@ export const ServerSettings = Schema.Struct({
    * user's text generation provider subscription.
    */
   generateActivityHeadlines: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /**
+   * The home screen's daily prompt cards. Off stops the schedule; the cards
+   * already generated stay until the next batch replaces them.
+   */
+  homeSuggestionsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /**
+   * Model that plans the daily cards. It reads a digest of every recent
+   * thread, so it defaults to a stronger model than other generated text.
+   */
+  homeSuggestionsModelSelection: ModelSelection.pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed({
+        instanceId: ProviderInstanceId.make("codex"),
+        model: DEFAULT_HOME_SUGGESTIONS_MODEL,
+        options: [
+          {
+            id: "reasoningEffort",
+            value: DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
+          },
+        ],
+      }),
+    ),
+  ),
+  /** Local time of day the batch regenerates, in the server's timezone. */
+  homeSuggestionsTime: HomeSuggestionsTime.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_HOME_SUGGESTIONS_TIME)),
+  ),
   defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   defaultProjectScripts: Schema.Array(ProjectScript).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -1589,6 +1618,10 @@ export const ServerSettingsPatch = Schema.Struct({
   enableComputerUse: Schema.optionalKey(Schema.Boolean),
   autoGenerateProjectIcons: Schema.optionalKey(Schema.Boolean),
   generateActivityHeadlines: Schema.optionalKey(Schema.Boolean),
+  homeSuggestionsEnabled: Schema.optionalKey(Schema.Boolean),
+  // Whole-value replacement, like the source control writer model.
+  homeSuggestionsModelSelection: Schema.optionalKey(ModelSelection),
+  homeSuggestionsTime: Schema.optionalKey(HomeSuggestionsTime),
   providers: Schema.optionalKey(
     Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),

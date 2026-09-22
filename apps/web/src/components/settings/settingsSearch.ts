@@ -549,6 +549,30 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["rewrite tool call human readable status line generated headline"],
   },
   {
+    id: "home-suggestions-enabled",
+    title: "Daily home suggestions",
+    to: "/settings/general",
+    searchTerms: ["home screen prompt cards ideas daily suggestions auto prompts"],
+  },
+  {
+    id: "home-suggestions-model",
+    title: "Home suggestions model",
+    to: "/settings/general",
+    searchTerms: ["home screen suggestion model astra reasoning cards"],
+  },
+  {
+    id: "home-suggestions-time",
+    title: "Home suggestions time",
+    to: "/settings/general",
+    searchTerms: ["home screen suggestions schedule daily time 9am"],
+  },
+  {
+    id: "home-suggestions-generate",
+    title: "Generate suggestions now",
+    to: "/settings/general",
+    searchTerms: ["home screen suggestions refresh regenerate now"],
+  },
+  {
     id: "diagnostics",
     title: "Diagnostics",
     to: "/settings/general",

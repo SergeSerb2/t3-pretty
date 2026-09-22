@@ -36,6 +36,7 @@ export * from "./filesystem.ts";
 export * from "./agentSessions.ts";
 export * from "./agentInstructions.ts";
 export * from "./automations.ts";
+export * from "./homeSuggestions.ts";
 export * from "./skills.ts";
 export * from "./subagentPolicy.ts";
 export * from "./storage.ts";

@@ -4,6 +4,7 @@ import {
   buildActivityHeadlinePrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
+  buildHomeSuggestionsPrompt,
   buildPrContentPrompt,
   buildProjectIconPrompt,
   buildThreadTitlePrompt,
@@ -409,5 +410,34 @@ describe("bounded text-generation output", () => {
 
     expect(output.truncated).toBe(true);
     expect(output.byteLength).toBe(TEXT_GENERATION_RESULT_MAX_BYTES);
+  });
+});
+
+describe("buildHomeSuggestionsPrompt", () => {
+  it("asks for the requested mix, lists previous titles, and appends the digest", () => {
+    const result = buildHomeSuggestionsPrompt({
+      context: "## P1: T3 Pretty\n- Add a home screen (today, last turn completed)",
+      projectCount: 6,
+      exploreCount: 3,
+      previousTitles: ["Fix the flaky login test"],
+    });
+
+    expect(result.prompt).toContain("exactly 6 project cards and exactly 3 explore cards");
+    expect(result.prompt).toContain("Previous card titles (avoid):\n- Fix the flaky login test");
+    expect(result.prompt).toContain("Digest:\n## P1: T3 Pretty");
+    expect(toJsonSchemaObject(result.outputSchema)).toMatchObject({
+      type: "object",
+      required: ["suggestions"],
+    });
+  });
+
+  it("omits the avoid-list when there are no previous titles", () => {
+    const result = buildHomeSuggestionsPrompt({
+      context: "digest",
+      projectCount: 1,
+      exploreCount: 1,
+      previousTitles: [],
+    });
+    expect(result.prompt).not.toContain("Previous card titles");
   });
 });

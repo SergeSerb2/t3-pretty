@@ -17,6 +17,9 @@ import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
 import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
 import { StorageCleanup } from "../../storageCleanup.ts";
 import { ActivityHeadlineReactor } from "./ActivityHeadlineReactor.ts";
+import { HomeSuggestionsService } from "../../homeSuggestions/HomeSuggestionsService.ts";
+import { EMPTY_HOME_SUGGESTIONS_SNAPSHOT } from "@t3tools/contracts";
+import * as Stream from "effect/Stream";
 
 describe("OrchestrationReactor", () => {
   let runtime: ManagedRuntime.ManagedRuntime<OrchestrationReactor, never> | null = null;
@@ -123,6 +126,20 @@ describe("OrchestrationReactor", () => {
             },
           }),
         ),
+        Layer.provideMerge(
+          Layer.succeed(HomeSuggestionsService, {
+            start: () => {
+              started.push("home-suggestions");
+              return Effect.void;
+            },
+            current: Effect.succeed(EMPTY_HOME_SUGGESTIONS_SNAPSHOT),
+            streamChanges: Stream.empty,
+            refresh: Effect.succeed(EMPTY_HOME_SUGGESTIONS_SNAPSHOT),
+            dismiss: () => Effect.succeed(EMPTY_HOME_SUGGESTIONS_SNAPSHOT),
+            drain: Effect.void,
+            tickOnce: Effect.void,
+          }),
+        ),
       ),
     );
 
@@ -141,6 +158,7 @@ describe("OrchestrationReactor", () => {
       "agent-awareness-relay",
       "activity-headline-reactor",
       "storage-cleanup",
+      "home-suggestions",
     ]);
 
     await Effect.runPromise(Scope.close(scope, Exit.void));

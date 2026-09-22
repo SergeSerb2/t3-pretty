@@ -24,6 +24,7 @@ import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildActivityHeadlinePrompt,
   buildBranchNamePrompt,
+  buildHomeSuggestionsPrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
@@ -425,12 +426,32 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
       } satisfies TextGeneration.ActivityHeadlineGenerationResult;
     });
 
+  const generateHomeSuggestions: TextGeneration.TextGeneration["Service"]["generateHomeSuggestions"] =
+    Effect.fn("AntigravityTextGeneration.generateHomeSuggestions")(function* (input) {
+      const { prompt, outputSchema } = buildHomeSuggestionsPrompt({
+        context: input.context,
+        projectCount: input.projectCount,
+        exploreCount: input.exploreCount,
+        previousTitles: input.previousTitles,
+      });
+      const generated = yield* runAntigravityJson({
+        operation: "generateHomeSuggestions",
+        prompt,
+        outputSchema,
+        modelSelection: input.modelSelection,
+      });
+      return {
+        suggestions: generated.suggestions,
+      } satisfies TextGeneration.HomeSuggestionsGenerationResult;
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
     generateActivityHeadline,
+    generateHomeSuggestions,
     generateProjectIcon: TextGeneration.unsupportedProjectIconGeneration("Antigravity"),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

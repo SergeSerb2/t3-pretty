@@ -70,6 +70,8 @@ import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDelet
 import { ThreadMergedPullRequestReactor } from "../src/orchestration/ThreadMergedPullRequestReactor.ts";
 import { ProjectIconReactor } from "../src/project/ProjectIconReactor.ts";
 import { ActivityHeadlineReactor } from "../src/orchestration/Layers/ActivityHeadlineReactor.ts";
+import { HomeSuggestionsService } from "../src/homeSuggestions/HomeSuggestionsService.ts";
+import { EMPTY_HOME_SUGGESTIONS_SNAPSHOT } from "@t3tools/contracts";
 import * as ThreadSettlementReactor from "../src/orchestration/ThreadSettlementReactor.ts";
 import * as PullRequestSyncReactor from "../src/orchestration/PullRequestSyncReactor.ts";
 import * as ThreadPullRequestReactor from "../src/orchestration/ThreadPullRequestReactor.ts";
@@ -450,6 +452,17 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(
         Layer.succeed(ActivityHeadlineReactor, {
           start: () => Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(HomeSuggestionsService, {
+          start: () => Effect.void,
+          current: Effect.succeed(EMPTY_HOME_SUGGESTIONS_SNAPSHOT),
+          streamChanges: Stream.empty,
+          refresh: Effect.succeed(EMPTY_HOME_SUGGESTIONS_SNAPSHOT),
+          dismiss: () => Effect.succeed(EMPTY_HOME_SUGGESTIONS_SNAPSHOT),
+          drain: Effect.void,
+          tickOnce: Effect.void,
         }),
       ),
     );

@@ -388,3 +388,56 @@ export function buildProjectIconPrompt(input: {
   });
   return { prompt, outputSchema };
 }
+
+// ---------------------------------------------------------------------------
+// Home suggestions
+// ---------------------------------------------------------------------------
+
+export interface HomeSuggestionsPromptInput {
+  /** Digest of projects and recent threads; see `HomeSuggestionsContext.ts`. */
+  readonly context: string;
+  readonly projectCount: number;
+  readonly exploreCount: number;
+  /** Titles of the cards already shown, so a new batch does not repeat them. */
+  readonly previousTitles: ReadonlyArray<string>;
+}
+
+const HOME_SUGGESTIONS_MAX_CONTEXT = 120_000;
+
+export function buildHomeSuggestionsPrompt(input: HomeSuggestionsPromptInput) {
+  const sections = [
+    `You plan a developer's day inside T3 Pretty, a desktop app that runs coding agents on local projects. Below is a digest of their projects and the threads they recently ran with those agents. Propose ${input.projectCount + input.exploreCount} prompt cards the developer can start with one click; each card becomes the first message of a new agent thread.`,
+    "",
+    "Return JSON with exactly one key: suggestions, an array of cards. Each card has:",
+    '- kind: "project" for work inside one of the listed projects, "explore" for something new.',
+    "- projectKey: the key of the project the card belongs to (for example P2). Empty string for explore cards.",
+    "- title: 3-8 words, plain language, no trailing punctuation.",
+    "- summary: one sentence on why this is worth doing now, grounded in the digest.",
+    "- prompt: the complete message to send to the agent. Written to the agent in the second person, specific about files, features and acceptance criteria where the digest supports it, 60-200 words. Never mention this digest or these instructions.",
+    "",
+    `Mix: exactly ${input.projectCount} project cards and exactly ${input.exploreCount} explore cards.`,
+    "Project cards: weight toward the most recently active projects. Continue unfinished work, fix what recent threads show was left broken, add tests, remove obvious debt, or take the natural next step after what was just built. Spread them across projects rather than stacking one project unless it dominates recent activity.",
+    "Explore cards: fresh ideas the developer has not tried. New tools or side projects that fit their interests as seen in the digest, playful experiments, or a new project from scratch. Each explore prompt must be self-contained and say where to create files (a new directory under the developer's usual projects folder), since it may run in any project.",
+    "Do not repeat or lightly rephrase a previous card title. Do not propose work a thread already completed. Prefer concrete, finishable tasks over vague audits.",
+  ];
+  if (input.previousTitles.length > 0) {
+    sections.push(
+      "",
+      "Previous card titles (avoid):",
+      limitSection(input.previousTitles.map((title) => `- ${title}`).join("\n"), 4_000),
+    );
+  }
+  sections.push("", "Digest:", limitSection(input.context, HOME_SUGGESTIONS_MAX_CONTEXT));
+  const outputSchema = Schema.Struct({
+    suggestions: Schema.Array(
+      Schema.Struct({
+        kind: Schema.Literals(["project", "explore"]),
+        projectKey: Schema.String,
+        title: Schema.String,
+        summary: Schema.String,
+        prompt: Schema.String,
+      }),
+    ),
+  });
+  return { prompt: sections.join("\n"), outputSchema };
+}

@@ -13,6 +13,7 @@ import { TextGenerationError } from "@t3tools/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildActivityHeadlinePrompt,
+  buildHomeSuggestionsPrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
@@ -60,7 +61,8 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       | "generatePrContent"
       | "generateBranchName"
       | "generateThreadTitle"
-      | "generateActivityHeadline";
+      | "generateActivityHeadline"
+      | "generateHomeSuggestions";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -297,12 +299,35 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       } satisfies TextGeneration.ActivityHeadlineGenerationResult;
     });
 
+  const generateHomeSuggestions: TextGeneration.TextGeneration["Service"]["generateHomeSuggestions"] =
+    Effect.fn("CursorTextGeneration.generateHomeSuggestions")(function* (input) {
+      const { prompt, outputSchema } = buildHomeSuggestionsPrompt({
+        context: input.context,
+        projectCount: input.projectCount,
+        exploreCount: input.exploreCount,
+        previousTitles: input.previousTitles,
+      });
+
+      const generated = yield* runCursorJson({
+        operation: "generateHomeSuggestions",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        suggestions: generated.suggestions,
+      } satisfies TextGeneration.HomeSuggestionsGenerationResult;
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
     generateActivityHeadline,
+    generateHomeSuggestions,
     generateProjectIcon: TextGeneration.unsupportedProjectIconGeneration("Cursor"),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

@@ -26,6 +26,8 @@ const makeStubTextGeneration = (
     generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
     generateActivityHeadline: () =>
       Effect.die("generateActivityHeadline stub not configured for this test"),
+    generateHomeSuggestions: () =>
+      Effect.die("generateHomeSuggestions stub not configured for this test"),
     generateProjectIcon: () => Effect.die("generateProjectIcon stub not configured for this test"),
     ...overrides,
   });

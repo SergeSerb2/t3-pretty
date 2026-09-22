@@ -48,6 +48,11 @@ import {
 } from "./agentInstructions.ts";
 import { AutomationsError } from "./automations.ts";
 import {
+  HomeSuggestionsDismissInput,
+  HomeSuggestionsError,
+  HomeSuggestionsSnapshot,
+} from "./homeSuggestions.ts";
+import {
   AppsAuthorizeInput,
   AppsAuthorizeResult,
   AppsDisconnectInput,
@@ -511,6 +516,12 @@ export const WS_METHODS = {
   projectCloneCancel: "projectClone.cancel",
   projectCloneRetry: "projectClone.retry",
   subscribeProjectClones: "subscribeProjectClones",
+
+  // Home suggestions
+  homeSuggestionsGet: "homeSuggestions.get",
+  homeSuggestionsRefresh: "homeSuggestions.refresh",
+  homeSuggestionsDismiss: "homeSuggestions.dismiss",
+  subscribeHomeSuggestions: "subscribeHomeSuggestions",
 
   // Streaming subscriptions
   subscribeVcsStatus: "subscribeVcsStatus",
@@ -1575,6 +1586,32 @@ const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents
   stream: true,
 });
 
+const WsHomeSuggestionsGetRpc = Rpc.make(WS_METHODS.homeSuggestionsGet, {
+  payload: Schema.Struct({}),
+  success: HomeSuggestionsSnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+/** Starts a generation; the result arrives on the subscription stream. */
+const WsHomeSuggestionsRefreshRpc = Rpc.make(WS_METHODS.homeSuggestionsRefresh, {
+  payload: Schema.Struct({}),
+  success: HomeSuggestionsSnapshot,
+  error: Schema.Union([HomeSuggestionsError, EnvironmentAuthorizationError]),
+});
+
+const WsHomeSuggestionsDismissRpc = Rpc.make(WS_METHODS.homeSuggestionsDismiss, {
+  payload: HomeSuggestionsDismissInput,
+  success: HomeSuggestionsSnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsSubscribeHomeSuggestionsRpc = Rpc.make(WS_METHODS.subscribeHomeSuggestions, {
+  payload: Schema.Struct({}),
+  success: HomeSuggestionsSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
 const WsSubscribeTerminalMetadataRpc = Rpc.make(WS_METHODS.subscribeTerminalMetadata, {
   payload: Schema.Struct({}),
   success: TerminalMetadataStreamEvent,
@@ -1771,6 +1808,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsTerminalCloseRpc,
   WsSubscribeTerminalEventsRpc,
   WsSubscribeTerminalMetadataRpc,
+  WsHomeSuggestionsGetRpc,
+  WsHomeSuggestionsRefreshRpc,
+  WsHomeSuggestionsDismissRpc,
+  WsSubscribeHomeSuggestionsRpc,
   WsPreviewOpenRpc,
   WsPreviewNavigateRpc,
   WsPreviewResizeRpc,
