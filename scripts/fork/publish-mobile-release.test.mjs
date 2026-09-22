@@ -114,6 +114,25 @@ function extractIsFullXcode() {
   return match[0];
 }
 
+function extractAllowEasCloudIos() {
+  const match = mobileRelease.match(/allow_eas_cloud_ios\(\) \{\n[\s\S]*?\n\}/);
+  assert.ok(match, "allow_eas_cloud_ios function missing");
+  return match[0];
+}
+
+function runAllowEasCloudIos(env = {}) {
+  try {
+    NodeChildProcess.execFileSync(
+      "bash",
+      ["-c", `${extractAllowEasCloudIos()}\nallow_eas_cloud_ios`],
+      { encoding: "utf8", env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function extractXcodeSearch() {
   const match = mobileRelease.match(/developer_dir=""\nif is_full_xcode[\s\S]*?done\nfi/);
   assert.ok(match, "Xcode search loop missing");
@@ -409,7 +428,7 @@ describe("iOS publish Xcode selection", () => {
     }
   });
 
-  it("uses the current beta and falls back to EAS cloud for an older beta", () => {
+  it("uses the current beta and rejects an older beta", () => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-xcode-search-"));
     try {
       const apps = NodePath.join(root, "Applications");
@@ -445,6 +464,30 @@ describe("iOS publish Xcode selection", () => {
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("requires T3CODE_IOS_ALLOW_EAS_CLOUD before compiling an IPA on EAS cloud", () => {
+    assert.isFalse(runAllowEasCloudIos({ T3CODE_IOS_ALLOW_EAS_CLOUD: "" }));
+    assert.isFalse(runAllowEasCloudIos({ T3CODE_IOS_ALLOW_EAS_CLOUD: "0" }));
+    assert.isTrue(runAllowEasCloudIos({ T3CODE_IOS_ALLOW_EAS_CLOUD: "1" }));
+    assert.isTrue(runAllowEasCloudIos({ T3CODE_IOS_ALLOW_EAS_CLOUD: "true" }));
+    assert.isTrue(runAllowEasCloudIos({ T3CODE_IOS_ALLOW_EAS_CLOUD: "YES" }));
+
+    const gate = mobileRelease.slice(
+      mobileRelease.indexOf("ipa_via_cloud=false"),
+      mobileRelease.indexOf('ipa_via_cloud" == "true" ]] && ! command -v curl'),
+    );
+    assert.include(gate, "allow_eas_cloud_ios");
+    assert.include(gate, "Cloud IPA builds are opt-in");
+    assert.include(gate, "T3CODE_IOS_ALLOW_EAS_CLOUD=1");
+    assert.include(gate, "macos-release");
+    assert.include(gate, "exit 1");
+    assert.include(gate, "annotate error");
+    assert.notInclude(gate, "ipa_via_cloud=true\n  ls -ld");
+    assert.include(
+      gate,
+      "T3CODE_IOS_ALLOW_EAS_CLOUD is set; compiling the TestFlight IPA on EAS cloud.",
+    );
   });
 });
 
