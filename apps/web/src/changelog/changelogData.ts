@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260922.2083002765",
+    date: "2026-09-22",
+    items: [
+      {
+        kind: "fixed",
+        title: "Require local Xcode instead of silent EAS cloud fallback",
+      },
+      {
+        kind: "fixed",
+        title: "Isolate electron-builder lock for macOS DMG packaging",
+      },
+      {
+        kind: "new",
+        title: "Filter the sidebar by project folder",
+      },
+      {
+        kind: "fixed",
+        title: "Calm the home suggestions into one tabbed row",
+      },
+      {
+        kind: "fixed",
+        title: "Resume pre-upgrade threads after switching accounts",
+      },
+      {
+        kind: "new",
+        title: "Generate home suggestions once per Connect mesh",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260922.2083002751",
     date: "2026-09-22",
     items: [
