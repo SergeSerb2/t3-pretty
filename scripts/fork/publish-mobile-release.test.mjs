@@ -475,7 +475,7 @@ describe("iOS publish Xcode selection", () => {
 
     const gate = mobileRelease.slice(
       mobileRelease.indexOf("ipa_via_cloud=false"),
-      mobileRelease.indexOf("if ! command -v unzip"),
+      mobileRelease.indexOf('ipa_via_cloud" == "true" ]] && ! command -v curl'),
     );
     assert.include(gate, "allow_eas_cloud_ios");
     assert.include(gate, "Cloud IPA builds are opt-in");

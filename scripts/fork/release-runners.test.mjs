@@ -358,10 +358,10 @@ ${setup}
       pipeline.indexOf(":iphone: iOS OTA + TestFlight"),
       pipeline.indexOf(":android: Android Internal"),
     );
+    assert.include(iosStep, "T3CODE_IOS_ALLOW_EAS_CLOUD");
     assert.include(iosStep, "queue: macos-large");
     assert.notInclude(iosStep, "os: macos");
     assert.include(iosStep, "publish-mobile-release.sh");
-    assert.include(iosStep, "T3CODE_IOS_ALLOW_EAS_CLOUD");
     assert.include(mobileRelease, "hosted macos-large (M4)");
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
     assert.include(mobileRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
