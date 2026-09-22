@@ -1,17 +1,18 @@
 /**
- * The review form floated over the Code tab: how many comments the review is holding, its
- * summary, and the verdict that sends the lot. Hidden entirely on a host that cannot take a
- * review. The glass card frame belongs to the caller (PullRequestCodeTab), which is why this
- * only contributes its own padding.
+ * The review half of the floating composer: the summary and the verdict that sends it, together
+ * with whatever line comments the review is holding. The count of those lives on the composer's
+ * trigger and mode toggle, and each pending card can be dropped from the diff, so neither is
+ * repeated here. The popover around it belongs to PullRequestComposer.
  */
 import type { EnvironmentId, PullRequestRef, PullRequestReviewVerdict } from "@t3tools/contracts";
 import { CheckIcon, MessageSquareIcon, XCircleIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode, type RefObject } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { Button } from "../ui/button";
+import { Select, SelectItem, SelectPopup, SelectTrigger } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import {
@@ -46,31 +47,32 @@ const VERDICTS: ReadonlyArray<{
   },
 ];
 
-export function PullRequestReviewBar({
+export function PullRequestReviewForm({
   environmentId,
   reference,
   verdicts,
   requestChangesSummaryRequired,
+  textareaRef,
+  pending,
+  onPendingChange,
   onSubmitted,
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
   verdicts: ReadonlyArray<PullRequestReviewVerdict>;
   requestChangesSummaryRequired: boolean;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+  pending: boolean;
+  onPendingChange: (pending: boolean) => void;
   onSubmitted: () => void;
 }) {
-  const [pending, setPending] = useState(false);
-  const mountedRef = useRef(false);
-  const pendingTargetsRef = useRef(new Set<string>());
+  const [requestedVerdict, setRequestedVerdict] = useState<PullRequestReviewVerdict>("comment");
   const comments = usePendingReviewComments(environmentId, reference);
   const reviewKey = pullRequestReviewKey(environmentId, reference);
-  const activeReviewKeyRef = useRef(reviewKey);
-  activeReviewKeyRef.current = reviewKey;
   // The panel stays mounted while the selected pull request changes. Keeping summaries beside
   // the keyed line-comment drafts makes the selected pull request's body correct on the first
   // render, before an effect could reset state left behind by the previous one.
   const body = usePullRequestReviewStore((store) => store.summaries[reviewKey] ?? "");
-  const clear = usePullRequestReviewStore((store) => store.clear);
   const removeComments = usePullRequestReviewStore((store) => store.removeComments);
   const setSummary = usePullRequestReviewStore((store) => store.setSummary);
   const clearSummary = usePullRequestReviewStore((store) => store.clearSummary);
@@ -78,26 +80,15 @@ export function PullRequestReviewBar({
     reportFailure: false,
   });
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    setPending(pendingTargetsRef.current.has(reviewKey));
-  }, [reviewKey]);
-
   const offered = VERDICTS.filter((verdict) => verdicts.includes(verdict.value));
-  if (offered.length === 0) return null;
+  const selectedVerdict =
+    offered.find((verdict) => verdict.value === requestedVerdict) ?? offered[0];
 
   const submit = async (verdict: (typeof VERDICTS)[number]) => {
-    if (pendingTargetsRef.current.has(reviewKey)) return;
-    pendingTargetsRef.current.add(reviewKey);
+    if (pending) return;
     const submittedBody = body;
     const submittedComments = comments;
-    setPending(true);
+    onPendingChange(true);
     try {
       const result = await submitReview({
         environmentId,
@@ -121,7 +112,7 @@ export function PullRequestReviewBar({
       );
       clearSummary(reviewKey, submittedBody);
       toastManager.add({ type: "success", title: verdict.sent });
-      if (mountedRef.current && activeReviewKeyRef.current === reviewKey) onSubmitted();
+      onSubmitted();
     } catch (error) {
       toastManager.add({
         type: "error",
@@ -129,8 +120,7 @@ export function PullRequestReviewBar({
         description: error instanceof Error ? error.message : "An unexpected error occurred.",
       });
     } finally {
-      pendingTargetsRef.current.delete(reviewKey);
-      if (mountedRef.current && activeReviewKeyRef.current === reviewKey) setPending(false);
+      onPendingChange(false);
     }
   };
 
@@ -141,22 +131,11 @@ export function PullRequestReviewBar({
       : verdict === "approve" || body.trim().length > 0 || comments.length > 0;
 
   return (
-    <div className="px-4 py-3">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span>
-          {comments.length === 0
-            ? "No line comments yet"
-            : `${comments.length} ${comments.length === 1 ? "comment" : "comments"} pending`}
-        </span>
-        {comments.length > 0 ? (
-          <Button size="xs" variant="ghost" disabled={pending} onClick={() => clear(reviewKey)}>
-            Discard
-          </Button>
-        ) : null}
-      </div>
+    <>
       <Textarea
-        size="sm"
-        className="mt-2"
+        ref={textareaRef}
+        rows={3}
+        className="[&_textarea]:max-h-64"
         value={body}
         placeholder={
           requestChangesSummaryRequired && verdicts.includes("request-changes")
@@ -166,22 +145,41 @@ export function PullRequestReviewBar({
         aria-label="Review summary"
         onChange={(event) => setSummary(reviewKey, event.target.value)}
       />
-      <div className="mt-2 flex flex-wrap justify-end gap-2">
-        {offered.map((verdict) => (
-          <Button
-            key={verdict.value}
-            size="xs"
-            variant={verdict.value === "comment" ? "outline" : "default"}
-            disabled={pending || !canSubmit(verdict.value)}
-            onClick={() => void submit(verdict)}
-          >
+      <div className="mt-2 flex justify-between gap-2">
+        <Select
+          value={selectedVerdict?.value ?? null}
+          disabled={pending}
+          onValueChange={(value) => {
+            if (value !== null) setRequestedVerdict(value);
+          }}
+        >
+          <SelectTrigger size="xs" className="w-auto min-w-0" aria-label="Review verdict">
             <span className="flex items-center gap-1.5">
-              {verdict.icon}
-              {verdict.label}
+              {selectedVerdict?.icon}
+              {selectedVerdict?.label}
             </span>
-          </Button>
-        ))}
+          </SelectTrigger>
+          <SelectPopup side="top" alignItemWithTrigger={false}>
+            {offered.map((verdict) => (
+              <SelectItem key={verdict.value} value={verdict.value}>
+                <span className="flex items-center gap-1.5">
+                  {verdict.icon}
+                  {verdict.label}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+        <Button
+          size="xs"
+          disabled={pending || selectedVerdict === undefined || !canSubmit(selectedVerdict.value)}
+          onClick={() => {
+            if (selectedVerdict !== undefined) void submit(selectedVerdict);
+          }}
+        >
+          {pending ? "Submitting..." : "Submit review"}
+        </Button>
       </div>
-    </div>
+    </>
   );
 }

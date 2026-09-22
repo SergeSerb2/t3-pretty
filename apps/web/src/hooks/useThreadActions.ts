@@ -15,7 +15,6 @@ import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef } from "react";
 
 import { getFallbackThreadIdAfterDelete, pinOrderKeyBetween } from "../components/Sidebar.logic";
-import { snoozeWakeDescription } from "../components/Sidebar.snooze";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useThreadDepartureStore } from "../threadDepartureStore";
 import { removeDeletedThreadUiState } from "../lib/deletedThreadUiStateCleanup";
@@ -46,7 +45,7 @@ import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useClientSettings } from "./useSettings";
 import * as ThreadUndo from "./threadUndo";
-import { showUndoToast } from "./showUndoToast";
+import { showThreadUndoNotice } from "./showThreadUndoNotice";
 import { useAtomCommand } from "../state/use-atom-command";
 
 export class ThreadArchiveBlockedError extends Schema.TaggedError<ThreadArchiveBlockedError>()(
@@ -238,7 +237,6 @@ export function useThreadActions() {
   const sidebarThreadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
   const confirmThreadUnpin = useClientSettings((settings) => settings.confirmThreadUnpin);
-  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearDraftThread);
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
@@ -331,9 +329,8 @@ export function useThreadActions() {
       }
       refreshArchivedThreadsForEnvironment(threadRef.environmentId);
       opts.onArchived?.();
-      showUndoToast({
-        title: "Thread archived",
-        description: thread.title,
+      showThreadUndoNotice({
+        action: "Archived",
         claim: action,
         // Undo also brings the reader back when archiving moved them to a draft.
         undo: () => unarchiveThread(threadRef, { navigate: shouldNavigateToDraft }),
@@ -661,9 +658,8 @@ export function useThreadActions() {
         );
       }
       if (result._tag === "Success" && action.isCurrent()) {
-        showUndoToast({
-          title: "Thread unpinned",
-          description: thread?.title,
+        showThreadUndoNotice({
+          action: "Unpinned",
           claim: action,
           undo: () => pinThread(target, orderKey === undefined ? {} : { orderKey }),
           failureTitle: "Failed to undo unpin",
@@ -739,9 +735,8 @@ export function useThreadActions() {
         action.finish();
         return result;
       }
-      showUndoToast({
-        title: "Thread settled",
-        description: resolved?.thread.title,
+      showThreadUndoNotice({
+        action: "Settled",
         claim: action,
         undo: async () => {
           const unsettled = await unsettleThread(target);
@@ -904,7 +899,7 @@ export function useThreadActions() {
     async (
       target: ScopedThreadRef,
       snoozedUntil: string,
-      // Batch callers report one toast for the whole selection instead.
+      // Batch callers report one notice for the whole selection instead.
       opts: { undoToast?: boolean } = {},
     ) => {
       const writable = readWritableThreadRef(target);
@@ -962,17 +957,16 @@ export function useThreadActions() {
         action.finish();
         return result;
       }
-      // Snooze hides the row, so the toast is the only confirmation.
-      showUndoToast({
-        title: `Snoozed until ${snoozeWakeDescription(snoozedUntil, new Date(), timestampFormat)}`,
-        description: resolved?.thread.title,
+      // Snooze hides the row, so keep its confirmation in the sidebar.
+      showThreadUndoNotice({
+        action: "Snoozed",
         claim: action,
         undo: () => unsnoozeThread(target),
         failureTitle: "Failed to wake thread",
       });
       return result;
     },
-    [resolveThreadTarget, snoozeThreadMutation, timestampFormat, unsnoozeThread],
+    [resolveThreadTarget, snoozeThreadMutation, unsnoozeThread],
   );
 
   const confirmAndDeleteThread = useCallback(
