@@ -306,3 +306,73 @@ Re-ran the four landing gates on this repair tree after Buildkite #2622 failed t
 ## Post-merge repairs
 
 - `WorktreeSetupCard` — The running `Spinner` now uses the same shared `StageIcon` className as idle/done/failed/warning so caller size and stroke still apply while a step is in flight.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260922.2110` (`aff9318bf`, `fix(web): retry failed attachment uploads after reconnect (#10338)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260922.2096`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2712. CLIProxyAPI (`gpt-5.6-sol`) returned HTTP 429 `usage_limit_reached` / `model_cooldown` (resets_at unix 1790449245, ~Sat Sep 26 12:00 PT) and was not used. Same blocker as #2707 / Origin #657.
+- Merge base vs Origin `main` (`889f22cf1`): `0141bc2bf`. Origin #657 squash-merged 2096, so 2096 is not an ancestor of `main` and the 15 text conflicts from that nightly replayed. `v0.0.43-nightly.20260922.2096..2110` touches none of those paths (only the three attachment-queue files below).
+
+## Conflicted paths
+
+Content: `AppSidebarLayout.tsx`, `NoActiveThreadState.tsx`, `NoProjectsHero.tsx`, `Sidebar.tsx`, `WorktreeSetupCard.tsx`, `PullRequestCodeTab.tsx`, `SettingsSidebarNav.tsx`, `SidebarChrome.tsx`, `UsagePage.tsx`, `useThreadActions.ts`, `_chat.index.tsx`, `_chat.pull-requests.tsx`, `settings.tsx`.
+
+Add/add: `PullRequestComposer.tsx`, `PullRequestReviewForm.tsx` (parent also renamed/deleted `PullRequestReviewBar.tsx`; Pretty already completed that rename on #657).
+
+Resolution for every conflicted path: keep Pretty `main` (OURS / Origin #657 tree). Parent 2110 is byte-identical to 2096 on these files; taking THEIRS would regress the #657 contract.
+
+`.github/workflows/*` was restored from `origin/main` after the merge, matching `scripts/fork/run-upstream-sync.sh`.
+
+## Clean-merged parent changes (no text conflict)
+
+- `apps/web/src/lib/attachmentUploadQueue.ts` — After a socket reconnect, wait for the in-flight upload job to settle, then `retryAttachmentUpload` if that job still owns the file and the upload is failed. Covers the case where the HTTP failure arrives after the socket has already reconnected.
+- `apps/web/src/lib/attachmentUploadQueue.test.ts` — Coverage for that reconnect retry.
+- `apps/mobile/src/lib/composerAttachmentUploadQueue.test.ts` — Matching mobile coverage. Pretty did not diverge on these three files.
+
+## Post-merge repairs
+
+- `attachmentUploadQueue` — Origin review on #658: only one reconnect edge may schedule a post-settle retry (`retryScheduled`), and replacing a map entry always stops the previous connection watcher. Two reconnects before the HTTP attempt finishes must not both call `retryAttachmentUpload`.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/AppSidebarLayout.tsx` — Workspace sidebar glass treatment, `group-data-[side=left]:border-r-0`, and memoized `sidebarResizable` options with live `getCssWidth` / `maxWidth` getters.
+- `apps/web/src/components/NoActiveThreadState.tsx` — `overflow-clip` / `overflow-x-clip` and explicit `bg-background text-foreground` on empty-thread chrome.
+- `apps/web/src/components/NoProjectsHero.tsx` — Same clip/background contract on the first-run empty project hero.
+- `apps/web/src/components/Sidebar.tsx` — Redesigned sidebar (project folders, nest-aware list, Pretty search-result close). Parent's search-close hunk is a misaligned duplicate of the nest-aware list already rendered below.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Running `Spinner` keeps the shared `StageIcon` `className` (`size-4 shrink-0 stroke-[1.8]`) so caller size and stroke still apply in flight.
+- `apps/web/src/components/pullRequest/PullRequestCodeTab.tsx` — `data-pull-request-tab-scroll="code"`, `usePaintedAppearance`, environment-scoped review keys, and Pretty finding-destination / per-reference pending-thread state.
+- `apps/web/src/components/pullRequest/PullRequestComposer.tsx` — Environment-scoped `pullRequestReviewKey` / `usePendingReviewComments` so drafts stay isolated across same-host checkouts on different environments.
+- `apps/web/src/components/pullRequest/PullRequestReviewForm.tsx` — The same environment-scoped keys, plus thrown-error toasts around submit.
+- `apps/web/src/components/settings/SettingsSidebarNav.tsx` — Footer inset padding and `data-sidebar-peek="copy"`.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Footer inset padding and `empty:hidden`.
+- `apps/web/src/components/usage/UsagePage.tsx` — `overflow-clip` and explicit page background/foreground classes (parent `isolate` already present from #657).
+- `apps/web/src/hooks/useThreadActions.ts` — `readWritableThreadRef` targeting, optimistic departure-marker cleanup, retargeted lifecycle mirroring, and the optional `undoToast: false` batch-silence flag.
+- `apps/web/src/routes/_chat.index.tsx` — Clip overflow and background classes on the draft-start error and hosted onboarding empty states.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Clip overflow and background classes on the pull-request page shell.
+- `apps/web/src/routes/settings.tsx` — Clip overflow and background classes on the settings shell (parent `isolate` already present from #657).
+
+## Parent changes integrated at conflict boundaries
+
+None new versus Origin #657. The 2096 first-party replacements already on Pretty `main` were kept: `PullRequestComposer` owns comment/review, `PullRequestReviewForm` replaced `PullRequestReviewBar`, `SidebarThreadUndoNotice` in chrome, `isolate` on usage/settings insets, and `showThreadUndoNotice` instead of toast-based undo.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/AppSidebarLayout.tsx` — Replace the glass sidebar with `border-r border-sidebar-border` and an inline resizable object using a static `sidebarMaximumWidth`. Reason: that would regress T3 Pretty's rail-owned seam, glass treatment, and drag-time CSS width/max-width getters.
+- `apps/web/src/components/NoActiveThreadState.tsx` — Switch empty-thread overflow from `overflow-clip` / `overflow-x-clip` to `overflow-hidden` / `overflow-x-hidden` and drop explicit background/foreground classes. Reason: T3 Pretty's scenery/layout contract requires clip overflow on these inset shells.
+- `apps/web/src/components/NoProjectsHero.tsx` — The same parent overflow-hidden / dropped-background change. Reason: same clip-overflow contract.
+- `apps/web/src/components/Sidebar.tsx` — Parent sidebar structure (legacy icons, search-close duplicate list, no Pretty project-folder / nest machinery). Reason: restoring it would regress the fork's sidebar redesign and duplicate rows.
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Parent `Spinner` without the shared `StageIcon` className. Reason: that would drop caller size and stroke on the in-flight step icon.
+- `apps/web/src/components/pullRequest/PullRequestCodeTab.tsx` — Parent `useTheme`, non-environment-scoped review keys, and the simpler `onFixFinding` signature. Reason: those would regress Pretty's painted appearance, environment-isolated drafts, and finding-destination hand-off.
+- `apps/web/src/components/pullRequest/PullRequestComposer.tsx` — `usePendingReviewComments(reference)` / `pullRequestReviewKey(reference)` without `environmentId`. Reason: drafts would collide across same-host checkouts on different environments.
+- `apps/web/src/components/pullRequest/PullRequestReviewForm.tsx` — The same unscoped keys, and submit without a thrown-error toast. Reason: environment isolation and failure explanation are fork-authoritative.
+- `apps/web/src/components/settings/SettingsSidebarNav.tsx` — Drop footer inset padding and the peek-copy marker. Reason: those classes are part of T3 Pretty's settings-rail density and peek behavior.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Drop footer inset padding and `empty:hidden`. Reason: that would add idle padding and regress the compact chrome footer.
+- `apps/web/src/components/usage/UsagePage.tsx` — Use `overflow-hidden` instead of `overflow-clip` and drop explicit background/foreground classes. Reason: clip overflow and page colors are T3 Pretty's inset contract; the parent's `isolate` is already kept.
+- `apps/web/src/hooks/useThreadActions.ts` — Call settle/snooze/pin against `target.environmentId` / `target.threadId` and drop writable retargeting, departure cleanup, mirrored writes, and the batch `undoToast` flag. Reason: those references may identify a disconnected same-machine twin, and dropping the batch flag would break callers that silence per-thread notices.
+- `apps/web/src/routes/_chat.index.tsx` — Switch draft-error and hosted-onboarding insets to `overflow-hidden` / `overflow-x-hidden` without background classes. Reason: same clip-overflow contract.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Switch the pull-request page inset to `overflow-hidden` without background classes. Reason: same clip-overflow contract.
+- `apps/web/src/routes/settings.tsx` — Switch the settings inset to `overflow-hidden` without background classes. Reason: same clip-overflow contract; the parent's `isolate` is already kept.
+- `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
