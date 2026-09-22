@@ -9,11 +9,14 @@
  * @module HomeSuggestionsContext
  */
 import {
+  HOME_SUGGESTIONS_DIGEST_MAX_PROJECTS,
   HOME_SUGGESTIONS_EXPLORE_COUNT,
   HOME_SUGGESTIONS_PROJECT_COUNT,
   HOME_SUGGESTIONS_TIME_PATTERN,
   HomeSuggestionId,
+  type EnvironmentId,
   type HomeSuggestion,
+  type HomeSuggestionsDigest,
   type HomeSuggestionsTime,
   type OrchestrationMessage,
   type OrchestrationProjectShell,
@@ -112,51 +115,103 @@ function projectKey(index: number): string {
 }
 
 /**
- * Renders projects and their recent threads for the model. Projects are
- * ordered by last activity and keyed P1, P2, ... so the model can name the
- * project a card belongs to without echoing paths back.
+ * One environment's projects and recent threads, clipped to what the model
+ * reads. This is what an environment shares with the rest of its mesh.
  */
-export function buildHomeSuggestionsDigest(input: {
+export function buildEnvironmentDigest(input: {
+  readonly environmentId: EnvironmentId;
+  readonly environmentLabel: string;
   readonly projects: ReadonlyArray<OrchestrationProjectShell>;
   readonly threads: ReadonlyArray<DigestThread>;
+}): HomeSuggestionsDigest {
+  const latestByProject = new Map<ProjectId, string>();
+  for (const thread of input.threads) {
+    const current = latestByProject.get(thread.shell.projectId);
+    if (current === undefined || Date.parse(thread.shell.updatedAt) > Date.parse(current)) {
+      latestByProject.set(thread.shell.projectId, thread.shell.updatedAt);
+    }
+  }
+  const projects = input.projects
+    .map((project) => ({
+      id: project.id,
+      title: clip(project.title, TITLE_MAX_CHARS),
+      folder: /[^\\/]+(?=[\\/]*$)/.exec(project.workspaceRoot)?.[0] ?? "",
+      lastActiveAt: latestByProject.get(project.id) ?? project.updatedAt,
+    }))
+    .sort(
+      (left, right) =>
+        Date.parse(right.lastActiveAt) - Date.parse(left.lastActiveAt) ||
+        left.title.localeCompare(right.title),
+    )
+    .slice(0, HOME_SUGGESTIONS_DIGEST_MAX_PROJECTS);
+  const threads = input.threads.slice(0, HOME_SUGGESTIONS_MAX_THREADS).map((thread) => {
+    const first = thread.messages.find((message) => message.role === "user");
+    const last = thread.messages.findLast((message) => message.role === "assistant");
+    return {
+      projectId: thread.shell.projectId,
+      title: clip(thread.shell.title, TITLE_MAX_CHARS),
+      updatedAt: thread.shell.updatedAt,
+      status: thread.shell.latestTurn?.state ?? "idle",
+      asked: first ? clip(messageText(first), FIRST_MESSAGE_MAX_CHARS) : "",
+      outcome: last ? clip(messageText(last), LAST_MESSAGE_MAX_CHARS) : "",
+    };
+  });
+  return {
+    environmentId: input.environmentId,
+    environmentLabel: clip(input.environmentLabel, TITLE_MAX_CHARS),
+    projects,
+    threads,
+  };
+}
+
+/** Where a digest project key points: a project on one environment. */
+export interface DigestProjectRef {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+}
+
+/**
+ * Renders every environment's digest for the model. Projects from all
+ * environments are ordered by last activity and keyed P1, P2, ... so the
+ * model can name the project a card belongs to without echoing paths back.
+ * With more than one environment each project also names its machine.
+ */
+export function buildHomeSuggestionsDigest(input: {
+  readonly digests: ReadonlyArray<HomeSuggestionsDigest>;
   readonly nowMs: number;
   /** The schedule's zone, so day labels match the user's calendar. */
   readonly timeZone: string;
-}): { readonly context: string; readonly projectsByKey: ReadonlyMap<string, ProjectId> } {
-  const latestByProject = new Map<ProjectId, number>();
-  for (const thread of input.threads) {
-    const updated = Date.parse(thread.shell.updatedAt);
-    const current = latestByProject.get(thread.shell.projectId) ?? 0;
-    if (updated > current) latestByProject.set(thread.shell.projectId, updated);
-  }
-  const projects = [...input.projects].sort(
-    (left, right) =>
-      (latestByProject.get(right.id) ?? Date.parse(right.updatedAt)) -
-        (latestByProject.get(left.id) ?? Date.parse(left.updatedAt)) ||
-      left.title.localeCompare(right.title),
-  );
-  const projectsByKey = new Map<string, ProjectId>();
+}): { readonly context: string; readonly projectsByKey: ReadonlyMap<string, DigestProjectRef> } {
+  const labelMachines = input.digests.length > 1;
+  const projects = input.digests
+    .flatMap((digest) => digest.projects.map((project) => ({ digest, project })))
+    .sort(
+      (left, right) =>
+        Date.parse(right.project.lastActiveAt) - Date.parse(left.project.lastActiveAt) ||
+        left.project.title.localeCompare(right.project.title),
+    );
+  const projectsByKey = new Map<string, DigestProjectRef>();
   const sections: string[] = [];
-  projects.forEach((project, index) => {
+  projects.forEach(({ digest, project }, index) => {
     const key = projectKey(index);
-    projectsByKey.set(key, project.id);
-    const folder = /[^\\/]+(?=[\\/]*$)/.exec(project.workspaceRoot)?.[0] ?? "";
-    const threads = input.threads.filter((thread) => thread.shell.projectId === project.id);
-    const lines = [`## ${key}: ${project.title}${folder ? ` (folder: ${folder})` : ""}`];
+    projectsByKey.set(key, { environmentId: digest.environmentId, projectId: project.id });
+    const details = [
+      project.folder ? `folder: ${project.folder}` : "",
+      labelMachines ? `on ${digest.environmentLabel}` : "",
+    ].filter(Boolean);
+    const threads = digest.threads.filter((thread) => thread.projectId === project.id);
+    const lines = [
+      `## ${key}: ${project.title}${details.length > 0 ? ` (${details.join(", ")})` : ""}`,
+    ];
     if (threads.length === 0) {
       lines.push("No recent threads.");
     }
     for (const thread of threads) {
-      const first = thread.messages.find((message) => message.role === "user");
-      const last = thread.messages.findLast((message) => message.role === "assistant");
-      const status = thread.shell.latestTurn?.state ?? "idle";
       lines.push(
-        `- ${clip(thread.shell.title, TITLE_MAX_CHARS)} (${relativeDay(input.nowMs, thread.shell.updatedAt, input.timeZone)}, last turn ${status})`,
+        `- ${thread.title} (${relativeDay(input.nowMs, thread.updatedAt, input.timeZone)}, last turn ${thread.status})`,
       );
-      const firstText = first ? messageText(first) : "";
-      if (firstText) lines.push(`  Asked: ${clip(firstText, FIRST_MESSAGE_MAX_CHARS)}`);
-      const lastText = last ? messageText(last) : "";
-      if (lastText) lines.push(`  Outcome: ${clip(lastText, LAST_MESSAGE_MAX_CHARS)}`);
+      if (thread.asked) lines.push(`  Asked: ${thread.asked}`);
+      if (thread.outcome) lines.push(`  Outcome: ${thread.outcome}`);
     }
     sections.push(lines.join("\n"));
   });
@@ -169,7 +224,7 @@ export function buildHomeSuggestionsDigest(input: {
  */
 export function mapGeneratedSuggestions(input: {
   readonly generated: ReadonlyArray<GeneratedHomeSuggestion>;
-  readonly projectsByKey: ReadonlyMap<string, ProjectId>;
+  readonly projectsByKey: ReadonlyMap<string, DigestProjectRef>;
   readonly makeId: (index: number) => string;
 }): ReadonlyArray<HomeSuggestion> {
   const seenTitles = new Set<string>();
@@ -180,9 +235,9 @@ export function mapGeneratedSuggestions(input: {
     const title = clip(candidate.title, TITLE_MAX_CHARS);
     const prompt = clip(candidate.prompt, PROMPT_MAX_CHARS);
     if (!title || !prompt || seenTitles.has(title.toLowerCase())) continue;
-    const projectId = input.projectsByKey.get(candidate.projectKey.trim()) ?? null;
+    const project = input.projectsByKey.get(candidate.projectKey.trim()) ?? null;
     // A project card that names no known project is still useful as an idea.
-    const kind = candidate.kind === "project" && projectId !== null ? "project" : "explore";
+    const kind = candidate.kind === "project" && project !== null ? "project" : "explore";
     if (kind === "project") {
       if (projectCount >= HOME_SUGGESTIONS_PROJECT_COUNT) continue;
       projectCount += 1;
@@ -194,7 +249,8 @@ export function mapGeneratedSuggestions(input: {
     cards.push({
       id: HomeSuggestionId.make(input.makeId(cards.length)),
       kind,
-      projectId: kind === "project" ? projectId : null,
+      projectId: kind === "project" ? (project?.projectId ?? null) : null,
+      environmentId: kind === "project" ? (project?.environmentId ?? null) : null,
       title,
       summary: clip(candidate.summary, SUMMARY_MAX_CHARS),
       prompt,

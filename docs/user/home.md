@@ -26,8 +26,15 @@ into view.
 
 The batch regenerates at **09:00** in the environment's local time. If the machine was asleep at
 that moment, the batch runs once when it is back. The refresh icon beside the row, or
-**Generate now** in Settings, makes a new batch right away. Each environment generates its own
-cards; the row shows the ones for the environment the draft belongs to.
+**Generate now** in Settings, makes a new batch right away.
+
+Machines linked to the same Surge Connect account share one batch. At the daily time, the first
+linked machine to reach it generates cards from the projects on every linked machine. The others
+pick up that same batch within about ten minutes, so the mesh spends one generation a day instead
+of one per machine. A card for a project on another machine opens a draft on that machine. It is
+hidden on clients that are not connected to that machine. Dismissing a card removes it
+everywhere. If another machine is already generating, **Generate now** says so and waits for its
+batch. A machine that is not linked, or cannot reach Surge Connect, generates its own cards.
 
 ## Settings
 
@@ -38,7 +45,10 @@ cards; the row shows the ones for the environment the draft belongs to.
   thread at once, so it defaults to GPT-6 Astra at low reasoning rather than the cheaper model used
   for thread titles. Any text generation provider works here.
 - **Home suggestions time** is the local time of the daily run.
-- **Generate now** makes a new batch for the selected environment.
+- **Generate now** makes a new batch for the selected environment, shared with its linked machines.
 
-Suggestions are generated on the environment that hosts your projects, using that machine's
-provider subscription. The mobile app does not show them yet.
+Suggestions are generated with the provider subscription of the machine that runs the batch. For
+a linked mesh, that is whichever machine claims the day's slot, using its own model setting. To
+share the batch, linked machines send Surge Connect a short summary of their recent threads: project
+names, thread titles, and the first request and final reply of each, clipped. The mobile app does
+not show suggestions yet.

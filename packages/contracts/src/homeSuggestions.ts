@@ -6,11 +6,16 @@
  * batch on disk, and streams it to clients through `subscribeHomeSuggestions`.
  * A card is a ready-to-send prompt: "project" cards continue work in an
  * existing project, "explore" cards start something new.
+ *
+ * Environments linked to the same Connect account share one batch through the
+ * relay: each uploads a `HomeSuggestionsDigest`, one of them generates from
+ * every digest, and the rest adopt the result. A project card therefore names
+ * the environment that owns its project.
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { IsoDateTime, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { EnvironmentId, IsoDateTime, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 export const HomeSuggestionId = Schema.String.pipe(Schema.brand("HomeSuggestionId"));
 export type HomeSuggestionId = typeof HomeSuggestionId.Type;
@@ -23,6 +28,14 @@ export const HomeSuggestion = Schema.Struct({
   kind: HomeSuggestionKind,
   /** The project a "project" card continues; null for "explore" cards. */
   projectId: Schema.NullOr(ProjectId),
+  /**
+   * The environment that owns `projectId`. Null for "explore" cards and for
+   * batches stored before mesh sharing, which always meant the serving
+   * environment.
+   */
+  environmentId: Schema.NullOr(EnvironmentId).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   title: TrimmedNonEmptyString,
   /** One sentence on why this is worth doing now. */
   summary: Schema.String,
@@ -76,6 +89,52 @@ export const HomeSuggestionsTime = Schema.String.check(
 export type HomeSuggestionsTime = typeof HomeSuggestionsTime.Type;
 
 export const DEFAULT_HOME_SUGGESTIONS_TIME = "09:00";
+
+/** Bounds on one environment's digest, so a relay row stays small. */
+export const HOME_SUGGESTIONS_DIGEST_MAX_PROJECTS = 64;
+export const HOME_SUGGESTIONS_DIGEST_MAX_THREADS = 40;
+const DIGEST_TEXT_MAX_LENGTH = 1_024;
+
+const DigestText = Schema.String.check(Schema.isMaxLength(DIGEST_TEXT_MAX_LENGTH));
+
+export const HomeSuggestionsDigestProject = Schema.Struct({
+  id: ProjectId,
+  title: DigestText,
+  /** Last path segment of the workspace root, never the full path. */
+  folder: DigestText,
+  /** Newest thread activity, or the project's own update time. */
+  lastActiveAt: IsoDateTime,
+});
+export type HomeSuggestionsDigestProject = typeof HomeSuggestionsDigestProject.Type;
+
+export const HomeSuggestionsDigestThread = Schema.Struct({
+  projectId: ProjectId,
+  title: DigestText,
+  updatedAt: IsoDateTime,
+  /** The latest turn's state, "idle" before the first turn. */
+  status: DigestText,
+  /** Clipped first user message. */
+  asked: DigestText,
+  /** Clipped last assistant message. */
+  outcome: DigestText,
+});
+export type HomeSuggestionsDigestThread = typeof HomeSuggestionsDigestThread.Type;
+
+/**
+ * One environment's recent work, already clipped. The generating environment
+ * renders every digest in the mesh into the model's context.
+ */
+export const HomeSuggestionsDigest = Schema.Struct({
+  environmentId: EnvironmentId,
+  environmentLabel: DigestText,
+  projects: Schema.Array(HomeSuggestionsDigestProject).check(
+    Schema.isMaxLength(HOME_SUGGESTIONS_DIGEST_MAX_PROJECTS),
+  ),
+  threads: Schema.Array(HomeSuggestionsDigestThread).check(
+    Schema.isMaxLength(HOME_SUGGESTIONS_DIGEST_MAX_THREADS),
+  ),
+});
+export type HomeSuggestionsDigest = typeof HomeSuggestionsDigest.Type;
 
 export class HomeSuggestionsError extends Schema.TaggedError<HomeSuggestionsError>()(
   "HomeSuggestionsError",

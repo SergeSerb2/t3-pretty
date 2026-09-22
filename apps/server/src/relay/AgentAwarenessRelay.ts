@@ -6,7 +6,6 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import {
-  RelayApi,
   type RelayAgentActivityPublishProofPayload,
   type RelayAgentActivityState,
 } from "@t3tools/contracts/relay";
@@ -32,24 +31,21 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import {
   isAgentActivityPublishingEnabledValue,
   PUBLISH_AGENT_ACTIVITY_SECRET,
-  RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
-  RELAY_ISSUER_SECRET,
-  RELAY_URL_SECRET,
 } from "../cloud/config.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../cloud/environmentKeys.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { forkParked } from "../serverActivation.ts";
+import {
+  makeRelayEnvironmentClient,
+  readRelayEnvironmentConfig,
+} from "./relayEnvironmentClient.ts";
 
 export const AGENT_AWARENESS_PUBLISHED_STATE_MAX_ENTRIES = 4_096;
 
@@ -166,10 +162,6 @@ export function sanitizeRelayAgentActivityState(
     .slice(0, RELAY_AGENT_ACTIVITY_DETAIL_MAX_LENGTH)
     .trim();
   return detail ? { ...rest, detail } : rest;
-}
-
-function relayEnvironmentClient(token: string) {
-  return HttpClient.mapRequest(HttpClientRequest.setHeader("authorization", `Bearer ${token}`));
 }
 
 function deliveryStats(
@@ -373,29 +365,13 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-  const readRelayConfig = Effect.gen(function* () {
-    const [url, issuer, environmentCredential] = yield* Effect.all([
-      readSecretString(RELAY_URL_SECRET),
-      readSecretString(RELAY_ISSUER_SECRET),
-      readSecretString(RELAY_ENVIRONMENT_CREDENTIAL_SECRET),
-    ]);
-    return url && environmentCredential
-      ? { url, issuer: issuer ?? url, environmentCredential }
-      : null;
-  });
+  const readRelayConfig = readRelayEnvironmentConfig(secrets);
 
   const readPublishAgentActivityEnabled = readSecretString(PUBLISH_AGENT_ACTIVITY_SECRET).pipe(
     Effect.map(isAgentActivityPublishingEnabledValue),
   );
 
-  const makeRelayClient = (relayConfig: {
-    readonly url: string;
-    readonly environmentCredential: string;
-  }) =>
-    HttpApiClient.make(RelayApi, {
-      baseUrl: relayConfig.url,
-      transformClient: relayEnvironmentClient(relayConfig.environmentCredential),
-    }).pipe(Effect.provide(FetchHttpClient.layer));
+  const makeRelayClient = makeRelayEnvironmentClient;
 
   // Deadlines for publishes that need confirmation (tombstones and
   // first-state completions). The confirming publish is re-enqueued through

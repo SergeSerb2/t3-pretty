@@ -87,6 +87,7 @@ import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletion
 import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as HomeSuggestions from "./homeSuggestions/HomeSuggestionsService.ts";
+import * as HomeSuggestionsMesh from "./homeSuggestions/HomeSuggestionsMesh.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
 import * as ThreadPullRequestReactor from "./orchestration/ThreadPullRequestReactor.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
@@ -260,7 +261,11 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ThreadPullRequestReactor.layer),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(ActivityHeadlineReactor.layer),
-  Layer.provideMerge(HomeSuggestions.layer),
+  Layer.provideMerge(
+    HomeSuggestions.layer.pipe(
+      Layer.provide(HomeSuggestionsMesh.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+    ),
+  ),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 

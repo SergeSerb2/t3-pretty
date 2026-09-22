@@ -1,4 +1,5 @@
 import {
+  EnvironmentId,
   HOME_SUGGESTIONS_EXPLORE_COUNT,
   HOME_SUGGESTIONS_PROJECT_COUNT,
   ProjectId,
@@ -15,6 +16,7 @@ import {
   HOME_SUGGESTIONS_MAX_THREADS,
   HOME_SUGGESTIONS_MAX_THREADS_PER_PROJECT,
   HOME_SUGGESTIONS_TITLE_MEMORY,
+  buildEnvironmentDigest,
   buildHomeSuggestionsDigest,
   mapGeneratedSuggestions,
   nextHomeSuggestionsRunAt,
@@ -23,6 +25,27 @@ import {
 } from "./HomeSuggestionsContext.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00.000Z");
+const ENVIRONMENT_ID = EnvironmentId.make("env-laptop");
+
+/** The standalone case: one environment's digest rendered on its own. */
+function renderDigest(input: {
+  readonly projects: ReadonlyArray<OrchestrationProjectShell>;
+  readonly threads: Parameters<typeof buildEnvironmentDigest>[0]["threads"];
+  readonly nowMs: number;
+  readonly timeZone: string;
+}) {
+  const digest = buildEnvironmentDigest({
+    environmentId: ENVIRONMENT_ID,
+    environmentLabel: "Laptop",
+    projects: input.projects,
+    threads: input.threads,
+  });
+  return buildHomeSuggestionsDigest({
+    digests: [digest],
+    nowMs: input.nowMs,
+    timeZone: input.timeZone,
+  });
+}
 
 function makeProject(id: string, overrides: Partial<OrchestrationProjectShell> = {}) {
   return {
@@ -110,7 +133,7 @@ describe("selectDigestThreads", () => {
 describe("buildHomeSuggestionsDigest", () => {
   it("keys projects by recent activity and strips hidden prompt blocks", () => {
     const projects = [makeProject("quiet"), makeProject("busy")];
-    const digest = buildHomeSuggestionsDigest({
+    const digest = renderDigest({
       projects,
       threads: [
         {
@@ -139,8 +162,11 @@ describe("buildHomeSuggestionsDigest", () => {
       timeZone: "UTC",
     });
 
-    expect(digest.projectsByKey.get("P1")).toBe("busy");
-    expect(digest.projectsByKey.get("P2")).toBe("quiet");
+    expect(digest.projectsByKey.get("P1")).toEqual({
+      environmentId: ENVIRONMENT_ID,
+      projectId: "busy",
+    });
+    expect(digest.projectsByKey.get("P2")?.projectId).toBe("quiet");
     expect(digest.context).toContain("## P1: busy (folder: busy)");
     expect(digest.context).toContain("Fix the flaky login test (today, last turn completed)");
     expect(digest.context).toContain("Asked: Make login.test.ts pass");
@@ -155,7 +181,7 @@ describe("buildHomeSuggestionsDigest", () => {
       messages: [],
     };
     const nowMs = Date.parse("2026-09-21T12:00:00.000Z");
-    const pacific = buildHomeSuggestionsDigest({
+    const pacific = renderDigest({
       projects: [makeProject("busy")],
       threads: [thread],
       nowMs,
@@ -164,7 +190,7 @@ describe("buildHomeSuggestionsDigest", () => {
     // 04:00 UTC is still Sep 20 in PDT; elapsed-ms math would have said "today".
     expect(pacific.context).toContain("Night work (yesterday, last turn idle)");
 
-    const utc = buildHomeSuggestionsDigest({
+    const utc = renderDigest({
       projects: [makeProject("busy")],
       threads: [thread],
       nowMs,
@@ -172,7 +198,7 @@ describe("buildHomeSuggestionsDigest", () => {
     });
     expect(utc.context).toContain("Night work (today, last turn idle)");
 
-    const twoDays = buildHomeSuggestionsDigest({
+    const twoDays = renderDigest({
       projects: [makeProject("busy")],
       threads: [
         {
@@ -188,10 +214,58 @@ describe("buildHomeSuggestionsDigest", () => {
   });
 });
 
+describe("buildHomeSuggestionsDigest across a mesh", () => {
+  it("orders every machine's projects together and names each machine", () => {
+    const laptop = buildEnvironmentDigest({
+      environmentId: ENVIRONMENT_ID,
+      environmentLabel: "Laptop",
+      projects: [makeProject("site")],
+      threads: [
+        {
+          shell: makeThread("t1", "site", "2026-09-19T09:00:00.000Z", { title: "Tweak the hero" }),
+          messages: [{ role: "user", text: "Make the hero taller" }],
+        },
+      ],
+    });
+    const desktopId = EnvironmentId.make("env-desktop");
+    const desktop = buildEnvironmentDigest({
+      environmentId: desktopId,
+      environmentLabel: "Desktop",
+      projects: [makeProject("engine")],
+      threads: [
+        {
+          shell: makeThread("t2", "engine", "2026-09-21T09:00:00.000Z", {
+            title: "Profile the GC",
+          }),
+          messages: [],
+        },
+      ],
+    });
+
+    const digest = buildHomeSuggestionsDigest({
+      digests: [laptop, desktop],
+      nowMs: NOW,
+      timeZone: "UTC",
+    });
+
+    expect(digest.projectsByKey.get("P1")).toEqual({
+      environmentId: desktopId,
+      projectId: "engine",
+    });
+    expect(digest.projectsByKey.get("P2")).toEqual({
+      environmentId: ENVIRONMENT_ID,
+      projectId: "site",
+    });
+    expect(digest.context).toContain("## P1: engine (folder: engine, on Desktop)");
+    expect(digest.context).toContain("## P2: site (folder: site, on Laptop)");
+    expect(digest.context).toContain("Asked: Make the hero taller");
+  });
+});
+
 describe("buildHomeSuggestionsDigest day labels", () => {
   it("counts days on the schedule's calendar rather than UTC", () => {
     // 23:30 local in Berlin (21:30Z) on the 20th, viewed at 01:00 local on the 21st (23:00Z on the 20th).
-    const digest = buildHomeSuggestionsDigest({
+    const digest = renderDigest({
       projects: [makeProject("p")],
       threads: [
         { shell: makeThread("late", "p", "2026-09-20T21:30:00.000Z"), messages: [] },
@@ -206,7 +280,9 @@ describe("buildHomeSuggestionsDigest day labels", () => {
 });
 
 describe("mapGeneratedSuggestions", () => {
-  const projectsByKey = new Map([["P1", ProjectId.make("alpha")]]);
+  const projectsByKey = new Map([
+    ["P1", { environmentId: ENVIRONMENT_ID, projectId: ProjectId.make("alpha") }],
+  ]);
   const card = (index: number, kind: "project" | "explore", projectKey = "P1") => ({
     kind,
     projectKey,
@@ -235,10 +311,12 @@ describe("mapGeneratedSuggestions", () => {
     const exploreCards = cards.filter((entry) => entry.kind === "explore");
     expect(projectCards).toHaveLength(HOME_SUGGESTIONS_PROJECT_COUNT);
     expect(projectCards.every((entry) => entry.projectId === "alpha")).toBe(true);
+    expect(projectCards.every((entry) => entry.environmentId === ENVIRONMENT_ID)).toBe(true);
     expect(exploreCards).toHaveLength(HOME_SUGGESTIONS_EXPLORE_COUNT);
     // The unknown-project card became the first explore card.
     expect(exploreCards[0]?.title).toBe("Card 90");
     expect(exploreCards[0]?.projectId).toBeNull();
+    expect(exploreCards[0]?.environmentId).toBeNull();
     expect(cards.map((entry) => entry.id)).toEqual(cards.map((_, index) => `batch:${index}`));
   });
 
