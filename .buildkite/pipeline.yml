@@ -296,6 +296,10 @@ steps:
     # Temporarily on macos-release + os=macos. Hosted macos-large
     # auto-cancels in ~100ms (BK #1944/#1948).
     # TODO: restore queue: macos-large (key only) once hosted dispatch works.
+    # IPA compile is local `eas build --local` on this Mac. Missing Xcode
+    # fails the job instead of spending EAS quota; set
+    # T3CODE_IOS_ALLOW_EAS_CLOUD=1 on a rebuild to opt into cloud. OTA
+    # (`eas update`) is unchanged.
     agents:
       queue: macos-release
       os: macos

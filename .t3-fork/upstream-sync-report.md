@@ -376,3 +376,78 @@ None new versus Origin #657. The 2096 first-party replacements already on Pretty
 - `apps/web/src/routes/_chat.pull-requests.tsx` — Switch the pull-request page inset to `overflow-hidden` without background classes. Reason: same clip-overflow contract.
 - `apps/web/src/routes/settings.tsx` — Switch the settings inset to `overflow-hidden` without background classes. Reason: same clip-overflow contract; the parent's `isolate` is already kept.
 - `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260922.2123` (`d7819c188`, `chore(devices): bump agent-device to 0.21.12 (#13124)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260922.2110`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2767. CLIProxyAPI (`gpt-5.6-sol`) returned HTTP 429 `model_cooldown` / `usage_limit_reached` until ~Sat 2026-09-26 12:00 PT and was not used.
+- Merge base vs Origin `main` (`2bcd1ecbc`): `0141bc2bf`. Origin #658 squash-merged 2110, so 2110 is not an ancestor of `main` and historical Pretty-vs-parent paths replayed. Unlike 2096..2110, `2110..2123` is a large parent delta (30 commits, 155 files): web UI primitive refactors, panel-animation settings, Opus 5.5 / model-manifest, explicit provider-refresh cache bypass, and the agent-device 0.21.12 bump.
+
+## Conflicted paths
+
+Replay-only (parent 2110 == 2123 on these files; kept Pretty `main` / #658 tree): `AppSidebarLayout.tsx`, `WorktreeSetupCard.tsx`, `useThreadActions.ts`, `attachmentUploadQueue.ts`, `attachmentUploadQueue.test.ts`, `settings.tsx`.
+
+Parent-changed 2110..2123, resolved by applying that parent patch onto Pretty (or the equivalent hunks when the patch did not apply cleanly): `ChatView.tsx`, `CommandPaletteResults.tsx`, `GitActionsControl.tsx`, `NoActiveThreadState.tsx`, `NoProjectsHero.tsx`, `ProjectScriptsControl.tsx`, `Sidebar.tsx`, `ThreadStatusIndicators.tsx`, `ChatHeader.tsx`, `draftHeroTransition.ts`, `MobileClientsUserProfilePage.tsx`, `T3ConnectUserProfilePage.tsx`, `PreviewMoreMenu.tsx`, `PullRequestCodeTab.tsx`, `PullRequestCommentForm.tsx`, `PullRequestComposer.tsx`, `PullRequestReviewForm.tsx`, `BrowserImportWizard.tsx`, `ProviderInstanceCard.tsx`, `SettingsSidebarNav.tsx`, `ThemeSettings.tsx`, `SidebarChrome.tsx`, `SidebarThreadHeader.tsx`, `SidebarThreadUndoNotice.tsx`, `command.tsx`, `menu.tsx`, `UsagePage.tsx`, `_chat.index.tsx`, `_chat.pull-requests.tsx`, `lint-restyle-ceiling.ts`, `vite.config.ts`.
+
+Add/add: `PullRequestCommentForm.tsx`, `PullRequestComposer.tsx`, `PullRequestReviewForm.tsx`, `SidebarThreadUndoNotice.tsx`, `lint-restyle-ceiling.ts`. Parent also renamed/deleted `PullRequestReviewBar.tsx`; Pretty already completed that rename.
+
+`.github/workflows/*` was restored from `origin/main` after the merge, matching `scripts/fork/run-upstream-sync.sh`.
+
+## Post-merge repairs
+
+- `web-typecheck` — Restored `import { cn } from "~/lib/utils"` in `apps/web/src/components/CommandPaletteResults.tsx`. The parent `CommandItem.active` hunk dropped local highlight classes, but Pretty still wraps the submenu chevron in `cn(...)`.
+
+## Clean-merged parent changes (no text conflict)
+
+- `apps/server` — Explicit provider refresh bypasses owned caches (`#13109`). Claude/Cursor driver and Cursor provider layers pick up the refresh path. Model manifest adds Opus 5.5 without rewriting existing aliases (`#13094`) plus timestamp/model updates. `ws.ts` / `server.test.ts` cover the refresh and model-list behavior. Device toolchain pins agent-device 0.21.12 (`#13124`).
+- `packages/contracts/src/rpc.ts` — Contract follow-through for the provider refresh / model-list work.
+- `apps/web/src/components/ui/*` — Parent primitive defaults auto-merged: `ghost-muted` / `ghost-destructive`, Empty sizes, Skeleton shapes, SidebarInput, Badge label variant, tooltip wrap width, popover widths, dialog body rhythm, and related call-site cleanups.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Auto-merged parent panel-animation settings and `iconOnlyBlockCount` overflow while keeping Pretty compact-touch controls, Create PR / babysit, and dictation.
+- `docs/internals/model-manifest.md` — Manifest documentation for the new models.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/AppSidebarLayout.tsx` — Workspace sidebar glass treatment, `group-data-[side=left]:border-r-0`, and memoized `sidebarResizable` options with live `getCssWidth` / `maxWidth` getters.
+- `apps/web/src/components/NoActiveThreadState.tsx` / `NoProjectsHero.tsx` / `UsagePage.tsx` / `_chat.index.tsx` / `_chat.pull-requests.tsx` / `settings.tsx` — `overflow-clip` / `overflow-x-clip` and explicit `bg-background text-foreground` on inset shells. Parent `isolate` stays on usage and settings.
+- `apps/web/src/components/NoProjectsHero.tsx` — Pretty clip/background contract plus the parent `Empty size="hero"` API; description keeps Pretty's quieter muted tone.
+- `apps/web/src/components/Sidebar.tsx` — Redesigned sidebar (project folders, nest-aware list, Pretty search-result close). Parent search-close duplicate list is not restored. Tooltip keeps `text-left whitespace-normal`. Header `SidebarGroup` keeps `relative z-[1]` so the stage backdrop does not paint the search outline.
+- `apps/web/src/components/chat/ChatView.tsx` / `draftHeroTransition.ts` — Pretty scenery dock, remount handoff, glide/pop thresholds, and scenery duration/easing stay. Parent panel-animation `active` / `durationMs` now gate the non-scenery glide and the mobile composer view transition.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Pretty header (no parent `MenuPopup` width hunk exists on this tree).
+- `apps/web/src/components/chat/WorktreeSetupCard.tsx` — Running `Spinner` keeps the shared `StageIcon` className.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Compact-touch menu, Create PR / babysit, dictation, and `composerControlsCompact`.
+- `apps/web/src/components/clerk/*` — Pretty `SURGE_*` product names stay; parent Empty `size="compact"` / Skeleton `shape="card"` land around them.
+- `apps/web/src/components/pullRequest/*` — Environment-scoped `pullRequestReviewKey` / `usePendingReviewComments`, `data-pull-request-tab-scroll="code"`, painted appearance, and thrown-error toasts. Parent 2110..2123 primitive-class cleanup is applied on that Pretty tree.
+- `apps/web/src/components/settings/SettingsSidebarNav.tsx` — Footer inset padding and `data-sidebar-peek="copy"`. Search uses parent `SidebarInput` / default `Kbd`.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Footer inset padding, `empty:hidden`, and the Pretty brand-stage pill wrapper (`rounded-full` / muted).
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — Pretty bordered search field and `--sidebar-icon-color` placeholder; input is now `SidebarInput`.
+- `apps/web/src/components/ui/command.tsx` — Pretty 90ms highlight transition kept; parent `active` prop added so the palette can own highlight.
+- `apps/web/src/components/ui/menu.tsx` — Pretty `dropdown-glass` kept; parent default min/max width, truncated labels, and checkbox grid `minmax(0,1fr)`.
+- `apps/web/src/hooks/useThreadActions.ts` — `readWritableThreadRef`, departure-marker cleanup, retargeted lifecycle mirroring, and `undoToast: false`.
+- `apps/web/src/lib/attachmentUploadQueue.ts` — #658 `retryScheduled` so two reconnect edges cannot both retry.
+
+## Parent changes integrated at conflict boundaries
+
+- Draft-hero / mobile composer transitions honor `usePanelAnimationSettings()` (`active` + `durationMs`) and set `--mobile-composer-transition-duration`.
+- `CommandItem` gains `active`; command-palette rows use it instead of restyling highlight locally (Pretty 90ms transition stays on the primitive).
+- Menu/tooltip/popover/dialog call sites drop width and `space-y-4` overrides now owned by ui defaults (`GitActionsControl`, `PreviewMoreMenu`, `ProviderInstanceCard`, `ChatView` tooltip).
+- Empty uses `size="hero"` / `size="compact"`; Skeleton uses `shape="card"`.
+- Settings and sidebar search use `SidebarInput`. Provider update/delete buttons use `ghost-muted` / `ghost-destructive` and `PopoverPopup width="md"`.
+- `ThreadPullRequestBadgeControl` renders through `Button` / `InlineButton` `render={element}` with `MouseEvent<HTMLElement>` so stack buttons and anchors share one handler type. Pretty underline variant classes stay on the non-ghost path.
+- `vite.config.ts` exempts `CollapsibleTrigger` from `shadcn/no-restyle` (parent `#13024`).
+- Pull-request composer/review/code/comment forms take the small 2110..2123 primitive cleanups on top of Pretty environment scoping.
+
+## Parent changes intentionally omitted
+
+- `scripts/lint-restyle-ceiling.ts` — Lower `RESTYLE_CEILING` from 1207 to 628. Reason: that drop matches the parent's migrated call sites. Pretty still owns extra chrome restyles, so taking 628 would fail the fork gate. Keep 1207 until a Pretty-side count is measured.
+- `apps/web/src/components/AppSidebarLayout.tsx` — Replace the glass sidebar with `border-r border-sidebar-border` and an inline resizable object using a static `sidebarMaximumWidth`. Reason: that would regress T3 Pretty's rail-owned seam, glass treatment, and drag-time CSS width/max-width getters.
+- `apps/web/src/components/NoActiveThreadState.tsx` / `NoProjectsHero.tsx` / `UsagePage.tsx` / `_chat.index.tsx` / `_chat.pull-requests.tsx` / `settings.tsx` — Switch inset overflow to `overflow-hidden` and drop explicit background/foreground classes. Reason: T3 Pretty's scenery/layout contract requires clip overflow on these inset shells.
+- `apps/web/src/components/Sidebar.tsx` — Parent sidebar structure (legacy icons, search-close duplicate list, no Pretty project-folder / nest machinery) and dropping `relative z-[1]` / `text-left whitespace-normal` tooltip classes. Reason: restoring parent structure would regress the redesign; the z-index and tooltip wrapping remain Pretty chrome.
+- `apps/web/src/components/chat/ChatView.tsx` — Replace Pretty scenery handoff/glide with the parent's single-duration draft-hero hook. Reason: scenery dock motion is fork-authoritative; parent panel-animation gating is applied around it.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Drop `className="min-w-56 max-w-[calc(100vw-2rem)]"` on a header actions `MenuPopup`. Reason: Pretty's header has no such menu; there is no equivalent call site.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Switch a theme-library remove button to `ghost-destructive`. Reason: Pretty's ThemeSettings has no matching remove control at that boundary.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Drop `rounded-full` / muted classes from the environment identification pill. Reason: those are Pretty brand-stage chrome; footer `empty:hidden` is also kept.
+- `apps/web/src/hooks/useThreadActions.ts` — Call settle/snooze/pin against `target.environmentId` / `target.threadId`. Reason: those references may identify a disconnected same-machine twin.
+- `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.

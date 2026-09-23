@@ -1,4 +1,11 @@
-import { FolderIcon, FolderOpenIcon, FolderPlusIcon, LayersIcon, PlusIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  FolderPlusIcon,
+  LayersIcon,
+  PlusIcon,
+} from "lucide-react";
 import { lazy, Suspense, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import type { IconName } from "lucide-react/dynamic";
 
@@ -39,7 +46,7 @@ const DynamicIcon = lazy(() =>
   import("lucide-react/dynamic").then((module) => ({ default: module.DynamicIcon })),
 );
 
-function FolderRailGlyph({ folder }: { readonly folder: SidebarProjectFolder }) {
+export function FolderRailGlyph({ folder }: { readonly folder: SidebarProjectFolder }) {
   const Fallback = folder.collapsed ? FolderIcon : FolderOpenIcon;
   if (folder.icon?.kind === "emoji") {
     return (
@@ -363,15 +370,20 @@ function ProjectRailItem({
 /**
  * Vertical strip of project icons. The rail is the only project axis in the
  * sidebar: picking an icon scopes the thread list to that project, the top
- * entry shows every project. The same column sits beside the thread list and
- * is the whole sidebar when it is icon-only, so expanding never moves an icon.
+ * entry shows every project. With `onSelectFolder`, a folder icon scopes the
+ * list to every project in the folder and a hover chevron opens and closes
+ * it; without it, the folder icon only opens and closes. The same column sits
+ * beside the thread list and is the whole sidebar when it is icon-only, so
+ * expanding never moves an icon.
  * `footer` pins utility controls under the projects. Search and new-thread
  * live on the peeked/expanded thread list, not here.
  */
 export function SidebarProjectRail({
   projects,
   selectedProjectKey,
+  selectedFolderId = null,
   onSelectProject,
+  onSelectFolder,
   onSelectAll,
   attentionByProjectKey,
   activityByProjectKey,
@@ -386,7 +398,9 @@ export function SidebarProjectRail({
 }: {
   projects: readonly SidebarProjectSnapshot[];
   selectedProjectKey: string | null;
+  selectedFolderId?: string | null;
   onSelectProject: (project: SidebarProjectSnapshot) => void;
+  onSelectFolder?: (folder: SidebarProjectFolder) => void;
   onSelectAll?: () => void;
   /** Strongest waiting-on-you / finished-PR status, plus a count, per project. */
   attentionByProjectKey?: ReadonlyMap<string, ProjectRailAttention>;
@@ -508,6 +522,8 @@ export function SidebarProjectRail({
     const containsSelected = item.projects.some(
       (project) => project.projectKey === selectedProjectKey,
     );
+    const folderSelected = selectedFolderId === item.folder.id;
+    const toggleLabel = `${item.folder.collapsed ? "Expand" : "Collapse"} ${item.folder.name}`;
     const drop: RailFolderDrop =
       dropHighlight === `folder:${item.folder.id}`
         ? "in"
@@ -549,7 +565,10 @@ export function SidebarProjectRail({
         }}
         button={
           <div
-            className={cn("relative w-full shrink-0", canDragFolder && "cursor-grab")}
+            className={cn(
+              "group/rail-folder relative w-full shrink-0",
+              canDragFolder && "cursor-grab",
+            )}
             draggable={canDragFolder}
             onDragStart={(event) => {
               event.dataTransfer.setData(RAIL_FOLDER_DRAG_TYPE, item.folder.id);
@@ -567,10 +586,11 @@ export function SidebarProjectRail({
               size="icon"
               variant="outline"
               aria-label={activityAccessibleLabel(
-                `${item.folder.collapsed ? "Expand" : "Collapse"} ${item.folder.name}`,
+                onSelectFolder ? `Show ${item.folder.name} threads` : toggleLabel,
                 item.folder.collapsed ? activity : null,
               )}
-              aria-expanded={!item.folder.collapsed}
+              aria-expanded={onSelectFolder ? undefined : !item.folder.collapsed}
+              aria-pressed={onSelectFolder ? folderSelected : undefined}
               tooltip={{
                 className: RAIL_TOOLTIP_CLASS,
                 sideOffset: 8,
@@ -584,8 +604,10 @@ export function SidebarProjectRail({
                   />
                 ),
               }}
-              isActive={containsSelected && item.folder.collapsed}
-              onClick={() => onToggleFolder?.(item.folder.id)}
+              isActive={folderSelected || (containsSelected && item.folder.collapsed)}
+              onClick={() =>
+                onSelectFolder ? onSelectFolder(item.folder) : onToggleFolder?.(item.folder.id)
+              }
               onContextMenu={
                 onFolderContextMenu ? (event) => onFolderContextMenu(event, item.folder) : undefined
               }
@@ -603,6 +625,26 @@ export function SidebarProjectRail({
               >
                 {attention.count}
               </span>
+            ) : null}
+            {onSelectFolder && onToggleFolder ? (
+              <button
+                type="button"
+                draggable={false}
+                aria-label={toggleLabel}
+                aria-expanded={!item.folder.collapsed}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleFolder(item.folder.id);
+                }}
+                className="absolute -bottom-1 -right-1 z-10 flex size-4 cursor-pointer items-center justify-center rounded-full bg-sidebar-control-surface text-sidebar-foreground opacity-0 ring-1 ring-sidebar-border transition-opacity hover:bg-sidebar-row-hover focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-ring group-hover/rail-folder:opacity-100 pointer-coarse:opacity-100"
+              >
+                <ChevronDownIcon
+                  className={cn(
+                    "size-2.5 transition-transform duration-200 motion-reduce:transition-none",
+                    !item.folder.collapsed && "rotate-180",
+                  )}
+                />
+              </button>
             ) : null}
           </div>
         }
@@ -631,8 +673,8 @@ export function SidebarProjectRail({
             size="icon"
             aria-label="All projects"
             tooltip={{ className: RAIL_TOOLTIP_CLASS, children: "All projects" }}
-            isActive={selectedProjectKey === null}
-            aria-pressed={selectedProjectKey === null}
+            isActive={selectedProjectKey === null && selectedFolderId === null}
+            aria-pressed={selectedProjectKey === null && selectedFolderId === null}
             className={cn(dropHighlight === "all" && RAIL_DROP_HIGHLIGHT_CLASS)}
             onClick={onSelectAll}
             onDragOver={highlightUngrouped("all")}

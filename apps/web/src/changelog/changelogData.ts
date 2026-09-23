@@ -26,6 +26,126 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260922.2123002775",
+    date: "2026-09-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "The zip in the macOS update manifest",
+      },
+      {
+        kind: "fixed",
+        title: "Require local Xcode instead of silent EAS cloud fallback",
+      },
+      {
+        kind: "fixed",
+        title: "Isolate electron-builder lock for macOS DMG packaging",
+      },
+      {
+        kind: "new",
+        title: "Filter the sidebar by project folder",
+      },
+      {
+        kind: "fixed",
+        title: "Calm the home suggestions into one tabbed row",
+      },
+      {
+        kind: "fixed",
+        title: "Resume pre-upgrade threads after switching accounts",
+      },
+    ],
+  },
+  {
+    version: "0.0.43-nightly.20260922.2123002772",
+    date: "2026-09-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "Require local Xcode instead of silent EAS cloud fallback",
+      },
+      {
+        kind: "fixed",
+        title: "Isolate electron-builder lock for macOS DMG packaging",
+      },
+      {
+        kind: "new",
+        title: "Filter the sidebar by project folder",
+      },
+      {
+        kind: "fixed",
+        title: "Calm the home suggestions into one tabbed row",
+      },
+      {
+        kind: "fixed",
+        title: "Resume pre-upgrade threads after switching accounts",
+      },
+      {
+        kind: "new",
+        title: "Generate home suggestions once per Connect mesh",
+      },
+    ],
+  },
+  {
+    version: "0.0.43-nightly.20260922.2083002765",
+    date: "2026-09-22",
+    items: [
+      {
+        kind: "fixed",
+        title: "Require local Xcode instead of silent EAS cloud fallback",
+      },
+      {
+        kind: "fixed",
+        title: "Isolate electron-builder lock for macOS DMG packaging",
+      },
+      {
+        kind: "new",
+        title: "Filter the sidebar by project folder",
+      },
+      {
+        kind: "fixed",
+        title: "Calm the home suggestions into one tabbed row",
+      },
+      {
+        kind: "fixed",
+        title: "Resume pre-upgrade threads after switching accounts",
+      },
+      {
+        kind: "new",
+        title: "Generate home suggestions once per Connect mesh",
+      },
+    ],
+  },
+  {
+    version: "0.0.43-nightly.20260922.2083002751",
+    date: "2026-09-22",
+    items: [
+      {
+        kind: "fixed",
+        title: "Resume pre-upgrade threads after switching accounts",
+      },
+      {
+        kind: "new",
+        title: "Generate home suggestions once per Connect mesh",
+      },
+      {
+        kind: "new",
+        title: "Frost changed-files and plan cards under World Scenery",
+      },
+      {
+        kind: "fixed",
+        title: "Let threads switch between Claude accounts",
+      },
+      {
+        kind: "fixed",
+        title: "Load images agents link in a thread",
+      },
+      {
+        kind: "fixed",
+        title: "Provide SecretRequestBroker to the /ws RPC layer",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260922.2083002747",
     date: "2026-09-22",
     items: [

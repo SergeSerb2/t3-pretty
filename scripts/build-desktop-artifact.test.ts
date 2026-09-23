@@ -60,6 +60,18 @@ import {
   resolveDesktopUpdateChannel,
   resolveDesktopWebAssetBrand,
   resolveCargoTargetDir,
+  resolveDesktopPackagingTargets,
+  mergeRetainedUpdateManifest,
+  resolveElectronBuilderMacPackedAppPath,
+  resolveElectronBuilderPrepackagedAppPath,
+  resolveElectronBuilderToolsetLockPaths,
+  resolveHostTempDirectory,
+  applyElectronBuilderIsolationEnv,
+  isElectronBuilderToolsetLockStale,
+  removeStaleElectronBuilderToolsetLock,
+  withDesktopPackagingTarget,
+  ELECTRON_BUILDER_TOOLSET_LOCK_NAME,
+  ELECTRON_BUILDER_TOOLSET_LOCK_STALE_MS,
   resolveAzureTrustedSigningOptions,
   resolveResourceMonitorRustTargets,
   resolveWindowsServerAsarIgnoreGlobs,
@@ -2198,7 +2210,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       const mac = config.mac as Record<string, unknown>;
       assert.equal(config.appId, "com.sergeserb.t3code");
-      assert.deepStrictEqual(mac.target, ["dmg", "zip"]);
+      assert.deepStrictEqual(mac.target, ["dmg"]);
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
       assert.equal(mac.entitlementsInherit, undefined);
@@ -2360,6 +2372,137 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         resolveCargoTargetDir(path, "/repo", "build/target"),
         path.resolve("/repo", "build/target"),
       );
+    }),
+  );
+
+  it("serializes macOS dmg packaging as zip then dmg", () => {
+    assert.deepStrictEqual(resolveDesktopPackagingTargets("mac", "dmg"), ["zip", "dmg"]);
+    assert.deepStrictEqual(resolveDesktopPackagingTargets("mac", "zip"), ["zip"]);
+    assert.deepStrictEqual(resolveDesktopPackagingTargets("linux", "AppImage"), ["AppImage"]);
+    assert.deepStrictEqual(resolveDesktopPackagingTargets("win", "nsis"), ["nsis"]);
+  });
+
+  it("keeps the zip in the mac update manifest after the dmg run rewrites it", () => {
+    const zipRun = [
+      "version: 1.2.3-nightly.1",
+      "files:",
+      "  - url: T3-Code-1.2.3-nightly.1-arm64.zip",
+      "    sha512: zipsha",
+      "    size: 10",
+      "path: T3-Code-1.2.3-nightly.1-arm64.zip",
+      "sha512: zipsha",
+      "releaseDate: '2026-09-22T00:00:00.000Z'",
+      "",
+    ].join("\n");
+    const dmgRun = [
+      "version: 1.2.3-nightly.1",
+      "files:",
+      "  - url: T3-Code-1.2.3-nightly.1-arm64.dmg",
+      "    sha512: dmgsha",
+      "    size: 20",
+      "path: T3-Code-1.2.3-nightly.1-arm64.dmg",
+      "sha512: dmgsha",
+      "releaseDate: '2026-09-22T00:01:00.000Z'",
+      "",
+    ].join("\n");
+    const merged = mergeRetainedUpdateManifest(zipRun, dmgRun, "nightly-mac.yml");
+    assert.include(merged, "url: T3-Code-1.2.3-nightly.1-arm64.zip");
+    assert.include(merged, "url: T3-Code-1.2.3-nightly.1-arm64.dmg");
+  });
+
+  it("isolates electron-builder's toolset lock without moving the shared cache", () => {
+    assert.deepStrictEqual(resolveElectronBuilderToolsetLockPaths("/tmp/job"), {
+      lockFile: "/tmp/job/.electron-builder-toolset.lock",
+      lockDir: "/tmp/job/.electron-builder-toolset.lock.lock",
+    });
+    assert.equal(ELECTRON_BUILDER_TOOLSET_LOCK_NAME, ".electron-builder-toolset.lock");
+    assert.equal(resolveHostTempDirectory({ TMPDIR: "/var/folders/x/T" }), "/var/folders/x/T");
+    assert.equal(resolveHostTempDirectory({ TEMP: "C:\\Temp" }), "C:\\Temp");
+    assert.equal(resolveHostTempDirectory({ SystemRoot: "C:\\Windows" }), "C:\\Windows\\Temp");
+    assert.equal(resolveHostTempDirectory({}), "/tmp");
+    const isolated = applyElectronBuilderIsolationEnv(
+      { PATH: "/usr/bin", ELECTRON_BUILDER_CACHE: "/shared/cache", TMPDIR: "/old" },
+      { tmpDir: "/stage/electron-builder-tmp" },
+    );
+    assert.equal(isolated.TMPDIR, "/stage/electron-builder-tmp");
+    assert.equal(isolated.TEMP, "/stage/electron-builder-tmp");
+    assert.equal(isolated.TMP, "/stage/electron-builder-tmp");
+    assert.equal(isolated.ELECTRON_BUILDER_CACHE, "/shared/cache");
+    assert.equal(isolated.PATH, "/usr/bin");
+    assert.isFalse(isElectronBuilderToolsetLockStale(1_000, 1_000 + 119_999));
+    assert.isTrue(
+      isElectronBuilderToolsetLockStale(1_000, 1_000 + ELECTRON_BUILDER_TOOLSET_LOCK_STALE_MS),
+    );
+  });
+
+  it("reuses the signed zip .app when packaging the macOS dmg", () => {
+    assert.equal(
+      resolveElectronBuilderMacPackedAppPath(NodePath.join, "/stage/app", "arm64", "T3 Pretty"),
+      NodePath.join("/stage/app", "dist", "mac-arm64", "T3 Pretty.app"),
+    );
+    assert.equal(
+      resolveElectronBuilderMacPackedAppPath(NodePath.join, "/stage/app", "x64", "T3 Pretty"),
+      NodePath.join("/stage/app", "dist", "mac", "T3 Pretty.app"),
+    );
+    assert.equal(
+      resolveElectronBuilderMacPackedAppPath(
+        NodePath.join,
+        "/stage/app",
+        "universal",
+        "T3 Pretty (Nightly)",
+      ),
+      NodePath.join("/stage/app", "dist", "mac-universal", "T3 Pretty (Nightly).app"),
+    );
+    assert.equal(
+      resolveElectronBuilderPrepackagedAppPath({
+        platform: "mac",
+        packagingTargets: ["zip", "dmg"],
+        packagingTarget: "dmg",
+        packedAppPath: "/app.app",
+      }),
+      "/app.app",
+    );
+    assert.equal(
+      resolveElectronBuilderPrepackagedAppPath({
+        platform: "mac",
+        packagingTargets: ["zip", "dmg"],
+        packagingTarget: "zip",
+        packedAppPath: "/app.app",
+      }),
+      undefined,
+    );
+    assert.equal(
+      resolveElectronBuilderPrepackagedAppPath({
+        platform: "mac",
+        packagingTargets: ["dmg"],
+        packagingTarget: "dmg",
+        packedAppPath: "/app.app",
+      }),
+      undefined,
+    );
+    assert.deepStrictEqual(
+      withDesktopPackagingTarget({ mac: { target: ["dmg"], icon: "icon.icns" } }, "mac", "zip"),
+      { mac: { target: ["zip"], icon: "icon.icns" } },
+    );
+  });
+
+  it.effect("removes only stale electron-builder toolset locks", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const tmpDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-eb-lock-",
+      });
+      const { lockFile, lockDir } = resolveElectronBuilderToolsetLockPaths(tmpDir);
+      yield* fs.makeDirectory(lockDir, { recursive: true });
+      yield* fs.writeFileString(lockFile, "");
+      assert.isFalse(yield* removeStaleElectronBuilderToolsetLock(tmpDir));
+      assert.isTrue(yield* fs.exists(lockDir));
+      // Pin mtime to epoch so the lock is older than both the live clock and
+      // @effect/vitest's TestClock (which starts at 0).
+      yield* fs.utimes(lockDir, 0, 0);
+      assert.isTrue(yield* removeStaleElectronBuilderToolsetLock(tmpDir, 0));
+      assert.isFalse(yield* fs.exists(lockDir));
+      assert.isFalse(yield* fs.exists(lockFile));
     }),
   );
 

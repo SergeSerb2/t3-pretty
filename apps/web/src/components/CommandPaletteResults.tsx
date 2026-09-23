@@ -109,13 +109,8 @@ function CommandPaletteResultRow(props: {
   return (
     <CommandItem
       value={props.item.value}
-      className={cn(
-        // 90ms: at held-arrow scrubbing speed each row still reaches ~45%
-        // opacity, which reads as motion blur rather than lag. Above ~120ms
-        // navigation starts smearing.
-        "cursor-pointer gap-2 transition-colors duration-[90ms] ease-out hover:bg-transparent hover:text-inherit data-highlighted:bg-transparent data-highlighted:text-inherit data-selected:bg-transparent data-selected:text-inherit [&[data-highlighted][data-selected]]:bg-transparent [&[data-highlighted][data-selected]]:text-inherit",
-        props.isActive && "bg-accent! text-accent-foreground!",
-      )}
+      active={props.isActive}
+      className="gap-2"
       onMouseDown={(event) => {
         event.preventDefault();
       }}

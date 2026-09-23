@@ -4,6 +4,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
+import * as NodePath from "node:path";
 
 import {
   createPackageWithOptions,
@@ -37,9 +38,15 @@ import {
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { loadRepoEnv, resolveBuildFlavor, type T3CodeBuildFlavor } from "./lib/public-config.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import {
+  mergeUpdateManifests,
+  parseUpdateManifest,
+  serializeUpdateManifest,
+} from "./lib/update-manifest.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -2377,6 +2384,149 @@ export function resolveCargoTargetDir(
   return path.join(repoRoot, "native/resource-monitor/target");
 }
 
+// electron-builder 26.15.6 (`app-builder-lib/src/util/toolsetLock.ts`) locks
+// `$TMPDIR/.electron-builder-toolset.lock` around dmgbuild/hdiutil. The lock
+// is not reentrant, `stale` is 2 minutes, and retries exhaust in ~8 minutes —
+// the same gap as Buildkite #2750/#2751 after zip finished and DMG kept going.
+export const ELECTRON_BUILDER_TOOLSET_LOCK_NAME = ".electron-builder-toolset.lock";
+export const ELECTRON_BUILDER_TOOLSET_LOCK_STALE_MS = 120_000;
+
+export function resolveDesktopPackagingTargets(
+  platform: typeof BuildPlatform.Type,
+  target: string,
+): readonly string[] {
+  if (platform === "mac" && target === "dmg") {
+    return ["zip", "dmg"];
+  }
+  return [target];
+}
+
+// Each electron-builder run rewrites `latest-mac.yml`/`nightly-mac.yml` with
+// only its own target, so the dmg run would drop the zip that macOS
+// electron-updater downloads. Fold the earlier run's entries back in.
+export function mergeRetainedUpdateManifest(
+  previousRaw: string,
+  currentRaw: string,
+  sourcePath: string,
+): string {
+  const label = "macOS";
+  return serializeUpdateManifest(
+    mergeUpdateManifests(
+      parseUpdateManifest(currentRaw, sourcePath, label),
+      parseUpdateManifest(previousRaw, sourcePath, label),
+      label,
+    ),
+    { platformLabel: label },
+  );
+}
+
+export function resolveElectronBuilderToolsetLockPaths(tmpDir: string) {
+  const lockFile = NodePath.join(tmpDir, ELECTRON_BUILDER_TOOLSET_LOCK_NAME);
+  return { lockFile, lockDir: `${lockFile}.lock` } as const;
+}
+
+export function resolveHostTempDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.TMPDIR || env.TEMP || env.TMP;
+  if (configured && configured.trim() !== "") {
+    return configured;
+  }
+  return env.SystemRoot ? NodePath.win32.join(env.SystemRoot, "Temp") : "/tmp";
+}
+
+export function resolveElectronBuilderMacOutDirName(arch: string): string {
+  // electron-builder's getArchSuffix() omits x64, so the packed app lands in
+  // dist/mac rather than dist/mac-x64.
+  return arch === "x64" ? "mac" : `mac-${arch}`;
+}
+
+export function resolveElectronBuilderMacPackedAppPath(
+  joinPath: (...parts: string[]) => string,
+  stageAppDir: string,
+  arch: string,
+  productName: string,
+): string {
+  return joinPath(
+    stageAppDir,
+    "dist",
+    resolveElectronBuilderMacOutDirName(arch),
+    `${productName}.app`,
+  );
+}
+
+export function resolveElectronBuilderPrepackagedAppPath(input: {
+  readonly platform: typeof BuildPlatform.Type;
+  readonly packagingTargets: readonly string[];
+  readonly packagingTarget: string;
+  readonly packedAppPath: string;
+}): string | undefined {
+  if (
+    input.platform === "mac" &&
+    input.packagingTarget === "dmg" &&
+    input.packagingTargets.includes("zip")
+  ) {
+    return input.packedAppPath;
+  }
+  return undefined;
+}
+
+export function withDesktopPackagingTarget(
+  build: Record<string, unknown>,
+  platform: typeof BuildPlatform.Type,
+  packagingTarget: string,
+): Record<string, unknown> {
+  const platformBuild = build[platform];
+  const nextPlatformBuild =
+    platformBuild !== undefined && typeof platformBuild === "object" && platformBuild !== null
+      ? { ...(platformBuild as Record<string, unknown>), target: [packagingTarget] }
+      : { target: [packagingTarget] };
+  return {
+    ...build,
+    [platform]: nextPlatformBuild,
+  };
+}
+
+export function isElectronBuilderToolsetLockStale(
+  mtimeMs: number,
+  nowMs: number,
+  staleMs = ELECTRON_BUILDER_TOOLSET_LOCK_STALE_MS,
+): boolean {
+  return Number.isFinite(mtimeMs) && nowMs - mtimeMs >= staleMs;
+}
+
+export function applyElectronBuilderIsolationEnv(
+  env: NodeJS.ProcessEnv,
+  isolation: { readonly tmpDir: string },
+): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    TMPDIR: isolation.tmpDir,
+    TEMP: isolation.tmpDir,
+    TMP: isolation.tmpDir,
+  };
+}
+
+export const removeStaleElectronBuilderToolsetLock = Effect.fn(
+  "removeStaleElectronBuilderToolsetLock",
+)(function* (tmpDir: string, staleMs = ELECTRON_BUILDER_TOOLSET_LOCK_STALE_MS) {
+  const fs = yield* FileSystem.FileSystem;
+  const { lockFile, lockDir } = resolveElectronBuilderToolsetLockPaths(tmpDir);
+  const lockStat = yield* fs.stat(lockDir).pipe(Effect.orElseSucceed(() => null));
+  if (!lockStat) {
+    return false;
+  }
+  const mtime = Option.getOrUndefined(lockStat.mtime);
+  if (mtime === undefined) {
+    return false;
+  }
+  const nowMs = yield* Clock.currentTimeMillis;
+  if (!isElectronBuilderToolsetLockStale(mtime.getTime(), nowMs, staleMs)) {
+    return false;
+  }
+  yield* fs.remove(lockDir, { recursive: true, force: true });
+  yield* fs.remove(lockFile, { force: true }).pipe(Effect.ignore);
+  return true;
+});
+
 export const stageLinuxCaptureHelper = Effect.fn("stageLinuxCaptureHelper")(function* (input: {
   readonly backend: "kde" | "hyprland";
   readonly repoRoot: string;
@@ -3067,7 +3217,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
     buildConfig.mac = {
-      target: target === "dmg" ? [target, "zip"] : [target],
+      // One target per electron-builder run. zip+dmg together start in
+      // parallel (zip is async) and contend for electron-builder 26's
+      // process-wide toolset lock under os.tmpdir().
+      target: [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
       extendInfo: {
@@ -4293,33 +4446,112 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* Effect.log(
     `[desktop-artifact] Building ${options.platform}/${options.target} (arch=${options.arch}, version=${appVersion})...`,
   );
-  const builderArgs = [
-    "exec",
-    "--filter",
-    "@t3tools/desktop",
-    "--",
-    "electron-builder",
-    "--projectDir",
+  const packagingTargets = resolveDesktopPackagingTargets(options.platform, options.target);
+  const builderTmpDir = path.join(stageRoot, "electron-builder-tmp");
+  yield* fs.makeDirectory(builderTmpDir, { recursive: true });
+  const isolatedBuildEnv = applyElectronBuilderIsolationEnv(buildEnv, { tmpDir: builderTmpDir });
+  const { lockFile } = resolveElectronBuilderToolsetLockPaths(builderTmpDir);
+  yield* Effect.log(
+    `[desktop-artifact] Isolating electron-builder TMPDIR to ${builderTmpDir} (toolset lock ${lockFile})`,
+  );
+  const packedAppPath = resolveElectronBuilderMacPackedAppPath(
+    path.join,
     stageAppDir,
-    platformConfig.cliFlag,
-    `--${options.arch}`,
-    "--publish",
-    "never",
-  ];
-  const builderCommand = yield* resolveSpawnCommand("vp", builderArgs, { env: buildEnv });
-  yield* runCommand(
-    ChildProcess.make(builderCommand.command, builderCommand.args, {
-      cwd: repoRoot,
-      env: buildEnv,
-      shell: builderCommand.shell,
-    }),
-    {
-      label: `vp exec --filter @t3tools/desktop -- electron-builder --projectDir ${stageAppDir} ${platformConfig.cliFlag} --${options.arch} --publish never`,
-      verbose: options.verbose,
-    },
+    options.arch,
+    resolveDesktopProductName(appVersion, buildFlavor),
   );
 
   const stageDistDir = path.join(stageAppDir, "dist");
+  for (const packagingTarget of packagingTargets) {
+    const previousManifests = new Map<string, string>();
+    if (yield* fs.exists(stageDistDir)) {
+      for (const entry of yield* fs.readDirectory(stageDistDir)) {
+        if (!entry.endsWith(".yml") || entry === "builder-debug.yml") continue;
+        const manifestPath = path.join(stageDistDir, entry);
+        previousManifests.set(manifestPath, yield* fs.readFileString(manifestPath));
+      }
+    }
+
+    const removedStaleLock = yield* removeStaleElectronBuilderToolsetLock(builderTmpDir).pipe(
+      Effect.tapError((error) =>
+        Effect.logWarning("Could not inspect electron-builder toolset lock.", {
+          tmpDir: builderTmpDir,
+          error: String(error),
+        }),
+      ),
+      Effect.orElseSucceed(() => false),
+    );
+    if (removedStaleLock) {
+      yield* Effect.log(
+        `[desktop-artifact] Removed a stale ${ELECTRON_BUILDER_TOOLSET_LOCK_NAME} under ${builderTmpDir}`,
+      );
+    }
+
+    const targetPackageJson: StagePackageJson = {
+      ...stagePackageJson,
+      build: withDesktopPackagingTarget(stagePackageJson.build, options.platform, packagingTarget),
+    };
+    const targetPackageJsonString = yield* encodeJsonString(targetPackageJson);
+    yield* fs.writeFileString(
+      path.join(stageAppDir, "package.json"),
+      `${targetPackageJsonString}\n`,
+    );
+
+    const prepackagedAppPath = resolveElectronBuilderPrepackagedAppPath({
+      platform: options.platform,
+      packagingTargets,
+      packagingTarget,
+      packedAppPath,
+    });
+    if (prepackagedAppPath && !(yield* fs.exists(prepackagedAppPath))) {
+      return yield* new DesktopBuildDistDirectoryMissingError({
+        distPath: prepackagedAppPath,
+        platform: options.platform,
+        arch: options.arch,
+      });
+    }
+
+    const builderArgs = [
+      "exec",
+      "--filter",
+      "@t3tools/desktop",
+      "--",
+      "electron-builder",
+      "--projectDir",
+      stageAppDir,
+      platformConfig.cliFlag,
+      `--${options.arch}`,
+      "--publish",
+      "never",
+      ...(prepackagedAppPath ? ["--prepackaged", prepackagedAppPath] : []),
+    ];
+    const builderCommand = yield* resolveSpawnCommand("vp", builderArgs, { env: isolatedBuildEnv });
+    const prepackagedSuffix = prepackagedAppPath ? ` --prepackaged ${prepackagedAppPath}` : "";
+    yield* Effect.log(
+      `[desktop-artifact] Packaging ${options.platform}/${packagingTarget} (${packagingTargets.join(" then ")})...`,
+    );
+    yield* runCommand(
+      ChildProcess.make(builderCommand.command, builderCommand.args, {
+        cwd: repoRoot,
+        env: isolatedBuildEnv,
+        shell: builderCommand.shell,
+      }),
+      {
+        label: `vp exec --filter @t3tools/desktop -- electron-builder --projectDir ${stageAppDir} ${platformConfig.cliFlag} --${options.arch} --publish never${prepackagedSuffix}`,
+        verbose: options.verbose,
+      },
+    );
+
+    for (const [manifestPath, previousRaw] of previousManifests) {
+      if (!(yield* fs.exists(manifestPath))) continue;
+      const currentRaw = yield* fs.readFileString(manifestPath);
+      yield* fs.writeFileString(
+        manifestPath,
+        mergeRetainedUpdateManifest(previousRaw, currentRaw, manifestPath),
+      );
+    }
+  }
+
   if (!(yield* fs.exists(stageDistDir))) {
     return yield* new DesktopBuildDistDirectoryMissingError({
       distPath: stageDistDir,

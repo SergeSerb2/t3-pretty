@@ -703,7 +703,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                             </Button>
                           }
                         />
-                        <TooltipPopup side="top" align="end" className="max-w-72">
+                        <TooltipPopup side="top" align="end">
                           {readiness.hint ??
                             "Open Settings → Source Control to configure this provider."}
                         </TooltipPopup>
@@ -1875,7 +1875,7 @@ export default function GitActionsControl({
                 <SourceControlIcon className="size-4" />
                 <MenuItemLabel>Git actions</MenuItemLabel>
               </MenuSubTrigger>
-              <MenuSubPopup className="min-w-32 max-w-[calc(100vw-2rem)]">{gitItems}</MenuSubPopup>
+              <MenuSubPopup>{gitItems}</MenuSubPopup>
             </MenuSub>
           </>
         )
@@ -1942,9 +1942,7 @@ export default function GitActionsControl({
             >
               <ChevronDownIcon aria-hidden="true" className="size-4" />
             </MenuTrigger>
-            <MenuPopup align="end" className="w-full min-w-64">
-              {gitItems}
-            </MenuPopup>
+            <MenuPopup align="end">{gitItems}</MenuPopup>
           </Menu>
         </Group>
       )}
@@ -1965,7 +1963,7 @@ export default function GitActionsControl({
             <DialogTitle>{COMMIT_DIALOG_TITLE}</DialogTitle>
             <DialogDescription>{COMMIT_DIALOG_DESCRIPTION}</DialogDescription>
           </DialogHeader>
-          <DialogPanel className="space-y-4">
+          <DialogPanel>
             <div className="space-y-3 rounded-xl bg-zinc-25 p-3 text-sm ring-1 ring-black/5 dark:bg-white/[0.035] dark:ring-white/5">
               <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
                 <span className="text-muted-foreground">Branch</span>

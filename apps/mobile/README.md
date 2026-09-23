@@ -130,9 +130,11 @@ The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin.
 CI publishes production OTA through the fork-owned EAS project. Installed
 TestFlight binaries pick that up. When the native fingerprint changes, a new
 IPA is compiled locally with stable `Xcode.app` or the Apple-listed beta build
-configured by `T3CODE_ACCEPTED_XCODE_BETA_BUILD`. Older beta builds fall back
-to EAS cloud. The resulting IPA is uploaded as a TestFlight build; neither path
-submits the app for App Store review.
+configured by `T3CODE_ACCEPTED_XCODE_BETA_BUILD`. Older or missing Xcode
+installs fail the job instead of spending EAS quota; set
+`T3CODE_IOS_ALLOW_EAS_CLOUD=1` to opt into the cloud IPA path. The resulting
+IPA is uploaded as a TestFlight build; neither path submits the app for App
+Store review.
 
 Android production binaries use Google Play's internal testing track:
 

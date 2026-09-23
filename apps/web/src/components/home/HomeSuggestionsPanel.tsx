@@ -2,12 +2,17 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, HomeSuggestion, ScopedProjectRef } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  HomeSuggestion,
+  HomeSuggestionKind,
+  ScopedProjectRef,
+} from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
 import { AsyncResult } from "effect/unstable/reactivity";
 import * as Option from "effect/Option";
 import { SettingsIcon, SparklesIcon } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { useComposerDraftStore, type DraftId } from "../../composerDraftStore";
@@ -32,8 +37,8 @@ function describeCommandFailure(result: Parameters<typeof squashAtomCommandFailu
 
 /**
  * The day's suggested prompts, shown on the draft landing between the
- * headline and the composer. Project cards and new ideas are separate
- * horizontal shelves. Picking a card types its prompt into the open draft; a
+ * headline and the composer. Project cards and new ideas are two tabs over one
+ * horizontal shelf, so the landing stays a single row tall. Picking a card types its prompt into the open draft; a
  * card for another project opens a draft there first, on whichever connected
  * environment owns it (linked machines share one batch). A project card whose
  * environment this client cannot see is hidden. The panel stays quiet
@@ -78,6 +83,7 @@ function EnvironmentSuggestionsStrip({
   const handleNewThread = useNewThreadHandler();
   const setPrompt = useComposerDraftStore((store) => store.setPrompt);
   const projects = useProjects();
+  const [selectedKind, setSelectedKind] = useState<HomeSuggestionKind>("project");
   const projectsByRef = useMemo(
     () =>
       new Map<string, EnvironmentProject>(
@@ -150,49 +156,81 @@ function EnvironmentSuggestionsStrip({
   if (cards.length === 0 && !generating) return null;
 
   const shelves = groupHomeSuggestionShelves(cards);
+  const shelf = shelves.find((candidate) => candidate.kind === selectedKind) ?? shelves[0];
+
+  const actions = (
+    <>
+      <Button
+        size="icon-xs"
+        variant="ghost-muted"
+        aria-label="Refresh suggestions"
+        disabled={generating}
+        onClick={() => void onRefresh()}
+      >
+        <RefreshIcon className={cn("size-3.5", generating && "animate-spin")} />
+      </Button>
+      <Button
+        size="icon-xs"
+        variant="ghost-muted"
+        aria-label="Suggestion settings"
+        render={<Link to="/settings/general" />}
+      >
+        <SettingsIcon className="size-3.5" />
+      </Button>
+    </>
+  );
 
   return (
     <section
       aria-label="Suggested prompts"
-      className="pointer-events-auto mt-8 flex w-full flex-col gap-3.5 sm:mt-10"
+      className="pointer-events-auto mt-8 flex w-full flex-col sm:mt-10"
     >
-      <div className="flex items-center gap-1.5 px-0.5 text-xs text-muted-foreground">
-        <SparklesIcon className="size-3.5" />
-        <span>{generating ? "Planning today's suggestions…" : "Suggested for today"}</span>
-        <div className="ml-auto flex items-center">
-          <Button
-            size="icon-xs"
-            variant="ghost-muted"
-            aria-label="Refresh suggestions"
-            disabled={generating}
-            onClick={() => void onRefresh()}
-          >
-            <RefreshIcon className={cn("size-3.5", generating && "animate-spin")} />
-          </Button>
-          <Button
-            size="icon-xs"
-            variant="ghost-muted"
-            aria-label="Suggestion settings"
-            render={<Link to="/settings/general" />}
-          >
-            <SettingsIcon className="size-3.5" />
-          </Button>
+      {shelf === undefined ? (
+        <div className="flex h-7 items-center gap-2 px-0.5 text-xs text-muted-foreground">
+          <SparklesIcon className="size-3.5 shrink-0" />
+          <span>Planning today's suggestions…</span>
+          <div className="ml-auto flex items-center gap-0.5">{actions}</div>
         </div>
-      </div>
-      {shelves.length > 0 ? (
-        <div className="flex flex-col gap-4">
-          {shelves.map((shelf) => (
-            <HomeSuggestionShelfView
-              key={shelf.kind}
-              shelf={shelf}
-              showLabel={shelves.length > 1}
-              projectFor={projectFor}
-              onStart={(card) => void start(card)}
-              onDismiss={(card) => void onDismiss(card.id)}
-            />
-          ))}
-        </div>
-      ) : null}
+      ) : (
+        <HomeSuggestionShelfView
+          key={shelf.kind}
+          shelf={shelf}
+          heading={
+            <>
+              <SparklesIcon className="size-3.5 shrink-0" />
+              {shelves.length > 1 ? (
+                <div role="group" aria-label="Suggestion kind" className="flex items-center gap-3">
+                  {shelves.map((candidate) => (
+                    <button
+                      key={candidate.kind}
+                      type="button"
+                      aria-pressed={candidate.kind === shelf.kind}
+                      onClick={() => setSelectedKind(candidate.kind)}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-sm transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                        candidate.kind === shelf.kind
+                          ? "text-foreground"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {candidate.label}
+                      <span className="text-muted-foreground/70 tabular-nums">
+                        {candidate.cards.length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <span>{shelf.label}</span>
+              )}
+            </>
+          }
+          actions={actions}
+          projectFor={projectFor}
+          onStart={(card) => void start(card)}
+          onDismiss={(card) => void onDismiss(card.id)}
+        />
+      )}
     </section>
   );
 }

@@ -1,9 +1,8 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { HomeSuggestion } from "@t3tools/contracts";
 import { ChevronLeftIcon, ChevronRightIcon, CompassIcon, XIcon } from "lucide-react";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
-import { cn } from "~/lib/utils";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import {
@@ -16,15 +15,22 @@ import {
 // next card stays visibly clipped instead of the row looking like a static grid.
 const SHELF_CARD_FLEX = "0 0 clamp(15rem, calc((100% - 1.5rem) / 2.35), 22rem)";
 
+/**
+ * One horizontal row of suggestion cards under a single header line. The
+ * caller fills the header's leading text and trailing actions; the row's
+ * scroll arrows sit between them so they never cover a card.
+ */
 export function HomeSuggestionShelfView({
   shelf,
-  showLabel,
+  heading,
+  actions,
   projectFor,
   onStart,
   onDismiss,
 }: {
   readonly shelf: HomeSuggestionShelfModel<HomeSuggestion>;
-  readonly showLabel: boolean;
+  readonly heading: ReactNode;
+  readonly actions: ReactNode;
   readonly projectFor: (card: HomeSuggestion) => EnvironmentProject | null;
   readonly onStart: (card: HomeSuggestion) => void;
   readonly onDismiss: (card: HomeSuggestion) => void;
@@ -44,8 +50,8 @@ export function HomeSuggestionShelfView({
       current.left === next.left && current.right === next.right ? current : next,
     );
     const active = document.activeElement;
-    // The arrows are siblings of the scroller, so the focused control is
-    // outside `node`. Move focus onto the row before that arrow hides.
+    // The arrows live in the header, outside `node`. Move focus onto the row
+    // before the focused arrow is disabled and drops it.
     if (!(active instanceof HTMLElement) || !node.parentElement?.contains(active)) return;
     const direction = active.dataset.shelfScroll;
     const exhausted =
@@ -79,61 +85,49 @@ export function HomeSuggestionShelfView({
   const mask = suggestionShelfMask(edges);
 
   return (
-    <div role="group" aria-label={shelf.label} className="flex flex-col gap-2">
-      {showLabel ? (
-        <div className="flex items-center gap-3 px-0.5">
-          <h3 className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
-            {shelf.label}
-          </h3>
-          <div aria-hidden className="h-px min-w-6 flex-1 bg-border/55" />
-          <span className="text-[11px] text-muted-foreground/70 tabular-nums">
-            {shelf.cards.length}
-          </span>
-        </div>
-      ) : null}
-      <div className="relative rounded-2xl bg-foreground/[0.04] p-1.5 ring-1 ring-foreground/15 backdrop-blur-[2px]">
-        <ul
-          ref={scrollerRef}
-          tabIndex={-1}
-          data-home-suggestion-shelf={shelf.kind}
-          className="flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain py-0.5 outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          style={
-            mask
-              ? {
-                  maskImage: mask,
-                  WebkitMaskImage: mask,
-                }
-              : undefined
-          }
-        >
-          {shelf.cards.map((card) => (
-            <li key={card.id} className="snap-start" style={{ flex: SHELF_CARD_FLEX }}>
-              <SuggestionCard
-                card={card}
-                project={projectFor(card)}
-                onStart={() => onStart(card)}
-                onDismiss={() => onDismiss(card)}
+    <div className="flex flex-col gap-2.5">
+      <div className="flex h-7 items-center gap-2 px-0.5 text-xs text-muted-foreground">
+        {heading}
+        <div className="ml-auto flex items-center gap-0.5">
+          {edges.left || edges.right ? (
+            <>
+              <ShelfScrollButton
+                direction={-1}
+                available={edges.left}
+                label={`Previous ${shelf.label} cards`}
+                onClick={() => scrollShelf(-1)}
               />
-            </li>
-          ))}
-        </ul>
-        {edges.left || edges.right ? (
-          <>
-            <ShelfScrollButton
-              direction={-1}
-              available={edges.left}
-              label={`Previous ${shelf.label} cards`}
-              onClick={() => scrollShelf(-1)}
-            />
-            <ShelfScrollButton
-              direction={1}
-              available={edges.right}
-              label={`More ${shelf.label} cards`}
-              onClick={() => scrollShelf(1)}
-            />
-          </>
-        ) : null}
+              <ShelfScrollButton
+                direction={1}
+                available={edges.right}
+                label={`More ${shelf.label} cards`}
+                onClick={() => scrollShelf(1)}
+              />
+              <div aria-hidden className="mx-1 h-3.5 w-px bg-border/70" />
+            </>
+          ) : null}
+          {actions}
+        </div>
       </div>
+      <ul
+        ref={scrollerRef}
+        tabIndex={-1}
+        aria-label={shelf.label}
+        data-home-suggestion-shelf={shelf.kind}
+        className="flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
+      >
+        {shelf.cards.map((card) => (
+          <li key={card.id} className="snap-start" style={{ flex: SHELF_CARD_FLEX }}>
+            <SuggestionCard
+              card={card}
+              project={projectFor(card)}
+              onStart={() => onStart(card)}
+              onDismiss={() => onDismiss(card)}
+            />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -152,22 +146,14 @@ function ShelfScrollButton({
   const Icon = direction < 0 ? ChevronLeftIcon : ChevronRightIcon;
   return (
     <Button
-      size="icon-sm"
-      variant="glass"
+      size="icon-xs"
+      variant="ghost-muted"
       data-shelf-scroll={direction < 0 ? "back" : "forward"}
-      aria-disabled={!available}
-      tabIndex={available ? 0 : -1}
-      className={cn(
-        "absolute top-1/2 z-10 -translate-y-1/2 rounded-full bg-background/85 shadow-md",
-        direction < 0 ? "left-1.5" : "right-2",
-        !available && "pointer-events-none invisible",
-      )}
+      disabled={!available}
       aria-label={label}
-      onClick={() => {
-        if (available) onClick();
-      }}
+      onClick={onClick}
     >
-      <Icon className="size-4" />
+      <Icon className="size-3.5" />
     </Button>
   );
 }
@@ -188,7 +174,7 @@ function SuggestionCard({
       <button
         type="button"
         onClick={onStart}
-        className="flex h-full min-h-32 w-full flex-col gap-1.5 rounded-xl border border-border/60 bg-card/55 px-3.5 py-3 text-left shadow-sm transition-colors hover:border-border hover:bg-card/75 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex h-full w-full flex-col gap-1 rounded-xl border border-border/50 bg-card/60 px-3.5 py-3 text-left transition-colors hover:border-border hover:bg-card/80 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="flex items-center gap-1.5 pr-5 text-[.6875rem] text-muted-foreground">
           {project ? (
@@ -203,10 +189,10 @@ function SuggestionCard({
             </>
           )}
         </span>
-        <span className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
+        <span className="mt-0.5 line-clamp-1 text-sm font-medium leading-snug text-foreground">
           {card.title}
         </span>
-        <span className="line-clamp-2 text-xs leading-relaxed text-muted-foreground/78">
+        <span className="line-clamp-2 text-xs leading-normal text-muted-foreground">
           {card.summary}
         </span>
       </button>

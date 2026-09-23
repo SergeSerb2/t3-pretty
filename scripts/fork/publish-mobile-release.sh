@@ -12,9 +12,10 @@
 # TestFlight through App Store Connect; it does not submit the app for App
 # Store review. EAS owns the remote retry after accepting the submission, so
 # Buildkite does not wait on that queue while holding the Apple signing slot.
-# Local builds use stable Xcode;
-# beta toolchains can fall out of App Store Connect support without warning,
-# so the existing EAS cloud path handles IPA builds while this Mac is on beta.
+# Local `eas build --local` is the default IPA compile path. Command Line
+# Tools cannot archive an IPA. Without a usable full Xcode the job fails
+# with a Buildkite annotation instead of spending EAS Free/paid quota.
+# Set T3CODE_IOS_ALLOW_EAS_CLOUD=1 to opt into the cloud IPA path.
 #
 # Buildkite cancels intermediate main builds when pushes land in quick
 # succession, so a release can die mid-flight and a later push would skip on
@@ -778,9 +779,18 @@ is_full_xcode() {
   return 0
 }
 
+# EAS cloud IPA compiles spend Free/paid quota. Opt in only.
+allow_eas_cloud_ios() {
+  case "${T3CODE_IOS_ALLOW_EAS_CLOUD:-}" in
+    true | TRUE | 1 | yes | YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Prefer a stable full Xcode.app if xcodebuild actually runs. Command Line
 # Tools cannot compile an IPA. The current Apple-listed beta is accepted for
-# macOS developer builds; stale betas fall back to EAS cloud.
+# macOS developer builds; stale betas are skipped. Without a usable Xcode
+# the job fails unless T3CODE_IOS_ALLOW_EAS_CLOUD=1 opts into EAS cloud.
 # Override T3CODE_ACCEPTED_XCODE_BETA_BUILD when Apple advances the listed beta.
 # Origin's pipeline upload rejects `interruptible`, so a later main push
 # can still cancel this job. Do not merge unrelated main PRs during an IPA.
@@ -798,10 +808,15 @@ fi
 
 ipa_via_cloud=false
 if ! is_full_xcode "$developer_dir"; then
-  ipa_via_cloud=true
   ls -ld /Applications/Xcode*.app 2>/dev/null || echo "No Xcode*.app under /Applications."
   xcode-select -p 2>/dev/null || true
-  annotate info "No full Xcode on this Mac that is safe for App Store Connect. Compiling the TestFlight IPA on EAS cloud."
+  if allow_eas_cloud_ios; then
+    ipa_via_cloud=true
+    annotate info "No full Xcode on this Mac that is safe for App Store Connect. T3CODE_IOS_ALLOW_EAS_CLOUD is set; compiling the TestFlight IPA on EAS cloud."
+  else
+    annotate error "No full Xcode on this Mac. Install Xcode.app (not just Command Line Tools) on the macos-release agent, then rerun. Cloud IPA builds are opt-in: set T3CODE_IOS_ALLOW_EAS_CLOUD=1 to spend an EAS iOS build credit."
+    exit 1
+  fi
 fi
 if ! command -v unzip >/dev/null; then
   echo "unzip is required to verify the iOS runtime fingerprint before TestFlight submit." >&2
