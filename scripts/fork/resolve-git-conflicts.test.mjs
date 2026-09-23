@@ -3146,14 +3146,17 @@ ${">".repeat(7)} theirs
     const validationStart = script.indexOf("validate_sync_tree_once() {");
     const webTypecheck = script.indexOf("vp run --filter @t3tools/web typecheck", validationStart);
     const webLint = script.indexOf("vp lint apps/web/src", validationStart);
+    const webSceneryUnit = script.indexOf("run-web-scenery-unit.sh", validationStart);
     const webBuild = script.indexOf("vp run --filter @t3tools/web build", validationStart);
 
     assert.isAtLeast(earlyInstall, 0);
     assert.isBelow(earlyInstall, firstMerge);
     assert.isAbove(webTypecheck, validationStart);
     assert.isAbove(webLint, webTypecheck);
-    assert.isAbove(webBuild, webLint);
+    assert.isAbove(webSceneryUnit, webLint);
+    assert.isAbove(webBuild, webSceneryUnit);
     assert.include(script, "failed the web lint error gate");
+    assert.include(script, "failed the scenery motion unit contract");
   });
 
   it("requests a fresh resolution when a batch's edit set fails validation", () => {

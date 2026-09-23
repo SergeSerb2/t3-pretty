@@ -18,7 +18,8 @@
  *    a turn fold or tool group get `scenery-row-reveal`, bodies mounted in
  *    the row get `scenery-reveal`. The click or Enter/Space is the only
  *    trigger, so restores, thread switches and virtualized re-mounts stay
- *    still.
+ *    still. The first live sync snapshots those row ids; later streaming
+ *    arrivals keep the rise instead of unfolding with the fold.
  *
  * 3. The html[data-scenery-motion] gate every motion.css rule hangs off,
  *    bound to the quick-settings Motion toggle.
@@ -39,6 +40,7 @@ import {
   revealDelayMs,
   revealIntentIsLive,
   resolveRevealIntent,
+  snapshotEligibleRevealRowIds,
   ROW_REVEAL_CLASS,
   type RevealIntent,
 } from "./sceneryMotionReveals";
@@ -209,7 +211,7 @@ export function SceneryMotion() {
       const silentWindowActive = now < silentUntilRef.current;
       const noTransitions = root.classList.contains("no-transitions");
       // A thread's first paint is seeded, never revealed, even mid-gesture.
-      const intent =
+      let intent =
         !firstPaintForThread && !noTransitions && revealIntentIsLive(revealIntent, now)
           ? revealIntent
           : null;
@@ -225,6 +227,15 @@ export function SceneryMotion() {
       }
       const boundaryTop =
         intent && intentRowTop !== null ? revealBoundaryTop(rows, intent, intentRowTop) : null;
+      // First wave under the header is the fold. Later streaming rows that
+      // land while the 400ms window is still open are arrivals, not reveals.
+      if (intent && intentRowTop !== null) {
+        const nextIntent = snapshotEligibleRevealRowIds(intent, rows, intentRowTop, boundaryTop);
+        if (nextIntent !== intent) {
+          revealIntent = nextIntent;
+          intent = nextIntent;
+        }
+      }
       let maxSeenTop = Number.NEGATIVE_INFINITY;
       const unseen: Array<{ wrapper: HTMLElement; id: string; top: number }> = [];
       const revealed: Array<{ wrapper: HTMLElement; top: number }> = [];

@@ -11,6 +11,7 @@ import {
   revealDelayMs,
   revealIntentIsLive,
   resolveRevealIntent,
+  snapshotEligibleRevealRowIds,
   type RevealIntent,
 } from "./sceneryMotionReveals";
 
@@ -198,10 +199,25 @@ describe("isRevealedRow", () => {
     expect(isRevealedRow({ id: "work:10", top: 520 }, intent, 200, boundary)).toBe(false);
   });
 
-  it("reveals everything below a header that was the last mounted row", () => {
-    const boundary = revealBoundaryTop(rows.slice(0, 3), intent, 200);
+  it("reveals the first wave below a header that was the last mounted row", () => {
+    const firstWave = rows.slice(0, 3);
+    const boundary = revealBoundaryTop(firstWave, intent, 200);
     expect(boundary).toBeNull();
-    expect(isRevealedRow({ id: "work:3", top: 240 }, intent, 200, boundary)).toBe(true);
+    const frozen = snapshotEligibleRevealRowIds(intent, firstWave, 200, boundary);
+    expect(frozen.eligibleRowIds).toEqual(new Set(["work:3"]));
+    expect(isRevealedRow({ id: "work:3", top: 240 }, frozen, 200, boundary)).toBe(true);
+  });
+
+  it("does not freeze an empty first wave so the fold can still commit", () => {
+    const onlyHeader = rows.slice(0, 2);
+    expect(snapshotEligibleRevealRowIds(intent, onlyHeader, 200, null)).toBe(intent);
+  });
+
+  it("ignores live timeline growth after the first eligible wave", () => {
+    const firstWave = rows.slice(0, 3);
+    const frozen = snapshotEligibleRevealRowIds(intent, firstWave, 200, null);
+    expect(isRevealedRow({ id: "work:3", top: 240 }, frozen, 200, null)).toBe(true);
+    expect(isRevealedRow({ id: "work:10", top: 520 }, frozen, 200, null)).toBe(false);
   });
 });
 

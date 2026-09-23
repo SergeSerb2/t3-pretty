@@ -148,6 +148,7 @@ describe("disclosure reveal contract", () => {
     expect(motionDriverSource).toContain(
       'document.addEventListener("keydown", onRevealGesture, true)',
     );
+    expect(motionDriverSource).toContain("snapshotEligibleRevealRowIds");
     expect(motionStylesSource).toContain("[data-timeline-root].scenery-row-reveal > *");
     expect(motionStylesSource).toContain("html[data-scenery-motion] .scenery-reveal {");
     // The old per-mount tool body rule replayed on every thread switch.

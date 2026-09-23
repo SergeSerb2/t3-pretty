@@ -13,7 +13,11 @@ export const REVEAL_CLASS = "scenery-reveal";
 /** On a row wrapper the open mounted; motion.css animates its inner box. */
 export const ROW_REVEAL_CLASS = "scenery-row-reveal";
 export const REVEAL_DELAY_PROP = "--sc-reveal-delay";
-/** How long after the gesture the list may take to mount what it opened. */
+/**
+ * How long after the gesture the list may take to mount what it opened.
+ * Row eligibility is snapshotted on the first live sync; this window only
+ * keeps that gesture alive for in-row bodies and a late first commit.
+ */
 export const REVEAL_INTENT_MS = 400;
 export const REVEAL_STAGGER_MS = 24;
 export const REVEAL_STAGGER_CAP = 4;
@@ -31,8 +35,16 @@ export interface RevealIntent {
   readonly control: Element;
   readonly rowId: string;
   readonly at: number;
-  /** Timeline rows mounted when the gesture landed; any other row below it was opened by it. */
+  /**
+   * Timeline rows mounted when the gesture landed. An open inserts between
+   * the header and the next of these; anything past that is live growth.
+   */
   readonly mountedRowIds: ReadonlySet<string>;
+  /**
+   * Ids from the first live sync that belonged to the open. Later arrivals
+   * during the intent window are streaming rows, not fold children.
+   */
+  readonly eligibleRowIds?: ReadonlySet<string>;
 }
 
 function isElement(target: EventTarget | null): target is Element {
@@ -118,8 +130,7 @@ export function revealBoundaryTop(
   return boundary;
 }
 
-/** A row the open mounted under its header, as opposed to one that was already there. */
-export function isRevealedRow(
+function isEligibleRevealRow(
   row: { readonly id: string; readonly top: number },
   intent: RevealIntent,
   intentRowTop: number,
@@ -130,6 +141,39 @@ export function isRevealedRow(
     row.top > intentRowTop &&
     (boundaryTop === null || row.top < boundaryTop)
   );
+}
+
+/**
+ * Freeze the rows the first live sync saw under the opened header. An empty
+ * wave is left unfrozen so a click can still wait for React to commit the
+ * fold; the next sync that actually mounts children becomes the snapshot.
+ */
+export function snapshotEligibleRevealRowIds(
+  intent: RevealIntent,
+  rows: ReadonlyArray<{ readonly id: string; readonly top: number }>,
+  intentRowTop: number,
+  boundaryTop: number | null,
+): RevealIntent {
+  if (intent.eligibleRowIds !== undefined) return intent;
+  const eligibleRowIds = new Set<string>();
+  for (const row of rows) {
+    if (isEligibleRevealRow(row, intent, intentRowTop, boundaryTop)) {
+      eligibleRowIds.add(row.id);
+    }
+  }
+  if (eligibleRowIds.size === 0) return intent;
+  return { ...intent, eligibleRowIds };
+}
+
+/** A row the open mounted under its header, as opposed to one that was already there. */
+export function isRevealedRow(
+  row: { readonly id: string; readonly top: number },
+  intent: RevealIntent,
+  intentRowTop: number,
+  boundaryTop: number | null,
+): boolean {
+  if (!isEligibleRevealRow(row, intent, intentRowTop, boundaryTop)) return false;
+  return intent.eligibleRowIds === undefined || intent.eligibleRowIds.has(row.id);
 }
 
 export function revealDelayMs(index: number): number {
