@@ -569,7 +569,12 @@ const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_USAGE_LIMIT_SOURCES: UsageLimitSourceSnapshots = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
-function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = false) {
+function useDraftHeroLayoutTransition(
+  isDraftHeroState: boolean,
+  sceneryDock = false,
+  animationsActive = true,
+  animationDurationMs = DRAFT_HERO_TRANSITION_DURATION_MS,
+) {
   const transitionGroupRef = useRef<HTMLDivElement | null>(null);
   const composerAnchorRef = useRef<HTMLDivElement | null>(null);
   const previousStateRef = useRef(isDraftHeroState);
@@ -644,6 +649,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
     let handoffGlideStarted = false;
     if (
       stateChanged &&
+      animationsActive &&
       !prefersReducedMotion &&
       !mobileComposerTransitionActive &&
       transitionGroup &&
@@ -665,7 +671,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
           {
             duration: sceneryDockMotion
               ? SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS
-              : DRAFT_HERO_TRANSITION_DURATION_MS,
+              : animationDurationMs,
             easing: sceneryDockMotion
               ? SCENERY_DRAFT_HERO_TRANSITION_EASING
               : DRAFT_HERO_TRANSITION_EASING,
@@ -694,7 +700,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
 
     previousStateRef.current = isDraftHeroState;
     previousComposerRectRef.current = nextComposerRect;
-  }, [isDraftHeroState]);
+  }, [animationDurationMs, animationsActive, isDraftHeroState]);
 
   return [attachTransitionGroupRef, attachComposerAnchorRef, captureComposerRect] as const;
 }
@@ -3821,7 +3827,12 @@ export default function ChatView(props: ChatViewProps) {
     attachDraftHeroTransitionGroupRef,
     attachDraftHeroComposerAnchorRef,
     captureDraftHeroComposerRect,
-  ] = useDraftHeroLayoutTransition(isDraftHeroState, sceneryDraftDock);
+  ] = useDraftHeroLayoutTransition(
+    isDraftHeroState,
+    sceneryDraftDock,
+    panelAnimationsActive,
+    panelAnimationDurationMs,
+  );
   const draftHeroHeadlineRef = useRef<HTMLDivElement | null>(null);
   const [draftHeroHeadlineGhost, setDraftHeroHeadlineGhost] = useState<{
     readonly top: number;
@@ -6681,7 +6692,7 @@ export default function ChatView(props: ChatViewProps) {
                   </code>
                 }
               />
-              <TooltipPopup side="top" className="max-w-80">
+              <TooltipPopup side="top">
                 This thread last ran on {localCheckoutBranchMismatch.threadBranch}. Sending will
                 continue on {localCheckoutBranchMismatch.currentBranch}.
               </TooltipPopup>
@@ -8048,23 +8059,29 @@ export default function ChatView(props: ChatViewProps) {
       const dockStarted = new Promise<void>((resolve) => {
         resolveDockStarted = resolve;
       });
-      const dockTransition = runMobileComposerTransition(() => {
-        flushSync(() => {
-          if (sceneryThemeActive) {
-            const headlineBox = draftHeroHeadlineRef.current?.getBoundingClientRect();
-            if (headlineBox) {
-              setDraftHeroHeadlineGhost({
-                top: headlineBox.top,
-                left: headlineBox.left,
-                width: headlineBox.width,
-              });
+      const dockTransition = runMobileComposerTransition(
+        () => {
+          flushSync(() => {
+            if (sceneryThemeActive) {
+              const headlineBox = draftHeroHeadlineRef.current?.getBoundingClientRect();
+              if (headlineBox) {
+                setDraftHeroHeadlineGhost({
+                  top: headlineBox.top,
+                  left: headlineBox.left,
+                  width: headlineBox.width,
+                });
+              }
             }
-          }
-          captureDraftHeroComposerRect();
-          setDockedDraftHeroThreadKey(activeThreadKey);
-        });
-        resolveDockStarted?.();
-      });
+            captureDraftHeroComposerRect();
+            setDockedDraftHeroThreadKey(activeThreadKey);
+          });
+          resolveDockStarted?.();
+        },
+        {
+          active: panelAnimationsActive,
+          durationMs: panelAnimationDurationMs,
+        },
+      );
       void dockTransition.catch(() => resolveDockStarted?.());
       await dockStarted;
     }

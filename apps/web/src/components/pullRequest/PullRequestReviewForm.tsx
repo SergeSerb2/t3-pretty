@@ -135,7 +135,6 @@ export function PullRequestReviewForm({
       <Textarea
         ref={textareaRef}
         rows={3}
-        className="[&_textarea]:max-h-64"
         value={body}
         placeholder={
           requestChangesSummaryRequired && verdicts.includes("request-changes")
