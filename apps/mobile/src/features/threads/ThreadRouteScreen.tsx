@@ -630,10 +630,19 @@ function ThreadRouteContent(
           files={FilesInspector}
           git={GitInspector}
           mode={inspectorMode}
+          resetKeys={[routeThreadIdentity, selectedThreadCwd]}
           route={props.renderInspector ? RouteInspector : undefined}
         />
       ),
-    [FilesInspector, GitInspector, RouteInspector, inspectorMode, props.renderInspector],
+    [
+      FilesInspector,
+      GitInspector,
+      RouteInspector,
+      inspectorMode,
+      props.renderInspector,
+      routeThreadIdentity,
+      selectedThreadCwd,
+    ],
   );
   const activeInspectorRenderer = inspectorMode === null ? undefined : renderInspectorStack;
   // Hand the inspector to the workspace so it renders beside the navigator,

@@ -517,3 +517,64 @@ Modify/delete (deleted upstream, modified on Pretty): `home-list-options.test.ts
 - `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Parent `bg-card px-4 android:min-h-14` disclosure row. Reason: that would regress Pretty's compact settings-sheet density.
 - `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Parent in-card environment-variable draft editor. Reason: Pretty already routes env vars through `EnvironmentVariablesEditor`; the unused parent helpers were not landed.
 - `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260923.2150` (`f5ef0ddb9`, `chore(mobile): bump app version to 1.3.1`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260923.2135`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2793. CLIProxyAPI (`gpt-5.6-sol`) returned HTTP 429 `model_cooldown` / `usage_limit_reached` and was not used. Same Sol cooldown that blocked #2785 / nightly 2135, Origin #686, #2767 / nightly 2123, and Origin #681.
+- Merge base vs Origin `main` (`f98ea1f3b`): `aca3c87cd` (2135). Origin #686 merge-committed 2135, so 2135 is an ancestor of `main`. Conflicts are the 20 Pretty-divergent paths parent 2135..2150 also touched — not a squash-merge replay.
+
+## Conflicted paths
+
+Content: `apps/mobile/app.config.ts`, `AdaptiveWorkspaceLayout.tsx`, `ThreadDetailScreen.tsx`, `ThreadRouteScreen.tsx`, `thread-inspector-content-stack.tsx`, `AppSidebarLayout.tsx`, `GitActionsControl.tsx`, `Sidebar.tsx`, `ChatComposer.tsx`, `CompactComposerControlsMenu.tsx`, `DraftHeroHeadline.tsx`, `PullRequestReviewAnnotation.tsx`, `PullRequestSummaryTab.tsx`, `ConnectionsSettings.tsx`, `SettingsSidebarNav.tsx`, `SidebarThreadHeader.tsx`, `button.tsx`, `toggle.tsx`, `index.css`.
+
+Modify/delete: `scripts/lint-restyle-ceiling.ts` (parent deleted it; Pretty modified it). Kept Pretty's script at `RESTYLE_CEILING` 1207. Restored `scripts/lint-restyle-ceiling.test.ts` and `package.json` `lint:restyle-ceiling`. Left `shadcn/no-restyle` as warn in `vite.config.ts` (parent made it an error).
+
+`.github/workflows/*` was restored from `origin/main` after the merge, matching `scripts/fork/run-upstream-sync.sh`.
+
+## Clean-merged parent changes (no text conflict)
+
+- `apps/web` — Context chips through one `ContextChip` (`#13192`); ui components drop secondary className props (`#13193`); menu/field/sidebar/button consumers stop restyling primitives (`#13205`–`#13208`); composer controls own their look (`#13209`); title matches sort by recent activity (`#13219`); `mod+[` / `mod+]` history navigation (`#13212`).
+- `apps/mobile` — Recover from screen render errors (`#13197`); app version bump is ignored in favor of Pretty's release-train resolver.
+- `apps/desktop` — Remove redundant keyring module-load test (`#13220`).
+- `packages/contracts` / `packages/shared` — `navigation.back` / `navigation.forward` keybindings.
+- `apps/web/src/components/ui/sheet.tsx` / `previewMiniPlayerLayout.ts` — docked sheets sit at `--z-sheet` under the mini-player and dialogs.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/app.config.ts` — `resolveMobileAppVersion()` and `pinnedRuntimeVersion` stay. Parent static `1.3.1` is not taken.
+- `apps/mobile` inspector/home — Pretty ReactNode `files`/`git`/`route` inspector API, visibility context, `AdaptiveWorkspaceSidebarNewTaskLayout`, PR/automations/rename sidebar handlers, scenery canvas, and `liveHeadline` stay. Parent `RenderErrorBoundary` wraps those trees and `resetKeys` follow the thread/cwd.
+- `apps/web/src/components/AppSidebarLayout.tsx` — Workspace sidebar glass, `group-data-[side=left]:border-r-0`, memoized `sidebarResizable` with live CSS width/max-width getters, and macOS `SidebarControl` props stay. Parent `NavigationHistoryShortcuts` is mounted beside them. Stage artwork uses parent `media-navigation` instead of restyling the trigger SVG.
+- `apps/web/src/components/Sidebar.tsx` — Redesigned sidebar (project folders, nest-aware list, Pretty search/tooltip chrome). Parent snooze control is now a `Menu` (`SnoozeMenuButton`) on that tree.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Compact-touch menu, Create PR / babysit, dictation, `tesla-touch` snap-shot reveal. Parent `ComposerControl` / `media-close` / `overlay` attachment buttons land around them.
+- `apps/web/src/components/chat/CompactComposerControlsMenu.tsx` — Pretty `ghost` variant and size-aware padding stay.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Pretty `PullRequestGlyph` stays; parent `InlineButton tone="picker"` trigger and radio-item wrap land beside it.
+- `apps/web/src/components/pullRequest/*` — Pretty host-link / glyph / environment-scoped review chrome stay. Parent `PullRequestActorLabel variant="avatar"` and dropped button restyles apply on that tree.
+- `apps/web/src/components/settings/SettingsSidebarNav.tsx` / `SidebarThreadHeader.tsx` / `ConnectionsSettings.tsx` — Pretty rail density, bordered search, peek-copy, and compact add-environment chrome stay. Parent dropped a few Autocomplete restyles in Connections.
+- `apps/web/src/components/ui/button.tsx` / `toggle.tsx` — Pretty color/opacity/scale transitions stay; parent `aria-disabled` opacity (and button cursor) is added.
+- `apps/web/src/index.css` — Pretty `--glass-blur-raised` stays; parent `--z-sheet: 46` is added beside it. Parent markdown file-link / chrome-action token cleanup auto-applied.
+
+## Parent changes integrated at conflict boundaries
+
+- Mobile render-error recovery on the conversation feed, inspector panes, and iPad sidebar.
+- Web history shortcuts `navigation.back` / `navigation.forward` (`mod+[` / `mod+]`).
+- Composer attachment close buttons use `media-close` / `overlay` variants instead of restyling `ghost`.
+- Draft hero project picker uses `InlineButton tone="picker"`.
+- Sidebar snooze presets render through `Menu` / `MenuShortcut`.
+- Pull-request actor stacks use `variant="avatar"`.
+- Git commit-dialog file list puts height on a wrapper so `ScrollArea` is not restyled; quick-action button drops `ps-[8.5px]`.
+- Button/Toggle honor `aria-disabled`.
+- `--z-sheet` token for docked sheets.
+
+## Parent changes intentionally omitted
+
+- `scripts/lint-restyle-ceiling.ts` — Parent deleted the ceiling gate and made `shadcn/no-restyle` an error. Reason: Pretty still owns extra chrome restyles; taking the deletion or the error rule would fail the fork lint/ceiling gate. Keep the script at 1207 and `no-restyle` as warn. Parent `RESTRICTED_UI_VARIANT_PATTERNS` (do not borrow `buttonVariants` in app code) is kept.
+- `apps/mobile/app.config.ts` — Change the mobile app's static version from 1.3.0 to 1.3.1. Reason: T3 Pretty derives its mobile version from its own release train via `resolveMobileAppVersion()`.
+- `apps/web/src/components/AppSidebarLayout.tsx` — Replace the glass sidebar with an inline resizable object and a no-prop `SidebarControl`. Reason: that would regress T3 Pretty's rail-owned seam, drag-time CSS width getters, and macOS traffic-light control.
+- `apps/web/src/components/chat/CompactComposerControlsMenu.tsx` — Drop `variant="ghost"` and the xs/default padding split. Reason: those are Pretty compact-touch chrome; `ComposerControl` already owns the look.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` / `SettingsSidebarNav.tsx` — Parent `ghost-muted` clear buttons and header restyle. Reason: Pretty owns the bordered search field, peek-copy rail, and pointer-coarse header hit targets.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Parent `ghost-muted` header actions. Reason: Pretty's add-environment control keeps compact `h-5` / `text-[11px]` chrome.
+- `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
