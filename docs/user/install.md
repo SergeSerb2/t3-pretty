@@ -191,6 +191,12 @@ bun, or Vite+ install) and runs that installer. Otherwise update the CLI the sam
 way you installed it. Homebrew installs compare against the version Homebrew
 offers, which can trail the npm release by a few hours.
 
+T3 Code warns when a provider version has known compatibility problems with your
+release. Check **Settings → Providers** on that environment for the recommended
+version or range. When its package manager supports installing a specific version,
+you can install the recommendation there. Otherwise use the provider's installer
+on the environment's machine. An unlisted version is unverified.
+
 When a provider CLI is behind its latest release, its provider card shows the
 available version. **Update now** appears only when T3 Code can tell which
 installer owns the CLI (its own update command, Homebrew, or a global npm, pnpm,

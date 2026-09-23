@@ -765,7 +765,7 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     expect(DEFAULT_SERVER_SETTINGS.generateActivityHeadlines).toBe(true);
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
       instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       options: [{ id: "reasoningEffort", value: "low" }],
     });
   });
@@ -780,6 +780,7 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     });
     expect(() => decodeServerSettings({ homeSuggestionsTime: "9am" })).toThrow();
   });
+
 
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});

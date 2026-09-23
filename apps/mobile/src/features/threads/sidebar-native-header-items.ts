@@ -27,7 +27,7 @@ export function createSidebarHeaderItems(input: {
     withNativeGlassHeaderItem({
       type: "button",
       label: "",
-      accessibilityLabel: "Filter and sort threads",
+      accessibilityLabel: "Filter threads",
       icon: sfSymbolIcon(input.filterIcon),
       onPress: () => presentHomeListFilterMenu(input.filterMenu, "top-start"),
     }),

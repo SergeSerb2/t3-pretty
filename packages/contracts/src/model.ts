@@ -282,7 +282,7 @@ export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
   "gpt-5.6-sol",
   "gpt-5.6-terra",
 ];
-export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-5.6-luna";
+export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-6-luna";
 /**
  * Home suggestions read every recent thread at once and plan a day of work
  * from them, so they default to the strongest Codex model rather than the

@@ -38,14 +38,6 @@ export interface Preferences {
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
   /**
-   * Device-local mirror of the web `legacySidebarEnabled` setting. Mobile has
-   * no client-settings sync, so the legacy grouped thread list is opted into
-   * per device. Deliberately a fresh key (was `threadListV2Enabled`, an
-   * opt-out): sanitizing drops the old key, so every device resets to the
-   * default flat list — see `resolveThreadListV2Enabled`.
-   */
-  readonly legacyThreadListEnabled?: boolean;
-  /**
    * Auto-PR toggle state per workspace mode, mirroring the web client.
    * Absent keys fall back to `AUTO_CREATE_PULL_REQUEST_DEFAULTS` (worktree
    * on, local off) via `resolveAutoCreatePullRequest`.
@@ -153,7 +145,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     composerEnterBehavior?: ComposerEnterBehavior;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
-    legacyThreadListEnabled?: boolean;
     autoCreatePullRequestByEnvMode?: {
       local?: boolean;
       worktree?: boolean;
@@ -248,9 +239,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     parsed.projectGroupingMode === "separate"
   ) {
     preferences.projectGroupingMode = parsed.projectGroupingMode;
-  }
-  if (typeof parsed.legacyThreadListEnabled === "boolean") {
-    preferences.legacyThreadListEnabled = parsed.legacyThreadListEnabled;
   }
   if (
     typeof parsed.autoCreatePullRequestByEnvMode === "object" &&
