@@ -17,12 +17,14 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Platform, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
+import { useSceneryChromeActive } from "../scenery/SceneryProvider";
 
 import { cn } from "../../lib/cn";
+import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { MaterialFloatingActionButton } from "../../components/MaterialFloatingActionButton";
 import type { WorkspaceEnvironment, WorkspaceState } from "../../state/workspaceModel";
@@ -211,6 +213,7 @@ function HomeTopContentSpacer() {
 export function HomeScreen(props: HomeScreenProps) {
   const [collapsedPrNests, setCollapsedPrNests] = useState<ReadonlySet<string>>(() => new Set());
   const isFocused = useIsFocused();
+  const sceneryChrome = useSceneryChromeActive();
   const queuedThreadKeys = useQueuedThreadKeys();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const insets = useSafeAreaInsets();
@@ -973,10 +976,22 @@ export function HomeScreen(props: HomeScreenProps) {
             ListHeaderComponent={v2ListHeader}
             ListFooterComponent={
               settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
-                <ThreadListV2ShowMoreRow
-                  hiddenCount={threadListV2Layout.hiddenSettledCount}
-                  onPress={showMoreSettled}
-                />
+                sceneryChrome ? (
+                  <Pressable
+                    onPress={showMoreSettled}
+                    className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
+                    style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                  >
+                    <Text className="text-xs font-t3-medium text-foreground-muted">
+                      Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <ThreadListV2ShowMoreRow
+                    hiddenCount={threadListV2Layout.hiddenSettledCount}
+                    onPress={showMoreSettled}
+                  />
+                )
               ) : null
             }
             ListEmptyComponent={v2ListEmpty}
