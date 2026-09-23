@@ -393,7 +393,7 @@ function SidebarThreadTooltip({
       align="start"
       sideOffset={4}
       variant="glass"
-      className="max-w-80 text-left whitespace-normal [&_[data-slot=tooltip-viewport]]:p-0"
+      className="text-left whitespace-normal [&_[data-slot=tooltip-viewport]]:p-0"
     >
       <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)]">
         <div className="min-w-0 truncate text-xs leading-tight font-medium text-foreground">
@@ -526,7 +526,7 @@ function SnoozePopoverButton(props: {
         </TooltipTrigger>
         <TooltipPopup>Snooze thread</TooltipPopup>
       </Tooltip>
-      <PopoverPopup side="bottom" align="end" className="w-56" viewportClassName="p-1">
+      <PopoverPopup side="bottom" align="end" width="sm" viewportClassName="p-1">
         {presets.map((preset) => (
           <button
             key={preset.id}
@@ -1403,7 +1403,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     if (!showSnoozeButton) setSnoozeMenuOpen(false);
   }, [showSnoozeButton]);
   const handlePrClick = useCallback(
-    (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    (event: ReactMouseEvent<HTMLElement>) => {
       const url = pr?.url ?? currentLinkedPr?.url;
       if (!url) return;
       const openedInRightPanel = openPrLink(
@@ -4709,11 +4709,11 @@ export default function Sidebar() {
           data-sidebar-peek="pane"
         >
           <SidebarContent
-            className="gap-0 min-h-full"
+            className="min-h-full"
             fixedHeader={
               // Lifted above the stage backdrop, whose fade bleeds below the
               // header and would otherwise paint across the search row's outline.
-              <SidebarGroup className="relative z-[1] p-[var(--sidebar-content-inset)] pt-1">
+              <SidebarGroup className="relative z-[1] pt-1">
                 <SidebarThreadHeader
                   scopeTitle={
                     scopedFolder ? (

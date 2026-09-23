@@ -12,12 +12,10 @@ export function NoProjectsHero() {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-clip overscroll-y-none bg-background text-foreground">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-clip bg-background">
-        <Empty className="flex-1">
+        <Empty size="hero" className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">
             <EmptyHeader className="max-w-none">
-              <EmptyTitle className="text-foreground text-2xl sm:text-3xl">
-                What should we work on?
-              </EmptyTitle>
+              <EmptyTitle>What should we work on?</EmptyTitle>
               <EmptyDescription className="mt-2 text-muted-foreground/78">
                 Add a project to start your first thread.
               </EmptyDescription>

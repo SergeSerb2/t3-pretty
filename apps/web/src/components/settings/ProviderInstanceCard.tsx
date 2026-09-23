@@ -472,24 +472,16 @@ export function ProviderInstanceCard({
                 <Button
                   type="button"
                   size="icon-xs"
-                  variant="ghost"
-                  className={cn(
-                    "[--control-icon-color:currentColor]",
-                    versionAdvisory.emphasis === "strong"
-                      ? "text-warning hover:text-warning"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
+                  variant="ghost-muted"
                   aria-label="Update available — view details"
                 >
-                  <ArrowUpCircleIcon />
+                  <ArrowUpCircleIcon
+                    className={cn(versionAdvisory.emphasis === "strong" && "text-warning")}
+                  />
                 </Button>
               }
             />
-            <PopoverPopup
-              side="bottom"
-              align="end"
-              className="w-[min(21rem,calc(100vw-1.5rem))] [--popup-width:min(21rem,calc(100vw-1.5rem))]"
-            >
+            <PopoverPopup side="bottom" align="end" width="md">
               <div className="grid min-w-0 gap-3">
                 <div className="grid gap-0.5">
                   <p className="text-[13px] font-semibold leading-tight text-foreground">
@@ -537,8 +529,8 @@ export function ProviderInstanceCard({
                           <Button
                             type="button"
                             size="icon-xs"
-                            variant="ghost"
-                            className="shrink-0 text-muted-foreground hover:text-foreground"
+                            variant="ghost-muted"
+                            className="shrink-0"
                             onClick={() =>
                               copyToClipboard(updateCommand, { providerName: displayName })
                             }
@@ -561,9 +553,8 @@ export function ProviderInstanceCard({
           <Button
             type="button"
             size="icon-xs"
-            variant="ghost-muted"
+            variant="ghost-destructive"
             disabled={readOnly}
-            className="[--control-icon-color:currentColor] hover:text-destructive"
             onClick={onDelete}
             aria-label={`Delete instance ${instanceId}`}
           >
