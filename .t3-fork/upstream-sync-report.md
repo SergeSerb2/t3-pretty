@@ -396,6 +396,10 @@ Add/add: `PullRequestCommentForm.tsx`, `PullRequestComposer.tsx`, `PullRequestRe
 
 `.github/workflows/*` was restored from `origin/main` after the merge, matching `scripts/fork/run-upstream-sync.sh`.
 
+## Post-merge repairs
+
+- `web-typecheck` — Restored `import { cn } from "~/lib/utils"` in `apps/web/src/components/CommandPaletteResults.tsx`. The parent `CommandItem.active` hunk dropped local highlight classes, but Pretty still wraps the submenu chevron in `cn(...)`.
+
 ## Clean-merged parent changes (no text conflict)
 
 - `apps/server` — Explicit provider refresh bypasses owned caches (`#13109`). Claude/Cursor driver and Cursor provider layers pick up the refresh path. Model manifest adds Opus 5.5 without rewriting existing aliases (`#13094`) plus timestamp/model updates. `ws.ts` / `server.test.ts` cover the refresh and model-list behavior. Device toolchain pins agent-device 0.21.12 (`#13124`).

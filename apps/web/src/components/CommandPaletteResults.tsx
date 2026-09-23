@@ -15,6 +15,7 @@ import {
   CommandShortcut,
 } from "./ui/command";
 import { ThreadSearchMatchExcerpt } from "./ThreadSearchMatch";
+import { cn } from "~/lib/utils";
 
 interface CommandPaletteResultsProps {
   emptyStateMessage?: string;
