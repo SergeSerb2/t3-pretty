@@ -7,6 +7,7 @@ import {
   REVEAL_INTENT_MS,
   REVEAL_STAGGER_CAP,
   REVEAL_STAGGER_MS,
+  revealBoundaryTop,
   revealDelayMs,
   revealIntentIsLive,
   resolveRevealIntent,
@@ -175,11 +176,32 @@ describe("collectInRowReveals", () => {
 });
 
 describe("isRevealedRow", () => {
+  const intent = intentFor(new FakeElement(), ["message:0", "turn-fold:1", "message:9"]);
+  const rows = [
+    { id: "message:0", top: 80 },
+    { id: "turn-fold:1", top: 200 },
+    { id: "work:3", top: 240 },
+    { id: "message:9", top: 400 },
+    { id: "work:10", top: 520 },
+  ];
+
   it("reveals rows the open mounted below its header, not rows that were already there", () => {
-    const intent = intentFor(new FakeElement(), ["turn-fold:1", "message:9"]);
-    expect(isRevealedRow({ id: "work:3", top: 240 }, intent, 200)).toBe(true);
-    expect(isRevealedRow({ id: "message:9", top: 400 }, intent, 200)).toBe(false);
-    expect(isRevealedRow({ id: "work:0", top: 80 }, intent, 200)).toBe(false);
+    const boundary = revealBoundaryTop(rows, intent, 200);
+    expect(boundary).toBe(400);
+    expect(isRevealedRow({ id: "work:3", top: 240 }, intent, 200, boundary)).toBe(true);
+    expect(isRevealedRow({ id: "message:9", top: 400 }, intent, 200, boundary)).toBe(false);
+    expect(isRevealedRow({ id: "work:0", top: 80 }, intent, 200, boundary)).toBe(false);
+  });
+
+  it("leaves rows streaming in past the next existing row to the arrival rise", () => {
+    const boundary = revealBoundaryTop(rows, intent, 200);
+    expect(isRevealedRow({ id: "work:10", top: 520 }, intent, 200, boundary)).toBe(false);
+  });
+
+  it("reveals everything below a header that was the last mounted row", () => {
+    const boundary = revealBoundaryTop(rows.slice(0, 3), intent, 200);
+    expect(boundary).toBeNull();
+    expect(isRevealedRow({ id: "work:3", top: 240 }, intent, 200, boundary)).toBe(true);
   });
 });
 

@@ -35,6 +35,7 @@ import {
   REVEAL_CLASS,
   REVEAL_CLEAR_MS,
   REVEAL_DELAY_PROP,
+  revealBoundaryTop,
   revealDelayMs,
   revealIntentIsLive,
   resolveRevealIntent,
@@ -208,24 +209,25 @@ export function SceneryMotion() {
       const intentRowTop = intent
         ? (document.querySelector(rowIdSelector(intent.rowId))?.getBoundingClientRect().top ?? null)
         : null;
-      let maxSeenTop = Number.NEGATIVE_INFINITY;
-      const unseen: Array<{ wrapper: HTMLElement; id: string; top: number }> = [];
-      const revealed: Array<{ wrapper: HTMLElement; top: number }> = [];
-      let observed = 0;
+      const rows: Array<{ wrapper: HTMLElement; id: string; top: number }> = [];
       for (const wrapper of wrappers) {
         const id = wrapper
           .querySelector("[data-timeline-row-id]")
           ?.getAttribute("data-timeline-row-id");
-        if (!id) {
-          continue;
-        }
-        observed++;
-        const top = wrapper.getBoundingClientRect().top;
+        if (id) rows.push({ wrapper, id, top: wrapper.getBoundingClientRect().top });
+      }
+      const boundaryTop =
+        intent && intentRowTop !== null ? revealBoundaryTop(rows, intent, intentRowTop) : null;
+      let maxSeenTop = Number.NEGATIVE_INFINITY;
+      const unseen: Array<{ wrapper: HTMLElement; id: string; top: number }> = [];
+      const revealed: Array<{ wrapper: HTMLElement; top: number }> = [];
+      const observed = rows.length;
+      for (const { wrapper, id, top } of rows) {
         if (
           intent &&
           intentRowTop !== null &&
           !revealedRowIds.has(id) &&
-          isRevealedRow({ id, top }, intent, intentRowTop)
+          isRevealedRow({ id, top }, intent, intentRowTop, boundaryTop)
         ) {
           // Rows a fold or tool group mounted unfold from its header, whether
           // or not they were seen before the disclosure last closed.

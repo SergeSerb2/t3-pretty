@@ -98,13 +98,38 @@ export function collectInRowReveals(
   );
 }
 
+/**
+ * The top of the first row below the header that was already mounted when the
+ * gesture landed. An open inserts its rows between the header and that row;
+ * rows streaming in past it are arrivals, not part of the disclosure. Null
+ * when nothing mounted sat below the header.
+ */
+export function revealBoundaryTop(
+  rows: ReadonlyArray<{ readonly id: string; readonly top: number }>,
+  intent: RevealIntent,
+  intentRowTop: number,
+): number | null {
+  let boundary: number | null = null;
+  for (const row of rows) {
+    if (row.top > intentRowTop && intent.mountedRowIds.has(row.id)) {
+      boundary = boundary === null ? row.top : Math.min(boundary, row.top);
+    }
+  }
+  return boundary;
+}
+
 /** A row the open mounted under its header, as opposed to one that was already there. */
 export function isRevealedRow(
   row: { readonly id: string; readonly top: number },
   intent: RevealIntent,
   intentRowTop: number,
+  boundaryTop: number | null,
 ): boolean {
-  return !intent.mountedRowIds.has(row.id) && row.top > intentRowTop;
+  return (
+    !intent.mountedRowIds.has(row.id) &&
+    row.top > intentRowTop &&
+    (boundaryTop === null || row.top < boundaryTop)
+  );
 }
 
 export function revealDelayMs(index: number): number {
