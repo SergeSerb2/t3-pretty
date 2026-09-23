@@ -825,6 +825,12 @@ validate_sync_tree_once() {
   run_validation_step web-lint \
     "The merged sync tree failed the web lint error gate." \
     vp lint apps/web/src || return 1
+  # Motion CSS/selector drift is silent in typecheck and lint. The contract
+  # test is the tripwire; keep it on the same web gate that already owns
+  # typecheck/lint/build so a nightly cannot land a renamed hook again.
+  run_validation_step web-scenery-unit \
+    "The merged sync tree failed the scenery motion unit contract." \
+    bash scripts/fork/run-web-scenery-unit.sh || return 1
   run_validation_step web-build \
     "The merged sync tree failed the production web build." \
     vp run --filter @t3tools/web build || return 1

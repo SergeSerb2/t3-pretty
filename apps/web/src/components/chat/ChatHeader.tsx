@@ -1,5 +1,5 @@
 import { type EnvironmentId, type ThreadId } from "@t3tools/contracts";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ChangeRequestSettleSource } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
@@ -32,6 +32,7 @@ import {
   WorkspaceBreadcrumbText,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
+import { useInPlaceChange } from "~/scenery/useInPlaceChange";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -85,6 +86,8 @@ export const ChatHeader = memo(function ChatHeader({
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
     [activeThreadEnvironmentId, activeThreadId],
   );
+  // Fork motion: the keyed title fades in only when it changed on this thread.
+  const titleChanged = useInPlaceChange(activeThreadTitle, scopedThreadKey(activeThreadRef));
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -300,7 +303,12 @@ export const ChatHeader = memo(function ChatHeader({
                 }
               >
                 <h2 className="min-w-0 font-medium tracking-tight">
-                  <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                  <WorkspaceBreadcrumbText
+                    key={activeThreadTitle}
+                    data-title-swap={titleChanged ? "" : undefined}
+                  >
+                    {activeThreadTitle}
+                  </WorkspaceBreadcrumbText>
                 </h2>
                 <ChevronDownIcon
                   aria-hidden
@@ -320,7 +328,12 @@ export const ChatHeader = memo(function ChatHeader({
                   />
                 }
               >
-                <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                <WorkspaceBreadcrumbText
+                  key={activeThreadTitle}
+                  data-title-swap={titleChanged ? "" : undefined}
+                >
+                  {activeThreadTitle}
+                </WorkspaceBreadcrumbText>
               </TooltipTrigger>
               <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
             </Tooltip>

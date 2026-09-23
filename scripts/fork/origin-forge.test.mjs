@@ -590,6 +590,7 @@ describe("Origin release and blocked-sync helpers", () => {
   it("keeps the fork release and sync workflows off the GitHub CLI", () => {
     const sync = workflow("fork-upstream-sync.yml");
     const syncScript = NodeFS.readFileSync(NodePath.resolve(here, "run-upstream-sync.sh"), "utf8");
+    const sceneryUnit = NodeFS.readFileSync(NodePath.resolve(here, "run-web-scenery-unit.sh"), "utf8");
     const desktop = workflow("fork-release.yml");
     const mobile = NodeFS.readFileSync(NodePath.resolve(here, "publish-mobile-release.sh"), "utf8");
     const reviewCi = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
@@ -617,6 +618,12 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(syncScript, "--filter @t3tools/contracts");
     assert.include(syncScript, "--filter @t3tools/client-runtime");
     assert.include(syncScript, "--filter @t3tools/web");
+    assert.include(syncScript, "run-web-scenery-unit.sh");
+    assert.include(syncScript, "web-scenery-unit");
+    assert.include(sceneryUnit, "sceneryMotionContract.test.ts");
+    assert.include(sceneryUnit, "sceneryMotionReveals.test.ts");
+    assert.include(sceneryUnit, "--project unit");
+    assert.notInclude(sceneryUnit, "sceneryDomContract.test.ts");
     assert.include(syncScript, "--filter t3 build:bundle");
     assert.include(syncScript, "--filter t3code-relay typecheck");
     assert.include(syncScript, "expo export --platform ios");
