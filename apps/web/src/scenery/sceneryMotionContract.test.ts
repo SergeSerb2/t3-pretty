@@ -35,6 +35,7 @@ import settingsLayoutSource from "../components/settings/settingsLayout.tsx?raw"
 import themeEditorSource from "../components/settings/ThemeEditorPanel.tsx?raw";
 import sidebarLogicSource from "../components/Sidebar.logic.ts?raw";
 import sidebarSource from "../components/Sidebar.tsx?raw";
+import workspaceBreadcrumbSource from "../components/WorkspaceBreadcrumb.tsx?raw";
 import providerUpdatePillSource from "../components/sidebar/SidebarProviderUpdatePill.tsx?raw";
 import alertSource from "../components/ui/alert.tsx?raw";
 import autocompleteSource from "../components/ui/autocomplete.tsx?raw";
@@ -363,6 +364,8 @@ describe("hero and sidebar contract", () => {
     expect(sidebarSource).toContain('data-title-swap={titleChanged ? "" : undefined}');
     expect(chatHeaderSource).toContain("key={activeThreadTitle}");
     expect(chatHeaderSource).toContain('data-title-swap={titleChanged ? "" : undefined}');
+    expect(workspaceBreadcrumbSource).toContain('data-slot="workspace-breadcrumb-text"');
+    expect(workspaceBreadcrumbSource).toContain("{...props}");
     expect(motionStylesSource).toContain("html[data-scenery-motion] [data-title-swap]");
   });
 

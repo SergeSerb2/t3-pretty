@@ -622,7 +622,9 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(syncScript, "web-scenery-unit");
     assert.include(sceneryUnit, "sceneryMotionContract.test.ts");
     assert.include(sceneryUnit, "sceneryMotionReveals.test.ts");
+    assert.include(sceneryUnit, "useInPlaceChange.test.tsx");
     assert.include(sceneryUnit, "--project unit");
+    assert.include(sceneryUnit, 'cd "$ROOT/apps/web"');
     assert.notInclude(sceneryUnit, "sceneryDomContract.test.ts");
     assert.include(syncScript, "--filter t3 build:bundle");
     assert.include(syncScript, "--filter t3code-relay typecheck");

@@ -6,6 +6,12 @@ import { useState } from "react";
  * so the remount runs a motion.css entry only for changes the user watched
  * happen (a generated title, a new status), never for first paint, a list
  * mount, or a switch to another thread (a new scope starts clean).
+ *
+ * `changed` stays true after that first in-place update because this hook
+ * calls `setState` during render; the follow-up commit must still expose
+ * the data attribute so `@starting-style` runs on the keyed child. The hook
+ * and that child live in the same component, so a virtualized remount
+ * drops both and a new scope starts clean.
  */
 export function useInPlaceChange<T>(value: T, scope: string): boolean {
   const [state, setState] = useState(() => ({ scope, value, changed: false }));

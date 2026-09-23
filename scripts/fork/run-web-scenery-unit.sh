@@ -6,10 +6,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$ROOT"
+# The `unit` project is defined in apps/web. Running from the repo root
+# reports "No projects matched the filter" and never executes the contract.
+cd "$ROOT/apps/web"
 
 vp test run --project unit \
-  apps/web/src/scenery/sceneryMotionContract.test.ts \
-  apps/web/src/scenery/sceneryMotionReveals.test.ts \
-  apps/web/src/scenery/sceneryMotionRowArrivals.test.ts \
-  apps/web/src/scenery/sceneryMotionMutations.test.ts
+  src/scenery/sceneryMotionContract.test.ts \
+  src/scenery/sceneryMotionReveals.test.ts \
+  src/scenery/sceneryMotionRowArrivals.test.ts \
+  src/scenery/sceneryMotionMutations.test.ts \
+  src/scenery/useInPlaceChange.test.tsx
