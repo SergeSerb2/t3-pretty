@@ -42,7 +42,10 @@ fi
 
 # Remotes install t3-<desktopVersion>.tgz. Pack the version macos-dmg just
 # published. Do not remint: flooring against that live slot yields highest+1
-# and SSH/pinned-runtime 404.
+# and SSH/pinned-runtime 404. Same YAML quote rules as the Linux AppImage
+# floor — Mac latest-mac.yml is single-quoted.
+# shellcheck source=update-feed-version.sh
+. "${root}/scripts/fork/update-feed-version.sh"
 version=""
 for manifest in latest-mac.yml latest-linux.yml latest.yml; do
   feed_file="$(mktemp)"
@@ -56,11 +59,8 @@ for manifest in latest-mac.yml latest-linux.yml latest.yml; do
     echo "Cannot read live update manifest ${manifest} (HTTP $feed_code)." >&2
     exit 1
   fi
-  feed_version="$(sed -n 's/^version: *//p' "$feed_file" | head -n 1)"
+  feed_version="$(t3_read_update_manifest_version "$feed_file")"
   rm -f "$feed_file"
-  feed_version="${feed_version%$'\r'}"
-  feed_version="${feed_version#\"}"
-  feed_version="${feed_version%\"}"
   if [[ -n "$feed_version" ]]; then
     version="$feed_version"
     break

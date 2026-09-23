@@ -68,37 +68,12 @@ git fetch --force --tags upstream
 # Linux publish cannot mint below the Mac/Windows slot from the same main
 # build. 404 means that feed has never published (no floor from it); any
 # other fetch/parse failure must fail the job or resolve-fork-release can
-# mint below an already-shipped slot.
-build_floor=""
-for manifest in latest-linux.yml latest-mac.yml latest.yml; do
-  feed_file="$(mktemp)"
-  feed_code="$(curl -sSL --max-time 30 -o "$feed_file" -w '%{http_code}' "${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/${manifest}" || true)"
-  if [[ "$feed_code" == "404" ]]; then
-    rm -f "$feed_file"
-    continue # never published, nothing live to floor against
-  fi
-  if [[ ! "$feed_code" =~ ^2 ]]; then
-    rm -f "$feed_file"
-    echo "Cannot read live update manifest ${manifest} (HTTP $feed_code); refusing to mint a version below the shipped slot." >&2
-    exit 1
-  fi
-  feed_version="$(sed -n 's/^version: *//p' "$feed_file" | head -n 1)"
-  rm -f "$feed_file"
-  feed_version="${feed_version%$'\r'}"
-  feed_version="${feed_version#\"}"
-  feed_version="${feed_version%\"}"
-  if [[ -z "$feed_version" ]]; then
-    echo "Live update manifest ${manifest} has no version field; refusing to mint a version below the shipped slot." >&2
-    exit 1
-  fi
-  if [[ ! "$feed_version" =~ -nightly\.[0-9]{8}\.([0-9]+)$ ]]; then
-    echo "Live update manifest ${manifest} version '$feed_version' is not a nightly build id; refusing to mint a version below the shipped slot." >&2
-    exit 1
-  fi
-  if [[ -z "$build_floor" ]] || (( 10#${BASH_REMATCH[1]} > 10#${build_floor} )); then
-    build_floor="${BASH_REMATCH[1]}"
-  fi
-done
+# mint below an already-shipped slot. Quote stripping lives in
+# update-feed-version.sh so a single-quoted latest-mac.yml (Mac serialize
+# path) cannot fail the nightly regex.
+# shellcheck source=update-feed-version.sh
+. "${root}/scripts/fork/update-feed-version.sh"
+build_floor="$(t3_resolve_update_feed_floor url "$T3CODE_DESKTOP_UPDATE_FEED_URL")"
 if [[ -n "$build_floor" ]]; then
   export T3_FORK_BUILD_FLOOR="$build_floor"
 fi

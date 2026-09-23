@@ -253,6 +253,8 @@ ${setup}
     assert.notInclude(publishCli, "resolve-fork-release.mjs");
     assert.include(publishCli, "T3CODE_BUILD_FLAVOR=internal");
     assert.include(publishCli, "latest-mac.yml");
+    assert.include(publishCli, "update-feed-version.sh");
+    assert.include(publishCli, "t3_read_update_manifest_version");
     assert.include(publishCli, "https://vite.plus");
     const secretsHelper = NodeFS.readFileSync(
       NodePath.resolve(here, "load-buildkite-secrets.sh"),
@@ -583,6 +585,8 @@ ${setup}
     assert.include(linux, "--platform linux --target AppImage --arch x64");
     assert.include(linux, "upload-assets");
     assert.include(linux, "T3_FORK_BUILD_FLOOR");
+    assert.include(linux, "update-feed-version.sh");
+    assert.include(linux, "t3_resolve_update_feed_floor");
     assert.include(linux, "latest-linux.yml");
     assert.include(linux, "nightly-linux.yml");
     assert.include(linux, "-name '*-linux.yml'");
