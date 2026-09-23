@@ -1,12 +1,5 @@
-import type {
-  EnvironmentId,
-  SidebarProjectGroupingMode,
-  SidebarThreadSortOrder,
-} from "@t3tools/contracts";
-import {
-  DEFAULT_SIDEBAR_PROJECT_SORT_ORDER,
-  DEFAULT_SIDEBAR_THREAD_SORT_ORDER,
-} from "@t3tools/contracts";
+import type { EnvironmentId, SidebarProjectGroupingMode } from "@t3tools/contracts";
+import { DEFAULT_SIDEBAR_PROJECT_SORT_ORDER } from "@t3tools/contracts";
 import {
   createContext,
   createElement,
@@ -25,28 +18,11 @@ export interface HomeListOptions {
   readonly selectedEnvironmentId: EnvironmentId | null;
   readonly selectedProjectKey: string | null;
   readonly projectSortOrder: HomeProjectSortOrder;
-  readonly threadSortOrder: SidebarThreadSortOrder;
 }
 
 export interface ResolvedHomeListOptions extends HomeListOptions {
   readonly projectGroupingMode: SidebarProjectGroupingMode;
 }
-
-export const PROJECT_SORT_OPTIONS: ReadonlyArray<{
-  readonly value: HomeProjectSortOrder;
-  readonly label: string;
-}> = [
-  { value: "updated_at", label: "Last user message" },
-  { value: "created_at", label: "Created at" },
-];
-
-export const THREAD_SORT_OPTIONS: ReadonlyArray<{
-  readonly value: SidebarThreadSortOrder;
-  readonly label: string;
-}> = [
-  { value: "updated_at", label: "Last user message" },
-  { value: "created_at", label: "Created at" },
-];
 
 function defaultHomeListOptions(): HomeListOptions {
   return {
@@ -56,7 +32,6 @@ function defaultHomeListOptions(): HomeListOptions {
       DEFAULT_SIDEBAR_PROJECT_SORT_ORDER === "manual"
         ? "updated_at"
         : DEFAULT_SIDEBAR_PROJECT_SORT_ORDER,
-    threadSortOrder: DEFAULT_SIDEBAR_THREAD_SORT_ORDER,
   };
 }
 
@@ -81,19 +56,6 @@ export function HomeListOptionsProvider({
     [options, projectGroupingMode],
   );
   return createElement(HomeListOptionsContext, { value }, children);
-}
-
-export function hasCustomHomeListOptions(options: HomeListOptions): boolean {
-  const defaultProjectSortOrder =
-    DEFAULT_SIDEBAR_PROJECT_SORT_ORDER === "manual"
-      ? "updated_at"
-      : DEFAULT_SIDEBAR_PROJECT_SORT_ORDER;
-  return (
-    options.selectedEnvironmentId !== null ||
-    options.selectedProjectKey !== null ||
-    options.projectSortOrder !== defaultProjectSortOrder ||
-    options.threadSortOrder !== DEFAULT_SIDEBAR_THREAD_SORT_ORDER
-  );
 }
 
 export function useHomeListOptions(availableEnvironmentIds: ReadonlySet<EnvironmentId>) {
@@ -124,14 +86,10 @@ export function useHomeListOptions(availableEnvironmentIds: ReadonlySet<Environm
   const setProjectSortOrder = useCallback((value: HomeProjectSortOrder) => {
     setOptions((current) => ({ ...current, projectSortOrder: value }));
   }, []);
-  const setThreadSortOrder = useCallback((value: SidebarThreadSortOrder) => {
-    setOptions((current) => ({ ...current, threadSortOrder: value }));
-  }, []);
   return {
     options: resolvedOptions,
     setSelectedEnvironmentId,
     setSelectedProjectKey,
     setProjectSortOrder,
-    setThreadSortOrder,
   } as const;
 }

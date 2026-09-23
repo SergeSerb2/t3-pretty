@@ -9,7 +9,6 @@ import * as NodeURL from "node:url";
 // count from growing: CI fails when findings exceed the ceiling. Lower the ceiling when you
 // migrate a file, and delete this script when the rule becomes an error.
 export const RESTYLE_CEILING = 1207;
-
 const RULE = "shadcn(no-restyle)";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");

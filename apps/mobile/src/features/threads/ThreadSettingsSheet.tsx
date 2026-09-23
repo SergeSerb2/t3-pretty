@@ -207,9 +207,8 @@ function ProviderHeader(props: {
         accessibilityLabel={`${props.label}, ${props.modelCount} models`}
         accessibilityRole="button"
         accessibilityState={{ expanded: !props.collapsed }}
-        className="mx-4 mt-1 min-h-11 flex-row items-center gap-2 rounded-xl px-1 pt-2 active:opacity-60"
+        className="mx-4 mt-1 min-h-11 flex-row items-center gap-2 rounded-xl px-1 pt-2 active:opacity-60 android:min-h-12"
         onPress={props.onToggle}
-        style={Platform.OS === "android" ? { minHeight: 48 } : undefined}
       >
         {content}
       </Pressable>
@@ -237,7 +236,6 @@ function DisclosureRow(props: {
       accessibilityState={{ disabled: props.disabled === true }}
       disabled={props.disabled}
       onPress={props.onPress}
-      style={Platform.OS === "android" ? { minHeight: 56 } : undefined}
       className={cn(
         "min-h-11 flex-row items-center gap-2 px-5 py-2.5 active:opacity-70",
         props.disabled && "opacity-55",

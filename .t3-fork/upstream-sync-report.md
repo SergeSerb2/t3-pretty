@@ -451,3 +451,69 @@ Add/add: `PullRequestCommentForm.tsx`, `PullRequestComposer.tsx`, `PullRequestRe
 - `apps/web/src/components/sidebar/SidebarChrome.tsx` — Drop `rounded-full` / muted classes from the environment identification pill. Reason: those are Pretty brand-stage chrome; footer `empty:hidden` is also kept.
 - `apps/web/src/hooks/useThreadActions.ts` — Call settle/snooze/pin against `target.environmentId` / `target.threadId`. Reason: those references may identify a disconnected same-machine twin.
 - `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260923.2135` (`aca3c87cd`, `chore(mobile): clear the legacy-list deletion fallout (#13203)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260922.2123`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2785. CLIProxyAPI (`gpt-5.6-sol`) returned HTTP 429 `model_cooldown` / `usage_limit_reached` and was not used. Same Sol cooldown that blocked #2767 / nightly 2123 and Origin #681.
+- Merge base vs Origin `main` (`c7f10af23`): `d7819c188` (2123). Origin #681 merge-committed 2123, so 2123 is an ancestor of `main`. Conflicts are the 25 Pretty-divergent paths parent 2123..2135 also touched — not a squash-merge replay.
+
+## Conflicted paths
+
+Content: `apps/mobile/package.json`, `HomeHeader.tsx`, `HomeRouteScreen.tsx`, `HomeScreen.tsx`, `home-list-options.ts`, `ThreadNavigationSidebar.tsx`, `ThreadRouteScreen.tsx`, `ThreadSettingsSheet.tsx`, `GitBranchesSheet.tsx`, `GitCommitSheet.tsx`, `mobile-preferences.ts`, `thread-outbox-model.ts`, `Sidebar.tsx`, `ThreadStatusIndicators.tsx`, `ProviderInstanceCard.tsx`, `settingsLayout.tsx`, `packages/contracts/src/model.ts`, `packages/contracts/src/server.ts`, `packages/contracts/src/settings.test.ts`, `scripts/lint-restyle-ceiling.ts`.
+
+Modify/delete (deleted upstream, modified on Pretty): `home-list-options.test.ts`, `homeListItems.test.ts`, `homeListItems.ts`, `thread-list-items.tsx`, `threadPresentation.ts`.
+
+`.github/workflows/*` was restored from `origin/main` after the merge, matching `scripts/fork/run-upstream-sync.sh`.
+
+## Post-merge repairs
+
+- Extracted `ThreadActiveSubagentCount` from the deleted legacy `thread-list-items.tsx` into `thread-active-subagent-count.tsx` so v2 rows keep Pretty's subagent glyph after the parent list retirement.
+
+## Clean-merged parent changes (no text conflict)
+
+- `apps/server` — GitHub PR lookups stop probing owner-qualified heads (`#13200`); background PR sync reads summaries in batches (`#13198`); background PR checks spend less GitHub quota (`#13189`); PR diffs generate from branch changes (`#13170`); shared provider sign-in / credential bindings (`#12983`); remote compatibility ranges (`#13130`).
+- `apps/web` — Settings scope sentence + breadcrumb move (`#13139`, `#13165`); provider email alignment (`#13174`); PR badge meta size (`#13175`); nested chat-timeline scroll (`#13167`); usage model-ordering tests without static markup (`#13104`).
+- `apps/mobile` — Uniwind platform-variant refactors for git sheets and remaining className ternaries (`#13185`, `#13188`, `#13172`); recycle the default v2 home list (`#13149`); cycle-breaking extractions (`#13151`); drop dead nitro-markdown tgz override (`#13148`).
+- `packages/contracts` — GPT-6 Luna as the text-generation default (`#13115`); provider setup / compatibility contract follow-through.
+- `apps/desktop` — Find linuxbrew node for the WSL backend (`#7827`).
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/Sidebar.tsx` — Redesigned sidebar plus #683 in-place title/status motion (`useInPlaceChange`, keyed title, `data-sidebar-status-change`). Parent `InlineButton` PR-badge render is applied on that tree.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Pretty status icons stay; parent `useRender` / `InlineButton` badge control lands so the badge reads at the meta size.
+- `apps/web/src/components/settings/settingsLayout.tsx` — Pretty chrome-fade / relative column scroller plus the parent `SettingsScopeSentence`.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Pretty card chrome and `EnvironmentVariablesEditor`; parent `ProviderStatusDiagnostic` / compatibility warning icon land around them.
+- `packages/contracts/src/model.ts` — Parent `gpt-6-luna` text-generation default; Pretty `DEFAULT_HOME_SUGGESTIONS_MODEL` (`gpt-6-astra`) stays.
+- `packages/contracts/src/server.ts` — Parent `canInstallVersion`; Pretty branded `ServerProviderTimestamp` / `ServerProviderText` length bounds stay on `checkedAt` / `message`.
+- `packages/contracts/src/settings.test.ts` — Pretty Luna / Astra default assertions, updated to `gpt-6-luna`.
+- `apps/mobile` home/thread list — Parent retirement of the legacy grouped list is taken. Pretty PR-nesting (`nestThreadsByPullRequest`, `resolveHighestThreadStatus`) and subagent counts stay on v2. `threadPresentation.ts` is kept because v2 still imports it. Home/sidebar keep Pretty scenery, automations, `WorkspaceConnectionTitle`, and scoped `startNewTask`.
+- `apps/mobile/src/persistence/mobile-preferences.ts` — Pretty auto-PR, babysit, changelog, and scenery prefs stay; the dead `legacyThreadListEnabled` key is dropped.
+- `apps/mobile/src/state/thread-outbox-model.ts` — Parent `./legacy-plan-mode` move; Pretty `compareTimestamps` import stays.
+- `apps/mobile` git sheets — Pretty `GitBranchesSheet` LegendList chrome; `GitCommitSheet` takes parent uniwind variants and keeps Pretty a11y `accessibilityRole` / `hitSlop`.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Pretty disclosure-row density (`px-5 py-2.5`).
+- `apps/mobile/src/features/threads/ThreadRouteScreen.tsx` — Parent uniwind android canvas classes plus Pretty `SceneryBackdrop`.
+- `apps/mobile/src/features/home/home-list-options.ts` — Pretty shared `selectedProjectKey` stays so home and the iPad sidebar share the project filter. Parent thread-sort API is dropped with the legacy list.
+
+## Parent changes integrated at conflict boundaries
+
+- Mobile legacy grouped list is gone (`#13183`, `#13203`): `homeListItems*`, `thread-list-items.tsx`, and `home-list-options.test.ts` are deleted. Home and the sidebar render v2 only.
+- Text generation default is `gpt-6-luna`.
+- Settings page shows `SettingsScopeSentence`.
+- Provider instance cards show compatibility diagnostics.
+- PR badge uses `InlineButton` / `useRender` so it reads at the meta size.
+- Git commit sheet platform classes are uniwind variants.
+- Dead nitro-markdown `overrides` block is dropped.
+- `thread-outbox-model` imports `legacy-plan-mode` from `state/` after the parent move.
+
+## Parent changes intentionally omitted
+
+- `scripts/lint-restyle-ceiling.ts` — Lower `RESTYLE_CEILING` from 1207 to 627. Reason: that drop matches the parent's migrated call sites. Pretty still owns extra chrome restyles, so taking 627 would fail the fork gate.
+- `apps/mobile/src/features/threads/threadPresentation.ts` — Parent deleted this with the legacy list. Reason: Pretty v2 still uses `resolveHighestThreadStatus` / `ThreadStatusPresentation` for collapsed PR nests.
+- `apps/mobile/src/features/threads/git/GitBranchesSheet.tsx` — Parent replaced Pretty's LegendList with a ScrollView + uniwind restyle. Reason: Pretty owns the recycled branch list chrome; the parent restyle does not map onto that structure.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Parent `bg-card px-4 android:min-h-14` disclosure row. Reason: that would regress Pretty's compact settings-sheet density.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Parent in-card environment-variable draft editor. Reason: Pretty already routes env vars through `EnvironmentVariablesEditor`; the unused parent helpers were not landed.
+- `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
