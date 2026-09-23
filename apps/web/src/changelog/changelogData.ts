@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260923.2150002798",
+    date: "2026-09-23",
+    items: [
+      {
+        kind: "new",
+        title: "Animate everyday thread actions",
+      },
+      {
+        kind: "fixed",
+        title: "The zip in the macOS update manifest",
+      },
+      {
+        kind: "fixed",
+        title: "Require local Xcode instead of silent EAS cloud fallback",
+      },
+      {
+        kind: "fixed",
+        title: "Isolate electron-builder lock for macOS DMG packaging",
+      },
+      {
+        kind: "new",
+        title: "Filter the sidebar by project folder",
+      },
+      {
+        kind: "fixed",
+        title: "Calm the home suggestions into one tabbed row",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260923.2135002792",
     date: "2026-09-23",
     items: [
