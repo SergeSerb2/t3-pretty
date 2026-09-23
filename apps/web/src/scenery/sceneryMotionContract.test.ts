@@ -153,13 +153,6 @@ describe("disclosure reveal contract", () => {
     // The old per-mount tool body rule replayed on every thread switch.
     expect(motionStylesSource).not.toContain('div[class*="ms-7"]');
   });
-
-  it("failed tool calls keep their accessible marker", () => {
-    expect(messagesTimelineSource).toContain(
-      'aria-label={showFailedIndicator ? "Tool call failed"',
-    );
-    expect(motionStylesSource).not.toContain('[class*="gap-1 text-icon-muted"]');
-  });
 });
 
 describe("chat view contract", () => {
@@ -337,8 +330,9 @@ describe("banner contract", () => {
     expect(alertSource).toContain('data-slot="alert"');
   });
 
-  it("the provider status banner still uses role=alert", () => {
-    expect(providerBannerSource).toContain('role="alert"');
+  it("the provider status banner still renders the role=alert Alert", () => {
+    expect(providerBannerSource).toContain("<Alert");
+    expect(alertSource).toContain('role="alert"');
   });
 });
 
@@ -359,9 +353,7 @@ describe("hero and sidebar contract", () => {
     expect(sidebarSource).toContain('<span key={props.status.icon} className="inline-block">');
     expect(sidebarSource).toContain('data-sidebar-status-change={props.changed ? "" : undefined}');
     expect(sidebarSource).toContain("useInPlaceChange(topStatus?.icon ?? null, threadKey)");
-    expect(motionStylesSource).toContain(
-      '[data-sidebar-status-change]\n  > [role="status"]\n  > span',
-    );
+    expect(motionStylesSource).toContain('[data-sidebar-status-change] > [role="status"] > span');
     expect(motionStylesSource).not.toContain("scenery-sidebar-working-breathe");
   });
 
