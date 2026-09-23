@@ -23,7 +23,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
 
 import { cn } from "../../lib/cn";
-import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { MaterialFloatingActionButton } from "../../components/MaterialFloatingActionButton";
 import type { WorkspaceEnvironment, WorkspaceState } from "../../state/workspaceModel";

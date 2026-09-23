@@ -29,7 +29,6 @@ import {
 import { useRender } from "@base-ui/react/use-render";
 import { useMemo, type MouseEvent, type ReactElement } from "react";
 import { cn } from "../lib/utils";
-import { InlineButton } from "./ui/button";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { parseChangeRequestUrl } from "../lib/openPullRequestLink";

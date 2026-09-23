@@ -258,48 +258,6 @@ describe("queued messages keep a settled thread active", () => {
   });
 });
 
-describe("queued messages keep a settled thread active", () => {
-  const threads = [
-    makeThread({ id: ThreadId.make("active"), title: "Active" }),
-    makeThread({ id: ThreadId.make("settled"), title: "Settled", settledOverride: "settled" }),
-    makeThread({
-      id: ThreadId.make("settled-queued"),
-      title: "Settled with outbox",
-      settledOverride: "settled",
-    }),
-  ];
-  const queuedThreadKeys = new Set([`${environmentId}:settled-queued`]);
-
-  it("lists the thread in the active block instead of the settled shelf", () => {
-    const layout = buildThreadListV2Items({
-      threads,
-      environmentId: null,
-      searchQuery: "",
-      now: NOW,
-      queuedThreadKeys,
-    });
-    expect(layout.items.map((item) => [item.thread.id, item.variant] as const)).toEqual([
-      ["active", "card"],
-      ["settled-queued", "card"],
-      ["settled", "slim"],
-    ]);
-    expect(layout.settledCount).toBe(1);
-  });
-
-  it("includes it in the reorderable active section", () => {
-    expect(
-      getThreadListV2OrderedSection({ threads, section: "active", now: NOW, queuedThreadKeys }).map(
-        (thread) => thread.id,
-      ),
-    ).toEqual(["active", "settled-queued"]);
-    expect(
-      getThreadListV2OrderedSection({ threads, section: "active", now: NOW }).map(
-        (thread) => thread.id,
-      ),
-    ).toEqual(["active"]);
-  });
-});
-
 describe("resolveThreadListV2SwipeActions", () => {
   it("offers settle and snooze for an active snoozable thread", () => {
     expect(
@@ -635,7 +593,7 @@ describe("buildThreadListV2Items", () => {
     expect(layout.snoozedCount).toBe(1);
   });
 
-  it("keeps stale settled state pinned until persistence unpins the thread", () => {
+  it("places settled pinned threads in the settled shelf", () => {
     const layout = buildThreadListV2Items({
       threads: [
         makeThread({ id: ThreadId.make("active"), title: "Active" }),
@@ -643,8 +601,6 @@ describe("buildThreadListV2Items", () => {
           id: ThreadId.make("pinned-settled"),
           title: "Pinned while settled",
           pinnedAt: "2026-06-01T12:00:00.000Z",
-          // Stale settled state (the decider clears it on pin): the pin wins
-          // the partition. Landing waits for settle to unpin onto the shelf.
           settledOverride: "settled",
           settledAt: "2026-06-01T12:00:00.000Z",
         }),
@@ -654,10 +610,10 @@ describe("buildThreadListV2Items", () => {
       now: NOW,
     });
 
-    expect(layout.items.map((item) => item.thread.id)).toEqual(["pinned-settled", "active"]);
-    expect(layout.items.map((item) => item.pinned)).toEqual([true, false]);
-    expect(layout.items.map((item) => item.settled)).toEqual([false, false]);
-    expect(layout.settledCount).toBe(0);
+    expect(layout.items.map((item) => item.thread.id)).toEqual(["active", "pinned-settled"]);
+    expect(layout.items.map((item) => item.pinned)).toEqual([false, false]);
+    expect(layout.items.map((item) => item.settled)).toEqual([false, true]);
+    expect(layout.settledCount).toBe(1);
   });
 
   it("keeps pinned threads pinned when their pull request merges", () => {
