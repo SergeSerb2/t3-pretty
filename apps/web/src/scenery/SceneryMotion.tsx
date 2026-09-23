@@ -112,6 +112,10 @@ export function SceneryMotion() {
     // Rows the current intent already revealed. A reveal finishes inside the
     // intent window, so a later sync must not tag the same row again.
     let revealedRowIds = new Set<string>();
+    // The open commits its body in one batch. Anything streaming into the row
+    // after that (thinking, tool output) is content, not the disclosure, and
+    // must not fade in again once the first reveal has cleared.
+    let revealedInRow = false;
     let queued = false;
     let syncFrame: number | null = null;
 
@@ -177,13 +181,16 @@ export function SceneryMotion() {
       if (!intent) return;
       revealIntent = intent;
       revealedRowIds = new Set<string>();
+      revealedInRow = false;
     };
 
     const revealInRow = (mutations: ReadonlyArray<MutationRecord>, intent: RevealIntent) => {
+      if (revealedInRow) return;
       const row = document.querySelector(rowIdSelector(intent.rowId));
       if (!row) return;
       for (const element of collectInRowReveals(mutations, intent, row)) {
         if (!(element instanceof HTMLElement)) continue;
+        revealedInRow = true;
         tagAnimation({
           element,
           animated: () => element,
