@@ -535,6 +535,10 @@ Modify/delete: `scripts/lint-restyle-ceiling.ts` (parent deleted it; Pretty modi
 
 `.github/workflows/*` was restored from `origin/main` after the merge, matching `scripts/fork/run-upstream-sync.sh`.
 
+## Post-merge repairs
+
+- `AGENTS.md` Taste — Restored Pretty's "`shadcn/no-restyle` reports violations and CI caps their count" wording. The parent nightly auto-merged "fails lint on violations", which contradicted the kept warn + ceiling gate (Origin review on #688).
+
 ## Clean-merged parent changes (no text conflict)
 
 - `apps/web` — Context chips through one `ContextChip` (`#13192`); ui components drop secondary className props (`#13193`); menu/field/sidebar/button consumers stop restyling primitives (`#13205`–`#13208`); composer controls own their look (`#13209`); title matches sort by recent activity (`#13219`); `mod+[` / `mod+]` history navigation (`#13212`).
