@@ -880,7 +880,6 @@ function ThreadNavigationSidebarPane(
       projectByKey,
       projectTitleByProjectKey,
       regenerateThreadTitle,
-      renameThread,
       threadSearchMatchByKey,
       props.onNewThreadInProject,
       props.onNewThreadOnBranch,
