@@ -584,8 +584,6 @@ function useDraftHeroLayoutTransition(
   // instead of finding it consumed.
   const handoffRef = useRef<DraftHeroHandoff | null | undefined>(undefined);
   const animationRef = useRef<Animation | null>(null);
-  const sceneryDockRef = useRef(sceneryDock);
-  sceneryDockRef.current = sceneryDock;
   const isDraftHeroStateRef = useRef(isDraftHeroState);
   isDraftHeroStateRef.current = isDraftHeroState;
   const attachTransitionGroupRef = (element: HTMLDivElement | null) => {
@@ -630,7 +628,7 @@ function useDraftHeroLayoutTransition(
     });
     // New scenery drafts have their own short arrival at the final position.
     const stateChanged =
-      stateChangedInPlace || (shouldGlideHandoff && !(isDraftHeroState && sceneryDockRef.current));
+      stateChangedInPlace || (shouldGlideHandoff && !(isDraftHeroState && sceneryDock));
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -660,19 +658,18 @@ function useDraftHeroLayoutTransition(
       const translateX = previousComposerRect.left - nextComposerRect.left;
       const translateY = previousComposerRect.top - nextComposerRect.top;
       if (draftHeroGlideHasTravel(translateX, translateY)) {
-        const sceneryDockMotion = sceneryDockRef.current;
         const pop = shouldPopDraftHeroGlide({
-          sceneryDock: sceneryDockMotion,
+          sceneryDock,
           inPlace: stateChangedInPlace,
           translateY,
         });
         const animation = transitionGroup.animate(
           [...draftHeroGlideKeyframes(translateX, translateY, pop)],
           {
-            duration: sceneryDockMotion
+            duration: sceneryDock
               ? SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS
               : animationDurationMs,
-            easing: sceneryDockMotion
+            easing: sceneryDock
               ? SCENERY_DRAFT_HERO_TRANSITION_EASING
               : DRAFT_HERO_TRANSITION_EASING,
             fill: "backwards",
@@ -700,7 +697,7 @@ function useDraftHeroLayoutTransition(
 
     previousStateRef.current = isDraftHeroState;
     previousComposerRectRef.current = nextComposerRect;
-  }, [animationDurationMs, animationsActive, isDraftHeroState]);
+  }, [animationDurationMs, animationsActive, isDraftHeroState, sceneryDock]);
 
   return [attachTransitionGroupRef, attachComposerAnchorRef, captureComposerRect] as const;
 }
