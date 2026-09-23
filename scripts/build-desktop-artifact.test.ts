@@ -61,6 +61,7 @@ import {
   resolveDesktopWebAssetBrand,
   resolveCargoTargetDir,
   resolveDesktopPackagingTargets,
+  mergeRetainedUpdateManifest,
   resolveElectronBuilderMacPackedAppPath,
   resolveElectronBuilderPrepackagedAppPath,
   resolveElectronBuilderToolsetLockPaths,
@@ -2379,6 +2380,34 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.deepStrictEqual(resolveDesktopPackagingTargets("mac", "zip"), ["zip"]);
     assert.deepStrictEqual(resolveDesktopPackagingTargets("linux", "AppImage"), ["AppImage"]);
     assert.deepStrictEqual(resolveDesktopPackagingTargets("win", "nsis"), ["nsis"]);
+  });
+
+  it("keeps the zip in the mac update manifest after the dmg run rewrites it", () => {
+    const zipRun = [
+      "version: 1.2.3-nightly.1",
+      "files:",
+      "  - url: T3-Code-1.2.3-nightly.1-arm64.zip",
+      "    sha512: zipsha",
+      "    size: 10",
+      "path: T3-Code-1.2.3-nightly.1-arm64.zip",
+      "sha512: zipsha",
+      "releaseDate: '2026-09-22T00:00:00.000Z'",
+      "",
+    ].join("\n");
+    const dmgRun = [
+      "version: 1.2.3-nightly.1",
+      "files:",
+      "  - url: T3-Code-1.2.3-nightly.1-arm64.dmg",
+      "    sha512: dmgsha",
+      "    size: 20",
+      "path: T3-Code-1.2.3-nightly.1-arm64.dmg",
+      "sha512: dmgsha",
+      "releaseDate: '2026-09-22T00:01:00.000Z'",
+      "",
+    ].join("\n");
+    const merged = mergeRetainedUpdateManifest(zipRun, dmgRun, "nightly-mac.yml");
+    assert.include(merged, "url: T3-Code-1.2.3-nightly.1-arm64.zip");
+    assert.include(merged, "url: T3-Code-1.2.3-nightly.1-arm64.dmg");
   });
 
   it("isolates electron-builder's toolset lock without moving the shared cache", () => {

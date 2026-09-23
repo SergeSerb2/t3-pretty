@@ -38,6 +38,11 @@ import {
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { loadRepoEnv, resolveBuildFlavor, type T3CodeBuildFlavor } from "./lib/public-config.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import {
+  mergeUpdateManifests,
+  parseUpdateManifest,
+  serializeUpdateManifest,
+} from "./lib/update-manifest.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -2396,6 +2401,25 @@ export function resolveDesktopPackagingTargets(
   return [target];
 }
 
+// Each electron-builder run rewrites `latest-mac.yml`/`nightly-mac.yml` with
+// only its own target, so the dmg run would drop the zip that macOS
+// electron-updater downloads. Fold the earlier run's entries back in.
+export function mergeRetainedUpdateManifest(
+  previousRaw: string,
+  currentRaw: string,
+  sourcePath: string,
+): string {
+  const label = "macOS";
+  return serializeUpdateManifest(
+    mergeUpdateManifests(
+      parseUpdateManifest(currentRaw, sourcePath, label),
+      parseUpdateManifest(previousRaw, sourcePath, label),
+      label,
+    ),
+    { platformLabel: label },
+  );
+}
+
 export function resolveElectronBuilderToolsetLockPaths(tmpDir: string) {
   const lockFile = NodePath.join(tmpDir, ELECTRON_BUILDER_TOOLSET_LOCK_NAME);
   return { lockFile, lockDir: `${lockFile}.lock` } as const;
@@ -4437,7 +4461,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     resolveDesktopProductName(appVersion, buildFlavor),
   );
 
+  const stageDistDir = path.join(stageAppDir, "dist");
   for (const packagingTarget of packagingTargets) {
+    const previousManifests = new Map<string, string>();
+    if (yield* fs.exists(stageDistDir)) {
+      for (const entry of yield* fs.readDirectory(stageDistDir)) {
+        if (!entry.endsWith(".yml") || entry === "builder-debug.yml") continue;
+        const manifestPath = path.join(stageDistDir, entry);
+        previousManifests.set(manifestPath, yield* fs.readFileString(manifestPath));
+      }
+    }
+
     const removedStaleLock = yield* removeStaleElectronBuilderToolsetLock(builderTmpDir).pipe(
       Effect.tapError((error) =>
         Effect.logWarning("Could not inspect electron-builder toolset lock.", {
@@ -4507,9 +4541,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         verbose: options.verbose,
       },
     );
+
+    for (const [manifestPath, previousRaw] of previousManifests) {
+      if (!(yield* fs.exists(manifestPath))) continue;
+      const currentRaw = yield* fs.readFileString(manifestPath);
+      yield* fs.writeFileString(
+        manifestPath,
+        mergeRetainedUpdateManifest(previousRaw, currentRaw, manifestPath),
+      );
+    }
   }
 
-  const stageDistDir = path.join(stageAppDir, "dist");
   if (!(yield* fs.exists(stageDistDir))) {
     return yield* new DesktopBuildDistDirectoryMissingError({
       distPath: stageDistDir,
