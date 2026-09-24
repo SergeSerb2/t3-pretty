@@ -590,7 +590,10 @@ describe("Origin release and blocked-sync helpers", () => {
   it("keeps the fork release and sync workflows off the GitHub CLI", () => {
     const sync = workflow("fork-upstream-sync.yml");
     const syncScript = NodeFS.readFileSync(NodePath.resolve(here, "run-upstream-sync.sh"), "utf8");
-    const sceneryUnit = NodeFS.readFileSync(NodePath.resolve(here, "run-web-scenery-unit.sh"), "utf8");
+    const sceneryUnit = NodeFS.readFileSync(
+      NodePath.resolve(here, "run-web-scenery-unit.sh"),
+      "utf8",
+    );
     const desktop = workflow("fork-release.yml");
     const mobile = NodeFS.readFileSync(NodePath.resolve(here, "publish-mobile-release.sh"), "utf8");
     const reviewCi = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
@@ -672,7 +675,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(sync, "mapfile ");
     assert.include(sync, "Prepare macOS runner PATH");
     assert.include(sync, "checkout-origin.sh");
-    assert.include(mobile, "hosted macos-large (M4)");
+    assert.include(mobile, "Linux-capable");
     assert.notInclude(mobile, "keeping importer tree");
     assert.notInclude(mobile, "t3_require_ota");
     assert.include(desktop, "ensure-linux-node.sh");
@@ -811,10 +814,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(importerStep, "queue: macos-large");
     assert.include(importerStep, "skip:");
     assert.include(importerStep, "BK #1952");
-    assert.isAtMost(
-      (importerStep.match(/skip: "([^"]+)"/u) || [])[1]?.length ?? 99,
-      70,
-    );
+    assert.isAtMost((importerStep.match(/skip: "([^"]+)"/u) || [])[1]?.length ?? 99, 70);
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");

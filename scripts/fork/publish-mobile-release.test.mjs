@@ -114,19 +114,25 @@ function extractIsFullXcode() {
   return match[0];
 }
 
-function extractAllowEasCloudIos() {
-  const match = mobileRelease.match(/allow_eas_cloud_ios\(\) \{\n[\s\S]*?\n\}/);
-  assert.ok(match, "allow_eas_cloud_ios function missing");
+function extractPreferLocalXcodeIos() {
+  const match = mobileRelease.match(/prefer_local_xcode_ios\(\) \{\n[\s\S]*?\n\}/);
+  assert.ok(match, "prefer_local_xcode_ios function missing");
   return match[0];
 }
 
-function runAllowEasCloudIos(env = {}) {
+function extractPreferEasCloudIos() {
+  const match = mobileRelease.match(/prefer_eas_cloud_ios\(\) \{\n[\s\S]*?\n\}/);
+  assert.ok(match, "prefer_eas_cloud_ios function missing");
+  return match[0];
+}
+
+function runBashPredicate(source, name, env = {}) {
   try {
-    NodeChildProcess.execFileSync(
-      "bash",
-      ["-c", `${extractAllowEasCloudIos()}\nallow_eas_cloud_ios`],
-      { encoding: "utf8", env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] },
-    );
+    NodeChildProcess.execFileSync("bash", ["-c", `${source}\n${name}`], {
+      encoding: "utf8",
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     return true;
   } catch {
     return false;
@@ -466,27 +472,97 @@ describe("iOS publish Xcode selection", () => {
     }
   });
 
-  it("requires T3CODE_IOS_ALLOW_EAS_CLOUD before compiling an IPA on EAS cloud", () => {
-    assert.isFalse(runAllowEasCloudIos({ T3CODE_IOS_ALLOW_EAS_CLOUD: "" }));
-    assert.isFalse(runAllowEasCloudIos({ T3CODE_IOS_ALLOW_EAS_CLOUD: "0" }));
-    assert.isTrue(runAllowEasCloudIos({ T3CODE_IOS_ALLOW_EAS_CLOUD: "1" }));
-    assert.isTrue(runAllowEasCloudIos({ T3CODE_IOS_ALLOW_EAS_CLOUD: "true" }));
-    assert.isTrue(runAllowEasCloudIos({ T3CODE_IOS_ALLOW_EAS_CLOUD: "YES" }));
+  it("uses EAS cloud when Xcode is missing and keeps local Xcode opt-in", () => {
+    assert.isFalse(
+      runBashPredicate(extractPreferLocalXcodeIos(), "prefer_local_xcode_ios", {
+        T3CODE_IOS_LOCAL_XCODE: "",
+      }),
+    );
+    assert.isTrue(
+      runBashPredicate(extractPreferLocalXcodeIos(), "prefer_local_xcode_ios", {
+        T3CODE_IOS_LOCAL_XCODE: "1",
+      }),
+    );
+    assert.isFalse(
+      runBashPredicate(extractPreferEasCloudIos(), "prefer_eas_cloud_ios", {
+        T3CODE_IOS_ALLOW_EAS_CLOUD: "",
+      }),
+    );
+    assert.isTrue(
+      runBashPredicate(extractPreferEasCloudIos(), "prefer_eas_cloud_ios", {
+        T3CODE_IOS_ALLOW_EAS_CLOUD: "1",
+      }),
+    );
+    assert.isTrue(
+      runBashPredicate(extractPreferEasCloudIos(), "prefer_eas_cloud_ios", {
+        T3CODE_IOS_PREFER_EAS_CLOUD: "YES",
+      }),
+    );
 
     const gate = mobileRelease.slice(
       mobileRelease.indexOf("ipa_via_cloud=false"),
       mobileRelease.indexOf('ipa_via_cloud" == "true" ]] && ! command -v curl'),
     );
-    assert.include(gate, "allow_eas_cloud_ios");
-    assert.include(gate, "Cloud IPA builds are opt-in");
-    assert.include(gate, "T3CODE_IOS_ALLOW_EAS_CLOUD=1");
-    assert.include(gate, "macos-release");
+    assert.include(gate, "prefer_local_xcode_ios");
+    assert.include(gate, "prefer_eas_cloud_ios");
+    assert.include(gate, "T3CODE_IOS_LOCAL_XCODE is set");
+    assert.include(gate, "Compiling the TestFlight IPA on EAS cloud.");
     assert.include(gate, "exit 1");
     assert.include(gate, "annotate error");
-    assert.notInclude(gate, "ipa_via_cloud=true\n  ls -ld");
-    assert.include(
-      gate,
-      "T3CODE_IOS_ALLOW_EAS_CLOUD is set; compiling the TestFlight IPA on EAS cloud.",
+    assert.include(gate, "ipa_via_cloud=true");
+    assert.notInclude(gate, "Cloud IPA builds are opt-in");
+  });
+
+  it("skips Expo OTA and cloud IPA when the Vancouver daily cap is exhausted", () => {
+    const field = mobileRelease.match(/ios_expo_daily_cap_field\(\) \{\n[\s\S]*?\n\}/);
+    const blocks = mobileRelease.match(/ios_expo_cap_blocks\(\) \{\n[\s\S]*?\n\}/);
+    assert.ok(field, "ios_expo_daily_cap_field missing");
+    assert.ok(blocks, "ios_expo_cap_blocks missing");
+    const source = `${field[0]}\n${blocks[0]}`;
+    const run = (kind, report) => {
+      const result = NodeChildProcess.spawnSync(
+        "bash",
+        ["-c", `${source}\nios_expo_cap_blocks "$1" "$2"`, "cap-blocks", kind, report],
+        { encoding: "utf8" },
+      );
+      return result.status === 0;
+    };
+    const capped = [
+      "day=2026-09-24",
+      "used=2",
+      "limit=2",
+      "remaining=0",
+      "status=ok",
+      "allowed=false",
+    ].join("\n");
+    const open = capped
+      .replace("used=2", "used=1")
+      .replace("remaining=0", "remaining=1")
+      .replace("allowed=false", "allowed=true");
+    const unknown = [
+      "day=2026-09-24",
+      "used=-1",
+      "limit=2",
+      "remaining=-1",
+      "status=unknown",
+      "allowed=true",
+    ].join("\n");
+    assert.isTrue(run("update", capped));
+    assert.isTrue(run("build", capped));
+    assert.isFalse(run("update", open));
+    assert.isFalse(run("build", open));
+    assert.isFalse(run("update", unknown));
+    assert.isTrue(run("build", unknown));
+    assert.isFalse(run("update", "status=disabled\nremaining=unlimited"));
+    assert.include(mobileRelease, "ios-expo-daily-cap.mjs");
+    assert.include(mobileRelease, "America/Vancouver");
+    assert.isBelow(
+      mobileRelease.indexOf("ios_expo_cap_blocks update"),
+      mobileRelease.indexOf("        eas update \\"),
+    );
+    assert.isBelow(
+      mobileRelease.indexOf("ios_expo_cap_blocks build"),
+      mobileRelease.indexOf("    eas build \\"),
     );
   });
 });
@@ -705,7 +781,7 @@ describe("iOS embedded runtime fingerprint", () => {
       mobileRelease.indexOf("Using Xcode at"),
     );
     assert.include(cloud, "if ! (");
-    assert.include(cloud, "report_eas_cloud_build_failure \"$cloud_build_json\"");
+    assert.include(cloud, 'report_eas_cloud_build_failure "$cloud_build_json"');
     assert.include(cloud, "EAS cloud iOS build failed.");
   });
 
@@ -721,7 +797,7 @@ describe("iOS embedded runtime fingerprint", () => {
     assert.include(mobileRelease, 'configure_eas_build_fingerprint "$fingerprint" internal');
     assert.include(mobileRelease, 'if (buildFlavor === "internal")');
     assert.include(mobileRelease, "credentials still point at");
-    const nativePath = mobileRelease.slice(mobileRelease.indexOf("MODE\" != \"build\""));
+    const nativePath = mobileRelease.slice(mobileRelease.indexOf('MODE" != "build"'));
     assert.isBelow(
       nativePath.indexOf("require_ios_internal_flavor"),
       nativePath.indexOf("eas fingerprint:generate"),
@@ -791,7 +867,10 @@ describe("iOS embedded runtime fingerprint", () => {
 
     const unset = NodeChildProcess.spawnSync(
       "bash",
-      ["-c", `${requireFn}\nrequire_ios_internal_flavor\nprintf '%s\\n' "$T3CODE_BUILD_FLAVOR" "$EXPO_PUBLIC_T3CODE_BUILD_FLAVOR" "$VITE_T3CODE_BUILD_FLAVOR"`],
+      [
+        "-c",
+        `${requireFn}\nrequire_ios_internal_flavor\nprintf '%s\\n' "$T3CODE_BUILD_FLAVOR" "$EXPO_PUBLIC_T3CODE_BUILD_FLAVOR" "$VITE_T3CODE_BUILD_FLAVOR"`,
+      ],
       {
         encoding: "utf8",
         env: Object.fromEntries(

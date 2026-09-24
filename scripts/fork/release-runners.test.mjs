@@ -316,10 +316,12 @@ ${setup}
       pipeline.indexOf(":android: Android public closed test"),
     );
     const relayStep = pipeline.slice(pipeline.indexOf(":cloud: Relay"));
-    assert.include(dmgStep, "queue: macos-large");
-    assert.notInclude(dmgStep, "os: macos");
-    assert.include(iosStep, "queue: macos-large");
+    assert.include(dmgStep, "queue: macos-release");
+    assert.include(dmgStep, "os: macos");
+    assert.include(iosStep, "queue: macos-release");
     assert.notInclude(iosStep, "os: macos");
+    assert.include(iosStep, 'concurrency_group: "t3-pretty/ios-mobile"');
+    assert.notInclude(iosStep, "t3-pretty/apple-signing");
     assert.include(syncStep, "queue: macos-release");
     assert.include(syncStep, "os: macos");
     assert.include(reviewStep, "queue: macos-release");
@@ -340,8 +342,9 @@ ${setup}
     assert.include(pipeline, "iOS OTA + TestFlight");
     assert.equal(
       (pipeline.match(/concurrency_group: "t3-pretty\/apple-signing"/g) || []).length,
-      2,
+      1,
     );
+    assert.equal((pipeline.match(/concurrency_group: "t3-pretty\/ios-mobile"/g) || []).length, 1);
     assert.include(pipeline, "priority: 20");
     assert.notInclude(pipeline, "interruptible:");
     assert.include(pipeline, "timeout_in_minutes: 30");
@@ -361,10 +364,11 @@ ${setup}
       pipeline.indexOf(":android: Android Internal"),
     );
     assert.include(iosStep, "T3CODE_IOS_ALLOW_EAS_CLOUD");
-    assert.include(iosStep, "queue: macos-large");
+    assert.include(iosStep, "T3CODE_IOS_LOCAL_XCODE");
+    assert.include(iosStep, "queue: macos-release");
     assert.notInclude(iosStep, "os: macos");
     assert.include(iosStep, "publish-mobile-release.sh");
-    assert.include(mobileRelease, "hosted macos-large (M4)");
+    assert.include(mobileRelease, "Linux-capable");
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
     assert.include(mobileRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
     assert.include(mobileRelease, 'ensure_vite_plus "to publish mobile OTA"');
@@ -439,9 +443,11 @@ ${setup}
     assert.include(mobileRelease, 'DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version');
     assert.include(mobileRelease, "This is not App Store review");
     assert.include(mobileRelease, "ipa_via_cloud");
-    assert.include(mobileRelease, "allow_eas_cloud_ios");
+    assert.include(mobileRelease, "prefer_eas_cloud_ios");
+    assert.include(mobileRelease, "prefer_local_xcode_ios");
     assert.include(mobileRelease, "T3CODE_IOS_ALLOW_EAS_CLOUD");
-    assert.include(mobileRelease, "Cloud IPA builds are opt-in");
+    assert.include(mobileRelease, "T3CODE_IOS_LOCAL_XCODE");
+    assert.include(mobileRelease, "ios-expo-daily-cap.mjs");
     assert.include(mobileRelease, "--wait");
     assert.include(mobileRelease, '--json > "$cloud_build_json"');
     assert.include(mobileRelease, "completed build with an id and archive");
@@ -449,7 +455,7 @@ ${setup}
     assert.include(mobileRelease, "verify_ipa_fingerprint");
     assert.notInclude(mobileRelease, "--latest");
     assert.include(mobileRelease, "Submitted verified TestFlight IPA from EAS cloud build");
-    assert.include(mobileRelease, "No full Xcode on this Mac");
+    assert.include(mobileRelease, "No full Xcode on this agent");
     assert.notInclude(mobileRelease, "Skipping a new IPA");
     assert.notInclude(mobileRelease, "xcode_is_store_supported");
     assert.notInclude(mobileRelease, "No native macos-release TestFlight submit recorded");
@@ -795,6 +801,7 @@ describe("macos review-only pre-command hook", () => {
     const refused = run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "macos-dmg" });
     assert.equal(refused.status, 1);
     assert.include(refused.stderr, "review-only");
+    assert.equal(run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "ios-mobile" }).status, 0);
   });
 });
 

@@ -43,7 +43,9 @@
 #                     and/or the macos-release file-store fallbacks.
 #                     Hosted M4 lacks those today (BK 1876/1878/1880).
 #                     Temporary packaging also runs here: macos-dmg,
-#                     publish-cli, ios-mobile, and android-mobile (os=macos).
+#                     publish-cli, and android-mobile (os=macos). ios-mobile
+#                     stays on this queue without an os pin so Linux Expo
+#                     cloud OTA/IPA can run when Serge's Mac is offline.
 #   windows-release — serge-pc native NSIS (cannot run on Mac)
 #
 # TODO: restore hosted queues for packaging (macos-large DMG/iOS,
@@ -53,10 +55,12 @@
 # Buildkite/Namespace hosted dispatch works again.
 # Target hosted Mac queues by key only when that lands — extra tags
 # like os=macos can leave hosted M4 unmatched. Until then,
-# macos-release packaging steps keep os=macos so the mixed pool
-# (Serge Mac + Linux review + m1-linux-t3code-fork) cannot take
-# Apple/Android jobs. Origin PR review and comments stay queue-wide
-# so the review-only Linux agent can take them. The Buildkite
+# macos-release Apple-keychain jobs (DMG, Android, relay) keep an os
+# pin so the mixed pool (Serge Mac + Linux review +
+# m1-linux-t3code-fork) cannot take them. ios-mobile is the exception:
+# Expo cloud OTA/IPA is Linux-capable and must not wait for a Mac.
+# Origin PR review and comments stay queue-wide so the review-only
+# Linux agent can take them. The Buildkite
 # default upload step is macos-medium (pipeline settings, not this
 # file); upload does not need Origin secrets.
 #
@@ -287,22 +291,25 @@ steps:
   - label: ":iphone: iOS OTA + TestFlight"
     key: ios-mobile
     concurrency: 1
-    concurrency_group: "t3-pretty/apple-signing"
+    concurrency_group: "t3-pretty/ios-mobile"
     # Ahead of Origin PR review so a feature-branch review cannot sit
-    # in front of TestFlight.
+    # in front of TestFlight. Do not share the Apple signing slot with
+    # macos-dmg: a Linux Expo job must not block the Mac DMG.
     priority: 20
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
-    # Temporarily on macos-release + os=macos. Hosted macos-large
-    # auto-cancels in ~100ms (BK #1944/#1948).
-    # TODO: restore queue: macos-large (key only) once hosted dispatch works.
-    # IPA compile is local `eas build --local` on this Mac. Missing Xcode
-    # fails the job instead of spending EAS quota; set
-    # T3CODE_IOS_ALLOW_EAS_CLOUD=1 on a rebuild to opt into cloud. OTA
-    # (`eas update`) is unchanged.
+    # Queue-wide on macos-release. Do not pin os=macos: that leaves this
+    # step limited when the Mac is offline. m1-linux-t3code-fork
+    # (os=linux) can publish OTA and EAS cloud IPAs. Local Xcode remains
+    # available when a Mac takes the job. Review-only agents may run this
+    # Expo path (cloud only); they still refuse DMG/Android/relay. Hosted
+    # macos-large auto-cancels in ~100ms (BK #1944/#1948); do not restore
+    # that queue until hosted dispatch works.
+    # Daily cap: two iOS Expo spends (OTA or cloud IPA) per
+    # America/Vancouver day. T3CODE_IOS_LOCAL_XCODE=1 forces local
+    # Xcode. T3CODE_IOS_ALLOW_EAS_CLOUD=1 forces cloud even with Xcode.
     agents:
       queue: macos-release
-      os: macos
     env:
       APP_VARIANT: production
       NODE_OPTIONS: "--max-old-space-size=8192"

@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Native hosted macos-large iOS OTA + TestFlight. Same M4 class as the signed
-# DMG. The GitHub Actions importer cannot load
-# cluster secrets or keep PATH across steps, so imported Expo/EAS jobs die
-# in seconds and TestFlight
-# never sees the update.
+# iOS OTA + TestFlight for tip packaging. The GitHub Actions importer cannot
+# load cluster secrets or keep PATH across steps, so imported Expo/EAS jobs
+# die in seconds and TestFlight never sees the update.
 #
 # Installed TestFlight binaries already poll the fork Expo Updates URL baked
 # into the IPA. Default release is that JS channel (`eas update`). A new IPA
@@ -11,11 +9,21 @@
 # T3CODE_FORCE_IOS / T3CODE_MOBILE_MODE=build. eas submit queues that IPA for
 # TestFlight through App Store Connect; it does not submit the app for App
 # Store review. EAS owns the remote retry after accepting the submission, so
-# Buildkite does not wait on that queue while holding the Apple signing slot.
-# Local `eas build --local` is the default IPA compile path. Command Line
-# Tools cannot archive an IPA. Without a usable full Xcode the job fails
-# with a Buildkite annotation instead of spending EAS Free/paid quota.
-# Set T3CODE_IOS_ALLOW_EAS_CLOUD=1 to opt into the cloud IPA path.
+# Buildkite does not wait on that queue while holding a Mac signing slot.
+#
+# This job is Linux-capable: `eas update` and `eas build` (cloud, no --local)
+# do not need Xcode. When a usable full Xcode is on the agent, local
+# `eas build --local` still saves an Expo IPA credit. Without Xcode the job
+# uses EAS cloud instead of failing. Force local with T3CODE_IOS_LOCAL_XCODE=1
+# (fails if Xcode is missing). Force cloud with T3CODE_IOS_ALLOW_EAS_CLOUD=1
+# even when Xcode is present.
+#
+# Tip packaging allows at most two iOS Expo spends (cloud IPA or OTA) per
+# America/Vancouver calendar day. scripts/fork/ios-expo-daily-cap.mjs counts
+# production-profile iOS EAS builds and production-branch iOS update groups
+# from Expo, so the budget is shared across macos-release Mac and Linux
+# agents. Hitting the cap skips that Expo call and annotates; it does not
+# fail the build or the desktop packagers. Local Xcode IPAs do not count.
 #
 # Buildkite cancels intermediate main builds when pushes land in quick
 # succession, so a release can die mid-flight and a later push would skip on
@@ -64,7 +72,7 @@ esac
 commit="${BUILDKITE_COMMIT:-${GITHUB_SHA:-$(git rev-parse HEAD)}}"
 update_message="${T3CODE_MOBILE_UPDATE_MESSAGE:-Production OTA (${commit})}"
 
-echo "T3 Pretty mobile release on hosted macos-large (M4) mode=${MODE} platform=${PLATFORM} force_ios=${FORCE_IOS}"
+echo "T3 Pretty mobile release mode=${MODE} platform=${PLATFORM} force_ios=${FORCE_IOS} host=$(uname -s)"
 
 load_secret() {
   local name="$1"
@@ -138,6 +146,107 @@ annotate() {
   if command -v buildkite-agent >/dev/null; then
     buildkite-agent annotate --style "$style" --context ios-mobile "$body" || true
   fi
+}
+
+ios_expo_daily_limit() {
+  local raw="${T3CODE_IOS_EXPO_DAILY_LIMIT:-2}"
+  [[ "$raw" =~ ^[0-9]+$ ]] || raw=2
+  printf '%s\n' "$raw"
+}
+
+ios_expo_daily_cap_field() {
+  local report="$1" key="$2"
+  awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1); exit }' <<< "$report"
+}
+
+# Expo is the durable counter: production iOS EAS builds + production-branch
+# iOS update groups created on the America/Vancouver day. Shared across
+# agents; local Xcode IPAs never appear. limit=0 disables the cap.
+ios_expo_daily_cap_eval() {
+  local limit out
+  limit="$(ios_expo_daily_limit)"
+  if (( limit == 0 )); then
+    printf '%s\n' \
+      "day=" \
+      "used=0" \
+      "limit=0" \
+      "remaining=unlimited" \
+      "status=disabled" \
+      "allowed=true" \
+      "builds=0" \
+      "updates=0" \
+      "store=disabled"
+    return 0
+  fi
+  out="$(
+    node "$root/scripts/fork/ios-expo-daily-cap.mjs" \
+      --fetch \
+      --timezone "${T3CODE_IOS_EXPO_DAILY_TZ:-America/Vancouver}" \
+      --limit "$limit" \
+      --app-id "${T3CODE_MOBILE_EAS_PROJECT_ID}" \
+      --branch production \
+      --mobile-dir "$root/apps/mobile"
+  )" || true
+  if [[ -z "$out" ]] || ! grep -q '^status=' <<< "$out"; then
+    printf '%s\n' \
+      "day=" \
+      "used=-1" \
+      "limit=$limit" \
+      "remaining=-1" \
+      "status=unknown" \
+      "allowed=true" \
+      "builds=-1" \
+      "updates=-1" \
+      "store=unavailable"
+    return 0
+  fi
+  printf '%s\n' "$out"
+}
+
+# True when this Expo spend should be skipped. Unknown usage fails open for
+# OTA (so a GraphQL flake cannot strand TestFlight JS) and closed for a
+# cloud IPA (so a flake cannot burn a native credit).
+ios_expo_cap_blocks() {
+  local kind="$1"
+  local report="$2"
+  local status remaining
+  status="$(ios_expo_daily_cap_field "$report" status)"
+  remaining="$(ios_expo_daily_cap_field "$report" remaining)"
+  case "$status" in
+    disabled) return 1 ;;
+    ok)
+      if [[ "$remaining" =~ ^[0-9]+$ ]] && (( remaining > 0 )); then
+        return 1
+      fi
+      return 0
+      ;;
+    unknown)
+      [[ "$kind" == "build" ]]
+      return
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+ios_expo_cap_skip_message() {
+  local kind="$1"
+  local report="$2"
+  local day used limit remaining store status
+  day="$(ios_expo_daily_cap_field "$report" day)"
+  used="$(ios_expo_daily_cap_field "$report" used)"
+  limit="$(ios_expo_daily_cap_field "$report" limit)"
+  remaining="$(ios_expo_daily_cap_field "$report" remaining)"
+  store="$(ios_expo_daily_cap_field "$report" store)"
+  status="$(ios_expo_daily_cap_field "$report" status)"
+  if [[ "$status" == "unknown" ]]; then
+    printf '%s\n' \
+      "Skipping cloud iOS IPA: could not read today's Expo iOS usage from ${store:-unavailable}. OTA is still allowed; a native cloud build is not."
+    return 0
+  fi
+  printf '%s\n' \
+    "Skipping iOS Expo ${kind}: America/Vancouver daily cap reached (${used:-?}/${limit:-2} on ${day:-unknown}, remaining ${remaining:-0}, store ${store:-expo-api}). Desktop packaging is unaffected."
 }
 
 native_submit_line() {
@@ -655,17 +764,23 @@ if [[ "$MODE" == "update" || "$MODE" == "release" ]]; then
     if [[ "$MODE" == "release" ]]; then
       update_platform=all
     fi
-    (
-      cd apps/mobile
-      eas update \
-        --channel production \
-        --environment production \
-        --platform "$update_platform" \
-        --message "$update_message" \
-        --non-interactive
-    )
-    echo "Published production OTA for ${update_platform}."
-    record_local_ota_publish
+    expo_cap_report="$(ios_expo_daily_cap_eval)"
+    echo "$expo_cap_report"
+    if ios_expo_cap_blocks update "$expo_cap_report"; then
+      annotate warning "$(ios_expo_cap_skip_message update "$expo_cap_report")"
+    else
+      (
+        cd apps/mobile
+        eas update \
+          --channel production \
+          --environment production \
+          --platform "$update_platform" \
+          --message "$update_message" \
+          --non-interactive
+      )
+      echo "Published production OTA for ${update_platform}."
+      record_local_ota_publish
+    fi
   else
     echo "Production OTA already covers mobile content at ${commit}; skipping eas update."
   fi
@@ -779,19 +894,34 @@ is_full_xcode() {
   return 0
 }
 
-# EAS cloud IPA compiles spend Free/paid quota. Opt in only.
-allow_eas_cloud_ios() {
-  case "${T3CODE_IOS_ALLOW_EAS_CLOUD:-}" in
+prefer_local_xcode_ios() {
+  case "${T3CODE_IOS_LOCAL_XCODE:-}" in
     true | TRUE | 1 | yes | YES) return 0 ;;
-    *) return 1 ;;
   esac
+  return 1
 }
+
+# Cloud is the fallback when this agent has no usable Xcode. Force cloud
+# even on a Mac with Xcode via T3CODE_IOS_ALLOW_EAS_CLOUD / PREFER_EAS_CLOUD.
+prefer_eas_cloud_ios() {
+  case "${T3CODE_IOS_ALLOW_EAS_CLOUD:-${T3CODE_IOS_PREFER_EAS_CLOUD:-}}" in
+    true | TRUE | 1 | yes | YES) return 0 ;;
+  esac
+  return 1
+}
+
+# Review-only agents must not compile a local IPA on a daily-driver keychain.
+if [[ "${T3_PRETTY_REVIEW_ONLY:-}" == "1" ]]; then
+  export T3CODE_IOS_ALLOW_EAS_CLOUD="${T3CODE_IOS_ALLOW_EAS_CLOUD:-1}"
+  unset T3CODE_IOS_LOCAL_XCODE
+fi
 
 # Prefer a stable full Xcode.app if xcodebuild actually runs. Command Line
 # Tools cannot compile an IPA. The current Apple-listed beta is accepted for
 # macOS developer builds; stale betas are skipped. Without a usable Xcode
-# the job fails unless T3CODE_IOS_ALLOW_EAS_CLOUD=1 opts into EAS cloud.
-# Override T3CODE_ACCEPTED_XCODE_BETA_BUILD when Apple advances the listed beta.
+# the job uses EAS cloud (no Mac required). T3CODE_IOS_LOCAL_XCODE=1 restores
+# the #676 fail-closed local-only path. Override
+# T3CODE_ACCEPTED_XCODE_BETA_BUILD when Apple advances the listed beta.
 # Origin's pipeline upload rejects `interruptible`, so a later main push
 # can still cancel this job. Do not merge unrelated main PRs during an IPA.
 developer_dir=""
@@ -807,15 +937,20 @@ else
 fi
 
 ipa_via_cloud=false
-if ! is_full_xcode "$developer_dir"; then
+if prefer_local_xcode_ios && ! is_full_xcode "$developer_dir"; then
   ls -ld /Applications/Xcode*.app 2>/dev/null || echo "No Xcode*.app under /Applications."
   xcode-select -p 2>/dev/null || true
-  if allow_eas_cloud_ios; then
-    ipa_via_cloud=true
-    annotate info "No full Xcode on this Mac that is safe for App Store Connect. T3CODE_IOS_ALLOW_EAS_CLOUD is set; compiling the TestFlight IPA on EAS cloud."
+  annotate error "T3CODE_IOS_LOCAL_XCODE is set but this agent has no full Xcode.app. Install Xcode on a macos-release Mac or unset the flag to compile the TestFlight IPA on EAS cloud."
+  exit 1
+fi
+if is_full_xcode "$developer_dir" && ! prefer_eas_cloud_ios; then
+  :
+else
+  ipa_via_cloud=true
+  if is_full_xcode "$developer_dir"; then
+    annotate info "T3CODE_IOS_ALLOW_EAS_CLOUD is set; compiling the TestFlight IPA on EAS cloud instead of local Xcode."
   else
-    annotate error "No full Xcode on this Mac. Install Xcode.app (not just Command Line Tools) on the macos-release agent, then rerun. Cloud IPA builds are opt-in: set T3CODE_IOS_ALLOW_EAS_CLOUD=1 to spend an EAS iOS build credit."
-    exit 1
+    annotate info "No full Xcode on this agent. Compiling the TestFlight IPA on EAS cloud."
   fi
 fi
 if ! command -v unzip >/dev/null; then
@@ -855,6 +990,12 @@ ipa_path="$tmp/t3-pretty.ipa"
 build_source="local Xcode"
 
 if [[ "$ipa_via_cloud" == "true" ]]; then
+  expo_cap_report="$(ios_expo_daily_cap_eval)"
+  echo "$expo_cap_report"
+  if ios_expo_cap_blocks build "$expo_cap_report"; then
+    annotate warning "$(ios_expo_cap_skip_message build "$expo_cap_report")"
+    exit 0
+  fi
   cloud_build_json="$tmp/eas-cloud-build.json"
   if ! (
     cd apps/mobile
