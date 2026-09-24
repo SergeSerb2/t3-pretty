@@ -25,9 +25,9 @@ jobs:
   sync:
     name: Sync newest upstream nightly
     if: github.repository == 'SergeSerb2/t3-pretty'
-    # Self-hosted macos-release can resolve CURSOR_API_KEY and
+    # Self-hosted macOS can resolve CURSOR_API_KEY and
     # CLI_PROXY_API_KEY. Hosted Linux and hosted M4 cannot.
-    runs-on: macos-latest
+    runs-on: [self-hosted, mac, m1]
     # A backlog merge resolves dozens of conflicts in sequential model
     # batches; 45 minutes hard-killed those runs mid-resolution, which
     # discarded the work and let the next nightly pile on more conflicts.

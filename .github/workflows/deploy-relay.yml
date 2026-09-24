@@ -42,11 +42,11 @@ jobs:
     # Belt-and-suspenders: skip unless Buildkite is actually running this
     # file. Native production deploy is the Buildkite deploy-relay step.
     if: github.repository == 'SergeSerb2/t3-pretty' && env.BUILDKITE == 'true'
-    # macos-release can read the file-store fallbacks that hosted
+    # Self-hosted macOS can read the file-store fallbacks that hosted
     # linux-small and hosted M4 cannot. Clerk / PlanetScale / Axiom tokens
     # are not interpolatable on the importer without risking a failed
     # `secrets.*` resolve.
-    runs-on: macos-latest
+    runs-on: [self-hosted, mac, m1]
     timeout-minutes: 15
     steps:
       - name: Prepare macOS runner PATH

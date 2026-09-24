@@ -113,7 +113,7 @@ jobs:
 
   mobile_native_static_analysis:
     name: Mobile Native Static Analysis
-    runs-on: macos-latest
+    runs-on: [self-hosted, mac, m1]
     timeout-minutes: 10
     steps:
       - name: Checkout
