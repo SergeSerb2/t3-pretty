@@ -158,7 +158,7 @@ const SOLID_HEADER_OPTIONS: AppScreenOptions = {
   headerShown: true,
   headerTitleStyle: { fontSize: 18, fontWeight: "800" },
   headerTransparent: false,
-  unstable_navigationItemStyle: Platform.OS === "ios" ? "editor" : undefined,
+  unstable_navigationItemStyle: NATIVE_LIQUID_GLASS_SUPPORTED ? "editor" : undefined,
 };
 
 // Solid header variant for screens inside sheets (centered title, no editor style).

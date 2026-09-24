@@ -1,13 +1,12 @@
-import { isGlassEffectAPIAvailable } from "expo-glass-effect";
 import { Platform } from "react-native";
 
-import {
-  readNativeLiquidGlassCapability,
-  supportsNativeLiquidGlass,
-} from "../lib/native-glass-capability";
+import { supportsNativeLiquidGlass } from "../lib/native-glass-capability";
 
+// Do not call expo-glass-effect here. The native probe can abort the process
+// before try/catch in readNativeLiquidGlassCapability can recover. Home glass
+// stays off until the RNS patch re-enables RNSAllowsPatchedLiquidGlassChrome.
 export const NATIVE_LIQUID_GLASS_SUPPORTED = supportsNativeLiquidGlass(
   Platform.OS,
-  readNativeLiquidGlassCapability(isGlassEffectAPIAvailable),
+  false,
   Platform.Version,
 );

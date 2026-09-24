@@ -16,9 +16,10 @@ export {
  * that send it must fall back to standard search/toolbar primitives when this
  * is false.
  *
- * Disabled on every iOS version: the native patch calls UIGlassEffect /
- * glassButtonConfiguration on the first Home frame with no selector
- * guard. TestFlight 159 (local Xcode 27) aborted launch on that path.
+ * Disabled on every iOS version: the native patch can still construct
+ * UIGlassEffect / glassButtonConfiguration / UINavigationItemStyle on the
+ * first Home frame. TestFlight 161 still aborted after #690, so JS cannot
+ * be the only gate.
  */
 export const NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED = isNativeMailSearchToolbarSupported(
   NATIVE_LIQUID_GLASS_SUPPORTED,

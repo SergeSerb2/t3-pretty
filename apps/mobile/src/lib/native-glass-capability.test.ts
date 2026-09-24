@@ -22,9 +22,9 @@ describe("readNativeLiquidGlassCapability", () => {
 });
 
 describe("supportsNativeLiquidGlass", () => {
-  it("uses native liquid glass when iOS 26 reports the capability", () => {
-    expect(supportsNativeLiquidGlass("ios", true, "26.1")).toBe(true);
-    expect(supportsNativeLiquidGlass("ios", true, 26)).toBe(true);
+  it("stays off on iOS 26 after TestFlight 161 still aborted with #690 JS", () => {
+    expect(supportsNativeLiquidGlass("ios", true, "26.1")).toBe(false);
+    expect(supportsNativeLiquidGlass("ios", true, 26)).toBe(false);
   });
 
   it("keeps pre-glass iOS on the solid fallback", () => {

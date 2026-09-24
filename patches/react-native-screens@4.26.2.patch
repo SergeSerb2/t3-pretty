@@ -70,17 +70,33 @@ index a26d1254eafd89268f65d968988cf6a3b8c1e457..62eea42ac26c532801189556c5f51012
  
  @end
 diff --git a/ios/RNSBarButtonItem.mm b/ios/RNSBarButtonItem.mm
-index 0eb1f09dee82edd99e3e614938233db5cdeaebfe..73298f10807520970f625e166d7f5dd1338206f1 100644
+index 0eb1f09..e926664 100644
 --- a/ios/RNSBarButtonItem.mm
 +++ b/ios/RNSBarButtonItem.mm
-@@ -110,6 +110,58 @@ - (instancetype)initWithConfig:(NSDictionary<NSString *, id> *)dict
+@@ -6,6 +6,14 @@
+ 
+ static UIMenuOptions RNSMakeUIMenuOptionsFromConfig(NSDictionary *config);
+ 
++// Keep UIButtonConfiguration.glassButtonConfiguration off until Xcode 27 /
++// TestFlight 161 stop aborting on the first Home frame. The selector can exist
++// and still kill the process, so this is not a respondsToSelector check.
++static BOOL RNSAllowsPatchedLiquidGlassChrome(void)
++{
++  return NO;
++}
++
+ @implementation RNSBarButtonItem {
+   NSString *_buttonId;
+   RNSBarButtonItemAction _itemAction;
+@@ -110,6 +118,59 @@ static UIMenuOptions RNSMakeUIMenuOptionsFromConfig(NSDictionary *config);
    if (dict[@"accessibilityHint"]) {
      self.accessibilityHint = dict[@"accessibilityHint"];
    }
 +#if !TARGET_OS_TV && RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
 +  NSNumber *glassEffectNum = dict[@"glassEffect"];
 +  if (@available(iOS 26.0, *)) {
-+    if ([glassEffectNum boolValue]) {
++    if ([glassEffectNum boolValue] && RNSAllowsPatchedLiquidGlassChrome() &&
++        [UIButtonConfiguration respondsToSelector:@selector(glassButtonConfiguration)]) {
 +      UIButtonConfiguration *configuration = [UIButtonConfiguration glassButtonConfiguration];
 +      configuration.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
 +      UIBackgroundConfiguration *background = configuration.background;
@@ -159,10 +175,10 @@ index 8a41697223f6c4b5cb2dd6d450fc58cbb3b27536..309ba2f762068dcf452c172f7c7cbf2a
  
  NS_ASSUME_NONNULL_END
 diff --git a/ios/RNSScreenStackHeaderConfig.mm b/ios/RNSScreenStackHeaderConfig.mm
-index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab60e185033 100644
+index 1c84484..0336936 100644
 --- a/ios/RNSScreenStackHeaderConfig.mm
 +++ b/ios/RNSScreenStackHeaderConfig.mm
-@@ -24,11 +24,46 @@
+@@ -24,11 +24,56 @@
  #import "RNSSearchBar.h"
  #import "UINavigationBar+RNSUtility.h"
  
@@ -192,6 +208,16 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
 +static char RNSAppliedToolbarConfigsKey;
  static const NSNumber *const DEFAULT_TITLE_LARGE_FONT_SIZE = @34;
  
++// Xcode 27 / TestFlight 159-161 abort when this patch constructs UIGlassEffect,
++// glassButtonConfiguration, or UINavigationItemStyle on the first Home frame.
++// Those selectors can exist and still kill the process, so respondsToSelector
++// is not a sufficient gate. Keep construction off until a later IPA proves
++// the SDK/runtime pair. JS cannot prevent the default navitem.style apply.
++static BOOL RNSAllowsPatchedLiquidGlassChrome(void)
++{
++  return NO;
++}
++
 +static NSInteger navigationItemStyleFromCppEquivalent(
 +    react::RNSScreenStackHeaderConfigNavigationItemStyle navigationItemStyle)
 +{
@@ -209,7 +235,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
  @interface RCTImageLoader (Private)
  - (id<RCTImageCache>)imageCache;
  @end
-@@ -46,6 +81,9 @@ + (BOOL)rnscreens_isBlankOrNull:(NSString *)string
+@@ -46,6 +91,9 @@ static const NSNumber *const DEFAULT_TITLE_LARGE_FONT_SIZE = @34;
  @end
  
  @interface RNSScreenStackHeaderConfig () <RCTMountingTransactionObserving>
@@ -219,7 +245,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
  @end
  
  @implementation RNSScreenStackHeaderConfig {
-@@ -80,6 +118,7 @@ - (void)initProps
+@@ -80,6 +128,7 @@ static const NSNumber *const DEFAULT_TITLE_LARGE_FONT_SIZE = @34;
    self.hidden = YES;
    _reactSubviews = [NSMutableArray new];
    _backTitleVisible = YES;
@@ -227,7 +253,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
    _blurEffect = RNSBlurEffectStyleNone;
    _synchronousShadowStateUpdatesEnabled = YES;
  }
-@@ -507,6 +546,10 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -507,6 +556,10 @@ RNS_IGNORE_SUPER_CALL_END
  
    if (shouldHide) {
      navitem.title = config.title;
@@ -238,13 +264,15 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
  
      // Setting navigation bar visibility is split to mitigate iOS 26 bug with bar button items.
      [navctr setNavigationBarHidden:YES animated:animated];
-@@ -523,11 +566,19 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -523,11 +576,21 @@ RNS_IGNORE_SUPER_CALL_END
    }
    navitem.largeTitleDisplayMode =
        config.largeTitle ? UINavigationItemLargeTitleDisplayModeAlways : UINavigationItemLargeTitleDisplayModeNever;
 +
-+  if (@available(iOS 16.0, *)) {
-+    navitem.style = (UINavigationItemStyle)config.navigationItemStyle;
++  if (@available(iOS 26.0, *)) {
++    if (RNSAllowsPatchedLiquidGlassChrome() && [navitem respondsToSelector:@selector(setStyle:)]) {
++      navitem.style = (UINavigationItemStyle)config.navigationItemStyle;
++    }
 +  }
  #endif
  
@@ -258,7 +286,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
  
  // appearance does not apply to the tvOS so we need to use lagacy customization
  #if TARGET_OS_TV
-@@ -559,8 +610,6 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -559,8 +622,6 @@ RNS_IGNORE_SUPER_CALL_END
    navitem.leftItemsSupplementBackButton = config.backButtonInCustomView;
  #endif
    navitem.titleView = nil;
@@ -267,7 +295,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
  
  #if !TARGET_OS_TV
    // We want to set navitem.searchController to nil only if we are sure
-@@ -568,22 +617,18 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -568,22 +629,18 @@ RNS_IGNORE_SUPER_CALL_END
    bool searchBarPresent = false;
  #endif /* !TARGET_OS_TV */
  
@@ -294,7 +322,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
          break;
        }
        case RNSScreenStackHeaderSubviewTypeCenter:
-@@ -648,10 +693,479 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -648,10 +705,479 @@ RNS_IGNORE_SUPER_CALL_END
    // This assignment should be done after `navitem.titleView = ...` assignment (iOS 16.0 bug).
    // See: https://github.com/software-mansion/react-native-screens/issues/1570 (comments)
    navitem.title = config.title;
@@ -404,7 +432,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
 +
 +  if (mailSearchToolbarConfig != nil && !reuseMailSearchToolbar) {
 +#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
-+    if (@available(iOS 26.0, *)) {
++    if (@available(iOS 26.0, *) && RNSAllowsPatchedLiquidGlassChrome()) {
 +      CGFloat horizontalInset = 18.0;
 +      NSNumber *width = mailSearchToolbarConfig[@"width"];
 +      CGFloat hostWidth = chromeHostView.bounds.size.width;
@@ -778,7 +806,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
  
    // Setting navigation bar visibility is split to mitigate iOS 26 bug with bar button items
    // (setting nav bar visibility should be done after `navitem.*BarButtonItems`).
-@@ -784,6 +1289,8 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -784,6 +1310,8 @@ RNS_IGNORE_SUPER_CALL_END
  
  - (NSArray<UIBarButtonItem *> *)barButtonItemsFromConfigs:(NSArray<NSDictionary<NSString *, id> *> *)dicts
                                           withCurrentItems:(NSArray<UIBarButtonItem *> *)currentItems
@@ -787,14 +815,14 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
  {
    if (dicts.count == 0) {
      return currentItems;
-@@ -792,7 +1299,200 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -792,7 +1320,204 @@ RNS_IGNORE_SUPER_CALL_END
    [items addObjectsFromArray:currentItems];
    for (NSUInteger i = 0; i < dicts.count; i++) {
      NSDictionary *dict = dicts[i];
 -    if (dict[@"buttonId"] || dict[@"menu"]) {
 +    if (dict[@"mailSearchToolbar"]) {
 +#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
-+      if (@available(iOS 26.0, *)) {
++      if (@available(iOS 26.0, *) && RNSAllowsPatchedLiquidGlassChrome()) {
 +        NSNumber *width = dict[@"width"];
 +        CGFloat resolvedWidth = width != nil ? width.doubleValue : MAX(320.0, [UIScreen mainScreen].bounds.size.width - 56.0);
 +        CGFloat resolvedHeight = 58.0;
@@ -931,7 +959,11 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
 +        NSNumber *width = dict[@"width"];
 +        UIBarButtonItem *item = nil;
 +        if ([dict[@"activatesSearchController"] boolValue]) {
-+          UIButtonConfiguration *configuration = [UIButtonConfiguration glassButtonConfiguration];
++          UIButtonConfiguration *configuration =
++              RNSAllowsPatchedLiquidGlassChrome() &&
++                      [UIButtonConfiguration respondsToSelector:@selector(glassButtonConfiguration)]
++                  ? [UIButtonConfiguration glassButtonConfiguration]
++                  : [UIButtonConfiguration plainButtonConfiguration];
 +          configuration.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
 +          configuration.image = [UIImage systemImageNamed:@"magnifyingglass"];
 +          configuration.baseForegroundColor = UIColor.labelColor;
@@ -989,7 +1021,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
        RNSBarButtonItem *item = [[RNSBarButtonItem alloc] initWithConfig:dict
            action:^(NSString *buttonId) {
              auto eventEmitter = std::static_pointer_cast<const facebook::react::RNSScreenStackHeaderConfigEventEmitter>(
-@@ -814,19 +1514,23 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -814,19 +1539,23 @@ RNS_IGNORE_SUPER_CALL_END
            }
            imageLoader:_imageLoader];
        NSNumber *index = dict[@"index"];
@@ -1019,7 +1051,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
          [items insertObject:item atIndex:index.integerValue];
        } else {
          [items addObject:item];
-@@ -836,6 +1540,47 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -836,6 +1565,47 @@ RNS_IGNORE_SUPER_CALL_END
    return items;
  }
  
@@ -1067,7 +1099,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
  RNS_IGNORE_SUPER_CALL_BEGIN
  - (void)insertReactSubview:(RNSScreenStackHeaderSubview *)subview atIndex:(NSInteger)atIndex
  {
-@@ -1023,6 +1768,8 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
+@@ -1023,6 +1793,8 @@ static RCTResizeMode resizeModeFromCppEquiv(react::ImageResizeMode resizeMode)
    }
  
    _title = RCTNSStringFromStringNilIfEmpty(newScreenProps.title);
@@ -1076,7 +1108,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
    if (newScreenProps.titleFontFamily != oldScreenProps.titleFontFamily) {
      _titleFontFamily = RCTNSStringFromStringNilIfEmpty(newScreenProps.titleFontFamily);
    }
-@@ -1048,6 +1795,7 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
+@@ -1048,6 +1820,7 @@ static RCTResizeMode resizeModeFromCppEquiv(react::ImageResizeMode resizeMode)
    _disableBackButtonMenu = newScreenProps.disableBackButtonMenu;
    _backButtonDisplayMode =
        [RNSConvert UINavigationItemBackButtonDisplayModeFromCppEquivalent:newScreenProps.backButtonDisplayMode];
@@ -1084,7 +1116,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..a60b96b44e85d3f4b29dc0d190b95ab6
  
    if (newScreenProps.userInterfaceStyle != oldScreenProps.userInterfaceStyle) {
      _userInterfaceStyle = [RNSConvert UIUserInterfaceStyleFromCppEquivalent:newScreenProps.userInterfaceStyle];
-@@ -1094,6 +1842,30 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
+@@ -1094,6 +1867,30 @@ static RCTResizeMode resizeModeFromCppEquiv(react::ImageResizeMode resizeMode)
      _headerRightBarButtonItems = array;
    }
  
