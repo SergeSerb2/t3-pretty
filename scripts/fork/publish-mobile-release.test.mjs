@@ -237,7 +237,12 @@ function extractEasJsonCleanupTrap() {
   return match[0];
 }
 
-function makeFingerprintIpa({ fingerprint, runtimeVersion } = {}) {
+const BINARY_EXPO_PLIST = Buffer.from(
+  "YnBsaXN0MDDSAQIDBF8QF0VYVXBkYXRlc1J1bnRpbWVWZXJzaW9uXEVYVXBkYXRlc1VSTF8QKGEyMWRmYmY5MWVhMzQ1MDY2OTFlZjEyZTI0ZjI2ZTlkZGIzNmI5MDFfEBpodHRwczovL3UuZXhwby5kZXYvZXhhbXBsZQgNJzRfAAAAAAAAAQEAAAAAAAAABQAAAAAAAAAAAAAAAAAAAHw=",
+  "base64",
+);
+
+function makeFingerprintIpa({ fingerprint, runtimeVersion, binaryPlist } = {}) {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-fingerprint-ipa-"));
   const app = NodePath.join(root, "Payload", "T3PrettyInternal.app");
   NodeFS.mkdirSync(app, { recursive: true });
@@ -246,7 +251,9 @@ function makeFingerprintIpa({ fingerprint, runtimeVersion } = {}) {
     NodeFS.mkdirSync(updates);
     NodeFS.writeFileSync(NodePath.join(updates, "fingerprint"), fingerprint);
   }
-  if (runtimeVersion !== undefined) {
+  if (binaryPlist) {
+    NodeFS.writeFileSync(NodePath.join(app, "Expo.plist"), BINARY_EXPO_PLIST);
+  } else if (runtimeVersion !== undefined) {
     NodeFS.writeFileSync(
       NodePath.join(app, "Expo.plist"),
       [
@@ -267,17 +274,33 @@ function makeFingerprintIpa({ fingerprint, runtimeVersion } = {}) {
   return { root, ipa };
 }
 
-function verifyIpaFingerprint(ipa, expected) {
+function pathWithoutPlutil() {
+  const current = process.env.PATH || "";
+  return current
+    .split(NodePath.delimiter)
+    .filter((directory) => {
+      if (!directory) return false;
+      return (
+        !NodeFS.existsSync(NodePath.join(directory, "plutil")) &&
+        !NodeFS.existsSync(NodePath.join(directory, "plutil.exe"))
+      );
+    })
+    .join(NodePath.delimiter);
+}
+
+function verifyIpaFingerprint(ipa, expected, env = {}) {
+  const repoRoot = NodePath.resolve(here, "../..");
   return NodeChildProcess.spawnSync(
     "bash",
     [
       "-c",
-      `${extractIpaFingerprintVerification()}\nverify_ipa_fingerprint "$1" "$2"`,
+      `root="$3"\n${extractIpaFingerprintVerification()}\nverify_ipa_fingerprint "$1" "$2"`,
       "verify-ipa-fingerprint",
       ipa,
       expected,
+      repoRoot,
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", env: { ...process.env, ...env } },
   );
 }
 
@@ -717,12 +740,9 @@ describe("Windows OTA persist without dump-sourcemap", () => {
       NodeFS.mkdirSync(fakeBin);
       NodeFS.writeFileSync(
         NodePath.join(fakeBin, "find"),
-        [
-          "#!/usr/bin/env bash",
-          'echo "FIND: Parameter format not correct" >&2',
-          "exit 2",
-          "",
-        ].join("\n"),
+        ["#!/usr/bin/env bash", 'echo "FIND: Parameter format not correct" >&2', "exit 2", ""].join(
+          "\n",
+        ),
         { mode: 0o755 },
       );
       const result = NodeChildProcess.spawnSync(
@@ -846,9 +866,13 @@ describe("Windows OTA persist without dump-sourcemap", () => {
         "echo refused",
         "exit 1",
       ].join("\n");
-      const result = NodeChildProcess.spawnSync("bash", ["-c", script, "win-ota-refuse", root, log], {
-        encoding: "utf8",
-      });
+      const result = NodeChildProcess.spawnSync(
+        "bash",
+        ["-c", script, "win-ota-refuse", root, log],
+        {
+          encoding: "utf8",
+        },
+      );
       assert.notEqual(result.status, 0);
       assert.include(`${result.stdout}\n${result.stderr}`, "refusing eas update --skip-bundler");
       assert.include(result.stdout, "refused");
@@ -999,9 +1023,13 @@ describe("Windows OTA persist without dump-sourcemap", () => {
         "export_mobile_bundle_for_ota() { return 0; }",
         'publish_production_ota all "Production OTA (test)"',
       ].join("\n");
-      const result = NodeChildProcess.spawnSync("bash", ["-c", script, "win-uname-ota", root, log], {
-        encoding: "utf8",
-      });
+      const result = NodeChildProcess.spawnSync(
+        "bash",
+        ["-c", script, "win-uname-ota", root, log],
+        {
+          encoding: "utf8",
+        },
+      );
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
       const calls = NodeFS.readFileSync(log, "utf8").trim();
       assert.include(calls, "eas update");
@@ -1554,6 +1582,42 @@ describe("iOS embedded runtime fingerprint", () => {
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("reads Expo.plist without macOS plutil, including a binary plist", () => {
+    assert.notInclude(mobileRelease, "command -v plutil");
+    assert.notInclude(mobileRelease, "plutil is required");
+    assert.include(mobileRelease, "read-expo-runtime-version.mjs");
+    const embedded = "a21dfbf91ea34506691ef12e24f26e9ddb36b901";
+    const xml = makeFingerprintIpa({ runtimeVersion: embedded });
+    const binary = makeFingerprintIpa({ binaryPlist: true });
+    try {
+      const env = { PATH: pathWithoutPlutil() };
+      const xmlMatch = verifyIpaFingerprint(xml.ipa, embedded, env);
+      assert.equal(xmlMatch.status, 0, `${xmlMatch.stdout}\n${xmlMatch.stderr}`);
+      assert.equal(xmlMatch.stdout.trim(), embedded);
+      const binaryMatch = verifyIpaFingerprint(binary.ipa, embedded, env);
+      assert.equal(binaryMatch.status, 0, `${binaryMatch.stdout}\n${binaryMatch.stderr}`);
+      assert.equal(binaryMatch.stdout.trim(), embedded);
+    } finally {
+      NodeFS.rmSync(xml.root, { recursive: true, force: true });
+      NodeFS.rmSync(binary.root, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses a finished matching EAS IPA before the Vancouver build cap", () => {
+    assert.include(mobileRelease, "reuse_build_id");
+    assert.include(mobileRelease, "reuse_artifact_url");
+    assert.include(mobileRelease, "eas build:view");
+    assert.include(mobileRelease, "not spending another Expo build credit");
+    assert.isBelow(
+      mobileRelease.indexOf('if [[ -n "$reuse_build_id" ]]; then'),
+      mobileRelease.indexOf("ios_expo_cap_blocks build"),
+    );
+    assert.isBelow(
+      mobileRelease.indexOf("ios_expo_cap_blocks build"),
+      mobileRelease.indexOf("    eas build \\"),
+    );
   });
 });
 

@@ -501,6 +501,8 @@ ${setup}
     assert.include(mobileRelease, "completed build with an id and archive");
     assert.include(mobileRelease, '--path "$ipa_path"');
     assert.include(mobileRelease, "verify_ipa_fingerprint");
+    assert.include(mobileRelease, "read-expo-runtime-version.mjs");
+    assert.notInclude(mobileRelease, "plutil is required");
     assert.notInclude(mobileRelease, "--latest");
     assert.include(mobileRelease, "Submitted verified TestFlight IPA from EAS cloud build");
     assert.include(mobileRelease, "No full Xcode on this agent");

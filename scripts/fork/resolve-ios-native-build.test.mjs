@@ -73,6 +73,57 @@ describe("T3 Pretty iOS native-build gate", () => {
 
     assert.include(output, "should_build=true");
     assert.include(output, "none -> abc123");
+    assert.match(output, /^reuse_build_id=$/mu);
+    assert.match(output, /^reuse_artifact_url=$/mu);
+  });
+
+  it("reuses a finished matching cloud IPA without treating it as already submitted", () => {
+    const artifact = "https://expo.invalid/application.ipa?token=1&x=2";
+    const output = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "5cc2e910d76aeb407d0e90c7509726039bcfe167" }),
+      "--builds-json",
+      JSON.stringify([
+        {
+          id: "347c6b49-e7dd-4c26-b221-efe6761a8222",
+          platform: "IOS",
+          buildProfile: "production",
+          status: "FINISHED",
+          runtimeVersion: "5cc2e910d76aeb407d0e90c7509726039bcfe167",
+          artifacts: { applicationArchiveUrl: artifact },
+        },
+      ]),
+    ]);
+
+    assert.include(output, "should_build=true");
+    assert.include(output, "reuse_build_id=347c6b49-e7dd-4c26-b221-efe6761a8222");
+    assert.include(output, `reuse_artifact_url=${artifact}`);
+    assert.include(output, "Reusing finished EAS cloud IPA 347c6b49-e7dd-4c26-b221-efe6761a8222");
+    assert.notInclude(output, "already has a production binary");
+  });
+
+  it("does not reuse a finished IPA when the submitted fingerprint already matches", () => {
+    const output = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "abc123" }),
+      "--builds-json",
+      JSON.stringify([
+        {
+          id: "already-submitted",
+          platform: "IOS",
+          buildProfile: "production",
+          status: "finished",
+          runtimeVersion: "abc123",
+          artifacts: { applicationArchiveUrl: "https://expo.invalid/old.ipa" },
+        },
+      ]),
+      "--submitted-fingerprint",
+      "abc123",
+    ]);
+
+    assert.include(output, "should_build=false");
+    assert.match(output, /^reuse_build_id=$/mu);
+    assert.match(output, /^reuse_artifact_url=$/mu);
   });
 
   it("does not let an in-flight hosted build suppress the local submit path", () => {

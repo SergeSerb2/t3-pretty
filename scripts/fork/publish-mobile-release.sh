@@ -22,7 +22,11 @@
 # EAS cloud instead of failing. Force local with T3CODE_IOS_LOCAL_XCODE=1
 # (fails if Xcode is missing). Force cloud with T3CODE_IOS_ALLOW_EAS_CLOUD=1
 # even when Xcode is present. Non-Darwin hosts force cloud themselves and
-# never look for /Applications/Xcode.app.
+# never look for /Applications/Xcode.app. The submit gate reads the IPA's
+# Expo.plist with scripts/fork/read-expo-runtime-version.mjs (XML or
+# binary). Do not require macOS plutil; Windows Git Bash does not have it
+# (BK #2864). A finished hosted IPA whose runtime already matches can be
+# downloaded and submitted without another Expo build credit.
 #
 # Tip packaging allows at most two iOS Expo spends (cloud IPA or OTA) per
 # America/Vancouver calendar day. scripts/fork/ios-expo-daily-cap.mjs counts
@@ -886,6 +890,7 @@ verify_ipa_fingerprint() {
   local fingerprint_entry
   local runtime_plist_entry
   local embedded_fingerprint
+  local runtime_reader
   if ! command -v unzip >/dev/null; then
     echo "unzip is required to verify the iOS runtime fingerprint before TestFlight submit." >&2
     return 1
@@ -909,15 +914,16 @@ verify_ipa_fingerprint() {
       echo "Cannot verify iOS runtime fingerprint: neither EXUpdates.bundle/fingerprint nor Expo.plist is present." >&2
       return 1
     fi
-    if ! command -v plutil >/dev/null; then
-      echo "plutil is required to read the iOS runtime version from Expo.plist." >&2
+    runtime_reader="${root:-}/scripts/fork/read-expo-runtime-version.mjs"
+    if [[ ! -f "$runtime_reader" ]]; then
+      echo "Cannot verify iOS runtime fingerprint: Expo.plist reader is missing at $runtime_reader." >&2
       return 1
     fi
     embedded_fingerprint="$(
       unzip -p "$ipa_path" "$runtime_plist_entry" 2>/dev/null |
-        plutil -extract EXUpdatesRuntimeVersion raw -expect string -o - -- - 2>/dev/null |
+        node "$runtime_reader" |
         tr -d '[:space:]'
-    )"
+    )" || true
     if [[ -z "$embedded_fingerprint" ]]; then
       echo "Cannot verify iOS runtime fingerprint: Expo.plist has no valid EXUpdatesRuntimeVersion." >&2
       return 1
@@ -1037,8 +1043,13 @@ if ! grep -q '^should_build=' "$gate_file"; then
 fi
 should_build="$(awk -F= '/^should_build=/ { print $2 }' "$gate_file" | tail -n 1)"
 fingerprint="$(awk -F= '/^fingerprint=/ { print $2 }' "$gate_file" | tail -n 1)"
+reuse_build_id="$(awk '/^reuse_build_id=/ { print substr($0, index($0, "=") + 1) }' "$gate_file" | tail -n 1)"
+reuse_artifact_url="$(awk '/^reuse_artifact_url=/ { print substr($0, index($0, "=") + 1) }' "$gate_file" | tail -n 1)"
 
 echo "iOS native binary fingerprint=${fingerprint:-unknown} should_build=${should_build}"
+if [[ -n "$reuse_build_id" ]]; then
+  echo "Finished EAS cloud IPA $reuse_build_id matches this runtime; TestFlight submit can reuse it."
+fi
 
 if [[ "$should_build" != "true" ]]; then
   annotate info "Native fingerprint is unchanged; TestFlight.app will not get a new build. Installed binaries pick up JS via OTA."
@@ -1166,32 +1177,57 @@ ipa_path="$tmp/t3-pretty.ipa"
 build_source="local Xcode"
 
 if [[ "$ipa_via_cloud" == "true" ]]; then
-  expo_cap_report="$(ios_expo_daily_cap_eval)"
-  echo "$expo_cap_report"
-  if ios_expo_cap_blocks build "$expo_cap_report"; then
-    annotate warning "$(ios_expo_cap_skip_message build "$expo_cap_report")"
-    exit 0
+  if [[ -n "$reuse_build_id" ]]; then
+    if [[ -z "$reuse_artifact_url" ]]; then
+      cloud_build_json="$tmp/eas-cloud-build.json"
+      if ! (
+        cd apps/mobile
+        eas build:view "$reuse_build_id" --json > "$cloud_build_json"
+      ); then
+        echo "Could not load finished EAS cloud IPA $reuse_build_id for TestFlight submit." >&2
+        exit 1
+      fi
+      cloud_build_details="$tmp/eas-cloud-build-details"
+      read_eas_cloud_build_details "$cloud_build_json" > "$cloud_build_details"
+      reuse_build_id="$(sed -n '1p' "$cloud_build_details")"
+      reuse_artifact_url="$(sed -n '2p' "$cloud_build_details")"
+    fi
+    if [[ -z "$reuse_artifact_url" ]]; then
+      echo "Finished EAS cloud IPA $reuse_build_id has no application archive URL." >&2
+      exit 1
+    fi
+    curl --fail --location --retry 3 --output "$ipa_path" "$reuse_artifact_url"
+    build_id="$reuse_build_id"
+    build_source="EAS cloud build $build_id"
+    annotate info "Reusing finished EAS cloud IPA $build_id; not spending another Expo build credit."
+  else
+    expo_cap_report="$(ios_expo_daily_cap_eval)"
+    echo "$expo_cap_report"
+    if ios_expo_cap_blocks build "$expo_cap_report"; then
+      annotate warning "$(ios_expo_cap_skip_message build "$expo_cap_report")"
+      exit 0
+    fi
+    cloud_build_json="$tmp/eas-cloud-build.json"
+    if ! (
+      cd apps/mobile
+      eas build \
+        --platform ios \
+        --profile production \
+        --non-interactive \
+        --wait \
+        --json > "$cloud_build_json"
+    ); then
+      echo "EAS cloud iOS build failed." >&2
+      report_eas_cloud_build_failure "$cloud_build_json"
+      exit 1
+    fi
+    cloud_build_details="$tmp/eas-cloud-build-details"
+    read_eas_cloud_build_details "$cloud_build_json" > "$cloud_build_details"
+    build_id="$(sed -n '1p' "$cloud_build_details")"
+    artifact_url="$(sed -n '2p' "$cloud_build_details")"
+    curl --fail --location --retry 3 --output "$ipa_path" "$artifact_url"
+    build_source="EAS cloud build $build_id"
   fi
-  cloud_build_json="$tmp/eas-cloud-build.json"
-  if ! (
-    cd apps/mobile
-    eas build \
-      --platform ios \
-      --profile production \
-      --non-interactive \
-      --wait \
-      --json > "$cloud_build_json"
-  ); then
-    echo "EAS cloud iOS build failed." >&2
-    report_eas_cloud_build_failure "$cloud_build_json"
-    exit 1
-  fi
-  cloud_build_details="$tmp/eas-cloud-build-details"
-  read_eas_cloud_build_details "$cloud_build_json" > "$cloud_build_details"
-  build_id="$(sed -n '1p' "$cloud_build_details")"
-  artifact_url="$(sed -n '2p' "$cloud_build_details")"
-  curl --fail --location --retry 3 --output "$ipa_path" "$artifact_url"
-  build_source="EAS cloud build $build_id"
 else
   echo "Using Xcode at $developer_dir"
   export DEVELOPER_DIR="$developer_dir"

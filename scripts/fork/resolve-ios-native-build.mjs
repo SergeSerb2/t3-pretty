@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
+import * as NodeURL from "node:url";
 
 // `eas fingerprint:generate --json` lists every native source it hashed; on
 // this app that runs well past 64 KiB, and a 64 KiB cap failed every
@@ -102,61 +104,161 @@ function readSubmittedFingerprint(args) {
   );
 }
 
-const args = new Map();
-for (let index = 2; index < NodeProcess.argv.length; index += 1) {
-  const arg = NodeProcess.argv[index];
-  if (!arg.startsWith("--")) continue;
-  const key = arg.slice(2);
-  const next = NodeProcess.argv[index + 1];
-  // An empty string is a real value (`--submitted-fingerprint ""`). Treat only
-  // a missing argv slot or another `--flag` as a boolean switch.
-  if (next !== undefined && !next.startsWith("--")) {
-    args.set(key, next);
-    index += 1;
-  } else {
-    args.set(key, "true");
+function nonEmptyString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+export function asBuildList(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") {
+    if (Array.isArray(value.builds)) return value.builds;
+    if (Array.isArray(value.currentPage)) return value.currentPage;
+    if (nonEmptyString(value.id)) return [value];
   }
+  return [];
 }
 
-const fingerprint = readFingerprintInput(args);
-const platform = args.get("platform") === "android" ? "Android" : "iOS";
-const forceBuild = args.get("force") === "true" || args.get("force") === "1";
-// Local `eas build --local` binaries never appear in `eas build:list`. The
-// workflow therefore persists the last successfully submitted fingerprint
-// (`.t3-fork/ios-production-fingerprint`). Automatic `release` skips Xcode
-// when that hash still matches (OTA already shipped the JS). `--force` is
-// reserved for explicit `build` / force_ios dispatches.
-const submittedFingerprint = readSubmittedFingerprint(args);
-// A hosted EAS build record proves only that an IPA was compiled. This fork has
-// no hosted auto-submit path, so neither an in-flight nor a finished build can
-// prove TestFlight delivery. Only the marker written after `eas submit`
-// succeeds is allowed to suppress a local release build.
-const shouldBuild = forceBuild || submittedFingerprint !== fingerprint;
-
-const outputPath = args.get("github-output") || NodeProcess.env.GITHUB_OUTPUT;
-const lines = [
-  `fingerprint=${fingerprint}`,
-  `last_runtime_version=${submittedFingerprint}`,
-  `submitted_fingerprint=${submittedFingerprint}`,
-  `should_build=${shouldBuild ? "true" : "false"}`,
-];
-
-if (outputPath) {
-  NodeFS.appendFileSync(outputPath, `${lines.join("\n")}\n`);
-}
-
-for (const line of lines) {
-  NodeProcess.stdout.write(`${line}\n`);
-}
-
-if (forceBuild) {
-  NodeProcess.stdout.write(`Forcing a native ${platform} build (mode=build).\n`);
-} else if (shouldBuild) {
-  NodeProcess.stdout.write(
-    `${platform} runtime fingerprint changed (${submittedFingerprint || "none"} -> ${fingerprint}).\n`,
+export function buildRuntimeVersion(build) {
+  const fingerprint = build?.fingerprint;
+  return (
+    nonEmptyString(build?.runtimeVersion) ||
+    nonEmptyString(fingerprint?.hash) ||
+    nonEmptyString(fingerprint) ||
+    nonEmptyString(build?.metadata?.runtimeVersion) ||
+    nonEmptyString(build?.metadata?.fingerprintHash) ||
+    nonEmptyString(build?.metadata?.fingerprint)
   );
-} else {
-  NodeProcess.stdout.write(
-    `${platform} runtime fingerprint ${fingerprint} already has a production binary; skipping native build.\n`,
+}
+
+export function archiveUrlFor(build) {
+  return (
+    nonEmptyString(build?.artifacts?.applicationArchiveUrl) ||
+    nonEmptyString(build?.artifacts?.buildUrl)
   );
+}
+
+export function isFinishedProductionIosBuild(build) {
+  if (!build || typeof build !== "object") return false;
+  if (!nonEmptyString(build.id)) return false;
+  const status = nonEmptyString(build.status).toLowerCase();
+  if (status !== "finished") return false;
+  const platform = nonEmptyString(build.platform || build.appPlatform).toUpperCase();
+  if (platform && platform !== "IOS") return false;
+  const profile = nonEmptyString(build.buildProfile || build.profile);
+  if (profile && profile !== "production") return false;
+  return true;
+}
+
+// A finished hosted IPA is not TestFlight delivery proof. It is a binary we
+// can download and submit without spending another Expo cloud-build credit.
+export function selectReusableCloudIpa(builds, fingerprint) {
+  const expected = nonEmptyString(fingerprint);
+  if (!expected) return { reuseBuildId: "", reuseArtifactUrl: "" };
+  const match = asBuildList(builds).find(
+    (build) => isFinishedProductionIosBuild(build) && buildRuntimeVersion(build) === expected,
+  );
+  if (!match) return { reuseBuildId: "", reuseArtifactUrl: "" };
+  return {
+    reuseBuildId: nonEmptyString(match.id),
+    reuseArtifactUrl: archiveUrlFor(match),
+  };
+}
+
+function readBuilds(args) {
+  try {
+    if (args.has("builds-file")) {
+      const raw = readBoundedFile(args.get("builds-file"), "Builds file").trim();
+      if (!raw) return [];
+      return asBuildList(readJson(raw, "builds file"));
+    }
+    if (args.has("builds-json")) {
+      const raw = args.get("builds-json") ?? "";
+      if (!raw.trim()) return [];
+      return asBuildList(readJson(raw, "builds JSON"));
+    }
+  } catch {
+    return [];
+  }
+  return [];
+}
+
+function parseArgs(argv) {
+  const args = new Map();
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (!arg.startsWith("--")) continue;
+    const key = arg.slice(2);
+    const next = argv[index + 1];
+    // An empty string is a real value (`--submitted-fingerprint ""`). Treat only
+    // a missing argv slot or another `--flag` as a boolean switch.
+    if (next !== undefined && !next.startsWith("--")) {
+      args.set(key, next);
+      index += 1;
+    } else {
+      args.set(key, "true");
+    }
+  }
+  return args;
+}
+
+export function resolveNativeBuild(argv = NodeProcess.argv.slice(2), env = NodeProcess.env) {
+  const args = parseArgs(argv);
+  const fingerprint = readFingerprintInput(args);
+  const platform = args.get("platform") === "android" ? "Android" : "iOS";
+  const forceBuild = args.get("force") === "true" || args.get("force") === "1";
+  // Local `eas build --local` binaries never appear in `eas build:list`. The
+  // workflow therefore persists the last successfully submitted fingerprint
+  // (`.t3-fork/ios-production-fingerprint`). Automatic `release` skips Xcode
+  // when that hash still matches (OTA already shipped the JS). `--force` is
+  // reserved for explicit `build` / force_ios dispatches.
+  const submittedFingerprint = readSubmittedFingerprint(args);
+  // A hosted EAS build record proves only that an IPA was compiled. This fork has
+  // no hosted auto-submit path, so neither an in-flight nor a finished build can
+  // prove TestFlight delivery. Only the marker written after `eas submit`
+  // succeeds is allowed to suppress a local release build.
+  const shouldBuild = forceBuild || submittedFingerprint !== fingerprint;
+  const reusable = shouldBuild
+    ? selectReusableCloudIpa(readBuilds(args), fingerprint)
+    : {
+        reuseBuildId: "",
+        reuseArtifactUrl: "",
+      };
+
+  const outputPath = args.get("github-output") || env.GITHUB_OUTPUT;
+  const lines = [
+    `fingerprint=${fingerprint}`,
+    `last_runtime_version=${submittedFingerprint}`,
+    `submitted_fingerprint=${submittedFingerprint}`,
+    `should_build=${shouldBuild ? "true" : "false"}`,
+    `reuse_build_id=${reusable.reuseBuildId}`,
+    `reuse_artifact_url=${reusable.reuseArtifactUrl}`,
+  ];
+
+  if (outputPath) {
+    NodeFS.appendFileSync(outputPath, `${lines.join("\n")}\n`);
+  }
+
+  let stdout = `${lines.join("\n")}\n`;
+  if (forceBuild) {
+    stdout += `Forcing a native ${platform} build (mode=build).\n`;
+  } else if (shouldBuild) {
+    stdout += `${platform} runtime fingerprint changed (${submittedFingerprint || "none"} -> ${fingerprint}).\n`;
+    if (reusable.reuseBuildId) {
+      stdout += `Reusing finished EAS cloud IPA ${reusable.reuseBuildId}; not spending another Expo build credit.\n`;
+    }
+  } else {
+    stdout += `${platform} runtime fingerprint ${fingerprint} already has a production binary; skipping native build.\n`;
+  }
+  return stdout;
+}
+
+function main() {
+  NodeProcess.stdout.write(resolveNativeBuild());
+}
+
+const invokedAsMain =
+  Boolean(NodeProcess.argv[1]) &&
+  import.meta.url === NodeURL.pathToFileURL(NodePath.resolve(NodeProcess.argv[1])).href;
+if (invokedAsMain) {
+  main();
 }

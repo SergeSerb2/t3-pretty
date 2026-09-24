@@ -136,7 +136,13 @@ change) get one when the fingerprint changes. TestFlight.app itself only
 lists new IPAs.
 
 Local `eas build --local` IPAs do not create hosted EAS Build records, so
-`eas build:list` alone cannot describe the last submitted binary. After a
+`eas build:list` alone cannot describe the last submitted binary. A
+finished hosted IPA whose runtime already matches the current fingerprint
+can still be downloaded and submitted without spending another Expo build
+credit; the job opens that IPA and refuses submit if the embedded runtime
+does not match. Windows agents read `EXUpdatesRuntimeVersion` from
+`Expo.plist` with `scripts/fork/read-expo-runtime-version.mjs` (XML or
+binary) because they have no macOS `plutil`. After a
 successful TestFlight submit the script commits the fingerprint to
 `.t3-fork/ios-production-fingerprint` and records
 `.t3-fork/ios-native-submit`. Because `main` requires pull requests, the
