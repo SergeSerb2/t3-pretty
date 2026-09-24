@@ -174,10 +174,12 @@ of reporting a green release that shipped nothing. To activate:
    fallbacks.
    Git Bash cannot exec the extensionless `vp` path (exit 126), and may
    also get Permission denied on the agent-tree `vp.exe`. The helper
-   launches `.exe` through `cmd.exe` and copies to a writable bin when
-   spawn or `--version` fails, including Access denied under
-   `C:\buildkite-agent\vite-plus`. It does not reinstall into that
-   prefix when the agent cannot write there.
+   searches `C:\buildkite-agent\vite-plus` for that CLI, launches `.exe`
+   through `cmd.exe`, and copies to a writable bin when spawn or
+   `--version` fails. It never installs into that prefix — even when the
+   directory root looks writable — because the rust launcher writes
+   `.tmp*` under the versioned `1.0.0-rc.0\bin` (BK #2842). `VP_HOME`
+   relocates to `~/.vite-plus` or a job temp first.
    Installed TestFlight binaries poll the fork Expo Updates URL baked into
    the IPA; eas-cli publishes that channel. IPA compilation is local from
    `Xcode.app` or `Xcode-beta.app` when that toolchain is on the agent,

@@ -44,8 +44,9 @@ source "$root/scripts/fork/apple-signing-lock.sh"
 source "$root/scripts/fork/ensure-vite-plus.sh"
 
 # Pin to the agent tree so ensure-vite-plus can find vp.exe (including
-# versioned 1.0.0-rc.0/bin). That prefix may be read-only; the helper
-# reuses the existing CLI and will not reinstall into it.
+# versioned 1.0.0-rc.0/bin). That prefix is search-only: the helper
+# relocates VP_HOME to ~/.vite-plus or a job temp before --version or
+# install, and never writes into C:\buildkite-agent\vite-plus (BK #2842).
 if [[ -z "${VP_HOME:-}" && -d /c/buildkite-agent/vite-plus ]]; then
   export VP_HOME=/c/buildkite-agent/vite-plus
 fi

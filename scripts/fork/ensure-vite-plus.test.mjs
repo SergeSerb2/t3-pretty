@@ -211,6 +211,9 @@ describe("ensure-vite-plus Windows Git Bash", () => {
     assert.include(NodeFS.readFileSync(helper, "utf8"), "exit 126");
     assert.include(NodeFS.readFileSync(helper, "utf8"), "cmd.exe");
     assert.include(NodeFS.readFileSync(helper, "utf8"), "vite_plus_cli_launchable");
+    assert.include(NodeFS.readFileSync(helper, "utf8"), "vite_plus_is_agent_prefix");
+    assert.include(NodeFS.readFileSync(helper, "utf8"), "vite_plus_relocate_home_if_needed");
+    assert.include(NodeFS.readFileSync(helper, "utf8"), "BK #2842");
     assert.include(mobileRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
     assert.include(mobileRelease, "vp i --filter=@t3tools/mobile");
     assert.notInclude(mobileRelease, "T3CODE_FORCE_IOS=");
@@ -354,9 +357,16 @@ vite_plus_resolve_cli vp`,
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
       assert.notInclude(result.stdout, "vp is missing");
       assert.notInclude(result.stderr, "installer ran");
-      const repaired = NodePath.join(tmp, "t3-vite-plus", "bin", "vp.exe");
-      assert.include(result.stdout, repaired);
-      assert.isTrue(NodeFS.existsSync(repaired));
+      const repairedHome = NodePath.join(root, ".vite-plus", "bin", "vp.exe");
+      const repairedTmp = NodePath.join(tmp, "t3-vite-plus", "bin", "vp.exe");
+      assert.isTrue(
+        NodeFS.existsSync(repairedHome) || NodeFS.existsSync(repairedTmp),
+        result.stdout,
+      );
+      assert.ok(
+        result.stdout.includes(repairedHome) || result.stdout.includes(repairedTmp),
+        result.stdout,
+      );
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
@@ -482,6 +492,92 @@ vp --version`,
       assert.notInclude(result.stdout, "Vite+ install failed");
       assert.include(result.stdout, `home=${fallback}`);
       assert.include(result.stdout, "vp.exe fallback");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("relocates off a writable agent prefix before --version so rust does not write .tmp there", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-bk2842-"));
+    try {
+      const agentHome = NodePath.join(root, "buildkite-agent", "vite-plus");
+      const versionedBin = NodePath.join(agentHome, "1.0.0-rc.0", "bin");
+      NodeFS.mkdirSync(versionedBin, { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(versionedBin, "vp.exe"),
+        `#!/bin/bash
+if [[ "\${VP_HOME:-}" == *"/buildkite-agent/vite-plus"* ]]; then
+  echo 'error: Command execution failed: Access is denied. (os error 5) at path "C:/buildkite-agent/vite-plus\\\\1.0.0-rc.0\\\\bin\\\\.tmpTNsNMM"' >&2
+  exit 1
+fi
+echo 'vp.exe relocated'
+`,
+        { mode: 0o755 },
+      );
+      const installer = writeInstaller(
+        root,
+        `echo "installer ran into \${VP_HOME}" >&2
+if [[ "\${VP_HOME}" == *"/buildkite-agent/vite-plus" ]]; then
+  echo 'error: Access is denied. (os error 5) at path "C:/buildkite-agent/vite-plus\\\\1.0.0-rc.0\\\\bin\\\\.tmpTNsNMM"' >&2
+  exit 1
+fi
+exit 1`,
+      );
+      const result = runWindowsHelper({
+        home: root,
+        path: "/usr/bin:/bin",
+        installer,
+        env: { VP_HOME: agentHome },
+        body: `ensure_vite_plus "to publish mobile OTA"
+printf 'home=%s\\n' "$(vite_plus_home)"
+vp --version`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.include(result.stdout, "is not writable");
+      assert.include(result.stdout, NodePath.join(root, ".vite-plus"));
+      assert.notInclude(result.stdout, `installing Vite+ into ${agentHome}`);
+      assert.notInclude(result.stderr, "installer ran");
+      assert.include(result.stdout, `home=${NodePath.join(root, ".vite-plus")}`);
+      assert.include(result.stdout, "vp.exe relocated");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("installs into a user prefix when the writable agent tree has no launchable vp", () => {
+    const root = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-bk2842-miss-"),
+    );
+    try {
+      const agentHome = NodePath.join(root, "buildkite-agent", "vite-plus");
+      const fallback = NodePath.join(root, ".vite-plus");
+      NodeFS.mkdirSync(NodePath.join(agentHome, "1.0.0-rc.0", "bin"), { recursive: true });
+      const installer = writeInstaller(
+        root,
+        `if [[ "\${VP_HOME}" == *"/buildkite-agent/vite-plus" ]]; then
+  echo 'error: Access is denied. (os error 5) at path "C:/buildkite-agent/vite-plus\\\\1.0.0-rc.0\\\\bin\\\\.tmpTNsNMM"' >&2
+  exit 1
+fi
+mkdir -p "\${VP_HOME}/bin"
+printf '%s\\n' '#!/bin/bash' 'echo vp.exe user prefix' > "\${VP_HOME}/bin/vp.exe"
+chmod +x "\${VP_HOME}/bin/vp.exe"`,
+      );
+      const result = runWindowsHelper({
+        home: root,
+        path: "/usr/bin:/bin",
+        installer,
+        env: { VP_HOME: agentHome },
+        body: `ensure_vite_plus "to publish mobile OTA"
+printf 'home=%s\\n' "$(vite_plus_home)"
+vp --version`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.include(result.stdout, "is not writable");
+      assert.include(result.stdout, fallback);
+      assert.notInclude(result.stdout, `installing Vite+ into ${agentHome}`);
+      assert.notInclude(result.stderr, "Access is denied");
+      assert.include(result.stdout, `home=${fallback}`);
+      assert.include(result.stdout, "vp.exe user prefix");
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }

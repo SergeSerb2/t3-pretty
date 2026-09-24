@@ -11,8 +11,10 @@
 # `.exe` via `cmd.exe //c` (same as `.cmd`/`.bat`) and copy to a writable
 # bin when that path cannot be executed. windows-release already ships
 # official Vite+ under `C:\buildkite-agent\vite-plus` (`bin\vp.exe` and/or
-# a versioned `1.0.0-rc.0\bin\vp.exe`). Do not reinstall into that prefix
-# when it is not writable (BK #2834 Access denied).
+# a versioned `1.0.0-rc.0\bin\vp.exe`). That prefix is search-only: the
+# rust launcher writes `.tmp*` under the versioned bin, so a writable
+# root is not an install target (BK #2842). Relocate VP_HOME to
+# ~/.vite-plus or a job temp before --version or install.
 #
 # Tests set T3CODE_VITE_PLUS_INSTALLER to a controlled script so this block
 # can run without hitting the network.
@@ -40,22 +42,99 @@ vite_plus_dir_writable() {
   return 0
 }
 
-# Prefer ~/.vite-plus, then a job temp, when the pinned agent prefix cannot
-# be written (LocalSystem vs an admin-owned C:\buildkite-agent\vite-plus).
+vite_plus_unix_dir() {
+  local dir="${1:-}"
+  [[ -n "$dir" ]] || return 1
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -u "$dir"
+    return
+  fi
+  dir="${dir//\\//}"
+  printf '%s\n' "${dir%/}"
+}
+
+# C:\buildkite-agent\vite-plus is the NSIS agent tree. Jobs may write a
+# probe file at the root and still get Access denied in 1.0.0-rc.0/bin
+# (BK #2842). Never treat it as VP_HOME for --version or install.
+vite_plus_is_agent_prefix() {
+  local dir
+  dir="$(vite_plus_unix_dir "${1:-}" 2>/dev/null || true)"
+  [[ -n "$dir" ]] || return 1
+  dir="${dir%/}"
+  case "$dir" in
+    /c/buildkite-agent/vite-plus | [cC]:/buildkite-agent/vite-plus | */buildkite-agent/vite-plus)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+# Official Vite+ writes .tmp* next to the versioned vp.exe. A writable
+# VP_HOME root is not enough when that bin is locked.
+vite_plus_versioned_bins_writable() {
+  local dir="$1"
+  local version_dir
+  [[ -d "$dir" ]] || return 0
+  for version_dir in "${dir}"/*; do
+    [[ -d "${version_dir}/bin" ]] || continue
+    case "$(basename "$version_dir")" in
+      bin | current | cache | data | config | state | package_manager) continue ;;
+    esac
+    vite_plus_dir_writable "${version_dir}/bin" || return 1
+  done
+  return 0
+}
+
+vite_plus_home_is_install_target() {
+  local dir="$1"
+  if vite_plus_is_agent_prefix "$dir"; then
+    return 1
+  fi
+  vite_plus_dir_writable "$dir" || return 1
+  vite_plus_versioned_bins_writable "$dir"
+}
+
+vite_plus_temp_homes() {
+  local raw unix
+  for raw in \
+    "${TMPDIR:-}" \
+    "${TEMP:-}" \
+    "${TMP:-}"; do
+    [[ -n "$raw" ]] || continue
+    unix="$(vite_plus_unix_dir "$raw" || true)"
+    [[ -n "$unix" ]] || continue
+    printf '%s\n' "${unix}/t3-vite-plus"
+  done
+  if [[ -n "${LOCALAPPDATA:-}" ]]; then
+    unix="$(vite_plus_unix_dir "${LOCALAPPDATA}/Temp" || true)"
+    if [[ -n "$unix" ]]; then
+      printf '%s\n' "${unix}/t3-vite-plus"
+    fi
+  fi
+  if [[ -z "${TMPDIR:-}${TEMP:-}${TMP:-}" ]]; then
+    printf '%s\n' "/tmp/t3-vite-plus"
+  fi
+}
+
+# Prefer the current VP_HOME when it can be installed into, then
+# ~/.vite-plus, then job temps. Never emit the agent prefix (BK #2842).
 # Print every usable home so a copy can skip dest==src and try the next.
 vite_plus_writable_homes() {
-  local candidate locked
-  locked="$(vite_plus_home)"
-  for candidate in \
-    "${HOME}/.vite-plus" \
-    "${TMPDIR:-/tmp}/t3-vite-plus"; do
-    if [[ "$candidate" == "$locked" ]]; then
-      continue
-    fi
-    if vite_plus_dir_writable "$candidate"; then
+  local candidate seen=$'\n'
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    case "$seen" in
+      *$'\n'"$candidate"$'\n'*) continue ;;
+    esac
+    seen="${seen}${candidate}"$'\n'
+    if vite_plus_home_is_install_target "$candidate"; then
       printf '%s\n' "$candidate"
     fi
-  done
+  done < <(
+    printf '%s\n' "$(vite_plus_home)"
+    printf '%s\n' "${HOME}/.vite-plus"
+    vite_plus_temp_homes
+  )
 }
 
 vite_plus_writable_home() {
@@ -83,12 +162,34 @@ vite_plus_writable_bin() {
   return 1
 }
 
-# Agent vite-plus first (NSIS / buildkite-agent.exe style), then VP_HOME.
+# Remember the pinned agent tree after VP_HOME moves to a writable prefix.
+vite_plus_prior_home=""
+
+vite_plus_relocate_home_if_needed() {
+  local current fallback
+  current="$(vite_plus_home)"
+  if vite_plus_home_is_install_target "$current"; then
+    return 0
+  fi
+  fallback="$(vite_plus_writable_home)" || return 1
+  if [[ "$fallback" == "$current" ]]; then
+    return 0
+  fi
+  echo "VP_HOME ${current} is not writable; using ${fallback}"
+  vite_plus_prior_home="$current"
+  export VP_HOME="$fallback"
+}
+
+# Agent vite-plus first (NSIS / buildkite-agent.exe style), then the
+# prefix we relocated away from, then the current VP_HOME.
 vite_plus_windows_search_roots() {
   local home
   home="$(vite_plus_home)"
   printf '%s\n' /c/buildkite-agent/vite-plus
-  if [[ "$home" != /c/buildkite-agent/vite-plus ]]; then
+  if [[ -n "${vite_plus_prior_home:-}" && "$vite_plus_prior_home" != /c/buildkite-agent/vite-plus ]]; then
+    printf '%s\n' "$vite_plus_prior_home"
+  fi
+  if [[ "$home" != /c/buildkite-agent/vite-plus && "$home" != "${vite_plus_prior_home:-}" ]]; then
     printf '%s\n' "$home"
   fi
 }
@@ -100,7 +201,7 @@ vite_plus_windows_search_roots() {
 vite_plus_windows_repair_cli() {
   local src="$1"
   local dest="${src}.exe"
-  local magic writable
+  local magic copied
   [[ -f "$src" ]] || return 1
   if [[ -f "$dest" ]]; then
     printf '%s\n' "$dest"
@@ -112,11 +213,8 @@ vite_plus_windows_repair_cli() {
       printf '%s\n' "$dest"
       return 0
     fi
-    writable="$(vite_plus_writable_bin)" || return 1
-    dest="${writable}/$(basename "$src").exe"
-    mkdir -p "$writable" || return 1
-    cp "$src" "$dest" || return 1
-    printf '%s\n' "$dest"
+    copied="$(vite_plus_windows_copy_cli "$src")" || return 1
+    printf '%s\n' "$copied"
     return 0
   fi
   if [[ "$magic" == "#!" ]]; then
@@ -384,6 +482,9 @@ vite_plus_cli_available() {
 vite_plus_on_path() {
   local cmd cmd_dir
   export VP_HOME
+  if vite_plus_is_windows; then
+    vite_plus_relocate_home_if_needed || true
+  fi
   VP_HOME="$(vite_plus_home)"
   export PATH="${VP_HOME}/bin:${PATH}"
   if vite_plus_is_windows; then
@@ -418,15 +519,18 @@ vp_is_official() {
 }
 
 install_vite_plus() {
-  local fallback
   export CI="${CI:-true}"
   export VP_HOME
+  if vite_plus_is_windows; then
+    vite_plus_relocate_home_if_needed || {
+      echo "Vite+ install failed; ${VP_HOME} is not writable and no alternate prefix is available." >&2
+      return 1
+    }
+  fi
   VP_HOME="$(vite_plus_home)"
-  if vite_plus_is_windows && ! vite_plus_dir_writable "$VP_HOME"; then
-    fallback="$(vite_plus_writable_home)" || return 1
-    echo "VP_HOME ${VP_HOME} is not writable; installing Vite+ into ${fallback}"
-    VP_HOME="$fallback"
-    export VP_HOME
+  if vite_plus_is_windows && vite_plus_is_agent_prefix "$VP_HOME"; then
+    echo "Vite+ install failed; refusing to install into ${VP_HOME}." >&2
+    return 1
   fi
   if [[ -n "${T3CODE_VITE_PLUS_INSTALLER:-}" ]]; then
     bash "${T3CODE_VITE_PLUS_INSTALLER}"
@@ -438,11 +542,17 @@ install_vite_plus() {
 ensure_vite_plus() {
   local purpose="${1:-to run this job}"
   local fallback
+  if vite_plus_is_windows; then
+    vite_plus_relocate_home_if_needed || {
+      echo "Vite+ install failed; ${VP_HOME} is not writable and no alternate prefix is available." >&2
+      return 1
+    }
+  fi
   vite_plus_on_path
   if vp_is_official; then
     return 0
   fi
-  if vite_plus_is_windows && ! vite_plus_dir_writable "$(vite_plus_home)"; then
+  if vite_plus_is_windows && ! vite_plus_home_is_install_target "$(vite_plus_home)"; then
     fallback="$(vite_plus_writable_home)" || {
       echo "Vite+ install failed; ${VP_HOME} is not writable and no alternate prefix is available." >&2
       return 1
@@ -455,6 +565,10 @@ ensure_vite_plus() {
     fi
   else
     echo "vp is missing; installing Vite+ into ${VP_HOME}"
+  fi
+  if vite_plus_is_windows && vite_plus_is_agent_prefix "$(vite_plus_home)"; then
+    echo "Vite+ install failed; refusing to install into $(vite_plus_home)." >&2
+    return 1
   fi
   if ! install_vite_plus; then
     echo "Vite+ install failed; vp is required ${purpose}." >&2
