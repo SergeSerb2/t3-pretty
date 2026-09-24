@@ -135,7 +135,6 @@ export function FixAllFindingsDialog({
                 lockedProvider={null}
                 instanceEntries={instanceEntries}
                 modelOptionsByInstance={modelOptionsByInstance}
-                triggerVariant="outline"
                 triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
                 triggerAriaLabel="Agent"
                 onInstanceModelChange={(instanceId, model) => {
@@ -161,7 +160,6 @@ export function FixAllFindingsDialog({
                 modelOptions={selection.options}
                 allowPromptInjectedEffort={false}
                 planModeEnabled={settings.planModeEnabled}
-                triggerVariant="outline"
                 triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
                 onModelOptionsChange={(nextOptions) => {
                   setSelection(

@@ -189,7 +189,6 @@ export function HomeSuggestionsSettingsSection() {
                 lockedProvider={null}
                 instanceEntries={instanceEntries}
                 modelOptionsByInstance={modelOptionsByInstance}
-                triggerVariant="outline"
                 triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
                 triggerAriaLabel="Home suggestions model"
                 {...(mixedModel ? { triggerLabel: "Mixed" } : {})}
@@ -229,7 +228,6 @@ export function HomeSuggestionsSettingsSection() {
                   modelOptions={selection.options}
                   allowPromptInjectedEffort={false}
                   planModeEnabled={settings.planModeEnabled}
-                  triggerVariant="outline"
                   triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
                   onModelOptionsChange={(nextOptions) => {
                     updateSettings({
