@@ -671,3 +671,36 @@ Content: `.github/workflows/release.yml`, `apps/desktop/src/window/DesktopWindow
 ## Follow-up compile fix (no text conflict)
 
 Parent `#13064` auto-merged timeout-eviction call sites that still keyed `clients` by `clientId` and called `disconnect(clientId, queue, true)`. Pretty scopes hosts with `clientConnectionKey(environmentId, clientId)` and `disconnect(identity, queue, completeStream)`. Unanswered hosts were never evicted, so the new eviction tests hung. Adapted the live-generation lookup and timeout disconnect to the Pretty identity.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260924.2200` (`b2b43bef7`, `fix(server): preserve racy edits in review diff previews (#12613)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260924.2187`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2858. Scheduled sync on `0f8b9d675` merged `origin/main` cleanly, then hit one content conflict in `docs/operations/observability.md`. CLIProxyAPI `gpt-5.6-sol` returned `model_cooldown` / `usage_limit_reached` for 8/8 attempts. This integrate does not wait for Sol.
+- Merge base vs Origin `main` (`0f8b9d675`): `78af372cf` (2187). Origin #700 merge-committed 2187, so 2187 is an ancestor of `main`. Parent 2187..2200 is 3 commits / 20 files.
+
+## Conflicted paths
+
+Content: `docs/operations/observability.md`.
+
+`.github/workflows/*` was unchanged by this nightly and remains Pretty's trusted tree.
+
+## Clean-merged parent changes (no text conflict)
+
+- OpenTelemetry kill switch (`#13355`): `packages/shared/src/otelEnvironment.ts` plus server/desktop honor `T3CODE_OTEL_SDK_DISABLED` / `OTEL_SDK_DISABLED`. Auto-merge kept Pretty bounded settings reads, positive config ints, HTTP-trace redaction, and desktop backend-log cache recovery.
+- Review-diff previews preserve racily clean working-tree edits (`#12613`) by rounding the temp-index copy mtime down before Git reads it.
+- Vouched list adds `scratchyone` (`#13353`).
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `docs/operations/observability.md` — Pretty's `T3CODE_LOG_PROVIDER_EVENTS_VERBOSE` provider-event log documentation stays in the Env Vars section.
+
+## Parent changes integrated at conflict boundaries
+
+- `docs/operations/observability.md` — Parent's "The Kill Switch" section documents `T3CODE_OTEL_SDK_DISABLED` winning over `OTEL_SDK_DISABLED`, boolean spellings, and the spec-only `true` for `OTEL_SDK_DISABLED`.
+
+## Parent changes intentionally omitted
+
+- None. The resolver did not omit any parent change to protect T3 Pretty.
