@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260924.2213002881",
+    date: "2026-09-24",
+    items: [
+      {
+        kind: "fixed",
+        title: "Expo Updates ErrorRecovery from aborting tip launch",
+      },
+      {
+        kind: "fixed",
+        title: "Home item groups from constructing Xcode 27 glass",
+      },
+      {
+        kind: "fixed",
+        title: "Xcode 27 glass chrome from constructing on Home launch",
+      },
+      {
+        kind: "fixed",
+        title: "IOS Home from constructing Xcode 27 glass chrome on open",
+      },
+      {
+        kind: "fixed",
+        title: "Linux AppImage floor accepts single-quoted feed versions",
+      },
+      {
+        kind: "new",
+        title: "Animate everyday thread actions",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260924.2213002878",
     date: "2026-09-24",
     items: [
