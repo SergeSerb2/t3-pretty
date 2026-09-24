@@ -17,7 +17,7 @@ describe("home hero composer layout", () => {
   });
 
   it("keeps the prompt scrolling inside the composer instead of growing the page", () => {
-    expect(composerEditorSource).toContain("max-h-50");
+    expect(composerEditorSource).toContain("max-h-52");
     expect(composerEditorSource).toContain("overflow-y-auto");
     expect(composerEditorSource).toContain("overscroll-contain");
   });

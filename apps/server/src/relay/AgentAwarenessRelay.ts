@@ -319,8 +319,13 @@ export function resolveAgentAwarenessRelayPublishSnapshot(input: {
   };
 }
 
+function terminalWorkSinceStart(thread: OrchestrationThreadShell, startedAt: number): boolean {
+  return Date.parse(thread.latestTurn?.completedAt ?? "") > startedAt;
+}
+
 export function resolveAgentAwarenessRelayActiveThreadIds(input: {
   readonly environmentId: EnvironmentId;
+  readonly startedAt: number;
   readonly projects: ReadonlyArray<Pick<OrchestrationProjectShell, "id" | "title">>;
   readonly threads: ReadonlyArray<OrchestrationThreadShell>;
 }): ReadonlyArray<ThreadId> {
@@ -331,12 +336,16 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
       if (!project) {
         return false;
       }
+      const relayState = awarenessForRelayThread({
+        environmentId: input.environmentId,
+        project,
+        thread,
+      });
       return (
-        awarenessForRelayThread({
-          environmentId: input.environmentId,
-          project,
-          thread,
-        }) !== null
+        relayState !== null &&
+        (relayState.phase !== "completed" && relayState.phase !== "failed"
+          ? true
+          : terminalWorkSinceStart(thread, input.startedAt))
       );
     })
     .map((thread) => thread.id);
@@ -350,6 +359,7 @@ export const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
   const crypto = yield* Crypto.Crypto;
   const cloudLinkKeyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets);
+  const startedAt = (yield* DateTime.now).epochMilliseconds;
   const activeSnapshotPublishedRef = yield* Ref.make(false);
   const publishedStateByThreadRef = yield* Ref.make(new Map<ThreadId, string>());
   const confirmationScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
@@ -464,6 +474,14 @@ export const make = Effect.gen(function* () {
       // tombstone path below clears the card when it goes quiet again.
       return;
     }
+    if (
+      (snapshot.state?.phase === "completed" || snapshot.state?.phase === "failed") &&
+      !publishedStateByThread.has(threadId)
+    ) {
+      // Startup has no publish history. Only work from this server process may
+      // produce an initial terminal alert; historical threads remain quiet.
+      if (Option.isNone(thread) || !terminalWorkSinceStart(thread.value, startedAt)) return;
+    }
     if (publishedStateByThread.get(threadId) === publishIdentity) {
       // The projection is back at (or never left) the last published state, so
       // any pending deferred confirmation is moot. Leaving the deadline in
@@ -540,9 +558,14 @@ export const make = Effect.gen(function* () {
       state: snapshot.state,
       reason: snapshot.reason,
     });
-    yield* Ref.update(publishedStateByThreadRef, (publishedStates) =>
-      upsertBoundedPublishedState(publishedStates, threadId, publishIdentity),
-    );
+    yield* Ref.update(publishedStateByThreadRef, (publishedStates) => {
+      if (snapshot.state === null) {
+        const nextPublishedStates = new Map(publishedStates);
+        nextPublishedStates.delete(threadId);
+        return nextPublishedStates;
+      }
+      return upsertBoundedPublishedState(publishedStates, threadId, publishIdentity);
+    });
   });
 
   const publishThread: AgentAwarenessRelay["Service"]["publishThread"] = (threadId) =>
@@ -575,6 +598,7 @@ export const make = Effect.gen(function* () {
     const snapshot = yield* snapshotQuery.getShellSnapshot();
     const activeThreadIds = resolveAgentAwarenessRelayActiveThreadIds({
       environmentId,
+      startedAt,
       projects: snapshot.projects,
       threads: snapshot.threads,
     });

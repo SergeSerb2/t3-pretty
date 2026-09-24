@@ -624,3 +624,50 @@ Modify/delete: `.github/workflows/mobile-eas-preview.yml` (parent modified; Pret
 
 - `.github/workflows/mobile-eas-preview.yml` — Parent added an EAS env:pull `GITHUB_ENV` export for Android Google Services. Reason: T3 Pretty deleted this GitHub workflow; the fork owns release/preview automation on Origin/Buildkite.
 - `.github/workflows/mobile-showcase-screenshots.yml` — Parent installed AXe to lock the simulator and answer the notification prompt. Reason: fork-owned workflow tree is restored from Pretty `main`. The agent-activity capture code in `scripts/mobile-showcase.ts` still landed.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260924.2187` (`78af372cf`, `feat(web): add an interactive 3D device workspace (#12787)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260923.2173`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2845. Scheduled sync on `583b3ce6e` aborted once on a dirty `packages/contracts/src/previewAutomation.ts` (lint-staged), retried with full objects, then hit five content conflicts. CLIProxyAPI `gpt-5.6-sol` returned `model_cooldown` / `usage_limit_reached` for 8/8 attempts. This integrate does not wait for Sol.
+- Merge base vs Origin `main` (`583b3ce6e`): `68fb7f4b8` (2173). Origin #691 merge-committed 2173, so 2173 is an ancestor of `main`. Parent 2173..2187 is 11 commits / 80 files. Conflicts are the 5 Pretty-divergent paths that nightly also touched — not a squash-merge replay.
+
+## Conflicted paths
+
+Content: `.github/workflows/release.yml`, `apps/desktop/src/window/DesktopWindow.ts`, `apps/desktop/src/window/DesktopWindow.test.ts`, `apps/server/src/relay/AgentAwarenessRelay.ts`, `apps/web/src/components/ComposerPromptEditorTiptap.tsx`.
+
+`.github/workflows/*` was restored from `origin/main` after the merge, matching `scripts/fork/run-upstream-sync.sh`. Parent release-test sharding in `release.yml` is omitted.
+
+## Clean-merged parent changes (no text conflict)
+
+- Interactive 3D device workspace (`#12787`): client-runtime device framing/motion/viewer plus web `DeviceWorkspace` / phone viewport / GLB models.
+- Desktop trackpad scroll-end IPC for the 3D viewer (`#13286` SnapShot Dock-icon fix also landed).
+- Composer chip-ring overflow padding (`#13301`), switch `aria-checked` only when mixed (`#11580`), previous-worktree branch on a second line (`#13314`), brain icon for effort (`#13309`).
+- Preview automation uses the visible browser for new agent sessions (`#13064`).
+- Provider compatibility ranges restored for every harness (`#13328`).
+- Relay awareness: stop replaying historical terminal alerts on restart (`#13340`).
+- Shared CSV preview keeps a final quoted empty record (`#11425`).
+- Parent CI release-test sharding (`#13321`) lives only in omitted parent workflows.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/desktop/src/window/DesktopWindow.ts` / `.test.ts` — Pretty `WINDOW_ACTIVE_STATE_CHANNEL` (key-window active state for chrome / Dock) stays; parent `TRACKPAD_SCROLL_END_CHANNEL` is imported beside it.
+- `apps/web/src/components/ComposerPromptEditorTiptap.tsx` — Pretty `w-full` and `overscroll-contain` stay so the prompt scrolls inside the composer instead of the page.
+- `apps/server/src/relay/AgentAwarenessRelay.ts` — Pretty `awarenessForRelayThread` (mute quiet automation runs) and bounded published-state upsert stay.
+- `.github/workflows/*` — Pretty's trusted workflow tree stays; parent `release.yml` test sharding is not imported.
+
+## Parent changes integrated at conflict boundaries
+
+- Desktop forwards native `gestureScrollEnd` to the renderer for the 3D device workspace.
+- Composer editor uses `-m-1 p-1` plus compensatory `max-h-52` / `min-h-19.5` so chip focus rings are not clipped at the overflow edge.
+- Relay startup catch-up and first-publish skip historical `completed`/`failed` threads unless `terminalWorkSinceStart`. Tombstones delete the thread from the published map; live states still go through Pretty's bounded upsert.
+
+## Parent changes intentionally omitted
+
+- `.github/workflows/release.yml` — Parent sharded release tests like pull-request CI (`#13321`). Reason: T3 Pretty owns `.github/workflows/*`; release automation runs on Origin/Buildkite, not parent GitHub Actions.
+
+## Follow-up compile fix (no text conflict)
+
+Parent `#13064` auto-merged timeout-eviction call sites that still keyed `clients` by `clientId` and called `disconnect(clientId, queue, true)`. Pretty scopes hosts with `clientConnectionKey(environmentId, clientId)` and `disconnect(identity, queue, completeStream)`. Unanswered hosts were never evicted, so the new eviction tests hung. Adapted the live-generation lookup and timeout disconnect to the Pretty identity.
