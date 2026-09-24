@@ -10,9 +10,9 @@ describe("isNativeMailSearchToolbarSupported", () => {
     expect(isNativeMailSearchToolbarSupported(false, "ios", "26.0")).toBe(false);
   });
 
-  it("is on for iOS 26 liquid glass", () => {
-    expect(isNativeMailSearchToolbarSupported(true, "ios", "26.1")).toBe(true);
-    expect(isNativeMailSearchToolbarSupported(true, "ios", 26)).toBe(true);
+  it("is off on iOS 26 after the Xcode 27 TestFlight 159 launch abort", () => {
+    expect(isNativeMailSearchToolbarSupported(true, "ios", "26.1")).toBe(false);
+    expect(isNativeMailSearchToolbarSupported(true, "ios", 26)).toBe(false);
   });
 
   it("is off on iOS 27 where UIGlassEffect selectors have churned", () => {

@@ -1,23 +1,18 @@
-export function iosMajorVersion(os: string, version: number | string): number {
-  if (os !== "ios") {
-    return 0;
-  }
-  if (typeof version === "number") {
-    return Math.floor(version);
-  }
-  const major = Number.parseInt(String(version).split(".")[0] ?? "", 10);
-  return Number.isFinite(major) ? major : 0;
-}
+export { iosMajorVersion } from "../../lib/native-glass-capability";
 
 /**
- * iOS 27 betas have churned UIGlassEffect / glassButtonConfiguration.
- * The patched mail toolbar constructs both on the first Home frame, so a
- * missing selector kills the process before React or expo-updates can recover.
+ * The patched mail toolbar constructs UIGlassEffect and
+ * glassButtonConfiguration on the first Home frame with no
+ * respondsToSelector. TestFlight 159 is the first IPA compiled with local
+ * Xcode 27; that SDK/runtime churned those selectors, so an iOS 26 device
+ * aborts launch the same way iOS 27 already did. Home already falls back to
+ * headerSearchBarOptions + NativeHeaderToolbar. Keep this off until the RNS
+ * patch guards the selectors and a new IPA ships.
  */
 export function isNativeMailSearchToolbarSupported(
-  liquidGlassSupported: boolean,
-  os: string,
-  version: number | string,
+  _liquidGlassSupported: boolean,
+  _os: string,
+  _version: number | string,
 ): boolean {
-  return liquidGlassSupported && os === "ios" && iosMajorVersion(os, version) < 27;
+  return false;
 }
