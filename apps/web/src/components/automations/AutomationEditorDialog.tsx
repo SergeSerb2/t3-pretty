@@ -466,7 +466,6 @@ export function AutomationEditorDialog({
                     instanceEntries={instanceEntries}
                     modelOptionsByInstance={modelOptionsByInstance}
                     disabled={draft.modelSelection === null}
-                    triggerVariant="outline"
                     triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
                     onInstanceModelChange={(instanceId, model) =>
                       patch({ modelSelection: createModelSelection(instanceId, model) })
