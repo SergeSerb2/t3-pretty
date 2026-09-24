@@ -106,7 +106,10 @@ job compiles on EAS cloud (`eas build --wait --json`, no `--local`) instead
 of failing. Set
 `T3CODE_IOS_LOCAL_XCODE=1` on a rebuild to require local Xcode. Set
 `T3CODE_IOS_ALLOW_EAS_CLOUD=1` to force cloud even when Xcode is present.
-OTA (`eas update`) is unchanged and is also Linux- and Windows-capable. Tip packaging
+OTA is Linux- and Windows-capable. On `windows-release` the job exports
+with `vp exec expo export` (no `--dump-sourcemap`) and publishes with
+`eas update --skip-bundler`, because Expo's persist can die with Windows
+exit 5 while writing the listed `.hbc.map` files (BK #2849). Tip packaging
 allows at most two iOS Expo spends (a production OTA or a production-profile
 cloud IPA) per America/Vancouver calendar day. The counter is Expo itself:
 `scripts/fork/ios-expo-daily-cap.mjs` lists today's production iOS EAS

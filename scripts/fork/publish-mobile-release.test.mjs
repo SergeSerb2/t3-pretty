@@ -558,12 +558,452 @@ describe("iOS publish Xcode selection", () => {
     assert.include(mobileRelease, "America/Vancouver");
     assert.isBelow(
       mobileRelease.indexOf("ios_expo_cap_blocks update"),
-      mobileRelease.indexOf("        eas update \\"),
+      mobileRelease.indexOf('publish_production_ota "$update_platform" "$update_message"'),
     );
     assert.isBelow(
       mobileRelease.indexOf("ios_expo_cap_blocks build"),
       mobileRelease.indexOf("    eas build \\"),
     );
+  });
+});
+
+function extractWindowsOtaHelpers() {
+  const windowsHost = mobileRelease.match(/ios_is_windows_host\(\) \{\n[\s\S]*?\n\}/);
+  const assertDist = mobileRelease.match(/assert_mobile_export_dist\(\) \{\n[\s\S]*?\n\}/);
+  const exportBundle = mobileRelease.match(/export_mobile_bundle_for_ota\(\) \{\n[\s\S]*?\n\}/);
+  const runUpdate = mobileRelease.match(/run_eas_update\(\) \{\n[\s\S]*?\n\}/);
+  const publish = mobileRelease.match(/publish_production_ota\(\) \{\n[\s\S]*?\n\}/);
+  assert.ok(windowsHost, "ios_is_windows_host missing");
+  assert.ok(assertDist, "assert_mobile_export_dist missing");
+  assert.ok(exportBundle, "export_mobile_bundle_for_ota missing");
+  assert.ok(runUpdate, "run_eas_update missing");
+  assert.ok(publish, "publish_production_ota missing");
+  return {
+    windowsHost: windowsHost[0],
+    assertDist: assertDist[0],
+    exportBundle: exportBundle[0],
+    runUpdate: runUpdate[0],
+    publish: publish[0],
+  };
+}
+
+function runWindowsHost(uname) {
+  const { windowsHost } = extractWindowsOtaHelpers();
+  const result = NodeChildProcess.spawnSync(
+    "bash",
+    ["-c", `${windowsHost}\nios_is_windows_host "$1"`, "windows-host", uname],
+    { encoding: "utf8" },
+  );
+  return result.status === 0;
+}
+
+function runWindowsHostDetected({ uname, envHost, iosHost } = {}) {
+  const { windowsHost } = extractWindowsOtaHelpers();
+  const script = [
+    "unset ios_host T3CODE_IOS_WINDOWS_HOST || true",
+    iosHost === undefined ? "" : `ios_host=${JSON.stringify(iosHost)}`,
+    envHost === undefined ? "" : `export T3CODE_IOS_WINDOWS_HOST=${JSON.stringify(envHost)}`,
+    uname === undefined ? "" : `uname() { printf '%s\\n' ${JSON.stringify(uname)}; }`,
+    windowsHost,
+    "ios_is_windows_host",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const result = NodeChildProcess.spawnSync("bash", ["-c", script], { encoding: "utf8" });
+  return result.status === 0;
+}
+
+function makeExportDist(root, { ios = true, android = true, metadata = true } = {}) {
+  const dir = NodePath.join(root, "apps", "mobile", "dist");
+  NodeFS.mkdirSync(dir, { recursive: true });
+  if (ios) {
+    NodeFS.mkdirSync(NodePath.join(dir, "_expo", "static", "js", "ios"), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(dir, "_expo", "static", "js", "ios", "index.hbc"), "hbc");
+  }
+  if (android) {
+    NodeFS.mkdirSync(NodePath.join(dir, "_expo", "static", "js", "android"), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(dir, "_expo", "static", "js", "android", "index.hbc"),
+      "hbc",
+    );
+  }
+  if (metadata) NodeFS.writeFileSync(NodePath.join(dir, "metadata.json"), "{}\n");
+  return dir;
+}
+
+function assertExportDist(dir, platform) {
+  const { assertDist } = extractWindowsOtaHelpers();
+  return NodeChildProcess.spawnSync(
+    "bash",
+    ["-c", `${assertDist}\nassert_mobile_export_dist "$1" "$2"`, "assert-dist", platform, dir],
+    { encoding: "utf8" },
+  );
+}
+
+describe("Windows OTA persist without dump-sourcemap", () => {
+  it("treats Git Bash hosts as Windows and leaves Darwin/Linux on stock eas update", () => {
+    assert.isTrue(runWindowsHost("MINGW64_NT-10.0-26340"));
+    assert.isTrue(runWindowsHost("MSYS_NT-10.0"));
+    assert.isTrue(runWindowsHost("CYGWIN_NT-10.0"));
+    assert.isFalse(runWindowsHost("Linux"));
+    assert.isFalse(runWindowsHost("Darwin"));
+    assert.isTrue(runWindowsHostDetected({ uname: "MINGW64_NT-10.0-26340" }));
+    assert.isTrue(runWindowsHostDetected({ envHost: "1", uname: "Linux" }));
+    assert.isFalse(runWindowsHostDetected({ uname: "Linux" }));
+    assert.isFalse(runWindowsHostDetected({ uname: "Darwin", iosHost: "MINGW64_NT-10.0-26340" }));
+    assert.include(extractWindowsOtaHelpers().windowsHost, "uname -s");
+    assert.include(extractWindowsOtaHelpers().windowsHost, "T3CODE_IOS_WINDOWS_HOST");
+    assert.include(mobileRelease, "export CI=");
+    assert.include(mobileRelease, "--skip-bundler");
+    assert.include(mobileRelease, "vp exec expo export");
+    assert.include(mobileRelease, "BK #2849");
+    const expoArgv = extractWindowsOtaHelpers().exportBundle.match(
+      /vp exec expo export[\s\S]*?--clear/,
+    )?.[0];
+    assert.ok(expoArgv, "Windows expo export argv missing");
+    assert.include(expoArgv, "--dump-assetmap");
+    assert.notInclude(expoArgv, "--dump-sourcemap");
+    assert.include(extractWindowsOtaHelpers().publish, "ios_is_windows_host");
+    const windowsUpdate = extractWindowsOtaHelpers().publish.match(
+      /run_eas_update "\$platform" "\$message"[^\n]*/,
+    )?.[0];
+    assert.ok(windowsUpdate, "Windows eas update argv missing");
+    assert.include(windowsUpdate, "--skip-bundler");
+    assert.notInclude(windowsUpdate, "--input-dir");
+    assert.include(
+      extractWindowsOtaHelpers().publish,
+      'export_mobile_bundle_for_ota "$platform" &&',
+    );
+    assert.include(extractWindowsOtaHelpers().runUpdate, "eas update flaked; retrying once.");
+    assert.include(extractWindowsOtaHelpers().runUpdate, "ios_is_windows_host");
+  });
+
+  it("refuses skip-bundler when persist listed files but did not write Hermes bundles", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-export-dist-"));
+    try {
+      const listedOnly = makeExportDist(root, { ios: false, android: false, metadata: true });
+      const listed = assertExportDist(listedOnly, "all");
+      assert.notEqual(listed.status, 0);
+      assert.include(listed.stderr, "Hermes bundle");
+
+      const iosOnly = makeExportDist(root, { ios: true, android: false, metadata: true });
+      const missingAndroid = assertExportDist(iosOnly, "all");
+      assert.notEqual(missingAndroid.status, 0);
+      assert.include(missingAndroid.stderr, "android");
+
+      const complete = makeExportDist(root, { ios: true, android: true, metadata: true });
+      const ok = assertExportDist(complete, "all");
+      assert.equal(ok.status, 0, ok.stderr);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("finds Hermes bundles when PATH resolves find to Windows find.exe", () => {
+    const { assertDist } = extractWindowsOtaHelpers();
+    assert.notInclude(assertDist, "$(find ");
+    assert.include(assertDist, "nullglob");
+    assert.include(assertDist, "*.hbc");
+
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-export-find-"));
+    try {
+      const dir = makeExportDist(root);
+      const fakeBin = NodePath.join(root, "fake-bin");
+      NodeFS.mkdirSync(fakeBin);
+      NodeFS.writeFileSync(
+        NodePath.join(fakeBin, "find"),
+        [
+          "#!/usr/bin/env bash",
+          'echo "FIND: Parameter format not correct" >&2',
+          "exit 2",
+          "",
+        ].join("\n"),
+        { mode: 0o755 },
+      );
+      const result = NodeChildProcess.spawnSync(
+        "bash",
+        [
+          "-c",
+          `export PATH="$1:$PATH"\n${assertDist}\nassert_mobile_export_dist "$2" "$3"`,
+          "assert-dist-win-find",
+          fakeBin,
+          "all",
+          dir,
+        ],
+        { encoding: "utf8" },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.notInclude(result.stderr, "Parameter format not correct");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("retries a Windows persist flake once, then skip-bundler publishes the complete dist", () => {
+    const { exportBundle, assertDist, runUpdate, publish, windowsHost } =
+      extractWindowsOtaHelpers();
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-export-retry-"));
+    const log = NodePath.join(root, "calls.log");
+    try {
+      NodeFS.mkdirSync(NodePath.join(root, "apps", "mobile"), { recursive: true });
+      const script = [
+        "set -euo pipefail",
+        `root="$1"`,
+        `TEST_LOG="$2"`,
+        "unset ios_host || true",
+        "export T3CODE_IOS_WINDOWS_HOST=1",
+        "uname() { printf 'Linux\\n'; }",
+        // Count calls in a file: vp runs inside `( cd ... )`, so a shell
+        // variable increment would stay in that subshell and every attempt
+        // would look like the first.
+        "vp() {",
+        '  if [[ "$1" == "exec" && "$2" == "expo" ]]; then',
+        '    n=$(($(cat "$TEST_LOG.vp" 2>/dev/null || printf 0) + 1))',
+        '    printf "%s\\n" "$n" > "$TEST_LOG.vp"',
+        '    printf "expo-export %s\\n" "$n" >> "$TEST_LOG"',
+        "    if (( n == 1 )); then",
+        '      mkdir -p "$root/apps/mobile/dist"',
+        '      printf "{}\\n" > "$root/apps/mobile/dist/metadata.json"',
+        "      return 5",
+        "    fi",
+        '    mkdir -p "$root/apps/mobile/dist/_expo/static/js/ios"',
+        '    mkdir -p "$root/apps/mobile/dist/_expo/static/js/android"',
+        '    printf "{}\\n" > "$root/apps/mobile/dist/metadata.json"',
+        '    printf hbc > "$root/apps/mobile/dist/_expo/static/js/ios/index.hbc"',
+        '    printf hbc > "$root/apps/mobile/dist/_expo/static/js/android/index.hbc"',
+        "    return 0",
+        "  fi",
+        '  echo "unexpected vp: $*" >&2',
+        "  return 1",
+        "}",
+        "eas() {",
+        '  printf "eas %s\\n" "$*" >> "$TEST_LOG"',
+        "  return 0",
+        "}",
+        windowsHost,
+        assertDist,
+        exportBundle,
+        runUpdate,
+        publish,
+        'publish_production_ota all "Production OTA (test)"',
+      ].join("\n");
+      const result = NodeChildProcess.spawnSync("bash", ["-c", script, "win-ota", root, log], {
+        encoding: "utf8",
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      const calls = NodeFS.readFileSync(log, "utf8").trim().split("\n");
+      assert.deepEqual(calls.slice(0, 2), ["expo-export 1", "expo-export 2"]);
+      assert.include(calls[2], "eas update");
+      assert.include(calls[2], "--skip-bundler");
+      assert.notInclude(calls[2], "--input-dir");
+      assert.include(result.stdout, "retrying once without --dump-sourcemap");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not skip-bundler when persist is refused even without set -e", () => {
+    const { exportBundle, assertDist, runUpdate, publish, windowsHost } =
+      extractWindowsOtaHelpers();
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-export-refuse-"));
+    const log = NodePath.join(root, "calls.log");
+    try {
+      NodeFS.mkdirSync(NodePath.join(root, "apps", "mobile"), { recursive: true });
+      const script = [
+        `root="$1"`,
+        `TEST_LOG="$2"`,
+        "unset ios_host || true",
+        "export T3CODE_IOS_WINDOWS_HOST=1",
+        "uname() { printf 'Linux\\n'; }",
+        "vp() {",
+        '  if [[ "$1" == "exec" && "$2" == "expo" ]]; then',
+        '    printf "expo-export\\n" >> "$TEST_LOG"',
+        '    mkdir -p "$root/apps/mobile/dist"',
+        '    printf "{}\\n" > "$root/apps/mobile/dist/metadata.json"',
+        "    return 5",
+        "  fi",
+        '  echo "unexpected vp: $*" >&2',
+        "  return 1",
+        "}",
+        "eas() {",
+        '  printf "eas %s\\n" "$*" >> "$TEST_LOG"',
+        "  return 0",
+        "}",
+        windowsHost,
+        assertDist,
+        exportBundle,
+        runUpdate,
+        publish,
+        'if publish_production_ota all "Production OTA (test)"; then',
+        "  echo published",
+        "  exit 0",
+        "fi",
+        "echo refused",
+        "exit 1",
+      ].join("\n");
+      const result = NodeChildProcess.spawnSync("bash", ["-c", script, "win-ota-refuse", root, log], {
+        encoding: "utf8",
+      });
+      assert.notEqual(result.status, 0);
+      assert.include(`${result.stdout}\n${result.stderr}`, "refusing eas update --skip-bundler");
+      assert.include(result.stdout, "refused");
+      const calls = NodeFS.readFileSync(log, "utf8").trim().split("\n");
+      assert.deepEqual(calls, ["expo-export", "expo-export"]);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps Darwin on eas update with the bundler and does not skip-bundler", () => {
+    const { runUpdate, publish, windowsHost } = extractWindowsOtaHelpers();
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-export-darwin-"));
+    const log = NodePath.join(root, "calls.log");
+    try {
+      NodeFS.mkdirSync(NodePath.join(root, "apps", "mobile"), { recursive: true });
+      const script = [
+        "set -euo pipefail",
+        `root="$1"`,
+        `TEST_LOG="$2"`,
+        "unset ios_host T3CODE_IOS_WINDOWS_HOST || true",
+        "uname() { printf 'Darwin\\n'; }",
+        'vp() { printf "vp %s\\n" "$*" >> "$TEST_LOG"; return 90; }',
+        'eas() { printf "eas %s\\n" "$*" >> "$TEST_LOG"; return 0; }',
+        windowsHost,
+        runUpdate,
+        publish,
+        'publish_production_ota all "Production OTA (test)"',
+      ].join("\n");
+      const result = NodeChildProcess.spawnSync("bash", ["-c", script, "darwin-ota", root, log], {
+        encoding: "utf8",
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      const calls = NodeFS.readFileSync(log, "utf8").trim();
+      assert.include(calls, "eas update");
+      assert.notInclude(calls, "--skip-bundler");
+      assert.notInclude(calls, "vp ");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("retries eas update once on Windows and leaves Darwin single-shot", () => {
+    const { runUpdate, publish, windowsHost } = extractWindowsOtaHelpers();
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-eas-retry-"));
+    const log = NodePath.join(root, "calls.log");
+    const scriptFor = (hostEnv) =>
+      [
+        `root="$1"`,
+        `TEST_LOG="$2"`,
+        hostEnv,
+        "eas() {",
+        '  n=$(($(cat "$TEST_LOG.eas" 2>/dev/null || printf 0) + 1))',
+        '  printf "%s\\n" "$n" > "$TEST_LOG.eas"',
+        '  printf "eas %s\\n" "$*" >> "$TEST_LOG"',
+        "  if (( n == 1 )); then return 1; fi",
+        "  return 0",
+        "}",
+        windowsHost,
+        runUpdate,
+        publish,
+        'if publish_production_ota all "Production OTA (test)"; then',
+        "  echo published",
+        "  exit 0",
+        "fi",
+        "echo refused",
+        "exit 1",
+      ].join("\n");
+    try {
+      NodeFS.mkdirSync(NodePath.join(root, "apps", "mobile"), { recursive: true });
+      const darwin = NodeChildProcess.spawnSync(
+        "bash",
+        [
+          "-c",
+          scriptFor(
+            [
+              "unset ios_host T3CODE_IOS_WINDOWS_HOST || true",
+              "uname() { printf 'Darwin\\n'; }",
+            ].join("\n"),
+          ),
+          "darwin-eas-once",
+          root,
+          `${log}.darwin`,
+        ],
+        { encoding: "utf8" },
+      );
+      assert.notEqual(darwin.status, 0);
+      assert.include(darwin.stdout, "refused");
+      assert.notInclude(darwin.stdout, "retrying once");
+      assert.deepEqual(NodeFS.readFileSync(`${log}.darwin`, "utf8").trim().split("\n"), [
+        "eas update --channel production --environment production --platform all --message Production OTA (test) --non-interactive",
+      ]);
+
+      const win = NodeChildProcess.spawnSync(
+        "bash",
+        [
+          "-c",
+          scriptFor(
+            [
+              "unset ios_host || true",
+              "export T3CODE_IOS_WINDOWS_HOST=1",
+              "uname() { printf 'Linux\\n'; }",
+              "export_mobile_bundle_for_ota() { return 0; }",
+            ].join("\n"),
+          ),
+          "win-eas-retry",
+          root,
+          `${log}.win`,
+        ],
+        { encoding: "utf8" },
+      );
+      assert.equal(win.status, 0, `${win.stdout}\n${win.stderr}`);
+      assert.include(win.stdout, "published");
+      assert.include(win.stdout, "retrying once");
+      const winCalls = NodeFS.readFileSync(`${log}.win`, "utf8").trim().split("\n");
+      assert.equal(winCalls.length, 2);
+      assert.include(winCalls[0], "eas update");
+      assert.include(winCalls[0], "--skip-bundler");
+      assert.include(winCalls[1], "--skip-bundler");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("takes skip-bundler when uname is Git Bash even if ios_host is unset", () => {
+    const { exportBundle, assertDist, runUpdate, publish, windowsHost } =
+      extractWindowsOtaHelpers();
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-export-uname-"));
+    const log = NodePath.join(root, "calls.log");
+    try {
+      NodeFS.mkdirSync(NodePath.join(root, "apps", "mobile"), { recursive: true });
+      const script = [
+        "set -euo pipefail",
+        `root="$1"`,
+        `TEST_LOG="$2"`,
+        "unset ios_host T3CODE_IOS_WINDOWS_HOST || true",
+        "uname() { printf 'MINGW64_NT-10.0-26340\\n'; }",
+        'vp() { echo "unexpected vp: $*" >&2; return 90; }',
+        "eas() {",
+        '  printf "eas %s\\n" "$*" >> "$TEST_LOG"',
+        "  return 0",
+        "}",
+        windowsHost,
+        assertDist,
+        exportBundle,
+        runUpdate,
+        publish,
+        "export_mobile_bundle_for_ota() { return 0; }",
+        'publish_production_ota all "Production OTA (test)"',
+      ].join("\n");
+      const result = NodeChildProcess.spawnSync("bash", ["-c", script, "win-uname-ota", root, log], {
+        encoding: "utf8",
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      const calls = NodeFS.readFileSync(log, "utf8").trim();
+      assert.include(calls, "eas update");
+      assert.include(calls, "--skip-bundler");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

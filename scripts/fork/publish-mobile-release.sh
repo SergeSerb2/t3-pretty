@@ -12,8 +12,12 @@
 # Buildkite does not wait on that queue while holding a Mac signing slot.
 #
 # This job is Linux- and Windows-capable: `eas update` and `eas build`
-# (cloud, no --local) do not need Xcode. When a usable full Xcode is on the
-# agent, local `eas build --local` still saves an Expo IPA credit. Without
+# (cloud, no --local) do not need Xcode. On windows-release, Expo's
+# persistMetroFilesAsync can die with exit 5 while writing the ~70MB
+# --dump-sourcemap .hbc.map pair after listing a complete-looking export
+# (BK #2849). That host exports without dump-sourcemap and publishes with
+# `eas update --skip-bundler`. When a usable full Xcode is on the agent,
+# local `eas build --local` still saves an Expo IPA credit. Without
 # Xcode — including windows-release and review-only Linux — the job uses
 # EAS cloud instead of failing. Force local with T3CODE_IOS_LOCAL_XCODE=1
 # (fails if Xcode is missing). Force cloud with T3CODE_IOS_ALLOW_EAS_CLOUD=1
@@ -61,6 +65,9 @@ export APP_VARIANT="${APP_VARIANT:-production}"
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+# Expo CLI rejects --non-interactive ("use $CI=1 instead"). eas update still
+# passes that flag; CI=1 is what actually keeps export non-interactive.
+export CI="${CI:-1}"
 export T3CODE_MOBILE_UPDATE_URL="${T3CODE_MOBILE_UPDATE_URL:-https://u.expo.dev/1eb51d67-48c5-4100-8aa8-f5ac9e1ada65}"
 export T3CODE_MOBILE_EAS_PROJECT_ID="${T3CODE_MOBILE_EAS_PROJECT_ID:-1eb51d67-48c5-4100-8aa8-f5ac9e1ada65}"
 export T3CODE_MOBILE_EXPO_OWNER="${T3CODE_MOBILE_EXPO_OWNER:-sergeserbinenkoteam}"
@@ -290,6 +297,132 @@ ios_expo_cap_skip_message() {
   fi
   printf '%s\n' \
     "Skipping iOS Expo ${kind}: America/Vancouver daily cap reached (${used:-?}/${limit:-2} on ${day:-unknown}, remaining ${remaining:-0}, store ${store:-expo-api}). Desktop packaging is unaffected."
+}
+
+# windows-release starts as Node on win32 (run-publish-mobile-release.mjs),
+# which sets T3CODE_IOS_WINDOWS_HOST=1, then execs Git Bash. Git Bash
+# uname is MINGW64_NT-*. Ask uname at call time so this does not depend
+# on ios_host being assigned first. Darwin/Linux keep stock eas update.
+ios_is_windows_host() {
+  if [[ -z "${1:-}" && "${T3CODE_IOS_WINDOWS_HOST:-}" == "1" ]]; then
+    return 0
+  fi
+  case "${1:-$(uname -s)}" in
+    MINGW* | MSYS* | CYGWIN*) return 0 ;;
+  esac
+  return 1
+}
+
+# persistMetroFilesAsync prints the inventory from memory, then Promise.all
+# writeFile. A listed metadata.json is not a finished dist. Require the
+# Hermes bundles the OTA actually ships before eas update --skip-bundler.
+assert_mobile_export_dist() {
+  local platform="$1"
+  local dir="${2:-$root/apps/mobile/dist}"
+  local plat
+  local -a bundles
+  if [[ ! -f "$dir/metadata.json" ]]; then
+    echo "expo export did not write $dir/metadata.json." >&2
+    return 1
+  fi
+  case "$platform" in
+    all) set -- ios android ;;
+    ios | android) set -- "$platform" ;;
+    *) return 0 ;;
+  esac
+  # Git Bash on windows-release can resolve `find` to Windows find.exe,
+  # which is not GNU find and will miss Hermes bundles. A bash glob does
+  # not depend on PATH.
+  shopt -s nullglob
+  for plat in "$@"; do
+    bundles=("$dir/_expo/static/js/$plat"/*.hbc)
+    if ((${#bundles[@]} == 0)); then
+      echo "expo export did not write a $plat Hermes bundle under $dir/_expo/static/js/$plat." >&2
+      shopt -u nullglob
+      return 1
+    fi
+  done
+  shopt -u nullglob
+}
+
+# eas update always invokes expo export with --dump-sourcemap. Those two
+# .hbc.map files are ~70MB; persist writes them after listing. On
+# windows-release that write has died with ERROR_ACCESS_DENIED (exit 5)
+# after a complete-looking listing and before "Exported: dist" (BK #2849).
+# Green #2844 printed Exported: dist ~400ms after the same listing. Skip
+# dump-sourcemap so persist does not write the maps, then publish the dist
+# with --skip-bundler. OTA JS still ships; sourcemaps are not required for
+# TestFlight to pick up the bundle. eas-cli --source-maps false is not a
+# workaround: it still passes --dump-sourcemap for compat.
+export_mobile_bundle_for_ota() {
+  local platform="$1"
+  local attempt=0
+  while true; do
+    if (
+      cd "$root/apps/mobile"
+      vp exec expo export \
+        --output-dir dist \
+        --experimental-bundle \
+        --dump-assetmap \
+        --platform "$platform" \
+        --clear
+    ) && assert_mobile_export_dist "$platform"; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    if ((attempt >= 2)); then
+      echo "Could not persist a complete mobile export dist; refusing eas update --skip-bundler." >&2
+      return 1
+    fi
+    echo "Windows expo export flaked while persisting dist; retrying once without --dump-sourcemap."
+  done
+}
+
+run_eas_update() {
+  local platform="$1"
+  local message="$2"
+  local attempt=0
+  shift 2
+  while true; do
+    if (
+      cd "$root/apps/mobile"
+      eas update \
+        --channel production \
+        --environment production \
+        --platform "$platform" \
+        --message "$message" \
+        --non-interactive \
+        "$@"
+    ); then
+      return 0
+    fi
+    # A second eas update on Darwin/Linux can publish twice if the first
+    # call reached Expo. windows-release is the persist/skip-bundler flake
+    # path (BK #2849); stock eas update stays single-shot.
+    if ! ios_is_windows_host; then
+      return 1
+    fi
+    attempt=$((attempt + 1))
+    if ((attempt >= 2)); then
+      return 1
+    fi
+    echo "eas update flaked; retrying once."
+  done
+}
+
+publish_production_ota() {
+  local platform="$1"
+  local message="$2"
+  if ios_is_windows_host; then
+    # eas-cli 24.7.0 `eas update --skip-bundler` reads input dir `dist`
+    # (the export --output-dir) after the apps/mobile cd. Do not pass
+    # --input-dir: that extra flag is not part of the documented
+    # skip-bundler argv and has failed as unknown on some eas builds.
+    export_mobile_bundle_for_ota "$platform" &&
+      run_eas_update "$platform" "$message" --skip-bundler
+  else
+    run_eas_update "$platform" "$message"
+  fi
 }
 
 native_submit_line() {
@@ -814,15 +947,7 @@ if [[ "$MODE" == "update" || "$MODE" == "release" ]]; then
     if ios_expo_cap_blocks update "$expo_cap_report"; then
       annotate warning "$(ios_expo_cap_skip_message update "$expo_cap_report")"
     else
-      (
-        cd apps/mobile
-        eas update \
-          --channel production \
-          --environment production \
-          --platform "$update_platform" \
-          --message "$update_message" \
-          --non-interactive
-      )
+      publish_production_ota "$update_platform" "$update_message"
       echo "Published production OTA for ${update_platform}."
       record_local_ota_publish
     fi

@@ -26,7 +26,10 @@ describe("run-publish-mobile-release launcher", () => {
       "win32",
     );
     assert.equal(windows.T3CODE_IOS_ALLOW_EAS_CLOUD, "1");
+    assert.equal(windows.T3CODE_IOS_WINDOWS_HOST, "1");
+    assert.equal(windows.CI, "1");
     assert.equal(windows.T3CODE_IOS_LOCAL_XCODE, undefined);
+    assert.equal(unix.T3CODE_IOS_WINDOWS_HOST, undefined);
     assert.equal(windows.VP_HOME, undefined);
     assert.include(windows.PATH, "Git\\bin");
     assert.include(windows.PATH, "buildkite-agent\\service");
@@ -42,5 +45,6 @@ describe("run-publish-mobile-release launcher", () => {
       "win32",
     );
     assert.equal(incomingVpHome.VP_HOME, undefined);
+    assert.equal(incomingVpHome.T3CODE_IOS_WINDOWS_HOST, "1");
   });
 });
