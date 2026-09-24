@@ -418,6 +418,10 @@ ${setup}
     assert.include(vitePlus, "MINGW");
     assert.include(vitePlus, "vite_plus_resolve_cli");
     assert.include(vitePlus, "vite_plus_bind_windows_cli");
+    assert.include(vitePlus, "vite_plus_windows_search_roots");
+    assert.include(vitePlus, "vite_plus_windows_list_extensionless");
+    assert.include(vitePlus, "not writable");
+    assert.include(vitePlus, "1.0.0-rc.0");
     assert.include(vitePlus, "exit 126");
     assert.include(mobileRelease, "EXPO_TOKEN is required to publish OTA");
     assert.include(mobileRelease, "eas update");

@@ -7,8 +7,10 @@
 #
 # Windows Git Bash cannot exec the extensionless `vp` path (exit 126) even
 # when `vp.exe` is next to it. windows-release already ships official Vite+
-# as `C:\buildkite-agent\vite-plus\bin\vp.exe`. Prefer that `.exe` / `.cmd`,
-# the same suffix NSIS uses for `buildkite-agent.exe`.
+# under `C:\buildkite-agent\vite-plus` (`bin\vp.exe` and/or a versioned
+# `1.0.0-rc.0\bin\vp.exe`). Prefer that `.exe` / `.cmd` — the same suffix
+# NSIS uses for `buildkite-agent.exe`. Do not reinstall into that prefix
+# when it is not writable (BK #2834 Access denied).
 #
 # Tests set T3CODE_VITE_PLUS_INSTALLER to a controlled script so this block
 # can run without hitting the network.
@@ -24,49 +26,149 @@ vite_plus_is_windows() {
   return 1
 }
 
+vite_plus_dir_writable() {
+  local dir="$1"
+  local probe
+  mkdir -p "$dir" 2>/dev/null || return 1
+  probe="${dir}/.t3-vp-write-$$"
+  if ! (: > "$probe") 2>/dev/null; then
+    return 1
+  fi
+  rm -f "$probe"
+  return 0
+}
+
+# Prefer ~/.vite-plus, then a job temp, when the pinned agent prefix cannot
+# be written (LocalSystem vs an admin-owned C:\buildkite-agent\vite-plus).
+vite_plus_writable_home() {
+  local candidate locked
+  locked="$(vite_plus_home)"
+  for candidate in \
+    "${HOME}/.vite-plus" \
+    "${TMPDIR:-/tmp}/t3-vite-plus"; do
+    if [[ "$candidate" == "$locked" ]]; then
+      continue
+    fi
+    if vite_plus_dir_writable "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+vite_plus_writable_bin() {
+  local home
+  home="$(vite_plus_writable_home)" || return 1
+  printf '%s\n' "${home}/bin"
+}
+
+# Agent vite-plus first (NSIS / buildkite-agent.exe style), then VP_HOME.
+vite_plus_windows_search_roots() {
+  local home
+  home="$(vite_plus_home)"
+  printf '%s\n' /c/buildkite-agent/vite-plus
+  if [[ "$home" != /c/buildkite-agent/vite-plus ]]; then
+    printf '%s\n' "$home"
+  fi
+}
+
 # Git Bash reports `/c/.../bin/vp` and then fails execve without the .exe
 # suffix. Copy a Windows PE that was saved extensionless, or chmod a shebang.
+# In-place copy into a locked agent prefix fails with Access denied; fall
+# back to a writable bin and print the path that can actually be exec'd.
 vite_plus_windows_repair_cli() {
   local src="$1"
   local dest="${src}.exe"
-  local magic
+  local magic writable
   [[ -f "$src" ]] || return 1
-  [[ -f "$dest" ]] && return 0
+  if [[ -f "$dest" ]]; then
+    printf '%s\n' "$dest"
+    return 0
+  fi
   magic="$(head -c 2 "$src" 2>/dev/null || true)"
   if [[ "$magic" == "MZ" ]]; then
-    cp "$src" "$dest"
+    if cp "$src" "$dest" 2>/dev/null; then
+      printf '%s\n' "$dest"
+      return 0
+    fi
+    writable="$(vite_plus_writable_bin)" || return 1
+    dest="${writable}/$(basename "$src").exe"
+    mkdir -p "$writable" || return 1
+    cp "$src" "$dest" || return 1
+    printf '%s\n' "$dest"
     return 0
   fi
   if [[ "$magic" == "#!" ]]; then
     chmod +x "$src" || return 1
+    printf '%s\n' "$src"
     return 0
   fi
   return 1
 }
 
+vite_plus_windows_walk_bins() {
+  local root="$1"
+  local suffix="$2"
+  local candidate version_dir
+  [[ -d "$root" ]] || return 0
+  for candidate in \
+    "${root}/bin/${suffix}" \
+    "${root}/current/bin/${suffix}"; do
+    if [[ -e "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+    fi
+  done
+  # Monolithic Vite+ layout: VP_HOME/<version>/bin/vp.exe
+  for version_dir in "${root}"/*; do
+    [[ -d "${version_dir}/bin" ]] || continue
+    case "$(basename "$version_dir")" in
+      bin | current | cache | data | config | state | package_manager) continue ;;
+    esac
+    candidate="${version_dir}/bin/${suffix}"
+    if [[ -e "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+    fi
+  done
+}
+
+vite_plus_windows_list_cli() {
+  local name="$1"
+  local root="$2"
+  local candidate
+  while IFS= read -r candidate; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+    fi
+  done < <(
+    vite_plus_windows_walk_bins "$root" "${name}.exe"
+    vite_plus_windows_walk_bins "$root" "${name}.cmd"
+  )
+}
+
+vite_plus_windows_list_extensionless() {
+  local name="$1"
+  local root="$2"
+  local candidate
+  while IFS= read -r candidate; do
+    [[ -f "$candidate" ]] || continue
+    if [[ -f "${candidate}.exe" || -f "${candidate}.cmd" ]]; then
+      continue
+    fi
+    printf '%s\n' "$candidate"
+  done < <(vite_plus_windows_walk_bins "$root" "$name")
+}
+
 vite_plus_resolve_cli() {
   local name="$1"
-  local home bin candidate
-  home="$(vite_plus_home)"
-  bin="${home}/bin"
+  local candidate repaired root
   if vite_plus_is_windows; then
-    for candidate in "${bin}/${name}.exe" "${bin}/${name}.cmd"; do
-      if [[ -f "$candidate" ]]; then
+    while IFS= read -r root; do
+      while IFS= read -r candidate; do
         printf '%s\n' "$candidate"
         return 0
-      fi
-    done
-    candidate="${bin}/${name}"
-    if [[ -f "$candidate" ]] && vite_plus_windows_repair_cli "$candidate"; then
-      if [[ -f "${candidate}.exe" ]]; then
-        printf '%s\n' "${candidate}.exe"
-        return 0
-      fi
-      if [[ -x "$candidate" ]]; then
-        printf '%s\n' "$candidate"
-        return 0
-      fi
-    fi
+      done < <(vite_plus_windows_list_cli "$name" "$root")
+    done < <(vite_plus_windows_search_roots)
     candidate="$(command -v "${name}.exe" 2>/dev/null || true)"
     if [[ -n "$candidate" && -f "$candidate" ]]; then
       printf '%s\n' "$candidate"
@@ -77,6 +179,15 @@ vite_plus_resolve_cli() {
       printf '%s\n' "$candidate"
       return 0
     fi
+    while IFS= read -r root; do
+      while IFS= read -r candidate; do
+        repaired="$(vite_plus_windows_repair_cli "$candidate" || true)"
+        if [[ -n "$repaired" && -f "$repaired" ]]; then
+          printf '%s\n' "$repaired"
+          return 0
+        fi
+      done < <(vite_plus_windows_list_extensionless "$name" "$root")
+    done < <(vite_plus_windows_search_roots)
     return 1
   fi
   candidate="$(command -v "$name" 2>/dev/null || true)"
@@ -137,16 +248,32 @@ vite_plus_cli_available() {
 }
 
 vite_plus_on_path() {
+  local cmd cmd_dir
   export VP_HOME
   VP_HOME="$(vite_plus_home)"
   export PATH="${VP_HOME}/bin:${PATH}"
-  vite_plus_bind_windows_cli vp
+  if vite_plus_is_windows; then
+    cmd="$(vite_plus_resolve_cli vp || true)"
+    if [[ -n "$cmd" ]]; then
+      cmd_dir="$(dirname "$cmd")"
+      export PATH="${cmd_dir}:${PATH}"
+    fi
+    vite_plus_bind_windows_cli vp
+  fi
 }
 
 vp_is_official() {
-  local out
+  local out cmd
   if vite_plus_is_windows; then
-    vite_plus_resolve_cli vp >/dev/null || return 1
+    cmd="$(vite_plus_resolve_cli vp)" || return 1
+    case "$cmd" in
+      *.exe | *.cmd | *.bat)
+        # A Windows PE named vp.exe is official Vite+. Do not require
+        # --version: the rust launcher may try to write a temp file under
+        # a locked agent prefix (BK #2834 Access denied).
+        return 0
+        ;;
+    esac
   elif ! command -v vp >/dev/null; then
     return 1
   fi
@@ -157,9 +284,16 @@ vp_is_official() {
 }
 
 install_vite_plus() {
+  local fallback
   export CI="${CI:-true}"
   export VP_HOME
   VP_HOME="$(vite_plus_home)"
+  if vite_plus_is_windows && ! vite_plus_dir_writable "$VP_HOME"; then
+    fallback="$(vite_plus_writable_home)" || return 1
+    echo "VP_HOME ${VP_HOME} is not writable; installing Vite+ into ${fallback}"
+    VP_HOME="$fallback"
+    export VP_HOME
+  fi
   if [[ -n "${T3CODE_VITE_PLUS_INSTALLER:-}" ]]; then
     bash "${T3CODE_VITE_PLUS_INSTALLER}"
     return
@@ -169,11 +303,25 @@ install_vite_plus() {
 
 ensure_vite_plus() {
   local purpose="${1:-to run this job}"
+  local fallback
   vite_plus_on_path
   if vp_is_official; then
     return 0
   fi
-  echo "vp is missing; installing Vite+ into ${VP_HOME}"
+  if vite_plus_is_windows && ! vite_plus_dir_writable "$(vite_plus_home)"; then
+    fallback="$(vite_plus_writable_home)" || {
+      echo "Vite+ install failed; ${VP_HOME} is not writable and no alternate prefix is available." >&2
+      return 1
+    }
+    echo "vp is missing; ${VP_HOME} is not writable. Installing Vite+ into ${fallback}"
+    export VP_HOME="$fallback"
+    vite_plus_on_path
+    if vp_is_official; then
+      return 0
+    fi
+  else
+    echo "vp is missing; installing Vite+ into ${VP_HOME}"
+  fi
   if ! install_vite_plus; then
     echo "Vite+ install failed; vp is required ${purpose}." >&2
     return 1

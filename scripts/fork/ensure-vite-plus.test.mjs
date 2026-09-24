@@ -149,7 +149,7 @@ chmod +x "${bin}/vp"`,
   });
 });
 
-function runWindowsHelper({ home, path, body, installer }) {
+function runWindowsHelper({ home, path, body, installer, env }) {
   return NodeChildProcess.spawnSync(
     "bash",
     [
@@ -175,6 +175,7 @@ ${body}`,
         HOME: home,
         VP_HOME: NodePath.join(home, ".vite-plus"),
         ...(installer ? { T3CODE_VITE_PLUS_INSTALLER: installer } : {}),
+        ...env,
       },
     },
   );
@@ -196,11 +197,9 @@ describe("ensure-vite-plus Windows Git Bash", () => {
       NodeFS.writeFileSync(NodePath.join(bin, "vp"), "#!/bin/bash\necho shadowed\nexit 126\n", {
         mode: 0o644,
       });
-      NodeFS.writeFileSync(
-        NodePath.join(bin, "vp.exe"),
-        "#!/bin/bash\necho 'vp.exe 9.9.9'\n",
-        { mode: 0o755 },
-      );
+      NodeFS.writeFileSync(NodePath.join(bin, "vp.exe"), "#!/bin/bash\necho 'vp.exe 9.9.9'\n", {
+        mode: 0o755,
+      });
       const result = runWindowsHelper({
         home: root,
         path: "/usr/bin:/bin",
@@ -261,6 +260,186 @@ vp --version`,
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
       assert.include(result.stdout, "vp is missing; installing Vite+ into");
       assert.include(result.stdout, "vp.exe 1.0.0");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses a versioned vp.exe without installing into a locked prefix", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-versioned-"));
+    try {
+      const versionedBin = NodePath.join(root, ".vite-plus", "1.0.0-rc.0", "bin");
+      NodeFS.mkdirSync(versionedBin, { recursive: true });
+      NodeFS.mkdirSync(NodePath.join(root, ".vite-plus", "bin"), { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(versionedBin, "vp.exe"),
+        "#!/bin/bash\necho 'vp.exe 1.0.0-rc.0'\n",
+        { mode: 0o755 },
+      );
+      const installer = writeInstaller(root, 'echo "installer ran" >&2; exit 1');
+      const result = runWindowsHelper({
+        home: root,
+        path: "/usr/bin:/bin",
+        installer,
+        body: `ensure_vite_plus "to publish mobile OTA"
+vp --version
+vite_plus_resolve_cli vp`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.notInclude(result.stdout, "vp is missing");
+      assert.notInclude(result.stderr, "installer ran");
+      assert.include(result.stdout, "vp.exe 1.0.0-rc.0");
+      assert.include(result.stdout, `${versionedBin}/vp.exe`);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs a versioned extensionless vp PE without reinstalling", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-ver-pe-"));
+    try {
+      const versionedBin = NodePath.join(root, ".vite-plus", "1.0.0-rc.0", "bin");
+      NodeFS.mkdirSync(versionedBin, { recursive: true });
+      NodeFS.mkdirSync(NodePath.join(root, ".vite-plus", "bin"), { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(versionedBin, "vp"),
+        "MZ#!/bin/bash\necho 'vp.exe versioned'\n",
+        {
+          mode: 0o644,
+        },
+      );
+      const tmp = NodePath.join(root, "tmp");
+      NodeFS.mkdirSync(tmp);
+      const installer = writeInstaller(root, 'echo "installer ran" >&2; exit 1');
+      const result = runWindowsHelper({
+        home: root,
+        path: "/usr/bin:/bin",
+        installer,
+        env: { TMPDIR: tmp },
+        body: `cp() {
+  if [[ "\${2:-}" == *.exe && "\${2:-}" == *"/1.0.0-rc.0/bin/"* ]]; then
+    echo "Access is denied. (os error 5)" >&2
+    return 1
+  fi
+  command cp "\$@"
+}
+ensure_vite_plus "to publish mobile OTA"
+vite_plus_resolve_cli vp`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.notInclude(result.stdout, "vp is missing");
+      assert.notInclude(result.stderr, "installer ran");
+      const repaired = NodePath.join(tmp, "t3-vite-plus", "bin", "vp.exe");
+      assert.include(result.stdout, repaired);
+      assert.isTrue(NodeFS.existsSync(repaired));
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("treats vp.exe as official even when --version cannot write", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-verfail-"));
+    try {
+      const bin = NodePath.join(root, ".vite-plus", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(bin, "vp.exe"),
+        "#!/bin/bash\necho 'Access is denied. (os error 5)' >&2\nexit 1\n",
+        { mode: 0o755 },
+      );
+      const installer = writeInstaller(root, 'echo "installer ran" >&2; exit 1');
+      const result = runWindowsHelper({
+        home: root,
+        path: "/usr/bin:/bin",
+        installer,
+        body: `ensure_vite_plus "to publish mobile OTA"
+vite_plus_resolve_cli vp`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.notInclude(result.stdout, "vp is missing");
+      assert.notInclude(result.stderr, "installer ran");
+      assert.include(result.stdout, `${bin}/vp.exe`);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("copies an extensionless PE to a writable bin when in-place vp.exe is denied", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-copy-"));
+    try {
+      const bin = NodePath.join(root, ".vite-plus", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(bin, "vp"), "MZ#!/bin/bash\necho 'vp.exe repaired'\n", {
+        mode: 0o644,
+      });
+      const tmp = NodePath.join(root, "tmp");
+      NodeFS.mkdirSync(tmp);
+      const installer = writeInstaller(root, 'echo "installer ran" >&2; exit 1');
+      const result = runWindowsHelper({
+        home: root,
+        path: "/usr/bin:/bin",
+        installer,
+        env: { TMPDIR: tmp },
+        body: `cp() {
+  if [[ "\${2:-}" == *.exe && "\${2:-}" == *".vite-plus/bin/"* ]]; then
+    echo "Access is denied. (os error 5)" >&2
+    return 1
+  fi
+  command cp "\$@"
+}
+ensure_vite_plus "to publish mobile OTA"
+vite_plus_resolve_cli vp`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.notInclude(result.stdout, "vp is missing");
+      assert.notInclude(result.stderr, "installer ran");
+      const repaired = NodePath.join(tmp, "t3-vite-plus", "bin", "vp.exe");
+      assert.include(result.stdout, repaired);
+      assert.isTrue(NodeFS.existsSync(repaired));
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("installs into a writable prefix when the agent VP_HOME is locked", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-locked-"));
+    try {
+      const locked = NodePath.join(root, "locked-vite-plus");
+      const fallback = NodePath.join(root, "writable-vite-plus");
+      NodeFS.mkdirSync(NodePath.join(locked, "bin"), { recursive: true });
+      const installer = writeInstaller(
+        root,
+        `mkdir -p "${fallback}/bin"
+printf '%s\\n' '#!/bin/bash' 'echo vp.exe fallback' > "${fallback}/bin/vp.exe"
+chmod +x "${fallback}/bin/vp.exe"`,
+      );
+      const result = runWindowsHelper({
+        home: root,
+        path: "/usr/bin:/bin",
+        installer,
+        body: `VP_HOME=${JSON.stringify(locked)}
+export VP_HOME
+vite_plus_dir_writable() {
+  case "$1" in
+    ${JSON.stringify(locked)} | ${JSON.stringify(`${locked}/bin`)}) return 1 ;;
+    ${JSON.stringify(fallback)} | ${JSON.stringify(`${fallback}/bin`)}) return 0 ;;
+  esac
+  mkdir -p "$1" 2>/dev/null || return 1
+  local probe="$1/.t3-vp-write-$$"
+  : > "$probe" 2>/dev/null || return 1
+  rm -f "$probe"
+}
+vite_plus_writable_home() { printf '%s\\n' ${JSON.stringify(fallback)}; }
+ensure_vite_plus "to publish mobile OTA"
+printf 'home=%s\\n' "$(vite_plus_home)"
+vp --version`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.include(result.stdout, "is not writable");
+      assert.include(result.stdout, fallback);
+      assert.notInclude(result.stdout, "Vite+ install failed");
+      assert.include(result.stdout, `home=${fallback}`);
+      assert.include(result.stdout, "vp.exe fallback");
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }

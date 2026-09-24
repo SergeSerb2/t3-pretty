@@ -173,8 +173,10 @@ of reporting a green release that shipped nothing. To activate:
    Linux agents still use `buildkite-agent` on PATH or the file-store
    fallbacks.
    Git Bash cannot exec the extensionless `vp` path (exit 126). The
-   helper launches `vp.exe` under `C:\buildkite-agent\vite-plus\bin`,
-   the same Windows-native suffix NSIS uses for `buildkite-agent.exe`.
+   helper launches `vp.exe` under `C:\buildkite-agent\vite-plus\bin`
+   or a versioned `...\1.0.0-rc.0\bin\vp.exe`, the same Windows-native
+   suffix NSIS uses for `buildkite-agent.exe`. It does not reinstall
+   into that prefix when the agent cannot write there.
    Installed TestFlight binaries poll the fork Expo Updates URL baked into
    the IPA; eas-cli publishes that channel. IPA compilation is local from
    `Xcode.app` or `Xcode-beta.app` when that toolchain is on the agent,
