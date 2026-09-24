@@ -172,6 +172,9 @@ of reporting a green release that shipped nothing. To activate:
    same binary Windows NSIS uses for `CLOUDFLARE_API_TOKEN`. Mac and
    Linux agents still use `buildkite-agent` on PATH or the file-store
    fallbacks.
+   Git Bash cannot exec the extensionless `vp` path (exit 126). The
+   helper launches `vp.exe` under `C:\buildkite-agent\vite-plus\bin`,
+   the same Windows-native suffix NSIS uses for `buildkite-agent.exe`.
    Installed TestFlight binaries poll the fork Expo Updates URL baked into
    the IPA; eas-cli publishes that channel. IPA compilation is local from
    `Xcode.app` or `Xcode-beta.app` when that toolchain is on the agent,

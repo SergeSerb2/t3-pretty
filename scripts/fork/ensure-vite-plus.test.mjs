@@ -125,6 +125,146 @@ chmod +x "${bin}/vp"`,
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("does not treat a vp that cannot exec as official", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-dead-"));
+    try {
+      const existingBin = NodePath.join(root, "existing-bin");
+      NodeFS.mkdirSync(existingBin);
+      NodeFS.writeFileSync(NodePath.join(existingBin, "vp"), "#!/bin/bash\nexit 126\n", {
+        mode: 0o755,
+      });
+      const installer = writeInstaller(root, 'echo "installer ran" >&2; exit 1');
+      const result = runEnsure({
+        home: root,
+        path: `${existingBin}:/usr/bin:/bin`,
+        installer,
+      });
+      assert.notEqual(result.status, 0);
+      assert.include(result.stdout, "vp is missing; installing Vite+ into");
+      assert.include(result.stderr, "installer ran");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+function runWindowsHelper({ home, path, body, installer }) {
+  return NodeChildProcess.spawnSync(
+    "bash",
+    [
+      "-c",
+      `set -euo pipefail
+uname() {
+  if [[ "\${1:-}" == "-s" ]]; then
+    printf '%s\\n' 'MINGW64_NT-10.0-26340'
+    return 0
+  fi
+  command uname "\$@"
+}
+source "$1"
+${body}`,
+      "ensure-vite-plus-windows-test",
+      helper,
+    ],
+    {
+      encoding: "utf8",
+      timeout: 10_000,
+      env: {
+        PATH: path,
+        HOME: home,
+        VP_HOME: NodePath.join(home, ".vite-plus"),
+        ...(installer ? { T3CODE_VITE_PLUS_INSTALLER: installer } : {}),
+      },
+    },
+  );
+}
+
+describe("ensure-vite-plus Windows Git Bash", () => {
+  it("documents the vp.exe Git Bash launch and prefers it over an unexecutable vp", () => {
+    assert.include(NodeFS.readFileSync(helper, "utf8"), "vp.exe");
+    assert.include(NodeFS.readFileSync(helper, "utf8"), "MINGW");
+    assert.include(NodeFS.readFileSync(helper, "utf8"), "exit 126");
+    assert.include(mobileRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
+    assert.include(mobileRelease, "vp i --filter=@t3tools/mobile");
+    assert.notInclude(mobileRelease, "T3CODE_FORCE_IOS=");
+
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-exe-"));
+    try {
+      const bin = NodePath.join(root, ".vite-plus", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(bin, "vp"), "#!/bin/bash\necho shadowed\nexit 126\n", {
+        mode: 0o644,
+      });
+      NodeFS.writeFileSync(
+        NodePath.join(bin, "vp.exe"),
+        "#!/bin/bash\necho 'vp.exe 9.9.9'\n",
+        { mode: 0o755 },
+      );
+      const result = runWindowsHelper({
+        home: root,
+        path: "/usr/bin:/bin",
+        body: `vite_plus_on_path
+vp --version
+vp i --filter=@t3tools/mobile...`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.include(result.stdout, "vp.exe 9.9.9");
+      assert.notInclude(result.stdout, "shadowed");
+      assert.equal((result.stdout.match(/vp\.exe 9\.9\.9/g) || []).length, 2);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs a shebang vp without +x and does not reinstall", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-shebang-"));
+    try {
+      const bin = NodePath.join(root, ".vite-plus", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(bin, "vp"), "#!/bin/bash\necho 'vp 3.2.1'\n", {
+        mode: 0o644,
+      });
+      const installer = writeInstaller(root, 'echo "installer ran" >&2; exit 1');
+      const result = runWindowsHelper({
+        home: root,
+        path: "/usr/bin:/bin",
+        installer,
+        body: `ensure_vite_plus "to publish mobile OTA"`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.notInclude(result.stdout, "vp is missing");
+      assert.notInclude(result.stderr, "installer ran");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("installs when only an unexecutable non-script vp is present", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-dead-"));
+    try {
+      const bin = NodePath.join(root, ".vite-plus", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(bin, "vp"), "not a program\n", { mode: 0o644 });
+      const installer = writeInstaller(
+        root,
+        `printf '%s\\n' '#!/bin/bash' 'echo vp.exe 1.0.0' > "${bin}/vp.exe"
+chmod +x "${bin}/vp.exe"`,
+      );
+      const result = runWindowsHelper({
+        home: root,
+        path: "/usr/bin:/bin",
+        installer,
+        body: `ensure_vite_plus "to publish mobile OTA"
+vp --version`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.include(result.stdout, "vp is missing; installing Vite+ into");
+      assert.include(result.stdout, "vp.exe 1.0.0");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 function runHelper(home, path, env, body) {

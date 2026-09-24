@@ -414,6 +414,11 @@ ${setup}
     assert.include(vitePlus, '[[ -n "${CI:-}" || -n "${BUILDKITE:-}" || ! -t 0 ]]');
     assert.include(vitePlus, "vite_plus_link_bin");
     assert.include(vitePlus, "printf 'y\\ny\\ny\\ny\\ny\\n' | npm install -g");
+    assert.include(vitePlus, "vp.exe");
+    assert.include(vitePlus, "MINGW");
+    assert.include(vitePlus, "vite_plus_resolve_cli");
+    assert.include(vitePlus, "vite_plus_bind_windows_cli");
+    assert.include(vitePlus, "exit 126");
     assert.include(mobileRelease, "EXPO_TOKEN is required to publish OTA");
     assert.include(mobileRelease, "eas update");
     assert.include(mobileRelease, "eas build");
