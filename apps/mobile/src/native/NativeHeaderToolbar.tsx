@@ -15,6 +15,8 @@ import {
 } from "react";
 import type { ColorValue } from "react-native";
 
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native-glass";
+
 function useNativeStackNavigation(): NativeStackNavigationProp<ParamListBase> | null {
   return useNavigation<NativeStackNavigationProp<ParamListBase>>();
 }
@@ -132,7 +134,7 @@ function convertToolbarChild(child: ReactNode): NativeStackHeaderItem | null {
         typeof child.props.onPress === "function"
           ? (child.props.onPress as () => void)
           : () => undefined,
-      sharesBackground: !child.props.separateBackground,
+      sharesBackground: NATIVE_LIQUID_GLASS_SUPPORTED && !child.props.separateBackground,
       tintColor: child.props.tintColor as ColorValue | undefined,
       variant: "plain",
     };
@@ -152,7 +154,7 @@ function convertToolbarChild(child: ReactNode): NativeStackHeaderItem | null {
         title: typeof child.props.title === "string" ? child.props.title : undefined,
         items: collectMenuItems(child.props.children),
       },
-      sharesBackground: !child.props.separateBackground,
+      sharesBackground: NATIVE_LIQUID_GLASS_SUPPORTED && !child.props.separateBackground,
       tintColor: child.props.tintColor as ColorValue | undefined,
       variant: "plain",
     };

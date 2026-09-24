@@ -60,6 +60,10 @@ it("links expo-audio only for internal mobile builds", () => {
   expect(Array.isArray(internalPlugin) ? internalPlugin[0] : internalPlugin).toBe("expo-audio");
 });
 
+it("opts iOS out of automatic Liquid Glass until a later IPA re-enables it", () => {
+  expect(config.ios?.infoPlist?.UIDesignRequiresCompatibility).toBe(true);
+});
+
 it("emits the release fingerprint override as a literal runtime version", () => {
   const expectedFingerprint = "a21dfbf91ea34506691ef12e24f26e9ddb36b901";
   const expoCli = NodePath.join(here, "node_modules", "expo", "bin", "cli");

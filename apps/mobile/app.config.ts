@@ -344,6 +344,12 @@ const config: ExpoConfig = {
       "keychain-access-groups": [`$(AppIdentifierPrefix)${iosBundleIdentifier}`],
     },
     infoPlist: {
+      // Xcode 26/27 applies Liquid Glass to UINavigationBar / UIToolbar /
+      // UISearchBar automatically. TestFlight 159-163 abort during that
+      // construction on first Home chrome. Opt the binary out until a later
+      // IPA proves the SDK/runtime pair. iOS 27 may ignore this key; the
+      // react-native-screens kill-switch remains the construction gate.
+      UIDesignRequiresCompatibility: true,
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },

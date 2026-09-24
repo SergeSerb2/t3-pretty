@@ -208,11 +208,11 @@ index 1c84484..0336936 100644
 +static char RNSAppliedToolbarConfigsKey;
  static const NSNumber *const DEFAULT_TITLE_LARGE_FONT_SIZE = @34;
  
-+// Xcode 27 / TestFlight 159-161 abort when this patch constructs UIGlassEffect,
-+// glassButtonConfiguration, or UINavigationItemStyle on the first Home frame.
-+// Those selectors can exist and still kill the process, so respondsToSelector
-+// is not a sufficient gate. Keep construction off until a later IPA proves
-+// the SDK/runtime pair. JS cannot prevent the default navitem.style apply.
++// Xcode 27 / TestFlight 159-163 abort when first Home chrome constructs glass.
++// #708 gated UIGlassEffect / glassButtonConfiguration / UINavigationItemStyle.
++// TF 163 still aborted: the same apply assigns item groups / sharesBackground.
++// Those selectors can exist and still kill the process. Keep every glass apply
++// off until a later IPA. JS cannot prevent the default item-group apply.
 +static BOOL RNSAllowsPatchedLiquidGlassChrome(void)
 +{
 +  return NO;
@@ -257,7 +257,7 @@ index 1c84484..0336936 100644
  
    if (shouldHide) {
      navitem.title = config.title;
-+    if (@available(iOS 26.0, *)) {
++    if (@available(iOS 26.0, *) && RNSAllowsPatchedLiquidGlassChrome()) {
 +      navitem.subtitle = config.subtitle;
 +      navitem.largeSubtitle = config.largeSubtitle;
 +    }
@@ -279,7 +279,7 @@ index 1c84484..0336936 100644
    UINavigationBarAppearance *appearance = [self buildAppearance:vc withConfig:config];
    navitem.standardAppearance = appearance;
    navitem.compactAppearance = appearance;
-+  if (@available(iOS 26.0, *)) {
++  if (@available(iOS 26.0, *) && RNSAllowsPatchedLiquidGlassChrome()) {
 +    navitem.subtitle = config.subtitle;
 +    navitem.largeSubtitle = config.largeSubtitle;
 +  }
@@ -343,7 +343,7 @@ index 1c84484..0336936 100644
 +  // UIKit may still be animating. Preserve each unchanged placement's group,
 +  // including the empty leading group beside the system back button.
 +#if !TARGET_OS_TV
-+  if (@available(iOS 16.0, *)) {
++  if (@available(iOS 16.0, *) && RNSAllowsPatchedLiquidGlassChrome()) {
 +    NSArray *headerLeftConfigs = config.headerLeftBarButtonItems ?: @[];
 +    NSArray *headerRightConfigs = config.headerRightBarButtonItems ?: @[];
 +    NSArray *headerCenterConfigs = config.headerCenterBarButtonItems ?: @[];
@@ -991,7 +991,7 @@ index 1c84484..0336936 100644
 +          searchBar.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 +          [container addSubview:searchBar];
 +          item = [[UIBarButtonItem alloc] initWithCustomView:container];
-+        } else {
++        } else if (RNSAllowsPatchedLiquidGlassChrome()) {
 +          item = navitem.searchBarPlacementBarButtonItem;
 +          if (width != nil) {
 +            item.width = width.doubleValue;
@@ -999,7 +999,7 @@ index 1c84484..0336936 100644
 +        }
 +        NSNumber *index = dict[@"index"];
 +#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
-+        if (@available(iOS 26.0, *)) {
++        if (@available(iOS 26.0, *) && RNSAllowsPatchedLiquidGlassChrome()) {
 +          NSNumber *sharesBackground = dict[@"sharesBackground"];
 +          if (sharesBackground != nil) {
 +            item.sharesBackground = sharesBackground.boolValue;
@@ -1077,7 +1077,7 @@ index 1c84484..0336936 100644
 +  for (UIBarButtonItem *item in items) {
 +    BOOL shouldShareBackground = NO;
 +#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
-+    if (@available(iOS 26.0, *)) {
++    if (@available(iOS 26.0, *) && RNSAllowsPatchedLiquidGlassChrome()) {
 +      shouldShareBackground = item.sharesBackground && !item.hidesSharedBackground;
 +    }
 +#endif
@@ -1200,7 +1200,7 @@ diff --git a/ios/RNSScreenStackHeaderSubview.mm b/ios/RNSScreenStackHeaderSubvie
 index add33c4807e038dcd846f6c72b2fc472ded02809..489afa5fa2da09c1ec6986d1832b58bb595396ae 100644
 --- a/ios/RNSScreenStackHeaderSubview.mm
 +++ b/ios/RNSScreenStackHeaderSubview.mm
-@@ -20,7 +20,9 @@ @implementation RNSScreenStackHeaderSubview {
+@@ -20,7 +20,14 @@ @implementation RNSScreenStackHeaderSubview {
    // This is a strong reference to UIBarButtonItem which creates a retain cycle.
    // The cycle is cleared via `invalidateUIBarButtonItem` method, called by `invalidate` callback.
    UIBarButtonItem *_barButtonItem;
@@ -1208,14 +1208,19 @@ index add33c4807e038dcd846f6c72b2fc472ded02809..489afa5fa2da09c1ec6986d1832b58bb
    BOOL _hidesSharedBackground;
 +  UILabel *_titleScrollEdgeEffectGuide;
  }
++
++static BOOL RNSAllowsPatchedLiquidGlassChrome(void)
++{
++  return NO;
++}
  
  #pragma mark - Common
-@@ -102,5 +104,24 @@ - (void)updateShadowStateWithFrame:(CGRect)frame
+@@ -102,5 +109,24 @@ - (void)updateShadowStateWithFrame:(CGRect)frame
  - (void)layoutSubviews
  {
    [super layoutSubviews];
 +#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
-+  if (@available(iOS 26.0, *)) {
++  if (@available(iOS 26.0, *) && RNSAllowsPatchedLiquidGlassChrome()) {
 +    if (_type == RNSScreenStackHeaderSubviewTypeTitle || _type == RNSScreenStackHeaderSubviewTypeCenter) {
 +      // UIKit shapes the navigation bar's scroll-edge fade around native labels,
 +      // but does not recognize Fabric's custom text views. An empty, non-interactive
@@ -1235,7 +1240,7 @@ index add33c4807e038dcd846f6c72b2fc472ded02809..489afa5fa2da09c1ec6986d1832b58bb
 +#endif
    [self updateShadowStateInContextOfAncestorView:[self findNavigationBar]];
  }
-@@ -124,6 +145,7 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
+@@ -124,6 +150,7 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
    const auto &newHeaderSubviewProps = *std::static_pointer_cast<const react::RNSScreenStackHeaderSubviewProps>(props);
  
    [self setType:[RNSConvert RNSScreenStackHeaderSubviewTypeFromCppEquivalent:newHeaderSubviewProps.type]];
@@ -1243,9 +1248,10 @@ index add33c4807e038dcd846f6c72b2fc472ded02809..489afa5fa2da09c1ec6986d1832b58bb
    [self setHidesSharedBackground:newHeaderSubviewProps.hidesSharedBackground];
    [self setSynchronousShadowStateUpdatesEnabled:newHeaderSubviewProps.synchronousShadowStateUpdatesEnabled];
    [super updateProps:props oldProps:oldProps];
-@@ -276,7 +298,14 @@ - (void)configureBarButtonItem
+@@ -276,7 +303,14 @@ - (void)configureBarButtonItem
  #if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
-   if (@available(iOS 26.0, *)) {
+-  if (@available(iOS 26.0, *)) {
++  if (@available(iOS 26.0, *) && RNSAllowsPatchedLiquidGlassChrome()) {
      if (_barButtonItem != nil) {
 -      [_barButtonItem setHidesSharedBackground:_hidesSharedBackground];
 +      NSString *currentIdentifier = _barButtonItem.identifier;
@@ -1259,7 +1265,7 @@ index add33c4807e038dcd846f6c72b2fc472ded02809..489afa5fa2da09c1ec6986d1832b58bb
      }
    }
  #endif // RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
-@@ -284,10 +313,22 @@ - (void)configureBarButtonItem
+@@ -284,10 +318,22 @@ - (void)configureBarButtonItem
  
  - (void)setHidesSharedBackground:(BOOL)hidesSharedBackground
  {

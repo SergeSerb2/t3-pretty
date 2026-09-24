@@ -21,15 +21,12 @@ export function iosMajorVersion(os: string, version: number | string): number {
  * Liquid-glass chrome (transparent headers, `editor` nav-item style, Expo
  * GlassView) is off on every iOS version.
  *
- * Origin #690 already disabled the mail toolbar and iOS 27 glass, but TestFlight
- * 161 still aborted on launch. That IPA embeds #690, so JS never sent
- * mailSearchToolbar. The patched RNS header still applies UINavigationItemStyle
- * (default Navigator, or Editor from iOS 26 glass / SOLID_HEADER_OPTIONS) and
- * can construct UIGlassEffect / glassButtonConfiguration before React runs.
- * Those selectors can exist on an Xcode 27 binary and still kill the process.
- *
- * Keep this off until the native patch re-enables
- * `RNSAllowsPatchedLiquidGlassChrome` after a proven IPA.
+ * #690 disabled the mail toolbar in JS. #708 gated native UIGlassEffect /
+ * glassButtonConfiguration / UINavigationItemStyle. TestFlight 163 still
+ * aborted on open: the same apply path assigned leadingItemGroups /
+ * trailingItemGroups / sharesBackground, and UIKit 26+ constructs glass for
+ * those groups before Expo Updates can run. Keep this off until the native
+ * kill-switch is re-enabled after a proven IPA.
  */
 export function supportsNativeLiquidGlass(
   _platform: string,

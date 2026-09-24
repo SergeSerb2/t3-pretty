@@ -17,9 +17,8 @@ export {
  * is false.
  *
  * Disabled on every iOS version: the native patch can still construct
- * UIGlassEffect / glassButtonConfiguration / UINavigationItemStyle on the
- * first Home frame. TestFlight 161 still aborted after #690, so JS cannot
- * be the only gate.
+ * glass chrome on the first Home frame (item groups / sharesBackground after
+ * #708). TestFlight 163 still aborted, so JS cannot be the only gate.
  */
 export const NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED = isNativeMailSearchToolbarSupported(
   NATIVE_LIQUID_GLASS_SUPPORTED,

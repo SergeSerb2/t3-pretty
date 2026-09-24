@@ -22,7 +22,7 @@ describe("readNativeLiquidGlassCapability", () => {
 });
 
 describe("supportsNativeLiquidGlass", () => {
-  it("stays off on iOS 26 after TestFlight 161 still aborted with #690 JS", () => {
+  it("stays off on iOS 26 after TestFlight 163 still aborted with the #708 native gate", () => {
     expect(supportsNativeLiquidGlass("ios", true, "26.1")).toBe(false);
     expect(supportsNativeLiquidGlass("ios", true, 26)).toBe(false);
   });
