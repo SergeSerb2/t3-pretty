@@ -323,6 +323,10 @@ const config: ExpoConfig = {
           },
           checkAutomatically: "ON_LOAD",
           fallbackToCacheTimeout: 0,
+          // A failed or empty remote check must not abort launch. Expo
+          // already launches embedded/cached JS at timeout 0; the remaining
+          // SIGABRT is ErrorRecovery.crash() after a captured JS/RN fatal.
+          // withIosSoftFailUpdatesRecovery keeps that path from killing tip.
         }
       : { enabled: false },
   ios: {
@@ -530,6 +534,10 @@ const config: ExpoConfig = {
     // target (which must exist before the compile phase can be attached).
     ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
     "./plugins/withIosSceneLifecycle.cjs",
+    // Tip TestFlight 159/162/163 abort in Expo Updates ErrorRecovery.crash()
+    // after a captured launch fatal and no newer OTA. Soft-fail so the
+    // process stays open; Diagnostics still records the original exception.
+    "./plugins/withIosSoftFailUpdatesRecovery.cjs",
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
     "./plugins/withAndroidInputBackground.cjs",

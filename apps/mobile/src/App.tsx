@@ -35,6 +35,7 @@ import { SceneryProvider } from "./features/scenery/SceneryProvider";
 import { RootStack } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
 import { OverlayPortalHost } from "./components/OverlayPortal";
+import { RenderErrorBoundary, RenderFailureView } from "./components/RenderErrorBoundary";
 import { shouldHandleAppLink } from "./lib/appLinking";
 import { isBoringMobileTheme } from "./lib/mobileTheme";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
@@ -71,15 +72,21 @@ function SplashScreenCoordinator() {
 
 export default function App() {
   return (
-    <RegistryContext.Provider value={appAtomRegistry}>
-      <CloudAuthProvider>
-        <AppearancePreferencesProvider>
-          <SceneryProvider>
-            <AppContent />
-          </SceneryProvider>
-        </AppearancePreferencesProvider>
-      </CloudAuthProvider>
-    </RegistryContext.Provider>
+    <RenderErrorBoundary
+      renderFallback={(fallback) => (
+        <RenderFailureView {...fallback} title="T3 Pretty couldn't finish starting" />
+      )}
+    >
+      <RegistryContext.Provider value={appAtomRegistry}>
+        <CloudAuthProvider>
+          <AppearancePreferencesProvider>
+            <SceneryProvider>
+              <AppContent />
+            </SceneryProvider>
+          </AppearancePreferencesProvider>
+        </CloudAuthProvider>
+      </RegistryContext.Provider>
+    </RenderErrorBoundary>
   );
 }
 
