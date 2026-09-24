@@ -149,6 +149,29 @@ chmod +x "${bin}/vp"`,
   });
 });
 
+function writeFakeCmdExe(root) {
+  const bin = NodePath.join(root, "cmd-bin");
+  NodeFS.mkdirSync(bin, { recursive: true });
+  NodeFS.writeFileSync(
+    NodePath.join(bin, "cmd.exe"),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == "//c" || "\${1:-}" == "/c" ]]; then
+  shift
+fi
+target="\${1:-}"
+shift || true
+printf '%s\\n' "cmd.exe launched \${target}"
+if [[ -f "\$target" ]]; then
+  exec bash "\$target" "\$@"
+fi
+exit 127
+`,
+    { mode: 0o755 },
+  );
+  return bin;
+}
+
 function runWindowsHelper({ home, path, body, installer, env }) {
   return NodeChildProcess.spawnSync(
     "bash",
@@ -186,6 +209,8 @@ describe("ensure-vite-plus Windows Git Bash", () => {
     assert.include(NodeFS.readFileSync(helper, "utf8"), "vp.exe");
     assert.include(NodeFS.readFileSync(helper, "utf8"), "MINGW");
     assert.include(NodeFS.readFileSync(helper, "utf8"), "exit 126");
+    assert.include(NodeFS.readFileSync(helper, "utf8"), "cmd.exe");
+    assert.include(NodeFS.readFileSync(helper, "utf8"), "vite_plus_cli_launchable");
     assert.include(mobileRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
     assert.include(mobileRelease, "vp i --filter=@t3tools/mobile");
     assert.notInclude(mobileRelease, "T3CODE_FORCE_IOS=");
@@ -337,28 +362,45 @@ vite_plus_resolve_cli vp`,
     }
   });
 
-  it("treats vp.exe as official even when --version cannot write", () => {
+  it("copies a locked-prefix vp.exe when --version fails with Access denied", () => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-verfail-"));
     try {
-      const bin = NodePath.join(root, ".vite-plus", "bin");
-      NodeFS.mkdirSync(bin, { recursive: true });
+      const lockedHome = NodePath.join(root, "buildkite-agent", "vite-plus");
+      const lockedBin = NodePath.join(lockedHome, "bin");
+      NodeFS.mkdirSync(lockedBin, { recursive: true });
       NodeFS.writeFileSync(
-        NodePath.join(bin, "vp.exe"),
-        "#!/bin/bash\necho 'Access is denied. (os error 5)' >&2\nexit 1\n",
+        NodePath.join(lockedBin, "vp.exe"),
+        `#!/bin/bash
+case "$0" in
+  */buildkite-agent/vite-plus/*)
+    echo 'Access is denied. (os error 5)' >&2
+    exit 1
+    ;;
+esac
+echo 'vp.exe writable'
+`,
         { mode: 0o755 },
       );
+      const tmp = NodePath.join(root, "tmp");
+      NodeFS.mkdirSync(tmp);
       const installer = writeInstaller(root, 'echo "installer ran" >&2; exit 1');
       const result = runWindowsHelper({
         home: root,
         path: "/usr/bin:/bin",
         installer,
+        env: { TMPDIR: tmp, VP_HOME: lockedHome },
         body: `ensure_vite_plus "to publish mobile OTA"
-vite_plus_resolve_cli vp`,
+vite_plus_resolve_cli vp
+vp --version`,
       });
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
       assert.notInclude(result.stdout, "vp is missing");
       assert.notInclude(result.stderr, "installer ran");
-      assert.include(result.stdout, `${bin}/vp.exe`);
+      const copied = NodePath.join(root, ".vite-plus", "bin", "vp.exe");
+      assert.include(result.stdout, copied);
+      assert.isTrue(NodeFS.existsSync(copied));
+      assert.include(result.stdout, "vp.exe writable");
+      assert.notInclude(result.stdout, `${lockedBin}/vp.exe`);
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
@@ -440,6 +482,117 @@ vp --version`,
       assert.notInclude(result.stdout, "Vite+ install failed");
       assert.include(result.stdout, `home=${fallback}`);
       assert.include(result.stdout, "vp.exe fallback");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("launches a Git Bash-unexecutable vp.exe through cmd.exe without reinstalling", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-cmd-"));
+    try {
+      const bin = NodePath.join(root, ".vite-plus", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(bin, "vp.exe"), "#!/bin/bash\necho 'vp.exe via cmd'\n", {
+        mode: 0o644,
+      });
+      const cmdBin = writeFakeCmdExe(root);
+      const installer = writeInstaller(root, 'echo "installer ran" >&2; exit 1');
+      const result = runWindowsHelper({
+        home: root,
+        path: `${cmdBin}:/usr/bin:/bin`,
+        installer,
+        body: `ensure_vite_plus "to publish mobile OTA"
+vp --version
+vite_plus_resolve_cli vp`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.notInclude(result.stdout, "vp is missing");
+      assert.notInclude(result.stderr, "installer ran");
+      assert.include(result.stdout, "cmd.exe launched");
+      assert.include(result.stdout, "vp.exe via cmd");
+      assert.include(result.stdout, `${bin}/vp.exe`);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("copies to a job temp when src is already the first writable vp.exe", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-dest-src-"));
+    try {
+      const lockedHome = NodePath.join(root, "buildkite-agent", "vite-plus");
+      NodeFS.mkdirSync(NodePath.join(lockedHome, "bin"), { recursive: true });
+      const homeBin = NodePath.join(root, ".vite-plus", "bin");
+      NodeFS.mkdirSync(homeBin, { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(homeBin, "vp.exe"),
+        "#!/bin/bash\necho 'vp.exe fallback copy'\n",
+        {
+          mode: 0o644,
+        },
+      );
+      const tmp = NodePath.join(root, "tmp");
+      NodeFS.mkdirSync(tmp);
+      const installer = writeInstaller(root, 'echo "installer ran" >&2; exit 1');
+      const result = runWindowsHelper({
+        home: root,
+        path: `${homeBin}:/usr/bin:/bin`,
+        installer,
+        env: { TMPDIR: tmp, VP_HOME: lockedHome },
+        body: `chmod() {
+  if [[ "\${1:-}" == "+x" && "\${2:-}" == *".vite-plus/bin/vp.exe" ]]; then
+    return 1
+  fi
+  command chmod "\$@"
+}
+ensure_vite_plus "to publish mobile OTA"
+vite_plus_resolve_cli vp
+vp --version`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.notInclude(result.stdout, "vp is missing");
+      assert.notInclude(result.stderr, "installer ran");
+      const copied = NodePath.join(tmp, "t3-vite-plus", "bin", "vp.exe");
+      assert.include(result.stdout, copied);
+      assert.isTrue(NodeFS.existsSync(copied));
+      assert.include(result.stdout, "vp.exe fallback copy");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("copies an unexecutable vp.exe to a writable bin when cmd.exe cannot launch it", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-win-126-"));
+    try {
+      const bin = NodePath.join(root, ".vite-plus", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(bin, "vp.exe"), "#!/bin/bash\necho 'vp.exe copied'\n", {
+        mode: 0o644,
+      });
+      const tmp = NodePath.join(root, "tmp");
+      NodeFS.mkdirSync(tmp);
+      const installer = writeInstaller(root, 'echo "installer ran" >&2; exit 1');
+      const result = runWindowsHelper({
+        home: root,
+        path: "/usr/bin:/bin",
+        installer,
+        env: { TMPDIR: tmp },
+        body: `chmod() {
+  if [[ "\${1:-}" == "+x" && "\${2:-}" == *".vite-plus/bin/vp.exe" ]]; then
+    return 1
+  fi
+  command chmod "\$@"
+}
+ensure_vite_plus "to publish mobile OTA"
+vite_plus_resolve_cli vp
+vp --version`,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.notInclude(result.stdout, "vp is missing");
+      assert.notInclude(result.stderr, "installer ran");
+      const copied = NodePath.join(tmp, "t3-vite-plus", "bin", "vp.exe");
+      assert.include(result.stdout, copied);
+      assert.isTrue(NodeFS.existsSync(copied));
+      assert.include(result.stdout, "vp.exe copied");
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }

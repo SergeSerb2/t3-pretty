@@ -6,10 +6,12 @@
 # this file so Vite+'s bin-link prompt cannot hang a TTY-less CI job.
 #
 # Windows Git Bash cannot exec the extensionless `vp` path (exit 126) even
-# when `vp.exe` is next to it. windows-release already ships official Vite+
-# under `C:\buildkite-agent\vite-plus` (`bin\vp.exe` and/or a versioned
-# `1.0.0-rc.0\bin\vp.exe`). Prefer that `.exe` / `.cmd` — the same suffix
-# NSIS uses for `buildkite-agent.exe`. Do not reinstall into that prefix
+# when `vp.exe` is next to it. Finding the PE is not enough: Git Bash may
+# still get Permission denied on the agent-tree `.exe` (BK #2838). Launch
+# `.exe` via `cmd.exe //c` (same as `.cmd`/`.bat`) and copy to a writable
+# bin when that path cannot be executed. windows-release already ships
+# official Vite+ under `C:\buildkite-agent\vite-plus` (`bin\vp.exe` and/or
+# a versioned `1.0.0-rc.0\bin\vp.exe`). Do not reinstall into that prefix
 # when it is not writable (BK #2834 Access denied).
 #
 # Tests set T3CODE_VITE_PLUS_INSTALLER to a controlled script so this block
@@ -40,7 +42,8 @@ vite_plus_dir_writable() {
 
 # Prefer ~/.vite-plus, then a job temp, when the pinned agent prefix cannot
 # be written (LocalSystem vs an admin-owned C:\buildkite-agent\vite-plus).
-vite_plus_writable_home() {
+# Print every usable home so a copy can skip dest==src and try the next.
+vite_plus_writable_homes() {
   local candidate locked
   locked="$(vite_plus_home)"
   for candidate in \
@@ -51,16 +54,33 @@ vite_plus_writable_home() {
     fi
     if vite_plus_dir_writable "$candidate"; then
       printf '%s\n' "$candidate"
-      return 0
     fi
   done
+}
+
+vite_plus_writable_home() {
+  local candidate
+  while IFS= read -r candidate; do
+    printf '%s\n' "$candidate"
+    return 0
+  done < <(vite_plus_writable_homes)
   return 1
 }
 
-vite_plus_writable_bin() {
+vite_plus_writable_bins() {
   local home
-  home="$(vite_plus_writable_home)" || return 1
-  printf '%s\n' "${home}/bin"
+  while IFS= read -r home; do
+    printf '%s\n' "${home}/bin"
+  done < <(vite_plus_writable_homes)
+}
+
+vite_plus_writable_bin() {
+  local bin
+  while IFS= read -r bin; do
+    printf '%s\n' "$bin"
+    return 0
+  done < <(vite_plus_writable_bins)
+  return 1
 }
 
 # Agent vite-plus first (NSIS / buildkite-agent.exe style), then VP_HOME.
@@ -165,23 +185,35 @@ vite_plus_resolve_cli() {
   if vite_plus_is_windows; then
     while IFS= read -r root; do
       while IFS= read -r candidate; do
-        printf '%s\n' "$candidate"
-        return 0
+        repaired="$(vite_plus_windows_make_launchable "$candidate" || true)"
+        if [[ -n "$repaired" && -f "$repaired" ]]; then
+          printf '%s\n' "$repaired"
+          return 0
+        fi
       done < <(vite_plus_windows_list_cli "$name" "$root")
     done < <(vite_plus_windows_search_roots)
     candidate="$(command -v "${name}.exe" 2>/dev/null || true)"
     if [[ -n "$candidate" && -f "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
+      repaired="$(vite_plus_windows_make_launchable "$candidate" || true)"
+      if [[ -n "$repaired" && -f "$repaired" ]]; then
+        printf '%s\n' "$repaired"
+        return 0
+      fi
     fi
     candidate="$(command -v "${name}.cmd" 2>/dev/null || true)"
     if [[ -n "$candidate" && -f "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
+      repaired="$(vite_plus_windows_make_launchable "$candidate" || true)"
+      if [[ -n "$repaired" && -f "$repaired" ]]; then
+        printf '%s\n' "$repaired"
+        return 0
+      fi
     fi
     while IFS= read -r root; do
       while IFS= read -r candidate; do
         repaired="$(vite_plus_windows_repair_cli "$candidate" || true)"
+        if [[ -n "$repaired" && -f "$repaired" ]]; then
+          repaired="$(vite_plus_windows_make_launchable "$repaired" || true)"
+        fi
         if [[ -n "$repaired" && -f "$repaired" ]]; then
           printf '%s\n' "$repaired"
           return 0
@@ -207,6 +239,116 @@ vite_plus_windows_path() {
   printf '%s\n' "$path"
 }
 
+vite_plus_cmd_exe() {
+  local candidate
+  candidate="$(command -v cmd.exe 2>/dev/null || true)"
+  if [[ -n "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  for candidate in \
+    /c/Windows/System32/cmd.exe \
+    /c/WINDOWS/System32/cmd.exe \
+    /c/Windows/SysWOW64/cmd.exe; do
+    if [[ -x "$candidate" || -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Git Bash execve of a PE under the agent tree can still be 126
+# (Permission denied) even when vp.exe exists (BK #2838). cmd.exe
+# starts Windows binaries the same way we already launch .cmd/.bat.
+vite_plus_spawn_cli() {
+  local cmd="$1"
+  shift
+  local comspec
+  case "$cmd" in
+    *.exe | *.cmd | *.bat)
+      if comspec="$(vite_plus_cmd_exe)"; then
+        "$comspec" //c "$(vite_plus_windows_path "$cmd")" "$@"
+        return
+      fi
+      ;;
+  esac
+  "$cmd" "$@"
+}
+
+vite_plus_cli_launchable() {
+  local cmd="$1"
+  local status=0
+  local magic
+  [[ -f "$cmd" ]] || return 1
+  # Mocked Git Bash tests run on Linux. A real PE (MZ) cannot exec here
+  # unless a fake cmd.exe is on PATH; accept it the same way a Windows
+  # host will launch it via cmd.exe. Shebang fixtures still get a probe
+  # so a 644 vp.exe is not treated as official (BK #2838).
+  if [[ "$cmd" == *.exe ]] && ! vite_plus_cmd_exe >/dev/null; then
+    magic="$(head -c 2 "$cmd" 2>/dev/null || true)"
+    if [[ "$magic" == "MZ" ]]; then
+      return 0
+    fi
+  fi
+  # Only a successful --version is launchable. Git Bash 126/127 cannot
+  # spawn the PE (BK #2838). The rust launcher can also start and then
+  # fail with Access denied while writing a temp under the locked agent
+  # prefix (BK #2834). Treating that non-zero as official left later
+  # `vp i` on the same unwritable tree. Copy to a writable bin instead.
+  vite_plus_spawn_cli "$cmd" --version >/dev/null 2>&1 || status=$?
+  [[ "$status" -eq 0 ]]
+}
+
+vite_plus_windows_copy_cli() {
+  local src="$1"
+  local writable dest base
+  base="$(basename "$src")"
+  while IFS= read -r writable; do
+    dest="${writable}/${base}"
+    case "$src" in
+      *.exe | *.cmd | *.bat) ;;
+      *) dest="${writable}/${base}.exe" ;;
+    esac
+    # First writable bin is often ~/.vite-plus/bin. If src already lives
+    # there, dest==src used to abort and never reach TMPDIR/t3-vite-plus.
+    if [[ "$dest" == "$src" ]]; then
+      continue
+    fi
+    mkdir -p "$writable" || continue
+    if ! cp "$src" "$dest"; then
+      continue
+    fi
+    chmod +x "$dest" 2>/dev/null || true
+    printf '%s\n' "$dest"
+    return 0
+  done < <(vite_plus_writable_bins)
+  return 1
+}
+
+# Prefer cmd.exe / in-place +x. If Git Bash still cannot spawn the
+# agent-tree PE, copy into ~/.vite-plus/bin or a job temp — never write
+# back into a locked C:\buildkite-agent\vite-plus (BK #2834).
+vite_plus_windows_make_launchable() {
+  local src="$1"
+  local dest
+  [[ -f "$src" ]] || return 1
+  if vite_plus_cli_launchable "$src"; then
+    printf '%s\n' "$src"
+    return 0
+  fi
+  if chmod +x "$src" 2>/dev/null && vite_plus_cli_launchable "$src"; then
+    printf '%s\n' "$src"
+    return 0
+  fi
+  dest="$(vite_plus_windows_copy_cli "$src")" || return 1
+  if vite_plus_cli_launchable "$dest"; then
+    printf '%s\n' "$dest"
+    return 0
+  fi
+  return 1
+}
+
 vite_plus_exec_cli() {
   local name="$1"
   shift
@@ -215,15 +357,7 @@ vite_plus_exec_cli() {
     echo "${name} is not installed" >&2
     return 127
   }
-  case "$cmd" in
-    *.cmd | *.bat)
-      if command -v cmd.exe >/dev/null 2>&1; then
-        cmd.exe //c "$(vite_plus_windows_path "$cmd")" "$@"
-        return
-      fi
-      ;;
-  esac
-  "$cmd" "$@"
+  vite_plus_spawn_cli "$cmd" "$@"
 }
 
 vite_plus_bind_windows_cli() {
@@ -268,9 +402,9 @@ vp_is_official() {
     cmd="$(vite_plus_resolve_cli vp)" || return 1
     case "$cmd" in
       *.exe | *.cmd | *.bat)
-        # A Windows PE named vp.exe is official Vite+. Do not require
-        # --version: the rust launcher may try to write a temp file under
-        # a locked agent prefix (BK #2834 Access denied).
+        # resolve already required a launchable path: --version 0,
+        # cmd.exe spawn, or a writable copy. A locked-prefix PE whose
+        # rust --version hits Access denied is copied first (BK #2834).
         return 0
         ;;
     esac

@@ -420,6 +420,10 @@ ${setup}
     assert.include(vitePlus, "vite_plus_bind_windows_cli");
     assert.include(vitePlus, "vite_plus_windows_search_roots");
     assert.include(vitePlus, "vite_plus_windows_list_extensionless");
+    assert.include(vitePlus, "vite_plus_cli_launchable");
+    assert.include(vitePlus, "vite_plus_writable_homes");
+    assert.include(vitePlus, "vite_plus_windows_copy_cli");
+    assert.include(vitePlus, "cmd.exe");
     assert.include(vitePlus, "not writable");
     assert.include(vitePlus, "1.0.0-rc.0");
     assert.include(vitePlus, "exit 126");
