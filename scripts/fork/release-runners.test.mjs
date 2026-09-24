@@ -385,6 +385,8 @@ ${setup}
     assert.include(mobileRelease, '"$ios_host" != "Darwin"');
     assert.include(mobileRelease, "/c/buildkite-agent/vite-plus");
     assert.include(mobileRelease, "/c/buildkite-agent/secrets/");
+    assert.include(mobileRelease, "/c/buildkite-agent/service/buildkite-agent.exe");
+    assert.include(mobileRelease, "buildkite_agent_bin");
     assert.include(mobileRelease, "ios_uses_apple_keychain");
     const launcher = NodeFS.readFileSync(
       NodePath.resolve(here, "run-publish-mobile-release.mjs"),
@@ -393,6 +395,7 @@ ${setup}
     assert.include(launcher, "publish-mobile-release.sh");
     assert.include(launcher, "Git");
     assert.include(launcher, "bash.exe");
+    assert.include(launcher, "C:\\\\buildkite-agent\\\\service");
     assert.include(launcher, "T3CODE_IOS_ALLOW_EAS_CLOUD");
     assert.notInclude(launcher, "T3CODE_FORCE_IOS=");
     assert.include(launcher, "delete env.VP_HOME");

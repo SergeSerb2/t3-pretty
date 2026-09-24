@@ -32,6 +32,10 @@ export function envForHost(base = NodeProcess.env, platform = NodeProcess.platfo
   const extra = [
     `${programFiles}\\Git\\bin`,
     `${programFiles}\\nodejs`,
+    // Same service exe Windows NSIS uses for cluster secret get.
+    // Git Bash `command -v buildkite-agent` misses it otherwise.
+    "C:\\buildkite-agent\\service",
+    "C:\\buildkite-agent\\bin",
     "C:\\buildkite-agent\\vite-plus\\bin",
   ];
   const current = env.Path || env.PATH || "";

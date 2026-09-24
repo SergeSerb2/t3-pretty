@@ -166,8 +166,12 @@ Server/web-only parent changes do not publish OTA or compile an IPA.
 The job fails early when required release credentials are missing instead
 of reporting a green release that shipped nothing. To activate:
 
-1. Keep `EXPO_TOKEN` in the Buildkite cluster secret store (any
-   `macos-release` agent, including Linux, loads it after checkout).
+1. Keep `EXPO_TOKEN` in the Buildkite cluster secret store. Tip
+   `ios-mobile` on `windows-release` loads it after checkout with the
+   service `buildkite-agent.exe` (`C:\buildkite-agent\service\`), the
+   same binary Windows NSIS uses for `CLOUDFLARE_API_TOKEN`. Mac and
+   Linux agents still use `buildkite-agent` on PATH or the file-store
+   fallbacks.
    Installed TestFlight binaries poll the fork Expo Updates URL baked into
    the IPA; eas-cli publishes that channel. IPA compilation is local from
    `Xcode.app` or `Xcode-beta.app` when that toolchain is on the agent,

@@ -1158,3 +1158,110 @@ describe("iOS fingerprint recording", () => {
     assert.deepEqual(failed.calls, ["setup-ci", "push", "push"]);
   });
 });
+
+function extractSecretHelpers() {
+  const match = mobileRelease.match(
+    /buildkite_agent_bin\(\) \{\n[\s\S]*?\n\}\n\nload_secret\(\) \{\n[\s\S]*?\n\}/,
+  );
+  assert.ok(match, "secret helpers missing");
+  return match[0];
+}
+
+function runLoadSecret(script, extraEnv = {}, extraPath = "") {
+  const helpers = extractSecretHelpers();
+  const isolatedPath = extraPath ? `${extraPath}:/usr/bin:/bin` : "/usr/bin:/bin";
+  return NodeChildProcess.spawnSync("bash", ["-c", `${helpers}\n${script}`], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...extraEnv,
+      PATH: isolatedPath,
+    },
+  });
+}
+
+function writeFakeBuildkiteAgent(directory, body) {
+  const agent = NodePath.join(directory, "buildkite-agent");
+  NodeFS.writeFileSync(agent, `#!/bin/bash\n${body}\n`, { mode: 0o755 });
+  return agent;
+}
+
+describe("iOS cluster secret loading", () => {
+  it("resolves EXPO_TOKEN from buildkite-agent secret get when PATH has the agent", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-secret-"));
+    try {
+      writeFakeBuildkiteAgent(
+        directory,
+        `if [[ "$1" == "secret" && "$2" == "get" && -n "$3" ]]; then
+  printf 'cluster-%s\\r\\n' "$3"
+  exit 0
+fi
+echo "unexpected: $*" >&2
+exit 1`,
+      );
+      const result = runLoadSecret(
+        'unset EXPO_TOKEN\nload_secret EXPO_TOKEN\nprintf "%s" "$EXPO_TOKEN"',
+        { EXPO_TOKEN: "" },
+        directory,
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, "cluster-EXPO_TOKEN");
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps an already-exported EXPO_TOKEN and does not call the agent", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-secret-keep-"));
+    try {
+      writeFakeBuildkiteAgent(directory, "echo called >&2; exit 1");
+      const result = runLoadSecret(
+        'load_secret EXPO_TOKEN\nprintf "%s" "$EXPO_TOKEN"',
+        { EXPO_TOKEN: "already-set" },
+        directory,
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, "already-set");
+      assert.notInclude(result.stderr, "called");
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reads EXPO_TOKEN from the home file-store when the agent is missing", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-secret-file-"));
+    try {
+      const config = NodePath.join(directory, ".config", "t3-pretty");
+      NodeFS.mkdirSync(config, { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(config, "EXPO_TOKEN"), "file-token\r\n");
+      const result = runLoadSecret(
+        'unset EXPO_TOKEN\nload_secret EXPO_TOKEN\nprintf "%s" "$EXPO_TOKEN"',
+        { HOME: directory, EXPO_TOKEN: "" },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, "file-token");
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed with Missing EXPO_TOKEN when no agent or file exists", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-secret-miss-"));
+    try {
+      const result = runLoadSecret("unset EXPO_TOKEN\nload_secret EXPO_TOKEN", {
+        HOME: directory,
+        EXPO_TOKEN: "",
+      });
+      assert.notEqual(result.status, 0);
+      assert.include(result.stderr, "Missing EXPO_TOKEN");
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("looks up the Windows service exe when buildkite-agent is not on PATH", () => {
+    assert.include(mobileRelease, "/c/buildkite-agent/service/buildkite-agent.exe");
+    assert.include(mobileRelease, "/c/buildkite-agent/bin/buildkite-agent.exe");
+    assert.include(extractSecretHelpers(), "buildkite_agent_bin");
+  });
+});

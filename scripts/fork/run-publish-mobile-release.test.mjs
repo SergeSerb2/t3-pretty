@@ -29,6 +29,8 @@ describe("run-publish-mobile-release launcher", () => {
     assert.equal(windows.T3CODE_IOS_LOCAL_XCODE, undefined);
     assert.equal(windows.VP_HOME, undefined);
     assert.include(windows.PATH, "Git\\bin");
+    assert.include(windows.PATH, "buildkite-agent\\service");
+    assert.include(windows.PATH, "buildkite-agent\\bin");
     assert.include(windows.PATH, "vite-plus\\bin");
     assert.notInclude(JSON.stringify(windows), "T3CODE_FORCE_IOS");
 

@@ -84,13 +84,39 @@ update_message="${T3CODE_MOBILE_UPDATE_MESSAGE:-Production OTA (${commit})}"
 
 echo "T3 Pretty mobile release mode=${MODE} platform=${PLATFORM} force_ios=${FORCE_IOS} host=$(uname -s)"
 
+# Windows jobs run under Git Bash. The Buildkite service exe is not on that
+# PATH; NSIS already hardcodes C:\buildkite-agent\service\buildkite-agent.exe
+# for cluster secret get. Mac/Linux still resolve `buildkite-agent` on PATH.
+buildkite_agent_bin() {
+  local candidate
+  if command -v buildkite-agent >/dev/null 2>&1; then
+    command -v buildkite-agent
+    return 0
+  fi
+  for candidate in \
+    /c/buildkite-agent/service/buildkite-agent.exe \
+    /c/buildkite-agent/bin/buildkite-agent.exe \
+    /c/buildkite-agent/buildkite-agent.exe; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 load_secret() {
   local name="$1"
   local required="${2:-1}"
   local value="${!name:-}"
-  local candidate
-  if [[ -z "$value" ]] && command -v buildkite-agent >/dev/null; then
-    value="$(buildkite-agent secret get "$name" 2>/dev/null || true)"
+  local candidate agent
+  if [[ -z "$value" ]]; then
+    agent="$(buildkite_agent_bin || true)"
+    if [[ -n "$agent" ]]; then
+      value="$("$agent" secret get "$name" 2>/dev/null || true)"
+      value="${value//$'\r'/}"
+      value="${value%"$'\n'"}"
+    fi
   fi
   if [[ -z "$value" ]]; then
     for candidate in \
@@ -153,9 +179,11 @@ annotate() {
   local style="${1:-info}"
   shift
   local body="$*"
+  local agent
   echo "$body"
-  if command -v buildkite-agent >/dev/null; then
-    buildkite-agent annotate --style "$style" --context ios-mobile "$body" || true
+  agent="$(buildkite_agent_bin || true)"
+  if [[ -n "$agent" ]]; then
+    "$agent" annotate --style "$style" --context ios-mobile "$body" || true
   fi
 }
 
