@@ -704,3 +704,75 @@ Content: `docs/operations/observability.md`.
 ## Parent changes intentionally omitted
 
 - None. The resolver did not omit any parent change to protect T3 Pretty.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260924.2213` (`cb1a3f346`, `fix(web): show repository names on linked pull requests (#13061)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260924.2200`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2867. Scheduled sync on `98edf94f4` merged `origin/main` and the nightly with no text conflicts, then web typecheck failed (8 errors in 5 files). CLIProxyAPI `gpt-5.6-sol` returned HTTP 429 for 8/8 repair attempts (same Sol cooldown pattern as #2858 → Origin #703 and #2845 → #700). This integrate does not wait for Sol.
+- Merge base vs Origin `main` (`98edf94f4`): `b2b43bef7` (2200). Origin #703 merge-committed 2200, so 2200 is an ancestor of `main`. Parent 2200..2213 is 1 commit / 1 file.
+
+## Conflicted paths
+
+None. The `--no-ff` merge produced no text conflicts.
+
+`.github/workflows/*` was unchanged by this nightly and remains Pretty's trusted tree.
+
+## Clean-merged parent changes (no text conflict)
+
+- Linked pull-request rows show the repository name with a middle truncate (`#13061`): `apps/web/src/components/pullRequest/ThreadPullRequestsPanel.tsx` adds `MiddleTruncate` plus a tooltip so same-owner rows stay distinguishable when the tail would otherwise hide the repo name.
+
+## Post-merge repairs
+
+- `web-typecheck` — Dropped obsolete `triggerVariant="outline"` from Pretty call sites that still passed it after upstream `#13209` (`0e512db34`) removed the prop from `ProviderModelPicker` and `TraitsPicker`: `AutomationEditorDialog.tsx`, `FixAllFindingsDialog.tsx`, `AgentsSettings.tsx`, `HomeSuggestionsSettings.tsx`. Settings pickers already style the trigger through `triggerClassName` / `SETTINGS_PICKER_TRIGGER_CLASSNAME`, matching `ProjectDefaultsSettings.tsx`.
+- `web-typecheck` — Dropped obsolete `variant="ghost"` from `CompactComposerControlsMenu.tsx`. `ComposerControl` is no longer a restyled `Button` and does not accept `variant`; it owns its look.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- None. There were no text-conflict boundaries.
+
+## Parent changes integrated at conflict boundaries
+
+- None. There were no text-conflict boundaries.
+
+## Parent changes intentionally omitted
+
+- None. The resolver did not omit any parent change to protect T3 Pretty.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260924.2213` (`cb1a3f346`, `fix(web): show repository names on linked pull requests (#13061)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260924.2200`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2867. Scheduled sync on `98edf94f4` merged `origin/main` and the nightly with no text conflicts, then web typecheck failed (8 errors in 5 files). CLIProxyAPI `gpt-5.6-sol` returned HTTP 429 for 8/8 repair attempts (same Sol cooldown pattern as #2858 → Origin #703 and #2845 → #700). This integrate does not wait for Sol.
+- Merge base vs Origin `main` (`98edf94f4`): `b2b43bef7` (2200). Origin #703 merge-committed 2200, so 2200 is an ancestor of `main`. Parent 2200..2213 is 1 commit / 1 file.
+
+## Conflicted paths
+
+None. The `--no-ff` merge produced no text conflicts.
+
+`.github/workflows/*` was unchanged by this nightly and remains Pretty's trusted tree.
+
+## Clean-merged parent changes (no text conflict)
+
+- Linked pull-request rows show the repository name with a middle truncate (`#13061`): `apps/web/src/components/pullRequest/ThreadPullRequestsPanel.tsx` adds `MiddleTruncate` plus a tooltip so same-owner rows stay distinguishable when the tail would otherwise hide the repo name.
+
+## Post-merge repairs
+
+- `web-typecheck` — Dropped obsolete `triggerVariant="outline"` from Pretty call sites that still passed it after upstream `#13209` (`0e512db34`) removed the prop from `ProviderModelPicker` and `TraitsPicker`: `AutomationEditorDialog.tsx`, `FixAllFindingsDialog.tsx`, `AgentsSettings.tsx`, `HomeSuggestionsSettings.tsx`. Settings pickers already style the trigger through `triggerClassName` / `SETTINGS_PICKER_TRIGGER_CLASSNAME`, matching `ProjectDefaultsSettings.tsx`.
+- `web-typecheck` — Dropped obsolete `variant="ghost"` from `CompactComposerControlsMenu.tsx`. `ComposerControl` is no longer a restyled `Button` and does not accept `variant`; it owns its look.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- None. There were no text-conflict boundaries.
+
+## Parent changes integrated at conflict boundaries
+
+- None. There were no text-conflict boundaries.
+
+## Parent changes intentionally omitted
+
+- None. The resolver did not omit any parent change to protect T3 Pretty.
