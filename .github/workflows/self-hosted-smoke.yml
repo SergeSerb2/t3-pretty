@@ -1,0 +1,12 @@
+name: self-hosted smoke
+on:
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: [self-hosted, mac, m1]
+    steps:
+      - name: hello
+        run: |
+          echo "ok from $(hostname)"
+          uname -a
+          echo "runner=$RUNNER_NAME labels=$RUNNER_LABELS"
