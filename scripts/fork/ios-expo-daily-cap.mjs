@@ -371,6 +371,8 @@ export async function fetchExpoIosRecords({
   };
 }
 
+// allowed=true is the fail-open signal: tip packaging still runs a due
+// cloud IPA (and OTA) when Expo usage cannot be read.
 export function unknownCapReport({
   limit = DEFAULT_LIMIT,
   timezone = DEFAULT_TIMEZONE,

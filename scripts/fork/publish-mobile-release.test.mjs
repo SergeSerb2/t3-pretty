@@ -546,14 +546,19 @@ describe("iOS publish Xcode selection", () => {
       "remaining=-1",
       "status=unknown",
       "allowed=true",
+      "store=unavailable",
     ].join("\n");
+    const unknownDenied = unknown.replace("allowed=true", "allowed=false");
     assert.isTrue(run("update", capped));
     assert.isTrue(run("build", capped));
     assert.isFalse(run("update", open));
     assert.isFalse(run("build", open));
     assert.isFalse(run("update", unknown));
-    assert.isTrue(run("build", unknown));
+    assert.isFalse(run("build", unknown));
+    assert.isTrue(run("update", unknownDenied));
+    assert.isTrue(run("build", unknownDenied));
     assert.isFalse(run("update", "status=disabled\nremaining=unlimited"));
+    assert.notInclude(mobileRelease, "a native cloud build is not");
     assert.include(mobileRelease, "ios-expo-daily-cap.mjs");
     assert.include(mobileRelease, "America/Vancouver");
     assert.isBelow(

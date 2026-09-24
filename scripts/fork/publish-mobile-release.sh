@@ -30,6 +30,8 @@
 # from Expo, so the budget is shared across Mac, Windows, and Linux
 # agents. Hitting the cap skips that Expo call and annotates; it does not
 # fail the build or the desktop packagers. Local Xcode IPAs do not count.
+# If today's usage cannot be read, OTA and cloud IPA both fail open when
+# allowed=true so a flake cannot skip a due native binary.
 #
 # Buildkite cancels intermediate main builds when pushes land in quick
 # succession, so a release can die mid-flight and a later push would skip on
@@ -253,15 +255,17 @@ ios_expo_daily_cap_eval() {
   printf '%s\n' "$out"
 }
 
-# True when this Expo spend should be skipped. Unknown usage fails open for
-# OTA (so a GraphQL flake cannot strand TestFlight JS) and closed for a
-# cloud IPA (so a flake cannot burn a native credit).
+# True when this Expo spend should be skipped. Unknown usage (store
+# unavailable) fails open for OTA and cloud IPA when allowed=true, so a
+# GraphQL/CLI flake cannot strand TestFlight JS or a due native binary.
+# When usage can be read, remaining==0 still blocks both.
 ios_expo_cap_blocks() {
   local kind="$1"
   local report="$2"
-  local status remaining
+  local status remaining allowed
   status="$(ios_expo_daily_cap_field "$report" status)"
   remaining="$(ios_expo_daily_cap_field "$report" remaining)"
+  allowed="$(ios_expo_daily_cap_field "$report" allowed)"
   case "$status" in
     disabled) return 1 ;;
     ok)
@@ -271,7 +275,7 @@ ios_expo_cap_blocks() {
       return 0
       ;;
     unknown)
-      [[ "$kind" == "build" ]]
+      [[ "$allowed" != "true" ]]
       return
       ;;
     *)
@@ -283,16 +287,17 @@ ios_expo_cap_blocks() {
 ios_expo_cap_skip_message() {
   local kind="$1"
   local report="$2"
-  local day used limit remaining store status
+  local day used limit remaining store status allowed
   day="$(ios_expo_daily_cap_field "$report" day)"
   used="$(ios_expo_daily_cap_field "$report" used)"
   limit="$(ios_expo_daily_cap_field "$report" limit)"
   remaining="$(ios_expo_daily_cap_field "$report" remaining)"
   store="$(ios_expo_daily_cap_field "$report" store)"
   status="$(ios_expo_daily_cap_field "$report" status)"
+  allowed="$(ios_expo_daily_cap_field "$report" allowed)"
   if [[ "$status" == "unknown" ]]; then
     printf '%s\n' \
-      "Skipping cloud iOS IPA: could not read today's Expo iOS usage from ${store:-unavailable}. OTA is still allowed; a native cloud build is not."
+      "Skipping iOS Expo ${kind}: could not read today's Expo iOS usage from ${store:-unavailable} and allowed=${allowed:-false}."
     return 0
   fi
   printf '%s\n' \

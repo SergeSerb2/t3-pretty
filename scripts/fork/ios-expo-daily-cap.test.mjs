@@ -14,6 +14,7 @@ import {
   formatCapReport,
   includesIosPlatform,
   parseLimit,
+  unknownCapReport,
   vancouverDay,
 } from "./ios-expo-daily-cap.mjs";
 
@@ -94,6 +95,19 @@ describe("iOS Expo daily cap", () => {
     });
     assert.equal(result.used, 0);
     assert.equal(result.allowed, true);
+  });
+
+  it("fails open with allowed=true when Expo usage cannot be read", () => {
+    const result = unknownCapReport({
+      now: "2026-09-24T16:00:00.000Z",
+      limit: 2,
+    });
+    assert.equal(result.status, "unknown");
+    assert.equal(result.allowed, true);
+    assert.equal(result.store, "unavailable");
+    assert.equal(result.remaining, -1);
+    assert.include(formatCapReport(result), "allowed=true");
+    assert.include(formatCapReport(result), "store=unavailable");
   });
 
   it("disables the cap when the limit is 0", () => {

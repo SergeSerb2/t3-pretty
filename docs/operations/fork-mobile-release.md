@@ -115,7 +115,9 @@ cloud IPA) per America/Vancouver calendar day. The counter is Expo itself:
 `scripts/fork/ios-expo-daily-cap.mjs` lists today's production iOS EAS
 builds and production-branch iOS update groups, so Mac and Linux agents
 share one budget. Hitting the cap skips that Expo call with a warning
-annotation and does not fail desktop packaging. Local Xcode IPAs do not
+annotation and does not fail desktop packaging. If today's Expo usage
+cannot be read, OTA and cloud IPA both fail open when `allowed=true` so
+a flake cannot skip a due native binary. Local Xcode IPAs do not
 count. Set `T3CODE_IOS_EXPO_DAILY_LIMIT=0` to disable the cap. Set
 `T3CODE_FORCE_IOS=1` (or
 `T3CODE_MOBILE_MODE=build`) on a Buildkite rebuild to compile and submit
