@@ -667,3 +667,7 @@ Content: `.github/workflows/release.yml`, `apps/desktop/src/window/DesktopWindow
 ## Parent changes intentionally omitted
 
 - `.github/workflows/release.yml` — Parent sharded release tests like pull-request CI (`#13321`). Reason: T3 Pretty owns `.github/workflows/*`; release automation runs on Origin/Buildkite, not parent GitHub Actions.
+
+## Follow-up compile fix (no text conflict)
+
+Parent `#13064` auto-merged timeout-eviction call sites that still keyed `clients` by `clientId` and called `disconnect(clientId, queue, true)`. Pretty scopes hosts with `clientConnectionKey(environmentId, clientId)` and `disconnect(identity, queue, completeStream)`. Unanswered hosts were never evicted, so the new eviction tests hung. Adapted the live-generation lookup and timeout disconnect to the Pretty identity.

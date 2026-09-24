@@ -663,7 +663,9 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         // A route can outlive its generation while another request evicts it.
         // Serialize the live-generation check and offer with queue closure.
         if (
-          current.clients.get(connection.clientId)?.queue !== connection.queue ||
+          current.clients.get(
+            clientConnectionKey(connection.environmentId, connection.clientId),
+          )?.queue !== connection.queue ||
           !current.pending.has(requestId)
         ) {
           return Effect.succeed([false, current] as const);
@@ -695,7 +697,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
           Effect.gen(function* () {
             // An unanswered request invalidates this connection. Do not replay
             // actions: the client may have applied them before becoming unreachable.
-            yield* disconnect(connection.clientId, connection.queue, true);
+            yield* disconnect(connection, connection.queue, true);
             return yield* new PreviewAutomationTimeoutError(requestContext);
           }),
         onSome: (value) => Effect.succeed(value as A),
