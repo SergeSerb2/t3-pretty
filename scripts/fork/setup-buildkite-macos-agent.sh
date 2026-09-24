@@ -16,6 +16,12 @@
 #
 # Machines without a full Xcode.app default to REVIEW_ONLY=1 so they refuse
 # packaging jobs that still match macos-release on older pipeline.yml files.
+# Agent-local hooks are copied at setup time and do not auto-pull from git.
+# After macos-review-only-hook.sh changes, re-run this script or copy the
+# file onto hooks/pre-command. Linux review-only agents install the same
+# hook at $HOME/.config/t3-pretty/buildkite/hooks/pre-command and must
+# be recopied the same way — persist-ios-native-submit-hook.sh only
+# refreshes Homebrew hooks on a Mac.
 #
 # Usage:
 #   printf '%s\n' '{"token":"<agent token>"}' > "$HOME/t3-buildkite-token.json"

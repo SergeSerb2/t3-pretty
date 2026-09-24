@@ -11,17 +11,19 @@
 # Store review. EAS owns the remote retry after accepting the submission, so
 # Buildkite does not wait on that queue while holding a Mac signing slot.
 #
-# This job is Linux-capable: `eas update` and `eas build` (cloud, no --local)
-# do not need Xcode. When a usable full Xcode is on the agent, local
-# `eas build --local` still saves an Expo IPA credit. Without Xcode the job
-# uses EAS cloud instead of failing. Force local with T3CODE_IOS_LOCAL_XCODE=1
+# This job is Linux- and Windows-capable: `eas update` and `eas build`
+# (cloud, no --local) do not need Xcode. When a usable full Xcode is on the
+# agent, local `eas build --local` still saves an Expo IPA credit. Without
+# Xcode — including windows-release and review-only Linux — the job uses
+# EAS cloud instead of failing. Force local with T3CODE_IOS_LOCAL_XCODE=1
 # (fails if Xcode is missing). Force cloud with T3CODE_IOS_ALLOW_EAS_CLOUD=1
-# even when Xcode is present.
+# even when Xcode is present. Non-Darwin hosts force cloud themselves and
+# never look for /Applications/Xcode.app.
 #
 # Tip packaging allows at most two iOS Expo spends (cloud IPA or OTA) per
 # America/Vancouver calendar day. scripts/fork/ios-expo-daily-cap.mjs counts
 # production-profile iOS EAS builds and production-branch iOS update groups
-# from Expo, so the budget is shared across macos-release Mac and Linux
+# from Expo, so the budget is shared across Mac, Windows, and Linux
 # agents. Hitting the cap skips that Expo call and annotates; it does not
 # fail the build or the desktop packagers. Local Xcode IPAs do not count.
 #
@@ -41,8 +43,16 @@ source "$root/scripts/fork/apple-signing-lock.sh"
 # shellcheck source=ensure-vite-plus.sh
 source "$root/scripts/fork/ensure-vite-plus.sh"
 
-export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
+if [[ -z "${VP_HOME:-}" && -d /c/buildkite-agent/vite-plus ]]; then
+  export VP_HOME=/c/buildkite-agent/vite-plus
+fi
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${VP_HOME:-${HOME}/.vite-plus}/bin:${HOME}/.local/bin:${PATH}"
 vite_plus_on_path
+ios_host="$(uname -s)"
+ios_uses_apple_keychain=0
+case "$ios_host" in
+  Darwin) ios_uses_apple_keychain=1 ;;
+esac
 export APP_VARIANT="${APP_VARIANT:-production}"
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
 export LANG="${LANG:-en_US.UTF-8}"
@@ -85,7 +95,8 @@ load_secret() {
   if [[ -z "$value" ]]; then
     for candidate in \
       "${HOME}/.config/t3-pretty/${name}" \
-      "/opt/homebrew/var/buildkite-agent/secrets/${name}"; do
+      "/opt/homebrew/var/buildkite-agent/secrets/${name}" \
+      "/c/buildkite-agent/secrets/${name}"; do
       if [[ -f "$candidate" ]]; then
         value="$(tr -d '\r' < "$candidate")"
         value="${value%$'\n'}"
@@ -431,7 +442,9 @@ cleanup() {
   exit "$status"
 }
 trap cleanup EXIT
-apple_signing_lock_acquire
+if (( ios_uses_apple_keychain == 1 )); then
+  apple_signing_lock_acquire
+fi
 
 if ! load_secret EXPO_TOKEN; then
   echo "EXPO_TOKEN is required to publish OTA that installed TestFlight binaries poll." >&2
@@ -910,8 +923,9 @@ prefer_eas_cloud_ios() {
   return 1
 }
 
-# Review-only agents must not compile a local IPA on a daily-driver keychain.
-if [[ "${T3_PRETTY_REVIEW_ONLY:-}" == "1" ]]; then
+# Review-only agents and non-Darwin hosts must not compile a local IPA.
+# Windows/Linux have no Xcode; do not set T3CODE_FORCE_IOS here.
+if [[ "${T3_PRETTY_REVIEW_ONLY:-}" == "1" || "$ios_host" != "Darwin" ]]; then
   export T3CODE_IOS_ALLOW_EAS_CLOUD="${T3CODE_IOS_ALLOW_EAS_CLOUD:-1}"
   unset T3CODE_IOS_LOCAL_XCODE
 fi

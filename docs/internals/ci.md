@@ -51,8 +51,8 @@ builds the x64 AppImage onto the same updater feed. Mac-capable jobs run
 on a hybrid of hosted M4 and self-hosted `macos-release`. Hosted
 `macos-medium` runs pipeline upload and Android orchestration. Hosted
 `macos-large` signs the DMG when hosted dispatch works. iOS OTA/TestFlight
-runs on self-hosted `macos-release` without an `os=macos` pin so Linux can
-publish through Expo. Signing
+uses the single cluster queue `windows-release` so Expo cloud can run
+without review-only Linux. Signing
 imports `CSC_LINK` / `APPLE_API_KEY` from cluster secrets into a per-job
 temp keychain. Origin PR review, comments, the GHA importer, upstream
 sync, the GitHub mirror, and relay stay on self-hosted `macos-release`

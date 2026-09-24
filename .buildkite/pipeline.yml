@@ -44,8 +44,14 @@
 #                     Hosted M4 lacks those today (BK 1876/1878/1880).
 #                     Temporary packaging also runs here: macos-dmg,
 #                     publish-cli, and android-mobile (os=macos). ios-mobile
-#                     stays on this queue without an os pin so Linux Expo
-#                     cloud OTA/IPA can run when Serge's Mac is offline.
+#                     is a single cluster queue: windows-release (serge-pc).
+#                     Cluster `agents.queue` must be one string — a YAML
+#                     list is uploaded as '["windows-release",
+#                     "macos-release"]' and rejected (BK #2823). Expo
+#                     cloud does not need Xcode, so Windows is the host
+#                     when Macs are flaky. Do not add macos-release here:
+#                     that pool includes review-only Linux whose stale
+#                     hook still prints "Refusing ios-mobile."
 #   windows-release — serge-pc native NSIS (cannot run on Mac)
 #
 # TODO: restore hosted queues for packaging (macos-large DMG/iOS,
@@ -58,11 +64,17 @@
 # macos-release Apple-keychain jobs (DMG, Android, relay) keep an os
 # pin so the mixed pool (Serge Mac + Linux review +
 # m1-linux-t3code-fork) cannot take them. ios-mobile is the exception:
-# Expo cloud OTA/IPA is Linux-capable and must not wait for a Mac.
-# Origin PR review and comments stay queue-wide so the review-only
-# Linux agent can take them. The Buildkite
-# default upload step is macos-medium (pipeline settings, not this
-# file); upload does not need Origin secrets.
+# Expo cloud OTA/IPA does not need Xcode, so it uses windows-release
+# only and skips the macos-release mixed pool. Origin PR
+# review and comments stay queue-wide so the review-only Linux agent
+# can take them. The Buildkite default upload step is
+# macos-release + os=macos in pipeline settings (not this file).
+# Do not send upload to windows-release: #2819 failed with
+# "Access is denied" / exit 5 on the temp batch wrapper.
+# macos-medium hosted upload still auto-cancels. Upload does not
+# need Origin secrets. A review-only Linux hook that has not been
+# recopied still refuses an empty BUILDKITE_STEP_KEY, so the os=macos
+# pin keeps m1-linux (os=linux) off upload.
 #
 # Do not list YAML `secrets:` on these steps. Hosted agents currently
 # 500 while fetching them; self-hosted packaging does not need that
@@ -298,18 +310,16 @@ steps:
     priority: 20
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
-    # Queue-wide on macos-release. Do not pin os=macos: that leaves this
-    # step limited when the Mac is offline. m1-linux-t3code-fork
-    # (os=linux) can publish OTA and EAS cloud IPAs. Local Xcode remains
-    # available when a Mac takes the job. Review-only agents may run this
-    # Expo path (cloud only); they still refuse DMG/Android/relay. Hosted
-    # macos-large auto-cancels in ~100ms (BK #1944/#1948); do not restore
-    # that queue until hosted dispatch works.
+    # Single queue: windows-release (serge-pc). Buildkite clusters reject
+    # a YAML/JSON list as agents.queue (BK #2823). macos-release is the
+    # mixed pool (Serge Mac + review-only Linux + m1-linux-t3code-fork);
+    # the Linux hook on disk still refuses ios-mobile until recopied.
+    # Hosted macos-large auto-cancels in ~100ms (BK #1944/#1948).
     # Daily cap: two iOS Expo spends (OTA or cloud IPA) per
     # America/Vancouver day. T3CODE_IOS_LOCAL_XCODE=1 forces local
     # Xcode. T3CODE_IOS_ALLOW_EAS_CLOUD=1 forces cloud even with Xcode.
     agents:
-      queue: macos-release
+      queue: windows-release
     env:
       APP_VARIANT: production
       NODE_OPTIONS: "--max-old-space-size=8192"
@@ -317,7 +327,8 @@ steps:
       LC_ALL: en_US.UTF-8
       APPLE_TEAM_ID: "78A5P57U23"
       T3CODE_APPLE_TEAM_ID: "78A5P57U23"
-    command: bash scripts/fork/publish-mobile-release.sh
+    command: node scripts/fork/run-publish-mobile-release.mjs
+    # run-publish-mobile-release.mjs execs publish-mobile-release.sh.
 
   # Android uses the same fork-owned EAS project and production OTA channel as
   # iOS, but its native binary is built in EAS cloud and submitted to Google

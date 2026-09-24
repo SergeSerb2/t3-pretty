@@ -318,8 +318,16 @@ ${setup}
     const relayStep = pipeline.slice(pipeline.indexOf(":cloud: Relay"));
     assert.include(dmgStep, "queue: macos-release");
     assert.include(dmgStep, "os: macos");
-    assert.include(iosStep, "queue: macos-release");
+    assert.include(iosStep, "queue: windows-release");
+    assert.notInclude(iosStep, "- windows-release");
+    assert.notInclude(iosStep, "- macos-release");
+    assert.notInclude(iosStep, "os: linux");
     assert.notInclude(iosStep, "os: macos");
+    assert.equal(
+      (pipeline.match(/^[ \t]*queue:[ \t]*$/gm) || []).length,
+      0,
+      "cluster queue must be a single string, not a YAML list",
+    );
     assert.include(iosStep, 'concurrency_group: "t3-pretty/ios-mobile"');
     assert.notInclude(iosStep, "t3-pretty/apple-signing");
     assert.include(syncStep, "queue: macos-release");
@@ -327,6 +335,8 @@ ${setup}
     assert.include(reviewStep, "queue: macos-release");
     assert.notInclude(reviewStep, "os: macos");
     assert.include(commentsStep, "queue: macos-release");
+    assert.include(pipeline, "macos-release + os=macos in pipeline settings");
+    assert.notInclude(pipeline, "windows-release in pipeline settings");
     assert.include(windowsStep, "queue: windows-release");
     assert.include(mirrorStep, "queue: macos-release");
     assert.include(mirrorStep, "os: macos");
@@ -365,10 +375,28 @@ ${setup}
     );
     assert.include(iosStep, "T3CODE_IOS_ALLOW_EAS_CLOUD");
     assert.include(iosStep, "T3CODE_IOS_LOCAL_XCODE");
-    assert.include(iosStep, "queue: macos-release");
-    assert.notInclude(iosStep, "os: macos");
+    assert.include(iosStep, "queue: windows-release");
+    assert.notInclude(iosStep, "- windows-release");
+    assert.notInclude(iosStep, "- macos-release");
+    assert.notInclude(iosStep, "T3CODE_FORCE_IOS");
+    assert.include(iosStep, "run-publish-mobile-release.mjs");
     assert.include(iosStep, "publish-mobile-release.sh");
-    assert.include(mobileRelease, "Linux-capable");
+    assert.include(mobileRelease, "Linux- and Windows-capable");
+    assert.include(mobileRelease, '"$ios_host" != "Darwin"');
+    assert.include(mobileRelease, "/c/buildkite-agent/vite-plus");
+    assert.include(mobileRelease, "/c/buildkite-agent/secrets/");
+    assert.include(mobileRelease, "ios_uses_apple_keychain");
+    const launcher = NodeFS.readFileSync(
+      NodePath.resolve(here, "run-publish-mobile-release.mjs"),
+      "utf8",
+    );
+    assert.include(launcher, "publish-mobile-release.sh");
+    assert.include(launcher, "Git");
+    assert.include(launcher, "bash.exe");
+    assert.include(launcher, "T3CODE_IOS_ALLOW_EAS_CLOUD");
+    assert.notInclude(launcher, "T3CODE_FORCE_IOS=");
+    assert.include(launcher, "delete env.VP_HOME");
+    assert.notInclude(launcher, "env.VP_HOME =");
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
     assert.include(mobileRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
     assert.include(mobileRelease, 'ensure_vite_plus "to publish mobile OTA"');
@@ -476,6 +504,8 @@ ${setup}
     assert.include(macosAgent, "${AGENT_NAME}-2");
     assert.include(macosAgent, "REVIEW_ONLY");
     assert.include(macosAgent, "macos-review-only-hook.sh");
+    assert.include(macosAgent, "do not auto-pull from git");
+    assert.include(macosAgent, ".config/t3-pretty/buildkite/hooks/pre-command");
     assert.include(macosAgent, "T3_PRETTY_REVIEW_ONLY");
     assert.include(macosAgent, "GIT_CONFIG_GLOBAL");
     assert.include(macosAgent, "HOMEBREW_NO_ASK");
@@ -492,6 +522,7 @@ ${setup}
     assert.include(persistHook, 'grep -q "helpers_ready" "$src/macos-origin-git.sh"');
     assert.include(persistHook, "origin_cli_helper_ready");
     assert.include(persistHook, "macos-review-only-hook.sh");
+    assert.include(persistHook, ".config/t3-pretty/buildkite/hooks/pre-command");
     assert.include(persistHook, "refresh-origin-git-credentials.sh");
     assert.include(persistHook, 'mkdir -p "$HOME/.local/bin"');
     assert.include(
@@ -802,6 +833,12 @@ describe("macos review-only pre-command hook", () => {
     assert.equal(refused.status, 1);
     assert.include(refused.stderr, "review-only");
     assert.equal(run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "ios-mobile" }).status, 0);
+    assert.equal(run({ T3_PRETTY_REVIEW_ONLY: "1" }).status, 0);
+    assert.equal(run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "" }).status, 0);
+    for (const key of ["android-mobile", "upstream-sync", "deploy-relay", "publish-cli"]) {
+      const blocked = run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: key });
+      assert.equal(blocked.status, 1, key);
+    }
   });
 });
 

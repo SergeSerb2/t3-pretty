@@ -65,13 +65,21 @@ Play Console decision, not an automatic consequence of this pipeline.
 
 ### iOS OTA and TestFlight
 
-`.buildkite/pipeline.yml` runs `scripts/fork/publish-mobile-release.sh` on
-every push to Origin `main` that is not the four-hour schedule. The job
-lives on self-hosted `macos-release` without an `os=macos` pin so a Linux
-agent (`m1-linux-t3code-fork`) can publish when Serge's Mac is offline. It
-is not imported GitHub Actions: the importer cannot load `EXPO_TOKEN` or
-Apple keys, so those jobs died in about two seconds and TestFlight never
-moved.
+`.buildkite/pipeline.yml` runs `scripts/fork/run-publish-mobile-release.mjs`
+(which execs `publish-mobile-release.sh`) on every push to Origin `main`
+that is not the four-hour schedule. The job uses the single cluster queue
+`windows-release` (serge-pc) so Expo cloud can run without a Mac and
+without review-only Linux. Buildkite clusters reject a YAML list as
+`agents.queue`. The Linux review-only pre-command hook is copied at
+setup and does not auto-pull from git. After allowlist changes, re-copy
+`scripts/fork/macos-review-only-hook.sh` onto
+`/home/m1-dev/.config/t3-pretty/buildkite/hooks/pre-command` before giving
+`m1-linux-t3code-fork` any `macos-release` job. Default pipeline upload
+stays on `macos-release` + `os=macos` in Buildkite settings so a stale
+review-only hook cannot refuse the empty-key `:pipeline:` step. It is not
+imported GitHub Actions:
+the importer cannot load `EXPO_TOKEN` or Apple keys, so those jobs died in
+about two seconds and TestFlight never moved.
 
 The script skips the OTA when the push does not touch mobile-relevant
 paths. Buildkite cancels intermediate main builds when pushes land in quick
@@ -93,11 +101,12 @@ changed. A GitHub Actions-era `.t3-fork/ios-production-fingerprint` is
 enough to skip Xcode. The job does not force an IPA just because
 `.t3-fork/ios-native-submit` is missing. When the worker has a usable full
 Xcode, local `eas build --local` still saves an Expo IPA credit. Without
-Xcode — including Linux `macos-release` agents — the job compiles on EAS
-cloud (`eas build --wait --json`, no `--local`) instead of failing. Set
+Xcode — including `windows-release` and Linux `macos-release` agents — the
+job compiles on EAS cloud (`eas build --wait --json`, no `--local`) instead
+of failing. Set
 `T3CODE_IOS_LOCAL_XCODE=1` on a rebuild to require local Xcode. Set
 `T3CODE_IOS_ALLOW_EAS_CLOUD=1` to force cloud even when Xcode is present.
-OTA (`eas update`) is unchanged and is also Linux-capable. Tip packaging
+OTA (`eas update`) is unchanged and is also Linux- and Windows-capable. Tip packaging
 allows at most two iOS Expo spends (a production OTA or a production-profile
 cloud IPA) per America/Vancouver calendar day. The counter is Expo itself:
 `scripts/fork/ios-expo-daily-cap.mjs` lists today's production iOS EAS
@@ -144,7 +153,7 @@ gpt-5.6-sol/xhigh conflict resolver as desktop. After the Origin merge, if
 that integration changed mobile-relevant paths, the sync job runs
 `publish-mobile-release.sh` in-process on self-hosted `macos-release` so a
 missed merge push still publishes OTA. The dedicated `ios-mobile` step on
-later `main` pushes is queue-wide on `macos-release` (Linux or Mac). The
+later `main` pushes uses `windows-release` (serge-pc). The
 script takes `/tmp/t3-pretty-ios-mobile.lock` on that host, so a follow-up
 job on the same agent cannot overlap eas update or a local IPA. It no
 longer shares the `t3-pretty/apple-signing` concurrency group with the

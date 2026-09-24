@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Counts today's tip-packaging iOS Expo spend so Buildkite can skip instead
 // of burning credits. Source of truth is Expo itself (eas build:list +
-// production-branch update groups), which is shared across macos-release
-// Mac and Linux agents. Local `eas build --local` IPAs never appear here
+// production-branch update groups), which is shared across Mac, Windows,
+// and Linux agents. Local `eas build --local` IPAs never appear here
 // and do not count. America/Vancouver is the calendar day Serge asked for.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";

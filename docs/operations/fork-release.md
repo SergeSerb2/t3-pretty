@@ -320,7 +320,7 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | hosted `macos-large` (M4 12 vCPU)                                             |
 | Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                                            |
 | Updater-feed upload (R2/S3) | m1-dev                                | 5 min (3 min just to install Vite+)         | hosted `macos-large` DMG (`origin-forge upload-assets` is S3, not Origin CLI) |
-| Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | `macos-release` Linux or Mac (`publish-mobile-release.sh`)                    |
+| Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | `windows-release` (`publish-mobile-release.sh`)                                 |
 | Relay production deploy     | m1-dev                                | queued behind releases                      | self-hosted `macos-release` (`deploy-relay-ci.sh`)                            |
 | GitHub mirror               | m1-dev                                | seconds                                     | self-hosted `macos-release` (`mirror-github.sh`)                              |
 
@@ -345,7 +345,13 @@ Hosted M4 agents are ephemeral. Optional leftover self-hosted agents still
 register with `scripts/fork/setup-buildkite-macos-agent.sh` on
 `macos-release`. The previous dedicated Mac runner lived at
 `/Users/m1-dev/actions-runner-t3code-fork` before that host moved to Linux.
-Do not give a leftover agent pull-request queues.
+Do not give a leftover agent pull-request queues. The Linux review-only
+agent copies `macos-review-only-hook.sh` to
+`$HOME/.config/t3-pretty/buildkite/hooks/pre-command` at setup and does
+not auto-pull later allowlist changes. Re-copy that file after hook
+edits before giving `m1-linux` `:pipeline:` or `ios-mobile`. Tip iOS
+Expo uses the single cluster queue `windows-release` so packaging does
+not wait on that copy.
 
 Origin git JWTs live about an hour. The agent's pre-checkout hook points git at
 `$HOME/.git-credentials` through a get-only helper: git's plain `store` helper

@@ -4,7 +4,10 @@
 # contain .t3-fork/ios-native-submit yet; without this they each compile
 # another 50–90 minute IPA on the only Mac. Only that copy is ios-mobile.
 # Also refresh agent hooks from this checkout so pre-checkout fixes land
-# without re-running setup-buildkite-macos-agent.sh.
+# without re-running setup-buildkite-macos-agent.sh. This only writes
+# Homebrew hooks. Linux review-only pre-command lives at
+# $HOME/.config/t3-pretty/buildkite/hooks/pre-command and must be recopied
+# by hand after macos-review-only-hook.sh changes.
 set -euo pipefail
 
 refresh_macos_agent_hooks() {
