@@ -582,3 +582,45 @@ Modify/delete: `scripts/lint-restyle-ceiling.ts` (parent deleted it; Pretty modi
 - `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` / `SettingsSidebarNav.tsx` — Parent `ghost-muted` clear buttons and header restyle. Reason: Pretty owns the bordered search field, peek-copy rail, and pointer-coarse header hit targets.
 - `apps/web/src/components/settings/ConnectionsSettings.tsx` — Parent `ghost-muted` header actions. Reason: Pretty's add-environment control keeps compact `h-5` / `text-[11px]` chrome.
 - `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260923.2173` (`68fb7f4b8`, `feat(mobile): manage environment and provider updates (#13302)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260923.2150`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2808. The scheduled job created local branch `automation/upstream-v0.0.43-nightly.20260923.2173` then lost the macos-release agent (`m5-dev-t3code-fork`, exit_status=-1) before printing a conflict list or Sol error. macos-release agents are offline; this integrate does not wait for Sol / Buildkite auto-repair.
+- Merge base vs Origin `main` (`802e815b7`): `f5ef0ddb9` (2150). Origin #688 merge-committed 2150, so 2150 is an ancestor of `main`. Parent 2150..2173 is two commits / 26 files (environment/provider updates and Live Activity showcase captures). Conflicts are the 4 Pretty-divergent paths that nightly also touched — not a squash-merge replay.
+
+## Conflicted paths
+
+Content: `ConnectionEnvironmentRow.tsx`, `ShowcaseCaptureCoordinator.tsx`, `docs/user/updating.md`.
+
+Modify/delete: `.github/workflows/mobile-eas-preview.yml` (parent modified; Pretty deleted). Kept the Pretty deletion.
+
+`.github/workflows/*` was restored from `origin/main` after the merge, matching `scripts/fork/run-upstream-sync.sh`. That also dropped the parent AXe install step that auto-merged into `mobile-showcase-screenshots.yml`.
+
+## Clean-merged parent changes (no text conflict)
+
+- `apps/mobile` — Environment list rows open `SettingsEnvironmentDetail` for server and provider updates (`#13302`). New `environment-maintenance` helper plus tests. Server-controls and GitHub-routing screens link into that detail page. Android notification modules expose Live Activity / agent-notification capture hooks (`#13316`).
+- `apps/mobile/src/Stack.tsx` — Registered `SettingsEnvironmentDetail` beside Pretty's Apps / environment-storage / scenery routes.
+- `apps/mobile/src/features/showcase/*` — `agent-activity` scene, `showcaseAgentActivity` / `stageShowcaseAgentActivity`, and runner capture-script / docs follow-through.
+- `docs/operations/mobile-app-store-screenshots.md` — Documents the new agent-activity capture scene.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` — Pretty's 250ms animated expand chevron stays when the row still expands in place. Parent `opensDetails`, accessibility label, `bg-grouped-card`, status-dot placement, relay-URL hide, and `chevron.right` on the details path land around it.
+- `apps/mobile/src/features/showcase/ShowcaseCaptureCoordinator.tsx` — Pretty's `SHOWCASE_ENABLED` module import stays; parent `stageShowcaseAgentActivity` is imported beside it. The rest of the agent-activity coordinator auto-merged.
+- `docs/user/updating.md` — Pretty's Remote Access cross-link stays under Mobile updates, after the new environment-update instructions.
+- `.github/workflows/*` — Pretty's trusted workflow tree stays (EAS preview remains deleted; showcase workflow keeps Pretty's no-theme-matrix shape).
+
+## Parent changes integrated at conflict boundaries
+
+- Environment rows can open a dedicated detail page (`opensDetails` / `chevron.right`) instead of only expanding inline.
+- Showcase coordinator stages Live Activity / agent-notification fixtures for the `agent-activity` scene.
+- User docs describe checking for environment and provider updates from **Settings → Environments**.
+
+## Parent changes intentionally omitted
+
+- `.github/workflows/mobile-eas-preview.yml` — Parent added an EAS env:pull `GITHUB_ENV` export for Android Google Services. Reason: T3 Pretty deleted this GitHub workflow; the fork owns release/preview automation on Origin/Buildkite.
+- `.github/workflows/mobile-showcase-screenshots.yml` — Parent installed AXe to lock the simulator and answer the notification prompt. Reason: fork-owned workflow tree is restored from Pretty `main`. The agent-activity capture code in `scripts/mobile-showcase.ts` still landed.
