@@ -887,3 +887,74 @@ Content: `.github/workflows/deploy-relay.yml`, `apps/desktop/src/backend/Desktop
 - Parent `buildCodexDeveloperInstructions` extra-arg removal is accepted (API is one-arg); computer-use prompt text is not re-injected into developer_instructions. Reason: parent moved tool text to `additionalContext` so newer models keep T3 instructions.
 - `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
 - `vite.config.ts` error-level shadcn rules. Reason: same Pretty lint-soft-as-warn policy as 2223.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260925.2251` (`1c1270663`, `fix(mobile): render assigned project icons in chat list (#12810)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260925.2237`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2903. Scheduled sync on `b93d6790f` merged the nightly and hit 11 content conflicts (plus modify/delete on parent `release-desktop.yml`). CLIProxyAPI `gpt-5.6-sol` returned HTTP 429 `model_cooldown` / `usage_limit_reached` for 8/8 attempts starting on `README.md` (CLIProxyAPI unavailable). This integrate does not wait for Sol and used no third-party model for resolution.
+- Merge base vs Origin `main` (`b93d6790f`): `6391be272` (2237). Origin #716 merge-committed 2237, so 2237 is an ancestor of `main`. Parent 2237..2251 is 17 commits / 78 files. Conflicts are the Pretty-divergent paths that nightly also touched — not a squash-merge replay.
+
+## Conflicted paths
+
+Content: `.github/workflows/release.yml`, `README.md`, `apps/desktop/src/backend/DesktopBackendConfiguration.ts`, `apps/desktop/src/updates/updatesTestHarness.ts`, `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx`, `apps/server/src/usage/usageScanCache.ts`, `apps/server/src/usage/usageTranscripts.ts`, `docs/internals/connection-runtime.md`, `docs/user/install.md`, `scripts/build-desktop-artifact.ts`.
+
+Modify/delete: `.github/workflows/release-desktop.yml` (deleted in HEAD / Pretty).
+
+`.github/workflows/*` was restored from Origin `main` (Pretty policy). Parent `release.yml`, `release-desktop.yml`, and the other parent workflow tree are omitted.
+
+## Clean-merged parent changes (no text conflict)
+
+- Assigned project icons render in the mobile chat list (`#12810`).
+- OpenAI logo updated to the current brand asset (`#13611`).
+- Claude fast-mode requests priced at the fast rate (`#13599`).
+- `t3 app` keeps working after a second desktop app quits (`#13585`).
+- New worktree threads no longer say "checkout" during setup (`#13590`).
+- One `t3.json` setup action that works on every OS (`#13589`).
+- Compiled JavaScript cached between desktop launches (`#13501`).
+- Linux `.deb` that updates itself (`#13575`).
+- Nested task states stay out of parent bullets (`#11477`).
+- A preview app no longer knocks the desktop's own server offline (`#13577`).
+- Android fold model sized from the inner display (`#13574`).
+- Agents working banner links to the Agents panel (`#13572`).
+- Preview MCP errors tell agents what to do (`#13559`).
+- Running threads stay synced in the desktop background (`#13554`).
+- Paste after clicking away from the composer lands in it again (`#13553`).
+- Preview snapshots fit in the agent's tool output again (`#13558`).
+- Android foldables can be controlled in the Device panel (`#13534`).
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- Trusted `.github/workflows/*` from Origin `main`. Parent release and desktop-release workflows stay deleted/omitted.
+- Pretty README source-install section (`### 2. Install vp`) and Origin clone path. R2 feed remains the desktop install channel.
+- Windows stdin bootstrap plus listen flags on the primary desktop backend (`useStdinBootstrap`).
+- Pretty GitHub releases client mock and `appVersion` on the desktop updates test harness.
+- Mobile new-task Android glass `MaterialListRow` + LegendList recycle path (not the parent's ScrollView rewrite).
+- Usage scan-cache hydration limits, exported version constant, and bounded token/cost/dedupe validation.
+- Claude `reportedCost(record["costUSD"])` helper (bounded) instead of an unbound `cost` local.
+- Pretty R2 desktop download links in `docs/user/install.md`. `winget` / Homebrew / AUR stay documented as upstream T3 Code, not this fork.
+- Pretty desktop artifact description (`T3 Pretty desktop build`).
+- Connection-runtime `## Platform Layers` heading.
+
+## Parent changes integrated at conflict boundaries
+
+- Packaged `--require` compile-cache prefix on primary backend args (`#13501`), composed with Pretty stdin bootstrap.
+- Linux `.deb` package-type harness option and `homepage` for the `.deb` control file (`#13575`).
+- Assigned `projectIcon` on new-task favicons (`#12810`) without restoring the parent list architecture.
+- Usage scan cache v4 + Claude `fast` serialization (`#13599`), keeping Pretty hydration limits.
+- Claude transcript `fast: usageRecord["speed"] === "fast"` (`#13599`).
+- Desktop keep-alive paragraph in `docs/internals/connection-runtime.md` (`#13554`).
+- Linux `.deb` self-update note on Pretty's R2 install page, without replacing R2 links with winget/brew/AUR.
+- README / install mention that the R2 Linux feed now includes `.deb` beside the AppImage.
+
+## Parent changes intentionally omitted
+
+- Parent `.github/workflows/release.yml` and `release-desktop.yml`. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
+- Parent README Debian/AUR install subsections that collided with Pretty's `### 2. Install vp` source path. Reason: those storefronts install upstream T3 Code; Pretty desktop installs come from the R2 feed. The `.deb` is documented on the Pretty R2 channel instead.
+- Parent `docs/user/install.md` winget / Homebrew / AUR table. Reason: same storefront warning already in the Pretty README; replacing R2 links would send users to upstream T3 Code.
+- Parent new-task `ScrollView` + iOS Pressable rewrite. Reason: Pretty already owns the LegendList recycle path and Android glass `MaterialListRow`.
+- Parent usage-scan decode that drops session/token/cost bounds. Reason: Pretty keeps the hydration trust boundary; v4 `fast` is added beside those checks.
+- Parent Claude `reportedCostUsd` from an unbound `cost` local. Reason: Pretty's `reportedCost` helper already bounds the field; `fast` is added beside it.
+- Parent `description: "T3 Code desktop build"`. Reason: packaged metadata stays Pretty-branded; `.deb` `homepage` is still taken.
