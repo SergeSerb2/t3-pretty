@@ -958,3 +958,9 @@ Modify/delete: `.github/workflows/release-desktop.yml` (deleted in HEAD / Pretty
 - Parent usage-scan decode that drops session/token/cost bounds. Reason: Pretty keeps the hydration trust boundary; v4 `fast` is added beside those checks.
 - Parent Claude `reportedCostUsd` from an unbound `cost` local. Reason: Pretty's `reportedCost` helper already bounds the field; `fast` is added beside it.
 - Parent `description: "T3 Code desktop build"`. Reason: packaged metadata stays Pretty-branded; `.deb` `homepage` is still taken.
+- Parent marketing ARM `.deb` / AppImage GitHub links (`download.astro`). Reason: Pretty does not ship arm64 desktop Linux from the R2 feed; GitHub Release assets are not the install channel. The x64 `.deb` card points at the R2 feed instead.
+
+## Post-merge repairs
+
+- `origin-pr-review` — Removed the duplicated `codeCache: true` on the production desktop scheme and left Chromium code cache off on the development scheme, matching parent `#13501` (Vite serves changing code at stable URLs).
+- `origin-pr-review` — Pointed the new marketing Debian `.deb` card at the Pretty R2 feed and dropped parent ARM GitHub download links.
