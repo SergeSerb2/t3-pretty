@@ -874,7 +874,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           ),
         );
       },
-      { concurrency: "unbounded", discard: true },
+      { concurrency: 8, discard: true },
     );
   });
   const keepFrameCaptureWebContentsUnthrottled = Effect.fnUntraced(function* (
