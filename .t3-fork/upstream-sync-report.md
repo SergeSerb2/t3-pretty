@@ -763,6 +763,7 @@ Content: `apps/marketing/src/pages/index.astro`, `apps/mobile/src/features/threa
 - `web-typecheck` — `ChatView.tsx` `runProjectScript` now accepts parent `rememberAsLastInvoked` so chat code-block shell runs can pass `{ rememberAsLastInvoked: false }` without a type error. Pretty has no last-invoked script affordance, so the flag is accepted and unused.
 - `web-typecheck` — Sidebar thread context menu supplies `autoSettleEnabled` / `supports.autoSettleOptOut` and dispatches `auto-settle:enabled` / `auto-settle:disabled` through `setThreadAutoSettle`, matching the header menu hook.
 - `relay-typecheck` — Pretty-only `HomeSuggestionsStore` used `instanceof` on a Schema TaggedError and `new Date()` in its unit helpers. Parent Effect diagnostics now error those; switched to `Schema.is` and `DateTime.makeUnsafe`.
+- `server-test` — `054_ProjectionThreadsAutoSettleDisabledAt.test.ts` now bounds `runMigrations` at Pretty slots 64 then 65 (not upstream 53/54), matching `Migrations.ts`.
 
 ## Clean-merged parent changes (no text conflict)
 
