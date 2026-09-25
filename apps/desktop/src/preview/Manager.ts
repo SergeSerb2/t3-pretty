@@ -9,6 +9,7 @@ import * as NodeCrypto from "node:crypto";
 import {
   DesktopPreviewRecordingInputSchema,
   DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER,
+  PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES,
 } from "@t3tools/contracts";
 import type {
   DesktopPreviewAnnotationTheme,
@@ -156,6 +157,10 @@ const PICTURE_IN_PICTURE_MIN_WIDTH = 240;
 const PICTURE_IN_PICTURE_MIN_HEIGHT = 160;
 const PICTURE_IN_PICTURE_ASPECT_RATIO_EPSILON = 0.002;
 const DIAGNOSTIC_BUFFER_LIMIT = 200;
+const DIAGNOSTIC_REQUEST_LIMIT = 500;
+const MAX_ACCESSIBILITY_TREE_NODES = PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES;
+const MAX_ACCESSIBILITY_TREE_BYTES = 1_000_000;
+const MAX_ACCESSIBILITY_NODE_BYTES = 64_000;
 const MAX_ARTIFACT_SITE_SLUG_LENGTH = 80;
 const AGENT_CURSOR_MOVE_MS = 160;
 const AGENT_CURSOR_CLICK_LEAD_MS = 40;
@@ -182,7 +187,47 @@ const DEFAULT_ANNOTATION_THEME: DesktopPreviewAnnotationTheme = {
   fontMono: "ui-monospace, monospace",
 };
 
-const buildPreviewPictureInPictureDataUrl = (): string => {
+export function boundAccessibilityTree(
+  value: unknown,
+): PreviewAutomationSnapshot["accessibilityTree"] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return { nodes: [] };
+  const tree = value as Record<string, unknown>;
+  const nodes = tree["nodes"];
+  if (!Array.isArray(nodes)) return { nodes: [] };
+  const retainedNodes: Array<unknown> = [];
+  const candidateCount = Math.min(nodes.length, MAX_ACCESSIBILITY_TREE_NODES);
+  let retainedBytes = 0;
+  let truncatedNodeCount = nodes.length - candidateCount;
+  for (let index = 0; index < candidateCount; index += 1) {
+    let serialized: string | undefined;
+    try {
+      serialized = JSON.stringify(nodes[index]);
+    } catch {
+      truncatedNodeCount += 1;
+      continue;
+    }
+    if (serialized === undefined) {
+      truncatedNodeCount += 1;
+      continue;
+    }
+    const nodeBytes = Buffer.byteLength(serialized, "utf8");
+    if (nodeBytes > MAX_ACCESSIBILITY_NODE_BYTES) {
+      truncatedNodeCount += 1;
+      continue;
+    }
+    if (retainedBytes + nodeBytes > MAX_ACCESSIBILITY_TREE_BYTES) {
+      truncatedNodeCount += candidateCount - index;
+      break;
+    }
+    retainedBytes += nodeBytes;
+    retainedNodes.push(nodes[index]);
+  }
+  return truncatedNodeCount === 0
+    ? { nodes: retainedNodes }
+    : { nodes: retainedNodes, t3TruncatedNodeCount: truncatedNodeCount };
+}
+
+export const buildPreviewPictureInPictureDataUrl = (): string => {
   const html = `<!doctype html>
 <html>
   <head>
@@ -1203,6 +1248,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           return {
             ...current,
             requests: replaceMap(current.requests, (copy) => {
+              if (copy.size >= DIAGNOSTIC_REQUEST_LIMIT) {
+                const oldest = copy.keys().next();
+                if (!oldest.done) copy.delete(oldest.value);
+              }
               copy.set(requestId, {
                 url: String(request["url"] ?? ""),
                 method: String(request["method"] ?? "GET"),
@@ -3746,7 +3795,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       const browserDiagnostics = diagnostics.get(wc.id);
       return {
         ...page,
-        accessibilityTree: accessibility,
+        accessibilityTree: boundAccessibilityTree(accessibility),
         consoleEntries: [...(browserDiagnostics?.consoleEntries ?? [])],
         networkEntries: [...(browserDiagnostics?.networkEntries ?? [])],
         actionTimeline: [...(timelines.get(tabId) ?? [])],

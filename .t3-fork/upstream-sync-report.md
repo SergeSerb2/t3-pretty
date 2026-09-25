@@ -862,13 +862,14 @@ Content: `.github/workflows/deploy-relay.yml`, `apps/desktop/src/backend/Desktop
 - `RELAY_JWT_MAX_LENGTH`, Pretty home-suggestions relay schema, and delivery/credential prune in the relay cron.
 - Deep bounded `isNotFoundCause` / `isManagedEndpointNotFound` plus list/DNS result caps.
 - Pretty sidebar chrome: vertical rail, usage/automations utility pages, and `ThreadActiveSubagentIndicator`.
+- Preview AX snapshots stay node/byte-capped (`boundAccessibilityTree`, `t3TruncatedNodeCount`). In-flight diagnostic request map evicts at `DIAGNOSTIC_REQUEST_LIMIT`. Desktop local-auth wait/retry tests stay with `waitForReady` on the pool mock.
 - Lint soft rules stay `warn` (`vite.config.ts` auto-merged). Migration remaps stay on Pretty slots (auto-merged).
 
 ## Parent changes integrated at conflict boundaries
 
 - Idle-tunnel reclaim/recovery (`#9386`): recovery contracts, JWT typ, host register/recover, reaper sweep, docs section.
 - Desktop update restart-marker TTL of one minute and filesystem test stubs (`#12006`).
-- Debugger domain enable on preview Manager; local-environment auth pool mock.
+- Debugger domain enable on preview Manager. AX snapshots stay bounded (`boundAccessibilityTree`, node/byte caps, `t3TruncatedNodeCount`) even though Accessibility stays enabled with the parent debugger session. In-flight diagnostic `requests` evict at `DIAGNOSTIC_REQUEST_LIMIT`. Local-environment auth keeps Pretty wait/retry tests; the pool mock supplies `waitForReady`. Parent PiP frames stay base64 `data:` URLs (Pretty blob-URL helper is re-exported for the existing test).
 - DPoP secret-store error mapping; MCP revoke-before-reissue.
 - Codex `collaborationMode` + `additionalContext` + model-name lookup (`#13547`).
 - Sidebar `synchronizeTerminalPulse` (`#12962`) and `isSidebarUtilityPage` / `navigateToMainApp` Back (`#13516`). Automations stays a Pretty utility page.
