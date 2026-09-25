@@ -37,7 +37,7 @@ function SlowRequestDetails({ requests }: { requests: ReadonlyArray<SlowRpcAckRe
                 ? request.tag
                 : `${request.tag} · ${environmentLabel}`}
             </div>
-            <div className="mt-0.5 text-[10px] opacity-75">
+            <div className="mt-0.5 text-3xs opacity-75">
               Started {new Date(request.startedAt).toLocaleTimeString()}
             </div>
           </li>

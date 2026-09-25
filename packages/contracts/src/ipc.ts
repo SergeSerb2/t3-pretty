@@ -131,6 +131,8 @@ export interface ContextMenuItem<T extends string = string> {
   separatorBefore?: boolean;
   /** Clicking the parent row selects this item. Hover still opens children. */
   activateOnClick?: boolean;
+  /** Shows a check mark. Used to mark the current option inside a submenu. */
+  checked?: boolean;
   children?: readonly ContextMenuItem<T>[];
 }
 
@@ -147,6 +149,8 @@ export interface ContextMenuItemSchemaType {
   readonly separator?: boolean;
   readonly icon?: string;
   readonly separatorBefore?: boolean;
+  readonly activateOnClick?: boolean;
+  readonly checked?: boolean;
   readonly children?: readonly ContextMenuItemSchemaType[];
 }
 
@@ -174,6 +178,8 @@ export const ContextMenuItemSchema: Schema.Codec<ContextMenuItemSchemaType> = Sc
   separator: Schema.optionalKey(Schema.Boolean),
   icon: Schema.optionalKey(ContextMenuItemIconSchema),
   separatorBefore: Schema.optionalKey(Schema.Boolean),
+  activateOnClick: Schema.optionalKey(Schema.Boolean),
+  checked: Schema.optionalKey(Schema.Boolean),
   children: Schema.optionalKey(
     Schema.Array(
       Schema.suspend((): Schema.Codec<ContextMenuItemSchemaType> => ContextMenuItemSchema),

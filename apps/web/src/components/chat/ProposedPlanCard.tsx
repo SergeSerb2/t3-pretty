@@ -157,7 +157,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
 
   return (
     <div
-      className="rounded-[24px] border border-border/80 bg-card/70 p-4 sm:p-5"
+      className="rounded-3xl border border-border/80 bg-card/70 p-4 sm:p-5"
       data-proposed-plan-card=""
     >
       <div className="flex flex-wrap items-center justify-between gap-3">

@@ -17,6 +17,7 @@ import {
   ThreadPinnedPayload as ContractsThreadPinnedPayloadSchema,
   ThreadUnpinnedPayload as ContractsThreadUnpinnedPayloadSchema,
   ThreadPinReorderedPayload as ContractsThreadPinReorderedPayloadSchema,
+  ThreadAutoSettleSetPayload as ContractsThreadAutoSettleSetPayloadSchema,
   ThreadSceneryAssignedPayload as ContractsThreadSceneryAssignedPayloadSchema,
   ThreadSkillsSetPayload as ContractsThreadSkillsSetPayloadSchema,
   ThreadSubagentPolicySetPayload as ContractsThreadSubagentPolicySetPayloadSchema,
@@ -57,6 +58,7 @@ export const ThreadUnsnoozedPayload = ContractsThreadUnsnoozedPayloadSchema;
 export const ThreadPinnedPayload = ContractsThreadPinnedPayloadSchema;
 export const ThreadUnpinnedPayload = ContractsThreadUnpinnedPayloadSchema;
 export const ThreadPinReorderedPayload = ContractsThreadPinReorderedPayloadSchema;
+export const ThreadAutoSettleSetPayload = ContractsThreadAutoSettleSetPayloadSchema;
 export const ThreadSceneryAssignedPayload = ContractsThreadSceneryAssignedPayloadSchema;
 export const ThreadSkillsSetPayload = ContractsThreadSkillsSetPayloadSchema;
 export const ThreadSubagentPolicySetPayload = ContractsThreadSubagentPolicySetPayloadSchema;

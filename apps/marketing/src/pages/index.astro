@@ -36,7 +36,7 @@ const mobileEndorsementRows = [
 
     <div class="hero-float" aria-hidden="true">
       {[
-        { key: "antigravity", title: "Antigravity", icon: "/harnesses/antigravity.png", cls: "hf-antigravity" },
+        { key: "antigravity", title: "Antigravity", icon: "/harnesses/antigravity.svg", cls: "hf-antigravity" },
         { key: "claude", title: "Claude Code", icon: "/harnesses/claude-ai-icon.svg", cls: "hf-claude" },
         { key: "codex", title: "Codex", icon: "/harnesses/openai_dark.svg", cls: "hf-codex" },
         { key: "grok", title: "Grok", icon: "/harnesses/grok-dark.svg", cls: "hf-grok" },
@@ -239,7 +239,7 @@ const mobileEndorsementRows = [
           </div>
         </div>
         <div class="harness">
-          <div class="harness-mark"><img src="/harnesses/antigravity.png" alt="" /></div>
+          <div class="harness-mark"><img src="/harnesses/antigravity.svg" alt="" /></div>
           <div class="harness-meta">
             <div class="harness-name">Antigravity</div>
             <div class="harness-tag">Google sign-in</div>
@@ -725,11 +725,6 @@ const mobileEndorsementRows = [
     object-fit: contain;
   }
 
-  /* The Antigravity icon ships with its own rounded dark tile, so it fills the
-     card edge to edge instead of sitting inside it. */
-  .hf-antigravity .hero-float-card { background: #0d0d10; border-color: rgba(255, 255, 255, 0.1); }
-  .hf-antigravity .hero-float-card img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
-
   .hf-antigravity { --x: min(300px, 19vw);   --y: 20px;  --s: 64px; --rot: -5deg; --depth: 0.6; }
   .hf-claude      { --x: max(-560px, -38vw); --y: 128px; --s: 96px; --rot: -8deg; --depth: 1.2; --tint: rgba(217, 119, 87, 0.22); }
   .hf-codex       { --x: min(560px, 38vw);   --y: 128px; --s: 96px; --rot: 7deg;  --depth: 1.2; }
@@ -844,7 +839,7 @@ const mobileEndorsementRows = [
     flex-shrink: 0; width: 28px; height: 28px;
     display: grid; place-items: center;
   }
-  .harness-mark img { width: 22px; height: 22px; object-fit: contain; border-radius: 5px; }
+  .harness-mark img { width: 22px; height: 22px; object-fit: contain; }
 
   .harness-meta { flex: 1; min-width: 0; }
   .harness-name {

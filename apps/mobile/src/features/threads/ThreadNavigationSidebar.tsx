@@ -158,6 +158,7 @@ function ThreadNavigationSidebarPane(
     unsettleThread,
     pinThread,
     unpinThread,
+    setThreadAutoSettle,
     moveThread,
     regenerateThreadTitle,
   } = useThreadListActions();
@@ -352,6 +353,15 @@ function ThreadNavigationSidebarPane(
     const supported = new Set<EnvironmentId>();
     for (const [environmentId, config] of serverConfigs) {
       if (config.environment.capabilities.threadPinning === true) {
+        supported.add(environmentId);
+      }
+    }
+    return supported;
+  }, [serverConfigs]);
+  const autoSettleOptOutEnvironmentIds = useMemo(() => {
+    const supported = new Set<EnvironmentId>();
+    for (const [environmentId, config] of serverConfigs) {
+      if (config.environment.capabilities.threadAutoSettleOptOut === true) {
         supported.add(environmentId);
       }
     }
@@ -814,6 +824,7 @@ function ThreadNavigationSidebarPane(
               onSettleThread={settleThread}
               snoozeSupported={snoozeEnvironmentIds.has(thread.environmentId)}
               pinningSupported={pinningEnvironmentIds.has(thread.environmentId)}
+              autoSettleOptOutSupported={autoSettleOptOutEnvironmentIds.has(thread.environmentId)}
               reorderSupported={
                 item.item.pinned
                   ? pinReorderEnvironmentIds.has(thread.environmentId)
@@ -826,6 +837,7 @@ function ThreadNavigationSidebarPane(
               onUnsettleThread={unsettleThread}
               onPinThread={pinThread}
               onUnpinThread={unpinThread}
+              onSetThreadAutoSettle={setThreadAutoSettle}
               onMoveThread={moveThread}
               onSwipeableClose={handleSwipeableClose}
               onSwipeableWillOpen={handleSwipeableWillOpen}
@@ -877,6 +889,8 @@ function ThreadNavigationSidebarPane(
       pinReorderEnvironmentIds,
       pinThread,
       pinningEnvironmentIds,
+      autoSettleOptOutEnvironmentIds,
+      setThreadAutoSettle,
       projectByKey,
       projectTitleByProjectKey,
       regenerateThreadTitle,
