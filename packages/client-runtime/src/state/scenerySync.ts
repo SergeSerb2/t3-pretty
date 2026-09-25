@@ -18,7 +18,10 @@ export function resolveSharedSceneryPhotoSet(input: {
   if (primaryValue !== null) return primaryValue;
   const others = eligible
     .filter((source) => source.environmentId !== input.primaryEnvironmentId)
-    .toSorted((left, right) => left.environmentId.localeCompare(right.environmentId));
+    // `.sort()`, not `.toSorted()`: `.filter()` already returned a fresh array, and this
+    // module is imported by mobile SceneryProvider on first paint. Hermes has no ES2023
+    // array methods — calling `.toSorted()` throws TypeError and kills iOS launch.
+    .sort((left, right) => left.environmentId.localeCompare(right.environmentId));
   for (const source of others) {
     const value = nonEmpty(source.sceneryPhotoSet);
     if (value !== null) return value;

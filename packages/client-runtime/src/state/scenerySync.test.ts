@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   mayPublishThreadScenery,
@@ -6,6 +6,22 @@ import {
   serverSceneryMatchesPhotoSet,
   shouldPublishLocalSceneryPhotoSet,
 } from "./scenerySync.ts";
+
+// Match Hermes: these ES2023 array methods are absent on mobile, and
+// resolveSharedSceneryPhotoSet runs from SceneryProvider on every iOS launch.
+beforeEach(() => {
+  const methods = ["toSorted", "toReversed", "toSpliced"] as const;
+  const descriptors = methods.map((method) =>
+    Object.getOwnPropertyDescriptor(Array.prototype, method),
+  );
+  for (const method of methods) Reflect.deleteProperty(Array.prototype, method);
+  return () => {
+    for (const [index, method] of methods.entries()) {
+      const descriptor = descriptors[index];
+      if (descriptor) Reflect.defineProperty(Array.prototype, method, descriptor);
+    }
+  };
+});
 
 describe("resolveSharedSceneryPhotoSet", () => {
   const sources = [
@@ -39,6 +55,12 @@ describe("resolveSharedSceneryPhotoSet", () => {
         sources: [{ environmentId: "env-a", syncEligible: true, sceneryPhotoSet: null }],
       }),
     ).toBeNull();
+  });
+
+  it("sorts connected catalogs without Array#toSorted when no primary is set", () => {
+    expect(resolveSharedSceneryPhotoSet({ primaryEnvironmentId: null, sources })).toBe(
+      "deep-forest",
+    );
   });
 });
 
