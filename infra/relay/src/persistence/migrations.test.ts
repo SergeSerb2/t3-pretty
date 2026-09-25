@@ -70,7 +70,7 @@ describe("relay postgres migration snapshots", () => {
   );
 
   it.effect(
-    "keeps android device columns and the August delivery indexes on the latest snapshot",
+    "keeps android columns, August indexes, and managed-endpoint recovery on the latest snapshot",
     () =>
       withNodeServices(
         Effect.gen(function* () {
@@ -90,6 +90,14 @@ describe("relay postgres migration snapshots", () => {
           expect(
             names.has("relay_environment_credentials.idx_relay_environment_credentials_revoked_at"),
           ).toBe(true);
+          expect(names.has("relay_home_suggestion_digests")).toBe(true);
+          expect(names.has("relay_home_suggestions")).toBe(true);
+          expect(names.has("relay_managed_endpoint_allocations.recovery_enabled_at")).toBe(true);
+          expect(
+            names.has("relay_managed_endpoint_allocations.recovery_environment_public_key"),
+          ).toBe(true);
+          expect(names.has("relay_managed_endpoint_allocations.origin")).toBe(true);
+          expect(names.has("relay_managed_endpoint_allocations.generation")).toBe(true);
         }),
       ),
   );
