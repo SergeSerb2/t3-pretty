@@ -150,8 +150,9 @@ jobs:
             target: dmg
             arch: arm64
             rust_target: aarch64-apple-darwin
+          # Self-hosted windows-5080-t3code-fork proved green in smoke PR #303
           - label: Windows x64
-            runner: windows-latest
+            runner: [self-hosted, Windows]
             platform: win
             target: nsis
             arch: x64
