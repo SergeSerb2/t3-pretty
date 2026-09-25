@@ -81,12 +81,25 @@ is only a pointer.
   [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002073-arm64.dmg)
 - Windows (x64):
   [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002055-x64.exe)
+- Linux (x64):
+  [AppImage](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-x64.AppImage)
+  and `.deb` from the same
+  [R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/).
 
 When those filenames go stale, read
-[latest-mac.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml)
-and [latest.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml)
+[latest-mac.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml),
+[latest.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml),
+and
+[latest-linux.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-linux.yml)
 for the current tip. After the first install, the desktop app updates itself from
 the same feed.
+
+The Linux `.deb` updates itself like the other desktop builds. It asks for your
+password to install each update. If your desktop has no password prompt, the
+update fails. Download the new `.deb` from the R2 feed and install it the same
+way. `winget`, Homebrew `t3-code`, and AUR `t3code-bin` install upstream T3 Code,
+not this fork.
+
 
 ### Windows Subsystem for Linux
 

@@ -26,7 +26,8 @@ import type { UsageRecord } from "./usageTranscripts.ts";
 // entries would keep serving double-counted records forever.
 // v3: entries carry the parse position and reducer state so a grown file
 // re-parses only its appended bytes instead of starting over.
-export const USAGE_SCAN_CACHE_VERSION = 3 as const;
+// v4: records carry Claude fast mode, which v3 rows never captured.
+export const USAGE_SCAN_CACHE_VERSION = 4 as const;
 
 /** Hard hydration limits for the persisted cache trust boundary. */
 export const USAGE_SCAN_CACHE_MAX_FILES = 100_000;
@@ -63,6 +64,7 @@ type SerializedRecord = readonly [
   reasoningTokens: number,
   dedupeKey: string | null,
   reportedCostUsd: number | null,
+  fast: 0 | 1,
 ];
 
 interface SerializedFile {
@@ -95,24 +97,27 @@ export function encodeScanCache(cache: ScanCache): SerializedCache {
     return next;
   };
 
+  const serializeRecord = (record: UsageRecord): SerializedRecord => [
+    record.timestampMs,
+    intern(models, modelIndex, record.model),
+    intern(sessions, sessionIndex, record.sessionId),
+    record.totals.uncachedInputTokens,
+    record.totals.cachedInputTokens,
+    record.totals.cacheCreationTokens,
+    record.totals.outputTokens,
+    record.totals.reasoningTokens,
+    record.dedupeKey,
+    record.reportedCostUsd,
+    record.fast ? 1 : 0,
+  ];
+
   const files: Record<string, SerializedFile> = {};
   for (const [path, entry] of cache) {
     files[path] = {
       s: entry.size,
       m: entry.mtimeMs,
       p: entry.provider,
-      r: entry.records.map((record) => [
-        record.timestampMs,
-        intern(models, modelIndex, record.model),
-        intern(sessions, sessionIndex, record.sessionId),
-        record.totals.uncachedInputTokens,
-        record.totals.cachedInputTokens,
-        record.totals.cacheCreationTokens,
-        record.totals.outputTokens,
-        record.totals.reasoningTokens,
-        record.dedupeKey,
-        record.reportedCostUsd,
-      ]),
+      r: entry.records.map(serializeRecord),
     };
   }
 
@@ -179,7 +184,7 @@ export function decodeScanCache(
   ): UsageRecord[] | null => {
     const records: UsageRecord[] = [];
     for (const row of rows) {
-      if (!isRecordArray(row) || row.length !== 10) return null;
+      if (!isRecordArray(row) || row.length < 11) return null;
       const [
         timestampMs,
         modelIndex,
@@ -191,6 +196,7 @@ export function decodeScanCache(
         reasoning,
         dedupeKey,
         reportedCostUsd,
+        fast,
       ] = row as SerializedRecord;
 
       const model = Number.isSafeInteger(modelIndex) ? models[modelIndex] : undefined;
@@ -210,6 +216,7 @@ export function decodeScanCache(
         !validTokenField(cacheCreation) ||
         !validTokenField(output) ||
         !validTokenField(reasoning) ||
+        (fast !== 0 && fast !== 1) ||
         (dedupeKey !== null &&
           (typeof dedupeKey !== "string" || dedupeKey.length > USAGE_DEDUPE_KEY_MAX_LENGTH)) ||
         (reportedCostUsd !== null &&
@@ -234,6 +241,7 @@ export function decodeScanCache(
           reasoningTokens: reasoning,
         },
         reportedCostUsd,
+        fast: fast === 1,
         dedupeKey,
       });
     }

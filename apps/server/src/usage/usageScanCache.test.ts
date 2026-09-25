@@ -23,6 +23,7 @@ function record(overrides: Partial<UsageRecord> = {}): UsageRecord {
       reasoningTokens: 0,
     },
     reportedCostUsd: null,
+    fast: false,
     dedupeKey: "msg_1:",
     ...overrides,
   };
@@ -44,7 +45,11 @@ function cacheWith(entries: readonly [string, number, readonly UsageRecord[]][])
 describe("scan cache round trip", () => {
   it("restores records unchanged", () => {
     const original = cacheWith([
-      ["/a.jsonl", 100, [record(), record({ dedupeKey: "msg_2:", model: "claude-opus-5" })]],
+      [
+        "/a.jsonl",
+        100,
+        [record(), record({ dedupeKey: "msg_2:", model: "claude-opus-5-5", fast: true })],
+      ],
       ["/b.jsonl", 200, [record({ sessionId: "session-b", reportedCostUsd: 1.5 })]],
       ["/c.jsonl", 300, [record({ provider: "grok", model: "grok-4.6", sessionId: "session-g" })]],
     ]);
@@ -54,6 +59,17 @@ describe("scan cache round trip", () => {
     expect(restored.get("/a.jsonl")).toEqual(original.get("/a.jsonl"));
     expect(restored.get("/b.jsonl")).toEqual(original.get("/b.jsonl"));
     expect(restored.get("/c.jsonl")).toEqual(original.get("/c.jsonl"));
+  });
+
+  it("drops an entry whose fast flag is not 0 or 1", () => {
+    const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record({ fast: true })]]]));
+    const row = encoded.files["/a.jsonl"]!.r[0]!;
+    const poisoned = {
+      ...encoded,
+      files: { "/a.jsonl": { ...encoded.files["/a.jsonl"]!, r: [[...row.slice(0, 10), true]] } },
+    };
+
+    expect(decodeScanCache(JSON.parse(JSON.stringify(poisoned))).has("/a.jsonl")).toBe(false);
   });
 
   it("rejects a document from the previous cache version", () => {

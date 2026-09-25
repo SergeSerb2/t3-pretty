@@ -167,6 +167,15 @@ Finite requests, durable subscriptions, and commands are separate APIs:
 The Promise bridge exists only at the React/Atom boundary. Runtime and business
 logic remain Effect-native.
 
+The desktop app adds one consumer: a
+[keep-alive](../../apps/web/src/state/threads.ts) mounts every thread whose
+session is starting or running, in each enabled environment. Opening a running
+thread then needs no replay. The shell and detail streams are independent, so
+the shell can report a stop before the detail loads or catches up. A stopped
+thread stays mounted until its own stream is live and shows the stop, and the
+stream then closes and saves the settled state.
+Web and mobile do not keep threads alive.
+
 ## Platform Layers
 
 Web and mobile provide:
