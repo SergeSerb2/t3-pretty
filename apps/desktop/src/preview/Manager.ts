@@ -702,7 +702,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const runFork = Effect.runForkWith(context);
   const resolvedArtifactDirectory = path.resolve(artifactDirectory);
   const playwrightInstallExpression = yield* Effect.cached(
-    playwrightInjectedRuntimeInstallExpression(),
+    Effect.succeed(playwrightInjectedRuntimeInstallExpression),
   );
 
   const annotationThemeRef = yield* Ref.make(DEFAULT_ANNOTATION_THEME);
