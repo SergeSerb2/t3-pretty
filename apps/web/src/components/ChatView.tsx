@@ -666,9 +666,7 @@ function useDraftHeroLayoutTransition(
         const animation = transitionGroup.animate(
           [...draftHeroGlideKeyframes(translateX, translateY, pop)],
           {
-            duration: sceneryDock
-              ? SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS
-              : animationDurationMs,
+            duration: sceneryDock ? SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS : animationDurationMs,
             easing: sceneryDock
               ? SCENERY_DRAFT_HERO_TRANSITION_EASING
               : DRAFT_HERO_TRANSITION_EASING,

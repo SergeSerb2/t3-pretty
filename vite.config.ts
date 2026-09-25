@@ -201,13 +201,13 @@ export default defineConfig({
         // Every class in web code must be one Tailwind generates: a typo or a class nothing
         // declares ships silently unstyled. JS hooks use data attributes, not class names.
         files: ["apps/web/src/**"],
-        rules: { "shadcn/no-unknown-classes": "error" },
+        rules: { "shadcn/no-unknown-classes": "warn" },
       },
       {
         // Colors come from theme tokens so status tones follow custom themes. components/ui
         // has no findings and stays covered too.
         files: ["apps/web/src/**"],
-        rules: { "shadcn/no-raw-colors": "error" },
+        rules: { "shadcn/no-raw-colors": "warn" },
       },
       {
         // Third-party marks (brand logos, the macOS permission panes, Codex's Computer Use
@@ -219,16 +219,17 @@ export default defineConfig({
         // components/ui exports own their look. App code picks a variant or size instead
         // of restyling with className; layout classes (width, flex, margin, position) stay
         // allowed because placement belongs to the parent. Warn-only while Pretty still
-        // owns extra chrome restyles; the ceiling gate stops the count growing.
+        // owns extra chrome restyles, raw colors, and off-scale type sizes; the ceiling
+        // gate stops the no-restyle count growing.
         files: ["apps/web/src/**"],
         excludeFiles: ["apps/web/src/components/ui/**"],
         rules: {
           // A className built at runtime on a ui component is one no-restyle cannot read.
-          "shadcn/require-static-classes": "error",
+          "shadcn/require-static-classes": "warn",
           // Appearance values come from the theme and Tailwind's scales. Layout stays free
           // (placement belongs to the parent); the other entries are values no scale can hold.
           "shadcn/no-arbitrary-values": [
-            "error",
+            "warn",
             {
               allow: [
                 "layout",

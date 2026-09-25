@@ -108,6 +108,8 @@ export class HomeSuggestionsEnvironmentNotLinked extends Schema.TaggedError<Home
   }
 }
 
+const isHomeSuggestionsEnvironmentNotLinked = Schema.is(HomeSuggestionsEnvironmentNotLinked);
+
 interface EnvironmentPrincipal {
   readonly environmentId: EnvironmentId;
   readonly environmentPublicKey: string;
@@ -179,7 +181,7 @@ const make = Effect.gen(function* () {
       );
 
   const persistenceError = (environmentId: string) => (cause: unknown) =>
-    cause instanceof HomeSuggestionsEnvironmentNotLinked
+    isHomeSuggestionsEnvironmentNotLinked(cause)
       ? cause
       : new HomeSuggestionsStorePersistenceError({ environmentId, cause });
 

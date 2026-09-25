@@ -762,6 +762,7 @@ Content: `apps/marketing/src/pages/index.astro`, `apps/mobile/src/features/threa
 
 - `web-typecheck` — `ChatView.tsx` `runProjectScript` now accepts parent `rememberAsLastInvoked` so chat code-block shell runs can pass `{ rememberAsLastInvoked: false }` without a type error. Pretty has no last-invoked script affordance, so the flag is accepted and unused.
 - `web-typecheck` — Sidebar thread context menu supplies `autoSettleEnabled` / `supports.autoSettleOptOut` and dispatches `auto-settle:enabled` / `auto-settle:disabled` through `setThreadAutoSettle`, matching the header menu hook.
+- `relay-typecheck` — Pretty-only `HomeSuggestionsStore` used `instanceof` on a Schema TaggedError and `new Date()` in its unit helpers. Parent Effect diagnostics now error those; switched to `Schema.is` and `DateTime.makeUnsafe`.
 
 ## Clean-merged parent changes (no text conflict)
 
@@ -812,3 +813,4 @@ Content: `apps/marketing/src/pages/index.astro`, `apps/mobile/src/features/threa
 - Parent `ConnectionsSettings` unused helper churn. Reason: Pretty's Surge Connect / compact add-environment chrome stays authoritative.
 - Parent `ComposerBannerStack` transform animations. Reason: Pretty banners stay in document flow; transform animations peg the GPU.
 - `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
+- `vite.config.ts` — Parent `#13371` / `#13397` made `shadcn/no-unknown-classes`, `no-raw-colors`, `no-arbitrary-values`, and `require-static-classes` error. Reason: Pretty still owns extra chrome classes, raw status colors, and off-scale type sizes; taking the error rules fails the fork `web-lint` gate (~270 findings). Keep those rules as warn beside existing `no-restyle` warn. Parent unknown-class / token checks still run and stay visible.
