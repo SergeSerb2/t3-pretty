@@ -1,0 +1,13 @@
+name: self-hosted windows smoke
+on:
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: [self-hosted, Windows]
+    steps:
+      - name: hello
+        shell: powershell
+        run: |
+          Write-Host "ok from $env:COMPUTERNAME"
+          hostname
+          Write-Host "runner=$env:RUNNER_NAME labels=$env:RUNNER_LABELS"
