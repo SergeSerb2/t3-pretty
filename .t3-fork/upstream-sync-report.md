@@ -758,6 +758,11 @@ Content: `apps/marketing/src/pages/index.astro`, `apps/mobile/src/features/threa
 
 `.github/workflows/*` was unchanged by this nightly and remains Pretty's trusted tree.
 
+## Post-merge repairs
+
+- `web-typecheck` — `ChatView.tsx` `runProjectScript` now accepts parent `rememberAsLastInvoked` so chat code-block shell runs can pass `{ rememberAsLastInvoked: false }` without a type error. Pretty has no last-invoked script affordance, so the flag is accepted and unused.
+- `web-typecheck` — Sidebar thread context menu supplies `autoSettleEnabled` / `supports.autoSettleOptOut` and dispatches `auto-settle:enabled` / `auto-settle:disabled` through `setThreadAutoSettle`, matching the header menu hook.
+
 ## Clean-merged parent changes (no text conflict)
 
 - Codex 0.156 protocol regenerate and Effect rc.115 generator fix (`#13481`, `#13480`).

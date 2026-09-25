@@ -4515,6 +4515,7 @@ export default function ChatView(props: ChatViewProps) {
         env?: Record<string, string>;
         worktreePath?: string | null;
         preferNewTerminal?: boolean;
+        rememberAsLastInvoked?: boolean;
       },
     ) => {
       if (!activeThreadId || !activeProject || !activeThread) return;
