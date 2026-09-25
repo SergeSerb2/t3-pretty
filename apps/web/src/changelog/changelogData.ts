@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260925.2237002900",
+    date: "2026-09-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "Scenery catalog sync no longer crashes iOS launch",
+      },
+      {
+        kind: "fixed",
+        title: "Expo Updates ErrorRecovery from aborting tip launch",
+      },
+      {
+        kind: "fixed",
+        title: "Home item groups from constructing Xcode 27 glass",
+      },
+      {
+        kind: "fixed",
+        title: "Xcode 27 glass chrome from constructing on Home launch",
+      },
+      {
+        kind: "fixed",
+        title: "IOS Home from constructing Xcode 27 glass chrome on open",
+      },
+      {
+        kind: "fixed",
+        title: "Linux AppImage floor accepts single-quoted feed versions",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260924.2223002891",
     date: "2026-09-25",
     items: [
