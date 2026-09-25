@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { DesktopUpdateState } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
@@ -108,9 +109,9 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
 
   const windowLayer = Layer.succeed(ElectronWindow.ElectronWindow, {
     create: () => Effect.die("unexpected BrowserWindow creation"),
-    main: Effect.succeed(Option.none()),
-    currentMainOrFirst: Effect.succeed(Option.none()),
-    focusedMainOrFirst: Effect.succeed(Option.none()),
+    main: Effect.succeedNone,
+    currentMainOrFirst: Effect.succeedNone,
+    focusedMainOrFirst: Effect.succeedNone,
     setMain: () => Effect.void,
     clearMain: () => Effect.void,
     prepareReveal: () => Effect.succeed(false),
@@ -132,7 +133,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       installSteps.push("startBackend");
     }).pipe(Effect.andThen(options.startBackend ?? Effect.void)),
     stop: () => options.stopBackend ?? Effect.void,
-    currentConfig: Effect.succeed(Option.none()),
+    currentConfig: Effect.succeedNone,
     snapshot: Effect.succeed({
       desiredRunning: true,
       ready: false,
@@ -217,8 +218,24 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     ),
   );
 
+  // Tracks the restart markers installs leave, so installs stay free of real
+  // disk I/O that would outrun the tests' settle loops.
+  const updateRestartMarkers = new Set<string>();
+  const fileSystemLayer = FileSystem.layerNoop({
+    makeDirectory: () => Effect.void,
+    writeFileString: (path) =>
+      Effect.sync(() => {
+        updateRestartMarkers.add(path);
+      }),
+    remove: (path) =>
+      Effect.sync(() => {
+        updateRestartMarkers.delete(path);
+      }),
+  });
+
   const layer = DesktopUpdates.layer.pipe(
     Layer.provideMerge(mockGitHubReleasesClient),
+    Layer.provide(fileSystemLayer),
     Layer.provideMerge(updaterLayer),
     Layer.provideMerge(windowLayer),
     Layer.provideMerge(backendLayer),
@@ -241,8 +258,9 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     checkCount: () => checkCount,
     quitAndInstalls: () => quitAndInstallCount,
     installSteps,
+    updateRestartMarkers,
     downloadCount: () => downloadCount,
-    feedUrls: () => feedUrls,
+    feedUrls: (): ElectronUpdater.ElectronUpdaterFeedUrl[] => feedUrls,
     fullChangelog: () => fullChangelog,
     listenerCount: () =>
       Array.from(listeners.values()).reduce(

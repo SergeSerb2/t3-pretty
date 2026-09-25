@@ -7,6 +7,7 @@ import {
   managedEndpointHostname,
   isManagedEndpointHostname,
   managedEndpointTunnelName,
+  managedEndpointTunnelNamePrefix,
   RelayInvalidDnsNameError,
   relayOwnsManagedEndpointZone,
   RelayPublicDomainLabelTooLongError,
@@ -93,6 +94,9 @@ describe("managed endpoint names", () => {
     );
     expect(managedEndpointTunnelName("dev_julius", hash)).toBe(
       "t3coderelay-managedendpoint-dev-julius-abcdef0123456789",
+    );
+    expect(managedEndpointTunnelNamePrefix("dev_julius")).toBe(
+      "t3coderelay-managedendpoint-dev-julius-",
     );
   });
 

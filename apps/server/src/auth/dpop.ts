@@ -5,7 +5,6 @@ import {
 import type { DpopFailureReason } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as Option from "effect/Option";
@@ -18,22 +17,6 @@ import {
   type ServerAuthInternalError,
 } from "./EnvironmentAuth.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
-
-export const DPOP_REPLAY_RETENTION = Duration.seconds(305);
-
-export const scheduleDpopReplayStateRemoval = Effect.fn("auth.dpop.scheduleReplayStateRemoval")(
-  function* (secretStore: ServerSecretStore.ServerSecretStore["Service"], secretName: string) {
-    yield* secretStore.remove(secretName).pipe(
-      Effect.delay(DPOP_REPLAY_RETENTION),
-      Effect.catch((cause) =>
-        Effect.logWarning("Failed to prune expired DPoP proof replay state.", {
-          cause,
-        }),
-      ),
-      Effect.forkDetach({ startImmediately: true }),
-    );
-  },
-);
 
 export const mapDpopFailureReason = (code: DpopVerificationFailureCodeType): DpopFailureReason => {
   switch (code) {
@@ -111,37 +94,30 @@ export const verifyRequestDpopProof = (input: {
           }),
       ),
     );
-    const secretName = `dpop-proof-${replayKey}`;
-    // Recording and scheduling expiry are one uninterruptible commit. Once a
-    // valid proof's jti has been seen it remains single-use for the complete
-    // acceptance window, even when the protected operation later fails.
-    yield* Effect.uninterruptible(
-      secretStore
-        .create(
-          secretName,
-          new TextEncoder().encode(
-            [
-              `thumbprint=${result.thumbprint}`,
-              `jti=${result.jti}`,
-              `iat=${result.iat}`,
-              `consumedAt=${DateTime.formatIso(now)}`,
-            ].join("\n"),
-          ),
-        )
-        .pipe(
-          Effect.catchIf(ServerSecretStore.isSecretStoreError, (error) =>
-            Effect.gen(function* () {
-              const mapped = mapDpopReplayStoreError(error);
-              if (mapped._tag === "ServerAuthInvalidCredentialError") {
-                yield* Effect.annotateCurrentSpan({
-                  "environment.dpop.failure_code": mapped.dpopFailureReason,
-                });
-              }
-              return yield* Effect.fail(mapped);
-            }),
-          ),
-          Effect.tap(() => scheduleDpopReplayStateRemoval(secretStore, secretName)),
+    yield* secretStore
+      .create(
+        `dpop-proof-${replayKey}`,
+        new TextEncoder().encode(
+          [
+            `thumbprint=${result.thumbprint}`,
+            `jti=${result.jti}`,
+            `iat=${result.iat}`,
+            `consumedAt=${DateTime.formatIso(now)}`,
+          ].join("\n"),
         ),
-    );
+      )
+      .pipe(
+        Effect.catchIf(ServerSecretStore.isSecretStoreError, (error) =>
+          Effect.gen(function* () {
+            const mapped = mapDpopReplayStoreError(error);
+            if (mapped._tag === "ServerAuthInvalidCredentialError") {
+              yield* Effect.annotateCurrentSpan({
+                "environment.dpop.failure_code": mapped.dpopFailureReason,
+              });
+            }
+            return yield* mapped;
+          }),
+        ),
+      );
     return result.thumbprint;
   });

@@ -49,10 +49,9 @@ describe("buildPreviewPictureInPictureDataUrl", () => {
       ),
     );
 
-    expect(html).toContain("img-src blob:");
-    expect(html).toContain('new Blob([next.data], { type: "image/jpeg" })');
-    expect(html).toContain("URL.revokeObjectURL(frameUrl)");
-    expect(html).not.toContain("data:image/jpeg;base64");
+    expect(html).toContain("img-src data:");
+    expect(html).toContain('data:image/jpeg;base64," + next.data');
+    expect(html).not.toContain("img-src blob:");
   });
 });
 
