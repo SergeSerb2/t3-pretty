@@ -1074,11 +1074,7 @@ const preWarmImpl = (
       const handle = yield* spawner.spawn(command);
       yield* handle.exitCode;
     }),
-  ).pipe(
-    Effect.timeoutOption(PRE_WARM_TIMEOUT),
-    Effect.asVoid,
-    Effect.catch(() => Effect.void),
-  );
+  ).pipe(Effect.timeoutOption(PRE_WARM_TIMEOUT), Effect.ignore);
 
 const windowsToWslPathImpl = (
   distro: string | null,
@@ -1306,25 +1302,24 @@ export const layer = Layer.effect(
     // distro. Negative results aren't cached so a transient wsl.exe failure
     // doesn't permanently disable tilde expansion.
     const userHomeCache = new Map<string, string>();
-    const getUserHome = (distro: string | null) =>
-      Effect.gen(function* () {
-        const key = distro ?? "__default__";
-        const cached = userHomeCache.get(key);
-        if (cached !== undefined) {
-          userHomeCache.delete(key);
-          userHomeCache.set(key, cached);
-          return Option.some(cached);
+    const getUserHome = Effect.fn("desktop.wsl.getUserHome")(function* (distro: string | null) {
+      const key = distro ?? "__default__";
+      const cached = userHomeCache.get(key);
+      if (cached !== undefined) {
+        userHomeCache.delete(key);
+        userHomeCache.set(key, cached);
+        return Option.some(cached);
+      }
+      const resolved = yield* provideSpawner(getUserHomeImpl(distro));
+      if (Option.isSome(resolved)) {
+        userHomeCache.set(key, resolved.value);
+        if (userHomeCache.size > WSL_USER_HOME_CACHE_MAX_ENTRIES) {
+          const oldestKey = userHomeCache.keys().next().value;
+          if (oldestKey !== undefined) userHomeCache.delete(oldestKey);
         }
-        const resolved = yield* provideSpawner(getUserHomeImpl(distro));
-        if (Option.isSome(resolved)) {
-          userHomeCache.set(key, resolved.value);
-          if (userHomeCache.size > WSL_USER_HOME_CACHE_MAX_ENTRIES) {
-            const oldestKey = userHomeCache.keys().next().value;
-            if (oldestKey !== undefined) userHomeCache.delete(oldestKey);
-          }
-        }
-        return resolved;
-      }).pipe(Effect.withSpan("desktop.wsl.getUserHome"));
+      }
+      return resolved;
+    });
 
     const getDistroIp = (distro: string | null) =>
       provideSpawner(getDistroIpImpl(distro)).pipe(Effect.withSpan("desktop.wsl.getDistroIp"));

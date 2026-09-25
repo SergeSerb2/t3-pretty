@@ -231,7 +231,6 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
           }));
           return;
         }
-
         let generation = yield* Ref.get(accountGeneration);
         yield* Ref.set(refreshGeneration, generation);
         yield* SubscriptionRef.update(state, (current) => ({

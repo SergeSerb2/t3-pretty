@@ -876,7 +876,7 @@ export const connectionStorageLayer = Layer.effectContext(
           Effect.tap(() => Effect.promise(() => projectFaviconCache.hydrate())),
           Effect.flatMap((raw) => {
             if (typeof raw !== "string") {
-              return Effect.succeed(Option.none());
+              return Effect.succeedNone;
             }
             return decodeStoredShellSnapshot(raw).pipe(
               Effect.flatMap((stored) =>
@@ -922,7 +922,7 @@ export const connectionStorageLayer = Layer.effectContext(
         readDatabaseValue(database, SERVER_CONFIG_STORE_NAME, environmentId).pipe(
           Effect.flatMap((raw) => {
             if (typeof raw !== "string") {
-              return Effect.succeed(Option.none());
+              return Effect.succeedNone;
             }
             return decodeStoredServerConfig(raw).pipe(
               Effect.flatMap((stored) =>
@@ -972,7 +972,7 @@ export const connectionStorageLayer = Layer.effectContext(
         ).pipe(
           Effect.flatMap((raw) => {
             if (typeof raw !== "string") {
-              return Effect.succeed(Option.none());
+              return Effect.succeedNone;
             }
             return decodeStoredThreadSnapshot(raw).pipe(
               Effect.flatMap((stored) =>
@@ -1024,7 +1024,7 @@ export const connectionStorageLayer = Layer.effectContext(
         readDatabaseValue(database, VCS_REFS_STORE_NAME, vcsRefsCacheKey(environmentId, cwd)).pipe(
           Effect.flatMap((raw) => {
             if (typeof raw !== "string") {
-              return Effect.succeed(Option.none());
+              return Effect.succeedNone;
             }
             return decodeStoredVcsRefs(raw).pipe(
               Effect.flatMap((stored) =>
