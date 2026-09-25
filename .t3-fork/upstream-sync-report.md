@@ -964,3 +964,4 @@ Modify/delete: `.github/workflows/release-desktop.yml` (deleted in HEAD / Pretty
 
 - `origin-pr-review` — Removed the duplicated `codeCache: true` on the production desktop scheme and left Chromium code cache off on the development scheme, matching parent `#13501` (Vite serves changing code at stable URLs).
 - `origin-pr-review` — Pointed the new marketing Debian `.deb` card at the Pretty R2 feed and dropped parent ARM GitHub download links.
+- `origin-pr-review` — Namespaced the packaged V8 compile-cache directory as `t3-pretty/compile-cache` so it cannot clobber an upstream T3 Code install, and pointed the marketing Linux AppImage card at the Pretty R2 AppImage.
