@@ -158,6 +158,18 @@ const PICTURE_IN_PICTURE_MIN_HEIGHT = 160;
 const PICTURE_IN_PICTURE_ASPECT_RATIO_EPSILON = 0.002;
 const DIAGNOSTIC_BUFFER_LIMIT = 200;
 const DIAGNOSTIC_REQUEST_LIMIT = 500;
+// CDP events the control session reacts to; everything else is dropped without
+// forking a fiber.
+const HANDLED_DEBUGGER_EVENTS: ReadonlySet<string> = new Set([
+  "Page.screencastFrame",
+  "Runtime.consoleAPICalled",
+  "Runtime.exceptionThrown",
+  "Log.entryAdded",
+  "Network.requestWillBeSent",
+  "Network.responseReceived",
+  "Network.loadingFailed",
+  "Network.loadingFinished",
+]);
 const MAX_ACCESSIBILITY_TREE_DEPTH = 12;
 const MAX_ACCESSIBILITY_TREE_NODES = PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES;
 const MAX_ACCESSIBILITY_TREE_BYTES = 1_000_000;
@@ -979,7 +991,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     pendingRecording = null;
     const sessions = yield* SynchronizedRef.get(frameCaptureSessionsRef);
     yield* Effect.forEach(sessions.keys(), (tabId) => stopFrameCapture(tabId, "recording"), {
-      concurrency: "unbounded",
+      concurrency: 8,
       discard: true,
     });
   });
@@ -1414,6 +1426,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             yield* captureDiagnosticMessage(wc.id, method, params);
           });
           const onMessage: BrowserControlSession["onMessage"] = (_event, method, params) => {
+            if (!HANDLED_DEBUGGER_EVENTS.has(method)) return;
             runFork(handleDebuggerMessage(method, params));
           };
           yield* Scope.addFinalizer(

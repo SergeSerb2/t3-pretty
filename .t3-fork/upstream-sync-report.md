@@ -862,7 +862,7 @@ Content: `.github/workflows/deploy-relay.yml`, `apps/desktop/src/backend/Desktop
 - `RELAY_JWT_MAX_LENGTH`, Pretty home-suggestions relay schema, and delivery/credential prune in the relay cron.
 - Deep bounded `isNotFoundCause` / `isManagedEndpointNotFound` plus list/DNS result caps.
 - Pretty sidebar chrome: vertical rail, usage/automations utility pages, and `ThreadActiveSubagentIndicator`.
-- Preview AX snapshots stay node/byte-capped (`boundAccessibilityTree`, `t3TruncatedNodeCount`) and `Accessibility.getFullAXTree` is still depth-capped at 12. In-flight diagnostic request map evicts at `DIAGNOSTIC_REQUEST_LIMIT`. Agent cursor click lead stays 300ms so it exceeds the renderer 280ms glide. Frame-capture throttling restore fans out at `concurrency: 8`. Desktop local-auth wait/retry tests stay with `waitForReady` on the pool mock.
+- Preview AX snapshots stay node/byte-capped (`boundAccessibilityTree`, `t3TruncatedNodeCount`) and `Accessibility.getFullAXTree` is still depth-capped at 12. In-flight diagnostic request map evicts at `DIAGNOSTIC_REQUEST_LIMIT`. Agent cursor click lead stays 300ms so it exceeds the renderer 280ms glide. Frame-capture throttling restore and stop-all-recordings fan out at `concurrency: 8`. Debugger `onMessage` still drops unhandled CDP methods via `HANDLED_DEBUGGER_EVENTS` before forking. Desktop local-auth wait/retry tests stay with `waitForReady` on the pool mock.
 - Lint soft rules stay `warn` (`vite.config.ts` auto-merged). Migration remaps stay on Pretty slots (auto-merged).
 
 ## Parent changes integrated at conflict boundaries
