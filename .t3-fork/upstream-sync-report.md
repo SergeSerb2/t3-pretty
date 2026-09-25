@@ -815,3 +815,74 @@ Content: `apps/marketing/src/pages/index.astro`, `apps/mobile/src/features/threa
 - Parent `ComposerBannerStack` transform animations. Reason: Pretty banners stay in document flow; transform animations peg the GPU.
 - `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
 - `vite.config.ts` — Parent `#13371` / `#13397` made `shadcn/no-unknown-classes`, `no-raw-colors`, `no-arbitrary-values`, and `require-static-classes` error. Reason: Pretty still owns extra chrome classes, raw status colors, and off-scale type sizes; taking the error rules fails the fork `web-lint` gate (~270 findings). Keep those rules as warn beside existing `no-restyle` warn. Parent unknown-class / token checks still run and stay visible.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260925.2237` (`6391be272`, `fix(server): newer Codex models get T3 Code's instructions again (#13547)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260924.2223`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2893. Scheduled sync on `dde678a28` merged the nightly and hit 40 content conflicts. CLIProxyAPI `gpt-5.6-sol` returned HTTP 429 `model_cooldown` / `usage_limit_reached` for 8/8 attempts on `apps/desktop/src/backend/DesktopBackendConfiguration.ts` (CLIProxyAPI unavailable). This integrate does not wait for Sol and used no third-party model for resolution.
+- Merge base vs Origin `main` (`dde678a28`): `720490adc` (2223). Origin #713 merge-committed 2223, so 2223 is an ancestor of `main`. Parent 2223..2237 is 18 commits / 275 files. Conflicts are the Pretty-divergent paths that nightly also touched — not a squash-merge replay.
+
+## Conflicted paths
+
+Content: `.github/workflows/deploy-relay.yml`, `apps/desktop/src/backend/DesktopBackendConfiguration.ts`, `apps/desktop/src/backend/DesktopLocalEnvironmentAuth.test.ts`, `apps/desktop/src/preview/BrowserSession.ts`, `apps/desktop/src/preview/Manager.ts`, `apps/desktop/src/settings/DesktopClientSettings.ts`, `apps/desktop/src/updates/updatesTestHarness.ts`, `apps/desktop/src/wsl/DesktopWslEnvironment.ts`, `apps/server/src/auth/PairingGrantStore.test.ts`, `apps/server/src/auth/ServerSecretStore.ts`, `apps/server/src/auth/dpop.ts`, `apps/server/src/cloud/ManagedEndpointRuntime.test.ts`, `apps/server/src/cloud/ManagedEndpointRuntime.ts`, `apps/server/src/cloud/http.test.ts`, `apps/server/src/cloud/http.ts`, `apps/server/src/diagnostics/TraceDiagnostics.ts`, `apps/server/src/mcp/McpInvocationContext.ts`, `apps/server/src/mcp/McpSessionRegistry.ts`, `apps/server/src/project/T3ProjectFileLoader.ts`, `apps/server/src/provider/Layers/CodexSessionRuntime.ts`, `apps/server/src/provider/Layers/ProviderSessionDirectory.ts`, `apps/server/src/serverRuntimeState.ts`, `apps/server/src/telemetry/Identify.ts`, `apps/server/src/usage/UsageService.ts`, `apps/server/src/vcs/VcsStatusBroadcaster.ts`, `apps/web/src/components/LegacySidebar.tsx`, `apps/web/src/components/ThreadStatusIndicators.tsx`, `apps/web/src/components/sidebar/SidebarChrome.tsx`, `docs/internals/t3-connect.md`, `infra/relay/src/deploymentConfig.test.ts`, `infra/relay/src/environments/ManagedEndpointProvider.test.ts`, `infra/relay/src/environments/ManagedEndpointProvider.ts`, `infra/relay/src/http/Api.test.ts`, `infra/relay/src/persistence/schema.ts`, `infra/relay/src/worker.ts`, `packages/client-runtime/src/relay/discovery.ts`, `packages/client-runtime/src/relay/managedRelayState.ts`, `packages/client-runtime/src/rpc/session.test.ts`, `packages/contracts/src/relay.ts`, `packages/shared/src/relayJwt.ts`.
+
+`.github/workflows/*` was restored from Origin `main` (Pretty policy). Parent `deploy-relay.yml` and the other parent workflow tree are omitted.
+
+## Clean-merged parent changes (no text conflict)
+
+- Newer Codex models get T3 Code instructions via `additionalContext` (`#13547`).
+- Client sync status no longer flickers when opening running threads (`#13551`).
+- Collapsed composer bar stops flipping labels while scrolling (`#13555`).
+- Selected text stays visible on a revealed file line (`#13548`).
+- Forced manual relay deploy CI (`#13550`) lives only in omitted parent workflows.
+- Effect language-service cleanups (`#13536`) on auto-merged paths.
+- Usage page keybinding (`#9434`).
+- Grok account email / empty-usage Limits rows (`#12588`, `#12799`).
+- Relay tunnel cleanup counters to Axiom (`#13528`).
+- iPhone Duo 3D controls (`#12813`).
+- Android subscription usage widgets scrollable (`#13474`).
+- One-click `grok update` (`#13523`).
+- Mobile showcase lock-screen capture (`#13522`).
+- Desktop updates reconnect in seconds (`#12006`).
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- Bounded file reads and secret/project/settings/trace/usage size limits (`readFileStringWithinLimit`, `readFilePrefix`, `SECRET_VALUE_MAX_BYTES`, `T3_PROJECT_FILE_MAX_BYTES`, `TRACE_DIAGNOSTICS_READ_BUDGET_BYTES`, `RATES_CACHE_MAX_BYTES`).
+- Bounded preview concurrency (`concurrency: 8`) and VCS status demand concurrency.
+- WSL user-home LRU eviction (`WSL_USER_HOME_CACHE_MAX_ENTRIES`).
+- Relay output line bounding and `RELAY_CLIENT_RESPONSE_MAX_BYTES`.
+- `tryRuntimeBinding` skip-undecodable provider session bindings.
+- MCP capability overloads for preview / computer-use / automations.
+- Pretty Codex steer-into-active-turn and `computerToolsAvailable` session wiring. Developer instructions use the parent one-arg API; tool text lives in `additionalContext`.
+- Pretty GitHub releases client mock in the desktop updates test harness, composed with parent restart-marker filesystem stubs.
+- Surge Connect session-token length checks and `SURGE_CONNECT_NAME` copy.
+- `RELAY_JWT_MAX_LENGTH`, Pretty home-suggestions relay schema, and delivery/credential prune in the relay cron.
+- Deep bounded `isNotFoundCause` / `isManagedEndpointNotFound` plus list/DNS result caps.
+- Pretty sidebar chrome: vertical rail, usage/automations utility pages, and `ThreadActiveSubagentIndicator`.
+- Lint soft rules stay `warn` (`vite.config.ts` auto-merged). Migration remaps stay on Pretty slots (auto-merged).
+
+## Parent changes integrated at conflict boundaries
+
+- Idle-tunnel reclaim/recovery (`#9386`): recovery contracts, JWT typ, host register/recover, reaper sweep, docs section.
+- Desktop update restart-marker TTL of one minute and filesystem test stubs (`#12006`).
+- Debugger domain enable on preview Manager; local-environment auth pool mock.
+- DPoP secret-store error mapping; MCP revoke-before-reissue.
+- Codex `collaborationMode` + `additionalContext` + model-name lookup (`#13547`).
+- Sidebar `synchronizeTerminalPulse` (`#12962`) and `isSidebarUtilityPage` / `navigateToMainApp` Back (`#13516`). Automations stays a Pretty utility page.
+- Effect `asSome` / `filterOrFail` / `Schema.is` cleanups that did not drop Pretty limits.
+- Tunnel list/DNS `Effect.timeout("8 seconds")` beside Pretty result caps.
+
+## Parent changes intentionally omitted
+
+- Unbounded `fileSystem.readFileString` / `concurrency: "unbounded"` replacements for Pretty bounded reads and preview/VCS concurrency. Reason: fork hardening against huge files and fan-out.
+- Parent `isManagedEndpointNotFound` unbounded recursion and DNS `search` without exact-name caps. Reason: Pretty keeps bounded cause walks and exact hostname filters; TunnelNotFound and timeouts still land.
+- Parent `Effect.filterOrFail` one-arity `requireMcpCapability`. Reason: Pretty's overloads carry computer-use and automations errors.
+- Parent `toRuntimeBinding.pipe(Effect.asSome)` on session directory get. Reason: Pretty skips undecodable bindings instead of failing the read.
+- Parent WSL `getUserHome` without LRU eviction. Reason: folder-picker cache must stay bounded.
+- Parent T3 Connect session-token `filterOrFail` without length check. Reason: Surge Connect copy and `AUTH_CREDENTIAL_MAX_LENGTH` stay authoritative.
+- Parent `buildCodexDeveloperInstructions` extra-arg removal is accepted (API is one-arg); computer-use prompt text is not re-injected into developer_instructions. Reason: parent moved tool text to `additionalContext` so newer models keep T3 instructions.
+- `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
+- `vite.config.ts` error-level shadcn rules. Reason: same Pretty lint-soft-as-warn policy as 2223.
