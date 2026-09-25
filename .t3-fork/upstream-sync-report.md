@@ -740,3 +740,78 @@ None. The `--no-ff` merge produced no text conflicts.
 ## Parent changes intentionally omitted
 
 - None. The resolver did not omit any parent change to protect T3 Pretty.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260924.2223` (`720490adc`, `fix(web): normalize disabled control opacity (#11441)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260924.2213`
+- Conflict resolver: manual repair by Cloud Agent after Buildkite #2883. Scheduled sync on `93b9a09a3` merged `origin/main`, then hit 40 conflicts on nightly 2223. CLIProxyAPI `gpt-5.6-sol` returned HTTP 429 `model_cooldown` / `usage_limit_reached` for 8/8 attempts on `apps/marketing/src/pages/index.astro` (CLIProxyAPI unavailable). This integrate does not wait for Sol and used no third-party model for resolution.
+- Merge base vs Origin `main` (`93b9a09a3`): `cb1a3f346` (2213). Origin #707 merge-committed 2213, so 2213 is an ancestor of `main`. Parent 2213..2223 is 20 commits / 239 files. Conflicts are the Pretty-divergent paths that nightly also touched — not a squash-merge replay.
+
+## Conflicted paths
+
+Modify/delete: `apps/marketing/public/harnesses/opencode-dark.svg` (parent added; Pretty deleted). Kept the Pretty deletion.
+
+Content: `apps/marketing/src/pages/index.astro`, `apps/mobile/src/features/threads/new-task-flow-provider.tsx`, `apps/server/src/orchestration/Schemas.ts`, `apps/server/src/orchestration/projector.ts`, `apps/server/src/persistence/Migrations.ts`, `apps/server/src/provider/Drivers/ClaudeDriver.ts`, `apps/web/src/components/AgentsPanel.tsx`, `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/QuitHoldOverlay.tsx`, `apps/web/src/components/RightPanelTabs.tsx`, `apps/web/src/components/Sidebar.logic.test.ts`, `apps/web/src/components/Sidebar.tsx`, `apps/web/src/components/SlowRpcRequestToastCoordinator.tsx`, `apps/web/src/components/WorkspacePageHeader.tsx`, `apps/web/src/components/chat/ChangedFilesTree.tsx`, `apps/web/src/components/chat/ChatHeader.tsx`, `apps/web/src/components/chat/ComposerBannerStack.tsx`, `apps/web/src/components/chat/ComposerPrimaryActions.tsx`, `apps/web/src/components/chat/ComposerSurface.tsx`, `apps/web/src/components/chat/ProposedPlanCard.tsx`, `apps/web/src/components/clerk/T3ConnectUserProfilePage.tsx`, `apps/web/src/components/preview/AgentBrowserCursor.tsx`, `apps/web/src/components/preview/PreviewPanelShell.tsx`, `apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx`, `apps/web/src/components/settings/ConnectionsSettings.tsx`, `apps/web/src/components/settings/SettingsSidebarNav.tsx`, `apps/web/src/components/settings/ThemeSettings.tsx`, `apps/web/src/components/sidebar/SidebarThreadHeader.tsx`, `apps/web/src/components/threadActionMenu.logic.test.ts`, `apps/web/src/components/threadActionMenu.logic.ts`, `apps/web/src/components/ui/sidebar.tsx`, `apps/web/src/hooks/useThreadActionMenu.ts`, `apps/web/src/index.css`, `apps/web/src/rightPanelLayout.ts`, `packages/client-runtime/src/state/threadCommands.ts`, `packages/client-runtime/src/state/threadReducer.test.ts`, `packages/client-runtime/src/state/threadReducer.ts`, `packages/contracts/src/ipc.ts`, `packages/contracts/src/orchestration.ts`.
+
+`.github/workflows/*` was unchanged by this nightly and remains Pretty's trusted tree.
+
+## Post-merge repairs
+
+- `web-typecheck` — `ChatView.tsx` `runProjectScript` now accepts parent `rememberAsLastInvoked` so chat code-block shell runs can pass `{ rememberAsLastInvoked: false }` without a type error. Pretty has no last-invoked script affordance, so the flag is accepted and unused.
+- `web-typecheck` — Sidebar thread context menu supplies `autoSettleEnabled` / `supports.autoSettleOptOut` and dispatches `auto-settle:enabled` / `auto-settle:disabled` through `setThreadAutoSettle`, matching the header menu hook.
+- `relay-typecheck` — Pretty-only `HomeSuggestionsStore` used `instanceof` on a Schema TaggedError and `new Date()` in its unit helpers. Parent Effect diagnostics now error those; switched to `Schema.is` and `DateTime.makeUnsafe`.
+- `server-test` — `054_ProjectionThreadsAutoSettleDisabledAt.test.ts` now bounds `runMigrations` at Pretty slots 64 then 65 (not upstream 53/54), matching `Migrations.ts`.
+
+## Clean-merged parent changes (no text conflict)
+
+- Codex 0.156 protocol regenerate and Effect rc.115 generator fix (`#13481`, `#13480`).
+- Antigravity Windows `MAX_PATH` unpack, Stop ending outlived commands (`#13389`, `#13388`).
+- ACP keeps one answer when a running tool reports progress (`#13386`).
+- Malformed `OTEL_RESOURCE_ATTRIBUTES` no longer stops startup (`#13469`).
+- Codex reset answer kept when the re-probe fails (`#13363`).
+- Streamed section titles wait for the text under them (`#13504`).
+- Working and monitoring threads fade in the sidebar again (`#13506`).
+- Disabled control opacity normalized (`#11441`).
+- Appearance / theme-token / scale cleanup (`#13397`, `#13371`, `#13366`).
+- Parent CI check-agent model pin (`#13473`) lives only in omitted parent workflows.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/marketing/public/harnesses/opencode-dark.svg` — stays deleted. Parent's official OpenCode logo is not imported.
+- `apps/marketing/src/pages/index.astro` — Pretty no-OpenCode harness set and T3 Pretty titles stay. Parent `antigravity.svg` path is used; parent OpenCode tile CSS is not.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Pretty Create-PR / babysit suffix helpers stay. Parent `sanitizeNewRefName` is imported beside them.
+- `apps/server/src/persistence/Migrations.ts` — Pretty remapped slots 50–64 stay. Parent auto-settle projection is slot 65 (`054_ProjectionThreadsAutoSettleDisabledAt`).
+- `apps/server/src/provider/Drivers/ClaudeDriver.ts` — Pretty portable `CLAUDE_CONTINUATION_GROUP_KEY` stays (no `makeClaudeContinuationGroupKey`). Parent banked-reset `resolveClaudeHomePath` / `accountConfigPath` land beside it.
+- `apps/server/src/orchestration/Schemas.ts` / `projector.ts` — Pretty scenery / skills / subagent payload aliases stay. Parent `ThreadAutoSettleSetPayload` and auto-settle projection land beside them.
+- `packages/contracts` / `packages/client-runtime` — Pretty event/command surface stays. Parent `thread.auto-settle` / `thread.auto-settle.set` / `autoSettleDisabledAt` and IPC `activateOnClick` + `checked` land beside them.
+- `apps/web/src/components/threadActionMenu.logic.ts` / `.test.ts` / `useThreadActionMenu.ts` — Pretty transfer and copy-conversation items stay after the new auto-settle submenu. Hook keeps `effectiveSettled` and wires `autoSettleEnabled` / `setThreadAutoSettle`.
+- `apps/web/src/components/ChatView.tsx` — Pretty hero flex and workspace-gutter tokens stay. Parent `runShellCommand` / `onRunShellCommand` land on that tree.
+- `apps/web/src/components/Sidebar.tsx` / `Sidebar.logic.test.ts` — Pretty redesigned sidebar (project folders, nest-aware list, rail helpers) stays. Parent `resolveThreadRowClassName` tests that targeted the deleted legacy row are not restored.
+- `apps/web/src/components/AgentsPanel.tsx` — Pretty expandable agents chrome and tokens stay.
+- `apps/web/src/components/chat/ChatHeader.tsx` / `ComposerBannerStack.tsx` / `PreviewPanelShell.tsx` / `ThemeSettings.tsx` / `ConnectionsSettings.tsx` / `SettingsSidebarNav.tsx` / `SidebarThreadHeader.tsx` — Pretty header, banner stack (no transform animations), preview shell, theme library, Surge Connect / compact add-environment chrome, and rail density stay.
+- `apps/web/src/index.css` — Pretty titlebar / glass / animation tokens stay. Parent `--workspace-gutter*` and `--font-size-prompt-touch` land beside them.
+- Expo iOS ErrorRecovery soft-fail (`#690` / `#708` / `#711`) and fork CI/scripts/branding are outside this conflict set and stay.
+
+## Parent changes integrated at conflict boundaries
+
+- Per-thread auto-settle switch (`#11846`): contracts, projector, remapped migration 65, client-runtime command/reducer/tests, and the thread action menu submenu.
+- Run shell commands from chat in the thread terminal (`#13060`).
+- Claude banked-reset redeem path (`#13118`) using Pretty's continuation group key and the parent's config-dir / account-config resolution.
+- Context-menu items can be `activateOnClick` and `checked` (`packages/contracts/src/ipc.ts`).
+- Mobile branch search sanitizes remote / space-typed names (`#13454`).
+- Official Antigravity harness asset (`#13365` / `#13373`) without restoring OpenCode.
+- Disabled-opacity / theme-token / workspace-gutter follow-through on Pretty chrome (`#11441`, `#13371`, `#13397`).
+
+## Parent changes intentionally omitted
+
+- `apps/marketing/public/harnesses/opencode-dark.svg` and the OpenCode marketing tile / `hf-opencode` CSS. Reason: T3 Pretty does not ship OpenCode; modify/delete keeps the deletion.
+- Parent sidebar `4.875rem` / legacy second-title metadata row and `resolveThreadRowClassName` tests. Reason: Pretty owns the redesigned sidebar; restoring the legacy row would duplicate metadata.
+- Parent `ChatHeader` header-actions strip. Reason: Pretty owns the workspace header chrome.
+- Parent `ThemeSettings` library-card restyle. Reason: Pretty already has `ThemeLibrary` on that page.
+- Parent `ConnectionsSettings` unused helper churn. Reason: Pretty's Surge Connect / compact add-environment chrome stays authoritative.
+- Parent `ComposerBannerStack` transform animations. Reason: Pretty banners stay in document flow; transform animations peg the GPU.
+- `.github/workflows/*` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
+- `vite.config.ts` — Parent `#13371` / `#13397` made `shadcn/no-unknown-classes`, `no-raw-colors`, `no-arbitrary-values`, and `require-static-classes` error. Reason: Pretty still owns extra chrome classes, raw status colors, and off-scale type sizes; taking the error rules fails the fork `web-lint` gate (~270 findings). Keep those rules as warn beside existing `no-restyle` warn. Parent unknown-class / token checks still run and stay visible.

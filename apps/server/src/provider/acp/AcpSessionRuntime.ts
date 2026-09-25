@@ -43,6 +43,8 @@ import {
   type AcpToolCallState,
 } from "./AcpRuntimeModel.ts";
 
+const MAX_SHOWN_TOOL_CALL_IDS = 256;
+
 interface AcpToolCallTrackedState {
   readonly state: AcpToolCallState;
   readonly lastEmittedDetailLength: number | undefined;
@@ -342,6 +344,9 @@ export const make = (
     );
     const modeStateRef = yield* Ref.make<AcpSessionModeState | undefined>(undefined);
     const toolCallsRef = yield* Ref.make(new Map<string, AcpToolCallTrackedState>());
+    // Recently shown tool calls. A late update to a finished call is not a new
+    // boundary in the answer, although its progress state is gone.
+    const shownToolCallIds = new Set<string>();
     const assistantItemRuntimeId = yield* crypto.randomUUIDv4.pipe(
       Effect.mapError(
         (cause) =>
@@ -544,6 +549,7 @@ export const make = (
         modeStateRef,
         configOptionsRef,
         toolCallsRef,
+        shownToolCallIds,
         assistantSegmentRef,
         assistantItemRuntimeId,
         params: notification,
@@ -1217,6 +1223,7 @@ const handleSessionUpdate = ({
   modeStateRef,
   configOptionsRef,
   toolCallsRef,
+  shownToolCallIds,
   assistantSegmentRef,
   assistantItemRuntimeId,
   params,
@@ -1225,6 +1232,7 @@ const handleSessionUpdate = ({
   readonly modeStateRef: Ref.Ref<AcpSessionModeState | undefined>;
   readonly configOptionsRef: Ref.Ref<ReadonlyArray<EffectAcpSchema.SessionConfigOption>>;
   readonly toolCallsRef: Ref.Ref<Map<string, AcpToolCallTrackedState>>;
+  readonly shownToolCallIds: Set<string>;
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
   readonly assistantItemRuntimeId: string;
   readonly params: EffectAcpSchema.SessionNotification;
@@ -1241,11 +1249,7 @@ const handleSessionUpdate = ({
     }
     for (const event of parsed.events) {
       if (event._tag === "ToolCallUpdated") {
-        yield* closeActiveAssistantSegment({
-          queue,
-          assistantSegmentRef,
-        });
-        const { merged, decision } = yield* Ref.modify(toolCallsRef, (current) => {
+        const { merged, decision, active } = yield* Ref.modify(toolCallsRef, (current) => {
           const tracked = current.get(event.toolCall.toolCallId);
           const previous = tracked?.state;
           const nextToolCall = mergeToolCallState(previous, event.toolCall);
@@ -1267,10 +1271,21 @@ const handleSessionUpdate = ({
               skippedSinceEmit: decision.skippedSinceEmit,
             });
           }
-          return [{ merged: nextToolCall, decision }, next] as const;
+          return [{ merged: nextToolCall, decision, active: tracked !== undefined }, next] as const;
         });
         if (!decision.emit) {
           continue;
+        }
+        // A new tool call is a boundary in the prose. Progress on a call that
+        // is already shown, such as a background command finishing, is not.
+        if (!shownToolCallIds.has(merged.toolCallId)) {
+          shownToolCallIds.add(merged.toolCallId);
+          // Only recent calls get late updates; keep a long session bounded.
+          if (shownToolCallIds.size > MAX_SHOWN_TOOL_CALL_IDS) {
+            shownToolCallIds.delete(shownToolCallIds.values().next().value!);
+          }
+          // A call still running is already on screen, even if it aged out.
+          if (!active) yield* closeActiveAssistantSegment({ queue, assistantSegmentRef });
         }
         yield* Queue.offer(queue, {
           _tag: "ToolCallUpdated",

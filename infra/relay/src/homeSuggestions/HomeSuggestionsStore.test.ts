@@ -1,11 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, HomeSuggestionId } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 
 import { decideHomeSuggestionsClaim, dismissFromBatch } from "./HomeSuggestionsStore.ts";
 
 const NOW = Date.parse("2026-09-22T09:00:00.000Z");
-const hoursAgo = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
-const minutesFromNow = (minutes: number) => new Date(NOW + minutes * 60_000).toISOString();
+const hoursAgo = (hours: number) =>
+  DateTime.formatIso(DateTime.makeUnsafe(NOW - hours * 3_600_000));
+const minutesFromNow = (minutes: number) =>
+  DateTime.formatIso(DateTime.makeUnsafe(NOW + minutes * 60_000));
 
 const row = (overrides: Partial<Parameters<typeof decideHomeSuggestionsClaim>[0]["row"]> = {}) => ({
   generatedAt: null,
