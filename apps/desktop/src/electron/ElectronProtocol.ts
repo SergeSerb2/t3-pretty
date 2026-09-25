@@ -244,8 +244,10 @@ function registerDesktopSchemePrivilegesSync(): void {
         secure: true,
         supportFetchAPI: true,
         corsEnabled: true,
-        codeCache: true,
         stream: true,
+        // Custom schemes skip Chromium's V8 code cache unless they opt in.
+        // Dev stays off: Vite serves changing code at stable URLs.
+        codeCache: true,
       },
     },
     {
@@ -255,7 +257,6 @@ function registerDesktopSchemePrivilegesSync(): void {
         secure: true,
         supportFetchAPI: true,
         corsEnabled: true,
-        codeCache: true,
         stream: true,
       },
     },

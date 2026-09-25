@@ -230,20 +230,13 @@ export class UsageAggregator {
       this.#bucketCounts.set(record.provider, bucketCount + 1);
     }
 
-    const priced = priceUsage(
-      this.#options.rates,
-      record.model,
-      record.totals,
-      record.reportedCostUsd,
-      this.#options.priceOverrides,
-    );
+    const priced = priceUsage(this.#options.rates, record, this.#options.priceOverrides);
 
     bucket.totals = addTotals(bucket.totals, record.totals);
     bucket.costUsd += priced.costUsd;
     bucket.cacheSavingsUsd += cacheSavingsUsd(
       this.#options.rates,
-      record.model,
-      record.totals,
+      record,
       this.#options.priceOverrides,
     );
     bucket.records += 1;

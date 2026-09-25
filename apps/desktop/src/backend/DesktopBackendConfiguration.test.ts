@@ -247,6 +247,11 @@ describe("DesktopBackendConfiguration", () => {
         const second = yield* configuration.resolvePrimary;
 
         assert.equal(first.executablePath, process.execPath);
+        assert.deepEqual(first.args.slice(0, 3), [
+          "--require",
+          environment.compileCachePath,
+          environment.backendEntryPath,
+        ]);
         assert.equal(first.entryPath, environment.backendEntryPath);
         assert.equal(first.cwd, environment.backendCwd);
         assert.equal(first.captureOutput, true);
@@ -284,7 +289,13 @@ describe("DesktopBackendConfiguration", () => {
         const config = yield* configuration.resolvePrimary;
 
         assert.equal(config.bootstrapDelivery, "fd3");
-        assert.deepEqual(config.args, [environment.backendEntryPath, "--bootstrap-fd", "3"]);
+        assert.deepEqual(config.args, [
+          "--require",
+          environment.compileCachePath,
+          environment.backendEntryPath,
+          "--bootstrap-fd",
+          "3",
+        ]);
         assert.equal(config.bootstrap.desktopTelemetryFd, 4);
         assert.equal(config.bootstrap.desktopTelemetryControlFd, 5);
       }).pipe(
@@ -315,6 +326,8 @@ describe("DesktopBackendConfiguration", () => {
 
         assert.equal(config.bootstrapDelivery, "stdin");
         assert.deepEqual(config.args, [
+          "--require",
+          environment.compileCachePath,
           environment.backendEntryPath,
           "--bootstrap-fd",
           "0",
@@ -1070,6 +1083,8 @@ describe("DesktopBackendConfiguration", () => {
         const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
         const config = yield* configuration.resolvePrimary;
         assert.equal(config.captureOutput, true);
+        // Dev never shares the prod compile cache.
+        assert.notInclude(config.args, "--require");
       }).pipe(
         Effect.provide(
           DesktopBackendConfiguration.layer.pipe(
