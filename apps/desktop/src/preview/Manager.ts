@@ -158,11 +158,14 @@ const PICTURE_IN_PICTURE_MIN_HEIGHT = 160;
 const PICTURE_IN_PICTURE_ASPECT_RATIO_EPSILON = 0.002;
 const DIAGNOSTIC_BUFFER_LIMIT = 200;
 const DIAGNOSTIC_REQUEST_LIMIT = 500;
+const MAX_ACCESSIBILITY_TREE_DEPTH = 12;
 const MAX_ACCESSIBILITY_TREE_NODES = PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES;
 const MAX_ACCESSIBILITY_TREE_BYTES = 1_000_000;
 const MAX_ACCESSIBILITY_NODE_BYTES = 64_000;
 const MAX_ARTIFACT_SITE_SLUG_LENGTH = 80;
-const AGENT_CURSOR_MOVE_MS = 160;
+// Must exceed the renderer cursor's longest glide (280ms) so the click
+// ripple fires after the cursor has visibly arrived at the target.
+const AGENT_CURSOR_MOVE_MS = 300;
 const AGENT_CURSOR_CLICK_LEAD_MS = 40;
 const requestRecordingCaptureExpression = (tabId: string): string =>
   `globalThis[${JSON.stringify(DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER)}]?.(${JSON.stringify(tabId)}) === true`;
@@ -3773,7 +3776,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         true,
       );
       const [accessibility, sourceImage, diagnostics, timelines] = yield* Effect.all([
-        send("Accessibility.getFullAXTree"),
+        send("Accessibility.getFullAXTree", { depth: MAX_ACCESSIBILITY_TREE_DEPTH }),
         capturePageWithRetry(
           {
             operation: "automationSnapshot.capturePage",
