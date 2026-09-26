@@ -308,7 +308,7 @@ export function HomeScreen(props: HomeScreenProps) {
       onMaterialFabScroll?.(event);
       clearTimeout(activationTimerRef.current);
       activationTimerRef.current = setTimeout(
-        () => activateVisibleRows(listRef.current?.getState().data ?? []),
+        () => activateVisibleRows(listRef.current?.getState()?.data ?? []),
         200,
       );
     },

@@ -1070,6 +1070,10 @@ No `.github/workflows/*` conflicts in this nightly.
 - `PRAGMA journal_size_limit` / `WAL_SIZE_LIMIT_BYTES` so the WAL file shrinks after large writes (`#13684`).
 - Sidebar compact instance badge uses `text-5xs` (parent `#13700`) on the Pretty row instead of `text-[7px]`.
 
+## Post-merge repairs
+
+- `origin-pr-review` — `listRef.current?.getState().data` in Home scroll activation threw when LegendList had no state. Parent `#13702` landed that optional chain; it now uses `getState()?.data` so the 200ms timer is a no-op until the list is mounted.
+
 ## Parent changes intentionally omitted
 
 - Unbounded `T3CODE_TRACE_MAX_FILES` export (`Config.Int` with no ceiling). Reason: Pretty keeps `TRACE_MAX_FILES_LIMIT`; the exported config uses that schema so `t3 trace summary` cannot open an unbounded backup set.
