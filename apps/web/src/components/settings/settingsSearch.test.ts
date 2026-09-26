@@ -192,7 +192,7 @@ describe("searchSettings", () => {
       "tailscale-https",
       "wsl-backend",
       "auto-settle-inactive-threads",
-      "auto-archive-settled-threads",
+      "auto-settle-merged-threads",
       "days-before-auto-settle",
     ]);
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
@@ -287,11 +287,9 @@ describe("searchSettings", () => {
 
     expect(searchSettings("auto-settle", available).map((item) => item.id)).toEqual([
       "auto-settle-inactive-threads",
+      "auto-settle-merged-threads",
       "days-before-auto-settle",
     ]);
-    expect(searchSettings("auto-archive", available).map((item) => item.id)).toContain(
-      "auto-archive-settled-threads",
-    );
   });
 
   it("finds keybinding commands by label, command id, and default key", () => {

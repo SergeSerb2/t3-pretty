@@ -367,8 +367,8 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "project-defaults",
   },
   {
-    id: "auto-archive-settled-threads",
-    title: "Auto-archive settled threads",
+    id: "auto-settle-merged-threads",
+    title: "Auto-settle merged threads",
     to: "/settings/general",
     searchTerms: ["pull request merge closed automatically sidebar"],
     requiresThreadAutoSettlement: true,
