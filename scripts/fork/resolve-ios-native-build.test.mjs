@@ -492,6 +492,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(source, "--no-wait");
     assert.include(source, "await_eas_cloud_build");
     assert.include(source, "T3CODE_IOS_EAS_WAIT_SECONDS:-3600");
+    assert.include(source, "T3CODE_IOS_EAS_VIEW_FAIL_POLLS:-6");
     assert.notInclude(source, "T3CODE_IOS_EAS_WAIT_SECONDS:-120");
   });
 

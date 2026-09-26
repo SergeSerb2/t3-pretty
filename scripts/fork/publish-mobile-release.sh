@@ -30,8 +30,12 @@
 # uses `eas build --no-wait --json` and records the id in
 # ~/.cache/t3-pretty-release/ios-eas-inflight. A later ios-mobile run
 # reattaches instead of starting a duplicate when the Windows agent dies
-# mid-wait (BK #2922). The waiter soft-exits 0 if that id is known and the
-# compile has not failed; ERRORED/CANCELED still fail the job.
+# mid-wait (BK #2922). Status refresh uses Expo GraphQL with EXPO_TOKEN,
+# then `eas build:view --json` / `eas build:list` without
+# `--non-interactive` (current eas-cli rejects that flag on build:view,
+# BK #2925). The waiter soft-exits 0 if that id is known and the compile
+# has not failed; several consecutive refresh failures also soft-exit so
+# windows-nsis is not blocked for an hour. ERRORED/CANCELED still fail.
 #
 # Tip packaging allows at most two iOS Expo spends (cloud IPA or OTA) per
 # America/Vancouver calendar day. scripts/fork/ios-expo-daily-cap.mjs counts
@@ -496,6 +500,16 @@ eas_cloud_poll_seconds() {
   printf '%s\n' "$raw"
 }
 
+# Keep in sync with DEFAULT_EAS_VIEW_FAIL_POLLS in eas-cloud-build.mjs.
+eas_cloud_view_fail_polls() {
+  local raw="${T3CODE_IOS_EAS_VIEW_FAIL_POLLS:-6}"
+  [[ "$raw" =~ ^[0-9]+$ ]] || raw=6
+  if (( raw < 1 )); then
+    raw=6
+  fi
+  printf '%s\n' "$raw"
+}
+
 record_local_eas_inflight() {
   local id="$1"
   local next_fingerprint="${2:-${fingerprint:-}}"
@@ -524,7 +538,9 @@ eas_cloud_wait_outcome() {
   node "$root/scripts/fork/eas-cloud-build.mjs" --wait-outcome \
     --kind "$1" \
     --interrupted "$2" \
-    --timed-out "$3"
+    --timed-out "$3" \
+    --view-failures "${4:-0}" \
+    --max-view-failures "${5:-0}"
 }
 
 soft_exit_known_eas_cloud_build() {
@@ -535,30 +551,32 @@ soft_exit_known_eas_cloud_build() {
   exit 0
 }
 
+# Status/list go through eas-cloud-build.mjs (Expo GraphQL, then eas
+# build:list / eas build:view --json). Do not pass --non-interactive to
+# build:view: current eas-cli rejects that flag (BK #2925).
 view_eas_cloud_build() {
   local build_id="$1"
   local out="$2"
-  (
-    cd apps/mobile
-    eas build:view "$build_id" --json --non-interactive > "$out"
-  )
+  node "$root/scripts/fork/eas-cloud-build.mjs" --view-id "$build_id" \
+    --mobile-dir "$root/apps/mobile" > "$out"
 }
 
-# Poll eas build:view until the IPA is finished, the compile failed, the
-# wait budget expires, or this agent is signaled. Prints id\nartifact_url
-# when finished. Soft-exits 0 when the id is known and Expo has not failed
-# the compile, so a Windows agent drop cannot red tip packaging solely
-# because the waiter died (BK #2922).
+# Poll Expo until the IPA is finished, the compile failed, the wait
+# budget expires, refresh stays stale, or this agent is signaled. Prints
+# id\nartifact_url when finished. Soft-exits 0 when the id is known and
+# Expo has not failed the compile, so a Windows agent drop cannot red tip
+# packaging solely because the waiter died (BK #2922).
 await_eas_cloud_build() {
   local build_id="$1"
   local next_fingerprint="${2:-${fingerprint:-}}"
   local next_commit="${3:-${commit:-}}"
   local build_number="${4:-}"
   local cloud_json="${tmp}/eas-cloud-build.json"
-  local wait_seconds poll_seconds deadline interrupted=0 timed_out=0
-  local state kind status artifact_url outcome viewed=0
+  local wait_seconds poll_seconds max_view_failures deadline interrupted=0 timed_out=0
+  local state kind status artifact_url outcome viewed=0 view_failures=0
   wait_seconds="$(eas_cloud_wait_seconds)"
   poll_seconds="$(eas_cloud_poll_seconds)"
+  max_view_failures="$(eas_cloud_view_fail_polls)"
   deadline=$((SECONDS + wait_seconds))
   record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "in-progress"
   trap 'interrupted=1' TERM INT
@@ -573,18 +591,22 @@ await_eas_cloud_build() {
     artifact_url=""
     if view_eas_cloud_build "$build_id" "$cloud_json"; then
       viewed=1
+      view_failures=0
       state="$(read_eas_cloud_build_state "$cloud_json")"
       kind="$(ios_expo_daily_cap_field "$state" kind)"
       status="$(ios_expo_daily_cap_field "$state" status)"
       artifact_url="$(ios_expo_daily_cap_field "$state" artifact_url)"
       build_number="$(ios_expo_daily_cap_field "$state" build_number)"
       record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "$status" || true
+    else
+      view_failures=$((view_failures + 1))
+      echo "Could not refresh EAS cloud IPA $build_id (${view_failures}/${max_view_failures}); will reattach if status stays unavailable."
     fi
     timed_out=0
     if (( SECONDS >= deadline )); then
       timed_out=1
     fi
-    outcome="$(eas_cloud_wait_outcome "$kind" "$interrupted" "$timed_out")"
+    outcome="$(eas_cloud_wait_outcome "$kind" "$interrupted" "$timed_out" "$view_failures" "$max_view_failures")"
     case "$outcome" in
       continue)
         if [[ -z "$artifact_url" ]]; then
@@ -606,6 +628,9 @@ await_eas_cloud_build() {
         trap - TERM INT
         record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "${status:-in-progress}" || true
         if (( viewed == 0 )); then
+          if (( view_failures >= max_view_failures && timed_out == 0 )); then
+            soft_exit_known_eas_cloud_build "$build_id" "could not refresh status after ${view_failures} polls"
+          fi
           soft_exit_known_eas_cloud_build "$build_id" "could not refresh status before wait budget"
         fi
         soft_exit_known_eas_cloud_build "$build_id" "status=${status:-unknown}; not holding this agent"
@@ -1150,16 +1175,14 @@ fingerprint=""
     echo "iOS fingerprint generation flaked; retrying once."
     sleep 10
   done
-  if ! eas build:list \
-    --platform ios \
-    --build-profile production \
-    --distribution store \
-    --limit 20 \
-    --json \
-    --non-interactive > "$builds_file"; then
-    echo "[]" > "$builds_file"
-  fi
 )
+if ! node "$root/scripts/fork/eas-cloud-build.mjs" --list-builds \
+  --mobile-dir "$root/apps/mobile" \
+  --app-id "${T3CODE_MOBILE_EAS_PROJECT_ID}" \
+  --limit 20 > "$builds_file"; then
+  echo "eas build:list / Expo GraphQL failed; native gate will rely on the local inflight record." >&2
+  echo "[]" > "$builds_file"
+fi
 
 if [[ ! -f "$gate_file" ]]; then
   submitted_fingerprint_file="$tmp/ios-submitted-fingerprint"

@@ -1623,6 +1623,8 @@ describe("iOS embedded runtime fingerprint", () => {
     assert.include(mobileRelease, "reuse_build_id");
     assert.include(mobileRelease, "reuse_artifact_url");
     assert.include(mobileRelease, "eas build:view");
+    assert.include(mobileRelease, "--view-id");
+    assert.include(mobileRelease, "--list-builds");
     assert.include(mobileRelease, "not spending another Expo build credit");
     assert.include(mobileRelease, "--inflight-file");
     assert.include(mobileRelease, "ios-eas-inflight");
@@ -1630,7 +1632,9 @@ describe("iOS embedded runtime fingerprint", () => {
     assert.include(mobileRelease, "await_eas_cloud_build");
     assert.include(mobileRelease, "soft_exit_known_eas_cloud_build");
     assert.include(mobileRelease, "T3CODE_IOS_EAS_WAIT_SECONDS:-3600");
+    assert.include(mobileRelease, "T3CODE_IOS_EAS_VIEW_FAIL_POLLS:-6");
     assert.notInclude(mobileRelease, "T3CODE_IOS_EAS_WAIT_SECONDS:-120");
+    assert.notInclude(mobileRelease, 'eas build:view "$build_id" --json --non-interactive');
     assert.isBelow(
       mobileRelease.indexOf('if [[ -n "$reuse_build_id" ]]; then'),
       mobileRelease.indexOf("ios_expo_cap_blocks build"),
@@ -1760,6 +1764,32 @@ describe("iOS EAS cloud wait / reattach", () => {
       assert.include(persisted, `id=${buildId}`);
       assert.include(persisted, "fingerprint=abc123");
       assert.include(persisted, "buildNumber=173");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("soft-exits 0 after consecutive view failures instead of holding the agent for an hour", () => {
+    const { result, root, inflight } = runAwait(
+      {
+        id: buildId,
+        status: "IN_PROGRESS",
+      },
+      {
+        waitSeconds: "3600",
+        extra: [
+          "export T3CODE_IOS_EAS_VIEW_FAIL_POLLS=3",
+          'view_eas_cloud_build() { echo "view failed" >&2; return 1; }',
+        ].join("\n"),
+      },
+    );
+    try {
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.include(result.stdout, "could not refresh status after 3 polls");
+      assert.include(result.stdout, "still running");
+      const persisted = NodeFS.readFileSync(inflight, "utf8");
+      assert.include(persisted, `id=${buildId}`);
+      assert.include(persisted, "fingerprint=abc123");
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }

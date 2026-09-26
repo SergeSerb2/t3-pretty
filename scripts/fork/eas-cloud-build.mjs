@@ -3,7 +3,11 @@
 // the windows-release agent for the whole Expo compile; when that host
 // dropped (BK #2922) the job died with exit -1 even though the IPA was
 // already submitted. Create is --no-wait, the id is persisted, and a later
-// ios-mobile run reattaches. Real ERRORED/CANCELED compiles still fail.
+// ios-mobile run reattaches. Status comes from Expo GraphQL (EXPO_TOKEN)
+// first; `eas build:view --json` is the fallback and must not pass
+// `--non-interactive` (current eas-cli rejects that flag, BK #2925).
+// Real ERRORED/CANCELED compiles still fail.
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
@@ -15,7 +19,53 @@ import * as NodeURL from "node:url";
 // OTA + TestFlight still have room). Override with
 // T3CODE_IOS_EAS_WAIT_SECONDS for short agent-loss experiments.
 export const DEFAULT_EAS_WAIT_SECONDS = 3600;
+// When Expo never returns status, do not park windows-nsis behind a
+// 60-minute unknown poll. Six 20s polls is about two minutes.
+export const DEFAULT_EAS_VIEW_FAIL_POLLS = 6;
+export const EXPO_GRAPHQL_URL = "https://api.expo.dev/graphql";
 export const BUILD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+// Same constraint as `eas build:list --platform ios --distribution store`.
+export const STORE_IOS_BUILD_FILTER = { platform: "IOS", distribution: "STORE" };
+
+const BUILD_SELECTION = `
+      id
+      status
+      platform
+      buildProfile
+      appBuildVersion
+      distribution
+      createdAt
+      fingerprint { hash }
+      runtime { version }
+      artifacts {
+        applicationArchiveUrl
+        buildUrl
+      }
+      error {
+        errorCode
+        message
+      }`;
+
+export const BUILD_BY_ID_QUERY = `query T3PrettyEasCloudBuildById($buildId: ID!) {
+  builds {
+    byId(buildId: $buildId) {${BUILD_SELECTION}
+    }
+  }
+}`;
+
+export const BUILDS_ON_APP_QUERY = `query T3PrettyEasCloudBuildsOnApp(
+  $appId: String!
+  $offset: Int!
+  $limit: Int!
+  $filter: BuildFilter
+) {
+  app {
+    byId(appId: $appId) {
+      builds(offset: $offset, limit: $limit, filter: $filter) {${BUILD_SELECTION}
+      }
+    }
+  }
+}`;
 
 export function nonEmptyString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
@@ -23,6 +73,18 @@ export function nonEmptyString(value) {
 
 export function isBuildId(value) {
   return BUILD_ID_PATTERN.test(nonEmptyString(value));
+}
+
+export function isStoreDistribution(build) {
+  const distribution = nonEmptyString(build?.distribution).toLowerCase().replace(/_/gu, "-");
+  return !distribution || distribution === "store";
+}
+
+export function isListedProductionStoreBuild(build) {
+  if (!build || !nonEmptyString(build.id)) return false;
+  const profile = nonEmptyString(build.buildProfile || build.profile);
+  if (profile && profile !== "production") return false;
+  return isStoreDistribution(build);
 }
 
 export function classifyCloudBuildStatus(status) {
@@ -44,6 +106,7 @@ export function classifyCloudBuildStatus(status) {
     normalized === "in-queue" ||
     normalized === "in-progress" ||
     normalized === "pending" ||
+    normalized === "pending-cancel" ||
     normalized === "queued" ||
     normalized === "waiting"
   ) {
@@ -74,6 +137,7 @@ export function fingerprintOf(build) {
     nonEmptyString(build?.runtimeVersion) ||
     nonEmptyString(fingerprint?.hash) ||
     nonEmptyString(fingerprint) ||
+    nonEmptyString(build?.runtime?.version) ||
     nonEmptyString(build?.metadata?.runtimeVersion) ||
     nonEmptyString(build?.metadata?.fingerprintHash) ||
     nonEmptyString(build?.metadata?.fingerprint)
@@ -223,11 +287,219 @@ export function inflightAsBuild(record) {
   };
 }
 
-export function waitOutcome({ kind = "unknown", interrupted = false, timedOut = false } = {}) {
+export function isStaleStatusRefresh({ viewFailures = 0, maxViewFailures = 0 } = {}) {
+  return maxViewFailures > 0 && viewFailures >= maxViewFailures;
+}
+
+export function waitOutcome({
+  kind = "unknown",
+  interrupted = false,
+  timedOut = false,
+  viewFailures = 0,
+  maxViewFailures = 0,
+} = {}) {
   if (kind === "failed") return "fail";
   if (kind === "finished") return "continue";
-  if (interrupted || timedOut) return "soft-exit";
+  if (interrupted || timedOut || isStaleStatusRefresh({ viewFailures, maxViewFailures })) {
+    return "soft-exit";
+  }
   return "poll";
+}
+
+export function normalizeGraphQLBuild(build) {
+  if (!build || typeof build !== "object") return null;
+  const runtimeVersion =
+    nonEmptyString(build.runtimeVersion) ||
+    nonEmptyString(build.runtime?.version) ||
+    nonEmptyString(build.fingerprint?.hash);
+  return {
+    ...build,
+    runtimeVersion,
+  };
+}
+
+export async function expoGraphql({
+  token,
+  query,
+  variables,
+  fetchImpl = globalThis.fetch,
+} = {}) {
+  if (!nonEmptyString(token)) {
+    throw new Error("EXPO_TOKEN is required to query Expo GraphQL.");
+  }
+  const response = await fetchImpl(EXPO_GRAPHQL_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body.errors?.length) {
+    const message =
+      body.errors?.map((error) => error.message).join("; ") || `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return body.data;
+}
+
+export async function fetchCloudBuildById({ buildId, token, fetchImpl } = {}) {
+  if (!isBuildId(buildId)) {
+    throw new Error("EAS cloud build view requires a UUID build id.");
+  }
+  const data = await expoGraphql({
+    token,
+    query: BUILD_BY_ID_QUERY,
+    variables: { buildId },
+    fetchImpl,
+  });
+  const build = normalizeGraphQLBuild(data?.builds?.byId);
+  if (!build || !nonEmptyString(build.id)) {
+    throw new Error(`Expo GraphQL returned no build for ${buildId}.`);
+  }
+  return build;
+}
+
+export async function fetchCloudBuildsViaGraphql({
+  token,
+  appId,
+  limit = 20,
+  offset = 0,
+  fetchImpl,
+} = {}) {
+  if (!nonEmptyString(appId)) {
+    throw new Error("Expo GraphQL build list requires an app id.");
+  }
+  const data = await expoGraphql({
+    token,
+    query: BUILDS_ON_APP_QUERY,
+    variables: {
+      appId,
+      offset,
+      limit,
+      filter: STORE_IOS_BUILD_FILTER,
+    },
+    fetchImpl,
+  });
+  const rows = data?.app?.byId?.builds;
+  if (!Array.isArray(rows)) {
+    throw new Error(`Expo GraphQL returned no iOS builds for ${appId}.`);
+  }
+  return rows.map((row) => normalizeGraphQLBuild(row)).filter(isListedProductionStoreBuild);
+}
+
+function easExecutable(env = NodeProcess.env) {
+  if (nonEmptyString(env.EAS_BIN)) return env.EAS_BIN;
+  return NodeProcess.platform === "win32" ? "eas.cmd" : "eas";
+}
+
+export function runEas(args, { cwd, env = NodeProcess.env } = {}) {
+  const result = NodeChildProcess.spawnSync(easExecutable(env), args, {
+    cwd,
+    encoding: "utf8",
+    env: { ...env, CI: env.CI || "1" },
+    windowsHide: true,
+    // win32 needs the cmd shim; a test-injected EAS_BIN is a real executable.
+    shell: NodeProcess.platform === "win32" && !nonEmptyString(env.EAS_BIN),
+  });
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout || `eas ${args[0]} failed`).trim();
+    throw new Error(detail || `eas ${args.join(" ")} failed`);
+  }
+  return result.stdout;
+}
+
+// current eas-cli `build:view` only declares --json. --non-interactive is
+// an unknown flag and the command exits with "build:view command failed."
+export function viewCloudBuildViaEas(buildId, { cwd, env } = {}) {
+  if (!isBuildId(buildId)) {
+    throw new Error("eas build:view requires a UUID build id.");
+  }
+  const stdout = runEas(["build:view", buildId, "--json"], { cwd, env });
+  const build = pickCloudBuild(stdout);
+  if (!build) {
+    throw new Error("eas build:view did not print a build object.");
+  }
+  return build;
+}
+
+export function listCloudBuildsViaEas({ cwd, env, limit = 20 } = {}) {
+  const stdout = runEas(
+    [
+      "build:list",
+      "--platform",
+      "ios",
+      "--build-profile",
+      "production",
+      "--distribution",
+      "store",
+      "--limit",
+      String(limit),
+      "--json",
+    ],
+    { cwd, env },
+  );
+  const values = extractJsonValues(stdout);
+  const parsed = values.at(-1);
+  const builds = flattenBuildCandidates(parsed === undefined ? values : [parsed]).filter(
+    (candidate) => candidate && typeof candidate === "object" && nonEmptyString(candidate.id),
+  );
+  if (builds.length === 0 && values.length === 0) {
+    throw new Error("eas build:list did not print JSON.");
+  }
+  return builds;
+}
+
+function collectErrors(error, errors) {
+  errors.push(error instanceof Error ? error.message : String(error));
+}
+
+export async function viewCloudBuild({
+  buildId,
+  token = NodeProcess.env.EXPO_TOKEN,
+  cwd,
+  env = NodeProcess.env,
+  fetchImpl,
+} = {}) {
+  const errors = [];
+  if (nonEmptyString(token)) {
+    try {
+      return await fetchCloudBuildById({ buildId, token, fetchImpl });
+    } catch (error) {
+      collectErrors(error, errors);
+    }
+  }
+  try {
+    return viewCloudBuildViaEas(buildId, { cwd, env });
+  } catch (error) {
+    collectErrors(error, errors);
+    throw new Error(`Could not view EAS cloud build ${buildId}: ${errors.join("; ")}`);
+  }
+}
+
+export async function listCloudBuilds({
+  token = NodeProcess.env.EXPO_TOKEN,
+  appId = NodeProcess.env.T3CODE_MOBILE_EAS_PROJECT_ID,
+  cwd,
+  env = NodeProcess.env,
+  limit = 20,
+  fetchImpl,
+} = {}) {
+  const errors = [];
+  if (nonEmptyString(token) && nonEmptyString(appId)) {
+    try {
+      return await fetchCloudBuildsViaGraphql({ token, appId, limit, fetchImpl });
+    } catch (error) {
+      collectErrors(error, errors);
+    }
+  }
+  try {
+    return listCloudBuildsViaEas({ cwd, env, limit });
+  } catch (error) {
+    collectErrors(error, errors);
+    throw new Error(`Could not list EAS cloud builds: ${errors.join("; ")}`);
+  }
 }
 
 function parseArgs(argv) {
@@ -249,6 +521,11 @@ function parseArgs(argv) {
 
 function truthy(value) {
   return value === "true" || value === "1" || value === "yes";
+}
+
+function intArg(value, fallback = 0) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 export function runCli(argv = NodeProcess.argv.slice(2)) {
@@ -280,20 +557,46 @@ export function runCli(argv = NodeProcess.argv.slice(2)) {
       kind: args.get("kind") || "unknown",
       interrupted: truthy(args.get("interrupted")),
       timedOut: truthy(args.get("timed-out")),
+      viewFailures: intArg(args.get("view-failures"), 0),
+      maxViewFailures: intArg(args.get("max-view-failures"), 0),
     })}\n`;
   }
   throw new Error(
-    "eas-cloud-build.mjs expected --read-json, --write-inflight, --read-inflight, or --wait-outcome.",
+    "eas-cloud-build.mjs expected --read-json, --write-inflight, --read-inflight, --wait-outcome, --view-id, or --list-builds.",
   );
 }
 
-function main() {
-  NodeProcess.stdout.write(runCli());
+export async function runCliAsync(argv = NodeProcess.argv.slice(2)) {
+  const args = parseArgs(argv);
+  if (args.has("view-id")) {
+    const build = await viewCloudBuild({
+      buildId: args.get("view-id"),
+      cwd: args.get("mobile-dir"),
+    });
+    return `${JSON.stringify(build, null, 2)}\n`;
+  }
+  if (args.has("list-builds")) {
+    const builds = await listCloudBuilds({
+      appId: args.get("app-id") || NodeProcess.env.T3CODE_MOBILE_EAS_PROJECT_ID,
+      cwd: args.get("mobile-dir"),
+      limit: intArg(args.get("limit"), 20),
+    });
+    return `${JSON.stringify(builds)}\n`;
+  }
+  return runCli(argv);
+}
+
+async function main() {
+  NodeProcess.stdout.write(await runCliAsync());
 }
 
 const invokedAsMain =
   Boolean(NodeProcess.argv[1]) &&
   import.meta.url === NodeURL.pathToFileURL(NodePath.resolve(NodeProcess.argv[1])).href;
 if (invokedAsMain) {
-  main();
+  main().catch((error) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    NodeProcess.stderr.write(`${detail}\n`);
+    NodeProcess.exitCode = 1;
+  });
 }

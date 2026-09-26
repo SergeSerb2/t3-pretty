@@ -9,6 +9,8 @@ import * as NodeFS from "node:fs";
 import * as NodeProcess from "node:process";
 import * as NodeURL from "node:url";
 
+import { fetchCloudBuildsViaGraphql } from "./eas-cloud-build.mjs";
+
 export const DEFAULT_TIMEZONE = "America/Vancouver";
 export const DEFAULT_LIMIT = 2;
 export const DEFAULT_BRANCH = "production";
@@ -242,13 +244,21 @@ function parseEasJson(stdout, label) {
 }
 
 export function runEas(args, { cwd, env = NodeProcess.env } = {}) {
-  const result = NodeChildProcess.spawnSync("eas", args, {
+  const executable = env.EAS_BIN || (NodeProcess.platform === "win32" ? "eas.cmd" : "eas");
+  const result = NodeChildProcess.spawnSync(executable, args, {
     cwd,
     encoding: "utf8",
-    env,
+    env: { ...env, CI: env.CI || "1" },
+    windowsHide: true,
+    shell: NodeProcess.platform === "win32" && !env.EAS_BIN,
   });
   if (result.status !== 0) {
-    const detail = (result.stderr || result.stdout || `eas ${args[0]} failed`).trim();
+    const detail = (
+      result.stderr ||
+      result.stdout ||
+      result.error?.message ||
+      `eas ${args[0]} failed`
+    ).trim();
     throw new Error(detail);
   }
   return result.stdout;
@@ -302,7 +312,6 @@ export function fetchBuildsViaEas({ cwd, env } = {}) {
       "--limit",
       "50",
       "--json",
-      "--non-interactive",
     ],
     { cwd, env },
   );
@@ -342,6 +351,25 @@ export function fetchUpdatesViaEas({ cwd, env, branch = DEFAULT_BRANCH } = {}) {
   return updates;
 }
 
+export async function fetchIosBuilds({
+  token,
+  appId,
+  cwd,
+  env = NodeProcess.env,
+} = {}) {
+  if (token && appId) {
+    try {
+      return await fetchCloudBuildsViaGraphql({ token, appId, limit: 50 });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      NodeProcess.stderr.write(
+        `Expo GraphQL build list failed (${detail}); falling back to eas build:list.\n`,
+      );
+    }
+  }
+  return fetchBuildsViaEas({ cwd, env });
+}
+
 export async function fetchExpoIosRecords({
   token,
   appId,
@@ -349,7 +377,7 @@ export async function fetchExpoIosRecords({
   cwd,
   env = NodeProcess.env,
 } = {}) {
-  const builds = fetchBuildsViaEas({ cwd, env });
+  const builds = await fetchIosBuilds({ token, appId, cwd, env });
   if (token && appId) {
     try {
       return {

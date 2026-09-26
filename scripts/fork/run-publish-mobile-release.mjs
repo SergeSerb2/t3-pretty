@@ -51,6 +51,7 @@ export function envForHost(base = NodeProcess.env, platform = NodeProcess.platfo
   // reattaches on the next ios-mobile so a Windows agent drop during
   // EAS compile (BK #2922) cannot spend a second Expo credit.
   // Expo CLI rejects --non-interactive; CI=1 is the supported switch.
+  // eas build:view on current eas-cli only accepts --json (BK #2925).
   env.CI = env.CI || "1";
   // Git Bash uname is MINGW64_NT-*, but publish must not depend on that
   // global being assigned first. The launcher is the windows-release host.
