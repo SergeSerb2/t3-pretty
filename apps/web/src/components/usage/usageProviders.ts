@@ -1,6 +1,14 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
 
-import { ClaudeAI, CursorIcon, GrokIcon, type Icon, OpenAI } from "../Icons";
+import {
+  AntigravityIcon,
+  ClaudeAI,
+  CursorIcon,
+  GrokIcon,
+  type Icon,
+  OpenAI,
+  OpenCodeIcon,
+} from "../Icons";
 
 type UsageProviderPresentation = {
   readonly label: string;
@@ -24,20 +32,22 @@ export const PROVIDER_PRESENTATION = {
     color: "#d97757",
     mark: ClaudeAI,
   },
-  cursor: {
-    label: "Cursor",
-    color: "#64748b",
-    mark: CursorIcon,
-  },
   grok: {
     label: "Grok Build",
     // Contrast-aware neutral between the Codex series and muted chart chrome.
     color: "color-mix(in oklab, var(--contrast-foreground) 72%, var(--background))",
     mark: GrokIcon,
   },
+  cursor: {
+    label: "Cursor",
+    color: "#64748b",
+    mark: CursorIcon,
+  },
+  opencode: { label: "OpenCode", color: "#5b9bbd", mark: OpenCodeIcon },
+  antigravity: { label: "Antigravity", color: "#8c7bd1", mark: AntigravityIcon },
 } satisfies Record<UsageProviderKind, UsageProviderPresentation>;
 
-/** Stable provider reading order across charts, summaries, tables, and hover rows. */
+/** Preferred provider reading order across charts, summaries, tables, and hover rows. */
 export const PROVIDER_ORDER = Object.keys(PROVIDER_PRESENTATION) as UsageProviderKind[];
 
 /** Providers with real activity, independent of the metric currently displayed. */

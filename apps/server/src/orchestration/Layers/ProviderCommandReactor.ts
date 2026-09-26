@@ -67,6 +67,7 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { NATIVE_RESUME_SLASH_COMMAND } from "../../provider/providerSnapshot.ts";
+import * as TerminalManager from "../../terminal/Manager.ts";
 const isProviderAdapterProcessError = Schema.is(ProviderAdapterProcessError);
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderAdapterValidationError = Schema.is(ProviderAdapterValidationError);
@@ -225,6 +226,7 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const terminalManager = yield* TerminalManager.TerminalManager;
   /** Environment settings with the thread's project overrides applied. */
   const projectSettingsForThread = Effect.fnUntraced(function* (threadId: ThreadId) {
     const settings = yield* serverSettingsService.getSettings;
@@ -1972,10 +1974,20 @@ const make = Effect.gen(function* () {
         else if (event.payload.titleState?.needsRefinement)
           yield* maybeRefineThreadTitle(event.payload.threadId);
         return;
-      case "thread.session-set":
-        if (event.payload.session.status === "ready")
+      case "thread.session-set": {
+        if (event.payload.session.status === "ready") {
           yield* maybeRefineThreadTitle(event.payload.threadId);
+        }
+        // Use the projected session, not the event payload: a ready event that
+        // was queued before a flushed turn marked the session starting must
+        // not start the next queued message.
+        const thread = yield* resolveThreadShell(event.payload.threadId);
+        const status = thread?.session?.status;
+        if (status !== "running" && status !== "starting") {
+          yield* flushQueuedTurnStarts(event.payload.threadId);
+        }
         return;
+      }
       case "thread.runtime-mode-set": {
         const thread = yield* resolveThreadShell(event.payload.threadId);
         if (!thread?.session || thread.session.status === "stopped") {
@@ -2014,24 +2026,16 @@ const make = Effect.gen(function* () {
       case "thread.session-stop-requested":
         yield* processSessionStopRequested(event);
         return;
-      case "thread.session-set": {
-        // Use the projected session, not the event payload: a ready event that
-        // was queued before a flushed turn marked the session starting must
-        // not start the next queued message.
-        const thread = yield* resolveThreadShell(event.payload.threadId);
-        const status = thread?.session?.status;
-        if (status !== "running" && status !== "starting") {
-          yield* flushQueuedTurnStarts(event.payload.threadId);
-        }
-        return;
-      }
       case "thread.settled": {
         const thread = yield* projectionSnapshotQuery.getThreadShellById(event.payload.threadId);
-        if (
-          Option.isNone(thread) ||
-          thread.value.session == null ||
-          thread.value.session.status === "stopped"
-        ) {
+        // A thread re-engaged before this event ran keeps its shells and session.
+        if (Option.isNone(thread) || thread.value.settledOverride !== "settled") {
+          return;
+        }
+        // Idle shells close so they stop holding the worktree. A terminal that
+        // runs a command (a dev server, an editor) stays for the user to close.
+        yield* terminalManager.closeIdle({ threadId: event.payload.threadId });
+        if (thread.value.session == null || thread.value.session.status === "stopped") {
           return;
         }
         yield* orchestrationEngine.dispatch({

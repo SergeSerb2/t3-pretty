@@ -55,6 +55,7 @@ describe("shouldBundleCliDependency", () => {
       "ffi-rs",
       "@yuuang/ffi-rs-win32-x64-msvc",
       "@ff-labs/fff-node",
+      "@napi-rs/keyring",
       "@clerk/electron-passkeys",
       "node-addon-api",
       "sharp",
@@ -91,7 +92,7 @@ describe("selectCliRuntimeExternalDependencies", () => {
   it("selects every external root declared by the server", () => {
     assert.deepStrictEqual(
       Object.keys(selectCliRuntimeExternalDependencies(serverPackageJson.dependencies)).sort(),
-      ["@ff-labs/fff-node", "node-pty", "sharp"],
+      ["@ff-labs/fff-node", "@napi-rs/keyring", "node-pty"],
     );
   });
 });
