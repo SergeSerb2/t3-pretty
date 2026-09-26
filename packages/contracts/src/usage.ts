@@ -4,13 +4,14 @@
  * Each environment scans the provider CLIs' own on-disk session transcripts
  * (`~/.claude/projects/**\/*.jsonl`, `~/.codex/sessions/**\/*.jsonl`,
  * `~/.grok/sessions/**\/updates.jsonl`,
- * `~/.cursor/acp-sessions`) rather than relying on T3 Code's own orchestration
+ * `~/.cursor/acp-sessions`) plus OpenCode/Antigravity databases and Cursor
+ * account history, rather than relying on T3 Code's own orchestration
  * projections, so usage stays complete even for turns that were never driven
- * through T3 Code. This mirrors the approach `ccusage` takes. Cursor's local
- * session store does not currently persist token usage, so that source is
- * reported empty until it does.
+ * through T3 Code. This mirrors the approach `ccusage` takes. Source status
+ * describes gaps in local coverage; Cursor account usage is fetched from the
+ * Cursor API when a CLI login is available.
  *
- * Environments return pre-aggregated `(day, hourStart?, provider, model)`
+ * Environments return pre-aggregated `(day, hourStart?, provider, model, sourcePath?)`
  * buckets. Raw transcript records never cross the wire.
  *
  * @module usage
@@ -24,31 +25,40 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
  * client renders partial coverage when an environment reports an older version
  * rather than failing the whole page.
  */
-export const USAGE_CONTRACT_VERSION = 5 as const;
+export const USAGE_CONTRACT_VERSION = 6 as const;
 
 /**
  * Oldest {@link UsageSummary} version a current client will still merge.
  *
- * Version 4 Claude/Codex buckets remain structurally valid under v5, so
- * mixed-version environments keep those totals instead of treating every
- * older server as stale.
+ * v5/v6 add providers and optional source attribution; v4 Claude/Codex
+ * buckets remain valid in mixed-version environments.
  */
 export const USAGE_MERGE_COMPATIBLE_SINCE = 4 as const;
 
-export const USAGE_PROVIDER_KINDS = ["claude", "codex", "cursor", "grok"] as const;
+export const USAGE_PROVIDER_KINDS = [
+  "claude",
+  "codex",
+  "grok",
+  "cursor",
+  "opencode",
+  "antigravity",
+] as const;
 
 export const USAGE_MODEL_MAX_LENGTH = 512;
 export const USAGE_TIME_ZONE_MAX_LENGTH = 128;
 export const USAGE_SUMMARY_MAX_BUCKETS_PER_PROVIDER = 4_096;
 export const USAGE_SUMMARY_MAX_BUCKETS =
   USAGE_PROVIDER_KINDS.length * USAGE_SUMMARY_MAX_BUCKETS_PER_PROVIDER;
-export const USAGE_SUMMARY_MAX_SOURCES = USAGE_PROVIDER_KINDS.length;
+/** Multiple roots per provider (aliased OpenCode/Antigravity homes, Cursor account). */
+export const USAGE_SUMMARY_MAX_SOURCES_PER_PROVIDER = 16;
+export const USAGE_SUMMARY_MAX_SOURCES =
+  USAGE_PROVIDER_KINDS.length * USAGE_SUMMARY_MAX_SOURCES_PER_PROVIDER;
 
 export const UsageProviderKind = Schema.Literals(USAGE_PROVIDER_KINDS);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
 
 export function isUsageProviderKind(value: unknown): value is UsageProviderKind {
-  return value === "claude" || value === "codex" || value === "cursor" || value === "grok";
+  return (USAGE_PROVIDER_KINDS as readonly string[]).includes(value as string);
 }
 
 /**
@@ -117,6 +127,8 @@ const UsageBucketFields = Schema.Struct({
   hourStart: Schema.optional(UsageTimestamp),
   provider: UsageProviderKind,
   model: UsageModel,
+  /** Source directory, so overlapping multi-home environments merge once per source. */
+  sourcePath: Schema.optional(TrimmedNonEmptyString),
   totals: UsageTokenTotals,
   costUsd: UsageFiniteNonNegativeNumber,
   /**
@@ -189,18 +201,26 @@ export const UsageSource = Schema.Struct({
    */
   distinctSessions: NonNegativeInt,
   message: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
+  /** An action the client can offer to make this source available. */
+  action: Schema.optionalKey(Schema.Literal("enableCursorKeychain")),
 });
 export type UsageSource = typeof UsageSource.Type;
 
 const UsageSources = Schema.Array(UsageSource).check(
   Schema.isMaxLength(USAGE_SUMMARY_MAX_SOURCES),
   Schema.makeFilter((sources) => {
-    const providers = new Set<UsageProviderKind>();
+    const fingerprints = new Set<string>();
     for (const source of sources) {
-      if (providers.has(source.fingerprint.provider)) {
-        return `Usage summary source provider '${source.fingerprint.provider}' must be unique.`;
+      const identity = [
+        source.fingerprint.hostId,
+        source.fingerprint.provider,
+        source.fingerprint.resolvedHomePath,
+        source.fingerprint.volumeId,
+      ].join("\0");
+      if (fingerprints.has(identity)) {
+        return `Usage summary source '${source.fingerprint.provider}' at '${source.fingerprint.resolvedHomePath}' must be unique.`;
       }
-      providers.add(source.fingerprint.provider);
+      fingerprints.add(identity);
     }
     return true;
   }),

@@ -37,6 +37,13 @@ function cacheWith(entries: readonly [string, number, readonly UsageRecord[]][])
       mtimeMs,
       provider: records[0]?.provider ?? "claude",
       records,
+      tailRecords: [],
+      position: {
+        resumeOffset: records.length * 10,
+        guardLength: 0,
+        guardHash: 0,
+        codexState: null,
+      },
     });
   }
   return cache;

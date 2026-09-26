@@ -965,3 +965,60 @@ Modify/delete: `.github/workflows/release-desktop.yml` (deleted in HEAD / Pretty
 - `origin-pr-review` — Removed the duplicated `codeCache: true` on the production desktop scheme and left Chromium code cache off on the development scheme, matching parent `#13501` (Vite serves changing code at stable URLs).
 - `origin-pr-review` — Pointed the new marketing Debian `.deb` card at the Pretty R2 feed and dropped parent ARM GitHub download links.
 - `origin-pr-review` — Namespaced the packaged V8 compile-cache directory as `t3-pretty/compile-cache` so it cannot clobber an upstream T3 Code install, and pointed the marketing Linux AppImage card at the Pretty R2 AppImage.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260925.2269` (`4293433ec`, `perf(server): avoid rereading unchanged files in review previews (#13395)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260925.2251`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2913. Scheduled sync on `ff047ee1c` merged the nightly and hit 16 content conflicts. CLIProxyAPI `gpt-5.6-sol` returned HTTP 503 `auth_unavailable: Incorrect API key` (CLIProxyAPI unavailable). This integrate does not wait for Sol and used no third-party model for resolution.
+- Merge base vs Origin `main` (`ff047ee1c`): `1c1270663` (2251). Origin #719 merge-committed 2251, so 2251 is an ancestor of `main`. Parent 2251..2269 is 8 commits / 93 files. Conflicts are the Pretty-divergent paths that nightly also touched — not a squash-merge replay.
+
+## Conflicted paths
+
+Content: `apps/mobile/src/components/AndroidAnchoredMenu.tsx`, `apps/mobile/src/components/CompactBrandTitle.tsx`, `apps/mobile/src/components/ComposerToolbar.tsx`, `apps/mobile/src/features/home/HomeScreen.tsx`, `apps/mobile/src/features/home/WorkspaceConnectionTitle.tsx`, `apps/mobile/src/features/usage/usageProviders.ts`, `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts`, `apps/server/src/usage/UsageService.ts`, `apps/server/src/usage/usageAggregation.ts`, `apps/server/src/usage/usageTranscriptReader.test.ts`, `apps/web/src/components/settings/useAvailableSettingsSearchItems.ts`, `apps/web/src/components/usage/UsagePage.tsx`, `apps/web/src/components/usage/usageProviders.ts`, `packages/contracts/src/usage.ts`, `packages/shared/src/usageMerge.ts`, `scripts/lib/cli-external-packages.test.ts`.
+
+No `.github/workflows/*` conflicts in this nightly.
+
+## Clean-merged parent changes (no text conflict)
+
+- Cursor, OpenCode, and Antigravity history on the usage page (`#10409`), including SQLite readers, Cursor account/keychain source, and settings search for usage providers.
+- SQLite statement-prepare retries (`#10584`).
+- Android controls scale with appearance text size (`#13356`).
+- Composer focus returns after saving a citation note (`#13450`).
+- Standard OTLP endpoint, headers, and protocol variables (`#13492`).
+- Settling a thread closes its idle shells (`#13673`).
+- Cursor keyring loaded with `createRequire` (`#13678`).
+- Review previews avoid rereading unchanged files (`#13395`).
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- Pretty usage contract bounds: `USAGE_PROVIDER_KINDS`, model/time-zone/message length caps, finite non-negative costs, and a fingerprint-unique source list (raised to 16 sources per provider so Cursor account + aliased OpenCode/Antigravity homes can coexist).
+- Usage merge environment fan-in (`USAGE_MERGE_MAX_ENVIRONMENTS`), bounded coverage messages, environment-scoped empty-`volumeId` fingerprints, and `sourceWarnings` / `coverageWarningsOmitted`.
+- Usage scan-cache hydration limits, intern-table length checks, token/cost validation, and `isUsageProviderKind` (now six providers). Resume `tailRecords` / parse position stay so grown JSONL files do not re-parse from byte 0.
+- Transcript listing file/directory caps, `readUtf8LinesWithinLimit`, and `prependGlobalEnvironment` / `isValidUsageTimeZone` on the usage scan.
+- Aggregator provider-prefixed dedupe, out-of-window-before-dedupe, and per-provider bucket/dedupe caps; `sourcePath` is accepted without the parent's early unbounded dedupe.
+- Mobile Pretty branding ("Pretty"), liquid-glass `AnchoredMenu` / iOS overlay, Hermes-safe brand-stay-mounted connection title, home list iOS `iosListBottomPad`, and `ComposerSendIconSlot`.
+- Settings search still keys off `primaryServerConfig` automations plus parent `scopeSearch.machine`.
+- Usage coverage notice plus cursor source messages that the notice does not already show.
+- Native resume slash-command import next to parent idle-shell close on settle. Combined Pretty `thread.session-set` refine + queued-turn flush.
+
+## Parent changes integrated at conflict boundaries
+
+- Six usage providers (`opencode`, `antigravity`) and `sourcePath` / `enableCursorKeychain` on the contract.
+- Nightly usage-merge supplemental partial buckets and `sourcePath`-aware ownership, with Pretty fingerprint and coverage caps.
+- `UsageService.collectDirs` for OpenCode/Antigravity/Cursor account history, scan-cache resume, and `aggregator.add(record, dir)`.
+- Android appearance scaling (`useAndroidControlSizing`, `menuWidth`, `fabClearance`) on Pretty chrome.
+- `@napi-rs/keyring` as a server external root (replacing Pretty's stale direct `sharp` expectation).
+- `thread.settled` closes idle shells (`#13673`).
+
+## Parent changes intentionally omitted
+
+- Unbounded usage contract collections and provider-unique sources. Reason: Pretty keeps hydration/DoS bounds; uniqueness is now fingerprint-based so multiple homes per provider still work.
+- Parent usage-scan decode without token/cost/path/intern bounds. Reason: Pretty keeps the hydration trust boundary; v4 resume fields and six providers are added beside those checks.
+- Parent `AndroidAnchoredMenu` rename and iOS-less overlay. Reason: Pretty's cross-platform `AnchoredMenu`, liquid glass, and placement mode stay authoritative; Android scaling is composed in.
+- Parent home-list iOS `+ 96` pad and connection-title tree swap. Reason: Pretty liquid-glass / pre-glass toolbar clearance and the brand-stay-mounted header workaround.
+- Parent CompactBrandTitle "T3 Code" copy and iOS-only `allowFontScaling` gate. Reason: Pretty branding and default font scaling.
+- Parent `UsagePage` inline source-message list in place of `UsageCoverageNotice`. Reason: Pretty coverage/duplicate/stale notice stays; unmatched cursor messages still render.
+- Parent usage-scan `listTranscriptFiles` unbounded walk. Reason: Pretty listing caps remain; `collectDirs` reads `listing.files`.

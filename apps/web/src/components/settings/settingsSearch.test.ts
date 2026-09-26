@@ -170,6 +170,7 @@ describe("searchSettings", () => {
       hasCloudPublicConfig: false,
       hasEnvironment: false,
       hasProviderSettingsEnvironment: false,
+      hasMacProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
@@ -184,16 +185,36 @@ describe("searchSettings", () => {
       "network-access",
       "publish-agent-activity",
       "provider-health-check-interval",
+      "cursor-keychain-usage",
       "source-control-writer-model",
       "source-control-writing-style",
       "t3-connect",
       "tailscale-https",
       "wsl-backend",
       "auto-settle-inactive-threads",
-      "auto-archive-settled-threads",
+      "auto-settle-merged-threads",
       "days-before-auto-settle",
     ]);
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
+  });
+
+  it("offers Cursor Keychain settings only when a macOS provider environment is available", () => {
+    const availability = {
+      hasCloudPublicConfig: false,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: false,
+      canManageLocalBackend: false,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+    };
+    const itemIds = (macAvailable: boolean) =>
+      filterAvailableSettingsSearchItems({
+        ...availability,
+        hasMacProviderSettingsEnvironment: macAvailable,
+      }).map((item) => item.id);
+    expect(itemIds(false)).not.toContain("cursor-keychain-usage");
+    expect(itemIds(true)).toContain("cursor-keychain-usage");
   });
 
   it("keeps the local toggle searchable without offering hidden host publishing controls", () => {
@@ -201,6 +222,7 @@ describe("searchSettings", () => {
       hasCloudPublicConfig: true,
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
@@ -256,6 +278,7 @@ describe("searchSettings", () => {
       hasCloudPublicConfig: false,
       hasEnvironment: false,
       hasProviderSettingsEnvironment: false,
+      hasMacProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: true,
@@ -264,11 +287,9 @@ describe("searchSettings", () => {
 
     expect(searchSettings("auto-settle", available).map((item) => item.id)).toEqual([
       "auto-settle-inactive-threads",
+      "auto-settle-merged-threads",
       "days-before-auto-settle",
     ]);
-    expect(searchSettings("auto-archive", available).map((item) => item.id)).toContain(
-      "auto-archive-settled-threads",
-    );
   });
 
   it("finds keybinding commands by label, command id, and default key", () => {
@@ -419,6 +440,7 @@ describe("searchSettings", () => {
       hasCloudPublicConfig: false,
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: true,
@@ -568,6 +590,7 @@ describe("auto-settlement search availability", () => {
       hasCloudPublicConfig: false,
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: availability.eligibleEnvironmentIds.length > 0,

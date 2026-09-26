@@ -27,6 +27,7 @@ import { AppText as Text } from "./AppText";
 import { OverlayPortal } from "./OverlayPortal";
 import { GlassBackdrop } from "./GlassBackdrop";
 import { MaterialMenuPopup } from "./MaterialMenuPopup";
+import { useAndroidControlSizing } from "./useAndroidControlSizing";
 
 const MENU_WIDTH = 268;
 const MENU_RADIUS = 16;
@@ -151,12 +152,17 @@ function anchorForPlacement(
  */
 export function AnchoredMenu(props: AnchoredMenuProps) {
   const isPlacementMode = props.placement !== undefined;
+  const { scale, menuWidth: desiredMenuWidth } = useAndroidControlSizing();
   const [measuredAnchor, setMeasuredAnchor] = useState<AnchorSnapshot | null>(
     isPlacementMode ? PLACEHOLDER_ANCHOR : null,
   );
   const [path, setPath] = useState<readonly MenuAction[]>([]);
   const [rootHeight, setRootHeight] = useState<number | null>(null);
   const [overlay, setOverlay] = useState<OverlayFrame | null>(null);
+  const menuWidth =
+    overlay === null
+      ? desiredMenuWidth
+      : Math.min(desiredMenuWidth, Math.max(0, overlay.width - 2 * SCREEN_MARGIN));
   const anchorRef = useRef<View>(null);
   const overlayRef = useRef<View>(null);
   const insets = useSafeAreaInsets();
@@ -235,14 +241,14 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
       ? 0
       : local.x + local.width / 2 <= overlay.width / 2
         ? local.x
-        : local.x + local.width - MENU_WIDTH;
+        : local.x + local.width - menuWidth;
   const left =
     overlay === null
       ? 0
-      : Math.min(
-          Math.max(preferredLeft, SCREEN_MARGIN),
-          overlay.width - MENU_WIDTH - SCREEN_MARGIN,
-        );
+      : Math.min(Math.max(preferredLeft, SCREEN_MARGIN), overlay.width - menuWidth - SCREEN_MARGIN);
+  // The keyboard stays up while the menu is open (in-window overlay, no
+  // focus change), so the space it covers is not usable — without this the
+  // composer-pill menus "open down" into the IME and can't be tapped.
   const usableBottom =
     overlay === null ? 0 : overlay.height - (keyboardVisible ? keyboardHeight : 0);
   const spaceBelow =
@@ -456,10 +462,10 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
               onPress={close}
             />
             {Platform.OS === "android" ? (
-              !placeable || local === null ? null : resolvedAnchor?.keyboardWasVisible !==
-                true ? (
+              !placeable || local === null ? null : resolvedAnchor?.keyboardWasVisible !== true ? (
                 <MaterialMenuPopup
                   anchor={local}
+                  menuWidth={menuWidth}
                   actions={popupActions}
                   title={props.title}
                   parent={parent}
@@ -470,10 +476,12 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
               ) : (
                 <Animated.View
                   entering={FadeIn.duration(120)}
-                  className="absolute w-[250px] overflow-hidden rounded-[4px] bg-card-alt shadow-md"
+                  className="absolute overflow-hidden bg-card-alt shadow-md"
                   style={{
                     left,
                     maxHeight,
+                    width: menuWidth,
+                    borderRadius: 4 * scale,
                     ...(opensDown
                       ? { top: local.y + local.height + ANCHOR_GAP }
                       : { bottom: (rootHeight ?? 0) - local.y + ANCHOR_GAP }),
@@ -486,7 +494,7 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
                     active editor; the first item tap must act, not just
                     dismiss the keyboard. */}
                   <ScrollView
-                    contentContainerClassName="py-2"
+                    contentContainerStyle={{ paddingVertical: 7 * scale }}
                     bounces={false}
                     keyboardShouldPersistTaps="always"
                     showsVerticalScrollIndicator={false}
@@ -494,6 +502,7 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
                     <MaterialMenuPopup
                       inline
                       anchor={local}
+                      menuWidth={menuWidth}
                       actions={popupActions}
                       title={props.title}
                       parent={parent}

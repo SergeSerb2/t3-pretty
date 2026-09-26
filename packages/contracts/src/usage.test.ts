@@ -76,18 +76,30 @@ describe("usage contract resource bounds", () => {
     expect(() =>
       decodeSummary({
         ...summary,
-        sources: Array.from({ length: USAGE_SUMMARY_MAX_SOURCES + 1 }, () => source),
+        sources: Array.from({ length: USAGE_SUMMARY_MAX_SOURCES + 1 }, (_, index) => ({
+          ...source,
+          fingerprint: { ...source.fingerprint, volumeId: `${index}:0` },
+        })),
       }),
     ).toThrow();
   });
 
-  it("rejects duplicate per-provider sources that cannot be attributed to buckets", () => {
+  it("rejects duplicate fingerprints that cannot be attributed to buckets", () => {
     expect(() =>
       decodeSummary({
         ...summary,
-        sources: [source, { ...source, fingerprint: { ...source.fingerprint, volumeId: "2:3" } }],
+        sources: [source, source],
       }),
     ).toThrow();
+  });
+
+  it("accepts multiple sources for one provider when fingerprints differ", () => {
+    expect(
+      decodeSummary({
+        ...summary,
+        sources: [source, { ...source, fingerprint: { ...source.fingerprint, volumeId: "2:3" } }],
+      }).sources,
+    ).toHaveLength(2);
   });
 
   it("rejects oversized identifiers and time zones", () => {

@@ -1,3 +1,4 @@
+import { useAndroidControlSizing } from "../../components/useAndroidControlSizing";
 import type { ThreadMoveDestination } from "../threads/threadOrder";
 import { computeThreadMoveAvailability } from "../threads/threadOrder";
 import { LegendList } from "@legendapp/list/react-native";
@@ -221,11 +222,11 @@ export function HomeScreen(props: HomeScreenProps) {
   const queuedThreadKeys = useQueuedThreadKeys();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const insets = useSafeAreaInsets();
+  const { fabClearance } = useAndroidControlSizing();
   const iosBottomToolbarClearance =
     Platform.OS === "ios" && !NATIVE_LIQUID_GLASS_SUPPORTED
       ? PRE_LIQUID_GLASS_BOTTOM_TOOLBAR_HEIGHT
       : 0;
-  const androidListBottomPad = Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) + 88;
   const iosListBottomPad = Math.max(insets.bottom, 24) + 24 + iosBottomToolbarClearance;
   const searchEnvironmentIds = useMemo(
     () =>
@@ -1030,9 +1031,8 @@ export function HomeScreen(props: HomeScreenProps) {
               paddingBottom:
                 Platform.OS === "ios"
                   ? iosListBottomPad
-                  : Platform.OS === "android"
-                    ? androidListBottomPad + 60
-                    : Math.max(insets.bottom, 16) + 88,
+                  : Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
+                    (Platform.OS === "android" ? fabClearance : 88),
             }}
           />
         </SwipeableScrollGateProvider>
