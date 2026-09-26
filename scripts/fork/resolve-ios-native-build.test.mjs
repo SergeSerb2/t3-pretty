@@ -75,6 +75,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "none -> abc123");
     assert.match(output, /^reuse_build_id=$/mu);
     assert.match(output, /^reuse_artifact_url=$/mu);
+    assert.match(output, /^reuse_status=$/mu);
   });
 
   it("reuses a finished matching cloud IPA without treating it as already submitted", () => {
@@ -98,6 +99,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "should_build=true");
     assert.include(output, "reuse_build_id=347c6b49-e7dd-4c26-b221-efe6761a8222");
     assert.include(output, `reuse_artifact_url=${artifact}`);
+    assert.include(output, "reuse_status=finished");
     assert.include(output, "Reusing finished EAS cloud IPA 347c6b49-e7dd-4c26-b221-efe6761a8222");
     assert.notInclude(output, "already has a production binary");
   });
@@ -149,6 +151,163 @@ describe("T3 Pretty iOS native-build gate", () => {
 
     assert.include(output, "should_build=true");
     assert.include(output, "none -> abc123");
+    assert.match(output, /^reuse_build_id=$/mu);
+    assert.notInclude(output, "already has a production binary");
+  });
+
+  it("reattaches to an in-flight matching cloud IPA without treating it as submitted", () => {
+    const output = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "abc123" }),
+      "--builds-json",
+      JSON.stringify([
+        {
+          id: "9312795f-d30f-4cc8-a20b-aea2931a4232",
+          platform: "IOS",
+          buildProfile: "production",
+          status: "IN_PROGRESS",
+          runtimeVersion: "abc123",
+        },
+      ]),
+    ]);
+
+    assert.include(output, "should_build=true");
+    assert.include(output, "reuse_build_id=9312795f-d30f-4cc8-a20b-aea2931a4232");
+    assert.include(output, "reuse_status=active");
+    assert.match(output, /^reuse_artifact_url=$/mu);
+    assert.include(
+      output,
+      "Reattaching to in-flight EAS cloud IPA 9312795f-d30f-4cc8-a20b-aea2931a4232",
+    );
+    assert.notInclude(output, "already has a production binary");
+  });
+
+  it("prefers a finished matching IPA over an in-flight persist record", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-inflight-"));
+    const inflight = NodePath.join(directory, "ios-eas-inflight");
+    const artifact = "https://expo.invalid/application.ipa";
+    try {
+      NodeFS.writeFileSync(
+        inflight,
+        [
+          "id=9312795f-d30f-4cc8-a20b-aea2931a4232",
+          "fingerprint=abc123",
+          "commit=1a8ceaddec412a8dea57cb08cef38fbc8ef66270",
+          "buildNumber=173",
+          "status=in-progress",
+          "",
+        ].join("\n"),
+      );
+      const output = run([
+        "--fingerprint-json",
+        JSON.stringify({ hash: "abc123" }),
+        "--inflight-file",
+        inflight,
+        "--builds-json",
+        JSON.stringify([
+          {
+            id: "347c6b49-e7dd-4c26-b221-efe6761a8222",
+            platform: "IOS",
+            buildProfile: "production",
+            status: "finished",
+            runtimeVersion: "abc123",
+            artifacts: { applicationArchiveUrl: artifact },
+          },
+        ]),
+      ]);
+      assert.include(output, "reuse_build_id=347c6b49-e7dd-4c26-b221-efe6761a8222");
+      assert.include(output, "reuse_status=finished");
+      assert.include(output, `reuse_artifact_url=${artifact}`);
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reattaches from a persisted id whose recorded status is unknown", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-inflight-"));
+    const inflight = NodePath.join(directory, "ios-eas-inflight");
+    try {
+      NodeFS.writeFileSync(
+        inflight,
+        [
+          "id=9312795f-d30f-4cc8-a20b-aea2931a4232",
+          "fingerprint=abc123",
+          "buildNumber=173",
+          "status=PENDING_WORKER",
+          "",
+        ].join("\n"),
+      );
+      const output = run([
+        "--fingerprint-json",
+        JSON.stringify({ hash: "abc123" }),
+        "--inflight-file",
+        inflight,
+        "--builds-json",
+        "[]",
+      ]);
+      assert.include(output, "should_build=true");
+      assert.include(output, "reuse_build_id=9312795f-d30f-4cc8-a20b-aea2931a4232");
+      assert.include(output, "reuse_status=active");
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reattaches from a persisted in-flight id when Expo's list is empty", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-inflight-"));
+    const inflight = NodePath.join(directory, "ios-eas-inflight");
+    try {
+      NodeFS.writeFileSync(
+        inflight,
+        [
+          "id=9312795f-d30f-4cc8-a20b-aea2931a4232",
+          "fingerprint=abc123",
+          "buildNumber=173",
+          "status=in-progress",
+          "",
+        ].join("\n"),
+      );
+      const output = run([
+        "--fingerprint-json",
+        JSON.stringify({ hash: "abc123" }),
+        "--inflight-file",
+        inflight,
+        "--builds-json",
+        "[]",
+      ]);
+      assert.include(output, "should_build=true");
+      assert.include(output, "reuse_build_id=9312795f-d30f-4cc8-a20b-aea2931a4232");
+      assert.include(output, "reuse_status=active");
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores a persisted in-flight id for a different fingerprint", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-inflight-"));
+    const inflight = NodePath.join(directory, "ios-eas-inflight");
+    try {
+      NodeFS.writeFileSync(
+        inflight,
+        [
+          "id=9312795f-d30f-4cc8-a20b-aea2931a4232",
+          "fingerprint=old-hash",
+          "status=in-progress",
+          "",
+        ].join("\n"),
+      );
+      const output = run([
+        "--fingerprint-json",
+        JSON.stringify({ hash: "abc123" }),
+        "--inflight-file",
+        inflight,
+        "--builds-json",
+        "[]",
+      ]);
+      assert.match(output, /^reuse_build_id=$/mu);
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("rebuilds when only a canceled or errored build matches the fingerprint", () => {
@@ -158,12 +317,14 @@ describe("T3 Pretty iOS native-build gate", () => {
       "--builds-json",
       JSON.stringify([
         {
+          id: "11111111-1111-4111-8111-111111111111",
           platform: "IOS",
           buildProfile: "production",
           status: "errored",
           runtimeVersion: "abc123",
         },
         {
+          id: "22222222-2222-4222-8222-222222222222",
           platform: "IOS",
           buildProfile: "production",
           status: "canceled",
@@ -174,6 +335,48 @@ describe("T3 Pretty iOS native-build gate", () => {
 
     assert.include(output, "should_build=true");
     assert.include(output, "none -> abc123");
+    assert.match(output, /^reuse_build_id=$/mu);
+    assert.match(output, /^reuse_status=$/mu);
+  });
+
+  it("reattaches to an unknown or empty Expo status for a matching fingerprint", () => {
+    const unknown = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "abc123" }),
+      "--builds-json",
+      JSON.stringify([
+        {
+          id: "9312795f-d30f-4cc8-a20b-aea2931a4232",
+          platform: "IOS",
+          buildProfile: "production",
+          status: "PENDING_WORKER",
+          runtimeVersion: "abc123",
+        },
+      ]),
+    ]);
+    assert.include(unknown, "should_build=true");
+    assert.include(unknown, "reuse_build_id=9312795f-d30f-4cc8-a20b-aea2931a4232");
+    assert.include(unknown, "reuse_status=active");
+    assert.include(
+      unknown,
+      "Reattaching to in-flight EAS cloud IPA 9312795f-d30f-4cc8-a20b-aea2931a4232",
+    );
+
+    const emptyStatus = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "abc123" }),
+      "--builds-json",
+      JSON.stringify([
+        {
+          id: "347c6b49-e7dd-4c26-b221-efe6761a8222",
+          platform: "IOS",
+          buildProfile: "production",
+          runtimeVersion: "abc123",
+        },
+      ]),
+    ]);
+    assert.include(emptyStatus, "reuse_build_id=347c6b49-e7dd-4c26-b221-efe6761a8222");
+    assert.include(emptyStatus, "reuse_status=active");
   });
 
   it("reads a full eas fingerprint:generate --json dump larger than 64 KiB", () => {
@@ -284,6 +487,12 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.notInclude(source, "xcode_is_store_supported");
     assert.notInclude(source, "No native macos-release TestFlight submit recorded");
     assert.include(source, ".t3-fork/ios-native-submit");
+    assert.include(source, "--inflight-file");
+    assert.include(source, "ios-eas-inflight");
+    assert.include(source, "--no-wait");
+    assert.include(source, "await_eas_cloud_build");
+    assert.include(source, "T3CODE_IOS_EAS_WAIT_SECONDS:-3600");
+    assert.notInclude(source, "T3CODE_IOS_EAS_WAIT_SECONDS:-120");
   });
 
   it("ignores malformed hosted build metadata because it is not delivery proof", () => {

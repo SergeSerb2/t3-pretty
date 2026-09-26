@@ -207,6 +207,20 @@ function extractIpaFingerprintVerification() {
   return match[0];
 }
 
+function extractIosExpoDailyCapField() {
+  const match = mobileRelease.match(/ios_expo_daily_cap_field\(\) \{\n[\s\S]*?\n\}/);
+  assert.ok(match, "ios_expo_daily_cap_field missing");
+  return match[0];
+}
+
+function extractEasCloudWaitHelpers() {
+  const match = mobileRelease.match(
+    /eas_cloud_wait_seconds\(\) \{\n[\s\S]*?\n\}\n\nrecord_local_ota_publish/,
+  );
+  assert.ok(match, "EAS cloud wait helpers missing");
+  return match[0].replace(/\n\nrecord_local_ota_publish$/u, "");
+}
+
 function extractCloudBuildDetailsReader() {
   const match = mobileRelease.match(
     /read_eas_cloud_build_details\(\) \{[\s\S]*?\n\}\n\nreport_eas_cloud_build_failure/,
@@ -1610,6 +1624,13 @@ describe("iOS embedded runtime fingerprint", () => {
     assert.include(mobileRelease, "reuse_artifact_url");
     assert.include(mobileRelease, "eas build:view");
     assert.include(mobileRelease, "not spending another Expo build credit");
+    assert.include(mobileRelease, "--inflight-file");
+    assert.include(mobileRelease, "ios-eas-inflight");
+    assert.include(mobileRelease, "--no-wait");
+    assert.include(mobileRelease, "await_eas_cloud_build");
+    assert.include(mobileRelease, "soft_exit_known_eas_cloud_build");
+    assert.include(mobileRelease, "T3CODE_IOS_EAS_WAIT_SECONDS:-3600");
+    assert.notInclude(mobileRelease, "T3CODE_IOS_EAS_WAIT_SECONDS:-120");
     assert.isBelow(
       mobileRelease.indexOf('if [[ -n "$reuse_build_id" ]]; then'),
       mobileRelease.indexOf("ios_expo_cap_blocks build"),
@@ -1618,6 +1639,158 @@ describe("iOS embedded runtime fingerprint", () => {
       mobileRelease.indexOf("ios_expo_cap_blocks build"),
       mobileRelease.indexOf("    eas build \\"),
     );
+  });
+});
+
+describe("iOS EAS cloud wait / reattach", () => {
+  const buildId = "9312795f-d30f-4cc8-a20b-aea2931a4232";
+
+  function runAwait(viewBuild, { waitSeconds = "0", invoke = true, extra = "" } = {}) {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-eas-wait-"));
+    const tmp = NodePath.join(root, "tmp");
+    const inflight = NodePath.join(root, "ios-eas-inflight");
+    const viewJson = NodePath.join(root, "view.json");
+    NodeFS.mkdirSync(tmp, { recursive: true });
+    NodeFS.mkdirSync(NodePath.join(root, "scripts", "fork"), { recursive: true });
+    NodeFS.copyFileSync(
+      NodePath.resolve(here, "eas-cloud-build.mjs"),
+      NodePath.join(root, "scripts", "fork", "eas-cloud-build.mjs"),
+    );
+    NodeFS.writeFileSync(viewJson, `${JSON.stringify(viewBuild)}\n`);
+    const result = NodeChildProcess.spawnSync(
+      "bash",
+      [
+        "-c",
+        [
+          "set -euo pipefail",
+          extractIosExpoDailyCapField(),
+          extractEasCloudWaitHelpers(),
+          'root="$1"',
+          'tmp="$2"',
+          'LOCAL_EAS_INFLIGHT="$3"',
+          'VIEW_JSON="$4"',
+          "fingerprint=abc123",
+          "commit=1a8ceaddec412a8dea57cb08cef38fbc8ef66270",
+          `export T3CODE_IOS_EAS_WAIT_SECONDS="${waitSeconds}"`,
+          "export T3CODE_IOS_EAS_POLL_SECONDS=1",
+          'annotate() { printf "annotate %s\\n" "$*"; }',
+          "restore_eas_json() { :; }",
+          'report_eas_cloud_build_failure() { printf "reported\\n" >&2; }',
+          'view_eas_cloud_build() { cat "$VIEW_JSON" > "$2"; }',
+          extra,
+          invoke
+            ? `await_eas_cloud_build "${buildId}" abc123 1a8ceaddec412a8dea57cb08cef38fbc8ef66270 173`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        "await-eas-cloud",
+        root,
+        tmp,
+        inflight,
+        viewJson,
+      ],
+      { encoding: "utf8" },
+    );
+    return { result, root, inflight };
+  }
+
+  it("defaults the EAS wait budget to an IPA-length bound", () => {
+    const { result, root } = runAwait(
+      {
+        id: buildId,
+        status: "FINISHED",
+      },
+      { waitSeconds: "", invoke: false, extra: "eas_cloud_wait_seconds" },
+    );
+    try {
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.equal(result.stdout.trim(), "3600");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns the archive when a reattached EAS build is already finished", () => {
+    const artifact = "https://expo.invalid/application.ipa";
+    const { result, root, inflight } = runAwait({
+      id: buildId,
+      status: "FINISHED",
+      artifacts: { applicationArchiveUrl: artifact },
+    });
+    try {
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.deepEqual(result.stdout.trim().split("\n").slice(-2), [buildId, artifact]);
+      assert.include(NodeFS.readFileSync(inflight, "utf8"), `id=${buildId}`);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails the job when the reattached EAS compile errored", () => {
+    const { result, root } = runAwait({
+      id: buildId,
+      status: "ERRORED",
+      error: { errorCode: "EAS_BUILD_UNKNOWN_ERROR", message: "compile failed" },
+    });
+    try {
+      assert.notEqual(result.status, 0);
+      assert.include(result.stderr, "EAS cloud iOS build failed.");
+      assert.include(result.stderr, "reported");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("soft-exits 0 and persists the id when the wait budget expires mid-compile", () => {
+    const { result, root, inflight } = runAwait(
+      {
+        id: buildId,
+        status: "IN_PROGRESS",
+        runtimeVersion: "abc123",
+        appBuildVersion: "173",
+      },
+      { waitSeconds: "0" },
+    );
+    try {
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.include(result.stdout, "still running");
+      assert.include(result.stdout, "not holding this agent");
+      const persisted = NodeFS.readFileSync(inflight, "utf8");
+      assert.include(persisted, `id=${buildId}`);
+      assert.include(persisted, "fingerprint=abc123");
+      assert.include(persisted, "buildNumber=173");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("soft-exits 0 when SIGTERM arrives after the build id is known", () => {
+    const { result, root, inflight } = runAwait(
+      {
+        id: buildId,
+        status: "IN_QUEUE",
+        runtimeVersion: "abc123",
+      },
+      {
+        waitSeconds: "30",
+        invoke: false,
+        extra: [
+          `await_eas_cloud_build "${buildId}" abc123 1a8ceaddec412a8dea57cb08cef38fbc8ef66270 173 &`,
+          "waiter=$!",
+          "sleep 0.2",
+          'kill -TERM "$waiter"',
+          'wait "$waiter"',
+        ].join("\n"),
+      },
+    );
+    try {
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.include(result.stdout, "waiter interrupted");
+      assert.include(NodeFS.readFileSync(inflight, "utf8"), `id=${buildId}`);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

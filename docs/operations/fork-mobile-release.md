@@ -102,8 +102,13 @@ enough to skip Xcode. The job does not force an IPA just because
 `.t3-fork/ios-native-submit` is missing. When the worker has a usable full
 Xcode, local `eas build --local` still saves an Expo IPA credit. Without
 Xcode — including `windows-release` and Linux `macos-release` agents — the
-job compiles on EAS cloud (`eas build --wait --json`, no `--local`) instead
-of failing. Set
+job compiles on EAS cloud (`eas build --no-wait --json`, no `--local`)
+instead of failing. The job records the submitted EAS build id under
+`~/.cache/t3-pretty-release/ios-eas-inflight` and reattaches on the next
+`ios-mobile` run if the Windows agent drops while Expo is still compiling.
+A waiter interrupt or wait-budget expiry exits 0 when that id is known and
+the compile has not failed; a real ERRORED/CANCELED IPA still fails the
+job. Set
 `T3CODE_IOS_LOCAL_XCODE=1` on a rebuild to require local Xcode. Set
 `T3CODE_IOS_ALLOW_EAS_CLOUD=1` to force cloud even when Xcode is present.
 OTA is Linux- and Windows-capable. On `windows-release` the job exports
@@ -126,7 +131,10 @@ cap. The runner writes
 `~/.cache/t3-pretty-release/ios-native-submit` after a successful IPA
 upload, and later jobs treat `origin/main`'s copy of the git marker as
 enough so queued jobs do not each compile another IPA while the marker
-pull request is still landing.
+pull request is still landing. An in-flight cloud IPA writes
+`~/.cache/t3-pretty-release/ios-eas-inflight` (id, fingerprint,
+buildNumber) so a retry reattaches instead of starting a second Expo
+build.
 
 OTA still reaches already-installed TestFlight binaries whose native
 fingerprint matches. JS-only changes therefore show up as an in-app update

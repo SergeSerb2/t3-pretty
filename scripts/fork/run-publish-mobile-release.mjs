@@ -47,6 +47,9 @@ export function envForHost(base = NodeProcess.env, platform = NodeProcess.platfo
   delete env.VP_HOME;
   env.T3CODE_IOS_ALLOW_EAS_CLOUD = env.T3CODE_IOS_ALLOW_EAS_CLOUD || "1";
   delete env.T3CODE_IOS_LOCAL_XCODE;
+  // Cloud IPA is eas build --no-wait. The shell persists the id and
+  // reattaches on the next ios-mobile so a Windows agent drop during
+  // EAS compile (BK #2922) cannot spend a second Expo credit.
   // Expo CLI rejects --non-interactive; CI=1 is the supported switch.
   env.CI = env.CI || "1";
   // Git Bash uname is MINGW64_NT-*, but publish must not depend on that

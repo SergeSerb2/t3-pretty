@@ -4,6 +4,13 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import * as NodeURL from "node:url";
 
+import {
+  classifyCloudBuildStatus,
+  inflightAsBuild,
+  inflightMatchesFingerprint,
+  parseInflightRecord,
+} from "./eas-cloud-build.mjs";
+
 // `eas fingerprint:generate --json` lists every native source it hashed; on
 // this app that runs well past 64 KiB, and a 64 KiB cap failed every
 // TestFlight job. The dump gets a bound a fingerprint cannot reach; the
@@ -137,11 +144,9 @@ export function archiveUrlFor(build) {
   );
 }
 
-export function isFinishedProductionIosBuild(build) {
+function isProductionIosBuild(build) {
   if (!build || typeof build !== "object") return false;
   if (!nonEmptyString(build.id)) return false;
-  const status = nonEmptyString(build.status).toLowerCase();
-  if (status !== "finished") return false;
   const platform = nonEmptyString(build.platform || build.appPlatform).toUpperCase();
   if (platform && platform !== "IOS") return false;
   const profile = nonEmptyString(build.buildProfile || build.profile);
@@ -149,18 +154,50 @@ export function isFinishedProductionIosBuild(build) {
   return true;
 }
 
-// A finished hosted IPA is not TestFlight delivery proof. It is a binary we
-// can download and submit without spending another Expo cloud-build credit.
+export function isFinishedProductionIosBuild(build) {
+  if (!isProductionIosBuild(build)) return false;
+  return classifyCloudBuildStatus(build.status) === "finished";
+}
+
+export function isActiveProductionIosBuild(build) {
+  if (!isProductionIosBuild(build)) return false;
+  const kind = classifyCloudBuildStatus(build.status);
+  // Unknown / empty / new Expo states are in-flight-ish. A matching
+  // fingerprint with an id must reattach; only a failed compile is a miss.
+  return kind === "active" || kind === "unknown";
+}
+
+function emptyReusableCloudIpa() {
+  return { reuseBuildId: "", reuseArtifactUrl: "", reuseStatus: "" };
+}
+
+// A hosted IPA is not TestFlight delivery proof. A finished matching cloud
+// binary can be downloaded, and an in-flight or unknown-status matching
+// one can be reattached, without spending another Expo credit. Only a
+// failed compile or a missing id starts a new IPA. Only the marker
+// written after `eas submit` succeeds is allowed to skip the native job.
 export function selectReusableCloudIpa(builds, fingerprint) {
   const expected = nonEmptyString(fingerprint);
-  if (!expected) return { reuseBuildId: "", reuseArtifactUrl: "" };
-  const match = asBuildList(builds).find(
+  if (!expected) return emptyReusableCloudIpa();
+  const list = asBuildList(builds);
+  const finished = list.find(
     (build) => isFinishedProductionIosBuild(build) && buildRuntimeVersion(build) === expected,
   );
-  if (!match) return { reuseBuildId: "", reuseArtifactUrl: "" };
+  if (finished) {
+    return {
+      reuseBuildId: nonEmptyString(finished.id),
+      reuseArtifactUrl: archiveUrlFor(finished),
+      reuseStatus: "finished",
+    };
+  }
+  const active = list.find(
+    (build) => isActiveProductionIosBuild(build) && buildRuntimeVersion(build) === expected,
+  );
+  if (!active) return emptyReusableCloudIpa();
   return {
-    reuseBuildId: nonEmptyString(match.id),
-    reuseArtifactUrl: archiveUrlFor(match),
+    reuseBuildId: nonEmptyString(active.id),
+    reuseArtifactUrl: archiveUrlFor(active),
+    reuseStatus: "active",
   };
 }
 
@@ -180,6 +217,23 @@ function readBuilds(args) {
     return [];
   }
   return [];
+}
+
+function readInflightBuilds(args, fingerprint) {
+  if (!args.has("inflight-file")) return [];
+  try {
+    const raw = readBoundedFile(
+      args.get("inflight-file"),
+      "In-flight EAS file",
+      MAX_MARKER_INPUT_BYTES,
+    );
+    if (!raw.trim()) return [];
+    const record = parseInflightRecord(raw);
+    if (!inflightMatchesFingerprint(record, fingerprint)) return [];
+    return [inflightAsBuild(record)];
+  } catch {
+    return [];
+  }
 }
 
 function parseArgs(argv) {
@@ -215,14 +269,14 @@ export function resolveNativeBuild(argv = NodeProcess.argv.slice(2), env = NodeP
   // A hosted EAS build record proves only that an IPA was compiled. This fork has
   // no hosted auto-submit path, so neither an in-flight nor a finished build can
   // prove TestFlight delivery. Only the marker written after `eas submit`
-  // succeeds is allowed to suppress a local release build.
+  // succeeds is allowed to suppress a local release build. An in-flight or
+  // finished matching cloud IPA can still be reused so a retry does not spend
+  // another Expo credit (BK #2922).
   const shouldBuild = forceBuild || submittedFingerprint !== fingerprint;
+  const hostedBuilds = [...readInflightBuilds(args, fingerprint), ...readBuilds(args)];
   const reusable = shouldBuild
-    ? selectReusableCloudIpa(readBuilds(args), fingerprint)
-    : {
-        reuseBuildId: "",
-        reuseArtifactUrl: "",
-      };
+    ? selectReusableCloudIpa(hostedBuilds, fingerprint)
+    : emptyReusableCloudIpa();
 
   const outputPath = args.get("github-output") || env.GITHUB_OUTPUT;
   const lines = [
@@ -232,6 +286,7 @@ export function resolveNativeBuild(argv = NodeProcess.argv.slice(2), env = NodeP
     `should_build=${shouldBuild ? "true" : "false"}`,
     `reuse_build_id=${reusable.reuseBuildId}`,
     `reuse_artifact_url=${reusable.reuseArtifactUrl}`,
+    `reuse_status=${reusable.reuseStatus}`,
   ];
 
   if (outputPath) {
@@ -243,8 +298,10 @@ export function resolveNativeBuild(argv = NodeProcess.argv.slice(2), env = NodeP
     stdout += `Forcing a native ${platform} build (mode=build).\n`;
   } else if (shouldBuild) {
     stdout += `${platform} runtime fingerprint changed (${submittedFingerprint || "none"} -> ${fingerprint}).\n`;
-    if (reusable.reuseBuildId) {
+    if (reusable.reuseStatus === "finished") {
       stdout += `Reusing finished EAS cloud IPA ${reusable.reuseBuildId}; not spending another Expo build credit.\n`;
+    } else if (reusable.reuseBuildId) {
+      stdout += `Reattaching to in-flight EAS cloud IPA ${reusable.reuseBuildId}; not spending another Expo build credit.\n`;
     }
   } else {
     stdout += `${platform} runtime fingerprint ${fingerprint} already has a production binary; skipping native build.\n`;

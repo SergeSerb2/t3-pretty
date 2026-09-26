@@ -436,7 +436,7 @@ ${setup}
     assert.include(mobileRelease, "eas build");
     assert.include(mobileRelease, "--local");
     assert.include(mobileRelease, "eas submit");
-    assert.equal((mobileRelease.match(/--no-wait/g) || []).length, 1);
+    assert.equal((mobileRelease.match(/--no-wait/g) || []).length, 3);
     assert.include(mobileRelease, "Xcode-beta.app");
     assert.include(mobileRelease, "HOMEBREW_NO_ASK=1");
     assert.include(mobileRelease, "brew install cocoapods");
@@ -496,7 +496,16 @@ ${setup}
     assert.include(mobileRelease, "T3CODE_IOS_ALLOW_EAS_CLOUD");
     assert.include(mobileRelease, "T3CODE_IOS_LOCAL_XCODE");
     assert.include(mobileRelease, "ios-expo-daily-cap.mjs");
-    assert.include(mobileRelease, "--wait");
+    assert.include(mobileRelease, "--no-wait");
+    assert.include(mobileRelease, "ios-eas-inflight");
+    assert.include(mobileRelease, "await_eas_cloud_build");
+    assert.notMatch(
+      mobileRelease.slice(
+        mobileRelease.indexOf('ipa_via_cloud" == "true"'),
+        mobileRelease.indexOf("Using Xcode at"),
+      ),
+      /^\s+--wait\s*\\?$/mu,
+    );
     assert.include(mobileRelease, '--json > "$cloud_build_json"');
     assert.include(mobileRelease, "completed build with an id and archive");
     assert.include(mobileRelease, '--path "$ipa_path"');

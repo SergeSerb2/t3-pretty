@@ -26,7 +26,12 @@
 # Expo.plist with scripts/fork/read-expo-runtime-version.mjs (XML or
 # binary). Do not require macOS plutil; Windows Git Bash does not have it
 # (BK #2864). A finished hosted IPA whose runtime already matches can be
-# downloaded and submitted without another Expo build credit.
+# downloaded and submitted without another Expo build credit. Cloud create
+# uses `eas build --no-wait --json` and records the id in
+# ~/.cache/t3-pretty-release/ios-eas-inflight. A later ios-mobile run
+# reattaches instead of starting a duplicate when the Windows agent dies
+# mid-wait (BK #2922). The waiter soft-exits 0 if that id is known and the
+# compile has not failed; ERRORED/CANCELED still fail the job.
 #
 # Tip packaging allows at most two iOS Expo spends (cloud IPA or OTA) per
 # America/Vancouver calendar day. scripts/fork/ios-expo-daily-cap.mjs counts
@@ -92,6 +97,9 @@ LOCAL_SUBMIT_MARK="${HOME}/.cache/t3-pretty-release/ios-native-submit"
 # diff and strand the release for good. Diffing against this mark lets a
 # later build re-release everything since the last publish.
 LOCAL_OTA_MARK="${HOME}/.cache/t3-pretty-release/ios-ota-publish"
+# Runner-local record of an already-submitted EAS cloud IPA. The next
+# ios-mobile run reattaches when the waiter is killed after create.
+LOCAL_EAS_INFLIGHT="${HOME}/.cache/t3-pretty-release/ios-eas-inflight"
 case "${T3CODE_FORCE_IOS:-}" in
   true | TRUE | 1 | yes | YES) FORCE_IOS=true ;;
 esac
@@ -469,6 +477,145 @@ mobile_release_base() {
 record_local_native_submit() {
   mkdir -p "$(dirname "$LOCAL_SUBMIT_MARK")"
   printf '%s\n' "macos-release" "${1:-${commit:-unknown}}" > "$LOCAL_SUBMIT_MARK"
+}
+
+eas_cloud_wait_seconds() {
+  # Keep in sync with DEFAULT_EAS_WAIT_SECONDS in eas-cloud-build.mjs.
+  # 60 minutes is an IPA-length bound, not the 2-minute agent-loss probe.
+  local raw="${T3CODE_IOS_EAS_WAIT_SECONDS:-3600}"
+  [[ "$raw" =~ ^[0-9]+$ ]] || raw=3600
+  printf '%s\n' "$raw"
+}
+
+eas_cloud_poll_seconds() {
+  local raw="${T3CODE_IOS_EAS_POLL_SECONDS:-20}"
+  [[ "$raw" =~ ^[0-9]+$ ]] || raw=20
+  if (( raw < 1 )); then
+    raw=20
+  fi
+  printf '%s\n' "$raw"
+}
+
+record_local_eas_inflight() {
+  local id="$1"
+  local next_fingerprint="${2:-${fingerprint:-}}"
+  local next_commit="${3:-${commit:-}}"
+  local build_number="${4:-}"
+  local status="${5:-in-progress}"
+  [[ -n "$id" ]] || return 1
+  mkdir -p "$(dirname "$LOCAL_EAS_INFLIGHT")"
+  node "$root/scripts/fork/eas-cloud-build.mjs" --write-inflight "$LOCAL_EAS_INFLIGHT" \
+    --id "$id" \
+    --fingerprint "$next_fingerprint" \
+    --commit "$next_commit" \
+    --build-number "$build_number" \
+    --status "$status"
+}
+
+clear_local_eas_inflight() {
+  rm -f "$LOCAL_EAS_INFLIGHT"
+}
+
+read_eas_cloud_build_state() {
+  node "$root/scripts/fork/eas-cloud-build.mjs" --read-json "$1"
+}
+
+eas_cloud_wait_outcome() {
+  node "$root/scripts/fork/eas-cloud-build.mjs" --wait-outcome \
+    --kind "$1" \
+    --interrupted "$2" \
+    --timed-out "$3"
+}
+
+soft_exit_known_eas_cloud_build() {
+  local build_id="$1"
+  local reason="$2"
+  annotate warning "EAS cloud IPA $build_id is still running (${reason}). Next ios-mobile will reattach from the persisted build id; not spending another Expo build credit."
+  restore_eas_json
+  exit 0
+}
+
+view_eas_cloud_build() {
+  local build_id="$1"
+  local out="$2"
+  (
+    cd apps/mobile
+    eas build:view "$build_id" --json --non-interactive > "$out"
+  )
+}
+
+# Poll eas build:view until the IPA is finished, the compile failed, the
+# wait budget expires, or this agent is signaled. Prints id\nartifact_url
+# when finished. Soft-exits 0 when the id is known and Expo has not failed
+# the compile, so a Windows agent drop cannot red tip packaging solely
+# because the waiter died (BK #2922).
+await_eas_cloud_build() {
+  local build_id="$1"
+  local next_fingerprint="${2:-${fingerprint:-}}"
+  local next_commit="${3:-${commit:-}}"
+  local build_number="${4:-}"
+  local cloud_json="${tmp}/eas-cloud-build.json"
+  local wait_seconds poll_seconds deadline interrupted=0 timed_out=0
+  local state kind status artifact_url outcome viewed=0
+  wait_seconds="$(eas_cloud_wait_seconds)"
+  poll_seconds="$(eas_cloud_poll_seconds)"
+  deadline=$((SECONDS + wait_seconds))
+  record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "in-progress"
+  trap 'interrupted=1' TERM INT
+  while true; do
+    if (( interrupted )); then
+      record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "in-progress" || true
+      trap - TERM INT
+      soft_exit_known_eas_cloud_build "$build_id" "waiter interrupted"
+    fi
+    kind="unknown"
+    status="unknown"
+    artifact_url=""
+    if view_eas_cloud_build "$build_id" "$cloud_json"; then
+      viewed=1
+      state="$(read_eas_cloud_build_state "$cloud_json")"
+      kind="$(ios_expo_daily_cap_field "$state" kind)"
+      status="$(ios_expo_daily_cap_field "$state" status)"
+      artifact_url="$(ios_expo_daily_cap_field "$state" artifact_url)"
+      build_number="$(ios_expo_daily_cap_field "$state" build_number)"
+      record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "$status" || true
+    fi
+    timed_out=0
+    if (( SECONDS >= deadline )); then
+      timed_out=1
+    fi
+    outcome="$(eas_cloud_wait_outcome "$kind" "$interrupted" "$timed_out")"
+    case "$outcome" in
+      continue)
+        if [[ -z "$artifact_url" ]]; then
+          echo "Finished EAS cloud IPA $build_id has no application archive URL." >&2
+          trap - TERM INT
+          exit 1
+        fi
+        trap - TERM INT
+        printf '%s\n%s\n' "$build_id" "$artifact_url"
+        return 0
+        ;;
+      fail)
+        trap - TERM INT
+        echo "EAS cloud iOS build failed." >&2
+        report_eas_cloud_build_failure "$cloud_json"
+        exit 1
+        ;;
+      soft-exit)
+        trap - TERM INT
+        record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "${status:-in-progress}" || true
+        if (( viewed == 0 )); then
+          soft_exit_known_eas_cloud_build "$build_id" "could not refresh status before wait budget"
+        fi
+        soft_exit_known_eas_cloud_build "$build_id" "status=${status:-unknown}; not holding this agent"
+        ;;
+      *)
+        echo "Waiting for EAS cloud IPA $build_id (${status:-unknown}); will reattach if this agent drops."
+        sleep "$poll_seconds" || true
+        ;;
+    esac
+  done
 }
 
 record_local_ota_publish() {
@@ -1034,6 +1181,7 @@ if [[ ! -f "$gate_file" ]]; then
     --fingerprint-file "$fingerprint_file" \
     --builds-file "$builds_file" \
     --submitted-fingerprint-file "$submitted_fingerprint_file" \
+    --inflight-file "$LOCAL_EAS_INFLIGHT" \
     --force "$force_flag"
 fi
 if ! grep -q '^should_build=' "$gate_file"; then
@@ -1045,10 +1193,13 @@ should_build="$(awk -F= '/^should_build=/ { print $2 }' "$gate_file" | tail -n 1
 fingerprint="$(awk -F= '/^fingerprint=/ { print $2 }' "$gate_file" | tail -n 1)"
 reuse_build_id="$(awk '/^reuse_build_id=/ { print substr($0, index($0, "=") + 1) }' "$gate_file" | tail -n 1)"
 reuse_artifact_url="$(awk '/^reuse_artifact_url=/ { print substr($0, index($0, "=") + 1) }' "$gate_file" | tail -n 1)"
+reuse_status="$(awk '/^reuse_status=/ { print substr($0, index($0, "=") + 1) }' "$gate_file" | tail -n 1)"
 
 echo "iOS native binary fingerprint=${fingerprint:-unknown} should_build=${should_build}"
-if [[ -n "$reuse_build_id" ]]; then
+if [[ -n "$reuse_build_id" && ( -n "$reuse_artifact_url" || "$reuse_status" == "finished" ) ]]; then
   echo "Finished EAS cloud IPA $reuse_build_id matches this runtime; TestFlight submit can reuse it."
+elif [[ -n "$reuse_build_id" ]]; then
+  echo "In-flight EAS cloud IPA $reuse_build_id matches this runtime; reattaching instead of starting another."
 fi
 
 if [[ "$should_build" != "true" ]]; then
@@ -1178,28 +1329,16 @@ build_source="local Xcode"
 
 if [[ "$ipa_via_cloud" == "true" ]]; then
   if [[ -n "$reuse_build_id" ]]; then
-    if [[ -z "$reuse_artifact_url" ]]; then
-      cloud_build_json="$tmp/eas-cloud-build.json"
-      if ! (
-        cd apps/mobile
-        eas build:view "$reuse_build_id" --json > "$cloud_build_json"
-      ); then
-        echo "Could not load finished EAS cloud IPA $reuse_build_id for TestFlight submit." >&2
-        exit 1
-      fi
-      cloud_build_details="$tmp/eas-cloud-build-details"
-      read_eas_cloud_build_details "$cloud_build_json" > "$cloud_build_details"
-      reuse_build_id="$(sed -n '1p' "$cloud_build_details")"
-      reuse_artifact_url="$(sed -n '2p' "$cloud_build_details")"
-    fi
-    if [[ -z "$reuse_artifact_url" ]]; then
-      echo "Finished EAS cloud IPA $reuse_build_id has no application archive URL." >&2
-      exit 1
-    fi
-    curl --fail --location --retry 3 --output "$ipa_path" "$reuse_artifact_url"
     build_id="$reuse_build_id"
-    build_source="EAS cloud build $build_id"
-    annotate info "Reusing finished EAS cloud IPA $build_id; not spending another Expo build credit."
+    artifact_url="$reuse_artifact_url"
+    if [[ -n "$artifact_url" ]]; then
+      annotate info "Reusing finished EAS cloud IPA $build_id; not spending another Expo build credit."
+    else
+      annotate info "Reattaching to EAS cloud IPA $build_id; not spending another Expo build credit."
+      cloud_build_details="$(await_eas_cloud_build "$reuse_build_id" "$fingerprint" "$commit")"
+      build_id="$(sed -n '1p' <<< "$cloud_build_details")"
+      artifact_url="$(sed -n '2p' <<< "$cloud_build_details")"
+    fi
   else
     expo_cap_report="$(ios_expo_daily_cap_eval)"
     echo "$expo_cap_report"
@@ -1214,20 +1353,54 @@ if [[ "$ipa_via_cloud" == "true" ]]; then
         --platform ios \
         --profile production \
         --non-interactive \
-        --wait \
+        --no-wait \
         --json > "$cloud_build_json"
     ); then
+      created_state="$(read_eas_cloud_build_state "$cloud_build_json" || true)"
+      created_id="$(ios_expo_daily_cap_field "$created_state" id)"
+      created_kind="$(ios_expo_daily_cap_field "$created_state" kind)"
+      created_status="$(ios_expo_daily_cap_field "$created_state" status)"
+      created_number="$(ios_expo_daily_cap_field "$created_state" build_number)"
+      if [[ -n "$created_id" && "$created_kind" != "failed" ]]; then
+        record_local_eas_inflight "$created_id" "$fingerprint" "$commit" "$created_number" "$created_status" || true
+        soft_exit_known_eas_cloud_build "$created_id" "create returned an id but the CLI exited; build id is persisted"
+      fi
       echo "EAS cloud iOS build failed." >&2
       report_eas_cloud_build_failure "$cloud_build_json"
       exit 1
     fi
-    cloud_build_details="$tmp/eas-cloud-build-details"
-    read_eas_cloud_build_details "$cloud_build_json" > "$cloud_build_details"
-    build_id="$(sed -n '1p' "$cloud_build_details")"
-    artifact_url="$(sed -n '2p' "$cloud_build_details")"
-    curl --fail --location --retry 3 --output "$ipa_path" "$artifact_url"
-    build_source="EAS cloud build $build_id"
+    created_state="$(read_eas_cloud_build_state "$cloud_build_json")"
+    build_id="$(ios_expo_daily_cap_field "$created_state" id)"
+    if [[ -z "$build_id" ]]; then
+      echo "EAS cloud iOS build did not return an id." >&2
+      report_eas_cloud_build_failure "$cloud_build_json"
+      exit 1
+    fi
+    created_kind="$(ios_expo_daily_cap_field "$created_state" kind)"
+    created_status="$(ios_expo_daily_cap_field "$created_state" status)"
+    created_number="$(ios_expo_daily_cap_field "$created_state" build_number)"
+    created_artifact="$(ios_expo_daily_cap_field "$created_state" artifact_url)"
+    echo "Submitted EAS cloud IPA $build_id (status=${created_status:-unknown}); not using eas build --wait."
+    record_local_eas_inflight "$build_id" "$fingerprint" "$commit" "$created_number" "$created_status"
+    if [[ "$created_kind" == "failed" ]]; then
+      echo "EAS cloud iOS build failed." >&2
+      report_eas_cloud_build_failure "$cloud_build_json"
+      exit 1
+    fi
+    if [[ "$created_kind" == "finished" && -n "$created_artifact" ]]; then
+      artifact_url="$created_artifact"
+    else
+      cloud_build_details="$(await_eas_cloud_build "$build_id" "$fingerprint" "$commit" "$created_number")"
+      build_id="$(sed -n '1p' <<< "$cloud_build_details")"
+      artifact_url="$(sed -n '2p' <<< "$cloud_build_details")"
+    fi
   fi
+  if [[ -z "$artifact_url" ]]; then
+    echo "EAS cloud IPA ${build_id:-unknown} has no application archive URL." >&2
+    exit 1
+  fi
+  curl --fail --location --retry 3 --output "$ipa_path" "$artifact_url"
+  build_source="EAS cloud build $build_id"
 else
   echo "Using Xcode at $developer_dir"
   export DEVELOPER_DIR="$developer_dir"
@@ -1305,6 +1478,7 @@ configure_eas_submit_credentials "$key_path" "$APPLE_API_KEY_ID" "$APPLE_API_ISS
     --non-interactive
 )
 record_local_native_submit "$commit"
+clear_local_eas_inflight
 if [[ "$ipa_via_cloud" == "true" ]]; then
   annotate success "Submitted verified TestFlight IPA from EAS cloud build $build_id"
 else
