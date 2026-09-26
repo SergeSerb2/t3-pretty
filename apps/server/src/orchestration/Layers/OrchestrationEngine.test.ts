@@ -473,6 +473,7 @@ describe("OrchestrationEngine", () => {
             }),
           listMergedPullRequestCandidates: () => Effect.succeed([]),
           getDeletedWorktreeThreads: () => Effect.die("unused"),
+          listThreadsWithPullRequests: () => Effect.die("unused"),
           getArchivedShellSnapshot: () =>
             Effect.succeed({
               snapshotSequence: projectionSnapshot.snapshotSequence,

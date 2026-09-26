@@ -1022,3 +1022,59 @@ No `.github/workflows/*` conflicts in this nightly.
 - Parent CompactBrandTitle "T3 Code" copy and iOS-only `allowFontScaling` gate. Reason: Pretty branding and default font scaling.
 - Parent `UsagePage` inline source-message list in place of `UsageCoverageNotice`. Reason: Pretty coverage/duplicate/stale notice stays; unmatched cursor messages still render.
 - Parent usage-scan `listTranscriptFiles` unbounded walk. Reason: Pretty listing caps remain; `collectDirs` reads `listing.files`.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260926.2282` (`6530de033`, `perf(server): pull request sync reads only threads with linked pull requests (#13704)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260925.2269`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2918. Scheduled sync on `ed80fca3d` merged the nightly and hit 6 content conflicts. CLIProxyAPI `gpt-5.6-sol` returned HTTP 503 `auth_unavailable: Incorrect API key` after 8 attempts on `HomeScreen.tsx` (CLIProxyAPI unavailable). This integrate does not wait for Sol and used no third-party model for resolution.
+- Merge base vs Origin `main` (`ed80fca3d`): `4293433ec` (2269). Origin #722 merge-committed 2269, so 2269 is an ancestor of `main`. Parent 2269..2282 is 13 commits / 66 files. Conflicts are the Pretty-divergent paths that nightly also touched — not a squash-merge replay.
+
+## Conflicted paths
+
+Content: `apps/mobile/src/features/home/HomeScreen.tsx`, `apps/server/src/cli/config.ts`, `apps/server/src/cloud/bootService.ts`, `apps/server/src/diagnostics/TraceDiagnostics.ts`, `apps/server/src/persistence/Layers/Sqlite.ts`, `apps/web/src/components/Sidebar.tsx`.
+
+No `.github/workflows/*` conflicts in this nightly.
+
+## Clean-merged parent changes (no text conflict)
+
+- Desktop and WSL honor standard OTLP variables (`#13641`).
+- Compact provider instance badges (`#13700`) on picker, settings card, and CSS `--text-5xs`.
+- Cursor cache savings priced by base model (`#13731`).
+- Home swipe-row activation helper and tests (`#13702`).
+- Observability service names after the application (`#13699`) on auto-merged server/desktop/relay/web tracing.
+- Projector no longer remaps every thread on each thread event (`#13720`).
+- Claude adapter drops unused items tracking (`#13718`).
+- Subprocess spans name the command (`#13701`).
+- `t3 triage` points agents at log files that exist (`#13685`).
+- Pull-request sync reads only threads with linked pull requests (`#13704`).
+- `t3 trace summary` CLI (`#13698`) and its tests.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- Mobile Home Pretty chrome: scenery backdrop, liquid-glass / pre-glass toolbar clearance, `iosListBottomPad`, `ANDROID_HOME_FAB_EDGE_GAP`, scenery "show more" row, PR-nest collapse, focus-bound snooze clock.
+- CLI config bounds: `PositiveConfigInt` / `TraceMaxFilesConfigInt`, `readTextWithinLimit` for persisted observability settings.
+- Boot service Pretty unit/launchd names (`t3pretty` / `com.sergeserb.t3pretty.service`), bounded unit/state/sentinel reads, pinned-runtime download source, and 404 install mapping.
+- Trace diagnostics read budget, record/key length caps, and `TRACE_MAX_FILES_LIMIT` clamp on rotated paths.
+- SQLite Pretty pragmas (`synchronous=NORMAL`, `wal_autocheckpoint=4000`, `cache_size=-65536`), fork migration 050 re-run, superseded tool-progress cleanup + VACUUM, and `PRAGMA optimize` finalizer.
+- Redesigned sidebar row (no legacy second title/branch metadata section). Compact provider badge stays on the Pretty row.
+
+## Parent changes integrated at conflict boundaries
+
+- Home swipe-row activation, further draw distance (`THREAD_LIST_V2_DRAW_DISTANCE = 1000`), list ref / touch tracking, and `activationKey` on v2 rows, composed onto Pretty chrome.
+- Exported `traceFileConfig` / `traceMaxFilesConfig` for `t3 trace summary`, with Pretty's max-files bound on the shared config.
+- Exported `BOOT_SERVICE_LOG_FILE` for `t3 triage`.
+- Exported `toRotatedTracePaths` for the trace CLI, still clamped by `TRACE_MAX_FILES_LIMIT`.
+- `PRAGMA journal_size_limit` / `WAL_SIZE_LIMIT_BYTES` so the WAL file shrinks after large writes (`#13684`).
+- Sidebar compact instance badge uses `text-5xs` (parent `#13700`) on the Pretty row instead of `text-[7px]`.
+
+## Parent changes intentionally omitted
+
+- Unbounded `T3CODE_TRACE_MAX_FILES` export (`Config.Int` with no ceiling). Reason: Pretty keeps `TRACE_MAX_FILES_LIMIT`; the exported config uses that schema so `t3 trace summary` cannot open an unbounded backup set.
+- Parent `toRotatedTracePaths` without the `TRACE_MAX_FILES_LIMIT` clamp. Reason: the CLI and server diagnostics share this helper; Pretty's cap stays on both paths.
+- Parent `TOP_LIMIT` / `RECENT_LIMIT` locals in `TraceDiagnostics.ts`. Reason: Pretty already uses the contract `SERVER_TRACE_DIAGNOSTIC_*` caps.
+- Parent boot-service `com.t3tools.t3code.service` labels. Reason: Pretty brands the unit and launchd label by `T3CODE_BUILD_FLAVOR`.
+- Parent SQLite setup that only sets `journal_size_limit` then `runMigrations()`. Reason: Pretty's WAL/cache pragmas, fork migration 050, and tool-progress cleanup remain required for existing `~/.t3` DBs.
+- Parent Sidebar legacy second title/branch metadata row (the `#13700` badge hunk sat on that deleted block). Reason: restoring it would duplicate title/branch under the redesigned row. The `text-5xs` badge change is applied on Pretty's existing compact row.

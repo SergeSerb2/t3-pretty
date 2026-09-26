@@ -88,20 +88,25 @@ const TraceMaxFilesConfigInt = Schema.Int.check(
   Schema.isBetween({ minimum: 1, maximum: ServerConfig.TRACE_MAX_FILES_LIMIT }),
 );
 
+// Trace file location, shared by the server and `t3 trace summary`.
+export const traceFileConfig = Config.String("T3CODE_TRACE_FILE").pipe(
+  Config.option,
+  Config.map(Option.getOrUndefined),
+);
+export const traceMaxFilesConfig = Config.schema(
+  TraceMaxFilesConfigInt,
+  "T3CODE_TRACE_MAX_FILES",
+).pipe(Config.withDefault(10));
+
 const EnvServerConfig = Config.all({
   logLevel: Config.LogLevel("T3CODE_LOG_LEVEL").pipe(Config.withDefault("Info")),
   traceMinLevel: Config.LogLevel("T3CODE_TRACE_MIN_LEVEL").pipe(Config.withDefault("Info")),
   traceTimingEnabled: Config.Boolean("T3CODE_TRACE_TIMING_ENABLED").pipe(Config.withDefault(true)),
-  traceFile: Config.String("T3CODE_TRACE_FILE").pipe(
-    Config.option,
-    Config.map(Option.getOrUndefined),
-  ),
+  traceFile: traceFileConfig,
   traceMaxBytes: Config.schema(PositiveConfigInt, "T3CODE_TRACE_MAX_BYTES").pipe(
     Config.withDefault(10 * 1024 * 1024),
   ),
-  traceMaxFiles: Config.schema(TraceMaxFilesConfigInt, "T3CODE_TRACE_MAX_FILES").pipe(
-    Config.withDefault(10),
-  ),
+  traceMaxFiles: traceMaxFilesConfig,
   traceBatchWindowMs: Config.schema(PositiveConfigInt, "T3CODE_TRACE_BATCH_WINDOW_MS").pipe(
     Config.withDefault(1_000),
   ),
@@ -120,7 +125,6 @@ const EnvServerConfig = Config.all({
   otlpExportIntervalMs: Config.schema(PositiveConfigInt, "T3CODE_OTLP_EXPORT_INTERVAL_MS").pipe(
     Config.withDefault(10_000),
   ),
-  otlpServiceName: Config.String("T3CODE_OTLP_SERVICE_NAME").pipe(Config.withDefault("t3-server")),
   otlpHeaders: Config.schema(OtlpHeadersFromString, "T3CODE_OTLP_HEADERS").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -449,7 +453,6 @@ export const resolveServerConfig = (
       otlpTracesExport: traces?.export ?? signalExport,
       otlpMetricsExport: metrics?.export ?? signalExport,
       otlpLogsExport: logs?.export ?? signalExport,
-      otlpServiceName: env.otlpServiceName,
       otelEnvironment: otel,
       mode,
       port,
