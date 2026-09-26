@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260926.2282002922",
+    date: "2026-09-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "Wrap Playwright inject script in Effect.succeed",
+      },
+      {
+        kind: "fixed",
+        title: "Prod deploy from recreating home suggestion tables",
+      },
+      {
+        kind: "fixed",
+        title: "Scenery catalog sync no longer crashes iOS launch",
+      },
+      {
+        kind: "fixed",
+        title: "Expo Updates ErrorRecovery from aborting tip launch",
+      },
+      {
+        kind: "fixed",
+        title: "Home item groups from constructing Xcode 27 glass",
+      },
+      {
+        kind: "fixed",
+        title: "Xcode 27 glass chrome from constructing on Home launch",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260925.2269002917",
     date: "2026-09-26",
     items: [
