@@ -246,6 +246,7 @@ describe("ProviderSessionReaper", () => {
           getShellSnapshot: () => Effect.die("unused"),
           listMergedPullRequestCandidates: () => Effect.die("unused"),
           getDeletedWorktreeThreads: () => Effect.die("unused"),
+          listThreadsWithPullRequests: () => Effect.die("unused"),
           getArchivedShellSnapshot: () => Effect.die("unused"),
           getSnapshotSequence: () =>
             Effect.succeed({ snapshotSequence: input.readModel.snapshotSequence }),

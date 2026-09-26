@@ -91,7 +91,11 @@ const TRACE_RECORD_MAX_LENGTH = 1024 * 1024;
 const TRACE_AGGREGATE_KEY_LIMIT = 4_096;
 const TRACE_DIAGNOSTICS_READ_BUDGET_BYTES = 32 * 1024 * 1024;
 
-function toRotatedTracePaths(traceFilePath: string, maxFiles: number): ReadonlyArray<string> {
+/** The trace file and its rotated backups, oldest first. */
+export function toRotatedTracePaths(
+  traceFilePath: string,
+  maxFiles: number,
+): ReadonlyArray<string> {
   const backupCount = Math.min(TRACE_MAX_FILES_LIMIT, Math.max(0, Math.floor(maxFiles)));
   const backups = Array.from(
     { length: backupCount },
