@@ -362,7 +362,6 @@ export function ConnectionsNewRouteScreen({
             <View collapsable={false} className="gap-4 rounded-[24px] bg-card p-4">
               <ConnectionFormField
                 label="Host"
-                accessibilityLabel="Host"
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
@@ -374,7 +373,6 @@ export function ConnectionsNewRouteScreen({
 
               <ConnectionFormField
                 label="Pairing code"
-                accessibilityLabel="Pairing code"
                 autoCapitalize="none"
                 autoCorrect={false}
                 maxLength={REMOTE_PAIRING_TOKEN_MAX_LENGTH}
