@@ -1159,3 +1159,10 @@ No `.github/workflows/*` conflicts in this nightly. Pretty's eight trusted workf
 - Whole-file `readTraceFile` / `aggregateTraceDiagnostics` / local `TOP_LIMIT` in `TraceDiagnostics.ts`. Reason: Pretty already streams with a newest-first byte budget and uses the contract `SERVER_TRACE_DIAGNOSTIC_*` caps.
 - Parent usage merge that walks every environment for `contractMismatches` (no `USAGE_MERGE_MAX_ENVIRONMENTS` slice). Reason: Pretty's environment cap stays; mismatches are collected only for retained environments.
 - Parent `staleEnvironments` UsagePage notices. Reason: `#8208` `contractMismatches` is the replacement; Pretty coverage/source/omission notices stay beside it.
+
+## Post-merge repairs
+
+- `web-typecheck` — Imported `resolveSettledThreadTimestamp` / `SettledThreadTimestampInput` in `Sidebar.logic.ts` from `@t3tools/client-runtime/state/thread-sort`. Parent `#13759` moved those helpers; the Pretty settled-archive shims still called them without the import.
+- `web-typecheck` — Filled missing `hasAutomations` / `hasMacProviderSettingsEnvironment` on a few `settingsSearch.test.ts` availability fixtures, and `enabledSkillIds: []` on the `threads.test.ts` detail fixture. Required fields were already on main; the landing-gate typecheck now sees the incomplete objects.
+- `shared-typecheck` — Added `refreshCatalog: Effect.void` on the remaining `RelayEnvironmentDiscovery` mock in `registry.test.ts`.
+- `ProviderCommandReactor` first-turn test now expects session `starting` (parent `pendingTurnStart`) and asserts the OpenCode session title is omitted unless the user renamed it.

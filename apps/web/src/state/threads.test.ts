@@ -62,6 +62,7 @@ function detail(
     settledOverride: null,
     settledAt: null,
     pullRequests: [],
+    enabledSkillIds: [],
     deletedAt: null,
     messages: [],
     proposedPlans: [],
