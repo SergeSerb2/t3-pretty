@@ -3,7 +3,7 @@ import type {
   PullRequestReviewVerdict,
   RepositoryIdentity,
 } from "@t3tools/contracts";
-import { ProjectId } from "@t3tools/contracts";
+import { ENTITY_ID_MAX_LENGTH, EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import {
   findProjectForChangeRequest,
@@ -33,7 +33,36 @@ export type PullRequestDiffRouteParams = PullRequestDetailRouteParams & {
   readonly path?: string;
 };
 
+const PULL_REQUEST_ROUTE_REPOSITORY_MAX_LENGTH = ENTITY_ID_MAX_LENGTH;
+const PULL_REQUEST_ROUTE_FILE_PATH_MAX_LENGTH = ENTITY_ID_MAX_LENGTH;
+const PULL_REQUEST_ROUTE_URL_MAX_LENGTH = 8_192;
+const INVALID_PULL_REQUEST_ROUTE_ENVIRONMENT_ID = EnvironmentId.make("invalid-pull-request-route");
+
+function normalizeBoundedRouteValue(value: string, maxLength: number): string | null {
+  if (value.length > maxLength) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= maxLength ? trimmed : null;
+}
+
+export function resolvePullRequestRouteEnvironmentId(value: string): EnvironmentId {
+  const normalized = normalizeBoundedRouteValue(value, ENTITY_ID_MAX_LENGTH);
+  return normalized === null
+    ? INVALID_PULL_REQUEST_ROUTE_ENVIRONMENT_ID
+    : EnvironmentId.make(normalized);
+}
+
+export function normalizePullRequestDiffRoutePath(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  return value.length > 0 && value.length <= PULL_REQUEST_ROUTE_FILE_PATH_MAX_LENGTH ? value : null;
+}
+
+export function normalizePullRequestRouteThreadId(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  return normalizeBoundedRouteValue(value, ENTITY_ID_MAX_LENGTH);
+}
+
 export function parseRoutePositiveInt(value: string | number | undefined): number | null {
+  if (typeof value === "string" && !/^[1-9]\d{0,15}$/u.test(value)) return null;
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
@@ -48,14 +77,20 @@ export function resolvePullRequestRouteRepository(input: {
     readonly repositoryIdentity?: Pick<RepositoryIdentity, "displayName" | "owner" | "name"> | null;
   }>;
 }): string | null {
-  const fromParams = input.repository?.trim() ?? "";
-  if (fromParams.length > 0) return fromParams;
+  const environmentId = normalizeBoundedRouteValue(input.environmentId, ENTITY_ID_MAX_LENGTH);
+  const projectId = normalizeBoundedRouteValue(input.projectId, ENTITY_ID_MAX_LENGTH);
+  if (environmentId === null || projectId === null) return null;
+  if (input.repository !== undefined) {
+    return normalizeBoundedRouteValue(input.repository, PULL_REQUEST_ROUTE_REPOSITORY_MAX_LENGTH);
+  }
   const project = input.projects.find(
     (candidate) =>
-      String(candidate.environmentId) === input.environmentId &&
-      String(candidate.id) === input.projectId,
+      String(candidate.environmentId) === environmentId && String(candidate.id) === projectId,
   );
-  return repositoryFromIdentity(project?.repositoryIdentity ?? null);
+  const repository = repositoryFromIdentity(project?.repositoryIdentity ?? null);
+  return repository === null
+    ? null
+    : normalizeBoundedRouteValue(repository, PULL_REQUEST_ROUTE_REPOSITORY_MAX_LENGTH);
 }
 
 export function resolvePullRequestRouteReference(
@@ -67,15 +102,18 @@ export function resolvePullRequestRouteReference(
   }>,
 ): PullRequestRef | null {
   const number = parseRoutePositiveInt(params.number);
+  const environmentId = normalizeBoundedRouteValue(params.environmentId, ENTITY_ID_MAX_LENGTH);
+  const projectId = normalizeBoundedRouteValue(params.projectId, ENTITY_ID_MAX_LENGTH);
+  if (environmentId === null || projectId === null) return null;
   const repository = resolvePullRequestRouteRepository({
     repository: params.repository,
-    environmentId: params.environmentId,
-    projectId: params.projectId,
+    environmentId,
+    projectId,
     projects,
   });
   if (number === null || repository === null) return null;
   return {
-    projectId: ProjectId.make(params.projectId),
+    projectId: ProjectId.make(projectId),
     repository,
     number,
   };
@@ -93,13 +131,27 @@ export function resolveNativePullRequestTarget(input: {
   readonly number?: number | null;
   readonly repositoryIdentity?: Pick<RepositoryIdentity, "displayName" | "owner" | "name"> | null;
 }): PullRequestDetailRouteParams | null {
+  const environmentId = normalizeBoundedRouteValue(input.environmentId, ENTITY_ID_MAX_LENGTH);
+  const projectId = normalizeBoundedRouteValue(input.projectId, ENTITY_ID_MAX_LENGTH);
+  if (
+    environmentId === null ||
+    projectId === null ||
+    input.url.length > PULL_REQUEST_ROUTE_URL_MAX_LENGTH
+  ) {
+    return null;
+  }
   const parsed = parseChangeRequestUrl(input.url);
-  const repository = parsed?.repository ?? repositoryFromIdentity(input.repositoryIdentity ?? null);
-  const number = parsed?.number ?? input.number ?? null;
+  const repositoryValue =
+    parsed?.repository ?? repositoryFromIdentity(input.repositoryIdentity ?? null);
+  const repository =
+    repositoryValue === null
+      ? null
+      : normalizeBoundedRouteValue(repositoryValue, PULL_REQUEST_ROUTE_REPOSITORY_MAX_LENGTH);
+  const number = parseRoutePositiveInt(parsed?.number ?? input.number ?? undefined);
   if (repository === null || number === null) return null;
   return {
-    environmentId: input.environmentId,
-    projectId: input.projectId,
+    environmentId,
+    projectId,
     repository,
     number: String(number),
   };
@@ -127,11 +179,18 @@ export function resolveChangeRequestRoute(input: {
   }>;
   readonly fallbackProjectId?: string;
 }): PullRequestDetailRouteParams | null {
-  if (!input.pullRequestsSupported) return null;
+  const environmentId = normalizeBoundedRouteValue(input.environmentId, ENTITY_ID_MAX_LENGTH);
+  if (
+    !input.pullRequestsSupported ||
+    environmentId === null ||
+    input.url.length > PULL_REQUEST_ROUTE_URL_MAX_LENGTH
+  ) {
+    return null;
+  }
   const parsed = parseChangeRequestUrl(input.url);
   if (parsed === null) return null;
   const projects = input.projects.filter(
-    (project) => String(project.environmentId) === input.environmentId,
+    (project) => String(project.environmentId) === environmentId,
   );
   const matched = findProjectForChangeRequest(projects, parsed);
   const fallback =
@@ -144,10 +203,18 @@ export function resolveChangeRequestRoute(input: {
       : undefined;
   const project = matched ?? fallback;
   if (project === undefined) return null;
+  const projectId = normalizeBoundedRouteValue(String(project.id), ENTITY_ID_MAX_LENGTH);
+  const repositoryValue =
+    repositoryFromIdentity(project.repositoryIdentity ?? null) ?? parsed.repository;
+  const repository = normalizeBoundedRouteValue(
+    repositoryValue,
+    PULL_REQUEST_ROUTE_REPOSITORY_MAX_LENGTH,
+  );
+  if (projectId === null || repository === null) return null;
   return {
-    environmentId: input.environmentId,
-    projectId: String(project.id),
-    repository: repositoryFromIdentity(project.repositoryIdentity ?? null) ?? parsed.repository,
+    environmentId,
+    projectId,
+    repository,
     number: String(parsed.number),
   };
 }

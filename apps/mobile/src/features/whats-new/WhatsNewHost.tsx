@@ -89,6 +89,7 @@ export function WhatsNewHost() {
       open={open}
       releases={presentation.releases}
       announceUpdate={presentation.announceUpdate}
+      currentVersion={currentVersion}
       onClose={handleClose}
     />
   );

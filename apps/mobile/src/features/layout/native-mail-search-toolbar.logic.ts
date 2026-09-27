@@ -1,23 +1,17 @@
-export function iosMajorVersion(os: string, version: number | string): number {
-  if (os !== "ios") {
-    return 0;
-  }
-  if (typeof version === "number") {
-    return Math.floor(version);
-  }
-  const major = Number.parseInt(String(version).split(".")[0] ?? "", 10);
-  return Number.isFinite(major) ? major : 0;
-}
+export { iosMajorVersion } from "../../lib/native-glass-capability";
 
 /**
- * iOS 27 betas have churned UIGlassEffect / glassButtonConfiguration.
- * The patched mail toolbar constructs both on the first Home frame, so a
- * missing selector kills the process before React or expo-updates can recover.
+ * The patched mail toolbar constructs UIGlassEffect and
+ * glassButtonConfiguration on the first Home frame with no
+ * respondsToSelector. TestFlight 163 still aborted after #708 gated those
+ * constructors, because native still assigned item groups / sharesBackground.
+ * Home already falls back to headerSearchBarOptions + NativeHeaderToolbar.
+ * Keep this off until `RNSAllowsPatchedLiquidGlassChrome` is re-enabled.
  */
 export function isNativeMailSearchToolbarSupported(
-  liquidGlassSupported: boolean,
-  os: string,
-  version: number | string,
+  _liquidGlassSupported: boolean,
+  _os: string,
+  _version: number | string,
 ): boolean {
-  return liquidGlassSupported && os === "ios" && iosMajorVersion(os, version) < 27;
+  return false;
 }

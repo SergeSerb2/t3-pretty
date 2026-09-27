@@ -1,5 +1,5 @@
 import {
-  AdvertisedEndpoint,
+  AdvertisedEndpoints,
   DesktopServerExposureModeSchema,
   DesktopServerExposureStateSchema,
 } from "@t3tools/contracts";
@@ -61,7 +61,7 @@ export const setTailscaleServeEnabled = DesktopIpc.makeIpcMethod({
 export const getAdvertisedEndpoints = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.GET_ADVERTISED_ENDPOINTS_CHANNEL,
   payload: Schema.Void,
-  result: Schema.Array(AdvertisedEndpoint),
+  result: AdvertisedEndpoints,
   handler: Effect.fn("desktop.ipc.serverExposure.getAdvertisedEndpoints")(function* () {
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
     return yield* serverExposure.getAdvertisedEndpoints;

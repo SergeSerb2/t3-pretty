@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 
 import { ThreadId } from "./baseSchemas.ts";
 import {
+  PROVIDER_SESSION_ERROR_MAX_LENGTH,
   ProviderEvent,
   ProviderSendTurnInput,
   ProviderSession,
@@ -11,6 +12,10 @@ import {
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
 } from "./provider.ts";
+import {
+  THREAD_TURN_START_PATH_MAX_LENGTH,
+  THREAD_TURN_START_TITLE_MAX_LENGTH,
+} from "./orchestration.ts";
 
 const decodeProviderSessionStartInput = Schema.decodeUnknownSync(ProviderSessionStartInput);
 const decodeProviderSendTurnInput = Schema.decodeUnknownSync(ProviderSendTurnInput);
@@ -118,9 +123,79 @@ describe("ProviderSessionStartInput", () => {
     expect(parsed.providerInstanceId).toBe("ollama_local");
     expect(parsed.modelSelection?.instanceId).toBe("ollama_local");
   });
+
+  it("rejects oversized session paths and titles", () => {
+    expect(() =>
+      decodeProviderSessionStartInput({
+        threadId: "thread-1",
+        provider: "codex",
+        cwd: `/${"x".repeat(THREAD_TURN_START_PATH_MAX_LENGTH)}`,
+        runtimeMode: "full-access",
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeProviderSessionStartInput({
+        threadId: "thread-1",
+        provider: "codex",
+        title: "x".repeat(THREAD_TURN_START_TITLE_MAX_LENGTH + 1),
+        runtimeMode: "full-access",
+      }),
+    ).toThrow();
+  });
 });
 
 describe("ProviderSendTurnInput", () => {
+  it("accepts 100 attachments and rejects 101", () => {
+    const attachments = Array.from({ length: 100 }, (_, index) => ({
+      type: "image",
+      id: `image-${index}`,
+      name: "image.png",
+      mimeType: "image/png",
+      sizeBytes: 1,
+    }));
+    expect(
+      decodeProviderSendTurnInput({ threadId: "thread-1", attachments }).attachments,
+    ).toHaveLength(100);
+    expect(() =>
+      decodeProviderSendTurnInput({
+        threadId: "thread-1",
+        attachments: [...attachments, attachments[0]],
+      }),
+    ).toThrow();
+  });
+
+  it.each(["image", "file"])(
+    "caps total image bytes for %s attachments without charging videos",
+    (type) => {
+      const image = {
+        type,
+        id: "image",
+        name: "image.png",
+        mimeType: "image/png",
+        sizeBytes: 10 * 1024 * 1024,
+      };
+      const video = {
+        type: "file",
+        id: "video",
+        name: "video.mp4",
+        mimeType: "video/mp4",
+        sizeBytes: 50 * 1024 * 1024,
+      };
+      expect(
+        decodeProviderSendTurnInput({
+          threadId: "thread-1",
+          attachments: [...Array.from({ length: 8 }, () => image), video],
+        }).attachments,
+      ).toHaveLength(9);
+      expect(() =>
+        decodeProviderSendTurnInput({
+          threadId: "thread-1",
+          attachments: [...Array.from({ length: 8 }, () => image), { ...image, sizeBytes: 1 }],
+        }),
+      ).toThrow(/80 MiB/);
+    },
+  );
+
   it("accepts codex modelSelection", () => {
     const parsed = decodeProviderSendTurnInput({
       threadId: "thread-1",
@@ -238,6 +313,20 @@ describe("providerInstanceId routing key (slice-2 invariant)", () => {
 
     expect(session.provider).toBe("ollama");
     expect(session.providerInstanceId).toBe("ollama_local");
+  });
+
+  it("rejects oversized provider session errors", () => {
+    expect(() =>
+      decodeProviderSession({
+        provider: "codex",
+        status: "error",
+        runtimeMode: "full-access",
+        threadId: "thread-1",
+        createdAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+        lastError: "x".repeat(PROVIDER_SESSION_ERROR_MAX_LENGTH + 1),
+      }),
+    ).toThrow();
   });
 
   it("decodes a ProviderEvent carrying both legacy provider and new instance routing", () => {

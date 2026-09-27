@@ -8,12 +8,14 @@ import type * as EffectAcpErrors from "effect-acp/errors";
 
 import { type GrokSettings, type ModelSelection } from "@t3tools/contracts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { extractJsonObject } from "@t3tools/shared/schemaJson";
 
 import { TextGenerationError } from "@t3tools/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildActivityHeadlinePrompt,
+  buildHomeSuggestionsPrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
@@ -22,6 +24,9 @@ import {
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeActivityHeadline,
+  appendBoundedTextGenerationOutput,
+  decodeBoundedTextGenerationOutput,
+  makeBoundedTextGenerationOutput,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -29,6 +34,7 @@ import {
 import {
   applyGrokAcpModelSelection,
   currentGrokModelIdFromSessionSetup,
+  currentGrokReasoningEffortFromSessionSetup,
   makeGrokAcpRuntime,
   resolveGrokAcpBaseModelId,
 } from "../provider/acp/GrokAcpSupport.ts";
@@ -57,6 +63,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       | "generateBranchName"
       | "generateThreadTitle"
       | "generateActivityHeadline"
+      | "generateHomeSuggestions"
       | "generateProjectIcon";
     cwd: string;
     prompt: string;
@@ -65,7 +72,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
   }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
     Effect.gen(function* () {
       const resolvedModel = resolveGrokAcpBaseModelId(modelSelection.model);
-      const outputRef = yield* Ref.make("");
+      const outputRef = yield* Ref.make(makeBoundedTextGenerationOutput());
       const runtime = yield* makeGrokAcpRuntime({
         grokSettings,
         environment,
@@ -83,15 +90,25 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
         if (content.type !== "text") {
           return Effect.void;
         }
-        return Ref.update(outputRef, (current) => current + content.text);
+        return Ref.update(outputRef, (current) =>
+          appendBoundedTextGenerationOutput(current, content.text),
+        );
       });
 
       const promptResult = yield* Effect.gen(function* () {
         const started = yield* runtime.start();
+        const requestedReasoningEffort = getModelSelectionStringOptionValue(
+          modelSelection,
+          "reasoningEffort",
+        );
         yield* applyGrokAcpModelSelection({
           runtime,
           currentModelId: currentGrokModelIdFromSessionSetup(started.sessionSetupResult),
+          currentReasoningEffort: currentGrokReasoningEffortFromSessionSetup(
+            started.sessionSetupResult,
+          ),
           requestedModelId: resolvedModel,
+          requestedReasoningEffort,
           mapError: (cause) =>
             new TextGenerationError({
               operation,
@@ -125,7 +142,14 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
         ),
       );
 
-      const trimmed = (yield* Ref.get(outputRef)).trim();
+      const output = yield* Ref.get(outputRef);
+      if (output.truncated) {
+        return yield* new TextGenerationError({
+          operation,
+          detail: "Grok Agent returned structured output above the one MiB limit.",
+        });
+      }
+      const trimmed = decodeBoundedTextGenerationOutput(output).trim();
       if (!trimmed) {
         return yield* new TextGenerationError({
           operation,
@@ -240,6 +264,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       const { prompt, outputSchema } = buildThreadTitlePrompt({
         message: input.message,
         previousTitle: input.previousTitle,
+        linkedContext: input.linkedContext,
         attachments: input.attachments,
       });
 
@@ -253,6 +278,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
 
       return {
         title: sanitizeThreadTitle(generated.title),
+        ...(generated.needsRefinement ? { needsRefinement: true } : {}),
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
@@ -294,12 +320,35 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       return { path: path.length > 0 ? path : input.outputPath };
     });
 
+  const generateHomeSuggestions: TextGeneration.TextGeneration["Service"]["generateHomeSuggestions"] =
+    Effect.fn("GrokTextGeneration.generateHomeSuggestions")(function* (input) {
+      const { prompt, outputSchema } = buildHomeSuggestionsPrompt({
+        context: input.context,
+        projectCount: input.projectCount,
+        exploreCount: input.exploreCount,
+        previousTitles: input.previousTitles,
+      });
+
+      const generated = yield* runGrokJson({
+        operation: "generateHomeSuggestions",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        suggestions: generated.suggestions,
+      } satisfies TextGeneration.HomeSuggestionsGenerationResult;
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
     generateActivityHeadline,
+    generateHomeSuggestions,
     generateProjectIcon,
   } satisfies TextGeneration.TextGeneration["Service"];
 });
