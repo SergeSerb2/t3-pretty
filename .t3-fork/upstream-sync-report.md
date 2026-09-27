@@ -1082,3 +1082,87 @@ No `.github/workflows/*` conflicts in this nightly.
 - Parent boot-service `com.t3tools.t3code.service` labels. Reason: Pretty brands the unit and launchd label by `T3CODE_BUILD_FLAVOR`.
 - Parent SQLite setup that only sets `journal_size_limit` then `runMigrations()`. Reason: Pretty's WAL/cache pragmas, fork migration 050, and tool-progress cleanup remain required for existing `~/.t3` DBs.
 - Parent Sidebar legacy second title/branch metadata row (the `#13700` badge hunk sat on that deleted block). Reason: restoring it would duplicate title/branch under the redesigned row. The `text-5xs` badge change is applied on Pretty's existing compact row.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260926.2318` (`ea7d46ac1`, `fix(build): validate Linux node-pty prebuilds in Windows artifacts (#13867)`)
+- Previously integrated parent nightly: `v0.0.43-nightly.20260926.2282`
+- Conflict resolver: manual repair by Cloud Agent (Grok) after Buildkite #2933. Scheduled sync on `517060c23` merged the nightly and hit 21 content conflicts. CLIProxyAPI `gpt-5.6-sol` returned HTTP 503 `auth_unavailable: Incorrect API key` (Sol auto-repair stuck). This integrate does not wait for Sol and used no third-party model for resolution.
+- Merge base vs Origin `main` (`517060c23`): `6530de033` (2282). Origin #724 merge-committed 2282, so 2282 is an ancestor of `main`. Parent 2282..2318 is 44 commits / 145 files. Conflicts are the Pretty-divergent paths that nightly also touched — not a squash-merge replay.
+
+## Conflicted paths
+
+Content: `apps/server/src/cloud/http.ts`, `apps/server/src/diagnostics/TraceDiagnostics.test.ts`, `apps/server/src/diagnostics/TraceDiagnostics.ts`, `apps/server/src/http.ts`, `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts`, `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts`, `apps/web/src/components/AppSidebarLayout.tsx`, `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/NoProjectsHero.tsx`, `apps/web/src/components/Sidebar.logic.test.ts`, `apps/web/src/components/Sidebar.logic.ts`, `apps/web/src/components/Sidebar.tsx`, `apps/web/src/components/chat/ComposerSurface.tsx`, `apps/web/src/components/usage/UsagePage.tsx`, `apps/web/src/connection/storage.test.ts`, `apps/web/src/connection/storage.ts`, `apps/web/src/routes/_chat.index.tsx`, `apps/web/src/routes/settings.tsx`, `packages/contracts/src/usage.ts`, `packages/shared/src/sourceControl.ts`, `packages/shared/src/usageMerge.ts`.
+
+No `.github/workflows/*` conflicts in this nightly. Pretty's eight trusted workflow files remain.
+
+## Clean-merged parent changes (no text conflict)
+
+- Linux `node-pty` prebuilds validated in Windows artifacts (`#13867`) and linux-arm64 prebuild bump (`#13748`).
+- Offline servers no longer look like pending updates (`#13083`).
+- Usage: omit Cursor warning when no login is saved (`#13820`), tolerate newer provider variants (`#10076`), hide the Cursor keychain prompt when Cursor is not set up (`#13714`), usage keyboard shortcuts (`#10158`).
+- Accessibility control announcements (`#13491` non-sidebar hunks) and mobile PR icon instead of `#` (`#13742`).
+- Background git status no longer fills disk with failed repacks (`#13812`); per-project git no longer reruns every minute (`#13689`).
+- Idle wakeups cut from the Connect relay and session reaper (`#13774`).
+- Thread-list cache save no longer freezes the UI (`#13767`); slow servers finish one list load (`#13683`); snapshot no longer decodes twice (`#13693`).
+- Background sweeps only read threads that can still settle (`#13765`); per-thread settlement and PR checks no longer rebuild the whole list (`#13691`).
+- Renderer OTLP proxy stops tracing itself (`#13761`); empty spans no longer written on spawns, projected events, and idle polls (`#13756`).
+- Event-loop stall recording (`#13697`) and SIGUSR2 heap snapshots (`#13694`).
+- Mobile: trailing underscores/tildes in autolinked URLs (`#13807`), URLs with ports and single-label hosts (`#13795`), composer stays in the folded screen (`#13310`), running threads open at the latest message (`#13530`).
+- Antigravity inspects unsupported files by path (`#13339`); `agy` is not treated as the Antigravity IDE (`#7079`).
+- OpenCode accepts the v2 serve ready line (`#13651`).
+- Terminal links drop a trailing colon (`#13408`); Mod+B bolds on non-Latin layouts (`#13409`).
+- Expired DPoP replay-protection files are pruned (`#13695`).
+- Installed editors no longer vanish when discovery is slow (`#13669`).
+- Hidden terminal drawers no longer keep full thread history (`#13686`).
+- Shutdown no longer rewrites every stopped session row (`#13688`).
+- Usage contract-mismatch detail tests (`#13861`).
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- Cloud HTTP stream helpers stay alongside the parent `AgentAwarenessRelay` import.
+- HTTP OTLP proxy keeps `readJsonBodyWithinByteLimit` and logs `resourceSpanCount` on decode failure.
+- Trace diagnostics keep `TRACE_RECORD_MAX_LENGTH`, `TRACE_AGGREGATE_KEY_LIMIT`, `TRACE_DIAGNOSTICS_READ_BUDGET_BYTES` (newest-first tail), and contract `SERVER_TRACE_DIAGNOSTIC_*` caps.
+- Provider command reactor keeps Pretty `nativeSessionId` resume plus `resolveDocuments` assertions.
+- Sidebar compact `3.25rem` rows, sr-only preview/`accessibleTitle`, project rail, traffic-light chrome, `usagePageOpen` shortcut context, and `sidebarResizable` memo. No legacy second title/branch row.
+- Composer stack uses Pretty draft-hero flex plus `--chat-max-width`.
+- Empty workspace / settings chrome keep Pretty `overflow-clip` / background / text tokens.
+- Settings Escape keeps Pretty `settingsEscapeAction` (blur vs leave vs ignore) and `navigateToMainApp`.
+- IndexedDB writes stay interrupt-safe so `QuotaExceeded` still surfaces via `transaction.error`.
+- Usage merge still slices `USAGE_MERGE_MAX_ENVIRONMENTS` and surfaces `sourceWarnings` / `omittedEnvironmentCount` / `coverageWarningsOmitted`.
+- Usage contract arrays stay `ForwardCompatibleArray` with Pretty max-length (and source fingerprint uniqueness).
+- Source-control remotes treat `transport::` helpers as non-hosts.
+
+## Parent changes integrated at conflict boundaries
+
+- `AgentAwarenessRelay` on the cloud HTTP layer.
+- Streaming `streamTraceFileLines` diagnostics (`#13763`) composed onto Pretty's read budget and caps.
+- OpenCode `titleSeed` session titles (`#13368`) next to Pretty `nativeSessionId`.
+- Parent OTLP-untraced comments on the traces proxy.
+- `QueuedMessageSender` / `sendQueuedMessage(threadRef, id)` so queued messages send while their thread is not open (`#13764`).
+- `--chat-max-width` chat width setting (`#11594`) on Pretty composer/hero surfaces.
+- Desktop empty-workspace drag via `WorkspacePageHeader` (`#13713`).
+- Settings Escape ignores `event.repeat` / `event.isComposing` (parent `useEscapeToGoBack` guards) inside Pretty's existing listener.
+- Sidebar sort helpers that avoid re-parsing dates (`#13759`) and a11y/focus-ring row announcements (`#13491`, `#13344`).
+- Usage `contractMismatches` replacing `staleEnvironments` (`#8208`), iterated only over Pretty's retained environments.
+- SSH remotes drop ports for provider detection; other URL schemes keep explicit ports (`#12537`).
+- IndexedDB abort-on-quota test plus Pretty interrupt-safe write tests.
+
+## Parent changes intentionally omitted
+
+- Parent `useEscapeToGoBack` on the settings route. Reason: Pretty's `settingsEscapeAction` distinguishes blur / leave / ignore and returns to the main app; wiring the hook would double-fire Escape and skip that policy. Repeat/composing guards were copied onto the Pretty listener.
+- ChatView's previous inline queue-send effect and Pretty extra send gates (`needsLoadBalancing`, `currentEnvironmentCannotRunModel`, `activeProviderStatus`) on the queue path. Reason: parent `QueuedMessageSender` is the first-party replacement (`sendQueuedMessage(threadRef, id)`); keeping the HEAD effect would double-send and call the old `sendQueuedMessage(message)` signature. Queue send still waits on pending approvals/questions.
+- Parent project-scope Combobox in the sidebar. Reason: Pretty's project rail remains the selector; parent helpers that do not require that chrome still land.
+- Parent Sidebar legacy second title/branch metadata row and `4.875rem` height. Reason: restoring it would duplicate title/branch under the redesigned compact row. Focus-ring / sr-only announcements apply on the Pretty row.
+- Whole-file `readTraceFile` / `aggregateTraceDiagnostics` / local `TOP_LIMIT` in `TraceDiagnostics.ts`. Reason: Pretty already streams with a newest-first byte budget and uses the contract `SERVER_TRACE_DIAGNOSTIC_*` caps.
+- Parent usage merge that walks every environment for `contractMismatches` (no `USAGE_MERGE_MAX_ENVIRONMENTS` slice). Reason: Pretty's environment cap stays; mismatches are collected only for retained environments.
+- Parent `staleEnvironments` UsagePage notices. Reason: `#8208` `contractMismatches` is the replacement; Pretty coverage/source/omission notices stay beside it.
+
+## Post-merge repairs
+
+- `web-typecheck` — Imported `resolveSettledThreadTimestamp` / `SettledThreadTimestampInput` in `Sidebar.logic.ts` from `@t3tools/client-runtime/state/thread-sort`. Parent `#13759` moved those helpers; the Pretty settled-archive shims still called them without the import.
+- `web-typecheck` — Filled missing `hasAutomations` / `hasMacProviderSettingsEnvironment` on a few `settingsSearch.test.ts` availability fixtures, and `enabledSkillIds: []` on the `threads.test.ts` detail fixture. Required fields were already on main; the landing-gate typecheck now sees the incomplete objects.
+- `shared-typecheck` — Added `refreshCatalog: Effect.void` on the remaining `RelayEnvironmentDiscovery` mock in `registry.test.ts`.
+- `ProviderCommandReactor` first-turn test now expects session `starting` (parent `pendingTurnStart`) and asserts the OpenCode session title is omitted unless the user renamed it.

@@ -118,20 +118,20 @@ function SettingsContentLayout() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (event.key === "Escape") {
-        const activeElement = document.activeElement;
-        const action = settingsEscapeAction(activeElement);
-        if (action === "ignore") return;
-
-        event.preventDefault();
-        if (action === "blur" && activeElement instanceof HTMLElement) {
-          activeElement.blur();
-          return;
-        }
-
-        void navigateToMainApp();
+      if (event.defaultPrevented || event.repeat || event.isComposing || event.key !== "Escape") {
+        return;
       }
+      const activeElement = document.activeElement;
+      const action = settingsEscapeAction(activeElement);
+      if (action === "ignore") return;
+
+      event.preventDefault();
+      if (action === "blur" && activeElement instanceof HTMLElement) {
+        activeElement.blur();
+        return;
+      }
+
+      void navigateToMainApp();
     };
 
     window.addEventListener("keydown", onKeyDown);

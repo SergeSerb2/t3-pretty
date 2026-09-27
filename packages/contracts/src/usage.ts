@@ -18,12 +18,14 @@
  */
 import * as Schema from "effect/Schema";
 
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ForwardCompatibleArray, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 /**
  * Bumped whenever the shape of {@link UsageSummary} changes incompatibly. The
  * client renders partial coverage when an environment reports an older version
  * rather than failing the whole page.
+ * Adding providers or other array-element variants is additive: unknown
+ * entries are skipped on decode and do not require a version bump.
  */
 export const USAGE_CONTRACT_VERSION = 6 as const;
 
@@ -206,7 +208,7 @@ export const UsageSource = Schema.Struct({
 });
 export type UsageSource = typeof UsageSource.Type;
 
-const UsageSources = Schema.Array(UsageSource).check(
+const UsageSources = ForwardCompatibleArray(UsageSource).check(
   Schema.isMaxLength(USAGE_SUMMARY_MAX_SOURCES),
   Schema.makeFilter((sources) => {
     const fingerprints = new Set<string>();
@@ -266,7 +268,7 @@ export const UsageSummary = Schema.Struct({
   timeZone: TrimmedNonEmptyString.check(Schema.isMaxLength(USAGE_TIME_ZONE_MAX_LENGTH)),
   sinceDay: UsageDay,
   untilDay: UsageDay,
-  buckets: Schema.Array(UsageBucket).check(Schema.isMaxLength(USAGE_SUMMARY_MAX_BUCKETS)),
+  buckets: ForwardCompatibleArray(UsageBucket).check(Schema.isMaxLength(USAGE_SUMMARY_MAX_BUCKETS)),
   sources: UsageSources,
   pricing: UsagePricing,
   /** Wall-clock cost of the scan, surfaced in diagnostics. */

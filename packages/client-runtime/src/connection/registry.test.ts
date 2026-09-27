@@ -900,6 +900,7 @@ describe("EnvironmentRegistry", () => {
                   },
                 ),
               refresh: Effect.void,
+              refreshCatalog: Effect.void,
             }),
           ),
           Effect.forkScoped,
