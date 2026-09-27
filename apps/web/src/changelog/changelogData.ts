@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.43-nightly.20260927.2331002944",
+    date: "2026-09-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "Drop leftover ConnectionFormField accessibilityLabel props",
+      },
+      {
+        kind: "fixed",
+        title: "Refresh EAS cloud IPA status without build:view --non-interactive",
+      },
+      {
+        kind: "fixed",
+        title: "Reattach ios-mobile to an in-flight EAS IPA after agent loss",
+      },
+      {
+        kind: "fixed",
+        title: "Wrap Playwright inject script in Effect.succeed",
+      },
+      {
+        kind: "fixed",
+        title: "Prod deploy from recreating home suggestion tables",
+      },
+      {
+        kind: "fixed",
+        title: "Scenery catalog sync no longer crashes iOS launch",
+      },
+    ],
+  },
+  {
     version: "0.0.43-nightly.20260926.2318002939",
     date: "2026-09-27",
     items: [
