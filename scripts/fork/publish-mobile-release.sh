@@ -1359,6 +1359,11 @@ if [[ "$ipa_via_cloud" == "true" ]]; then
     else
       annotate info "Reattaching to EAS cloud IPA $build_id; not spending another Expo build credit."
       cloud_build_details="$(await_eas_cloud_build "$reuse_build_id" "$fingerprint" "$commit")"
+      if [[ -z "$cloud_build_details" ]]; then
+        annotate warning "EAS cloud IPA $build_id wait returned empty (soft-exit in subshell). Next ios-mobile will reattach."
+        restore_eas_json
+        exit 0
+      fi
       build_id="$(sed -n '1p' <<< "$cloud_build_details")"
       artifact_url="$(sed -n '2p' <<< "$cloud_build_details")"
     fi
@@ -1414,12 +1419,18 @@ if [[ "$ipa_via_cloud" == "true" ]]; then
       artifact_url="$created_artifact"
     else
       cloud_build_details="$(await_eas_cloud_build "$build_id" "$fingerprint" "$commit" "$created_number")"
+      if [[ -z "$cloud_build_details" ]]; then
+        annotate warning "EAS cloud IPA $build_id wait returned empty (soft-exit in subshell). Next ios-mobile will reattach."
+        restore_eas_json
+        exit 0
+      fi
       build_id="$(sed -n '1p' <<< "$cloud_build_details")"
       artifact_url="$(sed -n '2p' <<< "$cloud_build_details")"
     fi
   fi
-  if [[ -z "$artifact_url" ]]; then
-    echo "EAS cloud IPA ${build_id:-unknown} has no application archive URL." >&2
+  artifact_url="${artifact_url//[[:space:]]/}"
+  if [[ -z "$artifact_url" || "$artifact_url" != http* ]]; then
+    echo "EAS cloud IPA ${build_id:-unknown} has no valid application archive URL: '${artifact_url:-empty}'." >&2
     exit 1
   fi
   curl --fail --location --retry 3 --output "$ipa_path" "$artifact_url"
