@@ -249,7 +249,7 @@ export const buildPreviewPictureInPictureDataUrl = (): string => {
     <meta charset="utf-8">
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+      content="default-src 'none'; img-src blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
     >
     <meta name="color-scheme" content="dark">
     <style>
@@ -262,8 +262,13 @@ export const buildPreviewPictureInPictureDataUrl = (): string => {
     <img id="preview-frame" alt="Live browser preview">
     <script>
       const frame = document.getElementById("preview-frame");
+      let activeFrameUrl = null;
       window.previewPictureInPicture.onFrame((next) => {
-        frame.src = "data:image/jpeg;base64," + next.data;
+        const frameUrl = URL.createObjectURL(new Blob([next.data], { type: "image/jpeg" }));
+        const previousFrameUrl = activeFrameUrl;
+        activeFrameUrl = frameUrl;
+        frame.src = frameUrl;
+        if (previousFrameUrl !== null) URL.revokeObjectURL(previousFrameUrl);
       });
     </script>
   </body>
@@ -491,7 +496,10 @@ const nextZoomLevel = (current: number, direction: "in" | "out"): number => {
 };
 
 type Listener = (tabId: string, state: PreviewTabState) => Effect.Effect<void>;
-type RecordingFrameListener = (frame: DesktopPreviewRecordingFrame) => Effect.Effect<void>;
+type RecordingFrameListener = (
+  frame: DesktopPreviewRecordingFrame,
+  host: Electron.WebContents,
+) => Effect.Effect<void>;
 
 type PreviewInputSignal =
   | { readonly kind: "pointer"; readonly x: number; readonly y: number; readonly button: number }
@@ -1398,7 +1406,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                 typeof params["metadata"] === "object" && params["metadata"] !== null
                   ? (params["metadata"] as Record<string, unknown>)
                   : {};
-              if (tabId && typeof params["data"] === "string") {
+              const host = wc.hostWebContents;
+              if (tabId && typeof params["data"] === "string" && host && !host.isDestroyed()) {
                 const captureSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(
                   tabId,
                 );
@@ -1407,7 +1416,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                   const listeners = yield* Ref.get(recordingFrameListenersRef);
                   const frame: DesktopPreviewRecordingFrame = {
                     tabId,
-                    data: params["data"],
+                    data: Buffer.from(params["data"], "base64"),
                     width:
                       typeof metadata["deviceWidth"] === "number" ? metadata["deviceWidth"] : 0,
                     height:
@@ -1417,7 +1426,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                   yield* Effect.forEach(
                     listeners,
                     (listener) =>
-                      deliverEvent("recording-frame", frame.tabId, () => listener(frame)),
+                      deliverEvent("recording-frame", frame.tabId, () => listener(frame, host)),
                     { discard: true },
                   );
                 }
@@ -3020,7 +3029,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const receivedAt = yield* currentIso;
     const frame: DesktopPreviewRecordingFrame = {
       tabId,
-      data: encoded.toString("base64"),
+      data: encoded,
       width: size.width,
       height: size.height,
       receivedAt,
