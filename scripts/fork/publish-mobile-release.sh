@@ -1,19 +1,50 @@
 #!/usr/bin/env bash
-# Native macos-release iOS OTA + TestFlight. Same machine as the signed DMG
-# (m5-dev; m1-dev is now Linux). The GitHub Actions importer cannot load
-# cluster secrets or keep PATH across steps, so imported Expo/EAS jobs die
-# in seconds and TestFlight
-# never sees the update.
+# iOS OTA + TestFlight for tip packaging. The GitHub Actions importer cannot
+# load cluster secrets or keep PATH across steps, so imported Expo/EAS jobs
+# die in seconds and TestFlight never sees the update.
 #
 # Installed TestFlight binaries already poll the fork Expo Updates URL baked
 # into the IPA. Default release is that JS channel (`eas update`). A new IPA
 # is only compiled when the native fingerprint changed, or a maintainer set
-# T3CODE_FORCE_IOS / T3CODE_MOBILE_MODE=build. eas submit / Fastlane pilot
-# uploads that IPA as a TestFlight build through App Store Connect; it does
-# not submit the app for App Store review. macos-release runs macOS 27
-# developer beta, so the compiler is Xcode-beta.app. TestFlight accepts the
-# current Xcode 27 beta (not every older beta). EAS cloud is only the
-# fallback when this Mac has no full Xcode at all.
+# T3CODE_FORCE_IOS / T3CODE_MOBILE_MODE=build. eas submit queues that IPA for
+# TestFlight through App Store Connect; it does not submit the app for App
+# Store review. EAS owns the remote retry after accepting the submission, so
+# Buildkite does not wait on that queue while holding a Mac signing slot.
+#
+# This job is Linux- and Windows-capable: `eas update` and `eas build`
+# (cloud, no --local) do not need Xcode. On windows-release, Expo's
+# persistMetroFilesAsync can die with exit 5 while writing the ~70MB
+# --dump-sourcemap .hbc.map pair after listing a complete-looking export
+# (BK #2849). That host exports without dump-sourcemap and publishes with
+# `eas update --skip-bundler`. When a usable full Xcode is on the agent,
+# local `eas build --local` still saves an Expo IPA credit. Without
+# Xcode — including windows-release and review-only Linux — the job uses
+# EAS cloud instead of failing. Force local with T3CODE_IOS_LOCAL_XCODE=1
+# (fails if Xcode is missing). Force cloud with T3CODE_IOS_ALLOW_EAS_CLOUD=1
+# even when Xcode is present. Non-Darwin hosts force cloud themselves and
+# never look for /Applications/Xcode.app. The submit gate reads the IPA's
+# Expo.plist with scripts/fork/read-expo-runtime-version.mjs (XML or
+# binary). Do not require macOS plutil; Windows Git Bash does not have it
+# (BK #2864). A finished hosted IPA whose runtime already matches can be
+# downloaded and submitted without another Expo build credit. Cloud create
+# uses `eas build --no-wait --json` and records the id in
+# ~/.cache/t3-pretty-release/ios-eas-inflight. A later ios-mobile run
+# reattaches instead of starting a duplicate when the Windows agent dies
+# mid-wait (BK #2922). Status refresh uses Expo GraphQL with EXPO_TOKEN,
+# then `eas build:view --json` / `eas build:list` without
+# `--non-interactive` (current eas-cli rejects that flag on build:view,
+# BK #2925). The waiter soft-exits 0 if that id is known and the compile
+# has not failed; several consecutive refresh failures also soft-exit so
+# windows-nsis is not blocked for an hour. ERRORED/CANCELED still fail.
+#
+# Tip packaging allows at most two iOS Expo spends (cloud IPA or OTA) per
+# America/Vancouver calendar day. scripts/fork/ios-expo-daily-cap.mjs counts
+# production-profile iOS EAS builds and production-branch iOS update groups
+# from Expo, so the budget is shared across Mac, Windows, and Linux
+# agents. Hitting the cap skips that Expo call and annotates; it does not
+# fail the build or the desktop packagers. Local Xcode IPAs do not count.
+# If today's usage cannot be read, OTA and cloud IPA both fail open when
+# allowed=true so a flake cannot skip a due native binary.
 #
 # Buildkite cancels intermediate main builds when pushes land in quick
 # succession, so a release can die mid-flight and a later push would skip on
@@ -26,12 +57,32 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
+# shellcheck source=apple-signing-lock.sh
+source "$root/scripts/fork/apple-signing-lock.sh"
+# shellcheck source=ensure-vite-plus.sh
+source "$root/scripts/fork/ensure-vite-plus.sh"
 
-export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
+# Pin to the agent tree so ensure-vite-plus can find vp.exe (including
+# versioned 1.0.0-rc.0/bin). That prefix is search-only: the helper
+# relocates VP_HOME to ~/.vite-plus or a job temp before --version or
+# install, and never writes into C:\buildkite-agent\vite-plus (BK #2842).
+if [[ -z "${VP_HOME:-}" && -d /c/buildkite-agent/vite-plus ]]; then
+  export VP_HOME=/c/buildkite-agent/vite-plus
+fi
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${VP_HOME:-${HOME}/.vite-plus}/bin:${HOME}/.local/bin:${PATH}"
+vite_plus_on_path
+ios_host="$(uname -s)"
+ios_uses_apple_keychain=0
+case "$ios_host" in
+  Darwin) ios_uses_apple_keychain=1 ;;
+esac
 export APP_VARIANT="${APP_VARIANT:-production}"
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+# Expo CLI rejects --non-interactive ("use $CI=1 instead"). eas update still
+# passes that flag; CI=1 is what actually keeps export non-interactive.
+export CI="${CI:-1}"
 export T3CODE_MOBILE_UPDATE_URL="${T3CODE_MOBILE_UPDATE_URL:-https://u.expo.dev/1eb51d67-48c5-4100-8aa8-f5ac9e1ada65}"
 export T3CODE_MOBILE_EAS_PROJECT_ID="${T3CODE_MOBILE_EAS_PROJECT_ID:-1eb51d67-48c5-4100-8aa8-f5ac9e1ada65}"
 export T3CODE_MOBILE_EXPO_OWNER="${T3CODE_MOBILE_EXPO_OWNER:-sergeserbinenkoteam}"
@@ -50,6 +101,9 @@ LOCAL_SUBMIT_MARK="${HOME}/.cache/t3-pretty-release/ios-native-submit"
 # diff and strand the release for good. Diffing against this mark lets a
 # later build re-release everything since the last publish.
 LOCAL_OTA_MARK="${HOME}/.cache/t3-pretty-release/ios-ota-publish"
+# Runner-local record of an already-submitted EAS cloud IPA. The next
+# ios-mobile run reattaches when the waiter is killed after create.
+LOCAL_EAS_INFLIGHT="${HOME}/.cache/t3-pretty-release/ios-eas-inflight"
 case "${T3CODE_FORCE_IOS:-}" in
   true | TRUE | 1 | yes | YES) FORCE_IOS=true ;;
 esac
@@ -57,20 +111,47 @@ esac
 commit="${BUILDKITE_COMMIT:-${GITHUB_SHA:-$(git rev-parse HEAD)}}"
 update_message="${T3CODE_MOBILE_UPDATE_MESSAGE:-Production OTA (${commit})}"
 
-echo "T3 Pretty mobile release on macos-release (m5-dev) mode=${MODE} platform=${PLATFORM} force_ios=${FORCE_IOS}"
+echo "T3 Pretty mobile release mode=${MODE} platform=${PLATFORM} force_ios=${FORCE_IOS} host=$(uname -s)"
+
+# Windows jobs run under Git Bash. The Buildkite service exe is not on that
+# PATH; NSIS already hardcodes C:\buildkite-agent\service\buildkite-agent.exe
+# for cluster secret get. Mac/Linux still resolve `buildkite-agent` on PATH.
+buildkite_agent_bin() {
+  local candidate
+  if command -v buildkite-agent >/dev/null 2>&1; then
+    command -v buildkite-agent
+    return 0
+  fi
+  for candidate in \
+    /c/buildkite-agent/service/buildkite-agent.exe \
+    /c/buildkite-agent/bin/buildkite-agent.exe \
+    /c/buildkite-agent/buildkite-agent.exe; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
 
 load_secret() {
   local name="$1"
   local required="${2:-1}"
   local value="${!name:-}"
-  local candidate
-  if [[ -z "$value" ]] && command -v buildkite-agent >/dev/null; then
-    value="$(buildkite-agent secret get "$name" 2>/dev/null || true)"
+  local candidate agent
+  if [[ -z "$value" ]]; then
+    agent="$(buildkite_agent_bin || true)"
+    if [[ -n "$agent" ]]; then
+      value="$("$agent" secret get "$name" 2>/dev/null || true)"
+      value="${value//$'\r'/}"
+      value="${value%"$'\n'"}"
+    fi
   fi
   if [[ -z "$value" ]]; then
     for candidate in \
       "${HOME}/.config/t3-pretty/${name}" \
-      "/opt/homebrew/var/buildkite-agent/secrets/${name}"; do
+      "/opt/homebrew/var/buildkite-agent/secrets/${name}" \
+      "/c/buildkite-agent/secrets/${name}"; do
       if [[ -f "$candidate" ]]; then
         value="$(tr -d '\r' < "$candidate")"
         value="${value%$'\n'}"
@@ -127,9 +208,241 @@ annotate() {
   local style="${1:-info}"
   shift
   local body="$*"
+  local agent
   echo "$body"
-  if command -v buildkite-agent >/dev/null; then
-    buildkite-agent annotate --style "$style" --context ios-mobile "$body" || true
+  agent="$(buildkite_agent_bin || true)"
+  if [[ -n "$agent" ]]; then
+    "$agent" annotate --style "$style" --context ios-mobile "$body" || true
+  fi
+}
+
+ios_expo_daily_limit() {
+  local raw="${T3CODE_IOS_EXPO_DAILY_LIMIT:-2}"
+  [[ "$raw" =~ ^[0-9]+$ ]] || raw=2
+  printf '%s\n' "$raw"
+}
+
+ios_expo_daily_cap_field() {
+  local report="$1" key="$2"
+  awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1); exit }' <<< "$report"
+}
+
+# Expo is the durable counter: production iOS EAS builds + production-branch
+# iOS update groups created on the America/Vancouver day. Shared across
+# agents; local Xcode IPAs never appear. limit=0 disables the cap.
+ios_expo_daily_cap_eval() {
+  local limit out
+  limit="$(ios_expo_daily_limit)"
+  if (( limit == 0 )); then
+    printf '%s\n' \
+      "day=" \
+      "used=0" \
+      "limit=0" \
+      "remaining=unlimited" \
+      "status=disabled" \
+      "allowed=true" \
+      "builds=0" \
+      "updates=0" \
+      "store=disabled"
+    return 0
+  fi
+  out="$(
+    node "$root/scripts/fork/ios-expo-daily-cap.mjs" \
+      --fetch \
+      --timezone "${T3CODE_IOS_EXPO_DAILY_TZ:-America/Vancouver}" \
+      --limit "$limit" \
+      --app-id "${T3CODE_MOBILE_EAS_PROJECT_ID}" \
+      --branch production \
+      --mobile-dir "$root/apps/mobile"
+  )" || true
+  if [[ -z "$out" ]] || ! grep -q '^status=' <<< "$out"; then
+    printf '%s\n' \
+      "day=" \
+      "used=-1" \
+      "limit=$limit" \
+      "remaining=-1" \
+      "status=unknown" \
+      "allowed=true" \
+      "builds=-1" \
+      "updates=-1" \
+      "store=unavailable"
+    return 0
+  fi
+  printf '%s\n' "$out"
+}
+
+# True when this Expo spend should be skipped. Unknown usage (store
+# unavailable) fails open for OTA and cloud IPA when allowed=true, so a
+# GraphQL/CLI flake cannot strand TestFlight JS or a due native binary.
+# When usage can be read, remaining==0 still blocks both.
+ios_expo_cap_blocks() {
+  local kind="$1"
+  local report="$2"
+  local status remaining allowed
+  status="$(ios_expo_daily_cap_field "$report" status)"
+  remaining="$(ios_expo_daily_cap_field "$report" remaining)"
+  allowed="$(ios_expo_daily_cap_field "$report" allowed)"
+  case "$status" in
+    disabled) return 1 ;;
+    ok)
+      if [[ "$remaining" =~ ^[0-9]+$ ]] && (( remaining > 0 )); then
+        return 1
+      fi
+      return 0
+      ;;
+    unknown)
+      [[ "$allowed" != "true" ]]
+      return
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+ios_expo_cap_skip_message() {
+  local kind="$1"
+  local report="$2"
+  local day used limit remaining store status allowed
+  day="$(ios_expo_daily_cap_field "$report" day)"
+  used="$(ios_expo_daily_cap_field "$report" used)"
+  limit="$(ios_expo_daily_cap_field "$report" limit)"
+  remaining="$(ios_expo_daily_cap_field "$report" remaining)"
+  store="$(ios_expo_daily_cap_field "$report" store)"
+  status="$(ios_expo_daily_cap_field "$report" status)"
+  allowed="$(ios_expo_daily_cap_field "$report" allowed)"
+  if [[ "$status" == "unknown" ]]; then
+    printf '%s\n' \
+      "Skipping iOS Expo ${kind}: could not read today's Expo iOS usage from ${store:-unavailable} and allowed=${allowed:-false}."
+    return 0
+  fi
+  printf '%s\n' \
+    "Skipping iOS Expo ${kind}: America/Vancouver daily cap reached (${used:-?}/${limit:-2} on ${day:-unknown}, remaining ${remaining:-0}, store ${store:-expo-api}). Desktop packaging is unaffected."
+}
+
+# windows-release starts as Node on win32 (run-publish-mobile-release.mjs),
+# which sets T3CODE_IOS_WINDOWS_HOST=1, then execs Git Bash. Git Bash
+# uname is MINGW64_NT-*. Ask uname at call time so this does not depend
+# on ios_host being assigned first. Darwin/Linux keep stock eas update.
+ios_is_windows_host() {
+  if [[ -z "${1:-}" && "${T3CODE_IOS_WINDOWS_HOST:-}" == "1" ]]; then
+    return 0
+  fi
+  case "${1:-$(uname -s)}" in
+    MINGW* | MSYS* | CYGWIN*) return 0 ;;
+  esac
+  return 1
+}
+
+# persistMetroFilesAsync prints the inventory from memory, then Promise.all
+# writeFile. A listed metadata.json is not a finished dist. Require the
+# Hermes bundles the OTA actually ships before eas update --skip-bundler.
+assert_mobile_export_dist() {
+  local platform="$1"
+  local dir="${2:-$root/apps/mobile/dist}"
+  local plat
+  local -a bundles
+  if [[ ! -f "$dir/metadata.json" ]]; then
+    echo "expo export did not write $dir/metadata.json." >&2
+    return 1
+  fi
+  case "$platform" in
+    all) set -- ios android ;;
+    ios | android) set -- "$platform" ;;
+    *) return 0 ;;
+  esac
+  # Git Bash on windows-release can resolve `find` to Windows find.exe,
+  # which is not GNU find and will miss Hermes bundles. A bash glob does
+  # not depend on PATH.
+  shopt -s nullglob
+  for plat in "$@"; do
+    bundles=("$dir/_expo/static/js/$plat"/*.hbc)
+    if ((${#bundles[@]} == 0)); then
+      echo "expo export did not write a $plat Hermes bundle under $dir/_expo/static/js/$plat." >&2
+      shopt -u nullglob
+      return 1
+    fi
+  done
+  shopt -u nullglob
+}
+
+# eas update always invokes expo export with --dump-sourcemap. Those two
+# .hbc.map files are ~70MB; persist writes them after listing. On
+# windows-release that write has died with ERROR_ACCESS_DENIED (exit 5)
+# after a complete-looking listing and before "Exported: dist" (BK #2849).
+# Green #2844 printed Exported: dist ~400ms after the same listing. Skip
+# dump-sourcemap so persist does not write the maps, then publish the dist
+# with --skip-bundler. OTA JS still ships; sourcemaps are not required for
+# TestFlight to pick up the bundle. eas-cli --source-maps false is not a
+# workaround: it still passes --dump-sourcemap for compat.
+export_mobile_bundle_for_ota() {
+  local platform="$1"
+  local attempt=0
+  while true; do
+    if (
+      cd "$root/apps/mobile"
+      vp exec expo export \
+        --output-dir dist \
+        --experimental-bundle \
+        --dump-assetmap \
+        --platform "$platform" \
+        --clear
+    ) && assert_mobile_export_dist "$platform"; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    if ((attempt >= 2)); then
+      echo "Could not persist a complete mobile export dist; refusing eas update --skip-bundler." >&2
+      return 1
+    fi
+    echo "Windows expo export flaked while persisting dist; retrying once without --dump-sourcemap."
+  done
+}
+
+run_eas_update() {
+  local platform="$1"
+  local message="$2"
+  local attempt=0
+  shift 2
+  while true; do
+    if (
+      cd "$root/apps/mobile"
+      eas update \
+        --channel production \
+        --environment production \
+        --platform "$platform" \
+        --message "$message" \
+        --non-interactive \
+        "$@"
+    ); then
+      return 0
+    fi
+    # A second eas update on Darwin/Linux can publish twice if the first
+    # call reached Expo. windows-release is the persist/skip-bundler flake
+    # path (BK #2849); stock eas update stays single-shot.
+    if ! ios_is_windows_host; then
+      return 1
+    fi
+    attempt=$((attempt + 1))
+    if ((attempt >= 2)); then
+      return 1
+    fi
+    echo "eas update flaked; retrying once."
+  done
+}
+
+publish_production_ota() {
+  local platform="$1"
+  local message="$2"
+  if ios_is_windows_host; then
+    # eas-cli 24.7.0 `eas update --skip-bundler` reads input dir `dist`
+    # (the export --output-dir) after the apps/mobile cd. Do not pass
+    # --input-dir: that extra flag is not part of the documented
+    # skip-bundler argv and has failed as unknown on some eas builds.
+    export_mobile_bundle_for_ota "$platform" &&
+      run_eas_update "$platform" "$message" --skip-bundler
+  else
+    run_eas_update "$platform" "$message"
   fi
 }
 
@@ -168,6 +481,166 @@ mobile_release_base() {
 record_local_native_submit() {
   mkdir -p "$(dirname "$LOCAL_SUBMIT_MARK")"
   printf '%s\n' "macos-release" "${1:-${commit:-unknown}}" > "$LOCAL_SUBMIT_MARK"
+}
+
+eas_cloud_wait_seconds() {
+  # Keep in sync with DEFAULT_EAS_WAIT_SECONDS in eas-cloud-build.mjs.
+  # 60 minutes is an IPA-length bound, not the 2-minute agent-loss probe.
+  local raw="${T3CODE_IOS_EAS_WAIT_SECONDS:-3600}"
+  [[ "$raw" =~ ^[0-9]+$ ]] || raw=3600
+  printf '%s\n' "$raw"
+}
+
+eas_cloud_poll_seconds() {
+  local raw="${T3CODE_IOS_EAS_POLL_SECONDS:-20}"
+  [[ "$raw" =~ ^[0-9]+$ ]] || raw=20
+  if (( raw < 1 )); then
+    raw=20
+  fi
+  printf '%s\n' "$raw"
+}
+
+# Keep in sync with DEFAULT_EAS_VIEW_FAIL_POLLS in eas-cloud-build.mjs.
+eas_cloud_view_fail_polls() {
+  local raw="${T3CODE_IOS_EAS_VIEW_FAIL_POLLS:-6}"
+  [[ "$raw" =~ ^[0-9]+$ ]] || raw=6
+  if (( raw < 1 )); then
+    raw=6
+  fi
+  printf '%s\n' "$raw"
+}
+
+record_local_eas_inflight() {
+  local id="$1"
+  local next_fingerprint="${2:-${fingerprint:-}}"
+  local next_commit="${3:-${commit:-}}"
+  local build_number="${4:-}"
+  local status="${5:-in-progress}"
+  [[ -n "$id" ]] || return 1
+  mkdir -p "$(dirname "$LOCAL_EAS_INFLIGHT")"
+  node "$root/scripts/fork/eas-cloud-build.mjs" --write-inflight "$LOCAL_EAS_INFLIGHT" \
+    --id "$id" \
+    --fingerprint "$next_fingerprint" \
+    --commit "$next_commit" \
+    --build-number "$build_number" \
+    --status "$status"
+}
+
+clear_local_eas_inflight() {
+  rm -f "$LOCAL_EAS_INFLIGHT"
+}
+
+read_eas_cloud_build_state() {
+  node "$root/scripts/fork/eas-cloud-build.mjs" --read-json "$1"
+}
+
+eas_cloud_wait_outcome() {
+  node "$root/scripts/fork/eas-cloud-build.mjs" --wait-outcome \
+    --kind "$1" \
+    --interrupted "$2" \
+    --timed-out "$3" \
+    --view-failures "${4:-0}" \
+    --max-view-failures "${5:-0}"
+}
+
+soft_exit_known_eas_cloud_build() {
+  local build_id="$1"
+  local reason="$2"
+  annotate warning "EAS cloud IPA $build_id is still running (${reason}). Next ios-mobile will reattach from the persisted build id; not spending another Expo build credit."
+  restore_eas_json
+  exit 0
+}
+
+# Status/list go through eas-cloud-build.mjs (Expo GraphQL, then eas
+# build:list / eas build:view --json). Do not pass --non-interactive to
+# build:view: current eas-cli rejects that flag (BK #2925).
+view_eas_cloud_build() {
+  local build_id="$1"
+  local out="$2"
+  node "$root/scripts/fork/eas-cloud-build.mjs" --view-id "$build_id" \
+    --mobile-dir "$root/apps/mobile" > "$out"
+}
+
+# Poll Expo until the IPA is finished, the compile failed, the wait
+# budget expires, refresh stays stale, or this agent is signaled. Prints
+# id\nartifact_url when finished. Soft-exits 0 when the id is known and
+# Expo has not failed the compile, so a Windows agent drop cannot red tip
+# packaging solely because the waiter died (BK #2922).
+await_eas_cloud_build() {
+  local build_id="$1"
+  local next_fingerprint="${2:-${fingerprint:-}}"
+  local next_commit="${3:-${commit:-}}"
+  local build_number="${4:-}"
+  local cloud_json="${tmp}/eas-cloud-build.json"
+  local wait_seconds poll_seconds max_view_failures deadline interrupted=0 timed_out=0
+  local state kind status artifact_url outcome viewed=0 view_failures=0
+  wait_seconds="$(eas_cloud_wait_seconds)"
+  poll_seconds="$(eas_cloud_poll_seconds)"
+  max_view_failures="$(eas_cloud_view_fail_polls)"
+  deadline=$((SECONDS + wait_seconds))
+  record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "in-progress"
+  trap 'interrupted=1' TERM INT
+  while true; do
+    if (( interrupted )); then
+      record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "in-progress" || true
+      trap - TERM INT
+      soft_exit_known_eas_cloud_build "$build_id" "waiter interrupted"
+    fi
+    kind="unknown"
+    status="unknown"
+    artifact_url=""
+    if view_eas_cloud_build "$build_id" "$cloud_json"; then
+      viewed=1
+      view_failures=0
+      state="$(read_eas_cloud_build_state "$cloud_json")"
+      kind="$(ios_expo_daily_cap_field "$state" kind)"
+      status="$(ios_expo_daily_cap_field "$state" status)"
+      artifact_url="$(ios_expo_daily_cap_field "$state" artifact_url)"
+      build_number="$(ios_expo_daily_cap_field "$state" build_number)"
+      record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "$status" || true
+    else
+      view_failures=$((view_failures + 1))
+      echo "Could not refresh EAS cloud IPA $build_id (${view_failures}/${max_view_failures}); will reattach if status stays unavailable."
+    fi
+    timed_out=0
+    if (( SECONDS >= deadline )); then
+      timed_out=1
+    fi
+    outcome="$(eas_cloud_wait_outcome "$kind" "$interrupted" "$timed_out" "$view_failures" "$max_view_failures")"
+    case "$outcome" in
+      continue)
+        if [[ -z "$artifact_url" ]]; then
+          echo "Finished EAS cloud IPA $build_id has no application archive URL." >&2
+          trap - TERM INT
+          exit 1
+        fi
+        trap - TERM INT
+        printf '%s\n%s\n' "$build_id" "$artifact_url"
+        return 0
+        ;;
+      fail)
+        trap - TERM INT
+        echo "EAS cloud iOS build failed." >&2
+        report_eas_cloud_build_failure "$cloud_json"
+        exit 1
+        ;;
+      soft-exit)
+        trap - TERM INT
+        record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "${status:-in-progress}" || true
+        if (( viewed == 0 )); then
+          if (( view_failures >= max_view_failures && timed_out == 0 )); then
+            soft_exit_known_eas_cloud_build "$build_id" "could not refresh status after ${view_failures} polls"
+          fi
+          soft_exit_known_eas_cloud_build "$build_id" "could not refresh status before wait budget"
+        fi
+        soft_exit_known_eas_cloud_build "$build_id" "status=${status:-unknown}; not holding this agent"
+        ;;
+      *)
+        echo "Waiting for EAS cloud IPA $build_id (${status:-unknown}); will reattach if this agent drops."
+        sleep "$poll_seconds" || true
+        ;;
+    esac
+  done
 }
 
 record_local_ota_publish() {
@@ -210,22 +683,6 @@ native_submit_recorded() {
   return 1
 }
 
-ios_lock_holder_alive() {
-  local pid cmd other
-  if [[ -f "$lockdir/pid" ]]; then
-    pid="$(tr -d '[:space:]' < "$lockdir/pid" || true)"
-    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
-      cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-      case "$cmd" in
-        *publish-mobile-release.sh* | *"/eas "* | *eas\ build* | *xcodebuild*) return 0 ;;
-      esac
-    fi
-  fi
-  other="$(pgrep -f 'scripts/fork/publish-mobile-release.sh' || true)"
-  other="$(printf '%s\n' "$other" | grep -v "^${$}$" || true)"
-  [[ -n "$other" ]]
-}
-
 # Upstream sync already has the merged tree. Re-checking out BUILDKITE_COMMIT
 # would reset to the scheduled starting SHA and publish a stale OTA.
 if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" ]]; then
@@ -239,8 +696,14 @@ if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" ]]; then
     fi
   done
   if [[ -n "$helper" ]]; then
-    "$helper" "${BUILDKITE_COMMIT:-$(git rev-parse HEAD)}" --full ||
-      echo "checkout-origin failed; keeping current tree"
+    # Hosted macos-large has no Origin git-credentials store. Fail open and
+    # keep the Buildkite checkout; do not require CURSOR_API_KEY here.
+    if [[ -s "${HOME}/.git-credentials" || -s /opt/homebrew/var/buildkite-agent/.git-credentials ]]; then
+      "$helper" "${BUILDKITE_COMMIT:-$(git rev-parse HEAD)}" --full ||
+        echo "checkout-origin failed; keeping current tree"
+    else
+      echo "No Origin git-credentials store on this agent; keeping current tree."
+    fi
   fi
 fi
 
@@ -292,59 +755,65 @@ if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$MODE" != "build" && "$FO
   esac
 fi
 
-lockdir="/tmp/t3-pretty-ios-mobile.lock"
-lock_wait_deadline=$((SECONDS + 900))
-while ! mkdir "$lockdir" 2>/dev/null; do
-  if ios_lock_holder_alive; then
-    if (( SECONDS >= lock_wait_deadline )); then
-      echo "Timed out waiting for another ios-mobile publish on this Mac." >&2
-      exit 1
-    fi
-    echo "Waiting for another ios-mobile publish on this Mac..."
-    sleep 10
-    continue
-  fi
-  echo "Removing stale ios-mobile lock at $lockdir"
-  rm -rf "$lockdir"
-done
-printf '%s\n' "$$" > "$lockdir/pid"
 tmp=""
 eas_json="$root/apps/mobile/eas.json"
 eas_json_bak=""
 cleanup() {
+  local status=$?
+  local cleanup_failed=0
+  local preserve_tmp=0
+  trap - EXIT
+  set +e
   if [[ -n "${eas_json_bak:-}" && -f "$eas_json_bak" ]]; then
-    cp "$eas_json_bak" "$eas_json"
+    if ! cp "$eas_json_bak" "$eas_json"; then
+      echo "Could not restore $eas_json; preserving its backup at $eas_json_bak" \
+        "and release temporary directory at $tmp." >&2
+      cleanup_failed=1
+      preserve_tmp=1
+    fi
   fi
-  if [[ -n "${tmp:-}" ]]; then
-    rm -rf "$tmp"
+  if [[ -n "${tmp:-}" && "$preserve_tmp" == "0" ]]; then
+    if ! rm -rf -- "$tmp"; then
+      echo "Could not remove iOS release temporary files at $tmp." >&2
+      cleanup_failed=1
+    fi
   fi
-  rm -rf "$lockdir"
+  if ! apple_signing_lock_release; then
+    echo "Could not release the Apple signing lock." >&2
+    cleanup_failed=1
+  fi
+  if (( status == 0 && cleanup_failed != 0 )); then
+    status=1
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
+if (( ios_uses_apple_keychain == 1 )); then
+  apple_signing_lock_acquire
+fi
 
 if ! load_secret EXPO_TOKEN; then
   echo "EXPO_TOKEN is required to publish OTA that installed TestFlight binaries poll." >&2
   exit 1
 fi
 
-if ! command -v vp >/dev/null; then
-  echo "vp is required on macos-release to publish mobile OTA." >&2
+if ! ensure_vite_plus "to publish mobile OTA"; then
   exit 1
 fi
 
 vp i --filter=@t3tools/mobile... --filter=@t3tools/scripts...
 
+# Bundling does not catch undefined identifiers; build 86 crashed before mount.
+# Stop before publishing OTA or submitting a native binary if mobile types fail.
+vp run --filter @t3tools/mobile typecheck
+
 pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
 export PATH="${HOME}/.vite-plus/package_manager/pnpm/${pnpm_version}/pnpm/bin:${PATH}"
 
-if ! command -v npm >/dev/null; then
-  echo "npm is required on macos-release to install eas-cli." >&2
+if ! vite_plus_install_global_cli eas-cli eas; then
+  echo "eas-cli is required to publish mobile OTA." >&2
   exit 1
 fi
-if ! command -v eas >/dev/null; then
-  npm install -g eas-cli
-fi
-export PATH="$(npm prefix -g)/bin:${PATH}"
 command -v eas
 eas --version
 
@@ -362,6 +831,287 @@ restore_eas_json() {
   fi
 }
 
+# Pin Internal only on the iOS TestFlight / EAS cloud path. The production
+# eas.json profile is also what public Android uses against a different EAS
+# project, so this script must not default Internal for every mode or caller.
+require_ios_internal_flavor() {
+  local current="${T3CODE_BUILD_FLAVOR:-}"
+  if [[ -n "$current" && "$current" != "internal" ]]; then
+    echo "iOS TestFlight requires T3CODE_BUILD_FLAVOR=internal; got $current." \
+      "Refusing to pin Internal onto a non-iOS or public path." >&2
+    exit 1
+  fi
+  export T3CODE_BUILD_FLAVOR=internal
+  export EXPO_PUBLIC_T3CODE_BUILD_FLAVOR=internal
+  export VITE_T3CODE_BUILD_FLAVOR=internal
+}
+
+configure_eas_build_fingerprint() {
+  local expected_fingerprint="$1"
+  # Only the iOS TestFlight call site passes "internal". Omit flavor keys when
+  # this helper is reused for fingerprint-only or public Android paths that
+  # share eas.build.production.env.
+  local build_flavor="${2:-}"
+  export EXPO_UPDATES_FINGERPRINT_OVERRIDE="$expected_fingerprint"
+  node --input-type=module - "$eas_json" "$expected_fingerprint" "$build_flavor" <<'NODE'
+import fs from "node:fs";
+const [easJsonPath, expectedFingerprint, buildFlavor] = process.argv.slice(2);
+const eas = JSON.parse(fs.readFileSync(easJsonPath, "utf8"));
+eas.build ??= {};
+eas.build.production ??= {};
+const env = {
+  ...eas.build.production.env,
+  EXPO_UPDATES_FINGERPRINT_OVERRIDE: expectedFingerprint,
+};
+if (buildFlavor === "internal") {
+  env.T3CODE_BUILD_FLAVOR = "internal";
+  env.EXPO_PUBLIC_T3CODE_BUILD_FLAVOR = "internal";
+  env.VITE_T3CODE_BUILD_FLAVOR = "internal";
+}
+eas.build.production.env = env;
+fs.writeFileSync(easJsonPath, `${JSON.stringify(eas, null, 2)}\n`);
+NODE
+}
+
+configure_eas_submit_credentials() {
+  local key_path="$1"
+  local key_id="$2"
+  local issuer="$3"
+  node --input-type=module - "$eas_json" "$key_path" "$key_id" "$issuer" <<'NODE'
+import fs from "node:fs";
+const [easJsonPath, keyPath, keyId, issuer] = process.argv.slice(2);
+const eas = JSON.parse(fs.readFileSync(easJsonPath, "utf8"));
+eas.submit ??= {};
+eas.submit.production ??= {};
+eas.submit.production.ios = {
+  ...eas.submit.production.ios,
+  ascApiKeyPath: keyPath,
+  ascApiKeyId: keyId,
+  ascApiKeyIssuerId: issuer,
+};
+fs.writeFileSync(easJsonPath, `${JSON.stringify(eas, null, 2)}\n`);
+NODE
+}
+
+read_eas_cloud_build_details() {
+  local cloud_build_json="$1"
+  node --input-type=module - "$cloud_build_json" <<'NODE'
+import fs from "node:fs";
+const raw = fs.readFileSync(process.argv[2], "utf8").trim();
+const values = [];
+for (let start = 0; start < raw.length; start += 1) {
+  if (raw[start] !== "{" && raw[start] !== "[") continue;
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+  for (let end = start; end < raw.length; end += 1) {
+    const character = raw[end];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+    } else if (character === "{") {
+      stack.push("}");
+    } else if (character === "[") {
+      stack.push("]");
+    } else if (character === "}" || character === "]") {
+      if (stack.pop() !== character) break;
+      if (stack.length === 0) {
+        let parsed = false;
+        try {
+          values.push(JSON.parse(raw.slice(start, end + 1)));
+          parsed = true;
+        } catch {
+          // A non-JSON progress fragment may wrap later JSON. Keep scanning
+          // from the next opener instead of skipping the entire fragment.
+        }
+        if (parsed) start = end;
+        break;
+      }
+    }
+  }
+}
+const candidates = values.flatMap((value) =>
+  Array.isArray(value) ? value : Array.isArray(value?.builds) ? value.builds : [value],
+);
+const nonEmptyString = (value) => (typeof value === "string" && value.trim() ? value : "");
+const archiveUrlFor = (candidate) =>
+  nonEmptyString(candidate?.artifacts?.applicationArchiveUrl) ||
+  nonEmptyString(candidate?.artifacts?.buildUrl);
+const build = [...candidates].reverse().find((candidate) => {
+  return nonEmptyString(candidate?.id) && archiveUrlFor(candidate);
+});
+const id = nonEmptyString(build?.id);
+const artifactUrl = archiveUrlFor(build);
+if (!id) {
+  throw new Error("eas build --json did not include a completed build with an id and archive");
+}
+if (!artifactUrl) {
+  throw new Error("eas build --json did not include an application archive URL");
+}
+process.stdout.write(`${id}\n${artifactUrl}\n`);
+NODE
+}
+
+report_eas_cloud_build_failure() {
+  # eas build --json --wait still writes the failed build object to stdout. The
+  # CLI's "✖ Build failed" line is all Buildkite sees unless that JSON is printed.
+  local cloud_build_json="$1"
+  if [[ ! -f "$cloud_build_json" ]]; then
+    echo "EAS cloud build produced no JSON output." >&2
+    return 0
+  fi
+  node --input-type=module - "$cloud_build_json" <<'NODE'
+import fs from "node:fs";
+const raw = fs.readFileSync(process.argv[2], "utf8").trim();
+if (!raw) {
+  console.error("EAS cloud build JSON was empty.");
+  process.exit(0);
+}
+const values = [];
+for (let start = 0; start < raw.length; start += 1) {
+  if (raw[start] !== "{" && raw[start] !== "[") continue;
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+  for (let end = start; end < raw.length; end += 1) {
+    const character = raw[end];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+    } else if (character === "{") {
+      stack.push("}");
+    } else if (character === "[") {
+      stack.push("]");
+    } else if (character === "}" || character === "]") {
+      if (stack.pop() !== character) break;
+      if (stack.length === 0) {
+        let parsed = false;
+        try {
+          values.push(JSON.parse(raw.slice(start, end + 1)));
+          parsed = true;
+        } catch {
+          // Keep scanning from the next opener.
+        }
+        if (parsed) start = end;
+        break;
+      }
+    }
+  }
+}
+const candidates = values.flatMap((value) =>
+  Array.isArray(value) ? value : Array.isArray(value?.builds) ? value.builds : [value],
+);
+const nonEmptyString = (value) => (typeof value === "string" && value.trim() ? value : "");
+const build = [...candidates].reverse().find((candidate) => {
+  if (!candidate || typeof candidate !== "object") return false;
+  return Boolean(
+    nonEmptyString(candidate.id) ||
+      nonEmptyString(candidate.status) ||
+      nonEmptyString(candidate.error?.message) ||
+      nonEmptyString(candidate.error?.errorCode) ||
+      nonEmptyString(candidate.message),
+  );
+});
+if (!build) {
+  console.error("EAS cloud build JSON had no status, id, or error fields.");
+  process.exit(0);
+}
+const owner = process.env.T3CODE_MOBILE_EXPO_OWNER || "sergeserbinenkoteam";
+const slug = process.env.T3CODE_MOBILE_EXPO_SLUG || "t3-pretty";
+const id = nonEmptyString(build.id);
+const lines = [
+  `EAS cloud build id=${id || "unknown"}`,
+  `status=${nonEmptyString(build.status) || "unknown"}`,
+];
+const phase = nonEmptyString(build.buildPhase) || nonEmptyString(build.phase);
+if (phase) lines.push(`phase=${phase}`);
+const errorCode = nonEmptyString(build.error?.errorCode) || nonEmptyString(build.error?.code);
+if (errorCode) lines.push(`errorCode=${errorCode}`);
+const message = nonEmptyString(build.error?.message) || nonEmptyString(build.message);
+if (message) lines.push(`error=${message}`);
+const logs =
+  nonEmptyString(build.logUrl) ||
+  nonEmptyString(build.logsUrl) ||
+  (id ? `https://expo.dev/accounts/${owner}/projects/${slug}/builds/${id}` : "");
+if (logs) lines.push(`logs=${logs}`);
+console.error(lines.join("\n"));
+NODE
+}
+
+verify_ipa_fingerprint() {
+  local ipa_path="$1"
+  local expected_fingerprint="$2"
+  local fingerprint_entry
+  local runtime_plist_entry
+  local embedded_fingerprint
+  local runtime_reader
+  if ! command -v unzip >/dev/null; then
+    echo "unzip is required to verify the iOS runtime fingerprint before TestFlight submit." >&2
+    return 1
+  fi
+  if [[ ! -f "$ipa_path" ]]; then
+    echo "Cannot verify iOS runtime fingerprint: IPA is missing at $ipa_path." >&2
+    return 1
+  fi
+  fingerprint_entry="$({ unzip -Z1 "$ipa_path" 2>/dev/null || true; } | awk '
+    /^Payload\/[^\/]+\.app\/EXUpdates\.bundle\/fingerprint$/ && !entry { entry = $0 }
+    END { print entry }
+  ')"
+  if [[ -n "$fingerprint_entry" ]]; then
+    embedded_fingerprint="$(unzip -p "$ipa_path" "$fingerprint_entry" 2>/dev/null | tr -d '[:space:]')"
+  else
+    runtime_plist_entry="$({ unzip -Z1 "$ipa_path" 2>/dev/null || true; } | awk '
+      /^Payload\/[^\/]+\.app\/Expo\.plist$/ && !entry { entry = $0 }
+      END { print entry }
+    ')"
+    if [[ -z "$runtime_plist_entry" ]]; then
+      echo "Cannot verify iOS runtime fingerprint: neither EXUpdates.bundle/fingerprint nor Expo.plist is present." >&2
+      return 1
+    fi
+    runtime_reader="${root:-}/scripts/fork/read-expo-runtime-version.mjs"
+    if [[ ! -f "$runtime_reader" ]]; then
+      echo "Cannot verify iOS runtime fingerprint: Expo.plist reader is missing at $runtime_reader." >&2
+      return 1
+    fi
+    embedded_fingerprint="$(
+      unzip -p "$ipa_path" "$runtime_plist_entry" 2>/dev/null |
+        node "$runtime_reader" |
+        tr -d '[:space:]'
+    )" || true
+    if [[ -z "$embedded_fingerprint" ]]; then
+      echo "Cannot verify iOS runtime fingerprint: Expo.plist has no valid EXUpdatesRuntimeVersion." >&2
+      return 1
+    fi
+  fi
+  if [[ -z "$embedded_fingerprint" ]]; then
+    echo "Cannot verify iOS runtime fingerprint: embedded fingerprint is empty." >&2
+    return 1
+  fi
+  if [[ "$embedded_fingerprint" != "$expected_fingerprint" ]]; then
+    echo "Embedded iOS runtime fingerprint mismatch: expected $expected_fingerprint, got $embedded_fingerprint. Refusing TestFlight submit." >&2
+    return 1
+  fi
+  printf '%s\n' "$embedded_fingerprint"
+}
+
 if [[ "$MODE" == "update" || "$MODE" == "release" ]]; then
   # The path filter ran before the publish lock; a newer job may have
   # released while this one waited on it. Re-check coverage with the lock
@@ -375,17 +1125,15 @@ if [[ "$MODE" == "update" || "$MODE" == "release" ]]; then
     if [[ "$MODE" == "release" ]]; then
       update_platform=all
     fi
-    (
-      cd apps/mobile
-      eas update \
-        --channel production \
-        --environment production \
-        --platform "$update_platform" \
-        --message "$update_message" \
-        --non-interactive
-    )
-    echo "Published production OTA for ${update_platform}."
-    record_local_ota_publish
+    expo_cap_report="$(ios_expo_daily_cap_eval)"
+    echo "$expo_cap_report"
+    if ios_expo_cap_blocks update "$expo_cap_report"; then
+      annotate warning "$(ios_expo_cap_skip_message update "$expo_cap_report")"
+    else
+      publish_production_ota "$update_platform" "$update_message"
+      echo "Published production OTA for ${update_platform}."
+      record_local_ota_publish
+    fi
   else
     echo "Production OTA already covers mobile content at ${commit}; skipping eas update."
   fi
@@ -394,6 +1142,14 @@ fi
 if [[ "$MODE" != "build" && "$MODE" != "release" ]]; then
   exit 0
 fi
+
+# Buildkite sets Internal on the Mac. The EAS worker does not inherit pipeline
+# env — only eas.json profile env and the EAS "production" environment. Pin
+# Internal here, on the iOS native/TestFlight path only, so prebuild emits
+# T3PrettyInternal / com.sergeserbinenko.t3pretty and Configure Xcode finds
+# the target credentials still point at. Do not default this at script top:
+# public Android reuses the production profile against another EAS project.
+require_ios_internal_flavor
 
 fingerprint_file="$tmp/ios-fingerprint.json"
 builds_file="$tmp/ios-builds.json"
@@ -413,29 +1169,27 @@ fingerprint=""
     --non-interactive > "$fingerprint_file"; do
     fingerprint_attempts=$((fingerprint_attempts + 1))
     if (( fingerprint_attempts >= 2 )); then
-      echo "Could not generate the iOS fingerprint; building a native binary to be safe."
-      printf 'placeholder\n' > "$fingerprint_file"
-      printf 'should_build=true\nfingerprint=unknown\n' > "$gate_file"
-      exit 0
+      echo "Could not generate a stable iOS fingerprint; refusing a native build." >&2
+      exit 1
     fi
     echo "iOS fingerprint generation flaked; retrying once."
     sleep 10
   done
-  if ! eas build:list \
-    --platform ios \
-    --build-profile production \
-    --distribution store \
-    --limit 20 \
-    --json \
-    --non-interactive > "$builds_file"; then
-    echo "[]" > "$builds_file"
-  fi
 )
+if ! node "$root/scripts/fork/eas-cloud-build.mjs" --list-builds \
+  --mobile-dir "$root/apps/mobile" \
+  --app-id "${T3CODE_MOBILE_EAS_PROJECT_ID}" \
+  --limit 20 > "$builds_file"; then
+  echo "eas build:list / Expo GraphQL failed; native gate will rely on the local inflight record." >&2
+  echo "[]" > "$builds_file"
+fi
 
 if [[ ! -f "$gate_file" ]]; then
-  submitted_fingerprint=""
+  submitted_fingerprint_file="$tmp/ios-submitted-fingerprint"
   if [[ -f .t3-fork/ios-production-fingerprint ]]; then
-    submitted_fingerprint="$(tr -d '[:space:]' < .t3-fork/ios-production-fingerprint)"
+    cp .t3-fork/ios-production-fingerprint "$submitted_fingerprint_file"
+  else
+    : > "$submitted_fingerprint_file"
   fi
   # Trust the recorded fingerprint, including one left by the old GitHub
   # Actions importer. Installed TestFlight binaries pick up JS via OTA.
@@ -449,7 +1203,8 @@ if [[ ! -f "$gate_file" ]]; then
   node scripts/fork/resolve-ios-native-build.mjs \
     --fingerprint-file "$fingerprint_file" \
     --builds-file "$builds_file" \
-    --submitted-fingerprint "$submitted_fingerprint" \
+    --submitted-fingerprint-file "$submitted_fingerprint_file" \
+    --inflight-file "$LOCAL_EAS_INFLIGHT" \
     --force "$force_flag"
 fi
 if ! grep -q '^should_build=' "$gate_file"; then
@@ -459,28 +1214,75 @@ if ! grep -q '^should_build=' "$gate_file"; then
 fi
 should_build="$(awk -F= '/^should_build=/ { print $2 }' "$gate_file" | tail -n 1)"
 fingerprint="$(awk -F= '/^fingerprint=/ { print $2 }' "$gate_file" | tail -n 1)"
+reuse_build_id="$(awk '/^reuse_build_id=/ { print substr($0, index($0, "=") + 1) }' "$gate_file" | tail -n 1)"
+reuse_artifact_url="$(awk '/^reuse_artifact_url=/ { print substr($0, index($0, "=") + 1) }' "$gate_file" | tail -n 1)"
+reuse_status="$(awk '/^reuse_status=/ { print substr($0, index($0, "=") + 1) }' "$gate_file" | tail -n 1)"
 
 echo "iOS native binary fingerprint=${fingerprint:-unknown} should_build=${should_build}"
+if [[ -n "$reuse_build_id" && ( -n "$reuse_artifact_url" || "$reuse_status" == "finished" ) ]]; then
+  echo "Finished EAS cloud IPA $reuse_build_id matches this runtime; TestFlight submit can reuse it."
+elif [[ -n "$reuse_build_id" ]]; then
+  echo "In-flight EAS cloud IPA $reuse_build_id matches this runtime; reattaching instead of starting another."
+fi
 
 if [[ "$should_build" != "true" ]]; then
   annotate info "Native fingerprint is unchanged; TestFlight.app will not get a new build. Installed binaries pick up JS via OTA."
   exit 0
 fi
+if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
+  annotate error "A stable iOS runtime fingerprint is required before compiling or submitting TestFlight. Refusing an unverifiable build."
+  exit 1
+fi
 
 is_full_xcode() {
   [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]] || return 1
   # leftover Xcode.app on macOS 27 can exist without being runnable.
-  if DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version >/dev/null 2>&1; then
-    return 0
+  local version_output
+  if ! version_output="$(DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version 2>/dev/null)"; then
+    echo "Skipping $1: xcodebuild -version failed." >&2
+    return 1
   fi
-  echo "Skipping $1: xcodebuild -version failed." >&2
+  if [[ "$1" == *Xcode-beta.app* || -f "$1/../Resources/BetaVersion.plist" ]]; then
+    local accepted_beta_build="${T3CODE_ACCEPTED_XCODE_BETA_BUILD:-27A5252f}"
+    local beta_build
+    beta_build="$(sed -n 's/^Build version //p' <<< "$version_output" | head -n 1)"
+    if [[ "$beta_build" != "$accepted_beta_build" ]]; then
+      echo "Skipping $1: beta build ${beta_build:-unknown}; accepted beta is $accepted_beta_build." >&2
+      return 1
+    fi
+  fi
+  return 0
+}
+
+prefer_local_xcode_ios() {
+  case "${T3CODE_IOS_LOCAL_XCODE:-}" in
+    true | TRUE | 1 | yes | YES) return 0 ;;
+  esac
   return 1
 }
 
-# Prefer a full Xcode.app, then Xcode-beta.app, if xcodebuild actually runs.
-# Command Line Tools cannot compile an IPA. TestFlight currently accepts
-# Xcode 27 beta 5 (27A5237l). This Mac is on macOS 27 developer beta so a
-# leftover Xcode.app often cannot run and Xcode-beta.app is the toolchain.
+# Cloud is the fallback when this agent has no usable Xcode. Force cloud
+# even on a Mac with Xcode via T3CODE_IOS_ALLOW_EAS_CLOUD / PREFER_EAS_CLOUD.
+prefer_eas_cloud_ios() {
+  case "${T3CODE_IOS_ALLOW_EAS_CLOUD:-${T3CODE_IOS_PREFER_EAS_CLOUD:-}}" in
+    true | TRUE | 1 | yes | YES) return 0 ;;
+  esac
+  return 1
+}
+
+# Review-only agents and non-Darwin hosts must not compile a local IPA.
+# Windows/Linux have no Xcode; do not set T3CODE_FORCE_IOS here.
+if [[ "${T3_PRETTY_REVIEW_ONLY:-}" == "1" || "$ios_host" != "Darwin" ]]; then
+  export T3CODE_IOS_ALLOW_EAS_CLOUD="${T3CODE_IOS_ALLOW_EAS_CLOUD:-1}"
+  unset T3CODE_IOS_LOCAL_XCODE
+fi
+
+# Prefer a stable full Xcode.app if xcodebuild actually runs. Command Line
+# Tools cannot compile an IPA. The current Apple-listed beta is accepted for
+# macOS developer builds; stale betas are skipped. Without a usable Xcode
+# the job uses EAS cloud (no Mac required). T3CODE_IOS_LOCAL_XCODE=1 restores
+# the #676 fail-closed local-only path. Override
+# T3CODE_ACCEPTED_XCODE_BETA_BUILD when Apple advances the listed beta.
 # Origin's pipeline upload rejects `interruptible`, so a later main push
 # can still cancel this job. Do not merge unrelated main PRs during an IPA.
 developer_dir=""
@@ -496,11 +1298,29 @@ else
 fi
 
 ipa_via_cloud=false
-if ! is_full_xcode "$developer_dir"; then
-  ipa_via_cloud=true
+if prefer_local_xcode_ios && ! is_full_xcode "$developer_dir"; then
   ls -ld /Applications/Xcode*.app 2>/dev/null || echo "No Xcode*.app under /Applications."
   xcode-select -p 2>/dev/null || true
-  annotate info "No full Xcode on this Mac (need Xcode.app or Xcode-beta.app, not Command Line Tools). Compiling the TestFlight IPA on EAS cloud."
+  annotate error "T3CODE_IOS_LOCAL_XCODE is set but this agent has no full Xcode.app. Install Xcode on a macos-release Mac or unset the flag to compile the TestFlight IPA on EAS cloud."
+  exit 1
+fi
+if is_full_xcode "$developer_dir" && ! prefer_eas_cloud_ios; then
+  :
+else
+  ipa_via_cloud=true
+  if is_full_xcode "$developer_dir"; then
+    annotate info "T3CODE_IOS_ALLOW_EAS_CLOUD is set; compiling the TestFlight IPA on EAS cloud instead of local Xcode."
+  else
+    annotate info "No full Xcode on this agent. Compiling the TestFlight IPA on EAS cloud."
+  fi
+fi
+if ! command -v unzip >/dev/null; then
+  echo "unzip is required to verify the iOS runtime fingerprint before TestFlight submit." >&2
+  exit 1
+fi
+if [[ "$ipa_via_cloud" == "true" ]] && ! command -v curl >/dev/null; then
+  echo "curl is required to verify an EAS cloud IPA before TestFlight submit." >&2
+  exit 1
 fi
 
 load_secret APPLE_API_KEY
@@ -511,6 +1331,9 @@ export APPLE_TEAM_ID="${APPLE_TEAM_ID:-78A5P57U23}"
 export T3CODE_APPLE_TEAM_ID="${T3CODE_APPLE_TEAM_ID:-$APPLE_TEAM_ID}"
 load_secret CURSOR_API_KEY 0
 
+# EAS Build can use this API key to create or refresh signing credentials in
+# non-interactive mode. Keep it in the process environment for the build, but
+# do not add its randomized path to fingerprinted eas.json until submission.
 key_path="$tmp/AuthKey_${APPLE_API_KEY_ID}.p8"
 printf '%s' "$APPLE_API_KEY" > "$key_path"
 chmod 600 "$key_path"
@@ -520,65 +1343,98 @@ export EXPO_ASC_ISSUER_ID="$APPLE_API_ISSUER"
 export EXPO_APPLE_TEAM_ID="$APPLE_TEAM_ID"
 export EXPO_APPLE_TEAM_TYPE=INDIVIDUAL
 
+cp "$eas_json" "$tmp/eas.json.bak"
 eas_json_bak="$tmp/eas.json.bak"
-cp "$eas_json" "$eas_json_bak"
-node --input-type=module - "$key_path" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER" <<'NODE'
-import fs from "node:fs";
-const [keyPath, keyId, issuer] = process.argv.slice(2);
-const easJsonPath = "apps/mobile/eas.json";
-const eas = JSON.parse(fs.readFileSync(easJsonPath, "utf8"));
-eas.submit ??= {};
-eas.submit.production ??= {};
-eas.submit.production.ios = {
-  ...eas.submit.production.ios,
-  ascApiKeyPath: keyPath,
-  ascApiKeyId: keyId,
-  ascApiKeyIssuerId: issuer,
-};
-fs.writeFileSync(easJsonPath, `${JSON.stringify(eas, null, 2)}\n`);
-NODE
+configure_eas_build_fingerprint "$fingerprint" internal
+
+ipa_path="$tmp/t3-pretty.ipa"
+build_source="local Xcode"
 
 if [[ "$ipa_via_cloud" == "true" ]]; then
-  cloud_build_json="$tmp/eas-cloud-build.json"
-  (
-    cd apps/mobile
-    eas build \
-      --platform ios \
-      --profile production \
-      --non-interactive \
-      --wait \
-      --json > "$cloud_build_json"
-  )
-  build_id="$(
-    node --input-type=module - "$cloud_build_json" <<'NODE'
-import fs from "node:fs";
-const raw = fs.readFileSync(process.argv[2], "utf8").trim();
-let data;
-try {
-  data = JSON.parse(raw);
-} catch {
-  const start = Math.max(raw.lastIndexOf("\n{") + 1, raw.lastIndexOf("{"));
-  data = JSON.parse(raw.slice(start));
-}
-const build = Array.isArray(data) ? data[data.length - 1] : data;
-const id = typeof build?.id === "string" ? build.id : "";
-if (!id) {
-  throw new Error("eas build --json did not include a build id");
-}
-process.stdout.write(`${id}\n`);
-NODE
-  )"
-  (
-    cd apps/mobile
-    eas submit \
-      --platform ios \
-      --profile production \
-      --id "$build_id" \
-      --non-interactive
-  )
-  record_local_native_submit "$commit"
-  annotate success "Submitted TestFlight IPA via EAS cloud"
-  restore_eas_json
+  if [[ -n "$reuse_build_id" ]]; then
+    build_id="$reuse_build_id"
+    artifact_url="$reuse_artifact_url"
+    if [[ -n "$artifact_url" ]]; then
+      annotate info "Reusing finished EAS cloud IPA $build_id; not spending another Expo build credit."
+    else
+      annotate info "Reattaching to EAS cloud IPA $build_id; not spending another Expo build credit."
+      cloud_build_details="$(await_eas_cloud_build "$reuse_build_id" "$fingerprint" "$commit")"
+      if [[ -z "$cloud_build_details" ]]; then
+        annotate warning "EAS cloud IPA $build_id wait returned empty (soft-exit in subshell). Next ios-mobile will reattach."
+        restore_eas_json
+        exit 0
+      fi
+      build_id="$(sed -n '1p' <<< "$cloud_build_details")"
+      artifact_url="$(sed -n '2p' <<< "$cloud_build_details")"
+    fi
+  else
+    expo_cap_report="$(ios_expo_daily_cap_eval)"
+    echo "$expo_cap_report"
+    if ios_expo_cap_blocks build "$expo_cap_report"; then
+      annotate warning "$(ios_expo_cap_skip_message build "$expo_cap_report")"
+      exit 0
+    fi
+    cloud_build_json="$tmp/eas-cloud-build.json"
+    if ! (
+      cd apps/mobile
+      eas build \
+        --platform ios \
+        --profile production \
+        --non-interactive \
+        --no-wait \
+        --json > "$cloud_build_json"
+    ); then
+      created_state="$(read_eas_cloud_build_state "$cloud_build_json" || true)"
+      created_id="$(ios_expo_daily_cap_field "$created_state" id)"
+      created_kind="$(ios_expo_daily_cap_field "$created_state" kind)"
+      created_status="$(ios_expo_daily_cap_field "$created_state" status)"
+      created_number="$(ios_expo_daily_cap_field "$created_state" build_number)"
+      if [[ -n "$created_id" && "$created_kind" != "failed" ]]; then
+        record_local_eas_inflight "$created_id" "$fingerprint" "$commit" "$created_number" "$created_status" || true
+        soft_exit_known_eas_cloud_build "$created_id" "create returned an id but the CLI exited; build id is persisted"
+      fi
+      echo "EAS cloud iOS build failed." >&2
+      report_eas_cloud_build_failure "$cloud_build_json"
+      exit 1
+    fi
+    created_state="$(read_eas_cloud_build_state "$cloud_build_json")"
+    build_id="$(ios_expo_daily_cap_field "$created_state" id)"
+    if [[ -z "$build_id" ]]; then
+      echo "EAS cloud iOS build did not return an id." >&2
+      report_eas_cloud_build_failure "$cloud_build_json"
+      exit 1
+    fi
+    created_kind="$(ios_expo_daily_cap_field "$created_state" kind)"
+    created_status="$(ios_expo_daily_cap_field "$created_state" status)"
+    created_number="$(ios_expo_daily_cap_field "$created_state" build_number)"
+    created_artifact="$(ios_expo_daily_cap_field "$created_state" artifact_url)"
+    echo "Submitted EAS cloud IPA $build_id (status=${created_status:-unknown}); not using eas build --wait."
+    record_local_eas_inflight "$build_id" "$fingerprint" "$commit" "$created_number" "$created_status"
+    if [[ "$created_kind" == "failed" ]]; then
+      echo "EAS cloud iOS build failed." >&2
+      report_eas_cloud_build_failure "$cloud_build_json"
+      exit 1
+    fi
+    if [[ "$created_kind" == "finished" && -n "$created_artifact" ]]; then
+      artifact_url="$created_artifact"
+    else
+      cloud_build_details="$(await_eas_cloud_build "$build_id" "$fingerprint" "$commit" "$created_number")"
+      if [[ -z "$cloud_build_details" ]]; then
+        annotate warning "EAS cloud IPA $build_id wait returned empty (soft-exit in subshell). Next ios-mobile will reattach."
+        restore_eas_json
+        exit 0
+      fi
+      build_id="$(sed -n '1p' <<< "$cloud_build_details")"
+      artifact_url="$(sed -n '2p' <<< "$cloud_build_details")"
+    fi
+  fi
+  artifact_url="${artifact_url//[[:space:]]/}"
+  if [[ -z "$artifact_url" || "$artifact_url" != http* ]]; then
+    echo "EAS cloud IPA ${build_id:-unknown} has no valid application archive URL: '${artifact_url:-empty}'." >&2
+    exit 1
+  fi
+  curl --fail --location --retry 3 --output "$ipa_path" "$artifact_url"
+  build_source="EAS cloud build $build_id"
 else
   echo "Using Xcode at $developer_dir"
   export DEVELOPER_DIR="$developer_dir"
@@ -595,6 +1451,9 @@ else
 
   mkdir -p "$HOME/.cache/t3-pretty-release/cocoapods"
   export CP_HOME_DIR="$HOME/.cache/t3-pretty-release/cocoapods"
+  # Homebrew 5 prompts on a TTY before installing deps; the LaunchAgent has one.
+  export HOMEBREW_NO_ASK=1
+  export HOMEBREW_NO_AUTO_UPDATE=1
   if ! command -v pod >/dev/null; then
     brew install cocoapods
   fi
@@ -610,7 +1469,6 @@ else
   chmod +x "$security_wrap/security"
   export PATH="$security_wrap:$PATH"
 
-  ipa_path="$tmp/t3-pretty.ipa"
   export EAS_LOCAL_BUILD_ARTIFACTS_DIR="$tmp/eas-artifacts"
   mkdir -p "$EAS_LOCAL_BUILD_ARTIFACTS_DIR"
 
@@ -628,47 +1486,39 @@ else
   fi
   test -n "$ipa_path"
   test -f "$ipa_path"
-
-  # Fastlane pilot uploads a TestFlight build. This is not App Store review.
-  (
-    cd apps/mobile
-    eas submit \
-      --platform ios \
-      --profile production \
-      --path "$ipa_path" \
-      --non-interactive
-  )
-  record_local_native_submit "$commit"
-  annotate success "Submitted TestFlight IPA $ipa_path"
-  restore_eas_json
 fi
 
-if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
-  echo "Fingerprint was unknown at compile time; generating after TestFlight submit."
-  retry="$tmp/ios-fingerprint-retry.json"
-  retry_builds="$tmp/ios-builds-retry.json"
-  retry_gate="$tmp/ios-gate-retry.txt"
-  printf '[]\n' > "$retry_builds"
-  if (
-    cd apps/mobile
-    eas fingerprint:generate \
-      --platform ios \
-      --build-profile production \
-      --json \
-      --non-interactive > "$retry"
-  ); then
-    GITHUB_OUTPUT="$retry_gate" node scripts/fork/resolve-ios-native-build.mjs \
-      --fingerprint-file "$retry" \
-      --builds-file "$retry_builds" \
-      --submitted-fingerprint "" \
-      --force false
-    fingerprint="$(awk -F= '/^fingerprint=/ { print $2 }' "$retry_gate" | tail -n 1)"
-  fi
+verified_fingerprint=""
+if ! verified_fingerprint="$(verify_ipa_fingerprint "$ipa_path" "$fingerprint")"; then
+  annotate error "The $build_source IPA does not embed the OTA runtime fingerprint. TestFlight submit was blocked."
+  exit 1
 fi
-if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
-  echo "Could not record an iOS fingerprint after TestFlight submit; the next release may compile again." >&2
-  exit 0
+fingerprint="$verified_fingerprint"
+echo "Verified embedded iOS runtime fingerprint=$fingerprint in $build_source IPA."
+
+# Submission profile credentials are intentionally added only after the IPA is built.
+# eas.json is a native fingerprint source, and the temporary key path changes
+# on every run; adding it before the build makes the binary reject its own OTA.
+configure_eas_submit_credentials "$key_path" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER"
+
+# Fastlane pilot uploads a TestFlight build. This is not App Store review.
+(
+  cd apps/mobile
+  eas submit \
+    --platform ios \
+    --profile production \
+    --path "$ipa_path" \
+    --no-wait \
+    --non-interactive
+)
+record_local_native_submit "$commit"
+clear_local_eas_inflight
+if [[ "$ipa_via_cloud" == "true" ]]; then
+  annotate success "Submitted verified TestFlight IPA from EAS cloud build $build_id"
+else
+  annotate success "Submitted verified TestFlight IPA $ipa_path"
 fi
+restore_eas_json
 
 if ! load_secret CURSOR_API_KEY; then
   echo "CURSOR_API_KEY is missing; TestFlight already submitted. Skipping the fingerprint record PR." >&2
@@ -687,9 +1537,16 @@ git config user.name "t3-pretty-mobile[bot]"
 git config user.email "t3-pretty-bot@users.noreply.cursor.com"
 git commit --no-verify -m "chore(mobile): record iOS production fingerprint"
 
-branch="automation/ios-fingerprint-${fingerprint:0:12}"
-git push --force origin "HEAD:refs/heads/$branch"
+# Refresh Origin auth after the potentially long native build, before pushing.
 node scripts/fork/origin-forge.mjs setup-ci
+# Origin's credential helper inherits the environment from git.
+unset FORCE_COLOR NO_COLOR
+branch="automation/ios-fingerprint-${fingerprint:0:12}"
+git push --force origin "HEAD:refs/heads/$branch" || {
+  echo "Fingerprint branch push failed; retrying once."
+  sleep 5
+  git push --force origin "HEAD:refs/heads/$branch"
+}
 body_path="$tmp/t3-pretty-ios-fingerprint.md"
 printf '%s\n' \
   "Records the submitted iOS runtime fingerprint so later JS-only releases can skip a native rebuild." \

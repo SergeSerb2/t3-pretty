@@ -47,6 +47,16 @@ const openServer = (host?: string): Effect.Effect<NodeNet.Server, NetService.Net
 
 it.layer(NetService.layer)("NetService", (it) => {
   describe("Net helpers", () => {
+    it.effect("rejects invalid ports without opening a socket", () =>
+      Effect.gen(function* () {
+        const net = yield* NetService.NetService;
+
+        assert.equal(yield* net.canListenOnHost(Number.NaN, "127.0.0.1"), false);
+        assert.equal(yield* net.hasListenerOnHost(65_536, "127.0.0.1"), false);
+        assert.equal(yield* net.isPortAvailableOnLoopback(-1), false);
+      }),
+    );
+
     it.effect("reserveLoopbackPort returns a positive loopback port", () =>
       Effect.gen(function* () {
         const net = yield* NetService.NetService;

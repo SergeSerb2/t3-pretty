@@ -18,6 +18,7 @@ import {
   ProjectionTurn,
   ProjectionTurnById,
   ProjectionTurnRepository,
+  SettleRunningProjectionTurnsInput,
   type ProjectionTurnRepositoryShape,
 } from "../Services/ProjectionTurns.ts";
 
@@ -229,6 +230,21 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
       `,
   });
 
+  const settleRunningProjectionTurns = SqlSchema.void({
+    Request: SettleRunningProjectionTurnsInput,
+    execute: ({ threadId, state, completedAt, excludedTurnId }) =>
+      sql`
+        UPDATE projection_turns
+        SET
+          state = ${state},
+          completed_at = ${completedAt}
+        WHERE thread_id = ${threadId}
+          AND turn_id IS NOT NULL
+          AND state = 'running'
+          AND (${excludedTurnId} IS NULL OR turn_id <> ${excludedTurnId})
+      `,
+  });
+
   const clearCheckpointTurnConflictRow = SqlSchema.void({
     Request: ClearCheckpointTurnConflictInput,
     execute: ({ threadId, turnId, checkpointTurnCount }) =>
@@ -317,10 +333,18 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
       ),
       Effect.flatMap((rowOption) =>
         Option.match(rowOption, {
-          onNone: () => Effect.succeed(Option.none()),
-          onSome: (row) =>
-            Effect.succeed(Option.some(row as Schema.Schema.Type<typeof ProjectionTurnById>)),
+          onNone: () => Effect.succeedNone,
+          onSome: (row) => Effect.succeedSome(row as Schema.Schema.Type<typeof ProjectionTurnById>),
         }),
+      ),
+    );
+
+  const settleRunningByThreadId: ProjectionTurnRepositoryShape["settleRunningByThreadId"] = (
+    input,
+  ) =>
+    settleRunningProjectionTurns(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlError("ProjectionTurnRepository.settleRunningByThreadId:query"),
       ),
     );
 
@@ -344,6 +368,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
     deletePendingTurnStartByThreadId,
     listByThreadId,
     getByTurnId,
+    settleRunningByThreadId,
     clearCheckpointTurnConflict,
     deleteByThreadId,
   } satisfies ProjectionTurnRepositoryShape;

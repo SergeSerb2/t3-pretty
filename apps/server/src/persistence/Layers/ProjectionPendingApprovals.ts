@@ -2,11 +2,11 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
   GetProjectionPendingApprovalInput,
-  DeleteProjectionPendingApprovalInput,
   ListProjectionPendingApprovalsInput,
   ProjectionPendingApproval,
   ProjectionPendingApprovalRepository,
@@ -86,12 +86,23 @@ const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
       `,
   });
 
-  const deleteProjectionPendingApprovalRow = SqlSchema.void({
-    Request: DeleteProjectionPendingApprovalInput,
-    execute: ({ requestId }) =>
+  const countPendingProjectionApprovalRows = SqlSchema.findOne({
+    Request: ListProjectionPendingApprovalsInput,
+    Result: Schema.Struct({ count: Schema.Number }),
+    execute: ({ threadId }) =>
+      sql`
+        SELECT COUNT(*) AS count
+        FROM projection_pending_approvals
+        WHERE thread_id = ${threadId}
+          AND status = 'pending'
+      `,
+  });
+  const deleteProjectionPendingApprovalRowsByThread = SqlSchema.void({
+    Request: ListProjectionPendingApprovalsInput,
+    execute: ({ threadId }) =>
       sql`
         DELETE FROM projection_pending_approvals
-        WHERE request_id = ${requestId}
+        WHERE thread_id = ${threadId}
       `,
   });
 
@@ -107,6 +118,15 @@ const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
       ),
     );
 
+  const countPendingByThreadId: ProjectionPendingApprovalRepositoryShape["countPendingByThreadId"] =
+    (input) =>
+      countPendingProjectionApprovalRows(input).pipe(
+        Effect.map((row) => row.count),
+        Effect.mapError(
+          toPersistenceSqlError("ProjectionPendingApprovalRepository.countPendingByThreadId:query"),
+        ),
+      );
+
   const getByRequestId: ProjectionPendingApprovalRepositoryShape["getByRequestId"] = (input) =>
     getProjectionPendingApprovalRow(input).pipe(
       Effect.mapError(
@@ -114,20 +134,19 @@ const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
       ),
     );
 
-  const deleteByRequestId: ProjectionPendingApprovalRepositoryShape["deleteByRequestId"] = (
-    input,
-  ) =>
-    deleteProjectionPendingApprovalRow(input).pipe(
+  const deleteByThreadId: ProjectionPendingApprovalRepositoryShape["deleteByThreadId"] = (input) =>
+    deleteProjectionPendingApprovalRowsByThread(input).pipe(
       Effect.mapError(
-        toPersistenceSqlError("ProjectionPendingApprovalRepository.deleteByRequestId:query"),
+        toPersistenceSqlError("ProjectionPendingApprovalRepository.deleteByThreadId:query"),
       ),
     );
 
   return {
     upsert,
     listByThreadId,
+    countPendingByThreadId,
     getByRequestId,
-    deleteByRequestId,
+    deleteByThreadId,
   } satisfies ProjectionPendingApprovalRepositoryShape;
 });
 

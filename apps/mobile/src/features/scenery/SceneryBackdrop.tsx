@@ -30,6 +30,7 @@ import {
   type SceneryPhoto,
 } from "./sceneryLogic";
 import { useScenery } from "./SceneryProvider";
+import { useSyncedThreadSceneryPhoto } from "./useSyncedThreadScenery";
 import { useReduceTransparency } from "./useReduceTransparency";
 
 function SceneryGradient(props: { readonly seed: string; readonly opacity?: number }) {
@@ -83,13 +84,15 @@ export function SceneryBackdrop(props: {
   const photosActive = enabled && !isBoringMobileTheme(themeId);
 
   const threadKey = props.threadKey;
+  const syncedPhoto = useSyncedThreadSceneryPhoto(photosActive ? threadKey : null);
   useEffect(() => {
-    if (photosActive && threadKey !== null) {
+    if (photosActive && threadKey !== null && syncedPhoto === null) {
       ensureThreadAssignment(threadKey);
     }
-  }, [photosActive, ensureThreadAssignment, threadKey]);
+  }, [photosActive, ensureThreadAssignment, syncedPhoto, threadKey]);
 
-  const photo: SceneryPhoto | null = threadKey !== null ? photoForThreadKey(threadKey) : dailyPhoto;
+  const photo: SceneryPhoto | null =
+    threadKey !== null ? (syncedPhoto ?? photoForThreadKey(threadKey)) : dailyPhoto;
   const renderWidth = wallpaperPixelWidth(windowWidth * PixelRatio.get());
   const imageSource = useMemo(
     () => (photo === null ? null : wallpaperURL(photo, blur, renderWidth)),

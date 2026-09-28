@@ -35,6 +35,8 @@ export interface OptimisticProjectFileTarget {
   readonly relativePath: string;
 }
 
+export const PROJECT_LARGE_QUERY_IDLE_TTL_MS = 60_000;
+
 function optimisticProjectFileKey(target: OptimisticProjectFileTarget): string {
   return JSON.stringify([target.environmentId, target.cwd, target.relativePath]);
 }
@@ -59,18 +61,19 @@ export function createProjectEnvironmentAtoms<R, E>(
       label: "environment-data:projects:search-entries",
       tag: WS_METHODS.projectsSearchEntries,
       staleTimeMs: 15_000,
+      idleTtlMs: PROJECT_LARGE_QUERY_IDLE_TTL_MS,
     }),
     listEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:list-entries",
       tag: WS_METHODS.projectsListEntries,
       staleTimeMs: 30_000,
-      idleTtlMs: 5 * 60_000,
+      idleTtlMs: PROJECT_LARGE_QUERY_IDLE_TTL_MS,
     }),
     readFile: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:read-file",
       tag: WS_METHODS.projectsReadFile,
       staleTimeMs: 30_000,
-      idleTtlMs: 5 * 60_000,
+      idleTtlMs: PROJECT_LARGE_QUERY_IDLE_TTL_MS,
     }),
     optimisticFile: (target: OptimisticProjectFileTarget) =>
       optimisticFileFamily(optimisticProjectFileKey(target)),

@@ -22,6 +22,7 @@
 import type { OrchestrationThreadActivity } from "@t3tools/contracts";
 import type { RuntimeSubagent, RuntimeSubagentStatus } from "./subagentRuntime.ts";
 import { isTerminalSubagentStatus } from "./subagentRuntime.ts";
+import { compareIsoDateTimes } from "./threadSort.ts";
 
 export type SubagentLogEntryKind = "activity" | "tool" | "status" | "result" | "error";
 
@@ -391,7 +392,7 @@ function advanceAgent(
       (entry) => entry.kind !== "tool" || entry.detail !== undefined || !richTimes.has(entry.at),
     )
     .map((entry, index) => ({ entry, index }))
-    .sort((a, b) => a.entry.at.localeCompare(b.entry.at) || a.index - b.index)
+    .sort((a, b) => compareIsoDateTimes(a.entry.at, b.entry.at) || a.index - b.index)
     .slice(-ENTRY_LIMIT)
     .map(({ entry }) => entry);
 

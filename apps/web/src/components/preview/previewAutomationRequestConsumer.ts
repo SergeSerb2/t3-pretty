@@ -13,6 +13,7 @@ import {
 } from "./previewAutomationErrors";
 
 type AutomationStreamResult<E> = AsyncResult.AsyncResult<PreviewAutomationStreamEvent, E>;
+const RECENT_AUTOMATION_REQUEST_LIMIT = 256;
 
 export function serializePreviewAutomationError(
   error: unknown,
@@ -42,6 +43,7 @@ export function createPreviewAutomationRequestConsumerAtom<E>(options: {
     let connectionExplicitlyAnnounced = false;
     let reportedConnectionId: PreviewAutomationStreamEvent["connectionId"] | null = null;
     let requestsVersion = 0;
+    const consumedRequests = new Set<string>();
 
     const consume = (result: AutomationStreamResult<E>) => {
       if (!AsyncResult.isSuccess(result)) return;
@@ -63,9 +65,15 @@ export function createPreviewAutomationRequestConsumerAtom<E>(options: {
         return;
       }
       const request = event.request;
-      void get
-        .once(options.requestHandlerAtom)
-        .handle(request)
+      const requestKey = JSON.stringify([event.connectionId, request.requestId]);
+      if (consumedRequests.has(requestKey)) return;
+      consumedRequests.add(requestKey);
+      if (consumedRequests.size > RECENT_AUTOMATION_REQUEST_LIMIT) {
+        const oldest = consumedRequests.values().next();
+        if (!oldest.done) consumedRequests.delete(oldest.value);
+      }
+      void Promise.resolve()
+        .then(() => get.once(options.requestHandlerAtom).handle(request))
         .then(
           (value) =>
             options.respond({
@@ -89,7 +97,12 @@ export function createPreviewAutomationRequestConsumerAtom<E>(options: {
                 tabId: request.tabId ?? null,
               }),
             }),
-        );
+        )
+        // A replacement connection can invalidate the response command while
+        // the desktop operation is still finishing. The server already times
+        // out or disconnects that request; do not turn the expected rejection
+        // into a renderer-wide unhandled promise.
+        .catch(() => undefined);
     };
 
     get.addFinalizer(() => {
