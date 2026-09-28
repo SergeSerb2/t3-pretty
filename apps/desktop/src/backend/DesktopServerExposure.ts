@@ -1,15 +1,18 @@
+import * as NodeNet from "node:net";
+
 import {
   createAdvertisedEndpoint,
   type CreateAdvertisedEndpointInput,
 } from "@t3tools/shared/advertisedEndpoint";
 import {
+  ADVERTISED_ENDPOINTS_MAX_ITEMS,
   DesktopServerExposureModeSchema,
   type AdvertisedEndpoint,
   type AdvertisedEndpointProvider,
   type DesktopServerExposureMode,
   type DesktopServerExposureState,
 } from "@t3tools/contracts";
-import { readTailscaleStatus } from "@t3tools/tailscale";
+import { isTailscaleIpv4Address, readTailscaleStatus } from "@t3tools/tailscale";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -27,8 +30,9 @@ import { resolveTailscaleAdvertisedEndpoints } from "./tailscaleEndpointProvider
 
 const TAILSCALE_STATUS_CACHE_TTL = Duration.seconds(60);
 
-export const DESKTOP_LOOPBACK_HOST = "127.0.0.1";
+const DESKTOP_LOOPBACK_HOST = "127.0.0.1";
 const DESKTOP_LAN_BIND_HOST = "0.0.0.0";
+const DESKTOP_LAN_HOST_MAX_LENGTH = 1_024;
 
 interface ResolvedDesktopServerExposure {
   readonly mode: DesktopServerExposureMode;
@@ -61,15 +65,36 @@ const DESKTOP_MANUAL_ENDPOINT_PROVIDER: AdvertisedEndpointProvider = {
 
 const normalizeOptionalHost = (value: string | undefined): string | undefined => {
   const normalized = value?.trim();
-  return normalized && normalized.length > 0 ? normalized : undefined;
+  if (!normalized || normalized.length > DESKTOP_LAN_HOST_MAX_LENGTH) return undefined;
+
+  try {
+    const urlHost = NodeNet.isIPv6(normalized) ? `[${normalized}]` : normalized;
+    const parsed = new URL(`http://${urlHost}`);
+    if (
+      parsed.username.length > 0 ||
+      parsed.password.length > 0 ||
+      parsed.port.length > 0 ||
+      parsed.pathname !== "/" ||
+      parsed.search.length > 0 ||
+      parsed.hash.length > 0
+    ) {
+      return undefined;
+    }
+    return parsed.host;
+  } catch {
+    return undefined;
+  }
 };
 
 const isUsableLanIpv4Address = (address: string): boolean =>
-  !address.startsWith("127.") && !address.startsWith("169.254.");
+  !address.startsWith("127.") &&
+  !address.startsWith("169.254.") &&
+  !isTailscaleIpv4Address(address);
 
-const isHttpsEndpointUrl = (value: string): boolean => {
+const isSecureEndpointUrl = (value: string): boolean => {
   try {
-    return new URL(value).protocol === "https:";
+    const protocol = new URL(value).protocol;
+    return protocol === "https:" || protocol === "wss:";
   } catch {
     return false;
   }
@@ -84,18 +109,25 @@ const resolveLanAdvertisedHost = (
     return normalizedExplicitHost;
   }
 
+  let tailscaleIp: string | null = null;
   for (const interfaceAddresses of Object.values(networkInterfaces)) {
     if (!interfaceAddresses) continue;
 
     for (const address of interfaceAddresses) {
       if (address.internal) continue;
-      if (address.family !== "IPv4") continue;
-      if (!isUsableLanIpv4Address(address.address)) continue;
-      return address.address;
+      if (!DesktopNetworkInterfaces.isIpv4Family(address.family)) continue;
+      if (isUsableLanIpv4Address(address.address)) {
+        return address.address;
+      }
+      // Remember the first Tailscale IP as fallback
+      if (!tailscaleIp && isTailscaleIpv4Address(address.address)) {
+        tailscaleIp = address.address;
+      }
     }
   }
 
-  return null;
+  // When no LAN IP exists, use Tailscale IP for endpointUrl if available
+  return tailscaleIp;
 };
 
 const resolveDesktopServerExposure = (input: {
@@ -166,35 +198,46 @@ const resolveDesktopCoreAdvertisedEndpoints = (
   ];
 
   if (input.exposure.endpointUrl) {
+    // When endpointUrl is a Tailscale IP (fallback), classify as private-network
+    const isTailscaleEndpoint = input.exposure.advertisedHost
+      ? isTailscaleIpv4Address(input.exposure.advertisedHost)
+      : false;
+
     endpoints.push(
       createDesktopEndpoint({
-        id: `desktop-lan:${input.exposure.endpointUrl}`,
-        label: "Local network",
+        id: isTailscaleEndpoint
+          ? `desktop-tailscale:${input.exposure.endpointUrl}`
+          : `desktop-lan:${input.exposure.endpointUrl}`,
+        label: isTailscaleEndpoint ? "Tailscale" : "Local network",
         httpBaseUrl: input.exposure.endpointUrl,
-        reachability: "lan",
+        reachability: isTailscaleEndpoint ? "private-network" : "lan",
         status: "available",
         isDefault: true,
-        description: "Reachable from devices on the same network.",
+        description: isTailscaleEndpoint
+          ? "Reachable from devices on the same Tailnet."
+          : "Reachable from devices on the same network.",
       }),
     );
   }
 
+  const seenManualHttpBaseUrls = new Set<string>();
   for (const customEndpointUrl of input.customHttpsEndpointUrls ?? []) {
     try {
-      const isHttpsEndpoint = isHttpsEndpointUrl(customEndpointUrl);
-      endpoints.push(
-        createManualEndpoint({
-          id: `manual:${customEndpointUrl}`,
-          label: isHttpsEndpoint ? "Custom HTTPS" : "Custom endpoint",
-          httpBaseUrl: customEndpointUrl,
-          reachability: "public",
-          ...(isHttpsEndpoint ? ({ hostedHttpsCompatibility: "compatible" } as const) : {}),
-          status: "unknown",
-          description: isHttpsEndpoint
-            ? "User-configured HTTPS endpoint for this desktop backend."
-            : "User-configured endpoint for this desktop backend.",
-        }),
-      );
+      const isSecureEndpoint = isSecureEndpointUrl(customEndpointUrl);
+      const endpoint = createManualEndpoint({
+        id: `manual:${customEndpointUrl}`,
+        label: isSecureEndpoint ? "Custom HTTPS" : "Custom endpoint",
+        httpBaseUrl: customEndpointUrl,
+        reachability: "public",
+        ...(isSecureEndpoint ? ({ hostedHttpsCompatibility: "compatible" } as const) : {}),
+        status: "unknown",
+        description: isSecureEndpoint
+          ? "User-configured HTTPS endpoint for this desktop backend."
+          : "User-configured endpoint for this desktop backend.",
+      });
+      if (seenManualHttpBaseUrls.has(endpoint.httpBaseUrl)) continue;
+      seenManualHttpBaseUrls.add(endpoint.httpBaseUrl);
+      endpoints.push(endpoint);
     } catch {
       // Ignore malformed user-configured endpoints without dropping valid endpoints.
     }
@@ -203,7 +246,7 @@ const resolveDesktopCoreAdvertisedEndpoints = (
   return endpoints;
 };
 
-export class DesktopServerExposureNoNetworkAddressError extends Schema.TaggedErrorClass<DesktopServerExposureNoNetworkAddressError>()(
+export class DesktopServerExposureNoNetworkAddressError extends Schema.TaggedError<DesktopServerExposureNoNetworkAddressError>()(
   "DesktopServerExposureNoNetworkAddressError",
   {
     port: Schema.Number,
@@ -214,7 +257,7 @@ export class DesktopServerExposureNoNetworkAddressError extends Schema.TaggedErr
   }
 }
 
-export class DesktopServerExposureModePersistenceError extends Schema.TaggedErrorClass<DesktopServerExposureModePersistenceError>()(
+export class DesktopServerExposureModePersistenceError extends Schema.TaggedError<DesktopServerExposureModePersistenceError>()(
   "DesktopServerExposureModePersistenceError",
   {
     mode: DesktopServerExposureModeSchema,
@@ -226,7 +269,7 @@ export class DesktopServerExposureModePersistenceError extends Schema.TaggedErro
   }
 }
 
-export class DesktopTailscaleServePersistenceError extends Schema.TaggedErrorClass<DesktopTailscaleServePersistenceError>()(
+export class DesktopTailscaleServePersistenceError extends Schema.TaggedError<DesktopTailscaleServePersistenceError>()(
   "DesktopTailscaleServePersistenceError",
   {
     enabled: Schema.Boolean,
@@ -244,7 +287,6 @@ export const DesktopServerExposureSetModeError = Schema.Union([
   DesktopServerExposureModePersistenceError,
 ]);
 export type DesktopServerExposureSetModeError = typeof DesktopServerExposureSetModeError.Type;
-export const isDesktopServerExposureSetModeError = Schema.is(DesktopServerExposureSetModeError);
 
 export const DesktopServerExposureError = Schema.Union([
   DesktopServerExposureNoNetworkAddressError,
@@ -252,7 +294,6 @@ export const DesktopServerExposureError = Schema.Union([
   DesktopTailscaleServePersistenceError,
 ]);
 export type DesktopServerExposureError = typeof DesktopServerExposureError.Type;
-export const isDesktopServerExposureError = Schema.is(DesktopServerExposureError);
 
 export interface DesktopServerExposureBackendConfig {
   readonly port: number;
@@ -298,11 +339,6 @@ interface RuntimeState {
   readonly advertisedHost: Option.Option<string>;
   readonly tailscaleServeEnabled: boolean;
   readonly tailscaleServePort: number;
-}
-
-interface ResolvedRuntimeState {
-  readonly state: RuntimeState;
-  readonly unavailable: boolean;
 }
 
 const initialRuntimeState = (): RuntimeState =>
@@ -369,34 +405,23 @@ function resolveRuntimeState(input: {
   readonly port: number;
   readonly networkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces;
   readonly advertisedHostOverride: Option.Option<string>;
-}): ResolvedRuntimeState {
+}): RuntimeState {
   const advertisedHostOverride = Option.getOrUndefined(input.advertisedHostOverride);
-  const requestedExposure = resolveDesktopServerExposure({
-    mode: input.requestedMode,
-    port: input.port,
-    networkInterfaces: input.networkInterfaces,
-    ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
-  });
-  const unavailable =
-    input.requestedMode === "network-accessible" && requestedExposure.endpointUrl === null;
-  const exposure = unavailable
-    ? resolveDesktopServerExposure({
-        mode: "local-only",
-        port: input.port,
-        networkInterfaces: input.networkInterfaces,
-        ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
-      })
-    : requestedExposure;
-
-  return {
-    state: runtimeStateFromResolvedExposure({
-      requestedMode: input.requestedMode,
-      settings: input.settings,
-      exposure,
+  // Keep the requested bind even when no address is available to advertise.
+  // Falling back to loopback made late Wi-Fi / DHCP addresses unshareable until
+  // a settings toggle or relaunch, because refresh refuses to invent a LAN URL
+  // for a 127.0.0.1 listener.
+  return runtimeStateFromResolvedExposure({
+    requestedMode: input.requestedMode,
+    settings: input.settings,
+    exposure: resolveDesktopServerExposure({
+      mode: input.requestedMode,
       port: input.port,
+      networkInterfaces: input.networkInterfaces,
+      ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
     }),
-    unavailable,
-  };
+    port: input.port,
+  });
 }
 
 const requiresBackendRelaunch = (previous: RuntimeState, next: RuntimeState): boolean =>
@@ -404,6 +429,7 @@ const requiresBackendRelaunch = (previous: RuntimeState, next: RuntimeState): bo
   previous.bindHost !== next.bindHost ||
   previous.localHttpUrl !== next.localHttpUrl;
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const config = yield* DesktopConfig.DesktopConfig;
   const networkInterfaces = yield* DesktopNetworkInterfaces.DesktopNetworkInterfaces;
@@ -426,7 +452,42 @@ export const make = Effect.gen(function* () {
 
   const readNetworkInterfaces = networkInterfaces.read;
 
-  const getState = Ref.get(stateRef).pipe(Effect.map(toContractState));
+  // Re-resolve the advertised host from live interfaces when the backend is
+  // already bound on all addresses. A loopback bind cannot serve a newly
+  // appeared LAN URL, so that snapshot stays put until configure/setMode
+  // (which may relaunch). Bind host and port are never changed here.
+  const refreshAdvertisedExposure = Effect.gen(function* () {
+    const current = yield* Ref.get(stateRef);
+    if (current.bindHost !== DESKTOP_LAN_BIND_HOST) {
+      return current;
+    }
+    const settings = yield* desktopSettings.get;
+    const currentNetworkInterfaces = yield* readNetworkInterfaces;
+    const resolved = resolveRuntimeState({
+      requestedMode: current.requestedMode,
+      settings,
+      port: current.port,
+      networkInterfaces: currentNetworkInterfaces,
+      advertisedHostOverride: config.desktopLanHostOverride,
+    });
+    const next: RuntimeState = {
+      ...current,
+      mode: resolved.mode,
+      endpointUrl: resolved.endpointUrl,
+      advertisedHost: resolved.advertisedHost,
+    };
+    if (
+      next.mode === current.mode &&
+      Option.getOrNull(next.endpointUrl) === Option.getOrNull(current.endpointUrl) &&
+      Option.getOrNull(next.advertisedHost) === Option.getOrNull(current.advertisedHost)
+    ) {
+      return current;
+    }
+    yield* Ref.set(stateRef, next);
+    return next;
+  }).pipe(Effect.withSpan("desktop.serverExposure.refreshAdvertisedExposure"));
+
+  const getState = refreshAdvertisedExposure.pipe(Effect.map(toContractState));
   const backendConfig = Ref.get(stateRef).pipe(Effect.map(toBackendConfig));
 
   const configureFromSettings = Effect.fn("desktop.serverExposure.configureFromSettings")(
@@ -441,8 +502,8 @@ export const make = Effect.gen(function* () {
         networkInterfaces: currentNetworkInterfaces,
         advertisedHostOverride: config.desktopLanHostOverride,
       });
-      yield* Ref.set(stateRef, resolved.state);
-      return toContractState(resolved.state);
+      yield* Ref.set(stateRef, resolved);
+      return toContractState(resolved);
     },
   );
 
@@ -465,10 +526,6 @@ export const make = Effect.gen(function* () {
       advertisedHostOverride: config.desktopLanHostOverride,
     });
 
-    if (resolved.unavailable) {
-      return yield* new DesktopServerExposureNoNetworkAddressError({ port: previous.port });
-    }
-
     const change = yield* desktopSettings.setServerExposureMode(mode).pipe(
       Effect.mapError(
         (cause) =>
@@ -479,10 +536,10 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-    yield* Ref.set(stateRef, resolved.state);
+    yield* Ref.set(stateRef, resolved);
     return {
-      state: toContractState(resolved.state),
-      requiresRelaunch: change.changed || requiresBackendRelaunch(previous, resolved.state),
+      state: toContractState(resolved),
+      requiresRelaunch: change.changed || requiresBackendRelaunch(previous, resolved),
     };
   });
 
@@ -522,7 +579,7 @@ export const make = Effect.gen(function* () {
   );
 
   const getAdvertisedEndpoints = Effect.gen(function* () {
-    const state = yield* Ref.get(stateRef);
+    const state = yield* refreshAdvertisedExposure;
     const currentNetworkInterfaces = yield* readNetworkInterfaces;
     const coreEndpoints = resolveDesktopCoreAdvertisedEndpoints({
       port: state.port,
@@ -547,7 +604,11 @@ export const make = Effect.gen(function* () {
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
-    return [...coreEndpoints, ...tailscaleEndpoints];
+    const seenHttpBaseUrls = new Set(coreEndpoints.map((endpoint) => endpoint.httpBaseUrl));
+    const extraTailscaleEndpoints = tailscaleEndpoints.filter(
+      (endpoint) => !seenHttpBaseUrls.has(endpoint.httpBaseUrl),
+    );
+    return [...coreEndpoints, ...extraTailscaleEndpoints].slice(0, ADVERTISED_ENDPOINTS_MAX_ITEMS);
   }).pipe(Effect.withSpan("desktop.serverExposure.getAdvertisedEndpoints"));
 
   return DesktopServerExposure.of({

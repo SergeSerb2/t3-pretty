@@ -1,5 +1,5 @@
 import type { DiffsHighlighter } from "@pierre/diffs";
-import { expect, it, vi } from "vite-plus/test";
+import { beforeEach, expect, it, vi } from "vite-plus/test";
 
 const { getSharedHighlighter } = vi.hoisted(() => ({
   getSharedHighlighter: vi.fn(),
@@ -9,7 +9,15 @@ vi.mock("@pierre/diffs", () => ({
   getSharedHighlighter,
 }));
 
-import { getSyntaxHighlighterPromise } from "./syntaxHighlighting";
+import {
+  __resetSyntaxHighlighterCacheForTests,
+  getSyntaxHighlighterPromise,
+} from "./syntaxHighlighting";
+
+beforeEach(() => {
+  getSharedHighlighter.mockReset();
+  __resetSyntaxHighlighterCacheForTests();
+});
 
 it("caches the recovered text highlighter for unsupported languages", async () => {
   const textHighlighter = {} as DiffsHighlighter;
@@ -24,5 +32,16 @@ it("caches the recovered text highlighter for unsupported languages", async () =
   const second = getSyntaxHighlighterPromise("unsupported-test-language");
 
   expect(second).toBe(first);
+  expect(getSharedHighlighter).toHaveBeenCalledTimes(2);
+});
+
+it("does not permanently cache a failed language promise", async () => {
+  getSharedHighlighter.mockRejectedValueOnce(new Error("initialization failed"));
+
+  await expect(getSyntaxHighlighterPromise("text")).rejects.toThrow("initialization failed");
+
+  const highlighter = {} as DiffsHighlighter;
+  getSharedHighlighter.mockResolvedValueOnce(highlighter);
+  await expect(getSyntaxHighlighterPromise("text")).resolves.toBe(highlighter);
   expect(getSharedHighlighter).toHaveBeenCalledTimes(2);
 });

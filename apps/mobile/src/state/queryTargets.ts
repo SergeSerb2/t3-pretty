@@ -1,5 +1,7 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
+import { limitMobileSearchQuery, MOBILE_VCS_SEARCH_QUERY_MAX_LENGTH } from "../lib/searchQuery";
+
 export interface CheckpointDiffTarget {
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
@@ -9,7 +11,7 @@ export interface CheckpointDiffTarget {
 }
 
 export function normalizeComposerPathSearchQuery(query: string | null): string {
-  return query?.trim() ?? "";
+  return limitMobileSearchQuery(query?.trim() ?? "", MOBILE_VCS_SEARCH_QUERY_MAX_LENGTH);
 }
 
 export function buildCheckpointDiffTargets(target: CheckpointDiffTarget) {

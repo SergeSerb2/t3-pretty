@@ -1,16 +1,21 @@
 import { Connection } from "@t3tools/client-runtime/connection";
-import { pullRequestDiffLoaderLayer } from "@t3tools/client-runtime/state/pull-requests";
 import { shellSnapshotLoaderLayer } from "@t3tools/client-runtime/state/shell";
 import { threadSnapshotLoaderLayer } from "@t3tools/client-runtime/state/threads";
+import { pullRequestDiffLoaderLayer } from "@t3tools/client-runtime/state/pull-requests";
 import * as Layer from "effect/Layer";
 import { Atom } from "effect/unstable/reactivity";
 
+import type { FoundationHotModule } from "../lib/foundation-fast-refresh";
+import { hotSwappableAtomRuntime } from "../lib/hot-swappable-atom-runtime";
 import { runtimeContextLayer } from "../lib/runtime";
+import { appAtomRegistry } from "../state/atom-registry";
 import {
   mobileBackgroundActivityObserverLayer,
   mobileBackgroundActivityReporterLayer,
 } from "./background-activity";
 import { connectionPlatformLayer } from "./platform";
+
+declare const module: { readonly hot?: FoundationHotModule } | undefined;
 
 const providedConnectionPlatformLayer = connectionPlatformLayer.pipe(
   Layer.provide(runtimeContextLayer),
@@ -30,7 +35,10 @@ type ConnectionLayerSource =
   | typeof mobileBackgroundActivityObserverLayer
   | typeof mobileBackgroundActivityReporterLayer;
 
-const providedClientConnectionLayer = Layer.merge(Connection.layer, snapshotLoaderLayer).pipe(
+const providedClientConnectionLayer = snapshotLoaderLayer.pipe(
+  Layer.provideMerge(
+    Connection.layerWithOptions({ usageLimitSources: true, usageLimitsCommand: true }),
+  ),
   Layer.provideMerge(
     Layer.mergeAll(
       runtimeContextLayer,
@@ -47,4 +55,9 @@ const connectionLayer = mobileBackgroundActivityReporterLayer.pipe(
 export const connectionAtomRuntime: Atom.AtomRuntime<
   Layer.Success<ConnectionLayerSource>,
   Layer.Error<ConnectionLayerSource>
-> = Atom.runtime(connectionLayer);
+> = hotSwappableAtomRuntime({
+  id: "t3.mobile.connection-runtime",
+  hotModule: typeof module === "undefined" ? undefined : module.hot,
+  registry: appAtomRegistry,
+  layer: connectionLayer,
+});

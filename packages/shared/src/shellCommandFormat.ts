@@ -15,7 +15,39 @@ export type ToolCallDisplaySection =
   | {
       readonly kind: "text";
       readonly text: string;
+    }
+  | {
+      readonly kind: "diff";
+      readonly text: string;
     };
+
+export function formatChangedFileDiffText(
+  files: ReadonlyArray<{ readonly path: string; readonly diff?: string | null | undefined }>,
+): string | null {
+  const withDiffs = files.filter((file) => file.diff?.trim());
+  if (withDiffs.length === 0) {
+    return null;
+  }
+  return withDiffs.map((file) => `${file.path}\n${file.diff!.trim()}`).join("\n\n");
+}
+
+export function isRedundantChangedFileOutput(
+  output: string | null | undefined,
+  paths: ReadonlyArray<string>,
+): boolean {
+  const text = output?.trim();
+  if (!text || paths.length === 0) return false;
+  return paths.includes(text) || paths.join("\n") === text;
+}
+
+export function leftoverChangedFilePaths(
+  allPaths: ReadonlyArray<string>,
+  diffs: ReadonlyArray<{ readonly path: string; readonly diff?: string | null | undefined }>,
+): string | null {
+  const shown = new Set(diffs.filter((file) => file.diff?.trim()).map((file) => file.path));
+  const leftover = allPaths.filter((path) => path.trim().length > 0 && !shown.has(path));
+  return leftover.length > 0 ? leftover.join("\n") : null;
+}
 
 export function formatShellCommandForDisplay(command: string): string {
   const trimmed = command.trim();
@@ -70,17 +102,18 @@ export function buildToolCallDisplaySections(input: {
   readonly command?: string | null;
   readonly output?: string | null;
   readonly trailingText?: string | null;
+  readonly diffText?: string | null;
 }): ToolCallDisplaySection[] {
   const sections: ToolCallDisplaySection[] = [];
   const seen = new Set<string>();
 
-  const pushText = (kind: "json" | "text", value: string | null | undefined) => {
+  const pushText = (kind: "json" | "text" | "diff", value: string | null | undefined) => {
     const text = value?.trim();
     if (!text || seen.has(text)) {
       return;
     }
     seen.add(text);
-    sections.push(kind === "json" ? { kind: "json", text } : { kind: "text", text });
+    sections.push({ kind, text });
   };
 
   pushText("text", input.leadingText);
@@ -100,6 +133,7 @@ export function buildToolCallDisplaySections(input: {
     pushText(detectStructuredTextLanguage(output), output);
   }
 
+  pushText("diff", input.diffText);
   pushText("text", input.trailingText);
   return sections;
 }
@@ -117,6 +151,7 @@ export function serializeToolCallDisplaySections(
           return section.display;
         case "json":
         case "text":
+        case "diff":
           return section.text;
       }
     })

@@ -1,21 +1,26 @@
 import * as Schema from "effect/Schema";
 
+export const RELAY_CLIENT_PATH_MAX_LENGTH = 32 * 1024;
+export const RELAY_CLIENT_VERSION_MAX_LENGTH = 256;
+export const RELAY_CLIENT_PLATFORM_MAX_LENGTH = 128;
+export const RELAY_CLIENT_ERROR_MAX_LENGTH = 8_192;
+
 export const RelayClientStatusSchema = Schema.Union([
   Schema.Struct({
     status: Schema.Literal("available"),
-    executablePath: Schema.String,
+    executablePath: Schema.String.check(Schema.isMaxLength(RELAY_CLIENT_PATH_MAX_LENGTH)),
     source: Schema.Literals(["override", "managed", "path"]),
-    version: Schema.String,
+    version: Schema.String.check(Schema.isMaxLength(RELAY_CLIENT_VERSION_MAX_LENGTH)),
   }),
   Schema.Struct({
     status: Schema.Literal("missing"),
-    version: Schema.String,
+    version: Schema.String.check(Schema.isMaxLength(RELAY_CLIENT_VERSION_MAX_LENGTH)),
   }),
   Schema.Struct({
     status: Schema.Literal("unsupported"),
-    platform: Schema.String,
-    arch: Schema.String,
-    version: Schema.String,
+    platform: Schema.String.check(Schema.isMaxLength(RELAY_CLIENT_PLATFORM_MAX_LENGTH)),
+    arch: Schema.String.check(Schema.isMaxLength(RELAY_CLIENT_PLATFORM_MAX_LENGTH)),
+    version: Schema.String.check(Schema.isMaxLength(RELAY_CLIENT_VERSION_MAX_LENGTH)),
   }),
 ]);
 export type RelayClientStatus = typeof RelayClientStatusSchema.Type;
@@ -54,10 +59,10 @@ export const RelayClientInstallFailureReasonSchema = Schema.Literals([
 ]);
 export type RelayClientInstallFailureReason = typeof RelayClientInstallFailureReasonSchema.Type;
 
-export class RelayClientInstallFailedError extends Schema.TaggedErrorClass<RelayClientInstallFailedError>()(
+export class RelayClientInstallFailedError extends Schema.TaggedError<RelayClientInstallFailedError>()(
   "RelayClientInstallFailedError",
   {
     reason: RelayClientInstallFailureReasonSchema,
-    message: Schema.String,
+    message: Schema.String.check(Schema.isMaxLength(RELAY_CLIENT_ERROR_MAX_LENGTH)),
   },
 ) {}

@@ -7,6 +7,7 @@ import { createKeyedPerformanceSampleGate } from "./performanceSampling";
 type SpanAttribute = string | number | boolean;
 
 const threadOpenMarks = new Map<string, number>();
+const MAX_PENDING_THREAD_OPEN_MARKS = 64;
 const shouldSampleThreadFeedBuild = createKeyedPerformanceSampleGate({ windowMs: 2_000 });
 
 function key(environmentId: string, threadId: string): string {
@@ -14,7 +15,14 @@ function key(environmentId: string, threadId: string): string {
 }
 
 export function markThreadOpenStarted(environmentId: string, threadId: string): void {
-  threadOpenMarks.set(key(environmentId, threadId), performance.now());
+  const markKey = key(environmentId, threadId);
+  threadOpenMarks.delete(markKey);
+  threadOpenMarks.set(markKey, performance.now());
+  while (threadOpenMarks.size > MAX_PENDING_THREAD_OPEN_MARKS) {
+    const oldestKey = threadOpenMarks.keys().next().value;
+    if (oldestKey === undefined) break;
+    threadOpenMarks.delete(oldestKey);
+  }
 }
 
 export function takeThreadOpenDuration(environmentId: string, threadId: string): number | null {

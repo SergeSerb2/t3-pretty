@@ -6,7 +6,7 @@ import type {
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
-import type { ApnsNotificationPayload } from "./apnsDeliveryJobs.ts";
+import type { ApnsLiveActivityAlert, ApnsNotificationPayload } from "./apnsDeliveryJobs.ts";
 
 export function isTerminalPhase(state: RelayAgentActivityState): boolean {
   return state.phase === "completed" || state.phase === "failed";
@@ -22,22 +22,29 @@ export function isTerminalPhase(state: RelayAgentActivityState): boolean {
 export const RUNNING_AGENT_ACTIVITY_ROW_TTL_MS = 2 * 60 * 60 * 1_000;
 export const WAITING_AGENT_ACTIVITY_ROW_TTL_MS = 24 * 60 * 60 * 1_000;
 
-export function isExpiredAgentActivityState(
-  state: RelayAgentActivityState,
-  nowMs: number,
-): boolean {
+export function agentActivityExpiresAt(
+  state: Pick<RelayAgentActivityState, "phase" | "updatedAt">,
+): number {
   const updatedAtMs = Option.match(DateTime.make(state.updatedAt), {
     onNone: () => Number.NaN,
     onSome: (dt) => dt.epochMilliseconds,
   });
   if (Number.isNaN(updatedAtMs)) {
-    return true;
+    return Number.NaN;
   }
   const ttlMs =
     state.phase === "running" || state.phase === "starting"
       ? RUNNING_AGENT_ACTIVITY_ROW_TTL_MS
       : WAITING_AGENT_ACTIVITY_ROW_TTL_MS;
-  return nowMs - updatedAtMs > ttlMs;
+  return updatedAtMs + ttlMs;
+}
+
+export function isExpiredAgentActivityState(
+  state: RelayAgentActivityState,
+  nowMs: number,
+): boolean {
+  const expiresAt = agentActivityExpiresAt(state);
+  return !Number.isFinite(expiresAt) || nowMs > expiresAt;
 }
 
 const MAX_SUMMARY_TEXT_LENGTH = 120;
@@ -98,4 +105,25 @@ export function sanitizeApnsNotificationPayload(
     body: truncateText(notification.body, MAX_SUMMARY_TEXT_LENGTH),
     deepLink: sanitizeDeepLink(notification.deepLink),
   };
+}
+export function sanitizeApnsLiveActivityAlert(alert: ApnsLiveActivityAlert): ApnsLiveActivityAlert {
+  return {
+    title: truncateText(alert.title, MAX_SUMMARY_TEXT_LENGTH),
+    body: truncateText(alert.body, MAX_SUMMARY_TEXT_LENGTH),
+  };
+}
+
+export function notificationForActivity(
+  row: RelayAgentActivityAggregateRow,
+): ApnsNotificationPayload {
+  const activity = sanitizeAgentActivityAggregateRow(row);
+  return sanitizeApnsNotificationPayload({
+    title: activity.threadTitle,
+    body: `${activity.status}: ${activity.projectTitle}`,
+    environmentId: activity.environmentId,
+    threadId: activity.threadId,
+    deepLink: activity.deepLink,
+    phase: activity.phase,
+    updatedAt: activity.updatedAt,
+  });
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Production relay deploy on macos-release. Imported GHA macos-latest jobs
-# can land on hosted Macs that do not have the Origin git store or the
-# packaging Mac file-store secrets.
+# Production relay deploy on self-hosted macos-release. Hosted M4 cannot
+# resolve PLANETSCALE_* / Clerk / Axiom cluster secrets or the macos-release
+# file-store fallbacks (BK 1878/1880).
 set -euo pipefail
 
 export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"

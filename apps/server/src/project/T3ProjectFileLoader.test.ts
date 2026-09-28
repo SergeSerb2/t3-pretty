@@ -85,5 +85,17 @@ it.layer(TestLayer)("T3ProjectFileLoader", (it) => {
         expect(Option.isNone(loaded)).toBe(true);
       }),
     );
+
+    it.effect("returns none without loading an oversized project file", () =>
+      Effect.gen(function* () {
+        const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+        const cwd = yield* makeTempDir;
+        yield* writeProjectFile(cwd, `{ "iconPath": "assets/logo.svg" }${" ".repeat(1024 * 1024)}`);
+
+        const loaded = yield* loader.load(cwd);
+
+        expect(Option.isNone(loaded)).toBe(true);
+      }),
+    );
   });
 });

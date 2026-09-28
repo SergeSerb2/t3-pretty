@@ -13,6 +13,12 @@ import * as Duration from "effect/Duration";
  */
 export const GITHUB_API_QUOTA_COOLDOWN_BASE = Duration.seconds(30);
 export const GITHUB_API_QUOTA_COOLDOWN_MAX = Duration.minutes(15);
+export const GITHUB_API_QUOTA_HOST_CAPACITY = 256;
+const SOURCE_CONTROL_HOST_MAX_LENGTH = 253;
+
+function quotaHost(host: string): string {
+  return host.trim().toLowerCase().slice(0, SOURCE_CONTROL_HOST_MAX_LENGTH);
+}
 
 export function gitHubApiQuotaCooldown(consecutiveRateLimits: number): Duration.Duration {
   const exponent = Math.max(0, consecutiveRateLimits - 1);
@@ -60,17 +66,36 @@ export function createGitHubApiQuota(): GitHubApiQuota {
 
   return {
     blockedUntil: (host, nowMs) => {
-      const entry = state.get(host);
-      if (entry === undefined || nowMs >= entry.cooldownUntilMs) return null;
+      const key = quotaHost(host);
+      const entry = state.get(key);
+      if (entry === undefined) return null;
+      if (nowMs >= entry.cooldownUntilMs) {
+        state.delete(key);
+        return null;
+      }
+      // Refresh insertion order so a host that is actively being checked is
+      // not the first one evicted by a burst of one-off Enterprise hosts.
+      state.delete(key);
+      state.set(key, entry);
       return entry.cooldownUntilMs;
     },
     noteSuccess: (host) => {
-      state.delete(host);
+      state.delete(quotaHost(host));
     },
     noteRateLimit: (host, nowMs) => {
-      const consecutive = (state.get(host)?.consecutive ?? 0) + 1;
+      for (const [key, entry] of state) {
+        if (nowMs >= entry.cooldownUntilMs) state.delete(key);
+      }
+
+      const key = quotaHost(host);
+      const consecutive = (state.get(key)?.consecutive ?? 0) + 1;
       const cooldown = gitHubApiQuotaCooldown(consecutive);
-      state.set(host, {
+      state.delete(key);
+      if (state.size >= GITHUB_API_QUOTA_HOST_CAPACITY) {
+        const oldest = state.keys().next().value;
+        if (oldest !== undefined) state.delete(oldest);
+      }
+      state.set(key, {
         consecutive,
         cooldownUntilMs: nowMs + Duration.toMillis(cooldown),
       });

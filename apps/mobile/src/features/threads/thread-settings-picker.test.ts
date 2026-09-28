@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  ProviderInstanceId,
-  defaultRuntimeModeForProviderDriver,
-  type ProviderOptionDescriptor,
-} from "@t3tools/contracts";
+import { ProviderInstanceId, type ProviderOptionDescriptor } from "@t3tools/contracts";
 
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import {
@@ -197,32 +193,17 @@ describe("buildThreadSettingsPickerModel", () => {
     expect(picker.selectSections[0]?.label).toBe("Reasoning");
   });
 
-  it("offers Kimi Yolo and Full access in ascending order of access", () => {
-    const kimiModels = [
-      modelOption("k3", { providerKey: "kimi", providerLabel: "Kimi", providerDriver: "kimi" }),
+  it("keeps an explicit Full access pick selected", () => {
+    const grokModels = [
+      modelOption("grok-4.6", {
+        providerKey: "grok",
+        providerLabel: "Grok",
+        providerDriver: "grok",
+      }),
     ];
     const picker = buildThreadSettingsPickerModel({
-      providerGroups: [group(kimiModels)],
-      selectedModel: kimiModels[0]?.selection ?? null,
-      optionDescriptors: [],
-      runtimeMode: defaultRuntimeModeForProviderDriver("kimi"),
-    });
-
-    expect(picker.runtimeChoices.map((choice) => choice.label)).toEqual([
-      "Approve actions",
-      "Yolo",
-      "Full access",
-    ]);
-    expect(picker.runtimeChoices.find((choice) => choice.selected)?.shortLabel).toBe("Yolo");
-  });
-
-  it("keeps an explicit Kimi Full access pick selected", () => {
-    const kimiModels = [
-      modelOption("k3", { providerKey: "kimi", providerLabel: "Kimi", providerDriver: "kimi" }),
-    ];
-    const picker = buildThreadSettingsPickerModel({
-      providerGroups: [group(kimiModels)],
-      selectedModel: kimiModels[0]?.selection ?? null,
+      providerGroups: [group(grokModels)],
+      selectedModel: grokModels[0]?.selection ?? null,
       optionDescriptors: [],
       runtimeMode: "full-access",
     });
@@ -230,7 +211,7 @@ describe("buildThreadSettingsPickerModel", () => {
     expect(picker.runtimeChoices.find((choice) => choice.selected)?.shortLabel).toBe("Full");
   });
 
-  it("treats carried Kimi yolo as Full access on Grok", () => {
+  it("treats carried yolo as Full access on Grok", () => {
     const grokModels = [
       modelOption("grok-4.6", {
         providerKey: "grok",
@@ -253,7 +234,7 @@ describe("buildThreadSettingsPickerModel", () => {
     const picker = buildThreadSettingsPickerModel({
       providerGroups: [],
       selectedModel: {
-        instanceId: ProviderInstanceId.make("kimi"),
+        instanceId: ProviderInstanceId.make("unknown"),
         model: "k2",
       },
       optionDescriptors: [],

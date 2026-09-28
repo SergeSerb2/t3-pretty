@@ -131,6 +131,21 @@ describe("parseCliArgs", () => {
     expect(parseCliArgs("--")).toEqual({ flags: {}, positionals: [] });
   });
 
+  it("preserves flag names inherited from Object.prototype as own values", () => {
+    const { flags } = parseCliArgs([
+      "--__proto__=prototype",
+      "--constructor",
+      "value",
+      "--toString=display",
+    ]);
+
+    expect(Object.getPrototypeOf(flags)).toBe(Object.prototype);
+    expect(Object.hasOwn(flags, "__proto__")).toBe(true);
+    expect(flags["__proto__"]).toBe("prototype");
+    expect(flags["constructor"]).toBe("value");
+    expect(flags["toString"]).toBe("display");
+  });
+
   it("boolean flag does not consume next token as value", () => {
     expect(parseCliArgs(["--github-output", "1.2.3"], { booleanFlags: ["github-output"] })).toEqual(
       {
