@@ -129,6 +129,13 @@ describe("loadRepoEnv", () => {
     });
   });
 
+  it("rejects oversized repository environment files before parsing", () => {
+    const repoRoot = makeTemporaryDirectory();
+    NodeFS.writeFileSync(NodePath.join(repoRoot, ".env.local"), "a".repeat(1024 * 1024 + 1));
+
+    expect(() => loadRepoEnv({ baseEnv: {}, repoRoot })).toThrow(/safety limit/u);
+  });
+
   it("accepts legacy framework aliases as root overrides", () => {
     expect(
       resolvePublicConfig({

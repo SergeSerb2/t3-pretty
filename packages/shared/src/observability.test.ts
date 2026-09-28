@@ -1,4 +1,4 @@
-import { assert, describe, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
@@ -16,12 +16,14 @@ import * as Tracer from "effect/Tracer";
 import {
   causeErrorTag,
   compactTraceAttributes,
+  decodeOtlpTraceRecords,
   errorTag,
   isVerboseLocalSpan,
   makeLocalFileTracer,
   makeTraceSink,
   type TraceRecord,
   type TraceSinkFlushStats,
+  OtlpHeadersFromString,
   truncateTraceAttributes,
 } from "./observability.ts";
 
@@ -147,6 +149,53 @@ describe("truncateTraceAttributes", () => {
   });
 });
 
+describe("decodeOtlpTraceRecords", () => {
+  it("clamps oversized renderer span and event attributes", () => {
+    const long = "x".repeat(2_000);
+    const clamped = `${"x".repeat(500)}…[truncated]`;
+    const [record] = decodeOtlpTraceRecords({
+      resourceSpans: [
+        {
+          resource: { attributes: [], droppedAttributesCount: 0 },
+          scopeSpans: [
+            {
+              scope: { name: "effect" },
+              spans: [
+                {
+                  traceId: "11111111111111111111111111111111",
+                  spanId: "2222222222222222",
+                  parentSpanId: undefined,
+                  name: "client.span",
+                  kind: 1,
+                  startTimeUnixNano: "1000000",
+                  endTimeUnixNano: "2000000",
+                  attributes: [{ key: "payload", value: { stringValue: long } }],
+                  droppedAttributesCount: 0,
+                  events: [
+                    {
+                      name: "log",
+                      timeUnixNano: "1500000",
+                      attributes: [{ key: "effect.cause", value: { stringValue: long } }],
+                      droppedAttributesCount: 0,
+                    },
+                  ],
+                  droppedEventsCount: 0,
+                  status: { code: 1 },
+                  links: [],
+                  droppedLinksCount: 0,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.equal(record?.attributes["payload"], clamped);
+    assert.equal(record?.events[0]?.attributes["effect.cause"], clamped);
+  });
+});
+
 describe("observability", () => {
   it("normalizes circular arrays, maps, and sets without recursing forever", () => {
     const array: Array<unknown> = ["alpha"];
@@ -183,6 +232,51 @@ describe("observability", () => {
         invalidDate: "Invalid Date",
       },
     );
+  });
+
+  it("bounds attribute collection width and nesting depth before serialization", () => {
+    let deep: unknown = "leaf";
+    for (let depth = 0; depth < 20; depth += 1) deep = { next: deep };
+    const attributes = compactTraceAttributes({
+      wide: Array.from({ length: 200 }, (_, index) => index),
+      deep,
+    });
+
+    const wide = attributes["wide"] as ReadonlyArray<unknown>;
+    assert.equal(wide.length, 129);
+    assert.equal(wide.at(-1), "[Truncated]");
+    assert.include(JSON.stringify(attributes["deep"]), "[Truncated]");
+  });
+
+  it("does not let an adversarial attribute getter fail span serialization", () => {
+    const value = {};
+    Object.defineProperty(value, "secret", {
+      enumerable: true,
+      get: () => {
+        throw new Error("getter failed");
+      },
+    });
+
+    assert.deepStrictEqual(compactTraceAttributes({ value }), {
+      value: "[Unserializable]",
+    });
+  });
+
+  it("preserves prototype-named trace attributes as own data", () => {
+    const attributes: Record<string, unknown> = {};
+    Object.defineProperty(attributes, "__proto__", {
+      enumerable: true,
+      value: new Map([["__proto__", "retained"]]),
+    });
+
+    const compacted = compactTraceAttributes(attributes);
+    const nested = compacted["__proto__"] as Record<string, unknown>;
+
+    assert.equal(Object.getPrototypeOf(compacted), Object.prototype);
+    assert.equal(Object.hasOwn(compacted, "__proto__"), true);
+    assert.equal(Object.getPrototypeOf(nested), Object.prototype);
+    assert.equal(Object.hasOwn(nested, "__proto__"), true);
+    assert.equal(nested["__proto__"], "retained");
   });
 
   nodeServicesIt("node services", (it) => {
@@ -467,5 +561,42 @@ describe("observability", () => {
         }),
       ),
     );
+  });
+});
+
+describe("OtlpHeadersFromString", () => {
+  const decode = Schema.decodeUnknownSync(OtlpHeadersFromString);
+
+  it.each([
+    {
+      name: "decodes percent-encoded values",
+      input: "authorization=Basic%20abc%3D%3D,x-tenant=t3",
+      expected: { authorization: "Basic abc==", "x-tenant": "t3" },
+    },
+    {
+      name: "ignores whitespace around separators",
+      input: "authorization=Basic%20abc%3D%3D, x-tenant = t3 ,",
+      expected: { authorization: "Basic abc==", "x-tenant": "t3" },
+    },
+    {
+      name: "keeps literal equals signs inside a value",
+      input: "authorization=Bearer abc==",
+      expected: { authorization: "Bearer abc==" },
+    },
+    {
+      name: "keeps an empty value",
+      input: "x-empty=",
+      expected: { "x-empty": "" },
+    },
+  ])("$name", ({ input, expected }) => {
+    expect(decode(input)).toEqual(expected);
+  });
+
+  it.each([
+    { name: "rejects a pair without a separator", input: "authorization" },
+    { name: "rejects a pair without a key", input: "=value" },
+    { name: "rejects a malformed percent-encoding", input: "authorization=%E0" },
+  ])("$name", ({ input }) => {
+    expect(() => decode(input)).toThrow();
   });
 });

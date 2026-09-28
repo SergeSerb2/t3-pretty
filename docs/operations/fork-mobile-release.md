@@ -1,13 +1,14 @@
 # T3 Pretty mobile release train
 
-The iOS app auto-updates through the same two mechanisms as the desktop apps:
-merge-driven releases from CI, and upstream ingestion every four hours with
-local build delivery.
+The mobile apps follow the same upstream ingestion as desktop. Internal iOS
+ships through OTA and TestFlight; Android ships two separate applications to
+Google Play internal testing.
 
 ## Upstream ingestion (shared with desktop)
 
 `.buildkite/pipeline.yml` runs `scripts/fork/run-upstream-sync.sh` every four
-hours at 00:00, 04:00, 08:00, 12:00, 16:00, and 20:00 UTC on `macos-release`.
+hours at 00:00, 04:00, 08:00, 12:00, 16:00, and 20:00 UTC on self-hosted
+`macos-release`.
 The job merges the newest upstream nightly tag (AI-resolving conflicts via
 `scripts/fork/resolve-git-conflicts.mjs`) and lands it on Origin `main` through
 an immediately merged pull request. Mobile code rides along — there is no separate
@@ -15,11 +16,70 @@ mobile sync. The imported `fork-upstream-sync.yml` wrapper is not scheduled.
 
 ## Merge-driven releases
 
-`.buildkite/pipeline.yml` runs `scripts/fork/publish-mobile-release.sh` on
-every push to Origin `main` that is not the four-hour schedule. The job lives
-on `macos-release`, the same native queue as the signed DMG. It is
-not imported GitHub Actions: the importer cannot load `EXPO_TOKEN` or Apple
-keys, so those jobs died in about two seconds and TestFlight never moved.
+### Android Play internal testing
+
+Buildkite runs `scripts/fork/publish-android-release.sh` on hosted
+`macos-medium`.
+Both Android flavors build an AAB in EAS cloud and submit that exact build to
+Google Play's internal track:
+
+- `T3 Pretty Internal` — package `com.sergeserbinenko.t3pretty`, private
+  Internal relay, automatic on non-scheduled `main` builds after activation.
+- public `T3 Pretty` — package `com.sergeserbinenko.t3pretty.app`, official
+  `https://relay.t3.codes`, manual closed-test build only. Start a Buildkite UI
+  build of `main` with `T3CODE_PUBLIC_ANDROID_RELEASE=1`.
+
+The flavors share the Android signing concurrency group but use separate EAS
+projects, Play records, package IDs, and native fingerprint markers. Internal
+skips Android-irrelevant commits and unchanged native fingerprints; compatible
+JavaScript still arrives through the existing production Expo Updates channel.
+Public builds are always native builds so an explicit tester release cannot be
+silently replaced by an OTA-only update.
+
+The automatic Internal step is intentionally inactive until setup is complete;
+it leaves a warning annotation instead of claiming a release. One-time setup:
+
+1. In Play Console, create `T3 Pretty Internal` with package
+   `com.sergeserbinenko.t3pretty` and `T3 Pretty` with package
+   `com.sergeserbinenko.t3pretty.app`. Keep both on internal testing and add the
+   tester lists there.
+2. Create or select a distinct public EAS project. Put its
+   `T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID`, `T3CODE_PUBLIC_MOBILE_EXPO_OWNER`, and
+   `T3CODE_PUBLIC_MOBILE_EXPO_SLUG` values in the Buildkite cluster secret
+   store. Internal keeps the existing fork-owned EAS project.
+3. Create the Google service account required by Play and upload its JSON key
+   to each EAS project as the Android submit credential. Do not store the JSON
+   key in Buildkite or this repository.
+4. Keep `EXPO_TOKEN` in the cluster secret store, keep Internal's EAS production
+   environment pointed at the private Internal Clerk and relay values, and
+   leave the public project's Connect values unset or pointed at official T3
+   Connect. The runner fails closed if either identity drifts. After both Play
+   records and the Internal EAS submit credential exist, set
+   `T3CODE_INTERNAL_ANDROID_RELEASE_ENABLED=1` there.
+5. Trigger a public tester build only when desired by setting
+   `T3CODE_PUBLIC_ANDROID_RELEASE=1` on a Buildkite UI build of `main`.
+
+The production submit profile in `apps/mobile/eas.json` fixes the destination
+to Play's `internal` track. Changing tester visibility or promoting a build is a
+Play Console decision, not an automatic consequence of this pipeline.
+
+### iOS OTA and TestFlight
+
+`.buildkite/pipeline.yml` runs `scripts/fork/run-publish-mobile-release.mjs`
+(which execs `publish-mobile-release.sh`) on every push to Origin `main`
+that is not the four-hour schedule. The job uses the single cluster queue
+`windows-release` (serge-pc) so Expo cloud can run without a Mac and
+without review-only Linux. Buildkite clusters reject a YAML list as
+`agents.queue`. The Linux review-only pre-command hook is copied at
+setup and does not auto-pull from git. After allowlist changes, re-copy
+`scripts/fork/macos-review-only-hook.sh` onto
+`/home/m1-dev/.config/t3-pretty/buildkite/hooks/pre-command` before giving
+`m1-linux-t3code-fork` any `macos-release` job. Default pipeline upload
+stays on `macos-release` + `os=macos` in Buildkite settings so a stale
+review-only hook cannot refuse the empty-key `:pipeline:` step. It is not
+imported GitHub Actions:
+the importer cannot load `EXPO_TOKEN` or Apple keys, so those jobs died in
+about two seconds and TestFlight never moved.
 
 The script skips the OTA when the push does not touch mobile-relevant
 paths. Buildkite cancels intermediate main builds when pushes land in quick
@@ -27,8 +87,8 @@ succession, so a release can die mid-flight; the runner therefore records
 each published OTA commit in `~/.cache/t3-pretty-release/ios-ota-publish`
 and diffs against that commit instead of `HEAD` against `HEAD~1`, letting
 the next uncancelled build re-release everything stranded. With no record
-(fresh runner), the filter falls back to the `HEAD~1` diff, and the reused
-macos-release checkout still fetches 50 commits of the release SHA and
+(fresh runner), the filter falls back to the `HEAD~1` diff, and the
+checkout still fetches 50 commits of the release SHA and
 `origin/main`. A later depth-1 fetch would drop the parent and fail the job
 instead of skipping. A skip only silences the OTA: the native fingerprint
 gate still runs, so an IPA that a cancelled build never compiled is not
@@ -39,26 +99,58 @@ URL. A new IPA is compiled and uploaded with Fastlane pilot (TestFlight on
 App Store Connect, not App Store review) only when the native fingerprint
 changed. A GitHub Actions-era `.t3-fork/ios-production-fingerprint` is
 enough to skip Xcode. The job does not force an IPA just because
-`.t3-fork/ios-native-submit` is missing. macos-release runs macOS 27
-developer beta, so the IPA is compiled with `Xcode-beta.app`. TestFlight
-accepts the current Xcode 27 beta; an older beta is rejected. If the Mac
-has no full Xcode at all, the job compiles on EAS cloud (`eas build --wait --json`,
-then `eas submit --id` of that build). Set `T3CODE_FORCE_IOS=1` (or
+`.t3-fork/ios-native-submit` is missing. When the worker has a usable full
+Xcode, local `eas build --local` still saves an Expo IPA credit. Without
+Xcode — including `windows-release` and Linux `macos-release` agents — the
+job compiles on EAS cloud (`eas build --no-wait --json`, no `--local`)
+instead of failing. The job records the submitted EAS build id under
+`~/.cache/t3-pretty-release/ios-eas-inflight` and reattaches on the next
+`ios-mobile` run if the Windows agent drops while Expo is still compiling.
+A waiter interrupt or wait-budget expiry exits 0 when that id is known and
+the compile has not failed; a real ERRORED/CANCELED IPA still fails the
+job. Set
+`T3CODE_IOS_LOCAL_XCODE=1` on a rebuild to require local Xcode. Set
+`T3CODE_IOS_ALLOW_EAS_CLOUD=1` to force cloud even when Xcode is present.
+OTA is Linux- and Windows-capable. On `windows-release` the job exports
+with `vp exec expo export` (no `--dump-sourcemap`) and publishes with
+`eas update --skip-bundler`, because Expo's persist can die with Windows
+exit 5 while writing the listed `.hbc.map` files (BK #2849). Tip packaging
+allows at most two iOS Expo spends (a production OTA or a production-profile
+cloud IPA) per America/Vancouver calendar day. The counter is Expo itself:
+`scripts/fork/ios-expo-daily-cap.mjs` lists today's production iOS EAS
+builds and production-branch iOS update groups, so Mac and Linux agents
+share one budget. Hitting the cap skips that Expo call with a warning
+annotation and does not fail desktop packaging. If today's Expo usage
+cannot be read, OTA and cloud IPA both fail open when `allowed=true` so
+a flake cannot skip a due native binary. Local Xcode IPAs do not
+count. Set `T3CODE_IOS_EXPO_DAILY_LIMIT=0` to disable the cap. Set
+`T3CODE_FORCE_IOS=1` (or
 `T3CODE_MOBILE_MODE=build`) on a Buildkite rebuild to compile and submit
-even when the fingerprint matches. The runner writes
+even when the fingerprint matches; that flag does not bypass the daily
+cap. The runner writes
 `~/.cache/t3-pretty-release/ios-native-submit` after a successful IPA
 upload, and later jobs treat `origin/main`'s copy of the git marker as
 enough so queued jobs do not each compile another IPA while the marker
-pull request is still landing.
+pull request is still landing. An in-flight cloud IPA writes
+`~/.cache/t3-pretty-release/ios-eas-inflight` (id, fingerprint,
+buildNumber) so a retry reattaches instead of starting a second Expo
+build.
 
 OTA still reaches already-installed TestFlight binaries whose native
 fingerprint matches. JS-only changes therefore show up as an in-app update
-after the Mac job finishes. Testers who need a brand-new TestFlight binary
-(new devices, or a native module change) get one when the fingerprint
-changes. TestFlight.app itself only lists new IPAs.
+after the iOS job finishes, including when that job ran on Linux. Testers
+who need a brand-new TestFlight binary (new devices, or a native module
+change) get one when the fingerprint changes. TestFlight.app itself only
+lists new IPAs.
 
 Local `eas build --local` IPAs do not create hosted EAS Build records, so
-`eas build:list` alone cannot describe the last submitted binary. After a
+`eas build:list` alone cannot describe the last submitted binary. A
+finished hosted IPA whose runtime already matches the current fingerprint
+can still be downloaded and submitted without spending another Expo build
+credit; the job opens that IPA and refuses submit if the embedded runtime
+does not match. Windows agents read `EXUpdatesRuntimeVersion` from
+`Expo.plist` with `scripts/fork/read-expo-runtime-version.mjs` (XML or
+binary) because they have no macOS `plutil`. After a
 successful TestFlight submit the script commits the fingerprint to
 `.t3-fork/ios-production-fingerprint` and records
 `.t3-fork/ios-native-submit`. Because `main` requires pull requests, the
@@ -66,27 +158,25 @@ bot commit lands through a short-lived `automation/ios-fingerprint-*`
 Origin pull request that `scripts/fork/origin-forge.mjs` merges. Those
 files are outside every release path filter, so the record itself
 schedules no further release. The iOS step has a higher Buildkite priority
-than Origin PR review so a feature-branch review cannot occupy the packaging Mac in
+than Origin PR review so a feature-branch review cannot sit in
 front of TestFlight. Origin's `pipeline upload` rejects `interruptible` on
 command steps, so a later `main` push can still cancel an in-flight Xcode
 archive. Do not merge unrelated `main` PRs while that job is compiling.
 
-iOS store binaries cannot be compiled on the Windows runner. The packaging
-Mac is m5-dev (m1-dev is now Linux); its companion worker lets a desktop DMG
-and an iOS compile run in parallel. `scripts/fork/setup-macos-runner.sh` can
-attach a second Mac with the same `self-hosted`, `macOS`,
-`ARM64`, `t3code-fork`, `release-only` labels if compile latency matters.
-Use a full Xcode.app there — Command Line Tools cannot produce an
-IPA. An M5 Pro (18-core, 48 GB) should compile the current IPA in roughly
-7–10 minutes versus ~13 minutes on m1-dev; the larger win is that the two
-Macs stop taking turns.
+iOS store binaries cannot be compiled on the Windows runner. Hosted
+`macos-large` (M4, 12 vCPU / 56 GB) is unlimited on the Pro plan, so a
+DMG and an iOS compile no longer take turns on one self-hosted Mac.
 
 The four-hour upstream job uses the same whole-repository merge and
 gpt-5.6-sol/xhigh conflict resolver as desktop. After the Origin merge, if
 that integration changed mobile-relevant paths, the sync job runs
-`publish-mobile-release.sh` on macos-release so a missed merge push still
-publishes OTA. The script takes `/tmp/t3-pretty-ios-mobile.lock`, so a
-follow-up native `ios-mobile` job cannot overlap eas update or a local IPA.
+`publish-mobile-release.sh` in-process on self-hosted `macos-release` so a
+missed merge push still publishes OTA. The dedicated `ios-mobile` step on
+later `main` pushes uses `windows-release` (serge-pc). The
+script takes `/tmp/t3-pretty-ios-mobile.lock` on that host, so a follow-up
+job on the same agent cannot overlap eas update or a local IPA. It no
+longer shares the `t3-pretty/apple-signing` concurrency group with the
+DMG, so a Linux Expo publish cannot block Mac packaging.
 A leftover lock from a killed job is removed when no publisher process is
 still running; waiting on a live lock fails after 15 minutes instead of
 sitting until the 90-minute step timeout.
@@ -95,12 +185,25 @@ Server/web-only parent changes do not publish OTA or compile an IPA.
 The job fails early when required release credentials are missing instead
 of reporting a green release that shipped nothing. To activate:
 
-1. Keep `EXPO_TOKEN` on the macos-release agent (cluster secret or
-   `$HOME/.config/t3-pretty/EXPO_TOKEN`). Installed TestFlight
-   binaries poll the fork Expo Updates URL baked into the IPA; eas-cli on
-   this Mac publishes that channel. IPA compilation is local from
-   `Xcode.app` or `Xcode-beta.app`. Do not import a GitHub Actions mobile
-   workflow for this.
+1. Keep `EXPO_TOKEN` in the Buildkite cluster secret store. Tip
+   `ios-mobile` on `windows-release` loads it after checkout with the
+   service `buildkite-agent.exe` (`C:\buildkite-agent\service\`), the
+   same binary Windows NSIS uses for `CLOUDFLARE_API_TOKEN`. Mac and
+   Linux agents still use `buildkite-agent` on PATH or the file-store
+   fallbacks.
+   Git Bash cannot exec the extensionless `vp` path (exit 126), and may
+   also get Permission denied on the agent-tree `vp.exe`. The helper
+   searches `C:\buildkite-agent\vite-plus` for that CLI, launches `.exe`
+   through `cmd.exe`, and copies to a writable bin when spawn or
+   `--version` fails. It never installs into that prefix — even when the
+   directory root looks writable — because the rust launcher writes
+   `.tmp*` under the versioned `1.0.0-rc.0\bin` (BK #2842). `VP_HOME`
+   relocates to `~/.vite-plus` or a job temp first.
+   Installed TestFlight binaries poll the fork Expo Updates URL baked into
+   the IPA; eas-cli publishes that channel. IPA compilation is local from
+   `Xcode.app` or `Xcode-beta.app` when that toolchain is on the agent,
+   otherwise EAS cloud. Do not import a GitHub Actions mobile workflow for
+   this.
 2. Set `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` from a Team
    App Store Connect API key with the Admin role and **Access to Certificates,
    Identifiers & Profiles** enabled, plus `APPLE_TEAM_ID`. The
@@ -115,18 +218,16 @@ of reporting a green release that shipped nothing. To activate:
    normal mobile releases are fully non-interactive. Do not use a cloud
    `eas build` for this bootstrap unless you intend to spend an Expo iOS
    build credit.
-5. On the Mac runner: a full `Xcode.app` or `Xcode-beta.app`. This machine
-   is on the macOS developer beta, so `Xcode-beta.app` is the one that
-   runs. The script probes `xcodebuild -version` and skips a leftover
-   `Xcode.app` that cannot run. Keep it on the Xcode 27 beta that App
-   Store Connect currently accepts for TestFlight (today that is beta 5).
-   Command Line Tools cannot compile an IPA; if `xcode-select -p` still
-   points at them, run once:
-   `sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`.
-   The script retries that switch with passwordless sudo during the job.
-   Local EAS on macOS 26 / Xcode 27 also needs the `security` PATH shim in
-   `scripts/fork/security-eas-local-keychain` so Prepare credentials does not
-   reject a successfully imported distribution certificate.
+5. A Mac with full `Xcode.app` (or the accepted `Xcode-beta.app` build)
+   can still compile the IPA locally. The publisher probes those apps and
+   skips a leftover `Xcode.app` that cannot run. Command Line Tools cannot
+   compile an IPA; without a usable Xcode the job uses EAS cloud. Force
+   local with `T3CODE_IOS_LOCAL_XCODE=1`. Force cloud with
+   `T3CODE_IOS_ALLOW_EAS_CLOUD=1`. The script retries `xcode-select` with
+   passwordless sudo when the selected Xcode is usable. Local EAS on
+   macOS 26 / Xcode 27 also needs the `security` PATH shim in
+   `scripts/fork/security-eas-local-keychain` so Prepare credentials does
+   not reject a successfully imported distribution certificate.
 6. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
    `T3CODE_MOBILE_EAS_PROJECT_ID`, `T3CODE_MOBILE_EXPO_OWNER`,
    optionally `T3CODE_MOBILE_EXPO_SLUG`.

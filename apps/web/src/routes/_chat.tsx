@@ -1,8 +1,10 @@
-import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useParams } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { ThreadRouteView } from "../components/ThreadRouteView";
+import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
@@ -15,6 +17,9 @@ import { useIsMobile } from "../hooks/useMediaQuery";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
+import { isEditableFocused } from "../lib/editableFocus";
+import { isModelPickerOpen } from "../modelPickerVisibility";
+import { undoLatestThreadAction } from "../hooks/showThreadUndoNotice";
 import { resolveShortcutCommand } from "../keybindings";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { isPreviewSupportedInRuntime } from "../previewStateStore";
@@ -26,8 +31,14 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
-  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
-    useHandleNewThread();
+  const {
+    activeDraftThread,
+    activeThread,
+    defaultProjectRef,
+    handleNewThread,
+    routeThreadRef,
+    scopedProjectRef,
+  } = useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const isMobile = useIsMobile();
   const legacySidebarEnabled = useLegacySidebarEnabled();
@@ -44,6 +55,7 @@ function ChatRouteGlobalShortcuts() {
       }).length,
     [primaryEnvironmentId, projectGroupingSettings, projects],
   );
+  const newDraftShortcutPendingRef = useRef(false);
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
@@ -58,6 +70,24 @@ function ChatRouteGlobalShortcuts() {
       : false,
   );
   useEffect(() => {
+    const runNewDraftShortcut = (label: "thread" | "canvas", action: () => Promise<boolean>) => {
+      if (newDraftShortcutPendingRef.current) return;
+      newDraftShortcutPendingRef.current = true;
+      void action()
+        .catch((error: unknown) => {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: `Could not start a new ${label}`,
+              description: error instanceof Error ? error.message : "The new draft was not opened.",
+            }),
+          );
+        })
+        .finally(() => {
+          newDraftShortcutPendingRef.current = false;
+        });
+    };
+
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, {
@@ -66,10 +96,21 @@ function ChatRouteGlobalShortcuts() {
           terminalOpen,
           previewFocus: isPreviewFocused(),
           previewOpen,
+          editableFocus: isEditableFocused(event.target),
+          modelPickerOpen: isModelPickerOpen(),
         },
       });
 
       if (isCommandPaletteOpen()) {
+        return;
+      }
+
+      if (command === "thread.undo") {
+        if (event.repeat || isModelPickerOpen()) return;
+        if (undoLatestThreadAction()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
         return;
       }
 
@@ -82,12 +123,15 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.newLocal") {
         event.preventDefault();
         event.stopPropagation();
-        void startNewThreadFromContext({
-          activeDraftThread,
-          activeThread: activeThread ?? undefined,
-          defaultProjectRef,
-          handleNewThread,
-        });
+        runNewDraftShortcut("thread", () =>
+          startNewThreadFromContext({
+            activeDraftThread,
+            activeThread: activeThread ?? undefined,
+            defaultProjectRef,
+            handleNewThread,
+            scopedProjectRef,
+          }),
+        );
         return;
       }
 
@@ -95,18 +139,22 @@ function ChatRouteGlobalShortcuts() {
         event.preventDefault();
         event.stopPropagation();
         // The default sidebar routes creation through the command palette
-        // whenever there is a real choice to make; the legacy sidebar (and
-        // single-project setups) keep the immediate contextual create.
-        if (!legacySidebarEnabled && projectGroupCount > 1) {
+        // whenever there is a real choice to make; a scoped project list is
+        // already that choice. The legacy sidebar (and single-project setups)
+        // keep the immediate contextual create.
+        if (!legacySidebarEnabled && projectGroupCount > 1 && scopedProjectRef === null) {
           openCommandPalette({ open: "new-thread-in" });
           return;
         }
-        void startNewThreadFromContext({
-          activeDraftThread,
-          activeThread: activeThread ?? undefined,
-          defaultProjectRef,
-          handleNewThread,
-        });
+        runNewDraftShortcut("thread", () =>
+          startNewThreadFromContext({
+            activeDraftThread,
+            activeThread: activeThread ?? undefined,
+            defaultProjectRef,
+            handleNewThread,
+            scopedProjectRef,
+          }),
+        );
         return;
       }
 
@@ -169,6 +217,7 @@ function ChatRouteGlobalShortcuts() {
     previewOpen,
     projectGroupCount,
     routeThreadRef,
+    scopedProjectRef,
     selectedThreadKeysSize,
     legacySidebarEnabled,
     terminalOpen,
@@ -178,10 +227,16 @@ function ChatRouteGlobalShortcuts() {
 }
 
 function ChatRouteLayout() {
+  // Both thread routes render here, not in their own leaf components, so the
+  // draft-to-thread promotion keeps one ChatView mounted across the swap.
+  const threadTarget = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteTarget(params),
+  });
   return (
     <>
       <ChatRouteGlobalShortcuts />
-      <Outlet />
+      {threadTarget ? <ThreadRouteView target={threadTarget} /> : <Outlet />}
     </>
   );
 }

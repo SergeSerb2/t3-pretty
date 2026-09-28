@@ -1,10 +1,14 @@
 #!/bin/bash
 # pre-command hook. No-op unless this agent opted into review-only mode.
 # macos-release still matches old feature-branch pipelines, so a daily-driver
-# review Mac must refuse DMG/iOS/relay/sync and imported macos GHA children.
+# review Mac must refuse DMG/relay/sync and imported macos GHA children.
+# Allowed: Origin review/comments, Expo cloud ios-mobile, and the default
+# :pipeline: upload (empty BUILDKITE_STEP_KEY). Copied onto the agent at
+# setup; the live hook does not auto-pull. Re-copy after allowlist changes.
+# Linux review-only: $HOME/.config/t3-pretty/buildkite/hooks/pre-command
 [[ "${T3_PRETTY_REVIEW_ONLY:-}" == "1" ]] || exit 0
 case "${BUILDKITE_STEP_KEY:-}" in
-  origin-pr-review | origin-pr-comments) exit 0 ;;
+  "" | origin-pr-review | origin-pr-comments | ios-mobile) exit 0 ;;
 esac
 echo "This macos-release agent is review-only. Refusing ${BUILDKITE_STEP_KEY:-unknown}." >&2
 exit 1
