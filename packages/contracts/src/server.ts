@@ -111,6 +111,8 @@ export const ServerProviderAuth = Schema.Struct({
   type: Schema.optional(ServerProviderLabel),
   label: Schema.optional(ServerProviderLabel),
   email: Schema.optional(ServerProviderLabel),
+  subscriptionSharing: Schema.optional(Schema.Boolean),
+  profileId: Schema.optional(ServerProviderLabel),
 });
 export type ServerProviderAuth = typeof ServerProviderAuth.Type;
 
@@ -264,6 +266,12 @@ export const ServerProvider = Schema.Struct({
     Schema.Struct({
       canAuthenticate: Schema.Boolean,
       canInstall: Schema.Boolean,
+    }),
+  ),
+  runtimePaths: Schema.optionalKey(
+    Schema.Struct({
+      homePath: TrimmedNonEmptyString,
+      shadowHomePath: Schema.NullOr(TrimmedNonEmptyString),
     }),
   ),
   enabled: Schema.Boolean,

@@ -5,6 +5,7 @@ import { createHashHistory, createBrowserHistory } from "@tanstack/react-router"
 
 import "./index.css";
 
+import { prepareProviderAuthDelivery } from "./providerAuthDelivery";
 import { isElectron } from "./env";
 import { syncTeslaTouchUi } from "./teslaTouchUi";
 import { ManagedRelayAuthProvider } from "./cloud/managedAuth";
@@ -25,6 +26,8 @@ import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkR
 // rendering the app unwrapped and remounting it once the chunk lands.
 const loadElectronClerkRoot = () => import("./electronClerkRoot");
 const LazyElectronClerkRoot = React.lazy(loadElectronClerkRoot);
+
+prepareProviderAuthDelivery();
 
 // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
 // Hosted web keeps real paths for OAuth callbacks and pairing links; its static host serves the

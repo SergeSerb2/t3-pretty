@@ -69,7 +69,8 @@ import {
   nativeHeaderScrollEdgeEffects,
 } from "../../native/StackHeader";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
-import { serverEnvironment } from "../../state/server";
+import { ChatGptSharingStatus } from "./ChatGptSharingStatus";
+import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { MaterialScreenContent } from "../../components/MaterialScreenContent";
@@ -831,12 +832,19 @@ function ThreadSettingsOptionsCard(props: {
   readonly onOpenSubmenu: (submenu: ThreadSettingsSubmenuPage) => void;
 }) {
   const session = useThreadSettingsSession();
+  const configs = useAtomValue(environmentServerConfigsAtom);
+  const selectedProvider = session.environmentId
+    ? (configs
+        .get(session.environmentId)
+        ?.providers.find((provider) => provider.instanceId === session.providerInstanceId) ?? null)
+    : null;
 
   return (
     <Animated.View
       className="mx-4 overflow-hidden rounded-2xl bg-card"
       layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}
     >
+      <ChatGptSharingStatus provider={selectedProvider} />
       {session.displayedDescriptors.map((descriptor) => {
         if (descriptor.type === "select") {
           return (
@@ -1715,7 +1723,7 @@ export function NewTaskThreadSettingsRouteScreen() {
   return (
     <ThreadSettingsSessionProvider
       environmentId={settings.environmentId}
-      providerInstanceId={settings.providerInstanceId}
+      {...(settings.providerInstanceId ? { providerInstanceId: settings.providerInstanceId } : {})}
       providerGroups={settings.providerGroups}
       selectedModel={settings.selectedModel}
       onSelectModel={handleSelectModel}

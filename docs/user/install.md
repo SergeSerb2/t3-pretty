@@ -100,7 +100,6 @@ update fails. Download the new `.deb` from the R2 feed and install it the same
 way. `winget`, Homebrew `t3-code`, and AUR `t3code-bin` install upstream T3 Code,
 not this fork.
 
-
 ### Windows Subsystem for Linux
 
 Choose a WSL distro in **Settings → Connections** to run agents and projects
@@ -153,20 +152,20 @@ before sharing.
 ## Providers
 
 T3 Code uses provider runtimes but does not bundle them. Install and authenticate each
-provider's CLI, or use T3 Code's managed setup for Antigravity.
+provider's CLI, or use T3 Code's managed setup for Codex or Antigravity.
 
 Open **Settings → Providers** in the web or desktop app, select the environment,
 and enable the provider you want. Installation, login, and configuration belong
 to that environment's machine, even when you connect from a phone or another
 computer.
 
-| Provider    | CLI                                                                                                        | Default binary     | Log in with                        |
-| ----------- | ---------------------------------------------------------------------------------------------------------- | ------------------ | ---------------------------------- |
-| Codex       | [Codex CLI](https://developers.openai.com/codex/cli)                                                       | `codex`            | `codex login`                      |
-| Claude      | [Claude Code](https://claude.com/product/claude-code)                                                      | `claude`           | `claude auth login`                |
-| Cursor      | [Cursor CLI](https://cursor.com/cli)                                                                       | `cursor-agent`     | `agent login`                      |
-| Grok Build  | [Grok Build CLI](https://x.ai/cli)                                                                         | `grok`             | `grok login`                       |
-| Antigravity | [Official ACP agent](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json) | Managed by T3 Code | **Sign in with Google** in T3 Code |
+| Provider    | Runtime / CLI                                                                                                              | Default binary                | Authenticate with                                    |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------- |
+| Codex       | [Connect with ChatGPT](./providers-codex.md#connect-with-chatgpt), or [Codex CLI](https://developers.openai.com/codex/cli) | Managed by T3 Code or `codex` | **Connect with ChatGPT** in T3 Code or `codex login` |
+| Claude      | [Claude Code](https://claude.com/product/claude-code)                                                                      | `claude`                      | `claude auth login`                                  |
+| Cursor      | [Cursor CLI](https://cursor.com/cli)                                                                                       | `cursor-agent`                | `agent login`                                        |
+| Grok Build  | [Grok Build CLI](https://x.ai/cli)                                                                                         | `grok`                        | `grok login`                                         |
+| Antigravity | [Official ACP agent](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json)                 | Managed by T3 Code            | **Sign in with Google** in T3 Code                   |
 
 Codex and Claude are on by default. Cursor, Grok Build, and Antigravity are off
 by default. Turn them on in **Settings** → **Providers** using each provider's card when you want
@@ -185,7 +184,8 @@ The available levels and default come from the installed Grok Build CLI, so they
 and CLI version.
 
 Run CLI login commands on the machine running the T3 Code server, not on the device you browse
-from. Antigravity uses its sign-in controls in T3 Code instead of a CLI login command.
+from. When using the managed options, connect Codex with ChatGPT or sign in to Antigravity from
+T3 Code instead of running a CLI login command.
 
 ### Binary Discovery
 
@@ -194,15 +194,9 @@ Each provider CLI must be on the server's `PATH`, or have an explicit binary pat
 manager or a non-standard install location keeps the CLI off the `PATH` of the shell that
 started T3 Code.
 
-Antigravity can use its managed runtime without a `PATH` entry. Its optional **Binary path**
-overrides the managed runtime and must point to the official ACP executable.
-
-When a provider CLI is behind its latest release, its provider card shows the
-available version. **Update now** appears only when T3 Code can tell which
-installer owns the CLI (its own update command, Homebrew, or a global npm, pnpm,
-bun, or Vite+ install) and runs that installer. Otherwise update the CLI the same
-way you installed it. Homebrew installs compare against the version Homebrew
-offers, which can trail the npm release by a few hours.
+Codex connected through ChatGPT and Antigravity can use their managed runtimes without a `PATH`
+entry. Antigravity's optional **Binary path** overrides its managed runtime and must point to the
+official ACP executable.
 
 T3 Code warns when a provider version has known compatibility problems with your
 release. Check **Settings → Providers** on that environment for the recommended
