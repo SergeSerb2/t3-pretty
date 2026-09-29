@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   isLoopbackHost,
-  isPreviewableUrl,
   newPreviewTabId,
   normalizePreviewUrl,
   PreviewUrlNormalizationError,
@@ -27,28 +26,12 @@ describe("isLoopbackHost", () => {
   });
 });
 
-describe("isPreviewableUrl", () => {
-  it.each([
-    "http://localhost:5173",
-    "http://127.0.0.1:3000/path",
-    "http://0.0.0.0:8080",
-    "http://[::1]:5173",
-  ])("%s is previewable", (url) => {
-    expect(isPreviewableUrl(url)).toBe(true);
-  });
-
-  it.each(["https://example.com", "ws://localhost:5173", "file:///etc/passwd", "not-a-url", ""])(
-    "%s is not previewable",
-    (url) => {
-      expect(isPreviewableUrl(url)).toBe(false);
-    },
-  );
-});
-
 describe("normalizePreviewUrl", () => {
   it("treats bare loopback hosts as http", () => {
     expect(normalizePreviewUrl("localhost:5173")).toBe("http://localhost:5173/");
     expect(normalizePreviewUrl("127.0.0.1:3000")).toBe("http://127.0.0.1:3000/");
+    expect(normalizePreviewUrl("localhost?view=mobile")).toBe("http://localhost/?view=mobile");
+    expect(normalizePreviewUrl("[::1]#ready")).toBe("http://[::1]/#ready");
   });
 
   it("treats bare public hosts as https", () => {

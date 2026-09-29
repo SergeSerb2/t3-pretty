@@ -1,69 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 
-import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveRenameCommit, shouldShowOpenInPicker } from "./ChatHeader";
-
-describe("shouldShowOpenInPicker", () => {
-  const primaryEnvironmentId = EnvironmentId.make("environment-primary");
-
-  it("shows the picker for projects in the primary environment", () => {
-    expect(
-      shouldShowOpenInPicker({
-        activeProjectName: "codething-mvp",
-        activeThreadEnvironmentId: primaryEnvironmentId,
-        primaryEnvironmentId,
-        remoteOpenMode: "local-exec",
-      }),
-    ).toBe(true);
-  });
-
-  it("shows the picker for remote environments in deep-link mode", () => {
-    expect(
-      shouldShowOpenInPicker({
-        activeProjectName: "codething-mvp",
-        activeThreadEnvironmentId: EnvironmentId.make("environment-remote"),
-        primaryEnvironmentId,
-        remoteOpenMode: "remote-links",
-      }),
-    ).toBe(true);
-  });
-
-  it("shows the picker's unavailable state for remote environments without an SSH route", () => {
-    expect(
-      shouldShowOpenInPicker({
-        activeProjectName: "codething-mvp",
-        activeThreadEnvironmentId: EnvironmentId.make("environment-remote"),
-        primaryEnvironmentId: null,
-        remoteOpenMode: "remote-unavailable",
-      }),
-    ).toBe(true);
-  });
-
-  it("hides the picker for non-primary local backends", () => {
-    expect(
-      shouldShowOpenInPicker({
-        activeProjectName: "codething-mvp",
-        activeThreadEnvironmentId: EnvironmentId.make("environment-remote"),
-        primaryEnvironmentId,
-        remoteOpenMode: "local-exec",
-      }),
-    ).toBe(false);
-  });
-
-  it("hides the picker when there is no active project", () => {
-    expect(
-      shouldShowOpenInPicker({
-        activeProjectName: undefined,
-        activeThreadEnvironmentId: primaryEnvironmentId,
-        primaryEnvironmentId,
-        remoteOpenMode: "remote-links",
-      }),
-    ).toBe(false);
-  });
-});
+import { resolveRenameCommit } from "./ChatHeader";
 
 describe("resolveRenameCommit", () => {
   it("commits a trimmed changed title", () => {
@@ -86,16 +26,17 @@ describe("resolveRenameCommit", () => {
   });
 });
 
-describe("header action padding", () => {
+describe("header layout-control reserve", () => {
   it("animates the layout-control reserve with the right panel slide", () => {
     const source = NodeFS.readFileSync(new URL("./ChatHeader.tsx", import.meta.url), "utf8");
-    const actionsStart = source.indexOf("data-chat-header-actions\n");
-    const actionsBlock = source.slice(actionsStart, actionsStart + 500);
 
-    expect(actionsStart).toBeGreaterThanOrEqual(0);
-    expect(actionsBlock).toContain("transition-[padding-right]");
-    expect(actionsBlock).toContain("duration-200");
-    expect(actionsBlock).toContain("ease-linear");
-    expect(actionsBlock).toContain('rightPanelOpen ? "pr-0" : "pr-16"');
+    expect(source).not.toContain("data-chat-header-actions");
+    expect(source).not.toContain("ProjectScriptsControl");
+    expect(source).not.toContain("OpenInPicker");
+    expect(source).not.toContain("GitActionsControl");
+    expect(source).toContain("transition-[padding-right]");
+    expect(source).toContain("duration-200");
+    expect(source).toContain("ease-linear");
+    expect(source).toContain('rightPanelOpen ? "pr-0" : "pr-16"');
   });
 });

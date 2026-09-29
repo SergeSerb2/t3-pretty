@@ -24,7 +24,19 @@ import {
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
 
+import {
+  resolveSharedSceneryPhotoSet,
+  shouldPublishLocalSceneryPhotoSet,
+} from "@t3tools/client-runtime/state/scenery-sync";
+import {
+  filterSharedServerPatch,
+  supportsSharedSettingsSync,
+} from "@t3tools/client-runtime/state/shared-settings";
+
 import { isBoringMobileTheme } from "../../lib/mobileTheme";
+import { useEnvironments } from "../../state/environments";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 import type { MobileSceneryPreferences } from "../../persistence/mobile-preferences";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -82,6 +94,7 @@ interface SceneryContextValue extends ResolvedScenery {
 const SceneryContext = createContext<SceneryContextValue | null>(null);
 
 const EMPTY_SEEDS: ReadonlyArray<SceneryPhoto> = [];
+let liftedSceneryPhotoSet: string | null = null;
 
 /** Backoff for a failed/empty extra-set import before the pool blanks. */
 const SEED_RETRY_DELAYS_MS: ReadonlyArray<number> = [500, 2000];
@@ -237,6 +250,67 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     (value: number) => persistScenery({ translucency: clampTranslucency(value) }),
     [persistScenery],
   );
+  const { environments } = useEnvironments();
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    label: "scenery photo set sync",
+    reportFailure: false,
+  });
+  const publishPhotoSet = useCallback(
+    (nextPhotoSetId: PhotoSetId) => {
+      liftedSceneryPhotoSet = nextPhotoSetId;
+      for (const environment of environments) {
+        if (!supportsSharedSettingsSync(environment)) continue;
+        const patch = filterSharedServerPatch(
+          { sceneryPhotoSet: nextPhotoSetId },
+          environment.serverConfig?.environment.capabilities,
+        );
+        if (patch.sceneryPhotoSet === undefined) continue;
+        void updateSettings({
+          environmentId: environment.environmentId,
+          input: { patch },
+        });
+      }
+    },
+    [environments, updateSettings],
+  );
+
+  useEffect(() => {
+    if (!isReady) return;
+    const localPhotoSetId = sceneryRef.current.photoSetId;
+    const sharedPhotoSetId = resolveSharedSceneryPhotoSet({
+      primaryEnvironmentId: null,
+      sources: environments.map((environment) => ({
+        environmentId: environment.environmentId,
+        syncEligible: supportsSharedSettingsSync(environment),
+        sceneryPhotoSet: environment.serverConfig?.settings.sceneryPhotoSet,
+      })),
+    });
+    if (sharedPhotoSetId !== null) {
+      const shared = parsePhotoSetId(sharedPhotoSetId);
+      if (shared !== localPhotoSetId) {
+        persistScenery({ photoSetId: shared });
+      }
+      return;
+    }
+    const canPublish = environments.some(
+      (environment) =>
+        supportsSharedSettingsSync(environment) &&
+        environment.serverConfig?.environment.capabilities.sceneryPhotoSet === true,
+    );
+    if (
+      !canPublish ||
+      !shouldPublishLocalSceneryPhotoSet({
+        sharedPhotoSetId,
+        localPhotoSetId,
+        defaultPhotoSetId: DEFAULT_PHOTO_SET_ID,
+      }) ||
+      liftedSceneryPhotoSet === localPhotoSetId
+    ) {
+      return;
+    }
+    publishPhotoSet(localPhotoSetId);
+  }, [environments, isReady, persistScenery, publishPhotoSet]);
+
   const setPhotoSetId = useCallback(
     (value: PhotoSetId) => {
       const next = parsePhotoSetId(value);
@@ -244,8 +318,9 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
         return;
       }
       persistScenery({ photoSetId: next });
+      publishPhotoSet(next);
     },
-    [persistScenery],
+    [persistScenery, publishPhotoSet],
   );
 
   const value = useMemo(

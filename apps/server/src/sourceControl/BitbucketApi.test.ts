@@ -16,6 +16,7 @@ import {
 
 import { GitCommandError } from "@t3tools/contracts";
 import * as BitbucketApi from "./BitbucketApi.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import type * as VcsDriver from "../vcs/VcsDriver.ts";
@@ -64,6 +65,7 @@ function makeLayer(input: {
     request: HttpClientRequest.HttpClientRequest,
   ) => HttpClientError.HttpClientError;
   readonly git?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
+  readonly env?: Record<string, string>;
 }) {
   const execute = vi.fn((request: HttpClientRequest.HttpClientRequest) =>
     input.requestFailure
@@ -150,7 +152,7 @@ function makeLayer(input: {
     Layer.provide(
       ConfigProvider.layer(
         ConfigProvider.fromEnv({
-          env: {
+          env: input.env ?? {
             T3CODE_BITBUCKET_API_BASE_URL: "https://api.test.local/2.0",
             T3CODE_BITBUCKET_EMAIL: "user@example.com",
             T3CODE_BITBUCKET_API_TOKEN: "token",
@@ -158,6 +160,7 @@ function makeLayer(input: {
         }),
       ),
     ),
+    Layer.provideMerge(ServerSettings.layerTest()),
     Layer.provideMerge(NodeServices.layer),
   );
 
@@ -497,6 +500,32 @@ it.effect("creates pull requests using the official REST payload shape", () => {
   }).pipe(Effect.provide(layer), Effect.scoped);
 });
 
+it.effect("rejects an oversized pull request body before sending it", () => {
+  const { execute, layer } = makeLayer({
+    response: () => Response.json(bitbucketPullRequest),
+  });
+
+  return Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const bodyFile = yield* fileSystem.makeTempFileScoped({ prefix: "bitbucket-pr-body-" });
+    yield* fileSystem.writeFile(bodyFile, new Uint8Array(1024 * 1024 + 1));
+
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const error = yield* bitbucket
+      .createPullRequest({
+        cwd: "/repo",
+        baseBranch: "main",
+        headSelector: "feature/provider",
+        title: "Provider PR",
+        bodyFile,
+      })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketPullRequestBodyReadError);
+    assert.lengthOf(execute.mock.calls, 0);
+  }).pipe(Effect.provide(layer), Effect.scoped);
+});
+
 it.effect("reports auth status through the Bitbucket REST /user endpoint", () => {
   const { layer } = makeLayer({
     response: () => Response.json({ username: "bitbucket-user" }),
@@ -515,8 +544,80 @@ it.effect("reports auth status through the Bitbucket REST /user endpoint", () =>
   }).pipe(Effect.provide(layer));
 });
 
-it.effect("preserves the HTTP client failure without deriving the domain message from it", () => {
-  const transportCause = new Error("socket reset by peer");
+it.effect("prefers credentials saved in settings over the environment, without a restart", () => {
+  const { execute, layer } = makeLayer({
+    response: () => Response.json({ username: "bitbucket-user" }),
+  });
+  const lastAuthorization = () => execute.mock.calls.at(-1)?.[0].headers.authorization;
+  const basic = (user: string, password: string) => `Basic ${btoa(`${user}:${password}`)}`;
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const settings = yield* ServerSettings.ServerSettingsService;
+
+    yield* bitbucket.probeAuth;
+    assert.strictEqual(lastAuthorization(), basic("user@example.com", "token"));
+
+    yield* settings.updateSettings({
+      bitbucket: { email: "saved@example.com", apiToken: "saved-api-token" },
+    });
+    yield* bitbucket.probeAuth;
+    assert.strictEqual(lastAuthorization(), basic("saved@example.com", "saved-api-token"));
+
+    yield* settings.updateSettings({ bitbucket: { accessToken: "saved-access-token" } });
+    yield* bitbucket.probeAuth;
+    assert.strictEqual(lastAuthorization(), "Bearer saved-access-token");
+
+    yield* settings.updateSettings({ bitbucket: { accessToken: "", apiToken: "" } });
+    yield* bitbucket.probeAuth;
+    assert.strictEqual(lastAuthorization(), basic("user@example.com", "token"));
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("never puts a saved token that is unsafe for an HTTP header on the wire", () => {
+  const { execute, layer } = makeLayer({
+    response: () => Response.json({ username: "bitbucket-user" }),
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const settings = yield* ServerSettings.ServerSettingsService;
+
+    // Fetch would reject this header with an error quoting the token, and that error reaches
+    // clients. The unusable token is ignored, so the environment credential is used instead.
+    yield* settings.updateSettings({ bitbucket: { accessToken: "saved\ntoken" } });
+    yield* bitbucket.probeAuth;
+    assert.strictEqual(
+      execute.mock.calls.at(-1)?.[0].headers.authorization,
+      `Basic ${btoa("user@example.com:token")}`,
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("reports saved credentials as configured when Bitbucket cannot confirm them", () => {
+  const { layer } = makeLayer({
+    response: () => new Response(null, { status: 401 }),
+    env: { T3CODE_BITBUCKET_API_BASE_URL: "https://api.test.local/2.0" },
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const settings = yield* ServerSettings.ServerSettingsService;
+
+    assert.strictEqual((yield* bitbucket.probeAuth).status, "unauthenticated");
+
+    yield* settings.updateSettings({ bitbucket: { accessToken: "saved-access-token" } });
+    assert.deepStrictEqual(yield* bitbucket.probeAuth, {
+      status: "unknown",
+      account: Option.none(),
+      host: Option.some("bitbucket.org"),
+      detail: Option.some("An access token is configured."),
+    });
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("keeps authenticated HTTP request failures out of diagnostics", () => {
+  const transportCause = new Error("socket reset by peer; token=must-not-leak");
   let requestFailure: HttpClientError.HttpClientError | undefined;
   const { layer } = makeLayer({
     response: () => Response.json({}),
@@ -546,8 +647,9 @@ it.effect("preserves the HTTP client failure without deriving the domain message
       error.message,
       "Bitbucket API failed in getPullRequest: Failed to send the Bitbucket request.",
     );
-    assert.strictEqual(error.cause, requestFailure);
-    assert.strictEqual(requestFailure?.cause, transportCause);
+    assert.notStrictEqual(error.cause, requestFailure);
+    assert.notInclude(String(error.cause), "must-not-leak");
+    assert.notInclude(String(error.cause), "user@example.com");
   }).pipe(Effect.provide(layer));
 });
 
@@ -594,8 +696,8 @@ it.effect("keeps a 429 Retry-After time on the response error", () => {
   }).pipe(Effect.provide(layer));
 });
 
-it.effect("preserves Bitbucket response body read failures as their immediate cause", () => {
-  const cause = new Error("response stream failed");
+it.effect("sanitizes Bitbucket response stream failures", () => {
+  const cause = new Error("response stream failed; credential=must-not-leak");
   const { layer } = makeLayer({
     response: () =>
       new Response(
@@ -615,12 +717,67 @@ it.effect("preserves Bitbucket response body read failures as their immediate ca
     assert.instanceOf(error, BitbucketApi.BitbucketResponseBodyReadError);
     assert.strictEqual(error.operation, "getPullRequest");
     assert.strictEqual(error.status, 502);
-    assert.instanceOf(error.cause, HttpClientError.HttpClientError);
-    assert.strictEqual(error.cause.cause, cause);
+    assert.notInclude(String(error.cause), "must-not-leak");
     assert.strictEqual(
       error.message,
       "Bitbucket API failed in getPullRequest: Bitbucket returned HTTP 502.",
     );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("rejects an oversized Bitbucket JSON response before materializing its body", () => {
+  let bodyCanceled = false;
+  const { layer } = makeLayer({
+    response: () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start: (controller) => controller.enqueue(new TextEncoder().encode("{}")),
+          cancel: () => {
+            bodyCanceled = true;
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Length": String(8 * 1024 * 1024 + 1) },
+        },
+      ),
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const error = yield* bitbucket
+      .getPullRequest({ cwd: "/repo", reference: "42" })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketResponseBodyReadError);
+    assert.strictEqual(error.operation, "getPullRequest");
+    assert.strictEqual(error.status, 200);
+    assert.notInclude(error.message, "{}");
+    assert.isTrue(bodyCanceled);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("keeps the 429 retry time when the response body cannot be read", () => {
+  const { layer } = makeLayer({
+    response: () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start: (controller) => controller.error(new Error("response stream failed")),
+        }),
+        { status: 429, headers: { "Retry-After": "120" } },
+      ),
+  });
+
+  return Effect.gen(function* () {
+    yield* TestClock.setTime(1_000);
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const error = yield* bitbucket
+      .request({ method: "GET", url: "/repositories/acme/web" })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketResponseBodyReadError);
+    assert.strictEqual(error.status, 429);
+    assert.strictEqual(error.retryAt, 121_000);
   }).pipe(Effect.provide(layer));
 });
 
@@ -891,3 +1048,21 @@ it.effect("cuts a response short rather than reading an unbounded diff into memo
     ),
   ),
 );
+
+it.effect("refuses an oversized Bitbucket request body before sending credentials", () => {
+  const { execute, layer } = makeLayer({ response: () => new Response("{}", { status: 200 }) });
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+
+    const error = yield* bitbucket
+      .request({
+        method: "POST",
+        url: "/repositories/acme/web/pullrequests/1/comments",
+        body: "x".repeat(1024 * 1024 + 1),
+      })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketRequestError);
+    assert.lengthOf(execute.mock.calls, 0);
+  }).pipe(Effect.provide(layer));
+});
