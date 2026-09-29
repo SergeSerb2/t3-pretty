@@ -9,6 +9,8 @@ import type {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useEnvironmentQuery } from "../../state/query";
+import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../../lib/searchQuery";
+import { compareTimestamps } from "../../lib/time";
 import { pullRequestEnvironment } from "../../state/pullRequests";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -55,7 +57,10 @@ export function usePullRequestList(input: {
     () => resolveProjectScope(input.projectId, input.projects, input.projectsKnown),
     [input.projectId, input.projects, input.projectsKnown],
   );
-  const typedQuery = input.query.trim();
+  const typedQuery = limitMobileSearchQuery(
+    input.query.trim(),
+    MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH,
+  );
   const sentQuery = useDebouncedValue(typedQuery, SEARCH_DEBOUNCE_MS);
   const scopeKey = `${input.environmentId ?? ""}:${input.state}:${input.involvement}:${scopedProjectId ?? ""}:${input.host ?? ""}`;
   const filterKey = `${scopeKey}:${sentQuery}`;
@@ -220,7 +225,7 @@ export function usePullRequestList(input: {
           (entry) => !held.has(`${entry.host}:${entry.repository}#${entry.number}`),
         );
         const appended = rankPullRequestMatches(
-          [...arrived].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+          [...arrived].sort((left, right) => compareTimestamps(right.updatedAt, left.updatedAt)),
           sentQuery,
         );
         return { key: filterKey, entries: [...previous.entries, ...appended] };

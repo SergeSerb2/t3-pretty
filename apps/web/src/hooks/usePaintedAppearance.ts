@@ -1,8 +1,9 @@
 /**
- * The appearance actually painted on <html>, which World Scenery ink can
- * flip independently of the stored light/dark preference. Syntax highlighting
- * and other token colors must follow this, not useTheme().resolvedTheme —
- * otherwise a light plate can carry a dark highlighter (white tokens).
+ * The appearance actually painted on <html>. The blocking theme script paints
+ * it before React boots and useTheme repaints it on preference or system
+ * changes, so syntax highlighting and other token colors follow this rather
+ * than a render-time snapshot — otherwise a light plate can briefly carry a
+ * dark highlighter (white tokens).
  */
 import { useSyncExternalStore } from "react";
 

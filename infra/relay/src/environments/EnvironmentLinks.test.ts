@@ -1,4 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
+import {
+  RELAY_ENVIRONMENT_LABEL_MAX_LENGTH,
+  RELAY_ENVIRONMENT_MAX_COUNT,
+} from "@t3tools/contracts/relay";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -8,6 +12,45 @@ import { relayEnvironmentLinks } from "../persistence/schema.ts";
 import * as EnvironmentLinks from "./EnvironmentLinks.ts";
 
 describe("EnvironmentLinks", () => {
+  it.effect("bounds environment listings to the shared response contract", () => {
+    let selectedLimit: number | null = null;
+    const fakeDb = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: (limit: number) => {
+                selectedLimit = limit;
+                return Effect.succeed([
+                  {
+                    environmentId: "environment-1",
+                    environmentLabel: `  ${"x".repeat(RELAY_ENVIRONMENT_LABEL_MAX_LENGTH + 1)}  `,
+                    endpointHttpBaseUrl: "https://example.test",
+                    endpointWsBaseUrl: "wss://example.test",
+                    endpointProviderKind: "manual",
+                    createdAt: "2026-08-23T00:00:00.000Z",
+                  },
+                ]);
+              },
+            }),
+          }),
+        }),
+      }),
+    } as unknown as RelayDb.RelayDb["Service"];
+
+    return Effect.gen(function* () {
+      const links = yield* EnvironmentLinks.EnvironmentLinks;
+      const listed = yield* links.listForUser({ userId: "user-1" });
+      expect(listed).toHaveLength(1);
+      expect(listed[0]?.label).toBe("x".repeat(RELAY_ENVIRONMENT_LABEL_MAX_LENGTH));
+      expect(selectedLimit).toBe(RELAY_ENVIRONMENT_MAX_COUNT);
+    }).pipe(
+      Effect.provide(
+        EnvironmentLinks.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb))),
+      ),
+    );
+  });
+
   it.effect("retains link lookup failures with user and environment identity", () => {
     const cause = new Error("database unavailable");
     const fakeDb = {
@@ -49,7 +92,11 @@ describe("EnvironmentLinks", () => {
         from: (table: unknown) => {
           expect(table).toBe(relayEnvironmentLinks);
           return {
-            where: () => Effect.fail(cause),
+            where: () => ({
+              orderBy: () => ({
+                limit: () => Effect.fail(cause),
+              }),
+            }),
           };
         },
       }),
@@ -66,7 +113,7 @@ describe("EnvironmentLinks", () => {
 
       expect(error).toMatchObject({
         _tag: "EnvironmentLinkUserListPersistenceError",
-        operation: "list-delivery-users",
+        message: "Environment link user query 'list-delivery-users' failed for environment 'env-1'",
         environmentId: "env-1",
       });
       expect(error.cause).toBe(cause);
@@ -78,8 +125,9 @@ describe("EnvironmentLinks", () => {
     );
   });
 
-  it.effect("selects users when either notifications or Live Activities are enabled", () => {
+  it.effect("selects a bounded recent notification or Live Activity user set by environment key", () => {
     const whereConditions: Array<unknown> = [];
+    const selectedLimits: Array<number> = [];
     const fakeDb = {
       select: (selection: unknown) => {
         expect(selection).toBeDefined();
@@ -89,7 +137,14 @@ describe("EnvironmentLinks", () => {
             return {
               where: (condition: unknown) => {
                 whereConditions.push(condition);
-                return Effect.succeed([]);
+                return {
+                  orderBy: () => ({
+                    limit: (limit: number) => {
+                      selectedLimits.push(limit);
+                      return Effect.succeed([]);
+                    },
+                  }),
+                };
               },
             };
           },
@@ -99,16 +154,23 @@ describe("EnvironmentLinks", () => {
 
     return Effect.gen(function* () {
       const links = yield* EnvironmentLinks.EnvironmentLinks;
-      expect(yield* links.listUsersForEnvironment({ environmentId: "env-1" })).toEqual([]);
+      expect(
+        yield* links.listDeliveryUsersForEnvironment({
+          environmentId: "env-1",
+          environmentPublicKey: "public-key-1",
+        }),
+      ).toEqual([]);
       expect(whereConditions).toHaveLength(1);
+      expect(selectedLimits).toEqual([EnvironmentLinks.ENVIRONMENT_LINK_USER_QUERY_MAX_COUNT]);
 
       const query = new PgDialect().sqlToQuery(whereConditions[0] as never);
       expect(query.sql).toContain('"relay_environment_links"."environment_id" = $1');
       expect(query.sql).toContain('"relay_environment_links"."revoked_at" is null');
       expect(query.sql).toContain('"relay_environment_links"."notifications_enabled" = $2');
       expect(query.sql).toContain('"relay_environment_links"."live_activities_enabled" = $3');
+      expect(query.sql).toContain('"relay_environment_links"."environment_public_key" = $4');
       expect(query.sql).toContain(" or ");
-      expect(query.params).toEqual(["env-1", true, true]);
+      expect(query.params).toEqual(["env-1", true, true, "public-key-1"]);
     }).pipe(
       Effect.provide(
         EnvironmentLinks.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb))),

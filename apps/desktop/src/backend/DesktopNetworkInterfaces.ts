@@ -20,7 +20,12 @@ export type NetworkInterfaces = Readonly<
   Record<string, readonly DesktopNetworkInterfaceInfo[] | undefined>
 >;
 
-export class DesktopNetworkInterfacesReadError extends Schema.TaggedErrorClass<DesktopNetworkInterfacesReadError>()(
+// os.networkInterfaces() reports family as "IPv4"/"IPv6" on Electron's Node,
+// and as 4/6 (or the string "4"/"6") on some other Node builds.
+export const isIpv4Family = (family: string | number): boolean =>
+  family === "IPv4" || family === 4 || family === "4";
+
+export class DesktopNetworkInterfacesReadError extends Schema.TaggedError<DesktopNetworkInterfacesReadError>()(
   "DesktopNetworkInterfacesReadError",
   {
     platform: Schema.String,
@@ -39,6 +44,7 @@ export class DesktopNetworkInterfaces extends Context.Service<
   }
 >()("@t3tools/desktop/backend/DesktopNetworkInterfaces") {}
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const platform = yield* HostProcessPlatform;
   return DesktopNetworkInterfaces.of({

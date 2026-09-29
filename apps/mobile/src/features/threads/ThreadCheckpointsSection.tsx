@@ -68,7 +68,7 @@ export const ThreadCheckpointsSection = memo(function ThreadCheckpointsSection(p
               <Text
                 className={cn(
                   "text-sm font-t3-medium",
-                  revertingThis ? "text-foreground-muted" : "text-red-600 dark:text-red-400",
+                  revertingThis ? "text-foreground-muted" : "text-adaptive-red-600-400",
                 )}
               >
                 {revertingThis ? "Reverting…" : "Revert"}

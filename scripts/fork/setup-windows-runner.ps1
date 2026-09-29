@@ -56,10 +56,46 @@ if (-not (Test-Path $toolchain)) {
 & $toolchain
 
 $tokenPath = "C:\dev\t3-runner-token.json"
-$token = (Get-Content $tokenPath -Raw | ConvertFrom-Json).token
-Remove-Item $tokenPath -Force
-if ([string]::IsNullOrWhiteSpace($token)) {
-  throw "Registration token missing"
+try {
+  $tokenFile = Get-Item -LiteralPath $tokenPath -Force -ErrorAction Stop
+  if ($tokenFile.PSIsContainer -or ($tokenFile.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+    throw "Runner token path must be a regular, non-linked file"
+  }
+  if ($tokenFile.Length -gt 64KB) {
+    throw "Runner token file exceeds 64 KiB"
+  }
+  $tokenStream = [IO.File]::Open(
+    $tokenFile.FullName,
+    [IO.FileMode]::Open,
+    [IO.FileAccess]::Read,
+    [IO.FileShare]::None
+  )
+  try {
+    if ($tokenStream.Length -gt 64KB) {
+      throw "Runner token file exceeds 64 KiB"
+    }
+    $tokenReader = New-Object IO.StreamReader($tokenStream)
+    try {
+      $token = ($tokenReader.ReadToEnd() | ConvertFrom-Json).token
+    }
+    finally {
+      $tokenReader.Dispose()
+    }
+  }
+  finally {
+    $tokenStream.Dispose()
+  }
+  if (
+    $token -isnot [string] -or
+    [string]::IsNullOrWhiteSpace($token) -or
+    [System.Text.Encoding]::UTF8.GetByteCount($token) -gt 4096 -or
+    $token -match '[\x00-\x1F\x7F]'
+  ) {
+    throw "Runner registration token is missing, oversized, or contains control characters"
+  }
+}
+finally {
+  Remove-Item -LiteralPath $tokenPath -Force -ErrorAction SilentlyContinue
 }
 
 $runnerDir = "C:\actions-runner-t3code-fork"
@@ -68,16 +104,21 @@ Set-Location $runnerDir
 
 if (-not (Test-Path ".\config.cmd")) {
   $archive = "$env:TEMP\actions-runner-win-x64-2.336.0.zip"
-  Invoke-WebRequest `
-    -UseBasicParsing `
-    -Uri "https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-win-x64-2.336.0.zip" `
-    -OutFile $archive
-  $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
-  $expected = "d59123a43003e357b0805b5d0f611d0bd2f65ab67d51bd070dd4e7a0f685c162"
-  if ($actual -ne $expected) {
-    throw "Runner checksum mismatch"
+  try {
+    Invoke-WebRequest `
+      -UseBasicParsing `
+      -Uri "https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-win-x64-2.336.0.zip" `
+      -OutFile $archive
+    $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+    $expected = "d59123a43003e357b0805b5d0f611d0bd2f65ab67d51bd070dd4e7a0f685c162"
+    if ($actual -ne $expected) {
+      throw "Runner checksum mismatch"
+    }
+    Expand-Archive -Path $archive -DestinationPath $runnerDir -Force
   }
-  Expand-Archive -Path $archive -DestinationPath $runnerDir -Force
+  finally {
+    Remove-Item $archive -Force -ErrorAction SilentlyContinue
+  }
 }
 
 & .\config.cmd `

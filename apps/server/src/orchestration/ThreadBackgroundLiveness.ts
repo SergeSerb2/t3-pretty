@@ -69,6 +69,9 @@ export class ThreadBackgroundLivenessService extends Context.Service<
      * "monitoring" only when watch loops are the ONLY live work.
      */
     readonly getThreadBackgroundLiveness: (threadId: string) => ThreadBackgroundLiveness;
+
+    /** Live agent tasks only; monitors do not count. */
+    readonly getThreadActiveSubagentCount: (threadId: string) => number;
   }
 >()("t3/orchestration/ThreadBackgroundLiveness/ThreadBackgroundLivenessService") {}
 
@@ -130,10 +133,9 @@ export function make(): ThreadBackgroundLivenessService["Service"] {
         return;
       }
 
-      // Status-free progress is a description tick, not a restart. A delayed
-      // progress event after idle must not put the task back in the live set
-      // (#7128).
-      if (input.kind === "progress" && input.status === undefined) {
+      // Status-free progress and metadata updates are not restarts. A delayed
+      // row after idle must not put the task back in the live set (#7128).
+      if ((input.kind === "progress" || input.kind === "updated") && input.status === undefined) {
         const existing = stateByThreadId.get(input.threadId);
         const stillLive =
           existing !== undefined &&
@@ -167,6 +169,8 @@ export function make(): ThreadBackgroundLivenessService["Service"] {
       }
       return null;
     },
+
+    getThreadActiveSubagentCount: (threadId) => stateByThreadId.get(threadId)?.agents.size ?? 0,
   };
 }
 

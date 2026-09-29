@@ -22,10 +22,18 @@ export function shouldShowThreadErrorBanner(
 // with no error cannot resurrect the banner, while a different error message
 // on the same thread still appears.
 const sessionDismissedThreadErrorBannerKeys = new Set<string>();
+export const MAX_SESSION_DISMISSED_THREAD_ERROR_BANNERS = 128;
 
 export function dismissThreadErrorBannerForSession(bannerKey: string | null): void {
-  if (bannerKey !== null) {
-    sessionDismissedThreadErrorBannerKeys.add(bannerKey);
+  if (bannerKey === null) return;
+  sessionDismissedThreadErrorBannerKeys.delete(bannerKey);
+  sessionDismissedThreadErrorBannerKeys.add(bannerKey);
+  while (sessionDismissedThreadErrorBannerKeys.size > MAX_SESSION_DISMISSED_THREAD_ERROR_BANNERS) {
+    const oldest = sessionDismissedThreadErrorBannerKeys.values().next().value as
+      | string
+      | undefined;
+    if (oldest === undefined) return;
+    sessionDismissedThreadErrorBannerKeys.delete(oldest);
   }
 }
 
@@ -42,13 +50,13 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
 }) {
   if (!error) return null;
   return (
-    <div className="mx-auto w-fit max-w-[min(48rem,calc(100%-2rem))] pt-3">
-      <Alert variant="error" controlAlignment="first-line">
+    <div className="pointer-events-auto mx-auto w-fit max-w-[min(48rem,calc(100%-2rem))] pt-3">
+      <Alert variant="error" surface="glass" controlAlignment="first-line">
         <CircleAlertIcon />
         <AlertDescription>
           <Tooltip>
             <TooltipTrigger render={<div className="line-clamp-3" />}>{error}</TooltipTrigger>
-            <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap">
+            <TooltipPopup side="top" className="whitespace-pre-wrap">
               {error}
             </TooltipPopup>
           </Tooltip>

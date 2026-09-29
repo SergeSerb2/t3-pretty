@@ -97,8 +97,46 @@ describe("withRelayClientTracing", () => {
           const payload = new TextDecoder().decode(fetchFn.mock.calls[0]?.[1]?.body as Uint8Array);
           expect(payload).toContain("relay request failed");
           expect(payload).toContain("relay socket closed");
+          expect(payload).toContain('"key":"service.name","value":{"stringValue":"relay-test"}');
+          expect(payload).toContain('"key":"service.namespace","value":{"stringValue":"t3code"}');
         }),
       ),
+    );
+  });
+
+  it.effect("contains hostile error getters while exporting relay spans", () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response(null, { status: 202 }));
+    const httpClientLayer = FetchHttpClient.layer.pipe(
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchFn)),
+    );
+    const tracingLayer = makeRelayClientTracingLayer(
+      {
+        tracesUrl: "https://api.axiom.test/v1/traces",
+        tracesDataset: "relay-traces",
+        tracesToken: "public-ingest-token",
+      },
+      {
+        serviceName: "relay-test",
+        runtime: "test",
+        client: "test",
+      },
+    ).pipe(Layer.provide(httpClientLayer));
+    const hostile = Object.defineProperty({}, "message", {
+      get: () => {
+        throw new Error("getter must not escape");
+      },
+    });
+    const tracedApplication = Layer.effectDiscard(
+      Effect.fail(hostile).pipe(
+        Effect.withSpan("relay.hostile-error"),
+        withRelayClientTracing,
+        Effect.exit,
+      ),
+    ).pipe(Layer.provide(tracingLayer));
+
+    return Layer.build(tracedApplication).pipe(
+      Effect.scoped,
+      Effect.andThen(Effect.sync(() => expect(fetchFn).toHaveBeenCalledOnce())),
     );
   });
 });

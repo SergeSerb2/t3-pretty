@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import * as ThreadBackgroundLiveness from "./ThreadBackgroundLiveness.ts";
 
 describe("ThreadBackgroundLiveness", () => {
-  it("does not let status-free progress restart an idle task", () => {
+  it("does not let status-free progress or metadata restart an idle task", () => {
     const liveness = ThreadBackgroundLiveness.make();
     liveness.recordTaskLiveness({
       threadId: "thread",
@@ -24,6 +24,36 @@ describe("ThreadBackgroundLiveness", () => {
       taskType: undefined,
       status: undefined,
       kind: "progress",
+    });
+    liveness.recordTaskLiveness({
+      threadId: "thread",
+      taskId: "task",
+      taskType: undefined,
+      status: undefined,
+      kind: "updated",
+    });
+    expect(liveness.getThreadBackgroundLiveness("thread")).toBeNull();
+
+    liveness.recordTaskLiveness({
+      threadId: "thread",
+      taskId: "completed-task",
+      taskType: undefined,
+      status: undefined,
+      kind: "started",
+    });
+    liveness.recordTaskLiveness({
+      threadId: "thread",
+      taskId: "completed-task",
+      taskType: undefined,
+      status: "completed",
+      kind: "completed",
+    });
+    liveness.recordTaskLiveness({
+      threadId: "thread",
+      taskId: "completed-task",
+      taskType: undefined,
+      status: undefined,
+      kind: "updated",
     });
     expect(liveness.getThreadBackgroundLiveness("thread")).toBeNull();
   });
@@ -195,5 +225,44 @@ describe("ThreadBackgroundLiveness", () => {
     expect(b.getThreadBackgroundLiveness("t")).toBeNull();
     a.clearThreadLiveness("t");
     expect(a.getThreadBackgroundLiveness("t")).toBeNull();
+  });
+
+  it("counts live agents and ignores monitors", () => {
+    const liveness = ThreadBackgroundLiveness.make();
+    const threadId = "t-count";
+    expect(liveness.getThreadActiveSubagentCount(threadId)).toBe(0);
+    liveness.recordTaskLiveness({
+      threadId,
+      taskId: "m1",
+      taskType: "local_bash",
+      status: undefined,
+      kind: "started",
+    });
+    expect(liveness.getThreadActiveSubagentCount(threadId)).toBe(0);
+    liveness.recordTaskLiveness({
+      threadId,
+      taskId: "a1",
+      taskType: "subagent",
+      status: undefined,
+      kind: "started",
+    });
+    liveness.recordTaskLiveness({
+      threadId,
+      taskId: "a2",
+      taskType: "subagent",
+      status: undefined,
+      kind: "started",
+    });
+    expect(liveness.getThreadActiveSubagentCount(threadId)).toBe(2);
+    liveness.recordTaskLiveness({
+      threadId,
+      taskId: "a1",
+      taskType: "subagent",
+      status: "completed",
+      kind: "completed",
+    });
+    expect(liveness.getThreadActiveSubagentCount(threadId)).toBe(1);
+    liveness.clearThreadLiveness(threadId);
+    expect(liveness.getThreadActiveSubagentCount(threadId)).toBe(0);
   });
 });

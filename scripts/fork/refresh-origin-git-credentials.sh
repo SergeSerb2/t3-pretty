@@ -1,9 +1,8 @@
 #!/bin/bash
 # Re-mint the Origin HTTPS git credential for the macos-release Buildkite
-# agent. Origin git JWTs live about an hour, and a 401 makes git erase the
-# whole credential store (one bad fetch wipes every later job). The agent's
-# pre-checkout hook points git at a store file, so that file must be
-# re-minted well inside the JWT lifetime. Installed as a launchd periodic
+# agent. Origin git JWTs live about an hour. The agent's pre-checkout hook
+# points git at a store file, so that file must be re-minted well inside
+# the JWT lifetime. Installed as a launchd periodic
 # job by setup-buildkite-macos-agent.sh; can also be run by hand.
 set -euo pipefail
 umask 077

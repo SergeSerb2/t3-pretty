@@ -6,27 +6,30 @@
  * keeps it across the draft→server promotion.
  *
  * The thread→photo binding is server-synced (thread.scenery.assign) so every
- * device of one environment renders the same photo. The server keeps the
- * first assignment it sees; the local assignment map only bridges drafts
- * (no server thread yet) and pre-scenery servers.
+ * device of one environment renders the same photo. The first photo for a
+ * catalog wins; choosing another catalog replaces it. The local assignment
+ * map only bridges drafts (no server thread yet) and pre-scenery servers.
  */
 import { useAtomValue } from "@effect/atom-react";
 import { connectionProjectionPhase } from "@t3tools/client-runtime/connection";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  mayPublishThreadScenery,
+  serverSceneryMatchesPhotoSet,
+} from "@t3tools/client-runtime/state/scenery-sync";
+import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
 import { getMediaQueryEntry } from "../hooks/useMediaQuery";
+import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
 import { environmentCatalog } from "../connection/catalog";
-import { readEnvironmentSupportsScenery } from "../state/entities";
+import { useServerConfigs } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentThreadShells, threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { layerStack } from "./glass";
 import { usePhotoSetStore } from "./photoSetStore";
-import { pickInkVariant, type InkDecisionInput } from "./sceneryInk";
 import { loadSeedPhotos, peekSeedPhotos } from "./scenerySeeds";
-import { SceneryArrival } from "./SceneryArrival";
 import { SceneryLayer } from "./SceneryLayer";
 import { SceneryPlaceCredit } from "./SceneryPlaceCredit";
 import {
@@ -41,7 +44,7 @@ import {
 import { preloadWallpaper } from "./sceneryWallpaper";
 import { wallpaperURL } from "./unsplash";
 import { useActiveThreadKey } from "./useActiveThreadKey";
-import { useInkOverride } from "./useInkOverride";
+import { useSyncedSceneryPhotoSet } from "./useSyncedSceneryPhotoSet";
 import "./scenery.css";
 
 const CONTRAST_QUERY = "(prefers-contrast: more)";
@@ -92,6 +95,11 @@ export default function ActiveScenery() {
   );
   const serverScenery = threadShell?.scenery ?? null;
   const serverThreadKnown = threadShell !== null;
+  const serverConfigs = useServerConfigs();
+  const supportsScenery =
+    threadRef !== null &&
+    serverConfigs.get(threadRef.environmentId)?.environment.capabilities.threadScenery === true;
+  const sharedPhotoSetId = useSyncedSceneryPhotoSet();
   // Reactive connection state: reconnecting re-runs the assign effect below,
   // which retries a dispatch that failed while the socket was down.
   const connection = useEnvironmentQuery(
@@ -106,7 +114,6 @@ export default function ActiveScenery() {
   );
   const translucency = useSceneryStore((state) => state.translucency);
   const blur = useSceneryStore((state) => state.blur);
-  const inkMode = useSceneryStore((state) => state.inkMode);
   const ensureAssignment = useSceneryStore((state) => state.ensureAssignment);
   const registerDisplayed = useSceneryStore((state) => state.registerDisplayed);
   const refreshPoolIfStale = useSceneryStore((state) => state.refreshPoolIfStale);
@@ -138,38 +145,43 @@ export default function ActiveScenery() {
     void refreshPoolIfStale();
   }, [photoSetId, refreshPoolIfStale]);
 
+  const serverPhoto = useMemo(() => {
+    if (!serverScenery || !serverSceneryMatchesPhotoSet(serverScenery.photoSetId, photoSetId)) {
+      return null;
+    }
+    return photoFromAssignment(serverScenery);
+  }, [photoSetId, serverScenery]);
+
   useEffect(() => {
     if (!threadKey) {
       return;
     }
-    if (serverScenery && pool.some((entry) => entry.id === serverScenery.photoId)) {
+    if (serverPhoto) {
       return;
     }
     // Local first: the photo shows this tick and covers drafts (no server
-    // thread yet) and pre-scenery servers. Also used when the server photo
-    // belongs to a different photo set than the one on screen.
+    // thread yet), pre-scenery servers, and a catalog change that still
+    // needs a photo from the new set.
     ensureAssignment(threadKey);
-    if (
-      serverScenery ||
-      !threadRef ||
-      !serverThreadKnown ||
-      !connectionReady ||
-      !readEnvironmentSupportsScenery(threadRef.environmentId)
-    ) {
+    if (!threadRef || !serverThreadKnown || !connectionReady || !supportsScenery) {
+      return;
+    }
+    if (!mayPublishThreadScenery({ sharedPhotoSetId, localPhotoSetId: photoSetId })) {
       return;
     }
     // Upload the local pick so the other devices converge on it. The server
-    // keeps the first assignment it sees (write-once), so a raced device
-    // adopts the winner when the shell stream lands. connectionReady is a
-    // dependency, so a dispatch lost to a dropped socket retries on reconnect.
+    // keeps the first photo for this catalog, so a raced device adopts the
+    // winner when the shell stream lands. connectionReady is a dependency, so
+    // a dispatch lost to a dropped socket retries on reconnect.
     const state = useSceneryStore.getState();
     const assignment = state.assignments[threadKey];
     // Resolve exactly what the render path shows for this assignment —
     // including the deterministic fallback when the saved photo left the
     // pool — so the photo on screen is the one other devices converge on.
+    const activeSetId = usePhotoSetStore.getState().photoSetId;
     const poolSnapshot = getSceneryPool(
-      state.fetchedBySet[usePhotoSetStore.getState().photoSetId] ?? EMPTY_FETCHED_PHOTOS,
-      peekSeedPhotos(usePhotoSetStore.getState().photoSetId),
+      state.fetchedBySet[activeSetId] ?? EMPTY_FETCHED_PHOTOS,
+      peekSeedPhotos(activeSetId),
     );
     const photo = assignment
       ? (poolSnapshot.find((entry) => entry.id === assignment.photoId) ??
@@ -180,14 +192,20 @@ export default function ActiveScenery() {
     }
     void assignScenery({
       environmentId: threadRef.environmentId,
-      input: { threadId: threadRef.threadId, scenery: photoToAssignmentPayload(photo) },
+      input: {
+        threadId: threadRef.threadId,
+        scenery: photoToAssignmentPayload(photo, activeSetId),
+      },
     });
   }, [
     threadKey,
     threadRef,
-    serverScenery,
+    serverPhoto,
     serverThreadKnown,
     connectionReady,
+    supportsScenery,
+    sharedPhotoSetId,
+    photoSetId,
     ensureAssignment,
     assignScenery,
     pool,
@@ -196,14 +214,10 @@ export default function ActiveScenery() {
   const assignment = threadKey ? (assignments[threadKey] ?? null) : null;
   const photo = useMemo(() => {
     if (threadKey) {
-      // Server binding wins when that photo still belongs to the active set.
-      // A Night Cities session should not keep painting a World Scenery
-      // assignment just because the server wrote it first.
-      if (serverScenery) {
-        const bound = photoFromAssignment(serverScenery);
-        if (pool.some((entry) => entry.id === bound.id)) {
-          return bound;
-        }
+      // The denormalized server photo renders even when this device's pool
+      // never fetched it. A different catalog falls through and is replaced.
+      if (serverPhoto) {
+        return serverPhoto;
       }
       if (assignment) {
         return (
@@ -215,7 +229,7 @@ export default function ActiveScenery() {
       return null;
     }
     return dailyFeatured(pool, dailySeed());
-  }, [threadKey, serverScenery, assignment, pool]);
+  }, [threadKey, serverPhoto, assignment, pool]);
 
   const seed = threadKey ?? dailySeed();
 
@@ -226,51 +240,17 @@ export default function ActiveScenery() {
     void preloadWallpaper(wallpaperURL(photo, blur));
   }, [photo, blur]);
 
-  // Ink follows the photo that is actually on screen. Using the incoming
-  // assignment would flip chrome/wash while the outgoing wallpaper is still
-  // dissolving (SceneryLayer only commits the new photo once decoded). Until
-  // the first photo has displayed, the assignment is the right source so the
-  // opening gradient already has matching ink.
-  const [displayedTone, setDisplayedTone] = useState<{
-    readonly averageColorHex: string | null;
-    readonly seed: string;
-  } | null>(null);
-  const [displayedPhotoId, setDisplayedPhotoId] = useState<string | null>(null);
-  const pendingToneRef = useRef<{
-    readonly averageColorHex: string | null;
-    readonly seed: string;
-  } | null>(null);
-
-  const incomingInk: Omit<InkDecisionInput, "baseAppearance"> = {
-    averageColorHex: photo?.averageColorHex ?? null,
-    seed,
-    translucency,
-    blur,
-    inkMode,
-  };
-  const delayedInk: Omit<InkDecisionInput, "baseAppearance"> = {
-    averageColorHex:
-      displayedTone !== null ? displayedTone.averageColorHex : incomingInk.averageColorHex,
-    seed: displayedTone !== null ? displayedTone.seed : incomingInk.seed,
-    translucency,
-    blur,
-    inkMode,
-  };
-
-  // Per-thread ink: repaint the palette in whichever variant reads best over
-  // this thread's photo. Off under reduced transparency — the photo is not
-  // shown, so the appearance preference should win unchallenged.
-  const { base: inkBase } = useInkOverride(reducedTransparency ? null : delayedInk);
-  const delayedVariant = pickInkVariant({ ...delayedInk, baseAppearance: inkBase });
-  const incomingVariant = pickInkVariant({ ...incomingInk, baseAppearance: inkBase });
-  const appearanceCrossfade = photo !== null && incomingVariant !== delayedVariant;
+  // The wash follows the app appearance (Settings → Appearance → Color
+  // scheme). A thread's photo never flips it: bright and dark landscapes
+  // both sit behind the light or dark variant the user chose.
+  const appearance = usePaintedAppearance();
 
   // Publish the layer alphas the CSS reads, plus the positive activation
   // attribute the transparent-surface rules are gated on. A positive gate —
   // rather than :not([data-scenery-reduced]) — means the first painted frame
   // (before this effect) keeps the stock opaque surfaces, which is exactly
-  // right under prefers-reduced-transparency. Layout so a view-transition
-  // photo commit captures the matching wash in the same frame as the ink.
+  // right under prefers-reduced-transparency. Layout so the wash lands in the
+  // same frame as the palette after an appearance switch.
   useLayoutEffect(() => {
     const root = document.documentElement;
     if (reducedTransparency) {
@@ -279,11 +259,11 @@ export default function ActiveScenery() {
     }
     const darkStack = layerStack(translucency, "dark", increasedContrast);
     const lightStack = layerStack(translucency, "light", increasedContrast);
-    const activeStack = delayedVariant === "dark" ? darkStack : lightStack;
+    const activeStack = appearance === "dark" ? darkStack : lightStack;
     root.style.setProperty("--scenery-wash-dark-alpha", String(darkStack.washAlpha));
     root.style.setProperty("--scenery-wash-light-alpha", String(lightStack.washAlpha));
-    root.style.setProperty("--scenery-wash-dark-opacity", delayedVariant === "dark" ? "1" : "0");
-    root.style.setProperty("--scenery-wash-light-opacity", delayedVariant === "light" ? "1" : "0");
+    root.style.setProperty("--scenery-wash-dark-opacity", appearance === "dark" ? "1" : "0");
+    root.style.setProperty("--scenery-wash-light-opacity", appearance === "light" ? "1" : "0");
     root.style.setProperty("--scenery-photo-opacity", String(activeStack.photoOpacity));
     root.style.setProperty("--scenery-edge-top-alpha", String(activeStack.edgeTopAlpha));
     root.style.setProperty("--scenery-edge-bottom-alpha", String(activeStack.edgeBottomAlpha));
@@ -298,51 +278,15 @@ export default function ActiveScenery() {
       root.style.removeProperty("--scenery-edge-bottom-alpha");
       root.removeAttribute("data-scenery-on");
     };
-  }, [translucency, delayedVariant, increasedContrast, reducedTransparency]);
+  }, [translucency, appearance, increasedContrast, reducedTransparency]);
 
   if (reducedTransparency) {
     return null;
   }
 
-  const photoReady = photo !== null && displayedPhotoId === photo.id;
-
   return (
     <>
-      <SceneryArrival
-        photo={photo}
-        threadKey={threadKey}
-        photoReady={photoReady}
-        onPhaseChange={(phase) => {
-          if (phase !== "reveal" && phase !== "settled") {
-            return;
-          }
-          const pending = pendingToneRef.current;
-          if (pending) {
-            pendingToneRef.current = null;
-            setDisplayedTone(pending);
-          }
-        }}
-      />
-      <SceneryLayer
-        photo={photo}
-        seed={seed}
-        blur={blur}
-        appearanceCrossfade={appearanceCrossfade}
-        onPhotoDisplayed={(displayed) => {
-          registerDisplayed(displayed);
-          setDisplayedPhotoId(displayed.id);
-          const tone = {
-            averageColorHex: displayed.averageColorHex,
-            seed,
-          };
-          if (document.documentElement.dataset.sceneryArrival === "fog") {
-            pendingToneRef.current = tone;
-            return;
-          }
-          pendingToneRef.current = null;
-          setDisplayedTone(tone);
-        }}
-      />
+      <SceneryLayer photo={photo} seed={seed} blur={blur} onPhotoDisplayed={registerDisplayed} />
       <SceneryPlaceCredit photo={photo} />
     </>
   );

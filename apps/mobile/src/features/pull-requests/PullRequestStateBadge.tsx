@@ -3,7 +3,6 @@ import { View } from "react-native";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { resolvePullRequestState, type PullRequestStateKind } from "./pullRequestPresentation";
 
 const SYMBOL_COLOR: Record<PullRequestStateKind, string> = {
@@ -22,8 +21,7 @@ export function PullRequestStateBadge(props: {
   readonly compact?: boolean;
 }) {
   const presentation = resolvePullRequestState(props);
-  const fallbackIcon = useThemeColor("--color-icon");
-  const tint = SYMBOL_COLOR[presentation.kind] ?? String(fallbackIcon);
+  const tint = SYMBOL_COLOR[presentation.kind];
   if (props.compact) {
     return <SymbolView name={presentation.symbol} size={16} tintColor={tint} type="monochrome" />;
   }

@@ -36,6 +36,21 @@ export function scanProgressCaption(inventory: StorageInventory): string | null 
   return `Found ${formatStorageBytes(inventory.totalBytes)} so far · ${scan.measuredCount} of ${scan.totalCount} paths`;
 }
 
+export function storageInventoryCoverageWarning(inventory: StorageInventory): string | null {
+  const scan = inventory.scan;
+  if (scan === undefined) return null;
+  const reasons: string[] = [];
+  if (scan.truncated === true) reasons.push("discovery reached a safety limit");
+  const unreadable = scan.unreadableDirectories ?? 0;
+  if (unreadable > 0) {
+    reasons.push(
+      `${unreadable} ${unreadable === 1 ? "directory" : "directories"} could not be read`,
+    );
+  }
+  if (reasons.length === 0) return null;
+  return `Inventory is incomplete: ${reasons.join(" and ")}. Bulk cleanup is disabled; listed paths can still be removed individually.`;
+}
+
 export function uniqueWorktreeBytes(entries: ReadonlyArray<StorageWorktreeEntry>): number {
   const seen = new Map<string, number>();
   for (const entry of entries) {
@@ -93,10 +108,8 @@ export type StoragePendingAction =
   | { readonly kind: "remove-clean-settled" }
   | { readonly kind: "remove-all-settled" }
   | { readonly kind: "delete-archived" }
-  | { readonly kind: "remove-orphans" }
   | { readonly kind: "remove-worktree"; readonly entry: StorageWorktreeEntry }
-  | { readonly kind: "delete-thread"; readonly entry: StorageWorktreeEntry }
-  | { readonly kind: "remove-orphan"; readonly orphan: StorageOrphanEntry };
+  | { readonly kind: "delete-thread"; readonly entry: StorageWorktreeEntry };
 
 export function pendingActionCopy(action: StoragePendingAction): {
   readonly title: string;
@@ -125,35 +138,27 @@ export function pendingActionCopy(action: StoragePendingAction): {
           "Archived threads that keep a managed worktree are permanently deleted, along with those worktrees. This can't be undone.",
         confirmLabel: "Delete",
       };
-    case "remove-orphans":
-      return {
-        title: "Remove orphan checkouts?",
-        message:
-          "Deletes managed worktree folders that no thread owns. Only paths under this environment's worktrees folder are removed.",
-        confirmLabel: "Remove",
-      };
     case "remove-worktree":
       return {
         title: `Remove worktree for “${action.entry.threadTitle}”?`,
         message:
           action.entry.isDirty === true
             ? "This worktree has uncommitted changes. Removing it discards those changes. The thread stays available on the project checkout."
-            : action.entry.ownerCount > 1
-              ? "Other threads still use this checkout, so only this thread is unlinked. The folder stays on disk."
-              : "The thread stays available and returns to the project checkout.",
+            : action.entry.isDirty === null
+              ? "This worktree's status could not be read. It may contain uncommitted changes, and removing it discards them. The thread stays available on the project checkout."
+              : action.entry.ownerCount > 1
+                ? "Other threads still use this checkout, so only this thread is unlinked. The folder stays on disk."
+                : "The thread stays available and returns to the project checkout.",
         confirmLabel: "Remove",
       };
     case "delete-thread":
       return {
         title: `Delete “${action.entry.threadTitle}”?`,
-        message: `“${action.entry.threadTitle}” and its managed worktree will be permanently deleted.`,
+        message:
+          action.entry.isDirty === null
+            ? `“${action.entry.threadTitle}” and its managed worktree will be permanently deleted. The worktree's status could not be read, so it may contain unrecoverable changes.`
+            : `“${action.entry.threadTitle}” and its managed worktree will be permanently deleted.`,
         confirmLabel: "Delete",
-      };
-    case "remove-orphan":
-      return {
-        title: `Remove orphan “${action.orphan.displayName}”?`,
-        message: `Deletes ${action.orphan.path}. Only managed worktree paths can be removed this way.`,
-        confirmLabel: "Remove",
       };
   }
 }

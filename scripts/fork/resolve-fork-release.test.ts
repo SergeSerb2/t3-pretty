@@ -27,6 +27,12 @@ it("emits a fork-specific semver tag that electron-updater can match to nightly"
     git(fixtureRoot, "add", "fixture.txt");
     git(fixtureRoot, "commit", "-m", "test fixture");
     git(fixtureRoot, "tag", "v0.0.33-nightly.20260809.1043");
+    const integratedCommit = git(fixtureRoot, "rev-parse", "HEAD");
+    NodeFS.writeFileSync(NodePath.join(fixtureRoot, "future.txt"), "not integrated\n");
+    git(fixtureRoot, "add", "future.txt");
+    git(fixtureRoot, "commit", "-m", "newer unintegrated nightly");
+    git(fixtureRoot, "tag", "v0.0.33-nightly.20260809.1044");
+    git(fixtureRoot, "checkout", "--detach", integratedCommit);
 
     const output = NodeChildProcess.execFileSync(process.execPath, [scriptPath], {
       cwd: fixtureRoot,
