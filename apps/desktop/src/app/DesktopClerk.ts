@@ -130,6 +130,7 @@ export const make = Effect.gen(function* () {
       const electronApp = yield* ElectronApp.ElectronApp;
       const electronWindow = yield* ElectronWindow.ElectronWindow;
       const context = yield* Effect.context<ElectronWindow.ElectronWindow>();
+      const runPromise = Effect.runPromiseWith(context);
       const runFork = Effect.runForkWith(context);
 
       // The SDK bridge holds Electron's single-instance lock (acquired at
