@@ -25,6 +25,7 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Spinner } from "./ui/spinner";
+import { toastManager } from "./ui/toast";
 
 interface PullRequestThreadDialogProps {
   open: boolean;
@@ -46,6 +47,8 @@ export function PullRequestThreadDialog({
   onPrepared,
 }: PullRequestThreadDialogProps) {
   const referenceInputRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(false);
+  const preparingRef = useRef(false);
   const [reference, setReference] = useState(initialReference ?? "");
   const [referenceDirty, setReferenceDirty] = useState(false);
   const [preparingMode, setPreparingMode] = useState<"local" | "worktree" | null>(null);
@@ -68,6 +71,13 @@ export function PullRequestThreadDialog({
   );
   const terminology = sourceControlPresentation.terminology;
   const SourceControlIcon = sourceControlPresentation.Icon;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -131,6 +141,9 @@ export function PullRequestThreadDialog({
 
   const handleConfirm = useCallback(
     async (mode: "local" | "worktree") => {
+      if (preparingRef.current) {
+        return;
+      }
       if (!parsedReference) {
         setReferenceDirty(true);
         return;
@@ -138,24 +151,45 @@ export function PullRequestThreadDialog({
       if (!parsedReference || !resolvedPullRequest || !cwd) {
         return;
       }
+      preparingRef.current = true;
       setPreparingMode(mode);
-      const result = await preparePullRequestThreadAction.run({
-        reference: parsedReference,
-        mode,
-        ...(mode === "worktree" ? { threadId } : {}),
-      });
-      setPreparingMode(null);
-      if (result._tag === "Failure") {
-        if (isAtomCommandInterrupted(result)) {
-          preparePullRequestThreadAction.resetError();
+      try {
+        const result = await preparePullRequestThreadAction.run({
+          reference: parsedReference,
+          mode,
+          ...(mode === "worktree" ? { threadId } : {}),
+        });
+        if (!mountedRef.current) {
+          return;
         }
-        return;
+        if (result._tag === "Failure") {
+          if (isAtomCommandInterrupted(result)) {
+            preparePullRequestThreadAction.resetError();
+          }
+          return;
+        }
+        await onPrepared({
+          branch: result.value.branch,
+          worktreePath: result.value.worktreePath,
+        });
+        if (mountedRef.current) {
+          onOpenChange(false);
+        }
+      } catch (error) {
+        if (mountedRef.current) {
+          toastManager.add({
+            type: "error",
+            title: `Could not open the prepared ${terminology.singular}`,
+            description:
+              error instanceof Error ? error.message : "The prepared thread was not opened.",
+          });
+        }
+      } finally {
+        preparingRef.current = false;
+        if (mountedRef.current) {
+          setPreparingMode(null);
+        }
       }
-      await onPrepared({
-        branch: result.value.branch,
-        worktreePath: result.value.worktreePath,
-      });
-      onOpenChange(false);
     },
     [
       cwd,
@@ -164,6 +198,7 @@ export function PullRequestThreadDialog({
       parsedReference,
       preparePullRequestThreadAction,
       resolvedPullRequest,
+      terminology.singular,
       threadId,
     ],
   );
@@ -189,15 +224,15 @@ export function PullRequestThreadDialog({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!preparePullRequestThreadAction.isPending) {
+        if (!preparingRef.current && !preparePullRequestThreadAction.isPending) {
           onOpenChange(nextOpen);
         }
       }}
     >
       <DialogPopup className="max-w-xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <SourceControlIcon className="size-4" />
+          <DialogTitle className="flex items-center">
+            <SourceControlIcon className="me-2 size-4" />
             Checkout {terminology.singular}
           </DialogTitle>
           <DialogDescription>
@@ -205,7 +240,7 @@ export function PullRequestThreadDialog({
             the draft thread in the main repo or in a dedicated worktree.
           </DialogDescription>
         </DialogHeader>
-        <DialogPanel className="space-y-4">
+        <DialogPanel>
           <label className="grid gap-1.5">
             <span className="text-xs font-medium text-foreground capitalize">
               {terminology.singular}
@@ -222,9 +257,12 @@ export function PullRequestThreadDialog({
                 if (event.key !== "Enter") {
                   return;
                 }
+                if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                  return;
+                }
                 event.preventDefault();
                 if (!isResolving && !preparePullRequestThreadAction.isPending) {
-                  void handleConfirm("local");
+                  void handleConfirm("worktree");
                 }
               }}
             />
@@ -249,7 +287,7 @@ export function PullRequestThreadDialog({
 
           {isResolving ? (
             <div className="flex items-center gap-2 text-muted-foreground text-xs">
-              <Spinner className="size-3.5" />
+              <Spinner size="sm" />
               Resolving {terminology.singular}...
             </div>
           ) : null}

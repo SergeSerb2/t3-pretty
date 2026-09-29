@@ -26,12 +26,7 @@ import { remoteHttpClientLayer } from "@t3tools/client-runtime/rpc";
 import { __resetDesktopPrimaryAuthForTests } from "../environments/primary/desktopAuth";
 
 import {
-  collectCloudLinkTargets,
-  isCloudLinkOnConfiguredRelay,
-  isCloudLinkOnConfiguredRelayForAccount,
   linkPrimaryEnvironmentToCloud,
-  listManagedCloudEnvironments,
-  normalizeRelayBaseUrl,
   readPrimaryCloudLinkState,
   type CloudLinkTarget,
   unlinkPrimaryEnvironmentFromCloud,
@@ -93,6 +88,7 @@ function registryLayer(options?: {
       const session: RpcSession = {
         client,
         initialConfig: Effect.never,
+        subscribeServerConfig: (input) => client.subscribeServerConfig(input),
         ready: Effect.void,
         probe: Effect.void,
         closed: Effect.never,
@@ -156,70 +152,6 @@ afterEach(() => {
 });
 
 describe("web cloud link environment client", () => {
-  it("normalizes relay URLs and de-duplicates cloud link targets", () => {
-    expect(normalizeRelayBaseUrl(" https://relay.example.test/// ")).toBe(
-      "https://relay.example.test",
-    );
-    expect(normalizeRelayBaseUrl(" ")).toBeNull();
-    expect(
-      collectCloudLinkTargets({
-        primary: TARGET,
-        saved: [TARGET, { ...TARGET, environmentId: "environment-2" }],
-      }).map((target) => target.environmentId),
-    ).toEqual(["environment-1", "environment-2"]);
-  });
-
-  it("only treats links to the configured relay as active", () => {
-    const state = {
-      linked: true,
-      cloudUserId: "user-1",
-      relayUrl: "https://relay.t3.codes/",
-      relayIssuer: "https://relay.t3.codes",
-      managedTunnelActive: true,
-      publishAgentActivity: true,
-    };
-
-    expect(isCloudLinkOnConfiguredRelay(state, "https://relay.t3.codes")).toBe(true);
-    expect(isCloudLinkOnConfiguredRelay(state, "https://relay.sergeserbinenko.com")).toBe(false);
-    expect(isCloudLinkOnConfiguredRelay({ ...state, linked: false }, state.relayUrl)).toBe(false);
-    expect(isCloudLinkOnConfiguredRelay({ ...state, relayUrl: null }, state.relayUrl)).toBe(false);
-    expect(isCloudLinkOnConfiguredRelayForAccount(state, state.relayUrl, "user-1")).toBe(true);
-    expect(isCloudLinkOnConfiguredRelayForAccount(state, state.relayUrl, "different-user")).toBe(
-      false,
-    );
-    expect(isCloudLinkOnConfiguredRelayForAccount(state, state.relayUrl, null)).toBe(true);
-    expect(isCloudLinkOnConfiguredRelayForAccount(state, state.relayUrl, undefined)).toBe(false);
-  });
-
-  it.effect("lists relay-managed environments through the typed relay client", () =>
-    Effect.gen(function* () {
-      const fetchMock = vi.fn().mockResolvedValue(
-        Response.json({
-          environments: [
-            {
-              environmentId: "environment-1",
-              label: "Desktop",
-              endpoint: {
-                httpBaseUrl: "https://desktop.example.test",
-                wsBaseUrl: "wss://desktop.example.test",
-                providerKind: "cloudflare_tunnel",
-              },
-              linkedAt: "2026-06-06T00:00:00.000Z",
-            },
-          ],
-        }),
-      );
-      vi.stubGlobal("fetch", fetchMock);
-
-      const environments = yield* withServices(
-        listManagedCloudEnvironments({ clerkToken: "clerk-token" }),
-      );
-
-      expect(environments).toHaveLength(1);
-      expect(fetchMock.mock.calls[0]?.[1]?.headers.authorization).toBe("Bearer clerk-token");
-    }),
-  );
-
   it.effect("reads primary cloud link state from the explicit target", () =>
     Effect.gen(function* () {
       const fetchMock = vi.fn().mockResolvedValue(

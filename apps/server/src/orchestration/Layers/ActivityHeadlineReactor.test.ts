@@ -36,10 +36,23 @@ describe("activitySeedsHeadline", () => {
     );
   });
 
+  it("seeds on native agent task rows so remote Cursor tasks get a rewrite", () => {
+    expect(activitySeedsHeadline(makeActivity({ kind: "task.started" }))).toBe(true);
+    expect(
+      activitySeedsHeadline(
+        makeActivity({ kind: "task.progress", summary: "Exploring the checkout" }),
+      ),
+    ).toBe(true);
+    expect(activitySeedsHeadline(makeActivity({ kind: "task.completed" }))).toBe(true);
+  });
+
   it("never seeds on its own output, turnless rows, or unrelated kinds", () => {
     expect(activitySeedsHeadline(makeActivity({ kind: HEADLINE_ACTIVITY_KIND }))).toBe(false);
     expect(activitySeedsHeadline(makeActivity({ kind: "tool.started", turnId: null }))).toBe(false);
     expect(activitySeedsHeadline(makeActivity({ kind: "context-window.updated" }))).toBe(false);
+    expect(
+      activitySeedsHeadline(makeActivity({ kind: "task.progress", summary: "Task usage updated" })),
+    ).toBe(false);
   });
 });
 
