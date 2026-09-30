@@ -95,8 +95,8 @@ function EmptyMobileClients() {
       <EmptyHeader>
         <EmptyTitle>No mobile clients</EmptyTitle>
         <EmptyDescription>
-          Sign in to {SURGE_CODE_ACCOUNT_NAME} on your iPhone to register it for push notifications
-          and Live Activities.
+          Install {SURGE_CODE_ACCOUNT_NAME} on your phone and sign in to {SURGE_CONNECT_NAME} to get
+          push notifications and Live Activities.
         </EmptyDescription>
       </EmptyHeader>
     </Empty>
@@ -113,7 +113,7 @@ export function MobileClientsUserProfilePage() {
   return (
     <ClerkUserProfilePage
       title="Mobile clients"
-      description={`Devices registered to receive ${SURGE_CONNECT_NAME} activity from your environments.`}
+      description={`Mobile devices that get ${SURGE_CONNECT_NAME} notifications from your environments.`}
       action={
         <ClerkUserProfileRefreshButton
           isPending={devicesState.isPending}
