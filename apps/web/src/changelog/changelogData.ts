@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.45-nightly.20260930.2468002989",
+    date: "2026-09-30",
+    items: [
+      {
+        kind: "fixed",
+        title: "Handle soft-exit curl empty URL in ios-mobile tip packaging",
+      },
+      {
+        kind: "fixed",
+        title: "Drop leftover ConnectionFormField accessibilityLabel props",
+      },
+      {
+        kind: "fixed",
+        title: "Refresh EAS cloud IPA status without build:view --non-interactive",
+      },
+      {
+        kind: "fixed",
+        title: "Reattach ios-mobile to an in-flight EAS IPA after agent loss",
+      },
+      {
+        kind: "fixed",
+        title: "Wrap Playwright inject script in Effect.succeed",
+      },
+      {
+        kind: "fixed",
+        title: "Prod deploy from recreating home suggestion tables",
+      },
+    ],
+  },
+  {
     version: "0.0.44-nightly.20260929.2456002984",
     date: "2026-09-30",
     items: [
