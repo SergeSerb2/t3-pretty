@@ -69,7 +69,7 @@ export type AgentInstructionsReadInput = typeof AgentInstructionsReadInput.Type;
 
 export const AgentInstructionsReadResult = Schema.Struct({
   file: AgentInstructionFile,
-  contents: Schema.String,
+  contents: Schema.String.check(Schema.isMaxLength(AGENT_INSTRUCTION_FILE_MAX_BYTES)),
   truncated: Schema.Boolean,
 });
 export type AgentInstructionsReadResult = typeof AgentInstructionsReadResult.Type;
@@ -77,7 +77,7 @@ export type AgentInstructionsReadResult = typeof AgentInstructionsReadResult.Typ
 export const AgentInstructionsWriteInput = Schema.Struct({
   fileId: TrimmedNonEmptyString,
   projectCwd: Schema.optional(TrimmedNonEmptyString),
-  contents: Schema.String,
+  contents: Schema.String.check(Schema.isMaxLength(AGENT_INSTRUCTION_FILE_MAX_BYTES)),
 });
 export type AgentInstructionsWriteInput = typeof AgentInstructionsWriteInput.Type;
 
@@ -112,7 +112,7 @@ const FAILURE_MESSAGES: Record<AgentInstructionsFailure, string> = {
   operation_failed: "Agent instruction file operation failed.",
 };
 
-export class AgentInstructionsError extends Schema.TaggedErrorClass<AgentInstructionsError>()(
+export class AgentInstructionsError extends Schema.TaggedError<AgentInstructionsError>()(
   "AgentInstructionsError",
   {
     failure: Schema.optional(AgentInstructionsFailure),

@@ -4,20 +4,41 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   ConfiguredLocalServerUrls,
   CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS,
+  DISCOVERED_LOCAL_SERVERS_MAX_ITEMS,
   DiscoveredLocalServer,
+  DiscoveredLocalServerList,
+  PREVIEW_SESSIONS_MAX_PER_THREAD,
   PREVIEW_URL_MAX_LENGTH,
   PreviewEvent,
+  PreviewListResult,
   PreviewNavStatus,
   PreviewSessionSnapshot,
   PreviewViewportSetting,
 } from "./preview.ts";
 import {
+  PREVIEW_AUTOMATION_KEY_MAX_LENGTH,
+  PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES,
+  PREVIEW_AUTOMATION_INTERACTIVE_ELEMENTS_MAX_ITEMS,
+  PREVIEW_AUTOMATION_OPERATIONS,
+  PREVIEW_AUTOMATION_PAGE_TITLE_MAX_LENGTH,
+  PREVIEW_AUTOMATION_REQUEST_ID_MAX_LENGTH,
+  PREVIEW_AUTOMATION_SELECTOR_MAX_LENGTH,
+  PREVIEW_AUTOMATION_TYPE_TEXT_MAX_LENGTH,
+  PREVIEW_AUTOMATION_WAIT_TEXT_MAX_LENGTH,
+  PREVIEW_AUTOMATION_VISIBLE_TEXT_MAX_LENGTH,
+  PreviewAutomationClickInput,
   PreviewAutomationHost,
   PreviewAutomationError,
+  PreviewAutomationNavigateInput,
   PreviewAutomationOpenInput,
+  PreviewAutomationPressInput,
+  PreviewAutomationRequest,
   PreviewAutomationResizeInput,
   PreviewAutomationResizeResult,
   PreviewAutomationStatus,
+  PreviewAutomationSnapshot,
+  PreviewAutomationTypeInput,
+  PreviewAutomationWaitForInput,
 } from "./previewAutomation.ts";
 
 const decodePreviewEvent = Schema.decodeUnknownSync(PreviewEvent);
@@ -25,6 +46,8 @@ const decodeSnapshot = Schema.decodeUnknownSync(PreviewSessionSnapshot);
 const decodeNavStatus = Schema.decodeUnknownSync(PreviewNavStatus);
 const decodeServer = Schema.decodeUnknownSync(DiscoveredLocalServer);
 const decodeConfiguredLocalServerUrls = Schema.decodeUnknownSync(ConfiguredLocalServerUrls);
+const decodeDiscoveredLocalServerList = Schema.decodeUnknownSync(DiscoveredLocalServerList);
+const decodePreviewList = Schema.decodeUnknownSync(PreviewListResult);
 const decodeViewport = Schema.decodeUnknownSync(PreviewViewportSetting);
 const decodeResizeInput = Schema.decodeUnknownSync(PreviewAutomationResizeInput);
 const decodeOpenInput = Schema.decodeUnknownSync(PreviewAutomationOpenInput);
@@ -32,6 +55,13 @@ const decodeResizeResult = Schema.decodeUnknownSync(PreviewAutomationResizeResul
 const decodeAutomationHost = Schema.decodeUnknownSync(PreviewAutomationHost);
 const decodeAutomationError = Schema.decodeUnknownSync(PreviewAutomationError);
 const decodeAutomationStatus = Schema.decodeUnknownSync(PreviewAutomationStatus);
+const decodeAutomationSnapshot = Schema.decodeUnknownSync(PreviewAutomationSnapshot);
+const decodeAutomationClick = Schema.decodeUnknownSync(PreviewAutomationClickInput);
+const decodeAutomationNavigate = Schema.decodeUnknownSync(PreviewAutomationNavigateInput);
+const decodeAutomationPress = Schema.decodeUnknownSync(PreviewAutomationPressInput);
+const decodeAutomationRequest = Schema.decodeUnknownSync(PreviewAutomationRequest);
+const decodeAutomationType = Schema.decodeUnknownSync(PreviewAutomationTypeInput);
+const decodeAutomationWaitFor = Schema.decodeUnknownSync(PreviewAutomationWaitForInput);
 
 describe("PreviewAutomationOpenInput", () => {
   it("accepts the inline preview visibility flag", () => {
@@ -40,6 +70,60 @@ describe("PreviewAutomationOpenInput", () => {
 
   it("retains the legacy show visibility alias", () => {
     expect(decodeOpenInput({ show: false })).toEqual({ show: false });
+  });
+});
+
+describe("PreviewAutomationSnapshot", () => {
+  const element = {
+    tag: "button",
+    role: "button",
+    name: "Save",
+    selector: "#save",
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 40,
+  };
+  const snapshot = {
+    url: "https://example.com",
+    title: "Example",
+    loading: false,
+    visibleText: "Ready",
+    interactiveElements: [element],
+    accessibilityTree: { nodes: [] },
+    consoleEntries: [],
+    networkEntries: [],
+    actionTimeline: [],
+    screenshot: { mimeType: "image/png", data: "AA==", width: 1, height: 1 },
+  };
+
+  it("rejects oversized browser text and collection fields", () => {
+    expect(() =>
+      decodeAutomationSnapshot({
+        ...snapshot,
+        visibleText: "x".repeat(PREVIEW_AUTOMATION_VISIBLE_TEXT_MAX_LENGTH + 1),
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeAutomationSnapshot({
+        ...snapshot,
+        interactiveElements: Array.from(
+          { length: PREVIEW_AUTOMATION_INTERACTIVE_ELEMENTS_MAX_ITEMS + 1 },
+          () => element,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeAutomationSnapshot({
+        ...snapshot,
+        accessibilityTree: {
+          nodes: Array.from(
+            { length: PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES + 1 },
+            () => ({}),
+          ),
+        },
+      }),
+    ).toThrow();
   });
 });
 
@@ -95,6 +179,45 @@ describe("PreviewSessionSnapshot", () => {
     });
     expect(snapshot.tabId).toBe("preview-thread-1");
     expect(snapshot.navStatus._tag).toBe("Success");
+  });
+});
+
+describe("PreviewListResult", () => {
+  it("rejects an oversized tab snapshot", () => {
+    const snapshot = {
+      threadId: "thread-1",
+      tabId: "tab-1",
+      navStatus: { _tag: "Idle" },
+      canGoBack: false,
+      canGoForward: false,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    expect(() =>
+      decodePreviewList({
+        sessions: Array.from({ length: PREVIEW_SESSIONS_MAX_PER_THREAD + 1 }, () => snapshot),
+        serverEpoch: "server",
+        revision: 0,
+      }),
+    ).toThrow();
+  });
+});
+
+describe("DiscoveredLocalServerList", () => {
+  it("rejects more server rows than the discovery ceiling", () => {
+    const server = {
+      host: "localhost",
+      port: 5173,
+      url: "http://localhost:5173",
+      processName: null,
+      pid: null,
+      terminal: null,
+    };
+    expect(() =>
+      decodeDiscoveredLocalServerList({
+        servers: Array.from({ length: DISCOVERED_LOCAL_SERVERS_MAX_ITEMS + 1 }, () => server),
+        scannedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toThrow();
   });
 });
 
@@ -172,6 +295,62 @@ describe("PreviewAutomationHost", () => {
       }).supportedOperations,
     ).toEqual(["status", "resize"]);
   });
+
+  it("rejects an oversized operation advertisement", () => {
+    expect(() =>
+      decodeAutomationHost({
+        clientId: "oversized",
+        environmentId: "environment-1",
+        supportedOperations: [...PREVIEW_AUTOMATION_OPERATIONS, PREVIEW_AUTOMATION_OPERATIONS[0]],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("preview automation input limits", () => {
+  it("bounds page-controlled targeting and inserted text", () => {
+    expect(() =>
+      decodeAutomationClick({ selector: "x".repeat(PREVIEW_AUTOMATION_SELECTOR_MAX_LENGTH + 1) }),
+    ).toThrow();
+    expect(() =>
+      decodeAutomationNavigate({
+        target: {
+          kind: "environment-port",
+          port: 5173,
+          path: "x".repeat(PREVIEW_URL_MAX_LENGTH + 1),
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeAutomationType({ text: "x".repeat(PREVIEW_AUTOMATION_TYPE_TEXT_MAX_LENGTH + 1) }),
+    ).toThrow();
+    expect(() =>
+      decodeAutomationPress({ key: "x".repeat(PREVIEW_AUTOMATION_KEY_MAX_LENGTH + 1) }),
+    ).toThrow();
+    expect(() =>
+      decodeAutomationWaitFor({
+        text: "x".repeat(PREVIEW_AUTOMATION_WAIT_TEXT_MAX_LENGTH + 1),
+      }),
+    ).toThrow();
+  });
+
+  it("bounds routed request identity and duration", () => {
+    const base = {
+      threadId: "thread-1",
+      operation: "status",
+      input: {},
+    } as const;
+    expect(() =>
+      decodeAutomationRequest({
+        ...base,
+        requestId: "x".repeat(PREVIEW_AUTOMATION_REQUEST_ID_MAX_LENGTH + 1),
+        timeoutMs: 1_000,
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeAutomationRequest({ ...base, requestId: "request-1", timeoutMs: 60_001 }),
+    ).toThrow();
+  });
 });
 
 describe("PreviewAutomationError", () => {
@@ -220,6 +399,29 @@ describe("PreviewAutomationStatus", () => {
         viewport: { width: 412, height: 915 },
       }).viewport,
     ).toEqual({ width: 412, height: 915 });
+  });
+
+  it("rejects oversized status URLs and titles", () => {
+    const base = {
+      available: true,
+      visible: false,
+      tabId: "preview-t",
+      url: "https://example.com",
+      title: "Example",
+      loading: false,
+    };
+    expect(() =>
+      decodeAutomationStatus({
+        ...base,
+        url: `https://example.com/${"x".repeat(PREVIEW_URL_MAX_LENGTH)}`,
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeAutomationStatus({
+        ...base,
+        title: "x".repeat(PREVIEW_AUTOMATION_PAGE_TITLE_MAX_LENGTH + 1),
+      }),
+    ).toThrow();
   });
 });
 

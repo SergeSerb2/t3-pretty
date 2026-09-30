@@ -12,6 +12,9 @@ type NativeGlassHeaderItem = {
  * shared background configuration when they are not part of a larger toolbar.
  * Do not enable `glassEffect` for normal bar-button items: react-native-screens
  * renders that as a custom UIButton, which creates a second skinny capsule.
+ * `sharesBackground` stays off while the native kill-switch is down: the
+ * patched header still assigned trailingItemGroups / sharesBackground on
+ * first Home chrome after #708, and UIKit 26+ builds glass for those groups.
  */
 export function withNativeGlassHeaderItem<T extends NativeGlassHeaderItem>(
   item: T,
@@ -20,8 +23,12 @@ export function withNativeGlassHeaderItem<T extends NativeGlassHeaderItem>(
     readonly sharesBackground?: boolean;
     readonly width?: number;
   } = {},
-): T {
-  const sharesBackground = options.sharesBackground ?? item.sharesBackground ?? true;
+): T &
+  Pick<
+    NativeGlassHeaderItem,
+    "glassEffect" | "hidesSharedBackground" | "sharesBackground" | "variant"
+  > {
+  const sharesBackground = options.sharesBackground ?? item.sharesBackground ?? false;
   return {
     ...item,
     glassEffect: item.glassEffect ?? false,
@@ -29,5 +36,5 @@ export function withNativeGlassHeaderItem<T extends NativeGlassHeaderItem>(
     sharesBackground,
     variant: item.variant ?? "plain",
     width: options.width ?? item.width,
-  } as T;
+  };
 }

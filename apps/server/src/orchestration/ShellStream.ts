@@ -19,16 +19,21 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import {
+  AutomationId,
   ThreadId,
   type OrchestrationEvent,
+  type OrchestrationShellSnapshot,
   type OrchestrationShellStreamEvent,
+  type OrchestrationShellStreamItem,
+  type OrchestrationGetSnapshotError,
   type ProjectId,
 } from "@t3tools/contracts";
+
+import { makeLiveStreamBudget, type RetainedLiveItem } from "./LiveStreamBudget.ts";
 
 import type { OrchestrationEventStoreError } from "../persistence/Errors.ts";
 import { SHELL_SUMMARY_COUNT_ACTIVITY_KINDS } from "./Layers/ProjectionPipeline.ts";
@@ -76,6 +81,39 @@ const SHELL_COALESCE_WINDOW = Duration.millis(50);
 const SHELL_COALESCE_MAX_CHUNK = 512;
 const SHELL_REFETCH_CONCURRENCY = 8;
 
+/** A shell snapshot without automation run threads, for clients that did not send `acceptAutomations`. */
+export const stripAutomationsFromShellSnapshot = (
+  snapshot: OrchestrationShellSnapshot,
+): OrchestrationShellSnapshot => ({
+  ...snapshot,
+  threads: snapshot.threads.filter((thread) => thread.automationRun == null),
+});
+
+/**
+ * What a subscriber that did not send `acceptAutomations` may see: no
+ * automation items, and no automation run threads (in deltas or the
+ * snapshot). `thread-removed` passes through; removing an unknown thread is a
+ * no-op on the client.
+ */
+export function stripAutomationsForLegacyClient(
+  item: OrchestrationShellStreamItem,
+): Option.Option<OrchestrationShellStreamItem> {
+  switch (item.kind) {
+    case "automation-upserted":
+    case "automation-removed":
+      return Option.none();
+    case "thread-upserted":
+      return item.thread.automationRun != null ? Option.none() : Option.some(item);
+    case "snapshot":
+      return Option.some({
+        kind: "snapshot",
+        snapshot: stripAutomationsFromShellSnapshot(item.snapshot),
+      });
+    default:
+      return Option.some(item);
+  }
+}
+
 export const makeShellStreamProjector = (
   projectionSnapshotQuery: ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"],
 ) => {
@@ -84,7 +122,7 @@ export const makeShellStreamProjector = (
   // drop the stream item; treating an error as a missing row would
   // incorrectly remove a still-active aggregate.
   const retryShellProjectionRead = <A, E>(
-    aggregateKind: "project" | "thread",
+    aggregateKind: OrchestrationEvent["aggregateKind"],
     aggregateId: string,
     read: Effect.Effect<A, E>,
   ): Effect.Effect<Option.Option<A>, never, never> =>
@@ -169,10 +207,47 @@ export const makeShellStreamProjector = (
       ),
     );
 
+  const automationUpsertOrRemove = (
+    automationId: AutomationId,
+    sequence: number,
+  ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> =>
+    retryShellProjectionRead(
+      "automation",
+      automationId,
+      projectionSnapshotQuery.getAutomationShellById(automationId),
+    ).pipe(
+      Effect.map(
+        Option.flatMap((automation) =>
+          Option.match(automation, {
+            onNone: () =>
+              Option.some<OrchestrationShellStreamEvent>({
+                kind: "automation-removed" as const,
+                sequence,
+                automationId,
+              }),
+            onSome: (nextAutomation) =>
+              Option.some<OrchestrationShellStreamEvent>({
+                kind: "automation-upserted" as const,
+                sequence,
+                automation: nextAutomation,
+              }),
+          }),
+        ),
+      ),
+    );
+
   const toShellStreamEvent = (
     event: OrchestrationEvent,
   ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> => {
     switch (event.type) {
+      case "automation.deleted":
+        return Effect.succeed(
+          Option.some({
+            kind: "automation-removed" as const,
+            sequence: event.sequence,
+            automationId: event.payload.automationId,
+          }),
+        );
       case "project.created":
       case "project.meta-updated":
         return projectUpsertOrRemove(event.payload.projectId, event.sequence);
@@ -196,6 +271,9 @@ export const makeShellStreamProjector = (
       case "thread.unarchived":
         return threadUpsertOrRemove(event.payload.threadId, event.sequence);
       default:
+        if (event.aggregateKind === "automation") {
+          return automationUpsertOrRemove(AutomationId.make(event.aggregateId), event.sequence);
+        }
         if (event.aggregateKind !== "thread") {
           return Effect.succeed(Option.none());
         }
@@ -290,7 +368,10 @@ export class ShellStreamBroadcaster extends Context.Service<
      * published while it is in flight are buffered, not lost.
      */
     readonly subscribe: Effect.Effect<
-      PubSub.Subscription<ReadonlyArray<OrchestrationShellStreamEvent>>,
+      {
+        readonly stream: Stream.Stream<OrchestrationShellStreamItem, OrchestrationGetSnapshotError>;
+        readonly markSynchronized: Effect.Effect<void, OrchestrationGetSnapshotError>;
+      },
       never,
       Scope.Scope
     >;
@@ -322,9 +403,38 @@ export const layer = Layer.effect(
     const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
     const projector = makeShellStreamProjector(projectionSnapshotQuery);
-    // ponytail: unbounded per subscriber, same as the per-socket queue it
-    // replaces; a slow socket buffers here instead of in its own queue.
-    const pubsub = yield* PubSub.unbounded<ReadonlyArray<OrchestrationShellStreamEvent>>();
+    // Projection is shared, but each socket owns a byte/item budget including
+    // batches waiting for its RPC ACK. A slow client cannot grow server memory.
+    const subscribers = new Set<
+      (items: ReadonlyArray<OrchestrationShellStreamItem>) => Effect.Effect<void>
+    >();
+    const subscribe = Effect.gen(function* () {
+      const budget = yield* makeLiveStreamBudget();
+      const output = yield* Queue.unbounded<RetainedLiveItem<OrchestrationShellStreamItem>>();
+      const offer = (items: ReadonlyArray<OrchestrationShellStreamItem>) =>
+        budget.replace([], items).pipe(
+          Effect.flatMap((retained) => Queue.offerAll(output, retained)),
+          Effect.asVoid,
+        );
+      let closed = false;
+      const close = Effect.suspend(() => {
+        if (closed) return Effect.void;
+        closed = true;
+        subscribers.delete(publishToSubscriber);
+        return Queue.clear(output).pipe(
+          Effect.tap((items) => Effect.sync(() => budget.release(items))),
+          Effect.andThen(Queue.shutdown(output)),
+        );
+      });
+      const publishToSubscriber = (items: ReadonlyArray<OrchestrationShellStreamItem>) =>
+        offer(items).pipe(Effect.catchTags({ OrchestrationGetSnapshotError: () => close }));
+      subscribers.add(publishToSubscriber);
+      yield* Effect.addFinalizer(() => close);
+      return {
+        stream: budget.deliver(Stream.fromQueue(output)).pipe(Stream.scoped),
+        markSynchronized: offer([{ kind: "synchronized" }]),
+      };
+    });
     const raw = yield* Queue.unbounded<ShellRawInput>();
     yield* Effect.forkScoped(
       orchestrationEngine.streamDomainEvents.pipe(
@@ -340,7 +450,9 @@ export const layer = Layer.effect(
             .coalesceShellEvents(events)
             .pipe(
               Effect.flatMap((batch) =>
-                batch.length === 0 ? Effect.void : PubSub.publish(pubsub, batch),
+                batch.length === 0
+                  ? Effect.void
+                  : Effect.forEach([...subscribers], (offer) => offer(batch), { discard: true }),
               ),
             );
 
@@ -389,7 +501,7 @@ export const layer = Layer.effect(
     );
 
     return {
-      subscribe: PubSub.subscribe(pubsub),
+      subscribe,
       settle: Deferred.make<void>().pipe(
         Effect.tap((done) => Queue.offer(raw, { _tag: "barrier", done })),
         Effect.flatMap(Deferred.await),

@@ -4,7 +4,10 @@
 # contain .t3-fork/ios-native-submit yet; without this they each compile
 # another 50–90 minute IPA on the only Mac. Only that copy is ios-mobile.
 # Also refresh agent hooks from this checkout so pre-checkout fixes land
-# without re-running setup-buildkite-macos-agent.sh.
+# without re-running setup-buildkite-macos-agent.sh. This only writes
+# Homebrew hooks. Linux review-only pre-command lives at
+# $HOME/.config/t3-pretty/buildkite/hooks/pre-command and must be recopied
+# by hand after macos-review-only-hook.sh changes.
 set -euo pipefail
 
 refresh_macos_agent_hooks() {
@@ -26,6 +29,11 @@ refresh_macos_agent_hooks() {
   fi
   if [[ -f "$src/macos-review-only-hook.sh" ]]; then
     install -m 0755 "$src/macos-review-only-hook.sh" "$hooks/pre-command"
+  fi
+  if [[ -f "$src/refresh-origin-git-credentials.sh" ]]; then
+    mkdir -p "$HOME/.local/bin"
+    install -m 0755 "$src/refresh-origin-git-credentials.sh" \
+      "$HOME/.local/bin/refresh-origin-git-credentials.sh"
   fi
   if [[ -f "$src/persist-ios-native-submit-hook.sh" && -f "$hooks/post-checkout" ]] \
     && grep -q "refresh_macos_agent_hooks" "$src/persist-ios-native-submit-hook.sh" \

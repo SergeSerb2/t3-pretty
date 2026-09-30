@@ -8,16 +8,22 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
  */
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
+  | "filter-by-project"
+  | "project-settings"
   | "pin"
   | "unpin"
   | "settle"
   | "unsettle"
+  | "auto-settle"
+  | "auto-settle:enabled"
+  | "auto-settle:disabled"
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
   | "rename"
   | "regenerate-title"
   | "mark-unread"
+  | "transfer"
   | "copy"
   | "copy-conversation"
   | "copy-path"
@@ -31,8 +37,19 @@ export type ThreadActionMenuId =
 
 export interface ThreadActionMenuState {
   readonly branch: string | null;
+  /**
+   * Project scoping for the thread list. Null on surfaces with no scoped
+   * list behind the menu (the chat header), where the item must not show.
+   */
+  readonly projectFilter: {
+    readonly label: string;
+    /** True when the list is already scoped to this thread's project. */
+    readonly isActive: boolean;
+  } | null;
   readonly isPinned: boolean;
   readonly isSettled: boolean;
+  /** False while the user has turned automatic settlement off for this thread. */
+  readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
   readonly isRegeneratingTitle: boolean;
@@ -45,9 +62,12 @@ export interface ThreadActionMenuState {
   readonly surface: "sidebar" | "header";
   readonly supports: {
     readonly settlement: boolean;
+    /** Server understands thread.auto-settle.set. */
+    readonly autoSettleOptOut: boolean;
     readonly snooze: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
+    readonly projectTransfer: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
@@ -76,8 +96,9 @@ function joinGroups(
 
 /**
  * Single source for the per-thread action menu: the sidebar row's right-click
- * menu and the chat header menu share grouping and copy, but the header keeps
- * settle/snooze because it has no hover-row affordances.
+ * menu and the chat header menu share labels, ordering, grouping, copy, and
+ * capability gating. Each surface supplies state for the actions it supports;
+ * the header keeps settle/snooze because it has no hover-row affordances.
  */
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
@@ -119,10 +140,13 @@ export function buildThreadActionMenuItems(
               label: "Snooze",
               icon: "clock",
               disabled: !state.canSnoozeNow,
-              children: state.snoozePresets.map((preset) => ({
-                id: `snooze:${preset.id}` as const,
-                label: `${preset.label} (${preset.whenLabel})`,
-              })),
+              children: [
+                ...state.snoozePresets.map((preset) => ({
+                  id: `snooze:${preset.id}` as const,
+                  label: `${preset.label} (${preset.whenLabel})`,
+                })),
+                { id: "snooze:custom" as const, label: "Custom…", separatorBefore: true },
+              ],
             },
       );
     }
@@ -141,6 +165,48 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "mark-unread", label: "Mark unread", icon: "mail" },
+    ...(state.projectFilter
+      ? [
+          {
+            id: "filter-by-project" as const,
+            label: state.projectFilter.isActive
+              ? "Show all projects"
+              : `Filter by ${state.projectFilter.label}`,
+            icon: "folder-tree",
+          },
+        ]
+      : []),
+    ...(state.supports.autoSettleOptOut
+      ? [
+          {
+            id: "auto-settle" as const,
+            label: "Auto-settle behavior",
+            icon: "timer",
+            children: [
+              {
+                id: "auto-settle:enabled" as const,
+                label: "Enabled",
+                checked: state.autoSettleEnabled,
+              },
+              {
+                id: "auto-settle:disabled" as const,
+                label: "Disabled",
+                checked: !state.autoSettleEnabled,
+              },
+            ],
+          },
+        ]
+      : []),
+    ...(state.supports.projectTransfer
+      ? [
+          {
+            id: "transfer" as const,
+            label: "Copy or move to connection…",
+            icon: "arrow-right-left",
+            disabled: state.isRunning,
+          },
+        ]
+      : []),
   ];
 
   const copy: ContextMenuItem<ThreadActionMenuId> = {
@@ -156,6 +222,12 @@ export function buildThreadActionMenuItems(
         : []),
       { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
     ],
+  };
+
+  const projectSettings: ContextMenuItem<ThreadActionMenuId> = {
+    id: "project-settings",
+    label: "Project settings",
+    icon: "settings",
   };
 
   const danger: ContextMenuItem<ThreadActionMenuId>[] = [
@@ -174,5 +246,5 @@ export function buildThreadActionMenuItems(
     { id: "delete", label: "Delete", destructive: true, icon: "trash" },
   ];
 
-  return joinGroups([lifecycle, edit, [copy], danger]);
+  return joinGroups([lifecycle, edit, [copy, projectSettings], danger]);
 }
