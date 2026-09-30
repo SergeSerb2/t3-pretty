@@ -26,6 +26,7 @@ import {
   AuthSessionState,
   AuthWebSocketTicketResult,
 } from "@t3tools/contracts";
+import { SSH_DISCOVERED_HOST_MAX_COUNT } from "@t3tools/ssh/config";
 import { SshHttpBridgeError } from "@t3tools/ssh/errors";
 import { resolveLoopbackSshHttpBaseUrl } from "@t3tools/ssh/tunnel";
 import * as Data from "effect/Data";
@@ -110,10 +111,23 @@ const withLoopbackSshApi =
 export const discoverSshHosts = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.DISCOVER_SSH_HOSTS_CHANNEL,
   payload: Schema.Void,
-  result: Schema.Array(DesktopDiscoveredSshHostSchema),
+  result: Schema.Array(DesktopDiscoveredSshHostSchema).check(
+    Schema.isMaxLength(SSH_DISCOVERED_HOST_MAX_COUNT),
+  ),
   handler: Effect.fn("desktop.ipc.sshEnvironment.discoverHosts")(function* () {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
-    return yield* sshEnvironment.discoverHosts();
+    const hosts = yield* sshEnvironment.discoverHosts();
+    return hosts.slice(0, SSH_DISCOVERED_HOST_MAX_COUNT);
+  }),
+});
+
+export const resolveSshHost = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.RESOLVE_SSH_HOST_CHANNEL,
+  payload: Schema.String,
+  result: DesktopSshEnvironmentTargetSchema,
+  handler: Effect.fn("desktop.ipc.sshEnvironment.resolveHost")(function* (alias) {
+    const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
+    return yield* sshEnvironment.resolveHost(alias);
   }),
 });
 
@@ -127,13 +141,11 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
   }) {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
     return yield* sshEnvironment.ensureEnvironment(target, options).pipe(
-      Effect.catch((error) =>
-        DesktopSshEnvironment.isDesktopSshPasswordPromptCancellation(error)
-          ? Effect.succeed({
-              type: DesktopSshPasswordPromptCancelledType,
-              message: error.message,
-            })
-          : Effect.fail(error),
+      Effect.catchIf(DesktopSshEnvironment.isDesktopSshPasswordPromptCancellation, (error) =>
+        Effect.succeed({
+          type: DesktopSshPasswordPromptCancelledType,
+          message: error.message,
+        }),
       ),
     );
   }),

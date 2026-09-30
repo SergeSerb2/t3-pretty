@@ -3,20 +3,12 @@ import { ActivityIndicator, View } from "react-native";
 import { WebView } from "react-native-webview";
 
 import { AppText as Text } from "../../components/AppText";
+import { FilePreviewLoading } from "./FilePreviewFeedback";
 import { LoadingStrip } from "../../components/LoadingStrip";
 
-export function WorkspaceFileWebPreview(props: { readonly uri: string | null }) {
+function ResolvedWorkspaceFileWebPreview(props: { readonly uri: string }) {
   const [loadProgress, setLoadProgress] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  if (props.uri === null) {
-    return (
-      <View className="flex-1 items-center justify-center gap-3 bg-card px-6">
-        <ActivityIndicator />
-        <Text className="text-center text-sm text-foreground-muted">Preparing preview...</Text>
-      </View>
-    );
-  }
 
   return (
     <View className="relative flex-1 bg-card">
@@ -57,4 +49,12 @@ export function WorkspaceFileWebPreview(props: { readonly uri: string | null }) 
       />
     </View>
   );
+}
+
+export function WorkspaceFileWebPreview(props: { readonly uri: string | null }) {
+  if (props.uri === null) {
+    return <FilePreviewLoading message="Preparing preview..." background="card" />;
+  }
+
+  return <ResolvedWorkspaceFileWebPreview key={props.uri} uri={props.uri} />;
 }

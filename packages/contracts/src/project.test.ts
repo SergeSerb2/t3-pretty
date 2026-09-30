@@ -3,6 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   ProjectReadFileError,
+  PROJECT_LIST_ENTRIES_MAX,
+  PROJECT_LIST_ENTRIES_TOTAL_PATH_CHARS_MAX,
+  ProjectListEntriesResult,
   ProjectSearchContentsError,
   ProjectSearchContentsInput,
   ProjectSearchEntriesError,
@@ -12,6 +15,7 @@ import {
 
 const decodeSearchEntriesInput = Schema.decodeUnknownSync(ProjectSearchEntriesInput);
 const decodeSearchContentsInput = Schema.decodeUnknownSync(ProjectSearchContentsInput);
+const decodeListEntriesResult = Schema.decodeUnknownSync(ProjectListEntriesResult);
 
 describe("project search inputs", () => {
   it("allows an empty entries query for bounded frecency browsing", () => {
@@ -34,6 +38,29 @@ describe("project search inputs", () => {
       useRegex: false,
     });
     expect(decoded.query).toBe(" foo ");
+  });
+});
+
+describe("project listing results", () => {
+  it("rejects entry counts above the workspace index ceiling", () => {
+    const entry = { path: "src/index.ts", kind: "file" } as const;
+    expect(() =>
+      decodeListEntriesResult({
+        entries: Array.from({ length: PROJECT_LIST_ENTRIES_MAX + 1 }, () => entry),
+        truncated: true,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects aggregate path data above the mobile indexing budget", () => {
+    const path = "x".repeat(32 * 1024);
+    const entryCount = Math.floor(PROJECT_LIST_ENTRIES_TOTAL_PATH_CHARS_MAX / path.length) + 1;
+    expect(() =>
+      decodeListEntriesResult({
+        entries: Array.from({ length: entryCount }, () => ({ path, kind: "file" as const })),
+        truncated: true,
+      }),
+    ).toThrow();
   });
 });
 

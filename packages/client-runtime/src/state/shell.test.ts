@@ -28,6 +28,7 @@ function environmentEntry(environmentId: EnvironmentId, label: string) {
       wsBaseUrl: `wss://${environmentId}.example.test`,
     }),
     profile: Option.none(),
+    enabled: true,
   };
 }
 
@@ -46,6 +47,7 @@ function shellState(input: {
             updatedAt: input.updatedAt,
             projects: [],
             threads: [],
+            automations: [],
           }),
     status: input.status,
     error: input.error === undefined ? Option.none() : Option.some(input.error),

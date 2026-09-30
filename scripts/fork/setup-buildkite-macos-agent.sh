@@ -1,8 +1,12 @@
 #!/bin/bash
 # Register a trusted macOS Buildkite agent for T3 Pretty Origin CI.
 #
-# Default queue is macos-release (Origin PR Review). Packaging (DMG, iOS,
-# relay, upstream sync) uses the same queue; REVIEW_ONLY=1 refuses those jobs.
+# Self-hosted macos-release still runs Origin PR review, comments, the
+# GHA importer, upstream sync, GitHub mirror, and relay (CURSOR_API_KEY /
+# origin CLI / GITHUB_MIRROR_SSH_KEY / PLANETSCALE_* / matching Go).
+# Hosted macos-medium / macos-large take Mac packaging that does not need
+# those secrets. REVIEW_ONLY=1 refuses packaging if a stale pipeline.yml
+# still matches this queue.
 # Review-only machines spawn REVIEW_WORKERS (default 10) workers so many PRs
 # review in parallel; the pipeline's per-branch concurrency group keeps one
 # reviewer per PR. Packaging machines register two workers so review and a
@@ -12,6 +16,12 @@
 #
 # Machines without a full Xcode.app default to REVIEW_ONLY=1 so they refuse
 # packaging jobs that still match macos-release on older pipeline.yml files.
+# Agent-local hooks are copied at setup time and do not auto-pull from git.
+# After macos-review-only-hook.sh changes, re-run this script or copy the
+# file onto hooks/pre-command. Linux review-only agents install the same
+# hook at $HOME/.config/t3-pretty/buildkite/hooks/pre-command and must
+# be recopied the same way — persist-ios-native-submit-hook.sh only
+# refreshes Homebrew hooks on a Mac.
 #
 # Usage:
 #   printf '%s\n' '{"token":"<agent token>"}' > "$HOME/t3-buildkite-token.json"
@@ -59,6 +69,7 @@ fi
 
 if ! command -v buildkite-agent >/dev/null; then
   export HOMEBREW_NO_AUTO_UPDATE=1
+  export HOMEBREW_NO_ASK=1
   brew tap buildkite/buildkite >/dev/null
   brew trust buildkite/buildkite >/dev/null || true
   brew install buildkite/buildkite/buildkite-agent
@@ -85,6 +96,9 @@ replacements = {
     "token=": f"token=\"{token}\"",
     "name=": f"name=\"{name}\"",
     "tags=": f"tags=\"{tags}\"",
+    # The upstream sync checkpoints resolutions from its EXIT trap on
+    # cancellation; the 10s default grace period kills it mid-push.
+    "cancel-grace-period=": "cancel-grace-period=60",
 }
 lines = []
 seen = set()
@@ -143,6 +157,10 @@ ${program_args}
     <string>$HOME/.config/t3-pretty/gitconfig</string>
     <key>FORCE_COLOR</key>
     <string>0</string>
+    <key>HOMEBREW_NO_ASK</key>
+    <string>1</string>
+    <key>HOMEBREW_NO_AUTO_UPDATE</key>
+    <string>1</string>
     <key>T3_PRETTY_REVIEW_ONLY</key>
     <string>${REVIEW_ONLY}</string>
   </dict>
@@ -214,6 +232,10 @@ if [[ "$COMPANION_NAME" != "$AGENT_NAME" ]]; then
     <string>$HOME/.config/t3-pretty/gitconfig</string>
     <key>FORCE_COLOR</key>
     <string>0</string>
+    <key>HOMEBREW_NO_ASK</key>
+    <string>1</string>
+    <key>HOMEBREW_NO_AUTO_UPDATE</key>
+    <string>1</string>
     <key>T3_PRETTY_REVIEW_ONLY</key>
     <string>${REVIEW_ONLY}</string>
   </dict>

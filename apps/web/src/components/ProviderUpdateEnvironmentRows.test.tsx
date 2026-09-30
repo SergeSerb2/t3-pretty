@@ -33,6 +33,13 @@ const hooks = vi.hoisted(() => {
       cursor = 0;
       slots = [];
     },
+    useEffect(effect: () => unknown) {
+      const index = nextIndex();
+      if (!slots[index]) {
+        slots[index] = true;
+        effect();
+      }
+    },
     useCallback<T>(callback: T): T {
       nextIndex();
       return callback;
@@ -76,6 +83,7 @@ vi.mock("react", async (importOriginal) => {
   return {
     ...actual,
     useCallback: hooks.useCallback,
+    useEffect: hooks.useEffect,
     useMemo: hooks.useMemo,
     useRef: hooks.useRef,
     useState: hooks.useState,
