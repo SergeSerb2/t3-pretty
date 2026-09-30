@@ -1,4 +1,4 @@
-import { ThreadId } from "@t3tools/contracts";
+import { ORCHESTRATION_THREAD_DETAIL_CURSOR_MAX_LENGTH, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
@@ -39,6 +39,9 @@ describe("threadDetailCursor", () => {
       decodeThreadDetailPageCursor(
         Buffer.from(JSON.stringify({ t: "thread-1", a: 5, i: "x" })).toString("base64url"),
       ),
+    ).toBeNull();
+    expect(
+      decodeThreadDetailPageCursor("x".repeat(ORCHESTRATION_THREAD_DETAIL_CURSOR_MAX_LENGTH + 1)),
     ).toBeNull();
   });
 });

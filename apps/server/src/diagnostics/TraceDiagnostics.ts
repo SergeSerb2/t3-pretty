@@ -1,11 +1,17 @@
-import type {
-  ServerTraceDiagnosticsErrorKind,
-  ServerTraceDiagnosticsFailureSummary,
-  ServerTraceDiagnosticsLogEvent,
-  ServerTraceDiagnosticsRecentFailure,
-  ServerTraceDiagnosticsResult,
-  ServerTraceDiagnosticsSpanOccurrence,
-  ServerTraceDiagnosticsSpanSummary,
+import {
+  SERVER_TRACE_DIAGNOSTIC_LOG_LEVEL_MAX_COUNT,
+  SERVER_TRACE_DIAGNOSTIC_PATH_MAX_LENGTH,
+  SERVER_TRACE_DIAGNOSTIC_RECENT_MAX_COUNT,
+  SERVER_TRACE_DIAGNOSTIC_SCANNED_FILE_MAX_COUNT,
+  SERVER_TRACE_DIAGNOSTIC_TEXT_MAX_LENGTH,
+  SERVER_TRACE_DIAGNOSTIC_TOP_MAX_COUNT,
+  type ServerTraceDiagnosticsErrorKind,
+  type ServerTraceDiagnosticsFailureSummary,
+  type ServerTraceDiagnosticsLogEvent,
+  type ServerTraceDiagnosticsRecentFailure,
+  type ServerTraceDiagnosticsResult,
+  type ServerTraceDiagnosticsSpanOccurrence,
+  type ServerTraceDiagnosticsSpanSummary,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -16,6 +22,9 @@ import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+
+import { TRACE_MAX_FILES_LIMIT } from "../config.ts";
 
 interface TraceRecordLike {
   readonly name?: unknown;
@@ -41,7 +50,7 @@ export interface TraceDiagnosticsOptions {
   readonly readAt?: DateTime.Utc;
 }
 
-export class TraceFileReadError extends Schema.TaggedErrorClass<TraceFileReadError>()(
+export class TraceFileReadError extends Schema.TaggedError<TraceFileReadError>()(
   "TraceFileReadError",
   {
     traceFilePath: Schema.String,
@@ -63,26 +72,22 @@ export class TraceDiagnostics extends Context.Service<
   }
 >()("t3/diagnostics/TraceDiagnostics") {}
 
-interface TraceDiagnosticsInput {
-  readonly traceFilePath: string;
-  readonly files: ReadonlyArray<{ readonly path: string; readonly text: string }>;
-  readonly scannedFilePaths?: ReadonlyArray<string>;
-  readonly slowSpanThresholdMs?: number;
-  readonly readAt: DateTime.Utc;
-  readonly error?: TraceDiagnosticsErrorSummary;
-  readonly partialFailure?: boolean;
-}
-
 interface TraceDiagnosticsErrorSummary {
   readonly kind: ServerTraceDiagnosticsErrorKind;
   readonly message: string;
 }
 
 const DEFAULT_SLOW_SPAN_THRESHOLD_MS = 1_000;
-const TOP_LIMIT = 10;
-const RECENT_LIMIT = 20;
-function toRotatedTracePaths(traceFilePath: string, maxFiles: number): ReadonlyArray<string> {
-  const backupCount = Math.max(0, Math.floor(maxFiles));
+const TRACE_RECORD_MAX_LENGTH = 1024 * 1024;
+const TRACE_AGGREGATE_KEY_LIMIT = 4_096;
+const TRACE_DIAGNOSTICS_READ_BUDGET_BYTES = 32 * 1024 * 1024;
+
+/** The trace file and its rotated backups, oldest first. */
+export function toRotatedTracePaths(
+  traceFilePath: string,
+  maxFiles: number,
+): ReadonlyArray<string> {
+  const backupCount = Math.min(TRACE_MAX_FILES_LIMIT, Math.max(0, Math.floor(maxFiles)));
   const backups = Array.from(
     { length: backupCount },
     (_, index) => `${traceFilePath}.${backupCount - index}`,
@@ -95,7 +100,29 @@ function isRecordObject(value: unknown): value is TraceRecordLike {
 }
 
 function toStringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.length <= SERVER_TRACE_DIAGNOSTIC_TEXT_MAX_LENGTH
+    ? trimmed
+    : trimmed.slice(0, SERVER_TRACE_DIAGNOSTIC_TEXT_MAX_LENGTH);
+}
+
+function toDiagnosticPath(value: string): string {
+  const trimmed = value.trim();
+  const nonEmpty = trimmed.length > 0 ? trimmed : "unknown";
+  return nonEmpty.slice(0, SERVER_TRACE_DIAGNOSTIC_PATH_MAX_LENGTH);
+}
+
+function toDiagnosticError(
+  error: TraceDiagnosticsErrorSummary | undefined,
+): TraceDiagnosticsErrorSummary | undefined {
+  return error === undefined
+    ? undefined
+    : {
+        kind: error.kind,
+        message: toStringValue(error.message) ?? "Trace diagnostics failed.",
+      };
 }
 
 function toNumberValue(value: unknown): number | null {
@@ -133,6 +160,10 @@ function readEventAttributes(event: TraceEventLike): Readonly<Record<string, unk
     : {};
 }
 
+function boundScannedFilePaths(paths: ReadonlyArray<string>): ReadonlyArray<string> {
+  return paths.slice(0, SERVER_TRACE_DIAGNOSTIC_SCANNED_FILE_MAX_COUNT).map(toDiagnosticPath);
+}
+
 function makeEmptyDiagnostics(input: {
   readonly traceFilePath: string;
   readonly scannedFilePaths: ReadonlyArray<string>;
@@ -142,8 +173,8 @@ function makeEmptyDiagnostics(input: {
   readonly partialFailure?: boolean;
 }): ServerTraceDiagnosticsResult {
   return {
-    traceFilePath: input.traceFilePath,
-    scannedFilePaths: [...input.scannedFilePaths],
+    traceFilePath: toDiagnosticPath(input.traceFilePath),
+    scannedFilePaths: boundScannedFilePaths(input.scannedFilePaths),
     readAt: input.readAt,
     recordCount: 0,
     parseErrorCount: 0,
@@ -160,7 +191,7 @@ function makeEmptyDiagnostics(input: {
     latestFailures: [],
     latestWarningAndErrorLogs: [],
     partialFailure: input.partialFailure ? Option.some(true) : Option.none(),
-    error: Option.fromNullishOr(input.error),
+    error: Option.fromNullishOr(toDiagnosticError(input.error)),
   };
 }
 
@@ -168,44 +199,50 @@ function isNotFoundError(error: PlatformError.PlatformError): boolean {
   return error.reason._tag === "NotFound";
 }
 
-function insertBoundedSlowestSpan(
-  slowestSpans: ServerTraceDiagnosticsSpanOccurrence[],
-  span: ServerTraceDiagnosticsSpanOccurrence,
+/**
+ * Adds `item` to `items`, which stays sorted by `order` and holds at most
+ * `limit` entries. Same result as a stable sort and slice over every item, but
+ * memory stays bounded however many items stream in.
+ */
+function insertBounded<A>(
+  items: A[],
+  item: A,
+  limit: number,
+  order: (left: A, right: A) => number,
 ): void {
-  if (
-    slowestSpans.length >= TOP_LIMIT &&
-    span.durationMs <= slowestSpans[slowestSpans.length - 1]!.durationMs
-  ) {
+  if (items.length >= limit && order(item, items[items.length - 1]!) >= 0) {
     return;
   }
 
-  slowestSpans.push(span);
-  slowestSpans.sort((left, right) => right.durationMs - left.durationMs);
-  if (slowestSpans.length > TOP_LIMIT) {
-    slowestSpans.length = TOP_LIMIT;
+  items.push(item);
+  items.sort(order);
+  if (items.length > limit) {
+    items.length = limit;
   }
 }
 
-export function aggregateTraceDiagnostics(
-  input: TraceDiagnosticsInput,
-): ServerTraceDiagnosticsResult {
-  const readAt = input.readAt;
-  const slowSpanThresholdMs = input.slowSpanThresholdMs ?? DEFAULT_SLOW_SPAN_THRESHOLD_MS;
-  const scannedFilePaths = input.scannedFilePaths ?? input.files.map((file) => file.path);
-  if (input.files.length === 0) {
-    return makeEmptyDiagnostics({
-      traceFilePath: input.traceFilePath,
-      scannedFilePaths,
-      readAt,
-      slowSpanThresholdMs,
-      error: input.error ?? {
-        kind: "trace-file-not-found",
-        message: "No local trace files were found.",
-      },
-      ...(input.partialFailure ? { partialFailure: true } : {}),
-    });
-  }
+const slowestFirst = (
+  left: ServerTraceDiagnosticsSpanOccurrence,
+  right: ServerTraceDiagnosticsSpanOccurrence,
+) => right.durationMs - left.durationMs;
 
+const latestEndedFirst = (
+  left: ServerTraceDiagnosticsRecentFailure,
+  right: ServerTraceDiagnosticsRecentFailure,
+) => DateTime.toEpochMillis(right.endedAt) - DateTime.toEpochMillis(left.endedAt);
+
+const latestSeenFirst = (
+  left: ServerTraceDiagnosticsLogEvent,
+  right: ServerTraceDiagnosticsLogEvent,
+) => DateTime.toEpochMillis(right.seenAt) - DateTime.toEpochMillis(left.seenAt);
+
+/**
+ * Folds trace NDJSON into diagnostics. Call `addLine` once per line as the
+ * rotated files stream in, then `finish` for the result.
+ */
+export function makeTraceDiagnosticsAggregator(
+  slowSpanThresholdMs = DEFAULT_SLOW_SPAN_THRESHOLD_MS,
+) {
   let parseErrorCount = 0;
   let recordCount = 0;
   let failureCount = 0;
@@ -222,76 +259,89 @@ export function aggregateTraceDiagnostics(
   const latestFailures: ServerTraceDiagnosticsRecentFailure[] = [];
   const slowestSpans: ServerTraceDiagnosticsSpanOccurrence[] = [];
   const latestWarningAndErrorLogs: ServerTraceDiagnosticsLogEvent[] = [];
-  const logLevelCounts: Record<string, number> = {};
+  const logLevelCounts = new Map<string, number>();
 
-  for (const file of input.files) {
-    const lines = file.text.split(/\r?\n/);
-    for (const line of lines) {
-      if (line.trim().length === 0) continue;
+  const addLine = (line: string) => {
+    if (line.length > TRACE_RECORD_MAX_LENGTH) {
+      parseErrorCount += 1;
+      return;
+    }
+    if (line.trim().length === 0) return;
 
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        parseErrorCount += 1;
-        continue;
-      }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      parseErrorCount += 1;
+      return;
+    }
 
-      if (!isRecordObject(parsed)) {
-        parseErrorCount += 1;
-        continue;
-      }
+    if (!isRecordObject(parsed)) {
+      parseErrorCount += 1;
+      return;
+    }
 
-      const name = toStringValue(parsed.name);
-      const traceId = toStringValue(parsed.traceId);
-      const spanId = toStringValue(parsed.spanId);
-      const durationMs = toNumberValue(parsed.durationMs);
-      const endedAt = unixNanoToDateTime(parsed.endTimeUnixNano);
-      const startedAt = unixNanoToDateTime(parsed.startTimeUnixNano);
+    const name = toStringValue(parsed.name);
+    const traceId = toStringValue(parsed.traceId);
+    const spanId = toStringValue(parsed.spanId);
+    const durationMs = toNumberValue(parsed.durationMs);
+    const endedAt = unixNanoToDateTime(parsed.endTimeUnixNano);
+    const startedAt = unixNanoToDateTime(parsed.startTimeUnixNano);
 
-      if (!name || !traceId || !spanId || durationMs === null || !endedAt) {
-        parseErrorCount += 1;
-        continue;
-      }
+    if (!name || !traceId || !spanId || durationMs === null || !endedAt) {
+      parseErrorCount += 1;
+      return;
+    }
 
-      recordCount += 1;
-      firstSpanAt =
-        startedAt && (firstSpanAt === null || DateTime.isLessThan(startedAt, firstSpanAt))
-          ? startedAt
-          : firstSpanAt;
-      lastSpanAt =
-        lastSpanAt === null || DateTime.isGreaterThan(endedAt, lastSpanAt) ? endedAt : lastSpanAt;
+    recordCount += 1;
+    firstSpanAt =
+      startedAt && (firstSpanAt === null || DateTime.isLessThan(startedAt, firstSpanAt))
+        ? startedAt
+        : firstSpanAt;
+    lastSpanAt =
+      lastSpanAt === null || DateTime.isGreaterThan(endedAt, lastSpanAt) ? endedAt : lastSpanAt;
 
-      const exitTag = readExitTag(parsed.exit);
-      const isFailure = exitTag === "Failure";
-      const isInterrupted = exitTag === "Interrupted";
-      if (isFailure) failureCount += 1;
-      if (isInterrupted) interruptionCount += 1;
+    const exitTag = readExitTag(parsed.exit);
+    const isFailure = exitTag === "Failure";
+    const isInterrupted = exitTag === "Interrupted";
+    if (isFailure) failureCount += 1;
+    if (isInterrupted) interruptionCount += 1;
 
-      const spanSummary = spansByName.get(name) ?? {
+    let spanSummary = spansByName.get(name);
+    if (spanSummary === undefined && spansByName.size < TRACE_AGGREGATE_KEY_LIMIT) {
+      spanSummary = {
         count: 0,
         failureCount: 0,
         totalDurationMs: 0,
         maxDurationMs: 0,
       };
+      spansByName.set(name, spanSummary);
+    }
+    if (spanSummary !== undefined) {
       spanSummary.count += 1;
       spanSummary.totalDurationMs += durationMs;
       spanSummary.maxDurationMs = Math.max(spanSummary.maxDurationMs, durationMs);
       if (isFailure) spanSummary.failureCount += 1;
-      spansByName.set(name, spanSummary);
+    }
 
-      const spanItem = { name, durationMs, endedAt, traceId, spanId };
-      if (durationMs >= slowSpanThresholdMs) {
-        slowSpanCount += 1;
-      }
-      insertBoundedSlowestSpan(slowestSpans, spanItem);
+    const spanItem = { name, durationMs, endedAt, traceId, spanId };
+    if (durationMs >= slowSpanThresholdMs) {
+      slowSpanCount += 1;
+    }
+    insertBounded(slowestSpans, spanItem, SERVER_TRACE_DIAGNOSTIC_TOP_MAX_COUNT, slowestFirst);
 
-      if (isFailure) {
-        const cause = readExitCause(parsed.exit);
-        latestFailures.push({ ...spanItem, cause });
+    if (isFailure) {
+      const cause = readExitCause(parsed.exit);
+      insertBounded(
+        latestFailures,
+        { ...spanItem, cause },
+        SERVER_TRACE_DIAGNOSTIC_RECENT_MAX_COUNT,
+        latestEndedFirst,
+      );
 
-        const failureKey = `${name}\0${cause}`;
-        const existing = failuresByKey.get(failureKey);
+      const failureKey = `${name}\0${cause}`;
+      const existing = failuresByKey.get(failureKey);
+      if (existing !== undefined || failuresByKey.size < TRACE_AGGREGATE_KEY_LIMIT) {
         const isLatestFailure = !existing || DateTime.isGreaterThan(endedAt, existing.lastSeenAt);
         failuresByKey.set(failureKey, {
           name,
@@ -302,104 +352,122 @@ export function aggregateTraceDiagnostics(
           spanId: isLatestFailure ? spanId : existing!.spanId,
         });
       }
+    }
 
-      if (Array.isArray(parsed.events)) {
-        for (const rawEvent of parsed.events) {
-          if (!isTraceEvent(rawEvent)) continue;
-          const attributes = readEventAttributes(rawEvent);
-          const level = toStringValue(attributes["effect.logLevel"]);
-          if (!level) continue;
+    if (Array.isArray(parsed.events)) {
+      for (const rawEvent of parsed.events) {
+        if (!isTraceEvent(rawEvent)) continue;
+        const attributes = readEventAttributes(rawEvent);
+        const level = toStringValue(attributes["effect.logLevel"]);
+        if (!level) continue;
 
-          logLevelCounts[level] = (logLevelCounts[level] ?? 0) + 1;
-          const normalizedLevel = level.toLowerCase();
-          if (
-            normalizedLevel !== "warning" &&
-            normalizedLevel !== "warn" &&
-            normalizedLevel !== "error" &&
-            normalizedLevel !== "fatal"
-          ) {
-            continue;
-          }
-
-          const seenAt = unixNanoToDateTime(rawEvent.timeUnixNano) ?? endedAt;
-          const message = toStringValue(rawEvent.name)?.trim() ?? "Log event";
-          latestWarningAndErrorLogs.push({
-            spanName: name,
-            level,
-            message,
-            seenAt,
-            traceId,
-            spanId,
-          });
+        const existingLevelCount = logLevelCounts.get(level);
+        if (existingLevelCount !== undefined) {
+          logLevelCounts.set(level, existingLevelCount + 1);
+        } else if (logLevelCounts.size < SERVER_TRACE_DIAGNOSTIC_LOG_LEVEL_MAX_COUNT) {
+          logLevelCounts.set(level, 1);
         }
+        const normalizedLevel = level.toLowerCase();
+        if (
+          normalizedLevel !== "warning" &&
+          normalizedLevel !== "warn" &&
+          normalizedLevel !== "error" &&
+          normalizedLevel !== "fatal"
+        ) {
+          continue;
+        }
+
+        const seenAt = unixNanoToDateTime(rawEvent.timeUnixNano) ?? endedAt;
+        const message = toStringValue(rawEvent.name)?.trim() ?? "Log event";
+        insertBounded(
+          latestWarningAndErrorLogs,
+          { spanName: name, level, message, seenAt, traceId, spanId },
+          SERVER_TRACE_DIAGNOSTIC_RECENT_MAX_COUNT,
+          latestSeenFirst,
+        );
       }
     }
-  }
-
-  const topSpansByCount: ServerTraceDiagnosticsSpanSummary[] = [...spansByName.entries()]
-    .map(([name, span]) => ({
-      name,
-      count: span.count,
-      failureCount: span.failureCount,
-      totalDurationMs: span.totalDurationMs,
-      averageDurationMs: span.count > 0 ? span.totalDurationMs / span.count : 0,
-      maxDurationMs: span.maxDurationMs,
-    }))
-    .toSorted((left, right) => right.count - left.count || right.maxDurationMs - left.maxDurationMs)
-    .slice(0, TOP_LIMIT);
-
-  return {
-    traceFilePath: input.traceFilePath,
-    scannedFilePaths,
-    readAt,
-    recordCount,
-    parseErrorCount,
-    firstSpanAt: Option.fromNullishOr(firstSpanAt),
-    lastSpanAt: Option.fromNullishOr(lastSpanAt),
-    failureCount,
-    interruptionCount,
-    slowSpanThresholdMs,
-    slowSpanCount,
-    logLevelCounts,
-    topSpansByCount,
-    slowestSpans,
-    commonFailures: [...failuresByKey.values()]
-      .toSorted(
-        (left, right) =>
-          right.count - left.count ||
-          DateTime.toEpochMillis(right.lastSeenAt) - DateTime.toEpochMillis(left.lastSeenAt),
-      )
-      .slice(0, TOP_LIMIT),
-    latestFailures: latestFailures
-      .toSorted(
-        (left, right) =>
-          DateTime.toEpochMillis(right.endedAt) - DateTime.toEpochMillis(left.endedAt),
-      )
-      .slice(0, RECENT_LIMIT),
-    latestWarningAndErrorLogs: latestWarningAndErrorLogs
-      .toSorted(
-        (left, right) => DateTime.toEpochMillis(right.seenAt) - DateTime.toEpochMillis(left.seenAt),
-      )
-      .slice(0, RECENT_LIMIT),
-    partialFailure: input.partialFailure ? Option.some(true) : Option.none(),
-    error: Option.fromNullishOr(input.error),
   };
+
+  const finish = (input: {
+    readonly traceFilePath: string;
+    readonly scannedFilePaths: ReadonlyArray<string>;
+    readonly readAt: DateTime.Utc;
+    readonly error?: TraceDiagnosticsErrorSummary;
+    readonly partialFailure?: boolean;
+  }): ServerTraceDiagnosticsResult => {
+    const topSpansByCount: ServerTraceDiagnosticsSpanSummary[] = [...spansByName.entries()]
+      .map(([name, span]) => ({
+        name,
+        count: span.count,
+        failureCount: span.failureCount,
+        totalDurationMs: span.totalDurationMs,
+        averageDurationMs: span.count > 0 ? span.totalDurationMs / span.count : 0,
+        maxDurationMs: span.maxDurationMs,
+      }))
+      .toSorted(
+        (left, right) => right.count - left.count || right.maxDurationMs - left.maxDurationMs,
+      )
+      .slice(0, SERVER_TRACE_DIAGNOSTIC_TOP_MAX_COUNT);
+
+    return {
+      traceFilePath: toDiagnosticPath(input.traceFilePath),
+      scannedFilePaths: boundScannedFilePaths(input.scannedFilePaths),
+      readAt: input.readAt,
+      recordCount,
+      parseErrorCount,
+      firstSpanAt: Option.fromNullishOr(firstSpanAt),
+      lastSpanAt: Option.fromNullishOr(lastSpanAt),
+      failureCount,
+      interruptionCount,
+      slowSpanThresholdMs,
+      slowSpanCount,
+      logLevelCounts: Object.fromEntries(logLevelCounts),
+      topSpansByCount,
+      slowestSpans,
+      commonFailures: [...failuresByKey.values()]
+        .toSorted(
+          (left, right) =>
+            right.count - left.count ||
+            DateTime.toEpochMillis(right.lastSeenAt) - DateTime.toEpochMillis(left.lastSeenAt),
+        )
+        .slice(0, SERVER_TRACE_DIAGNOSTIC_TOP_MAX_COUNT),
+      latestFailures,
+      latestWarningAndErrorLogs,
+      partialFailure: input.partialFailure ? Option.some(true) : Option.none(),
+      error: Option.fromNullishOr(toDiagnosticError(input.error)),
+    };
+  };
+
+  return { addLine, finish };
 }
 
-type TraceFileReadResult =
-  | { readonly _tag: "Loaded"; readonly path: string; readonly text: string }
-  | { readonly _tag: "Missing"; readonly path: string };
-
-function readTraceFile(
+/**
+ * Feeds each line of one trace file to `onLine`, streaming so only one chunk of
+ * text is in memory at a time. Succeeds with false when the file does not exist.
+ * `options` forwards FileSystem.stream range limits so a caller can cap bytes
+ * without loading the file whole.
+ */
+export function streamTraceFileLines(
   fileSystem: FileSystem.FileSystem,
   path: string,
-): Effect.Effect<TraceFileReadResult, TraceFileReadError> {
-  return fileSystem.readFileString(path).pipe(
-    Effect.map((text): TraceFileReadResult => ({ _tag: "Loaded", path, text })),
+  onLine: (line: string) => void,
+  options?: {
+    readonly bytesToRead?: bigint | number;
+    readonly offset?: bigint | number;
+  },
+): Effect.Effect<boolean, TraceFileReadError> {
+  const stream =
+    options === undefined ? fileSystem.stream(path) : fileSystem.stream(path, options);
+  return stream.pipe(
+    Stream.decodeText,
+    Stream.splitLines,
+    Stream.runForEachArray((lines) => Effect.sync(() => lines.forEach(onLine))),
+    Effect.as(true),
     Effect.catchTags({
       PlatformError: (cause) =>
         isNotFoundError(cause)
-          ? Effect.succeed<TraceFileReadResult>({ _tag: "Missing", path })
+          ? Effect.succeed(false)
           : Effect.fail(
               new TraceFileReadError({
                 traceFilePath: path,
@@ -411,6 +479,7 @@ function readTraceFile(
   );
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
 
@@ -419,9 +488,62 @@ export const make = Effect.gen(function* () {
       const readAt = options.readAt ?? (yield* DateTime.now);
       const slowSpanThresholdMs = options.slowSpanThresholdMs ?? DEFAULT_SLOW_SPAN_THRESHOLD_MS;
       const paths = toRotatedTracePaths(options.traceFilePath, options.maxFiles);
-      const results = yield* Effect.all(
-        paths.map((path) =>
-          readTraceFile(fileSystem, path).pipe(
+      const aggregator = makeTraceDiagnosticsAggregator(slowSpanThresholdMs);
+      let remainingBytes = TRACE_DIAGNOSTICS_READ_BUDGET_BYTES;
+      let wasTruncated = false;
+
+      // Allocate the newest-first tail budget, then stream oldest-first so the
+      // aggregator sees chronological lines.
+      const ranges: Array<{
+        readonly path: string;
+        readonly streamOptions?: { readonly offset: bigint; readonly bytesToRead: bigint };
+        readonly skipPartialLine: boolean;
+        readonly skip: boolean;
+      }> = [];
+      for (const path of paths.toReversed()) {
+        if (remainingBytes <= 0) {
+          wasTruncated = true;
+          ranges.push({ path, skipPartialLine: false, skip: true });
+          continue;
+        }
+
+        const infoResult = yield* fileSystem.stat(path).pipe(Effect.result);
+        if (Result.isSuccess(infoResult)) {
+          const size = infoResult.success.size;
+          const readLimit = BigInt(remainingBytes);
+          const bytesToRead = size < readLimit ? size : readLimit;
+          const offset = size - bytesToRead;
+          if (offset > 0n) wasTruncated = true;
+          remainingBytes = Math.max(0, remainingBytes - Number(bytesToRead));
+          ranges.push({
+            path,
+            streamOptions: { offset, bytesToRead },
+            skipPartialLine: offset > 0n,
+            skip: false,
+          });
+        } else {
+          ranges.push({ path, skipPartialLine: false, skip: false });
+        }
+      }
+      ranges.reverse();
+
+      const results = yield* Effect.forEach(
+        ranges,
+        (range) => {
+          if (range.skip) return Effect.succeed(Result.succeed(false));
+          let skipFirst = range.skipPartialLine;
+          return streamTraceFileLines(
+            fileSystem,
+            range.path,
+            (line) => {
+              if (skipFirst) {
+                skipFirst = false;
+                return;
+              }
+              aggregator.addLine(line);
+            },
+            range.streamOptions,
+          ).pipe(
             Effect.tapError((cause) =>
               Effect.logWarning("Failed to read local trace file.").pipe(
                 Effect.annotateLogs({
@@ -432,33 +554,33 @@ export const make = Effect.gen(function* () {
               ),
             ),
             Effect.result,
-          ),
-        ),
-        {
-          concurrency: 1,
+          );
         },
+        // Every file feeds one aggregator, so read them one at a time, oldest first.
+        { concurrency: 1 },
       );
-      const files = results.flatMap((result) =>
-        Result.isSuccess(result) && result.success._tag === "Loaded"
-          ? [{ path: result.success.path, text: result.success.text }]
-          : [],
-      );
+      const foundFile = results.some((result) => Result.isSuccess(result) && result.success);
       const readFailure = results.find(Result.isFailure);
-      const readFailureError = readFailure
+      const partialReadError = readFailure
         ? ({
             kind: "trace-file-read-failed",
             message: readFailure.failure.message,
           } satisfies TraceDiagnosticsErrorSummary)
-        : undefined;
+        : wasTruncated
+          ? ({
+              kind: "trace-file-read-failed",
+              message: "Only the newest 32 MiB of local trace data was analyzed.",
+            } satisfies TraceDiagnosticsErrorSummary)
+          : undefined;
 
-      if (files.length === 0) {
+      if (!foundFile) {
         return makeEmptyDiagnostics({
           traceFilePath: options.traceFilePath,
           scannedFilePaths: paths,
           readAt,
           slowSpanThresholdMs,
           error:
-            readFailureError ??
+            partialReadError ??
             ({
               kind: "trace-file-not-found",
               message: "No local trace files were found.",
@@ -466,13 +588,11 @@ export const make = Effect.gen(function* () {
         });
       }
 
-      return aggregateTraceDiagnostics({
+      return aggregator.finish({
         traceFilePath: options.traceFilePath,
-        files,
         scannedFilePaths: paths,
         readAt,
-        slowSpanThresholdMs,
-        ...(readFailureError ? { partialFailure: true, error: readFailureError } : {}),
+        ...(partialReadError ? { partialFailure: true, error: partialReadError } : {}),
       });
     },
   );

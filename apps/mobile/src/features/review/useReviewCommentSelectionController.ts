@@ -105,6 +105,9 @@ export function useReviewCommentSelectionController(input: {
   useEffect(() => {
     clearReviewCommentTarget();
     setPendingNativeCommentSelection(null);
+    return () => {
+      clearReviewCommentTarget();
+    };
   }, [selectedSection?.id]);
 
   useEffect(() => {

@@ -34,7 +34,8 @@ const TestLayer = ElectronMenu.layer.pipe(
 const makeWindow = (zoomFactor = 1): Electron.BrowserWindow =>
   ({
     id: 7,
-    webContents: { getZoomFactor: () => zoomFactor },
+    isDestroyed: () => false,
+    webContents: { getZoomFactor: () => zoomFactor, isDestroyed: () => false },
   }) as unknown as Electron.BrowserWindow;
 
 describe("ElectronMenu", () => {
@@ -48,7 +49,7 @@ describe("ElectronMenu", () => {
     Effect.gen(function* () {
       const electronMenu = yield* ElectronMenu.ElectronMenu;
       const selectedItemId = yield* electronMenu.showContextMenu({
-        window: {} as Electron.BrowserWindow,
+        window: makeWindow(),
         items: [],
         position: Option.none(),
       });
@@ -182,9 +183,11 @@ describe("ElectronMenu", () => {
       buildFromTemplateMock.mockImplementation(() => ({ popup: popupMock }));
 
       const electronMenu = yield* ElectronMenu.ElectronMenu;
+      const frame = { routingId: 7 } as Electron.WebFrameMain;
       const popup = electronMenu.popupTemplate({
-        window: {} as Electron.BrowserWindow,
+        window: makeWindow(),
         template: [{ label: "Copy" }],
+        frame,
       });
 
       assert.equal(buildFromTemplateMock.mock.calls.length, 0);
@@ -194,6 +197,7 @@ describe("ElectronMenu", () => {
 
       assert.equal(buildFromTemplateMock.mock.calls.length, 1);
       assert.equal(popupMock.mock.calls.length, 1);
+      assert.strictEqual(popupMock.mock.calls[0]?.[0].frame, frame);
     }).pipe(Effect.provide(TestLayer)),
   );
 
@@ -235,7 +239,7 @@ describe("ElectronMenu", () => {
       const electronMenu = yield* ElectronMenu.ElectronMenu;
       const exit = yield* Effect.exit(
         electronMenu.popupTemplate({
-          window: { id: 41 } as Electron.BrowserWindow,
+          window: { ...makeWindow(), id: 41 } as Electron.BrowserWindow,
           template: [{ label: "Copy" }],
         }),
       );
@@ -262,7 +266,7 @@ describe("ElectronMenu", () => {
       const electronMenu = yield* ElectronMenu.ElectronMenu;
       const exit = yield* Effect.exit(
         electronMenu.showContextMenu({
-          window: { id: 42 } as Electron.BrowserWindow,
+          window: { ...makeWindow(), id: 42 } as Electron.BrowserWindow,
           items: [{ id: "copy", label: "Copy" }],
           position: Option.none(),
         }),

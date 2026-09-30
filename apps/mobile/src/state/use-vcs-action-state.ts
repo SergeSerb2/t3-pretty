@@ -81,7 +81,7 @@ function formatElapsedSeconds(ms: number | null): string | null {
   return `Running for ${elapsed}s`;
 }
 
-export function useGitActionProgress(target: VcsActionTarget): GitActionProgress {
+export function useGitActionProgress(target: VcsActionTarget, enabled = true): GitActionProgress {
   const actionState = useVcsActionState(target);
   const { result } = useGitActionResultNotification();
 
@@ -101,13 +101,13 @@ export function useGitActionProgress(target: VcsActionTarget): GitActionProgress
   }, []);
 
   useEffect(() => {
-    if (actionState.isRunning) {
+    if (enabled && actionState.isRunning) {
       startElapsedTimer();
     } else {
       stopElapsedTimer();
     }
     return stopElapsedTimer;
-  }, [actionState.isRunning, startElapsedTimer, stopElapsedTimer]);
+  }, [actionState.isRunning, enabled, startElapsedTimer, stopElapsedTimer]);
 
   if (actionState.isRunning) {
     const description =

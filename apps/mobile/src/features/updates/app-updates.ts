@@ -295,17 +295,10 @@ async function performAppUpdateCheck(
   // A rollback directive exists to pull a broken bundle; never hold it
   // behind a prompt or a deferred install.
   if (options.applyMode === "immediate" || fetched.value.isRollBackToEmbedded) {
-    const outcome = await installAppUpdate(
-      client,
-      environment,
-      deferral,
-      options,
-      options.applyMode === "immediate",
-    );
+    const outcome = await installAppUpdate(client, environment, deferral, options);
     if (outcome === "flush-failed") {
-      // Only reachable for an automatic rollback: keep the state-bearing
-      // runtime alive and retry like a deferred install. The fetched rollback
-      // still applies at the next cold start regardless.
+      // Keep the state-bearing runtime alive and retry like a deferred install.
+      // The fetched update still applies at the next cold start regardless.
       setState("ready");
       armDeferredAppUpdateInstall(client, environment, deferral);
     }
@@ -322,16 +315,14 @@ type AppUpdateInstallOutcome = "installed" | "flush-failed" | "restart-failed";
  * Restarting mid-session while native surfaces are mounted is the crashiest
  * moment expo-updates has, so the restart flushes persistence first and, by
  * default, waits for a backgrounding — where nothing is rendering and the
- * teardown is invisible. Only a restart the user explicitly asked for may
- * proceed over a failed flush; an automatic one aborts with "flush-failed"
- * so unsaved state is never silently discarded.
+ * teardown is invisible. A failed flush always aborts the restart so an
+ * explicit "Install Now" cannot silently discard drafts or queued prompts.
  */
 async function installAppUpdate(
   client: AppUpdateClient,
   environment: AppUpdateEnvironment,
   deferral: AppUpdateDeferral,
   options: AppUpdateCheckOptions,
-  userRequested: boolean,
 ): Promise<AppUpdateInstallOutcome> {
   // A concurrent install sequence already owns the restart.
   if (deferral.installInProgress) return "installed";
@@ -340,11 +331,9 @@ async function installAppUpdate(
   setState("restarting");
   const flushed = await settlePromise(() => environment.flushPendingWrites());
   if (flushed._tag === "Failure") {
-    reportUpdateFailure(flushed, "Could not save pending state.", undefined);
-    if (!userRequested) {
-      deferral.installInProgress = false;
-      return "flush-failed";
-    }
+    reportUpdateFailure(flushed, "Could not save pending state.", options.onFailure);
+    deferral.installInProgress = false;
+    return "flush-failed";
   }
   const reloaded = await settlePromise(() => client.reloadAsync());
   if (reloaded._tag === "Failure") {
@@ -363,7 +352,11 @@ async function installPendingAppUpdate(
   deferral: AppUpdateDeferral,
   options: AppUpdateCheckOptions,
 ): Promise<void> {
-  const outcome = await installAppUpdate(client, environment, deferral, options, true);
+  const outcome = await installAppUpdate(client, environment, deferral, options);
+  if (outcome === "flush-failed") {
+    options.onStateChange?.("ready");
+    return;
+  }
   if (outcome === "restart-failed") {
     // Let later checks re-arm the install; the downloaded update still
     // applies at the next cold start regardless.
