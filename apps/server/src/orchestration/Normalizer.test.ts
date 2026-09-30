@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  AutomationId,
+  AutomationRunId,
   CommandId,
   type ClientOrchestrationCommand,
   MessageId,
@@ -8,7 +10,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 
-import { canonicalizeClientCommandTimestamps } from "./Normalizer.ts";
+import { canonicalizeClientCommandTimestamps, stripServerOnlyCommandFields } from "./Normalizer.ts";
 
 const clientCreatedAt = "2031-01-01T00:00:00.000Z";
 const serverReceivedAt = "2026-07-18T00:00:00.000Z";
@@ -70,5 +72,30 @@ describe("canonicalizeClientCommandTimestamps", () => {
     }
     expect(result.createdAt).toBe(serverReceivedAt);
     expect(result.bootstrap?.createThread?.createdAt).toBe(serverReceivedAt);
+  });
+});
+
+describe("stripServerOnlyCommandFields", () => {
+  it("drops a client-sent automation run marker from thread.create", () => {
+    const command: ClientOrchestrationCommand = {
+      type: "thread.create",
+      commandId: CommandId.make("command-3"),
+      threadId: ThreadId.make("thread-1"),
+      projectId: ProjectId.make("project-1"),
+      title: "Not a run",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      enabledSkillIds: [],
+      automationRun: {
+        automationId: AutomationId.make("automation-1"),
+        runId: AutomationRunId.make("run-1"),
+      },
+      createdAt: clientCreatedAt,
+    };
+
+    expect(stripServerOnlyCommandFields(command)).toEqual({ ...command, automationRun: null });
   });
 });

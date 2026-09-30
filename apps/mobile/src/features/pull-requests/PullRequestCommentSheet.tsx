@@ -1,9 +1,8 @@
 import type { PullRequestReviewVerdict } from "@t3tools/contracts";
-import { EnvironmentId } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,7 +11,6 @@ import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { PullRequestPrimaryButton } from "./PullRequestActionChip";
 import { pullRequestEnvironment } from "../../state/pullRequests";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -21,7 +19,11 @@ import {
   resolveReviewSheetVerdicts,
   reviewRequiresBody,
 } from "./pullRequestDetail.logic";
-import { type PullRequestCommentRouteParams } from "./pullRequestNavigation";
+import {
+  normalizePullRequestRouteThreadId,
+  resolvePullRequestRouteEnvironmentId,
+  type PullRequestCommentRouteParams,
+} from "./pullRequestNavigation";
 import { useResolvedPullRequestReference } from "./useResolvedPullRequestReference";
 
 const VERDICT_LABELS: Record<PullRequestReviewVerdict, string> = {
@@ -38,11 +40,10 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const isAndroid = Platform.OS === "android";
-  const primaryColor = useThemeColor("--color-primary");
-  const environmentId = EnvironmentId.make(props.route.params.environmentId);
+  const environmentId = resolvePullRequestRouteEnvironmentId(props.route.params.environmentId);
   const reference = useResolvedPullRequestReference(props.route.params);
   const mode = props.route.params.mode;
-  const threadId = props.route.params.threadId;
+  const threadId = normalizePullRequestRouteThreadId(props.route.params.threadId);
   const [body, setBody] = useState("");
   const verdicts = useMemo(
     () => resolveReviewSheetVerdicts(props.route.params.verdicts),
@@ -50,6 +51,8 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
   );
   const [verdict, setVerdict] = useState<PullRequestReviewVerdict>(verdicts[0] ?? "comment");
   const [pending, setPending] = useState(false);
+  const pendingRef = useRef(false);
+  const mountedRef = useRef(true);
   const comment = useAtomCommand(pullRequestEnvironment.comment, { reportFailure: false });
   const submitReview = useAtomCommand(pullRequestEnvironment.submitReview, {
     reportFailure: false,
@@ -66,14 +69,22 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
     (mode === "review"
       ? !reviewRequiresBody(verdict) || body.trim().length > 0
       : body.trim().length > 0) &&
-    (mode !== "reply" || (threadId !== undefined && threadId.length > 0));
+    (mode !== "reply" || threadId !== null);
 
   useEffect(() => {
     if (!verdicts.includes(verdict)) setVerdict(verdicts[0] ?? "comment");
   }, [verdict, verdicts]);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const submit = useCallback(async () => {
-    if (reference === null || !canSubmit) return;
+    if (reference === null || !canSubmit || pendingRef.current) return;
+    pendingRef.current = true;
     setPending(true);
     try {
       const result =
@@ -92,14 +103,16 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
                 input: { ...reference, body },
               });
       if (AsyncResult.isFailure(result)) {
-        Alert.alert(
-          "Could not post",
-          readableFailure(squashAtomCommandFailure(result), "The host refused this remark."),
-        );
+        if (mountedRef.current && navigation.isFocused()) {
+          Alert.alert(
+            "Could not post",
+            readableFailure(squashAtomCommandFailure(result), "The host refused this remark."),
+          );
+        }
         return;
       }
       const invalidateResult = await invalidate({ environmentId, input: { reference } });
-      if (AsyncResult.isFailure(invalidateResult)) {
+      if (AsyncResult.isFailure(invalidateResult) && mountedRef.current && navigation.isFocused()) {
         Alert.alert(
           "Posted, but this page may look stale",
           readableFailure(
@@ -108,9 +121,10 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
           ),
         );
       }
-      navigation.goBack();
+      if (mountedRef.current && navigation.isFocused()) navigation.goBack();
     } finally {
-      setPending(false);
+      pendingRef.current = false;
+      if (mountedRef.current) setPending(false);
     }
   }, [
     body,
@@ -144,7 +158,9 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
                 style={({ pressed }) => ({ opacity: !canSubmit ? 0.45 : pressed ? 0.7 : 1 })}
                 className="min-h-9 min-w-14 flex-row items-center justify-end gap-1.5"
               >
-                {pending ? <ActivityIndicator color={String(primaryColor)} size="small" /> : null}
+                {pending ? (
+                  <ActivityIndicator colorClassName="accent-primary" size="small" />
+                ) : null}
                 <Text
                   className={cn(
                     "text-base font-t3-bold",

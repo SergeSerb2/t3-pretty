@@ -1,6 +1,18 @@
 import type { ProviderOptionDescriptor } from "@t3tools/contracts";
 
-import { providerOptionValueLabels } from "../../lib/providerOptions";
+function providerOptionValueLabel(descriptor: ProviderOptionDescriptor): string | null {
+  if (descriptor.type !== "select") {
+    return null;
+  }
+
+  const currentValue = descriptor.currentValue;
+  const selected = descriptor.options.find((option) => option.id === currentValue);
+  if (selected?.label) {
+    return selected.label;
+  }
+
+  return typeof currentValue === "string" && currentValue.length > 0 ? currentValue : null;
+}
 
 export type ThreadModelIdentityTrait = {
   readonly id: string;
@@ -34,7 +46,7 @@ export function buildThreadModelIdentity(input: {
         ? [{ id: descriptor.id, name: descriptor.label, label: descriptor.label }]
         : [];
     }
-    const label = providerOptionValueLabels([descriptor])[0];
+    const label = providerOptionValueLabel(descriptor);
     return label ? [{ id: descriptor.id, name: descriptor.label, label }] : [];
   });
   const traitSummary = traits.map((trait) => trait.label).join(" · ");

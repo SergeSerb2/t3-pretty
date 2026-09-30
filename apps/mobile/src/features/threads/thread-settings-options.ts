@@ -43,34 +43,10 @@ export const RUNTIME_MODE_CHOICES: ReadonlyArray<{
   },
 ];
 
-// Kimi runs both full-access modes in the same unrestricted session; they
-// differ only in whether Kimi can stop to ask questions. Listed in ascending
-// order of access: "Yolo" may ask, "Full access" never does.
-const KIMI_RUNTIME_MODE_CHOICES: typeof RUNTIME_MODE_CHOICES = [
-  {
-    mode: "approval-required",
-    label: "Approve actions",
-    shortLabel: "Approve",
-    description: "Ask before commands and file changes.",
-  },
-  {
-    mode: "yolo",
-    label: "Yolo",
-    shortLabel: "Yolo",
-    description: "Allow commands and edits, but may stop to ask questions.",
-  },
-  {
-    mode: "full-access",
-    label: "Full access",
-    shortLabel: "Full",
-    description: "Allow commands and edits without stopping to ask.",
-  },
-];
-
 export function runtimeModeChoicesForProvider(
-  providerDriver: string | null | undefined,
+  _providerDriver: string | null | undefined,
 ): typeof RUNTIME_MODE_CHOICES {
-  return providerDriver === "kimi" ? KIMI_RUNTIME_MODE_CHOICES : RUNTIME_MODE_CHOICES;
+  return RUNTIME_MODE_CHOICES;
 }
 
 /** Driver of the provider backing the selected model, when it is in the list. */

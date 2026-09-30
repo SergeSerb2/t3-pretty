@@ -228,7 +228,12 @@ export function loadGhosttyKeyboardLayoutMap(): Promise<GhosttyKeyboardLayoutMap
       })
     | undefined;
   const keyboard = browserNavigator?.keyboard;
-  const promise = keyboard?.getLayoutMap().catch(() => undefined) ?? Promise.resolve(undefined);
+  if (!keyboard) return Promise.resolve(undefined);
+  let promise: Promise<GhosttyKeyboardLayoutMap | undefined>;
+  promise = keyboard.getLayoutMap().catch(() => {
+    if (keyboardLayoutMapPromise === promise) keyboardLayoutMapPromise = undefined;
+    return undefined;
+  });
   keyboardLayoutMapPromise = promise;
   return promise;
 }

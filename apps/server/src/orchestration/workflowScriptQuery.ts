@@ -17,10 +17,8 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import { OrchestrationGetWorkflowScriptError } from "@t3tools/contracts";
+import { OrchestrationGetWorkflowScriptError, WORKFLOW_SCRIPT_MAX_BYTES } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-
-const SCRIPT_BYTE_CAP = 256 * 1024;
 
 function scriptsRoot(): string {
   return NodePath.join(NodeOS.homedir(), ".claude", "projects");
@@ -32,9 +30,10 @@ export const readWorkflowScript = Effect.fn("orchestration.readWorkflowScript")(
   const requested = input.scriptPath;
 
   if (!NodePath.isAbsolute(requested) || NodePath.extname(requested) !== ".js") {
-    return yield* Effect.fail(
-      new OrchestrationGetWorkflowScriptError({ reason: "invalid-path", scriptPath: requested }),
-    );
+    return yield* new OrchestrationGetWorkflowScriptError({
+      reason: "invalid-path",
+      scriptPath: requested,
+    });
   }
 
   const root = yield* Effect.tryPromise({
@@ -60,14 +59,16 @@ export const readWorkflowScript = Effect.fn("orchestration.readWorkflowScript")(
   });
 
   if (resolved !== root && !resolved.startsWith(`${root}${NodePath.sep}`)) {
-    return yield* Effect.fail(
-      new OrchestrationGetWorkflowScriptError({ reason: "outside-root", scriptPath: resolved }),
-    );
+    return yield* new OrchestrationGetWorkflowScriptError({
+      reason: "outside-root",
+      scriptPath: resolved,
+    });
   }
   if (NodePath.extname(resolved) !== ".js") {
-    return yield* Effect.fail(
-      new OrchestrationGetWorkflowScriptError({ reason: "not-js", scriptPath: resolved }),
-    );
+    return yield* new OrchestrationGetWorkflowScriptError({
+      reason: "not-js",
+      scriptPath: resolved,
+    });
   }
 
   // TOCTOU-safe read (review finding): open FIRST, then verify what was
@@ -91,9 +92,18 @@ export const readWorkflowScript = Effect.fn("orchestration.readWorkflowScript")(
         if (stat.ino !== pathStat.ino || stat.dev !== pathStat.dev) {
           return { failure: "changed-during-read" as const };
         }
-        const truncated = stat.size > SCRIPT_BYTE_CAP;
-        const buffer = Buffer.alloc(Math.min(stat.size, SCRIPT_BYTE_CAP));
-        const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+        const buffer = Buffer.alloc(Math.min(stat.size, WORKFLOW_SCRIPT_MAX_BYTES));
+        let bytesRead = 0;
+        while (bytesRead < buffer.length) {
+          const result = await handle.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+          if (result.bytesRead === 0) break;
+          bytesRead += result.bytesRead;
+        }
+        let truncated = stat.size > WORKFLOW_SCRIPT_MAX_BYTES;
+        if (!truncated && bytesRead === buffer.length) {
+          const probe = Buffer.alloc(1);
+          truncated = (await handle.read(probe, 0, 1, bytesRead)).bytesRead > 0;
+        }
         return {
           contents: buffer.subarray(0, bytesRead).toString("utf8"),
           truncated,

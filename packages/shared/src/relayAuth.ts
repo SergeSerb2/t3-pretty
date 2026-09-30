@@ -1,8 +1,11 @@
 import * as Schema from "effect/Schema";
 
+export const CLERK_PUBLISHABLE_KEY_MAX_LENGTH = 16 * 1024;
+export const CLERK_FRONTEND_API_MAX_LENGTH = 253;
+
 const ClerkPublishableKeyPrefix = Schema.Literals(["pk_test", "pk_live", "unknown"]);
 
-export class ClerkPublishableKeyDecodeError extends Schema.TaggedErrorClass<ClerkPublishableKeyDecodeError>()(
+export class ClerkPublishableKeyDecodeError extends Schema.TaggedError<ClerkPublishableKeyDecodeError>()(
   "ClerkPublishableKeyDecodeError",
   {
     keyPrefix: ClerkPublishableKeyPrefix,
@@ -14,12 +17,12 @@ export class ClerkPublishableKeyDecodeError extends Schema.TaggedErrorClass<Cler
   }
 }
 
-export class ClerkPublishableKeyFrontendApiError extends Schema.TaggedErrorClass<ClerkPublishableKeyFrontendApiError>()(
+export class ClerkPublishableKeyFrontendApiError extends Schema.TaggedError<ClerkPublishableKeyFrontendApiError>()(
   "ClerkPublishableKeyFrontendApiError",
   {
     keyPrefix: ClerkPublishableKeyPrefix,
-    frontendApi: Schema.String,
-    reason: Schema.Literals(["empty", "contains-path", "invalid-url"]),
+    frontendApi: Schema.String.check(Schema.isMaxLength(CLERK_FRONTEND_API_MAX_LENGTH)),
+    reason: Schema.Literals(["empty", "too-long", "contains-path", "invalid-url"]),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -37,6 +40,14 @@ function parseClerkFrontendApi(publishableKey: string): {
     : publishableKey.startsWith("pk_live_")
       ? "pk_live"
       : "unknown";
+  if (publishableKey.length > CLERK_PUBLISHABLE_KEY_MAX_LENGTH) {
+    throw new ClerkPublishableKeyDecodeError({
+      keyPrefix,
+      cause: new RangeError(
+        `Clerk publishable key exceeds ${CLERK_PUBLISHABLE_KEY_MAX_LENGTH} characters.`,
+      ),
+    });
+  }
   const encodedFrontendApi = publishableKey.split("_").slice(2).join("_");
   let frontendApi: string;
   try {
@@ -50,6 +61,13 @@ function parseClerkFrontendApi(publishableKey: string): {
       keyPrefix,
       frontendApi,
       reason: "empty",
+    });
+  }
+  if (frontendApi.length > CLERK_FRONTEND_API_MAX_LENGTH) {
+    throw new ClerkPublishableKeyFrontendApiError({
+      keyPrefix,
+      frontendApi: `${frontendApi.slice(0, CLERK_FRONTEND_API_MAX_LENGTH - 1)}…`,
+      reason: "too-long",
     });
   }
   if (frontendApi.includes("/")) {
@@ -79,17 +97,6 @@ export function clerkFrontendApiUrlFromPublishableKey(publishableKey: string): s
 
 export function clerkFrontendApiHostnameFromPublishableKey(publishableKey: string): string {
   return parseClerkFrontendApi(publishableKey).hostname;
-}
-
-export function isAllowedClerkFrontendApiHostname(
-  hostname: string,
-  configuredHostname: string | null,
-): boolean {
-  return (
-    hostname.endsWith(".clerk.accounts.dev") ||
-    hostname.endsWith(".clerk.accounts.com") ||
-    hostname === configuredHostname
-  );
 }
 
 export function relayClerkTokenOptions(template: string) {

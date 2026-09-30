@@ -5,6 +5,7 @@ import {
   dismissThreadErrorBannerForSession,
   getThreadErrorBannerKey,
   isThreadErrorBannerDismissedForSession,
+  MAX_SESSION_DISMISSED_THREAD_ERROR_BANNERS,
   shouldShowThreadErrorBanner,
   ThreadErrorBanner,
 } from "./ThreadErrorBanner";
@@ -69,6 +70,18 @@ describe("ThreadErrorBanner", () => {
   it("never shows a null error", () => {
     expect(shouldShowThreadErrorBanner("env:thread-e", null, false)).toBe(false);
   });
+
+  it("bounds remembered full error strings and keeps the most recent dismissals", () => {
+    const bannerKeys = Array.from(
+      { length: MAX_SESSION_DISMISSED_THREAD_ERROR_BANNERS + 1 },
+      (_, index) => getThreadErrorBannerKey(`env:bounded-${index}`, `Failure ${index}`)!,
+    );
+    for (const bannerKey of bannerKeys) dismissThreadErrorBannerForSession(bannerKey);
+
+    expect(isThreadErrorBannerDismissedForSession(bannerKeys[0]!)).toBe(false);
+    expect(isThreadErrorBannerDismissedForSession(bannerKeys.at(-1)!)).toBe(true);
+  });
+
   it("aligns the warning and dismiss icons with the first line of a multi-line error", () => {
     const markup = renderToStaticMarkup(
       <ThreadErrorBanner

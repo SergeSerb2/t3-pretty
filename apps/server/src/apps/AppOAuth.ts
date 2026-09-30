@@ -66,7 +66,7 @@ const decodePrm = Schema.decodeUnknownOption(ProtectedResourceMetadata);
 const decodeAsMetadata = Schema.decodeUnknownOption(RawAuthorizationServerMetadata);
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
-export class AppOAuthError extends Schema.TaggedErrorClass<AppOAuthError>()("AppOAuthError", {
+export class AppOAuthError extends Schema.TaggedError<AppOAuthError>()("AppOAuthError", {
   step: Schema.Literals(["discover", "register", "exchange", "refresh"]),
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
