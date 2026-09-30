@@ -204,3 +204,27 @@
 
 - `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
 - `apps/web/src/components/chat/MessagesTimeline.tsx` — Upstream always gives the question-text preview precedence as the row label, including while the row has an active live headline.. Reason: That narrow precedence cannot coexist in the single primary-label slot with T3 Pretty's active live-headline behavior. The live headline is retained while active; the upstream question preview is used as the fallback otherwise.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.45-nightly.20260930.2493`
+- Previously integrated parent nightly: `v0.0.45-nightly.20260930.2481`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — The empty-state copy continues to use T3 Pretty’s SURGE_CODE_ACCOUNT_NAME identity instead of the parent’s T3 Code name.
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — Surge Connect branding remains sourced from SURGE_CONNECT_NAME in both the empty-state guidance and page description.
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — The empty state continues to identify both push notifications and Live Activities as supported mobile capabilities.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — The empty state now tells users to install the mobile app before signing in.
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — The iPhone-only wording is broadened to the parent’s platform-neutral “phone” wording.
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — The page description adopts the parent’s clearer focus on mobile devices receiving notifications from environments.
+
+## Parent changes intentionally omitted
+
+- None. The resolver did not omit any parent change to protect T3 Pretty.
