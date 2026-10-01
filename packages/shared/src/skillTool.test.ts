@@ -7,6 +7,7 @@ import {
   skillMentionToken,
   isSkillToolName,
   isSkillToolTitle,
+  normalizeSkillId,
   resolveSkillToolName,
   skillNameFromTitle,
   skillNameFromToolInput,
@@ -25,6 +26,15 @@ describe("skillTool", () => {
     expect(skillNameFromToolInput({ skill: "grill-me" })).toBe("grill-me");
     expect(skillNameFromToolInput({ skillName: "tdd" })).toBe("tdd");
     expect(skillNameFromToolInput({ name: "not-a-skill" })).toBeUndefined();
+  });
+
+  it("ignores opaque provider fields whose getters throw", () => {
+    const input = Object.defineProperty({}, "skill", {
+      get: () => {
+        throw new Error("getter failed");
+      },
+    });
+    expect(skillNameFromToolInput(input)).toBeUndefined();
   });
 
   it("parses Skill titles used by ACP adapters", () => {
@@ -70,5 +80,26 @@ describe("skillTool", () => {
     expect(skillMentionMatchesName("next-js-upgrade", "next.js-upgrade")).toBe(true);
     expect(skillMentionMatchesName("next.js-upgrade", "next.js-upgrade")).toBe(true);
     expect(skillMentionMatchesName("next-js", "next.js-upgrade")).toBe(false);
+  });
+});
+
+describe("normalizeSkillId", () => {
+  it("keeps library ids as they are", () => {
+    expect(normalizeSkillId("host:agents:ponytail")).toBe("host:agents:ponytail");
+    expect(normalizeSkillId("host:codex:work:tdd")).toBe("host:codex:work:tdd");
+  });
+
+  it("folds legacy store ids onto the shared library folder", () => {
+    expect(normalizeSkillId("mattpocock/skills:skills/productivity/grill-me")).toBe(
+      "host:agents:grill-me",
+    );
+    expect(normalizeSkillId("dietrichgebert/asd-ste100-skill:@root")).toBe(
+      "host:agents:asd-ste100-skill",
+    );
+  });
+
+  it("leaves unrecognisable ids alone", () => {
+    expect(normalizeSkillId("plain")).toBe("plain");
+    expect(normalizeSkillId(":x")).toBe(":x");
   });
 });

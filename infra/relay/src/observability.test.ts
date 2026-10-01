@@ -10,7 +10,12 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type { OtlpTracer } from "effect/unstable/observability";
 
 import * as EnvironmentConnector from "./environments/EnvironmentConnector.ts";
-import { makeRelayTraceLayer } from "./observability.ts";
+import {
+  makeRelayTraceLayer,
+  RELAY_SCHEMA_ERROR_ATTRIBUTE_ARRAY_MAX_COUNT,
+  RELAY_SCHEMA_ERROR_ATTRIBUTE_STRING_MAX_LENGTH,
+  schemaErrorAttributes,
+} from "./observability.ts";
 
 interface ExportedRequest {
   readonly authorization: string | undefined;
@@ -26,6 +31,39 @@ const otlpAttributeValue = (value: {
 }) => value.stringValue ?? value.boolValue ?? value.intValue ?? value.doubleValue;
 
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+
+class OversizedTraceError extends Schema.TaggedError<OversizedTraceError>()("OversizedTraceError", {
+  detail: Schema.String,
+  values: Schema.Array(Schema.String),
+  cause: Schema.Defect(),
+}) {}
+
+it("bounds schema error attributes without inspecting the defect cause", () => {
+  const attributes = schemaErrorAttributes(
+    new OversizedTraceError({
+      detail: "d".repeat(RELAY_SCHEMA_ERROR_ATTRIBUTE_STRING_MAX_LENGTH + 1_000),
+      values: Array.from(
+        { length: RELAY_SCHEMA_ERROR_ATTRIBUTE_ARRAY_MAX_COUNT + 100 },
+        (_, index) => `${index}:${"v".repeat(RELAY_SCHEMA_ERROR_ATTRIBUTE_STRING_MAX_LENGTH + 1)}`,
+      ),
+      cause: {
+        toJSON: () => {
+          throw new Error("the defect cause must not be serialized");
+        },
+      },
+    }),
+  );
+
+  expect(attributes?.["error.type"]).toBe("OversizedTraceError");
+  expect(attributes?.["error.detail"]).toHaveLength(RELAY_SCHEMA_ERROR_ATTRIBUTE_STRING_MAX_LENGTH);
+  expect(attributes?.["error.values"]).toHaveLength(RELAY_SCHEMA_ERROR_ATTRIBUTE_ARRAY_MAX_COUNT);
+  const values = attributes?.["error.values"];
+  expect(Array.isArray(values)).toBe(true);
+  if (Array.isArray(values)) {
+    expect(values[0]).toHaveLength(RELAY_SCHEMA_ERROR_ATTRIBUTE_STRING_MAX_LENGTH);
+  }
+  expect(attributes).not.toHaveProperty("error.cause");
+});
 
 it.effect("exports schema error fields as span attributes", () =>
   Effect.gen(function* () {
@@ -62,6 +100,11 @@ it.effect("exports schema error fields as span attributes", () =>
 
     const request = yield* Deferred.await(exportedRequest).pipe(Effect.timeout("1 second"));
     const payload = (yield* decodeJson(request.body)) as OtlpTracer.TraceData;
+    const resourceAttributes = Object.fromEntries(
+      payload.resourceSpans
+        .flatMap((resourceSpan) => resourceSpan.resource.attributes)
+        .map((attribute) => [attribute.key, otlpAttributeValue(attribute.value)]),
+    );
     const span = payload.resourceSpans
       .flatMap((resourceSpan) => resourceSpan.scopeSpans)
       .flatMap((scopeSpan) => scopeSpan.spans)
@@ -75,6 +118,10 @@ it.effect("exports schema error fields as span attributes", () =>
 
     expect(request.authorization).toBe("Bearer test-token");
     expect(request.dataset).toBe("relay-test-traces");
+    expect(resourceAttributes).toMatchObject({
+      "service.name": "t3code-relay",
+      "service.namespace": "t3code",
+    });
     expect(attributes).toMatchObject({
       "error.type": "EnvironmentConnectNotAuthorized",
       "error.environmentId": "environment-1",

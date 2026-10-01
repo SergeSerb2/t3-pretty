@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { EnvironmentId, PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
 
 import { removeLocalStorageItem } from "./hooks/useLocalStorage";
 
@@ -83,6 +84,27 @@ describe("partitionStashAttachments", () => {
     expect(kept).toHaveLength(1);
     expect(droppedNames).toEqual([]);
   });
+
+  it("bounds the attachment count even when every image fits the byte budget", () => {
+    const attachments = Array.from(
+      { length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 2 },
+      (_, index) => ({
+        id: `image-${index}`,
+        name: `image-${index}.png`,
+        mimeType: "image/png",
+        sizeBytes: 1,
+        dataUrl: "x",
+      }),
+    );
+
+    const { kept, droppedNames } = partitionStashAttachments(attachments);
+
+    expect(kept).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+    expect(droppedNames).toEqual([
+      `image-${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}.png`,
+      `image-${PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 1}.png`,
+    ]);
+  });
 });
 
 describe("promptStashStore", () => {
@@ -162,6 +184,62 @@ describe("promptStashStore", () => {
     expect(entry?.pendingImageCount).toBe(0);
   });
 
+  it("takeEntry returns images and drop metadata finalized after a menu snapshot", () => {
+    const store = usePromptStashStore.getState();
+    store.stashEntry({ ...makeEntry({ id: "pending-restore" }), pendingImageCount: 1 });
+    const menuSnapshot = usePromptStashStore.getState().entries[0];
+    expect(menuSnapshot?.attachments).toEqual([]);
+
+    store.finalizeEntryImages("pending-restore", {
+      attachments: [
+        {
+          id: "img-finalized",
+          name: "finalized.webp",
+          mimeType: "image/webp",
+          sizeBytes: 12,
+          dataUrl: "data:image/webp;base64,BBBB",
+        },
+      ],
+      droppedImageNames: ["too-large.png"],
+      unreadableImageNames: ["unreadable.png"],
+    });
+
+    const { entry: taken } = store.takeEntry("pending-restore");
+    expect(taken).not.toBe(menuSnapshot);
+    expect(taken).toMatchObject({
+      attachments: [
+        {
+          id: "img-finalized",
+          name: "finalized.webp",
+        },
+      ],
+      droppedImageNames: ["too-large.png"],
+      unreadableImageNames: ["unreadable.png"],
+      pendingImageCount: 0,
+    });
+  });
+
+  it("preserves uploaded file references without storing file contents", () => {
+    const store = usePromptStashStore.getState();
+    const file = {
+      id: "file-1",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 42,
+      attachmentId: "pending-report-pdf",
+      environmentId: EnvironmentId.make("environment-1"),
+    };
+
+    store.stashEntry({ ...makeEntry({ id: "with-file" }), files: [file] });
+    store.finalizeEntryImages("with-file", {
+      attachments: [],
+      droppedImageNames: [],
+      unreadableImageNames: [],
+    });
+
+    expect(usePromptStashStore.getState().entries[0]?.files).toEqual([file]);
+  });
+
   it("finalizeEntryImages reports false when the entry was already taken", () => {
     const store = usePromptStashStore.getState();
     store.stashEntry({ ...makeEntry({ id: "racing" }), pendingImageCount: 1 });
@@ -194,6 +272,25 @@ describe("promptStashStore", () => {
     expect(entry?.unreadableImageNames).toHaveLength(2);
   });
 
+  it("bounds corrupt persisted entry and pending-image counts during hydration", () => {
+    writePromptStashStorageForTest(
+      JSON.stringify({
+        version: 2,
+        state: {
+          entries: Array.from({ length: MAX_STASH_ENTRIES + 3 }, (_, index) => ({
+            ...makeEntry({ id: `persisted-${index}` }),
+            pendingImageCount: Number.MAX_SAFE_INTEGER,
+          })),
+        },
+      }),
+    );
+
+    const entries = usePromptStashStore.getState().entries;
+    expect(entries).toHaveLength(MAX_STASH_ENTRIES);
+    expect(entries[0]?.pendingImageCount).toBe(0);
+    expect(entries[0]?.unreadableImageNames).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+  });
+
   it("ignores an unreadable v1 payload seeded under the current key", () => {
     // The v1 shape (per-provider queues) does not decode as v2; hydration
     // must fall back to an empty stash rather than throw.
@@ -204,5 +301,34 @@ describe("promptStashStore", () => {
       }),
     );
     expect(usePromptStashStore.getState().entries).toEqual([]);
+  });
+});
+
+describe("prompt stash context records", () => {
+  it("keeps the records behind a stashed prompt's chips", () => {
+    const store = usePromptStashStore.getState();
+    const records = [
+      {
+        version: 1 as const,
+        contextId: "ctx-1" as never,
+        kind: "terminal" as const,
+        label: "Terminal 1 line 4",
+        terminalId: "default",
+        terminalLabel: "Terminal 1",
+        lineStart: 4,
+        lineEnd: 4,
+        text: "boom",
+      },
+    ];
+    store.stashEntry({
+      id: "entry-records",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      prompt: "see [Terminal 1 line 4](t3-context://v1/terminal/ctx-1)",
+      attachments: [],
+      droppedImageNames: [],
+      records,
+    });
+    const taken = usePromptStashStore.getState().takeEntry("entry-records");
+    expect(taken.entry?.records).toEqual(records);
   });
 });

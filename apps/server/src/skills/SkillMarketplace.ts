@@ -2,7 +2,8 @@
  * SkillMarketplace — browses and installs skills from the GitHub marketplace
  * sources configured in `ServerSettings.skills.marketplaceSources`.
  *
- * Each source repo is downloaded once as a tarball
+ * Installs land in the shared skill library (`SkillLibrary`), named after the
+ * skill's directory in the repository. Each source repo is downloaded once as a tarball
  * (`https://codeload.github.com/<owner>/<repo>/tar.gz/HEAD`) and cached under
  * `skillMarketplaceCacheDir` as `<owner>--<repo>.tar.gz` plus a derived
  * `<owner>--<repo>.listing.json`. Listings serve from cache while fresh
@@ -28,13 +29,16 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import * as SkillStore from "./SkillStore.ts";
+import { isSafeSegment, SkillLibrary } from "./SkillLibrary.ts";
 import { listTarGzEntries, type TarEntry } from "./Untar.ts";
+import { readFilePrefix, readTextPrefix } from "../boundedFileRead.ts";
+import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 
 /** How long a downloaded listing is served without re-fetching. */
 const LISTING_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -45,6 +49,62 @@ const MARKETPLACE_MAX_DEPTH = 5;
 export const ROOT_SKILL_SOURCE_PATH = "@root";
 /** Larger tarballs are refused rather than buffered; skill repos are small. */
 const MAX_TARBALL_BYTES = 64 * 1024 * 1024;
+const MAX_CACHED_LISTING_BYTES = 4 * 1024 * 1024;
+
+/** Validate an `"owner/repo"` marketplace source. */
+export function parseSkillSourceRepo(
+  sourceRepo: string,
+): { readonly owner: string; readonly repo: string } | null {
+  const parts = sourceRepo.split("/");
+  if (parts.length !== 2 || !parts.every(isSafeSegment)) {
+    return null;
+  }
+  return { owner: parts[0]!, repo: parts[1]! };
+}
+
+/** Validate a skill directory path relative to a repository root. */
+export function parseSkillSourcePath(sourcePath: string): ReadonlyArray<string> | null {
+  const segments = sourcePath.split("/");
+  return segments.every(isSafeSegment) ? segments : null;
+}
+
+/** The `<owner>--<repo>` cache key for one source. */
+export function formatSkillRepoDirName(owner: string, repo: string): string {
+  return `${owner}--${repo}`;
+}
+
+export interface ParsedMarketplaceSkillId {
+  readonly owner: string;
+  readonly repo: string;
+  readonly sourceRepo: string;
+  readonly sourcePath: string;
+  readonly sourcePathSegments: ReadonlyArray<string>;
+}
+
+/** Parse and validate a marketplace skill id (`owner/repo:path`); `null` when any part is unsafe. */
+export function parseMarketplaceSkillId(skillId: string): ParsedMarketplaceSkillId | null {
+  const colonIndex = skillId.indexOf(":");
+  if (colonIndex <= 0 || colonIndex === skillId.length - 1) {
+    return null;
+  }
+  const sourceRepo = skillId.slice(0, colonIndex);
+  const sourcePath = skillId.slice(colonIndex + 1);
+  const repoParts = parseSkillSourceRepo(sourceRepo);
+  const sourcePathSegments = parseSkillSourcePath(sourcePath);
+  if (!repoParts || !sourcePathSegments) {
+    return null;
+  }
+  return { ...repoParts, sourceRepo, sourcePath, sourcePathSegments };
+}
+
+/** Library folder name for a marketplace skill: its directory name, or the repository name for a root skill. */
+export function marketplaceSkillDirName(sourceRepo: string, sourcePath: string): string {
+  if (sourcePath === ROOT_SKILL_SOURCE_PATH) {
+    return sourceRepo.slice(sourceRepo.indexOf("/") + 1);
+  }
+  const segments = sourcePath.split("/");
+  return segments[segments.length - 1] ?? sourcePath;
+}
 
 /** Cached listing on disk; the `installed` flag is derived fresh on every read. */
 const CachedMarketplaceListing = Schema.Struct({
@@ -94,10 +154,10 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
-  const skillStore = yield* SkillStore.SkillStore;
+  const skillLibrary = yield* SkillLibrary;
 
   const cachePaths = (owner: string, repo: string) => {
-    const key = SkillStore.formatSkillRepoDirName(owner, repo);
+    const key = formatSkillRepoDirName(owner, repo);
     return {
       tarball: path.join(config.skillMarketplaceCacheDir, `${key}.tar.gz`),
       listing: path.join(config.skillMarketplaceCacheDir, `${key}.listing.json`),
@@ -109,9 +169,11 @@ const make = Effect.gen(function* () {
     owner: string,
     repo: string,
   ) {
-    const contents = yield* fileSystem
-      .readFileString(cachePaths(owner, repo).listing)
-      .pipe(Effect.orElseSucceed(() => undefined));
+    const contents = yield* readTextPrefix(
+      fileSystem,
+      cachePaths(owner, repo).listing,
+      MAX_CACHED_LISTING_BYTES,
+    ).pipe(Effect.orElseSucceed(() => undefined));
     if (contents === undefined) {
       return undefined;
     }
@@ -128,53 +190,76 @@ const make = Effect.gen(function* () {
     operation: SkillsError["operation"],
     sourceRepo: string,
   ): Effect.fn.Return<Uint8Array, SkillsError> {
-    const request = HttpClientRequest.get(`https://codeload.github.com/${sourceRepo}/tar.gz/HEAD`);
-    const response = yield* httpClient.execute(request).pipe(
+    return yield* Effect.gen(function* () {
+      const request = HttpClientRequest.get(
+        `https://codeload.github.com/${sourceRepo}/tar.gz/HEAD`,
+      );
+      const response = yield* httpClient.execute(request);
+      if (response.status !== 200) {
+        yield* releaseHttpClientResponseBody(response);
+        return yield* new SkillsError({
+          operation,
+          sourceRepo,
+          message: `GitHub returned HTTP ${response.status} for ${sourceRepo}.`,
+        });
+      }
+      const contentLength = Number(response.headers["content-length"] ?? "0");
+      if (Number.isFinite(contentLength) && contentLength > MAX_TARBALL_BYTES) {
+        yield* releaseHttpClientResponseBody(response);
+        return yield* new SkillsError({
+          operation,
+          sourceRepo,
+          message: `${sourceRepo} is too large to use as a skill marketplace source.`,
+        });
+      }
+      const collected = yield* response.stream.pipe(
+        Stream.runFoldEffect<
+          { readonly chunks: Uint8Array<ArrayBufferLike>[]; readonly bytes: number },
+          Uint8Array<ArrayBufferLike>,
+          SkillsError,
+          never
+        >(
+          () => ({ chunks: [], bytes: 0 }),
+          (state, chunk) => {
+            const bytes = state.bytes + chunk.byteLength;
+            if (bytes > MAX_TARBALL_BYTES) {
+              return Effect.fail(
+                new SkillsError({
+                  operation,
+                  sourceRepo,
+                  message: `${sourceRepo} is too large to use as a skill marketplace source.`,
+                }),
+              );
+            }
+            state.chunks.push(chunk);
+            return Effect.succeed({ chunks: state.chunks, bytes });
+          },
+        ),
+        Effect.mapError((cause) =>
+          isSkillsError(cause)
+            ? cause
+            : new SkillsError({
+                operation,
+                sourceRepo,
+                message: `Failed to read the ${sourceRepo} tarball response.`,
+                cause,
+              }),
+        ),
+      );
+      return Buffer.concat(collected.chunks, collected.bytes);
+    }).pipe(
       Effect.timeout(FETCH_TIMEOUT_MS),
-      Effect.mapError(
-        (cause) =>
-          new SkillsError({
-            operation,
-            sourceRepo,
-            message: `Failed to download ${sourceRepo} from GitHub.`,
-            cause,
-          }),
+      Effect.mapError((cause) =>
+        isSkillsError(cause)
+          ? cause
+          : new SkillsError({
+              operation,
+              sourceRepo,
+              message: `Failed to download ${sourceRepo} from GitHub.`,
+              cause,
+            }),
       ),
     );
-    if (response.status !== 200) {
-      return yield* new SkillsError({
-        operation,
-        sourceRepo,
-        message: `GitHub returned HTTP ${response.status} for ${sourceRepo}.`,
-      });
-    }
-    const contentLength = Number(response.headers["content-length"] ?? "0");
-    if (Number.isFinite(contentLength) && contentLength > MAX_TARBALL_BYTES) {
-      return yield* new SkillsError({
-        operation,
-        sourceRepo,
-        message: `${sourceRepo} is too large to use as a skill marketplace source.`,
-      });
-    }
-    const buffer = yield* response.arrayBuffer.pipe(
-      Effect.mapError(
-        (cause) =>
-          new SkillsError({
-            operation,
-            sourceRepo,
-            message: `Failed to read the ${sourceRepo} tarball response.`,
-            cause,
-          }),
-      ),
-    );
-    if (buffer.byteLength > MAX_TARBALL_BYTES) {
-      return yield* new SkillsError({
-        operation,
-        sourceRepo,
-        message: `${sourceRepo} is too large to use as a skill marketplace source.`,
-      });
-    }
-    return new Uint8Array(buffer);
   });
 
   /** Entry paths minus the archive's top-level `<repo>-<sha>/` folder. */
@@ -215,7 +300,7 @@ const make = Effect.gen(function* () {
       if (
         segments.length > MARKETPLACE_MAX_DEPTH ||
         segments.some((segment) => segment.startsWith(".")) ||
-        SkillStore.parseSkillSourcePath(sourcePath) === null
+        parseSkillSourcePath(sourcePath) === null
       ) {
         continue;
       }
@@ -294,7 +379,7 @@ const make = Effect.gen(function* () {
     sourceRepo: string,
     options: { readonly forceRefresh: boolean },
   ): Effect.fn.Return<CachedMarketplaceListing, SkillsError> {
-    const repoParts = SkillStore.parseSkillSourceRepo(sourceRepo);
+    const repoParts = parseSkillSourceRepo(sourceRepo);
     if (!repoParts) {
       return yield* new SkillsError({
         operation,
@@ -353,8 +438,8 @@ const make = Effect.gen(function* () {
       return [];
     }
 
-    const installedIds = new Set(
-      (yield* skillStore.getState).installedSkills.map((skill) => skill.id),
+    const installedDirNames = new Set(
+      (yield* skillLibrary.getState).skills.map((skill) => skill.dirName),
     );
     const settled = yield* Effect.forEach(
       sources,
@@ -362,7 +447,7 @@ const make = Effect.gen(function* () {
         getListing(operation, source.repo, {
           forceRefresh: operation === "refresh-marketplace",
         }).pipe(Effect.result),
-      { concurrency: "unbounded" },
+      { concurrency: 4 },
     );
 
     const listings: Array<SkillMarketplaceListing> = [];
@@ -378,7 +463,9 @@ const make = Effect.gen(function* () {
             name: skill.name,
             ...(skill.description ? { description: skill.description } : {}),
             sourcePath: skill.sourcePath,
-            installed: installedIds.has(`${listing.repo}:${skill.sourcePath}`),
+            installed: installedDirNames.has(
+              marketplaceSkillDirName(listing.repo, skill.sourcePath),
+            ),
           })),
         });
       } else {
@@ -407,7 +494,7 @@ const make = Effect.gen(function* () {
   const install = Effect.fn("SkillMarketplace.install")(function* (
     skillId: SkillId,
   ): Effect.fn.Return<SkillsState, SkillsError> {
-    const parsed = SkillStore.parseSkillId(skillId);
+    const parsed = parseMarketplaceSkillId(skillId);
     if (!parsed) {
       return yield* new SkillsError({
         operation: "install",
@@ -425,9 +512,15 @@ const make = Effect.gen(function* () {
       });
 
     // The cached tarball is authoritative; it only downloads when never fetched.
-    const cachedTarball = yield* fileSystem
-      .readFile(cachePaths(parsed.owner, parsed.repo).tarball)
-      .pipe(Effect.orElseSucceed(() => undefined));
+    const cachedTarballCandidate = yield* readFilePrefix(
+      fileSystem,
+      cachePaths(parsed.owner, parsed.repo).tarball,
+      MAX_TARBALL_BYTES + 1,
+    ).pipe(Effect.orElseSucceed(() => undefined));
+    const cachedTarball =
+      cachedTarballCandidate !== undefined && cachedTarballCandidate.byteLength <= MAX_TARBALL_BYTES
+        ? cachedTarballCandidate
+        : undefined;
     const tarball =
       cachedTarball ??
       (yield* Effect.gen(function* () {
@@ -490,10 +583,10 @@ const make = Effect.gen(function* () {
         yield* fileSystem.makeDirectory(path.dirname(destination), { recursive: true });
         yield* fileSystem.writeFile(destination, file.data);
       }
-      return yield* skillStore.installFromDirectory({
-        sourceRepo: parsed.sourceRepo,
-        sourcePath: parsed.sourcePath,
+      return yield* skillLibrary.installFromDirectory({
+        dirName: marketplaceSkillDirName(parsed.sourceRepo, parsed.sourcePath),
         directory: tempDir,
+        source: { repo: parsed.sourceRepo, path: parsed.sourcePath },
       });
     }).pipe(
       Effect.mapError((cause) =>

@@ -13,6 +13,7 @@ import { TextGenerationError } from "@t3tools/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildActivityHeadlinePrompt,
+  buildHomeSuggestionsPrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
@@ -20,6 +21,9 @@ import {
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeActivityHeadline,
+  appendBoundedTextGenerationOutput,
+  decodeBoundedTextGenerationOutput,
+  makeBoundedTextGenerationOutput,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -57,14 +61,15 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       | "generatePrContent"
       | "generateBranchName"
       | "generateThreadTitle"
-      | "generateActivityHeadline";
+      | "generateActivityHeadline"
+      | "generateHomeSuggestions";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
     modelSelection: ModelSelection;
   }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
     Effect.gen(function* () {
-      const outputRef = yield* Ref.make("");
+      const outputRef = yield* Ref.make(makeBoundedTextGenerationOutput());
       const runtime = yield* makeCursorAcpRuntime({
         cursorSettings,
         environment: resolvedEnvironment,
@@ -82,7 +87,9 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
         if (content.type !== "text") {
           return Effect.void;
         }
-        return Ref.update(outputRef, (current) => current + content.text);
+        return Ref.update(outputRef, (current) =>
+          appendBoundedTextGenerationOutput(current, content.text),
+        );
       });
 
       const promptResult = yield* Effect.gen(function* () {
@@ -131,7 +138,14 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
         ),
       );
 
-      const rawResult = (yield* Ref.get(outputRef)).trim();
+      const output = yield* Ref.get(outputRef);
+      if (output.truncated) {
+        return yield* new TextGenerationError({
+          operation,
+          detail: "Cursor Agent returned structured output above the one MiB limit.",
+        });
+      }
+      const rawResult = decodeBoundedTextGenerationOutput(output).trim();
       if (!rawResult) {
         return yield* new TextGenerationError({
           operation,
@@ -246,6 +260,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       const { prompt, outputSchema } = buildThreadTitlePrompt({
         message: input.message,
         previousTitle: input.previousTitle,
+        linkedContext: input.linkedContext,
         attachments: input.attachments,
       });
 
@@ -259,6 +274,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
 
       return {
         title: sanitizeThreadTitle(generated.title),
+        ...(generated.needsRefinement ? { needsRefinement: true } : {}),
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
@@ -283,12 +299,35 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       } satisfies TextGeneration.ActivityHeadlineGenerationResult;
     });
 
+  const generateHomeSuggestions: TextGeneration.TextGeneration["Service"]["generateHomeSuggestions"] =
+    Effect.fn("CursorTextGeneration.generateHomeSuggestions")(function* (input) {
+      const { prompt, outputSchema } = buildHomeSuggestionsPrompt({
+        context: input.context,
+        projectCount: input.projectCount,
+        exploreCount: input.exploreCount,
+        previousTitles: input.previousTitles,
+      });
+
+      const generated = yield* runCursorJson({
+        operation: "generateHomeSuggestions",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        suggestions: generated.suggestions,
+      } satisfies TextGeneration.HomeSuggestionsGenerationResult;
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
     generateActivityHeadline,
+    generateHomeSuggestions,
     generateProjectIcon: TextGeneration.unsupportedProjectIconGeneration("Cursor"),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

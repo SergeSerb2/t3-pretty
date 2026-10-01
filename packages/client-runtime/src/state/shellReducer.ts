@@ -1,6 +1,20 @@
 import * as Arr from "effect/Array";
 import type { OrchestrationShellSnapshot, OrchestrationShellStreamEvent } from "@t3tools/contracts";
 
+function upsertById<A extends { readonly id: string }>(
+  entries: ReadonlyArray<A>,
+  next: A,
+): ReadonlyArray<A> {
+  const nextId = next.id;
+  let updated: A[] | null = null;
+  for (let index = 0; index < entries.length; index += 1) {
+    if (entries[index]!.id !== nextId) continue;
+    updated ??= entries.slice();
+    updated[index] = next;
+  }
+  return updated ?? Arr.append(entries, next);
+}
+
 /**
  * Reduce a single shell stream event into an existing snapshot, returning a new
  * snapshot with the event's changes applied. This is a pure reducer that both
@@ -8,6 +22,10 @@ import type { OrchestrationShellSnapshot, OrchestrationShellStreamEvent } from "
  *
  * Returns the original snapshot reference unchanged if the event is not
  * recognized (forward-compatible).
+ *
+ * Every branch replaces only the collection the event touched, so a streaming
+ * thread never changes the `automations` array identity (automation row atoms
+ * are refresh triggers; rebuilding them would refetch run pages per token).
  */
 export function applyShellStreamEvent(
   snapshot: OrchestrationShellSnapshot,
@@ -17,9 +35,7 @@ export function applyShellStreamEvent(
 
   switch (event.kind) {
     case "project-upserted": {
-      const projects = snapshot.projects.some((p) => p.id === event.project.id)
-        ? Arr.map(snapshot.projects, (p) => (p.id === event.project.id ? event.project : p))
-        : Arr.append(snapshot.projects, event.project);
+      const projects = upsertById(snapshot.projects, event.project);
       return { ...snapshot, projects, snapshotSequence: event.sequence };
     }
     case "project-removed":
@@ -29,15 +45,23 @@ export function applyShellStreamEvent(
         snapshotSequence: event.sequence,
       };
     case "thread-upserted": {
-      const threads = snapshot.threads.some((t) => t.id === event.thread.id)
-        ? Arr.map(snapshot.threads, (t) => (t.id === event.thread.id ? event.thread : t))
-        : Arr.append(snapshot.threads, event.thread);
+      const threads = upsertById(snapshot.threads, event.thread);
       return { ...snapshot, threads, snapshotSequence: event.sequence };
     }
     case "thread-removed":
       return {
         ...snapshot,
         threads: Arr.filter(snapshot.threads, (t) => t.id !== event.threadId),
+        snapshotSequence: event.sequence,
+      };
+    case "automation-upserted": {
+      const automations = upsertById(snapshot.automations ?? [], event.automation);
+      return { ...snapshot, automations, snapshotSequence: event.sequence };
+    }
+    case "automation-removed":
+      return {
+        ...snapshot,
+        automations: Arr.filter(snapshot.automations ?? [], (a) => a.id !== event.automationId),
         snapshotSequence: event.sequence,
       };
     case "thread-touched": {

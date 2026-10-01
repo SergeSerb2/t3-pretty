@@ -14,6 +14,10 @@ if [[ "${FORCE_COLOR}" == "1" || "${FORCE_COLOR}" == "true" ]]; then
 fi
 export GIT_TERMINAL_PROMPT=0
 
+if ! origin update; then
+  echo "Origin update failed; continuing with the installed version" >&2
+fi
+
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FILES=(
   review-origin-pr-ci.sh
@@ -30,8 +34,8 @@ copy_from_main() {
   # a root, so `git diff origin/main...HEAD` has no merge-base and exits 128
   # (Buildkite #563). --deepen on the PR checkout does the same when main is
   # not in the shallow PR ancestry (Buildkite #757).
-  git -C "$ROOT" fetch --depth=1 origin "refs/heads/main:${main_ref}" \
-    || git -C "$ROOT" fetch origin "refs/heads/main:${main_ref}" \
+  git -C "$ROOT" fetch --depth=1 origin "+refs/heads/main:${main_ref}" \
+    || git -C "$ROOT" fetch origin "+refs/heads/main:${main_ref}" \
     || return 1
   git -C "$ROOT" cat-file -e "${main_ref}:scripts/fork/review-origin-pr-ci.sh" || return 1
   for name in "${FILES[@]}"; do
@@ -40,9 +44,57 @@ copy_from_main() {
   chmod +x "${dir}/review-origin-pr-ci.sh"
 }
 
+# origin/main's runOrigin uses inheritEnv:false and originInstallerEnvironment,
+# so Origin children never see CURSOR_API_KEY. auth login --local only writes
+# the git helper; later `origin pr comment` still needs the key in-process.
+# Patch the already-copied main file. Never overlay this checkout's
+# origin-forge.mjs: a PR that merely mentions originCommandEnvironment would
+# otherwise supply the Origin child runner (auth, env, pr comment).
+pass_origin_command_env() {
+  local file="$1"
+  if grep -q "originCommandEnvironment" "$file"; then
+    return 0
+  fi
+  if ! command -v python3 >/dev/null; then
+    echo "python3 is not available; Origin children will not receive CURSOR_API_KEY from this wrapper" >&2
+    return 0
+  fi
+  if ! python3 - "$file" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+src = path.read_text()
+start = src.find("export function runOrigin")
+if start < 0:
+    raise SystemExit(0)
+nxt = src.find("\nexport function", start + 1)
+region = src[start:] if nxt < 0 else src[start:nxt]
+needle = "env: { ...originInstallerEnvironment(), ...options.env }"
+if needle not in region:
+    raise SystemExit(0)
+injected = (
+    "env: { ...originInstallerEnvironment(), "
+    "...(process.env.CURSOR_API_KEY !== undefined "
+    "? { CURSOR_API_KEY: process.env.CURSOR_API_KEY } : {}), "
+    "...(process.env.ORIGIN_TOKEN !== undefined "
+    "? { ORIGIN_TOKEN: process.env.ORIGIN_TOKEN } : {}), "
+    "...options.env }"
+)
+path.write_text(
+    src[:start] + region.replace(needle, injected, 1) + ("" if nxt < 0 else src[nxt:])
+)
+PY
+  then
+    echo "could not inject Origin API keys into trusted origin-forge" >&2
+    return 0
+  fi
+}
+
 DIR="$(mktemp -d)"
 if copy_from_main "$DIR"; then
   echo "Running Origin PR review scripts from origin/main"
+  pass_origin_command_env "${DIR}/origin-forge.mjs"
   bash "${DIR}/review-origin-pr-ci.sh" "$@"
 else
   echo "origin/main has no review scripts yet; using this checkout"

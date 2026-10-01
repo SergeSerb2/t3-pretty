@@ -8,6 +8,7 @@ import type {
   SourceControlProviderKind,
   SourceControlRepositoryInfo,
 } from "@t3tools/contracts";
+import { newProjectFolderName } from "@t3tools/shared/path";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
@@ -25,7 +26,7 @@ import type { EnvironmentProject } from "../state/models.ts";
 
 export type AddProjectRemoteProviderKind = Extract<
   SourceControlProviderKind,
-  "github" | "gitlab" | "bitbucket" | "azure-devops" | "origin"
+  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops" | "origin"
 >;
 export type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
 
@@ -59,6 +60,7 @@ const ADD_PROJECT_REMOTE_SOURCES: ReadonlyArray<AddProjectRemoteSource> = [
   "url",
   "github",
   "gitlab",
+  "forgejo",
   "bitbucket",
   "azure-devops",
   "origin",
@@ -67,6 +69,7 @@ const ADD_PROJECT_REMOTE_SOURCES: ReadonlyArray<AddProjectRemoteSource> = [
 const ADD_PROJECT_REMOTE_PROVIDER_SOURCES: ReadonlyArray<AddProjectRemoteProviderKind> = [
   "github",
   "gitlab",
+  "forgejo",
   "bitbucket",
   "azure-devops",
   "origin",
@@ -76,6 +79,8 @@ export function addProjectRemoteSourceLabel(source: AddProjectRemoteSource): str
   switch (source) {
     case "github":
       return "GitHub";
+    case "forgejo":
+      return "Forgejo / Gitea";
     case "gitlab":
       return "GitLab";
     case "bitbucket":
@@ -91,6 +96,7 @@ export function addProjectRemoteSourceLabel(source: AddProjectRemoteSource): str
 
 export function addProjectRemoteSourcePathHint(source: AddProjectRemoteSource): string {
   switch (source) {
+    case "forgejo":
     case "github":
       return "owner/repo";
     case "gitlab":
@@ -123,11 +129,13 @@ export function normalizePastedCloneUrl(input: string): string {
   return `https://github.com/${repository}`;
 }
 
-/** GitHub defaults to HTTPS; other providers retain their existing SSH default. */
+/** GitHub and Forgejo default to HTTPS; other providers retain their existing SSH default. */
 export function getDefaultCloneUrl(
   repository: Pick<SourceControlRepositoryInfo, "provider" | "url" | "sshUrl">,
 ): string {
-  return repository.provider === "github" ? repository.url : repository.sshUrl;
+  return repository.provider === "github" || repository.provider === "forgejo"
+    ? repository.url
+    : repository.sshUrl;
 }
 
 export function sortAddProjectProviderSources(
@@ -159,6 +167,7 @@ export function buildAddProjectRemoteSourceReadiness(
     url: { ready: true, hint: null },
     github: unavailable,
     gitlab: unavailable,
+    forgejo: unavailable,
     bitbucket: unavailable,
     "azure-devops": unavailable,
     origin: unavailable,
@@ -230,7 +239,14 @@ export function getCloneDirectoryName(repositoryOrRemoteUrl: string | null | und
   if (hasHost && segments.length === 2 && /^\d+$/.test(lastSegment)) {
     return "";
   }
-  return lastSegment.endsWith(".git") ? lastSegment.slice(0, -".git".length) : lastSegment;
+  const directoryName = lastSegment.toLowerCase().endsWith(".git")
+    ? lastSegment.slice(0, -".git".length)
+    : lastSegment;
+  // Never let a pasted remote turn the proposed clone destination into the
+  // selected directory's parent (or the directory itself). The server still
+  // validates the final path, but the shared confirmation model should not
+  // present a traversal segment as a repository folder.
+  return directoryName === "." || directoryName === ".." ? "" : directoryName;
 }
 
 /**
@@ -247,6 +263,36 @@ export function getCloneDestinationPath(
     return directoryPath;
   }
   return `${ensureBrowseDirectoryPath(directoryPath)}${name}`;
+}
+
+/**
+ * Where `projects.createNew` will put a project named `name`. The server adds
+ * `-2`, `-3`, ... when that folder is taken, so this is a preview.
+ */
+export function getNewProjectPathPreview(newProjectsRoot: string, name: string): string {
+  return getCloneDestinationPath(newProjectsRoot, newProjectFolderName(name));
+}
+
+/**
+ * The GitHub account a new project would be published under, or null when
+ * GitHub is not ready on that environment. A ready GitHub with an unknown
+ * account still publishes; `gh` picks the signed-in user.
+ */
+export function getNewProjectGitHubTarget(
+  discovery: SourceControlDiscoveryResult | null,
+): { readonly account: string | null } | null {
+  if (!buildAddProjectRemoteSourceReadiness(discovery).github.ready) return null;
+  const github = discovery?.sourceControlProviders.find((provider) => provider.kind === "github");
+  return { account: github ? Option.getOrNull(github.auth.account) : null };
+}
+
+/** `owner/folder` for publishing a new project, or just the folder for `gh` to place. */
+export function getNewProjectGitHubRepository(
+  target: { readonly account: string | null },
+  workspaceRoot: string,
+): string {
+  const folderName = workspaceRoot.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
+  return target.account ? `${target.account}/${folderName}` : folderName;
 }
 
 /**

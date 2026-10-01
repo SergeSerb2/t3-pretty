@@ -1,14 +1,29 @@
-import { EnvironmentId, WS_METHODS } from "@t3tools/contracts";
+import {
+  CLIENT_ACTIVITY_CLIENT_ID_MAX_LENGTH,
+  EnvironmentId,
+  WS_METHODS,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
 import {
+  isStoredBackgroundActivityClientId,
   observeBackgroundActivitySubscription,
   retainedBackgroundScopes,
   wasRecentlyInteracted,
 } from "./backgroundActivityReporter.ts";
 
 describe("wasRecentlyInteracted", () => {
+  it("rejects corrupt stored client ids that cannot cross the activity contract", () => {
+    expect(isStoredBackgroundActivityClientId("client-1")).toBe(true);
+    expect(isStoredBackgroundActivityClientId(" client-1 ")).toBe(false);
+    expect(isStoredBackgroundActivityClientId("")).toBe(false);
+    expect(isStoredBackgroundActivityClientId(null)).toBe(false);
+    expect(
+      isStoredBackgroundActivityClientId("c".repeat(CLIENT_ACTIVITY_CLIENT_ID_MAX_LENGTH + 1)),
+    ).toBe(false);
+  });
+
   it("expires interaction independently of window focus", () => {
     expect(wasRecentlyInteracted(10_000, 55_000)).toBe(true);
     expect(wasRecentlyInteracted(10_000, 55_001)).toBe(false);

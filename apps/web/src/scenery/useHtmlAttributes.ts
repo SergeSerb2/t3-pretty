@@ -20,7 +20,7 @@ function subscribe(listener: () => void): () => void {
     });
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-theme-id", "data-scenery-composer", "data-scenery-arrival"],
+      attributeFilter: ["data-theme-id", "data-scenery-composer"],
     });
   }
   return () => {

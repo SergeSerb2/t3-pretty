@@ -1,491 +1,358 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.34-nightly.20260820.1142`
-- Previously integrated parent nightly: `v0.0.34-nightly.20260819.1133`
-- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+- Parent nightly: `v0.0.43-nightly.20260927.2331`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260926.2318`
+- Conflict resolver: not invoked; Git reported no text conflicts
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `apps/desktop/src/updates/DesktopUpdates.ts` — T3 Pretty's failed-install recovery continues to run when electron-updater reports an install error, including recovery of backend instances recorded in installRecoveryInstancesRef.
-- `apps/desktop/src/updates/DesktopUpdates.ts` — The install-specific compatibility ref required by the existing recovery routine is retained while the parent action reservation remains authoritative.
-- `apps/desktop/src/updates/DesktopUpdates.ts` — Desktop lifecycle recovery remains complete before the failed install is exposed as available for another updater action.
-- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Retained `activityProjectionGroupKey` as the authoritative fallback for lifecycle identity, preserving T3 Pretty's centralized activity grouping and action-identity behavior.
-- `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts` — Preserved T3 Pretty's existing `status` propagation for completed tool lifecycle activities and left its surrounding tool payload behavior unchanged.
-- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — Preserved T3 Pretty commit 359573a76's intentional removal of the unused OpenCode provider and its obsolete provider-specific test file.
-- `apps/server/src/provider/Layers/OpenCodeProvider.ts` — Preserved T3 Pretty commit 359573a76's intentional removal of the unused OpenCode provider implementation.
-- `apps/server/src/provider/opencodeRuntime.cliParsers.test.ts` — Preserved T3 Pretty's explicit removal of the unused OpenCode provider and its associated dead runtime-parser test file.
-- `apps/server/src/provider/opencodeRuntime.ts` — T3 Pretty's explicit removal of the unused OpenCode provider and its server/runtime integration, as established by commit 359573a76.
-- `apps/web/src/components/ChatView.tsx` — T3 Pretty's titlebar transition continues to animate both padding sides, keeping native titlebar controls visually still while the right panel slides.
-- `apps/web/src/components/ChatView.tsx` — Reduced-motion users continue to receive no titlebar padding transition.
-- `apps/web/src/components/ChatView.tsx` — The collapsed-sidebar titlebar inset class remains applied.
-- `apps/web/src/components/ComposerPromptEditor.tsx` — Preserved T3 Pretty composer @app mention lookup and rendering through getComposerAppMention, useComposerAppMention, and AppIcon.
-- `apps/web/src/components/chat/ChatComposer.tsx` — ThreadSubagentPolicy remains imported for T3 Pretty's global and per-thread subagent policy behavior.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Skill mention token generation remains available for T3 Pretty's composer skill picker and $use mention flow.
-- `apps/web/src/components/chat/ChatComposer.tsx` — The data-chat-composer-editor-chrome hook remains on the composer surface for T3 Pretty styling and presentation.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Canvas selection cards remain visible and removable, with image expansion behavior preserved.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Images represented by canvas selections remain excluded from the generic attachment grid to prevent duplicate cards.
-- `apps/web/src/components/chat/ChatComposer.tsx` — The composer placeholder continues advertising @app mentions with “@tag files or apps,” preserving T3 Pretty's external Apps/T3 Connect composer UX.
-- `apps/web/src/components/chat/ChatComposer.tsx` — T3 Pretty's consolidated ComposerOverflowMenu remains available in both compact and expanded footer layouts, including provider-aware interaction/runtime controls, provider traits, thread overflow content, and skills-picker close handling.
-- `apps/web/src/components/chat/ChatComposer.tsx` — The fork-only auto-create pull-request toggle remains exposed through the composer overflow menu.
-- `apps/web/src/components/chat/ChatComposer.tsx` — The primary action continues to use turnInProgress rather than only phase === "running", preserving continuous thinking/running feedback while a new thread starts.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Pretty's @ menu remains capable of presenting Files, Skills, and Apps as distinct groups, with a header omitted when only one @ result kind is present.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Pretty's slash menu retains Built-in and Provider sections, and runtime-mode entries remain part of the Built-in section.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Pretty's dedicated Skills section and skill-aware empty-state presentation remain intact.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Pretty app mentions retain their branded AppIcon rendering with app name, color, and icon domain.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Pretty's runtime-mode icons, bot icon for built-in slash commands, and provider-command glyph remain visible.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — The optional slash-section control is restored around the parent component refactor and defaults to preserving Pretty's grouped slash-menu behavior.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Neutral work-entry status classification remains available alongside the parent failure API.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's compact turn-fold typography, spacing, hover treatment, and transition timing are retained.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's status-pulse-wave working animation and compact working-row presentation are retained.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's compact work-group toggle styling, custom chevron easing, hover opacity, and reduced-motion safeguard are retained.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Skill-load timeline entries retain the Package icon and package icon-name support.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Generated-image timeline entries retain their dedicated Image icon, timeline row context, activity binding, generated path resolution, and pending lifecycle handling.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's structured tool-call display remains authoritative, including resolved/raw command presentation, MCP data, output and changed-file sections, command formatting/highlighting, and structure-aware expansion.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's heading-plus-preview labels and duplicate-preview suppression remain intact.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Multiline, whitespace-sensitive, clipped, and structurally enhanced tool bodies retain the fork's disclosure safeguards.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's compact size-4 timeline icon treatment and muted handling of ordinary tool-like failures remain intact instead of turning every failed tool into a large destructive X.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Legacy icon fallbacks remain available for tool entries not classified by the new upstream action mapper.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's compact tool-row visual design, including 12px typography, foreground treatment, six-unit header height, hover/open-state styling, icon size and stroke, and custom chevron animation.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — The clipping-aware split between heading and preview, including the previewRef measurement that keeps disclosure available for clipped, multiline, whitespace-sensitive, or structurally richer tool output.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's status policy: successful calls remain visually quiet, failed calls retain the explicit failed affordance, and neutral markers appear only for still-open calls during an active turn.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Header-only expansion semantics are retained, so interacting with expanded tool content or generated-image content does not inadvertently collapse the row.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's reduced-motion behavior remains attached to the disclosure chevron transition.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — The pullRequestDiffIdentity integration used by T3 Pretty's pull-request diff behavior remains imported.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Per-tab panel state survives remounts: condensed chrome is restored from saved view state, each tab retains its own chrome state, and the viewport reference remains available for scroll restoration.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Chrome condensation remains restricted to the collapse variant and retains exact scroll compensation so content does not jump while the header changes height.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — The visible Fix all button for unresolved review findings remains in the header, including its handoff guard and progress label.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Timeline-order changes continue through T3 Pretty's persistence-aware setTimelineOrder wrapper rather than bypassing or miscalling it.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — The context-independent visible “Fix all findings” label added for bulk review-finding handoff.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Resolve and conflict-resolution handoff labels for actions targeting the currently open thread.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Resolve and conflict-resolution handoff labels for actions initiated from the standalone pull-request page.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — The SourceControlProviderKind contract type remains available for T3 Pretty's provider-aware pull-request behavior, including first-class Cursor Origin handling and host-specific review guidance.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — The aggregate findings action remains visibly labeled "Fix all findings" in both current-thread and other-thread contexts.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Review-thread resolution handoff labels remain available for both current-thread and new-thread destinations.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Merge-conflict resolution handoff labels remain available for both current-thread and other-thread destinations.
-- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Preserved the generated T3 Pretty sidebar mark (`/t3-pretty-mark.png`) and the accompanying “Pretty” identity instead of restoring the legacy inline T3 wordmark.
-- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Preserved the fork’s existing branded sidebar header, including its stage-backdrop-aware foreground treatment.
-- `apps/web/src/components/threadActionMenu.logic.test.ts` — The in-app action menu keeps copy actions nested under the top-level copy item, with the exact Pretty ordering of copy-path, conditional copy-branch, and copy-thread-id.
-- `apps/web/src/components/threadActionMenu.logic.test.ts` — The copy-branch child remains conditional on the thread having a branch.
-- `apps/web/src/components/threadActionMenu.logic.test.ts` — The new-thread action retains the compact label “New thread on this branch,” preventing long branch names from stretching the glass menu.
-- `apps/web/src/components/threadActionMenu.logic.ts` — T3 Pretty's in-app glass menu architecture remains based on explicit lifecycle, edit, copy, and danger groups joined by synthetic separator items.
-- `apps/web/src/components/threadActionMenu.logic.ts` — Settle and snooze remain header-only menu actions because sidebar rows already expose those controls on hover.
-- `apps/web/src/components/threadActionMenu.logic.ts` — The compact “New thread on this branch” label and T3 Pretty's git-branch icon remain unchanged.
-- `apps/web/src/components/threadActionMenu.logic.ts` — T3 Pretty's lifecycle and edit icon choices are retained: undo/check for settlement state, alarm-off/clock for snooze state, refresh for title regeneration, and mail for mark-unread.
-- `apps/web/src/components/threadActionMenu.logic.ts` — The Copy action remains a dedicated nested group, and Archive remains disabled while a thread is running and visually distinct from destructive Delete.
-- `apps/web/src/contextMenuFallback.test.ts` — T3 Pretty's in-app glass context menu continues to support explicit `{ separator: true }` entries rendered as non-interactive ARIA separators.
-- `apps/web/src/contextMenuFallback.test.ts` — The fork test fixture's `attrs` attribute view remains functional, preserving existing Pretty context-menu assertions.
-- `apps/web/src/contextMenuFallback.ts` — Preserved T3 Pretty's explicit `item.separator` entries, including their standalone rendering and early continuation so they are not treated as actionable menu items.
-- `apps/web/src/contextMenuFallback.ts` — Preserved the in-app glass context menu's border-token styling and accessible separator role.
-- `apps/web/src/index.css` — Right-panel open/close animation keeps separate gap sizing and fixed-width surface translation, avoiding per-frame reflow of expensive panel contents.
-- `apps/web/src/index.css` — Right-panel resize state still disables width transition, and reduced-motion users receive no right-panel transition.
-- `apps/web/src/index.css` — Terminal drawer animation keeps separate height allocation and surface translation to avoid resizing the terminal canvas every frame.
-- `apps/web/src/index.css` — Terminal resize handling, closed-by-default behavior, open starting style, chat-composer stability, and reduced-motion behavior are retained.
-- `apps/web/src/main.tsx` — Desktop installs without an open Clerk gate continue rendering the app unwrapped, avoiding loading the Electron clerk-js bundle until a sign-in surface requires it.
-- `apps/web/src/main.tsx` — The Electron provider remains behind React.lazy and a null Suspense fallback, preserving the fork's desktop performance and stable tree/remount behavior.
-- `apps/web/src/main.tsx` — T3 Pretty's Clerk appearance configuration and ManagedRelayAuthProvider nesting remain intact.
-- `apps/web/src/main.tsx` — The existing browser Clerk provider path and cloud-public-configuration checks remain unchanged.
-- `apps/web/src/routes/_chat.index.tsx` — Preserved T3 Pretty's automatic new-session landing behavior by retaining selectDraftLandingProject.
-- `apps/web/src/routes/_chat.index.tsx` — Preserved the route's fork-specific styling and collapsed-sidebar titlebar handling by retaining cn and COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS.
-- `packages/client-runtime/src/providerSkills.test.ts` — Preserved T3 Pretty's formatProviderSkillInstallSource import and associated fork-specific provider skill presentation behavior.
-- `packages/client-runtime/src/providerSkills.test.ts` — Preserved T3 Pretty's normalizeProviderSkillPath helper and Windows path compatibility coverage.
-- `packages/client-runtime/src/providerSkills.ts` — Preserved the exported normalizeProviderSkillPath helper and its use when classifying provider skill paths, including Windows path-separator normalization.
+- No text conflicts required a fork-preservation decision.
 
 ## Parent changes integrated at conflict boundaries
 
-- `apps/desktop/src/updates/DesktopUpdates.ts` — The parent's Option-based activeUpdateActionRef is adopted as the unified coordinator for update actions, replacing the old check and download in-flight refs.
-- `apps/desktop/src/updates/DesktopUpdates.ts` — Updater errors are classified as install failures using the active UpdateAction rather than only the legacy install boolean.
-- `apps/desktop/src/updates/DesktopUpdates.ts` — The parent finishUpdateAction("install") cleanup is incorporated so the unified action reservation is released after recovery.
-- `apps/desktop/src/updates/DesktopUpdates.ts` — The parent explicit reset of desktopState.quitting is retained on updater-reported install failure.
-- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Added support for lifecycle identities carried in `payload.toolCallId`, with the parent's intended precedence over legacy or fallback identity sources.
-- `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts` — Added `toolCallId` to `item.completed` activity payloads when `event.itemId` is available, aligning completed events with started and updated tool lifecycle events.
-- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — kept the fork's deletion of this file over the parent copy
-- `apps/server/src/provider/Layers/OpenCodeProvider.ts` — kept the fork's deletion of this file over the parent copy
-- `apps/server/src/provider/opencodeRuntime.cliParsers.test.ts` — kept the fork's deletion of this file over the parent copy
-- `apps/server/src/provider/opencodeRuntime.ts` — kept the fork's deletion of this file over the parent copy
-- `apps/web/src/components/ChatView.tsx` — WorkspacePageHeader now receives the parent's `electron` prop so the shared component owns platform-specific header layout.
-- `apps/web/src/components/ChatView.tsx` — Native window-control spacing is delegated through the parent's `reserveNativeControls` prop while retaining the existing condition that avoids double reservation when the inline right panel owns the titlebar.
-- `apps/web/src/components/ChatView.tsx` — The parent's relative positioning and background styling are retained.
-- `apps/web/src/components/ComposerPromptEditor.tsx` — Adopted formatProviderSkillDisplayName from @t3tools/client-runtime/providerSkills, matching the parent's provider-skill presentation API refactor.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Added the parent TurnId contract type import.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Moved provider skill display-name formatting to the parent's shared @t3tools/client-runtime/providerSkills implementation.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Adopted composerSurfaceRef, data-chat-composer-surface, and mobile collapsed-state metadata.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Integrated the parent's command-menu layer rendering, loading state, active-item highlighting, and selection callbacks.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Integrated the parent's relocated composer content structure without duplicating review comments, attachments, or the prompt editor.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Integrated parent prompt-length validation and the responsive compact footer/model/provider controls layout.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Integrated the parent's right-side send/stop action organization.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Accepted the parent's relocation of the composer footer and removed the obsolete duplicate toolbar from its former position.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Retained the parent's new inline task and stash badges in the relocated right-side action area, including suppression while mobile pending-answer actions are shown.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Kept the parent's relocated responsive footer, provider picker, and primary-action structure while composing T3 Pretty controls into it.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Parent source-specific skill icons are integrated for app, repository, project, personal, system, and other skill sources, including screen-reader labels.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Parent skill icons replace the redundant generic skill glyph while the generic glyph remains only for Pretty's provider-command presentation.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Parent row typography is adopted: baseline alignment, medium compact labels, wider spacing, and right-aligned truncated descriptions.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Parent empty-state bottom padding is retained to improve drawer spacing.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Parent command-list scroll padding remains in use with the restored grouped rendering.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — The unused formatProviderSkillInstallSource import is removed as in the parent cleanup.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Adopted workEntryDisplayIndicatesToolFailure, the parent's display-aware tool-failure predicate.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Integrated the parent's collapsed-group failure signal, including the destructive X icon and accessible "Hidden work includes a failure" label.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Used block-compatible working-label markup so the merged JSX remains structurally coherent with the parent refactor.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added the upstream Search icon name and SVG rendering path alongside Pretty's Package icon.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Integrated upstream's centralized toolGroupAction/toolGroupSummaryIconName mapping, including the new search-oriented icon behavior.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Integrated upstream's shell tokenizer and command-program extraction for live labels, including env/sudo wrappers, wrapper options, quoted arguments, substitutions, Windows drive paths, and recursion limits.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Integrated upstream's liveWorkEntryLabel behavior that reports the active command as “Running &lt;program&gt;” or “Running command”.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Accepted the upstream isExpandedToolGroupEntry prop in PlainWorkEntryRow so parent expanded-group behavior can be used by the surrounding row implementation.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Adopted the upstream workEntryDisplayIndicatesToolFailure API while retaining Pretty's presentation rules.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Upstream expanded-body data coverage is carried through Pretty's structured display pipeline: MCP tool data, resolved/raw commands, detail output, and workspace-relative changed files are still represented.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Expanded tool-group entries now suppress routine leading icons while retaining warning and failure icons, using the upstream isExpandedToolGroupEntry behavior.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Failed tool rows receive upstream's explicit accessible text (`tool call failed`) in the expandable row label.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Visible failure icons receive the upstream image role and accessible label, while suppressed grouped-entry icons are marked aria-hidden.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Upstream's no-success-glyph direction is preserved alongside Pretty's existing exceptional-only status policy.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Added the parent isStackedPullRequestBase helper needed by the new stacked-pull-request detection path.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Added the parent page-only Check out menu with separate-worktree and current-repository destinations, environment selection, and checkout progress handling.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Added the parent auto-merge status badge and primary Resolve conflicts, Ready for review, and Merge actions.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Integrated the parent's cleanup of duplicated approval-count markup while retaining the accessible approval label.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Integrated the parent's timeline newest/oldest toggle behavior, adapted to T3 Pretty's persistence-aware setter.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Imported VcsRef for the parent's isStackedPullRequestBase implementation, preserving its default-ref and remote-ref branch comparison behavior.
-- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Integrated the parent `SidebarUtilityItem` helper, including icon-button labels and top-positioned tooltips.
-- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Integrated the parent `SidebarUtilityMenu` extraction/export, allowing `SidebarChromeFooter` to remain a small composition of provider/update warnings and navigation utilities.
-- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Retained the parent utility-menu behavior for settings, supported pull requests, usage, back navigation, mobile-sidebar closing, and the update pill through the shared function body.
-- `apps/web/src/components/threadActionMenu.logic.test.ts` — Branch-related tests use the recursive allIds helper so nested actions such as copy-branch are included.
-- `apps/web/src/components/threadActionMenu.logic.test.ts` — The test explicitly verifies that copy-branch is present for branched threads and absent for threads without a branch.
-- `apps/web/src/components/threadActionMenu.logic.test.ts` — The absence check for new-thread-on-branch now covers the complete recursive menu tree.
-- `apps/web/src/components/threadActionMenu.logic.ts` — Kept the upstream-compatible pin and unpin icons.
-- `apps/web/src/components/threadActionMenu.logic.ts` — Added upstream's folder, git-branch, and hash icons to the Path, Branch, and Thread ID copy submenu entries.
-- `apps/web/src/components/threadActionMenu.logic.ts` — Preserved upstream's intended separators before edit, copy, and danger sections through T3 Pretty's joinGroups implementation rather than duplicate separatorBefore flags.
-- `apps/web/src/components/threadActionMenu.logic.ts` — Integrated upstream's explanatory archive wording clarifying that Archive is non-destructive and sits beside Delete.
-- `apps/web/src/components/threadActionMenu.logic.ts` — Retained the upstream archive and delete icons and destructive styling.
-- `apps/web/src/contextMenuFallback.test.ts` — Added upstream FakeElement focus and blur behavior, including active-element transitions and focus/blur event dispatch needed by submenu accessibility tests.
-- `apps/web/src/contextMenuFallback.test.ts` — Added coverage for upstream `separatorBefore` menu-section behavior, including the separator dataset marker and ARIA role.
-- `apps/web/src/contextMenuFallback.test.ts` — Preserved upstream's Map-based fake element attribute storage while synchronizing it with the fork-compatible attribute view.
-- `apps/web/src/contextMenuFallback.ts` — Added support for `item.separatorBefore`, rendered only when the menu already contains content.
-- `apps/web/src/contextMenuFallback.ts` — Applied upstream's inline separator fallback styling and `data-context-menu-separator` marker to both separator forms for consistent behavior.
-- `apps/web/src/index.css` — Added the parent chat-composer shoulder-tab glass styling, dark-mode shadow, and no-backdrop-filter fallback.
-- `apps/web/src/index.css` — Added the parent banner-stack-cap attached surface and outline variables, glass treatment, dark-mode values, and compatibility fallback.
-- `apps/web/src/index.css` — Added parent drawer and top-drawer attached-surface layout, inset sizing, overlap handling, masked glass pseudo-elements, dark-mode treatment, and fallback rendering.
-- `apps/web/src/index.css` — Added parent handling for adjacent drawer seams, top-drawer stacking, and error/info/success/warning attached-surface variants.
-- `apps/web/src/main.tsx` — Pinned the Electron provider to Clerk UI build 1.30.5-canary.v20260819050620, the first build containing the upstream PR 9500 fix.
-- `apps/web/src/main.tsx` — Adopted the parent first-party fix by using the native Electron passkeys adapter rather than retaining the manual isAutoFillSupported override.
-- `apps/web/src/main.tsx` — Integrated the parent Electron Clerk provider and passkey wiring within T3 Pretty's lazy, session-gated architecture instead of eagerly importing and mounting it.
-- `packages/client-runtime/src/providerSkills.test.ts` — Integrated the parent resolveProviderSkillSourceKind API and its source-kind tests.
-- `packages/client-runtime/src/providerSkills.test.ts` — Adopted the parent's providerSkills.ts source for formatProviderSkillDisplayName as part of the upstream API/refactor.
-- `packages/client-runtime/src/providerSkills.ts` — Integrated the narrower ProviderSkillSourceKind return type for resolveProviderSkillSourceKind.
+- No text conflicts required an AI-composed parent integration.
 
 ## Parent changes intentionally omitted
 
-- `apps/desktop/src/updates/DesktopUpdates.ts` — Complete removal of the legacy updateInstallInFlightRef as part of consolidating all in-flight state into activeUpdateActionRef.. Reason: The existing T3 Pretty recoverFromInstallFailure routine from the failed-install recovery change still consumes the install-specific ref. Only this one compatibility ref is retained; the parent's activeUpdateActionRef governs action classification and exclusion.
-- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — The parent's retained OpenCode provider status test suite, including missing-binary handling, health-check errors, model and agent defaults, local CLI behavior, inventory failures, and configured-server error messages.. Reason: T3 Pretty intentionally removed the unused OpenCode provider. Restoring its dedicated test file would resurrect coverage tied to a feature the fork removed.
-- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — New parent coverage and test fixtures for exposing OpenCode inventory skills in provider snapshots, including filtering skill rows without a location.. Reason: This behavior belongs to the removed OpenCode provider implementation and cannot be integrated coherently in this deleted provider test file without resurrecting the feature.
-- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — New parent test-double tracking and assertion that the working directory is passed to loadInventoryFromCli.. Reason: This validates the removed OpenCode provider's CLI inventory path; retaining it here would require restoring the deleted provider test infrastructure.
-- `apps/server/src/provider/Layers/OpenCodeProvider.ts` — Retain the parent OpenCode provider layer, including its probing, model inventory, authentication status, and runtime integration.. Reason: T3 Pretty deliberately removed this provider as unused; restoring the file would directly undo the fork's authoritative feature removal.
-- `apps/server/src/provider/Layers/OpenCodeProvider.ts` — Expose OpenCode inventory skills by trimming and validating skill fields, sorting them, and adding them to the server provider snapshot.. Reason: This enhancement only applies inside the removed OpenCode provider layer, and no replacement implementation is evidenced at this conflict boundary into which it can be integrated.
-- `apps/server/src/provider/Layers/OpenCodeProvider.ts` — Pass the current working directory to local OpenCode CLI inventory loading.. Reason: This fix only affects the intentionally removed OpenCode provider status path, so applying it would require resurrecting that path.
-- `apps/server/src/provider/opencodeRuntime.cliParsers.test.ts` — Parent's retained model and agent CLI parser test suite for opencodeRuntime.ts.. Reason: T3 Pretty removed the OpenCode provider outright, so retaining tests that import its deleted runtime would resurrect dead provider-specific code or leave broken imports.
-- `apps/server/src/provider/opencodeRuntime.cliParsers.test.ts` — Parent's new parseSkillsCliOutput import and tests covering skill metadata parsing and malformed-output fallback.. Reason: These tests target the removed OpenCode runtime/provider. There is no surviving replacement in the supplied context into which this provider-specific coverage can be integrated.
-- `apps/server/src/provider/opencodeRuntime.ts` — OpenCode skill inventory support via the SDK and `debug skill` CLI, including schema-based parsing and retry/degradation behavior.. Reason: The fork intentionally removed the entire unused OpenCode provider; resurrecting its runtime solely for new inventory behavior would regress that removal.
-- `apps/server/src/provider/opencodeRuntime.ts` — Running OpenCode inventory CLI commands in the requested working directory through the new `cwd` runtime option.. Reason: This applies only to the OpenCode provider runtime that T3 Pretty intentionally removed.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Use CompactComposerControlsMenu as the sole compact-mode control implementation, with no thread/auto-PR overflow menu in the relocated footer.. Reason: That hunk would regress T3 Pretty's authoritative consolidated overflow menu and remove access to fork-specific auto-PR, thread, skills, and provider-aware controls. The parent mode and trait behaviors remain represented inside the Pretty overflow menu.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Drive ComposerFooterPrimaryActions running state only from phase === "running".. Reason: T3 Pretty intentionally uses turnInProgress so running/thinking feedback remains continuous during thread startup; reverting to phase alone would reintroduce the fork-fixed visual discontinuity.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Flatten all command results into one unlabeled CommandGroup and delete the command-grouping helpers.. Reason: That would regress Pretty's fuller slash, skill, and @ menus, including Files/Skills/Apps and Built-in/Provider sections.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Remove slash-command, runtime-mode, provider-command, and app item glyphs.. Reason: Those icons are part of Pretty's visual menu behavior and app/runtime integrations; they can coexist with the parent's new source-specific skill icons.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Replace the labeled Skills empty state with a single unlabeled paragraph and use the parent path-only “No matching files or folders.” text.. Reason: Pretty's menu searches and presents skills alongside @ results and intentionally keeps a dedicated Skills presentation, so the parent wording would misdescribe fork behavior.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Removal of the neutral-status helper import from the timeline.. Reason: Pretty's work-entry presentation still distinguishes neutral tool statuses; retaining it is compatible with the new display-aware failure predicate.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Larger text-sm/leading-relaxed styling for the turn-fold control.. Reason: It conflicts with Pretty's authoritative compact timeline typography and refined fold-control visual design.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's border-separated, text-sm working-row presentation without Pretty's pulse indicator.. Reason: It would remove Pretty's authoritative working animation and compact activity styling.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's larger text-sm overflow-toggle spacing and typography.. Reason: It conflicts with Pretty's compact work-log disclosure design.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's size-6 icon container, larger chevron, and generic 200ms transition for the overflow toggle.. Reason: The hidden-failure behavior was integrated, but its presentation was adapted to preserve Pretty's compact icon sizing, custom easing, hover feedback, and reduced-motion behavior.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Replace Pretty's structured tool-call display with upstream's flat buildToolCallExpandedBody implementation.. Reason: The fork's structured display is required for command formatting/highlighting, section-aware rendering, changed-file formatting, and multiline disclosure safeguards. The parent's MCP, command, output, and changed-file content remains integrated through that structured pipeline.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Use only the preview as a row label whenever a preview exists.. Reason: This would regress Pretty's deliberate heading-plus-preview presentation and duplicate-label suppression.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Offer disclosure for every non-null expanded body, including a fully visible body that merely repeats the one-line preview.. Reason: Pretty intentionally suppresses redundant disclosure while retaining it for clipping, multiline/whitespace preservation, and structured content.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Render every failed tool with a destructive X and destructive icon color.. Reason: Pretty distinguishes destructive runtime/non-tool failures from ordinary tool-like failures, retaining the tool's semantic icon and muted styling for the latter.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Increase work-entry icon wrappers to size-6.. Reason: This conflicts with T3 Pretty's authoritative compact timeline visual design, which uses size-4 icons.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Remove TimelineRowCtx and TimelineRowActivityCtx consumption from PlainWorkEntryRow.. Reason: Pretty's generated-image rendering binds image paths and state to the generating turn/session through these contexts, so removing them would regress generated-image ownership.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Upstream's whole-row toggle target, row-level hover treatment, conditional py-0/py-0.5 padding, and opacity/translate transition layout.. Reason: Pretty intentionally scopes disclosure interaction and open-state styling to the compact header. Applying the toggle to the outer row would make clicks inside expanded tool and generated-image content collapse the row and would regress the fork's refined row design.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Upstream's tool/non-tool heading colors, text-sm/leading-relaxed typography, and flattened displayText heading.. Reason: These conflict with Pretty's authoritative typography and theming and would remove the separately measured preview span required by the fork's clipped and multiline disclosure fixes.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Upstream's larger size-4, stroke-1.8, opacity-70 work-entry icon styling.. Reason: Pretty's size-3.5, stroke-1.75 icon treatment is part of the fork-specific visual design; upstream's grouped-icon visibility and accessibility behavior were integrated without replacing that presentation.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Upstream's always-reserved chevron slot and removal of explicit failed and active-turn-neutral trailing indicators.. Reason: Pretty deliberately shows only exceptional statuses, keeps its failure and still-open neutral tooltips, omits success glyphs, and uses a custom hover/open/reduced-motion chevron treatment.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Initialize condensed chrome to false with an empty per-tab map on every mount.. Reason: That parent initialization would discard T3 Pretty's saved per-tab chrome state and regress panel view restoration when returning to a pull request or thread.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Derive condensed UI directly from chromeCondensed without chromeVariant gating, while omitting the viewport reference from this block.. Reason: T3 Pretty's panel architecture requires collapse-variant gating and the viewport reference for scroll restoration and no-jump chrome compensation.
-- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Call setTimelineOrder with React's functional-updater form.. Reason: In T3 Pretty, setTimelineOrder is a persistence-aware wrapper that accepts the concrete next order, not a React state-dispatch function. The same upstream toggle behavior is retained using a concrete value.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Use context-specific “Fix findings in this thread” and “Fix findings in a thread” expectations for the bulk findings action.. Reason: T3 Pretty intentionally replaced these labels with the newer visible “Fix all findings” action; restoring the parent-side wording would regress the fork’s bulk-fix UX.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Remove the resolve and resolve-conflicts label expectations from both handoff-label result shapes.. Reason: Those fields protect T3 Pretty’s fork-specific review-thread resolution and conflict handoff behavior, so removing them would regress supported conversation workflows.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Use the parent's context-specific "Fix findings in this thread" and "Fix findings in a thread" labels.. Reason: Those labels would regress T3 Pretty's newer, intentionally visible "Fix all findings" action.
-- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Remove the resolve and resolveConflicts handoff labels from pullRequestHandoffLabels.. Reason: T3 Pretty relies on these fork-specific labels for review-conversation resolution and conflict-resolution handoffs; removing them would regress established fork behavior.
-- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Retention of the legacy inline `T3Wordmark` SVG helper.. Reason: It conflicts with T3 Pretty’s authoritative generated sidebar branding and is no longer needed by the branded `SidebarBrand` implementation.
-- `apps/web/src/components/threadActionMenu.logic.ts` — Interpolating the branch name in the new-thread label and using the message-square-plus icon.. Reason: This directly conflicts with T3 Pretty's compact branch wording and established git-branch visual treatment.
-- `apps/web/src/components/threadActionMenu.logic.ts` — Showing settle and snooze menu entries on every surface, including the sidebar, with circle-check/clock icon choices.. Reason: T3 Pretty intentionally omits these duplicate sidebar menu actions because sidebar rows already provide hover controls; its header-specific state icons are part of the fork's menu design.
-- `apps/web/src/components/threadActionMenu.logic.ts` — separatorBefore fields on Rename, Copy, and Archive.. Reason: T3 Pretty's joinGroups function already creates the same section boundaries with explicit separator items; retaining the fields would risk duplicate separators in the glass menu.
-- `apps/web/src/components/threadActionMenu.logic.ts` — The refresh-cw icon for title regeneration and mail-open icon for mark-unread.. Reason: These conflict with T3 Pretty's explicit refresh and mail icon choices.
-- `apps/web/src/routes/_chat.index.tsx` — Upstream removal of the cn and COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS imports.. Reason: The retained T3 Pretty route presentation still consumes these imports; removing them would break the fork-specific UI and compilation.
+- None. The resolver did not omit any parent change to protect T3 Pretty.
+
+## Post-merge repairs
+
+- `desktop-typecheck` failed after merging `v0.0.43-nightly.20260927.2331` because Pretty's `DesktopPreviewRecordingFrame.data` is `Uint8Array` and recording listeners take `(frame, host)`, while the auto-merged Manager still built base64 strings and called one-argument listeners. Restored Pretty's byte encoding and host-targeted delivery so IPC consumers and the Uint8Array contract stay aligned.
+  - edited `apps/desktop/src/preview/Manager.ts`
+  - edited `apps/desktop/src/preview/Manager.test.ts`
 
 ---
 
 # Additional reconciliation with newer T3 Pretty main
 
-- Parent nightly: `v0.0.34-nightly.20260822.1155`
-- Previously integrated parent nightly: `v0.0.34-nightly.20260819.1133`
+- Parent nightly: `v0.0.43-nightly.20260929.2416`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260928.2402`
 - Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `apps/web/src/components/ChatView.tsx` — Preserved the T3 Pretty WorkspacePageHeader abstraction and its existing header styling, native-control inset handling, motion behavior, and inline right-panel titlebar coordination.
-- `apps/web/src/components/ChatView.tsx` — Preserved the fork's component structure instead of regressing the closing element to the parent's raw header element.
-- `apps/web/src/components/chat/ChatComposer.tsx` — The composer top drawer remains independently gated by showComposerTopDrawer and the tasks-drawer/blocking-drawer rules, including T3 Pretty's expanded and collapsed mobile pending approval/input flows.
-- `apps/web/src/components/chat/ChatComposer.tsx` — T3 Pretty's split top-drawer/main-surface composer architecture and polished relative main frame remain intact instead of being replaced by the parent's older enclosing wrapper.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Canvas selections, preview annotations, review comments, element contexts, ordinary attachments, removal controls, and image expansion remain arranged in T3 Pretty's richer composer context-card flow.
-- `apps/web/src/components/chat/ChatComposer.tsx` — The existing contextual approval placeholder remains capable of showing activePendingApproval.detail, with the generic approval instruction retained as its fallback.
-- `apps/web/src/components/chat/ChatComposer.tsx` — The footer keeps T3 Pretty's wrapper, inline tasks/stash badges, compact overflow composition, mobile focus preservation, mobile send-while-running behavior, and plan/submission actions.
-- `apps/web/src/components/chat/ComposerBannerStack.tsx` — T3 Pretty’s `chat-composer-banner-stack-cap` visual treatment, including its fork-specific background/theming behavior.
-- `apps/web/src/components/chat/ComposerBannerStack.tsx` — T3 Pretty’s `rounded-t-2xl` stack-cap geometry.
-- `apps/web/src/index.css` — Preserved T3 Pretty's attachment-aware split glass surfaces for composer drawers, shoulder tabs, and explicitly attached states, including backdrop-filter fallbacks and shadow behavior.
-- `apps/web/src/index.css` — Preserved the mobile-collapsed attachment overlap minimum height.
-- `apps/web/src/index.css` — Preserved context-strip seam clipping for both the normal host outline and the split main-surface outline.
-- `apps/web/src/index.css` — Preserved T3 Pretty's light and dark specular top-edge treatment on the active composer outline.
+- `apps/desktop/src/app/DesktopLinuxUrlHandler.ts` — Preserved the 10-second registration timeout used to prevent Linux desktop URL-handler setup commands from hanging indefinitely.
+- `apps/mobile/src/state/use-remote-environment-registry.ts` — Preserved T3 Pretty's pairing-cancellation callback, including the existing `onCancelConnectPress` behavior.
+- `apps/mobile/src/state/use-remote-environment-registry.ts` — Preserved the T3 Connect-aware removal flow that navigates relay-managed users to T3 Account settings.
+- `apps/web/src/components/clerk/T3ConnectSidebarSignIn.tsx` — The sidebar sign-in action continues to use the T3 Pretty account identity through SURGE_CODE_ACCOUNT_NAME.
+- `apps/web/src/components/clerk/T3ConnectSidebarSignIn.tsx` — The connect profile page remains branded with SURGE_CONNECT_NAME rather than being renamed back to the parent T3 Connect label.
 
 ## Parent changes integrated at conflict boundaries
 
-- `apps/web/src/components/ChatView.tsx` — Integrated the Electron-only TitlebarLayoutControlsDragHole for the parked two-control cluster when the inline right panel does not own the titlebar.
-- `apps/web/src/components/ChatView.tsx` — Integrated the parent's condition and explanatory placement logic so parked titlebar controls remain interactive while the right panel is closed.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Added the parent's compositor-driven ultrathink rainbow ring to T3 Pretty's current main composer frame.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Added visible, accessible spinner tiles for images currently being compressed, including when no completed image attachment exists yet.
-- `apps/web/src/components/chat/ChatComposer.tsx` — Forwarded isInterrupting to the active ComposerFooterPrimaryActions instance so the parent interruption-state behavior works with T3 Pretty's footer architecture.
-- `apps/web/src/components/chat/ComposerBannerStack.tsx` — Removed the cap’s default `pointer-events-none`, allowing the button to receive pointer focus and activate the existing `group-focus-within` expansion behavior for improved accessibility.
-- `apps/web/src/index.css` — Integrated the upstream focus-within rim color and border-color transition, adapting it to the fork's split main-surface outline when the normal host outline is hidden.
-- `apps/web/src/index.css` — Integrated upstream reduced-motion handling for rim transitions on both normal and split composer surfaces.
-- `apps/web/src/index.css` — Integrated the compositor-only pointer-reactive specular highlight for fine hover pointers, including context-strip sizing and dark-mode styling.
-- `apps/web/src/index.css` — Integrated reduced-motion and World Scenery Motion-toggle gates that disable the pointer specular and its associated work.
+- `apps/desktop/src/app/DesktopLinuxUrlHandler.ts` — Integrated the parent documentation clarifying that registration refreshes the desktop MIME cache before xdg-mime records the handler as the scheme default.
+- `apps/mobile/src/state/use-remote-environment-registry.ts` — Integrated the parent initialization of `useNavigation()` needed by the removal dialog's Settings navigation action.
+- `apps/web/src/components/clerk/T3ConnectSidebarSignIn.tsx` — Account profile pages are now rendered from T3_CONNECT_ACCOUNT_PAGES, centralizing their URLs, icons, content, and ordering and allowing newly added parent pages to appear automatically.
+- `apps/web/src/components/clerk/T3ConnectSidebarSignIn.tsx` — Direct ServerIcon and SmartphoneIcon imports are removed because page icons now come from the centralized account-page definitions.
 
 ## Parent changes intentionally omitted
 
-- `apps/web/src/components/chat/ChatComposer.tsx` — Replace the approval-state prompt placeholder with the always-generic text “Resolve this approval request to continue”.. Reason: T3 Pretty retains the more informative activePendingApproval.detail when available and already uses that exact generic text as the fallback. Removing the detail would regress the fork's contextual approval UX.
+- `apps/web/src/components/clerk/T3ConnectSidebarSignIn.tsx` — Display the centralized page.label verbatim for the t3-connect account page.. Reason: That label would rename T3 Pretty's Surge Connect presentation back to the parent branding. Only this presentation value is overridden; the parent's page definition, icon, URL, content, ordering, and data-driven rendering are retained.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260929.2428`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260929.2416`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/serverSettings.test.ts` — Preserved T3 Pretty's test proving sensitive global environment values remain available in memory but are excluded from settings.json and redacted for clients.
+- `apps/server/src/serverSettings.test.ts` — Preserved global environment injection into provider terminal processes, including provider-instance environment precedence over a global value with the same name.
+- `apps/server/src/serverSettings.ts` — The exported `globalEnvironmentSecretName` helper and its stable `global-env-&lt;base64url&gt;` naming remain intact for T3 Pretty's shared global environment secrets and Surge Connect behavior.
+- `apps/server/src/serverSettings.ts` — Sensitive entries in `settings.globalEnvironment` continue to be redacted before settings are returned to clients.
+- `apps/server/src/serverSettings.ts` — Preserved T3 Pretty's secure materialization of sensitive global environment variables from the secret store, including missing-secret fallback and error context used by shared global environment secrets across Surge Connect.
+- `apps/server/src/serverSettings.ts` — Preserved inclusion of the materialized globalEnvironment in the returned server settings.
+- `apps/server/src/serverSettings.ts` — Preserved T3 Pretty's shared global environment handling, including secure secret-store writes, redaction, inline-value recovery, explicit secret removal, and cleanup of stale global environment secrets.
+- `apps/server/src/serverSettings.ts` — Preserved inclusion of the sanitized globalEnvironment value in the returned server settings.
+- `apps/server/src/sourceControl/BitbucketApi.test.ts` — Preserved T3 Pretty's hardened authenticated-request diagnostics test, including a transport cause containing a token-like secret and assertions that neither that secret nor the configured account email appears in exposed diagnostics.
+- `apps/server/src/sourceControl/BitbucketApi.test.ts` — Preserved the fork's explicit test intent that authenticated HTTP request failures stay out of diagnostics rather than weakening the fixture to a non-sensitive transport message.
+- `apps/server/src/sourceControl/BitbucketApi.ts` — Credentials continue to be resolved from server settings on every request, so newly saved Bitbucket credentials apply without restarting the server.
+- `apps/server/src/sourceControl/BitbucketApi.ts` — Low-level authentication and HTTP execution failures are sanitized before being retained in BitbucketRequestError, preserving T3 Pretty's safeguard against leaking credentials or request details through diagnostics.
+- `apps/server/src/sourceControl/BitbucketApi.ts` — The existing timeout handling, response-size limits, body-read sanitization, and JSON-decode sanitization remain unchanged.
+- `packages/contracts/src/settings.ts` — Preserved T3 Pretty's server-side `apps` settings schema and empty-object decoding default.
+- `packages/contracts/src/settings.ts` — Preserved T3 Pretty's server-side `automations` settings schema and empty-object decoding default.
+- `packages/contracts/src/settings.ts` — Preserved skills settings.
+- `packages/contracts/src/settings.ts` — Preserved subagent policy controls, including enablement and child-policy configuration.
+- `packages/contracts/src/settings.ts` — Preserved computer-use enablement.
+- `packages/contracts/src/settings.ts` — Preserved automatic project icon generation.
+- `packages/contracts/src/settings.ts` — Preserved generated activity headlines.
+- `packages/contracts/src/settings.ts` — Preserved home suggestion enablement, model selection, scheduling, and whole-value model replacement semantics.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/server/src/serverSettings.test.ts` — Added coverage that Bitbucket access and API tokens are stored outside settings.json, represented to clients by non-empty redaction markers, and retained when markers are echoed or token fields are omitted.
+- `apps/server/src/serverSettings.test.ts` — Added coverage for independently clearing a Bitbucket access token and removing its secret-store entry while retaining the API token.
+- `apps/server/src/serverSettings.test.ts` — Added coverage that manually removing a Bitbucket token from settings.json clears a stale secret-store value.
+- `apps/server/src/serverSettings.test.ts` — Added coverage that hand-edited Bitbucket tokens are migrated from settings.json into the secret store during settings loading.
+- `apps/server/src/serverSettings.test.ts` — Added coverage that hand-edited Bitbucket tokens remain materialized and are migrated when a client echoes the redaction marker while updating other Bitbucket fields.
+- `apps/server/src/serverSettings.ts` — Added the parent's canonical Bitbucket access-token and API-token secret names and field list.
+- `apps/server/src/serverSettings.ts` — Added the parent's reusable secret redaction helper.
+- `apps/server/src/serverSettings.ts` — Bitbucket access and API tokens are now redacted in client-facing server settings while preserving the rest of the Bitbucket configuration.
+- `apps/server/src/serverSettings.ts` — Integrated parent materialization of redacted Bitbucket secret fields from the secret store using BITBUCKET_SECRET_FIELDS and BITBUCKET_SECRET_NAMES.
+- `apps/server/src/serverSettings.ts` — Integrated inclusion of the materialized bitbucket configuration in the returned server settings.
+- `apps/server/src/serverSettings.ts` — Integrated parent Bitbucket secret-field processing using BITBUCKET_SECRET_FIELDS and BITBUCKET_SECRET_NAMES.
+- `apps/server/src/serverSettings.ts` — Integrated migration of plaintext Bitbucket secrets hand-edited into settings.json into the secret store while retaining existing secrets represented by SECRET_REDACTED.
+- `apps/server/src/serverSettings.ts` — Integrated removal of empty Bitbucket secrets, redaction of newly stored values, and inclusion of sanitized Bitbucket settings in the returned server settings.
+- `apps/server/src/sourceControl/BitbucketApi.test.ts` — Integrated coverage proving saved Bitbucket basic credentials and access tokens take effect immediately and take precedence over environment credentials, while clearing them restores environment fallback.
+- `apps/server/src/sourceControl/BitbucketApi.test.ts` — Integrated coverage preventing newline-containing saved tokens from being placed in an HTTP Authorization header and verifying fallback to safe environment credentials.
+- `apps/server/src/sourceControl/BitbucketApi.test.ts` — Integrated coverage reporting configured saved credentials as unknown, with a non-secret detail, when Bitbucket returns 401 and cannot validate them.
+- `apps/server/src/sourceControl/BitbucketApi.test.ts` — Integrated the parent HTTP-client failure behavior: the domain error retains a sanitized message and does not expose the original HTTP client failure object.
+- `apps/server/src/sourceControl/BitbucketApi.ts` — Adopted upstream's effectful request flow: resolve the authenticated request with withAuth, then execute it through Effect.flatMap(httpClient.execute).
+- `apps/server/src/sourceControl/BitbucketApi.ts` — Preserved upstream's operation-specific BitbucketRequestError mapping at the authentication/HTTP execution boundary, adapted to use the fork's sanitized cause.
+- `packages/contracts/src/settings.ts` — Added the parent `bitbucket` settings schema with its empty-object decoding default.
+- `packages/contracts/src/settings.ts` — Added the parent Bitbucket settings patch with optional email, access token, and API token fields.
+- `packages/contracts/src/settings.ts` — Preserved the parent credential update semantics: empty tokens clear stored values, while omitted tokens retain server state.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/sourceControl/BitbucketApi.ts` — Store the raw authentication or HTTP client failure as the cause of the inner BitbucketRequestError.. Reason: The raw cause can contain credential-bearing request details and would become exempt from the later sanitizer because it is already a BitbucketApiError. The cause is therefore sanitized at the same boundary while retaining upstream's typed error behavior.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.43-nightly.20260929.2450`
+- Previously integrated parent nightly: `v0.0.43-nightly.20260929.2428`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/desktop/src/app/DesktopClerk.ts` — Electron callback work continues to run through the configure scope's context-aware `runFork`, preserving T3 Pretty's desktop lifecycle and Effect runtime hardening.
+- `apps/desktop/src/app/DesktopClerk.ts` — Ordinary second-instance window reveal failures retain T3 Pretty's explicit cause-aware warning instead of becoming unobserved failures.
+- `apps/desktop/src/app/DesktopClerk.ts` — Provider return URL validation continues to derive the expected origin from T3 Pretty's environment-aware desktop protocol configuration.
+- `apps/desktop/src/preload.ts` — Preserved T3 Pretty's edit-context-menu event subscription, payload validation, listener cleanup, and menu-selection resolution IPC, maintaining its in-app context-menu behavior.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — T3 Pretty's redesigned single-card, instant-apply thread settings presentation remains intact instead of restoring the legacy outer wrapper and redundant Options heading.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — T3 Pretty's current descriptor rendering and unified animated layout/enter/exit transitions are preserved, including the existing onOpenSubmenu-only component API.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The fork's established visual styling for the mobile model/options panel—rounded card, spacing, and layout—is retained while accommodating the new status UI.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The new-task picker continues to use buildNewTaskThreadSettingsSession output for normalized environment, provider groups, selected model, option descriptors, and runtime mode, preserving the fork's crash-resistant new-thread model-picker behavior.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The memoized handleSelectModel callback remains in use, preserving the fork's current model-selection flow and selected option forwarding.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Preserved T3 Pretty’s ability to resume a native Codex session in a new thread by translating input.nativeSessionId into the Codex resume cursor, with priority over the generic resumeCursor fallback.
+- `apps/web/src/main.tsx` — Preserved Electron-only lazy loading of the Clerk root so desktop renderers do not eagerly pay for the full clerk-js bundle.
+- `apps/web/src/main.tsx` — Preserved the stable provider tree and null Suspense fallback used while the Electron Clerk chunk resolves.
+- `apps/web/src/routes/__root.tsx` — Preserved T3 Pretty's World Scenery rendering while the welcome/onboarding workspace is displayed.
+- `docs/internals/providers.md` — T3 Pretty's documented Antigravity sign-out ordering remains intact: stop admission and existing processes before clearing account metadata.
+- `docs/internals/providers.md` — The safeguard that cached models do not prove current access and that an authoritative empty catalog clears stale models remains intact.
+- `docs/user/install.md` — T3 Pretty's supported-provider surface remains authoritative: the removed OpenCode integration is not reintroduced into installation documentation.
+- `docs/user/install.md` — The detailed provider matrix retains fork guidance for default binaries, authentication commands, default enablement, Cursor's `cursor-agent` naming, Grok Build, and the official managed Antigravity ACP runtime.
+- `docs/user/install.md` — T3 Pretty's Grok reasoning-control documentation and environment-specific provider login guidance remain intact.
+- `docs/user/install.md` — The expanded binary discovery, explicit binary-path, Antigravity override, and provider CLI update guidance are preserved; the update paragraph remains once in its existing location below the conflict.
+- `packages/client-runtime/src/state/runtime.ts` — Preserved restartOnReconnect behavior by retaining the generation atom and suspending subscriptions with Stream.never until a connected generation is available.
+- `packages/client-runtime/src/state/runtime.ts` — Preserved subscription recreation when the environment reconnects, along with the existing configurable idle TTL and normal per-key labels for non-sensitive inputs.
+- `packages/contracts/src/ipc.ts` — Kept the optional desktop edit-context-menu request listener and resolver used to render Electron-authored spellcheck, link/image, and clipboard menus in the renderer, including compatibility with older desktop shells.
+- `packages/contracts/src/server.ts` — Preserved T3 Pretty's SERVER_PROVIDER_LABEL_MAX_LENGTH validation for provider authentication type, label, and email fields.
+- `packages/contracts/src/server.ts` — Applied the fork's bounded provider-auth string policy to the newly introduced profileId field.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/desktop/src/app/DesktopClerk.ts` — Added hosted ChatGPT/Codex authentication handoff processing, including authorization callback receipt, external-browser launch, callback delivery, and failure logging.
+- `apps/desktop/src/app/DesktopClerk.ts` — Added provider-auth return handling that validates the desktop app origin, loads the destination in the main window, and reveals it.
+- `apps/desktop/src/app/DesktopClerk.ts` — Added authentication handoff detection from initial host process arguments, macOS-style `open-url` events, and secondary-instance arguments.
+- `apps/desktop/src/app/DesktopClerk.ts` — Preserved normal second-instance window reveal behavior when no provider-auth argument was handled.
+- `apps/desktop/src/preload.ts` — Added the parent preload API methods for receiving and canceling provider authentication callbacks through their new IPC channels.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The active environment's server configuration is read from environmentServerConfigsAtom and matched by providerInstanceId.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — ChatGptSharingStatus is rendered for the selected provider, bringing the parent's ChatGPT sharing-state visibility into T3 Pretty's settings panel.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The selected model's provider instance is supplied to ThreadSettingsSessionProvider when available, using the fork's normalized settings.providerInstanceId as the source.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Provider-instance omission when no provider instance is available is retained through a conditional prop spread.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Integrated the parent’s per-session effectiveConfig and effectiveEnvironment values supplied by resolveRuntime.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Integrated propagation of effectiveConfig.binaryPath into CodexSessionRuntimeOptions.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Applied resolved launch arguments and home path from effectiveConfig while retaining schema-validated resumeCursor support.
+- `apps/web/src/main.tsx` — Added startup initialization via prepareProviderAuthDelivery(), enabling the parent provider-auth delivery behavior.
+- `apps/web/src/routes/__root.tsx` — Integrated the parent ProviderAuthCallbackCoordinator into the welcome route so provider authentication callbacks remain coordinated during onboarding.
+- `docs/internals/providers.md` — Documented the Managed ChatGPT primary-handoff flow for remote environments, including ephemeral credential storage, environment-bound verification, destination-only token persistence and refresh, and fallback to remote callback completion.
+- `docs/user/install.md` — Codex can now be connected through ChatGPT using the parent-provided setup flow and documentation link, while the standalone Codex CLI remains supported.
+- `docs/user/install.md` — The documentation now identifies ChatGPT-connected Codex as a T3 Code-managed runtime that does not require a server `PATH` entry.
+- `docs/user/install.md` — Managed authentication guidance now distinguishes Codex's in-app ChatGPT connection from CLI login commands.
+- `packages/client-runtime/src/state/runtime.ts` — Integrated sensitiveInput-aware subscription atom labels, omitting serialized input from labels and using only the environment ID when input is sensitive.
+- `packages/contracts/src/ipc.ts` — Added optional receiveProviderAuthCallback and cancelProviderAuthCallback bridge methods for local OAuth callbacks belonging to sign-ins initiated by remote environments.
+- `packages/contracts/src/server.ts` — Added the optional subscriptionSharing boolean to ServerProviderAuth.
+- `packages/contracts/src/server.ts` — Added the optional profileId field to ServerProviderAuth.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Restore the parent's legacy outer View with bottom safe-area/native mail-toolbar padding and the separate Options heading.. Reason: T3 Pretty intentionally replaced that structure with its custom single-card instant-apply panel; restoring it would regress fork-authoritative mobile visual design and spacing.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Use the parent's animationsReady-gated enter and exit transitions for select descriptors.. Reason: T3 Pretty's current component API no longer exposes animationsReady and intentionally uses its unified transition behavior for all displayed descriptors.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Place ChatGptSharingStatus outside the options card above the legacy Options heading.. Reason: That parent placement depends on the legacy wrapper and heading removed by T3 Pretty; the status is instead integrated at the top of the fork's existing card without changing its functional provider behavior.
+- `docs/user/install.md` — The parent provider table's OpenCode installation and `opencode auth login` row.. Reason: T3 Pretty intentionally removed its unused OpenCode provider integration; documenting OpenCode as available would regress the fork's authoritative provider surface and direct users to unsupported setup.
+- `desktop-typecheck` failed after merging `v0.0.43-nightly.20260929.2450`; repaired with `gpt-5.6-sol`: Define both context-bound Effect runners so hosted auth can await shell operations without regressing T3 Pretty’s hardened fire-and-forget handlers.
+  - edited `apps/desktop/src/app/DesktopClerk.ts`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.45-nightly.20260930.2468`
+- Previously integrated parent nightly: `v0.0.44-nightly.20260929.2456`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Active work rows continue to prioritize T3 Pretty's live activity headline when one is available.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The route-thread-keyed SlidingActivity wrapper, collapsed-row handoff key, and live headline plumbing remain intact, preserving T3 Pretty's animated activity handoffs.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — LiveActivityRow continues to receive the active state and existing failure/tool-icon presentation.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Question work entries now use getQuestionTextPreview as their descriptive fallback instead of always using the generic work-entry label.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The heading-and-answer split is rendered only when the question actually has an answer.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Both question heading and answer can truncate within the flex row, and answered text uses the upstream foreground styling.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Upstream always gives the question-text preview precedence as the row label, including while the row has an active live headline.. Reason: That narrow precedence cannot coexist in the single primary-label slot with T3 Pretty's active live-headline behavior. The live headline is retained while active; the upstream question preview is used as the fallback otherwise.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.45-nightly.20260930.2493`
+- Previously integrated parent nightly: `v0.0.45-nightly.20260930.2481`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — The empty-state copy continues to use T3 Pretty’s SURGE_CODE_ACCOUNT_NAME identity instead of the parent’s T3 Code name.
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — Surge Connect branding remains sourced from SURGE_CONNECT_NAME in both the empty-state guidance and page description.
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — The empty state continues to identify both push notifications and Live Activities as supported mobile capabilities.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — The empty state now tells users to install the mobile app before signing in.
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — The iPhone-only wording is broadened to the parent’s platform-neutral “phone” wording.
+- `apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx` — The page description adopts the parent’s clearer focus on mobile devices receiving notifications from environments.
+
+## Parent changes intentionally omitted
+
+- None. The resolver did not omit any parent change to protect T3 Pretty.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.45-nightly.20260930.2510`
+- Previously integrated parent nightly: `v0.0.45-nightly.20260930.2493`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The World Scenery daily-photo place remains visible above the composer when scenery chrome is active and the keyboard is hidden.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Workspace controls retain T3 Pretty's NewTaskGlassChip presentation and scenery-aware active styling.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Preserved T3 Pretty's useCallback dependency for its existing callback-based mobile new-task behavior.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Preserved the LegendList-based virtualized and recycled project list, including estimated item sizing, stable scope keys, and extraData updates for environment and reserved-destination state.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Preserved T3 Pretty's distinct filtered-empty state and its existing mobile styling, project/environment navigation, loading presentation, and platform-specific controls.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — T3 Pretty's recycled/virtualized project-scope list remains intact instead of reverting to the parent's older ScrollView-based rendering.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — The fork's Android MaterialListRow project rendering, rounded scope grouping, reserved-destination disabling, and project favicon presentation are preserved.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — The fork's existing non-Android renderProjectScope path and platform-specific project-selection behavior are preserved.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved T3 Pretty's per-workspace-mode auto-create-PR and auto-babysit preferences.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved draft-scoped PR overrides while editing queued pending tasks.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved preference-hydration gating so submission cannot race persisted create-PR or babysit choices.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved coupled toggle behavior: disabling create-PR disables babysitting, while enabling babysitting enables create-PR.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved reactive updates for T3 Pretty's per-environment automatic pull-request creation preference.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved reactive updates for T3 Pretty's per-environment pull-request babysitting preference, ensuring Merge/PR+ behavior remains effective for queued and edited tasks.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Kept the fork's resolved `runtimeMode` dependency already present later in the dependency list rather than restoring the obsolete `defaultRuntimeMode` dependency.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved authorization for T3 Pretty project favicon imports.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved read/operate authorization distinctions for project transfer inspection, preparation, sending, and cancellation.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved T3 Pretty agent-instruction list, read, and write authorization.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved T3 Pretty skills state, marketplace, installation, removal, and location-setting authorization.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved read-only access to marketplace refresh so read-only clients can explicitly refresh marketplace data.
+- `apps/web/src/components/CommandPalette.tsx` — Preserved the HouseIcon import used by T3 Pretty's fork-specific home screen and navigation behavior.
+- `apps/web/src/components/NoProjectsHero.tsx` — T3 Pretty's custom no-project hero description presentation, including the explicit top margin and softened muted-foreground color.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Preserved T3 Pretty's `collectOpenProjectPullRequests` import, which supports pull-request-aware thread nesting and stable PR nest behavior.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Preserved the `useEffect` and `useRef` hooks required by draft attachment state handling, including branch restoration/reset behavior.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Preserved T3 Pretty's inline pull-request attachment selector below the draft headline.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Preserved use of the fork-compatible PullRequestGlyph through the existing pullRequestSelector implementation.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Preserved visual separation for the pull-request selector with the prior 0.75rem spacing.
+- `apps/web/src/routes/_chat.tsx` — Preserved T3 Pretty's `useIsMobile` integration and the responsive/mobile behavior that consumes it in the chat route.
+- `apps/web/src/routes/_chat.tsx` — Preserved `scopedProjectRef` in the keyboard shortcut effect dependencies, maintaining T3 Pretty's behavior for creating new threads within the filtered sidebar project.
+- `packages/contracts/src/rpc.ts` — Preserved T3 Pretty's ProjectImportFaviconError, ProjectImportFaviconInput, and ProjectImportFaviconResult RPC contract imports.
+- `packages/contracts/src/rpc.ts` — Preserved the T3 Pretty project favicon import RPC.
+- `packages/contracts/src/rpc.ts` — Preserved T3 Pretty project-transfer inspect, prepare, send, and cancel RPCs.
+- `packages/contracts/src/rpc.ts` — Preserved fork-specific agent-instruction and automation-run RPCs.
+- `packages/contracts/src/rpc.ts` — Preserved managed storage inventory, streaming inventory, and orphan-removal RPCs.
+- `packages/contracts/src/rpc.ts` — Preserved the T3 Pretty skills marketplace and app integration RPC surface, including authorization, token, OAuth client, disconnect, and test operations.
+- `packages/contracts/src/rpc.ts` — Preserved the project favicon-import RPC and its authorization/error contract.
+- `packages/contracts/src/rpc.ts` — Preserved project transfer inspect, prepare, send, and cancel RPCs used by T3 Pretty's cross-environment/T3 Connect transfer behavior.
+- `packages/contracts/src/rpc.ts` — Preserved agent-instruction list, read, and write RPCs.
+- `packages/contracts/src/rpc.ts` — Preserved automation run-listing and run-detail RPCs.
+- `packages/contracts/src/rpc.ts` — Preserved the complete skills state, installation, marketplace, refresh, and per-location enablement RPC surface.
+- `packages/contracts/src/rpc.ts` — Preserved app integration management RPCs for configuration, authorization, credentials, disconnection, and connection testing.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Workspace controls are now rendered only when flow.canChooseWorkspace is true, preventing unsupported workspace selection UI from appearing.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Integrated the parent imports for Effect Cause inspection and AsyncResult handling.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Added the parent's conditional start-without-a-project action through canStartScratch, startScratchLabel, and startScratch().
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Used a secondary MaterialButton for the Android scratch action and the parent's subtle Pressable presentation on iOS, while retaining the primary add-project action first.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Added the upstream conditional “No project” scratch-task entry when scratch tasks are available, no scratch project exists, and projects are present.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Integrated the upstream Android MaterialListRow version of the scratch entry with its subtitle and text-bubble icon.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Integrated the upstream accessible non-Android scratch entry, including its button role and label, subtitle, icons, and platform-specific styling.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Adapted the upstream entry to the fork's list architecture as ListFooterComponent rather than restoring the obsolete ScrollView/project-map implementation.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Integrated the parent guard that forces scratch/non-worktree-capable projects to use local workspace mode even if a stale draft contains another mode; PR preferences consequently resolve and persist against the effective local mode.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Added `canChooseWorkspace` to the callback dependency list so changes to whether workspace selection is allowed correctly rebuild pending-task messages and clear stale workspace choices for no-project tasks.
+- `apps/server/src/auth/RpcAuthorization.ts` — Added authorization for WS_METHODS.projectsEnsureScratch using AuthOrchestrationOperateScope, matching the parent implementation's mutating behavior.
+- `apps/web/src/components/CommandPalette.tsx` — Integrated the parent nightly's MessageSquareDashedIcon import for its new command-palette behavior.
+- `apps/web/src/components/NoProjectsHero.tsx` — The empty-state description now advertises starting without a project when a scratch environment is available.
+- `apps/web/src/components/NoProjectsHero.tsx` — The hero action row uses a gap between the Add project and Start without a project buttons.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated upstream `isScratchProject` support for recognizing scratch projects.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated upstream `MessageSquareDashedIcon` alongside the existing add-project icon.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated upstream `useAtomValue` access for server keybindings.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Retained the expanded React hook imports shared by both sides.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated the scratch-draft-specific “What should we work on?” headline.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated the full-width heading layout inside the centered hero container.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated the reserved fixed-height secondary row that prevents headline movement when projectless threads are available.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated movement of the project selector into the secondary row for scratch drafts and the “start without a project” shortcut for project drafts.
+- `apps/web/src/routes/_chat.tsx` — Integrated the parent `useScratchProject` hook import, supporting the upstream scratch-environment and scratch-thread behavior already used by `ChatRouteGlobalShortcuts`.
+- `apps/web/src/routes/_chat.tsx` — Added `scratchEnvironmentId` to the keyboard shortcut effect dependencies so upstream scratch-thread creation uses the current environment resolver and satisfies hook dependency correctness.
+- `packages/contracts/src/rpc.ts` — Integrated the parent ProjectEnsureScratchResult contract import.
+- `packages/contracts/src/rpc.ts` — Added the parent `projects.ensureScratch` RPC method alongside the existing T3 Pretty project registry methods.
+- `packages/contracts/src/rpc.ts` — Added the parent WsProjectsEnsureScratchRpc contract, including its empty payload, ProjectEnsureScratchResult response, and orchestration/authorization error union.
+- `packages/contracts/src/rpc.ts` — Retained the upstream documentation that the RPC finds or creates the Scratch project under ServerConfig.scratchWorkspaceRoot.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Retain `defaultRuntimeMode` in the callback dependency list.. Reason: The composed callback uses T3 Pretty's resolved `runtimeMode`, which is already included later in the dependency list, and no longer references `defaultRuntimeMode`; retaining it would be a stale dependency from the parent's older runtime-mode implementation.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.45-nightly.20261001.2525`
+- Previously integrated parent nightly: `v0.0.45-nightly.20260930.2510`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved favicon import as an orchestration operate-scope action.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved project-transfer authorization: inspection remains readable, while prepare, send, and cancel require operate scope.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved agent-instruction list/read access under read scope and writes under operate scope.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved skill state and marketplace reads, skill mutations under operate scope, and the fork's intentional read-scope treatment of marketplace refresh for read-only clients.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Preserved T3 Pretty's grouped command-menu rendering, including Built-in, Provider, Skills, Files, and Apps sections and conditional section labels.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Preserved the fork's richer slash-command and @-mention menu organization rather than reverting to one ungrouped command list.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — The project-rail architecture remains authoritative: obsolete inline project-scope and project-creation controls are not restored in the thread header.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — The full-width, bordered, theme-aware “Search threads” control and its Pretty-specific icon, placeholder, focus, hover, and clear-button styling are preserved.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — The compact two-row scoped layout is preserved, including placing the new-thread control beside search for the all-project view and beside the scope title for a selected project.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — The existing new-thread shortcut and Shift+click current-project behavior remain intact through the shared newThreadButton.
+- `packages/contracts/src/rpc.ts` — Project favicon import and project-transfer RPC methods remain available.
+- `packages/contracts/src/rpc.ts` — Agent instruction file list/read/write RPC methods remain available.
+- `packages/contracts/src/rpc.ts` — Automation run listing and lookup RPC methods remain available.
+- `packages/contracts/src/rpc.ts` — Managed storage inventory streaming and orphan-removal RPC methods remain available.
+- `packages/contracts/src/rpc.ts` — T3 Pretty skills marketplace, skill-location, and app integration RPC methods remain available.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/server/src/auth/RpcAuthorization.ts` — Added projectsCreateNew to the authorization map with AuthOrchestrationOperateScope, ensuring project creation is treated as a mutating operation.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Added the upstream list ID and trigger-specific accessible label to CommandList.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Added upstream-generated stable option IDs to every ComposerCommandMenuItem, supporting the item's existing rendered DOM ID and accessible active-option relationships.
+- `packages/contracts/src/rpc.ts` — Added the parent projects.createNew RPC method mapping alongside the existing project registry methods.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — Rename the inline project-creation button from “New project” to “Add project”.. Reason: T3 Pretty replaced sidebar project-folder controls with a project rail, so this component no longer has an inline project-creation button or the associated hasProjects, projectScope, onNewProject, FolderPlusIcon, and searchFieldRef APIs. Restoring that control solely to apply the label change would regress the fork architecture and would not compile against the current component interface.
 - `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
-
----
-
-# Additional reconciliation with newer T3 Pretty main
-
-- Parent nightly: `v0.0.34-nightly.20260822.1155`
-- Previously integrated parent nightly: `v0.0.34-nightly.20260819.1133`
-- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
-
-## T3 Pretty changes preserved at conflict boundaries
-
-- `apps/desktop/src/ipc/methods/window.ts` — `apps/desktop/src/ipc/methods/window.ts` — Editor launching keeps resolving through the fork's resolveEditorExecutable; the now-unused isCommandAvailable import stays removed.
-- `apps/desktop/src/preload.ts` — `apps/desktop/src/preload.ts` — The fork's guarded getPathForFile bridge (empty string on failure) remains exposed.
-- `apps/server/src/assets/AssetAccess.ts` — `apps/server/src/assets/AssetAccess.ts` — T3 Pretty's managed project favicon flow (ProjectFaviconStore lookup, managed absolutePath claims, managedProjectFaviconFileName token naming) remains the authoritative path for managed favicons.
-- `apps/server/src/assets/AssetAccess.ts` — `apps/server/src/assets/AssetAccess.ts` — Canonical favicon resolution keeps the fork's AssetProjectFaviconInspectionError classification.
-- `apps/web/src/components/ChatView.tsx` — `apps/web/src/components/ChatView.tsx` — The fork's hasOptimisticWorkingSettled-based hold on the optimistic dispatch stays authoritative, preserving continuous working feedback while a new thread starts.
-- `apps/web/src/components/ChatView.tsx` — `apps/web/src/components/ChatView.tsx` — isSendBusy keeps requiring !sendAcknowledged and isOptimisticWorking remains derived from the held dispatch.
-- `apps/web/src/components/ChatView.tsx` — `apps/web/src/components/ChatView.tsx` — The scenery hero/dock placement write, motion gate, and draft-dock derivation remain wired to isDraftHeroState.
-- `apps/web/src/components/chat/ChatHeader.tsx` — `apps/web/src/components/chat/ChatHeader.tsx` — The thread-title menu keeps opening with the fork's motion: "dropdown" presentation hint.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — `apps/web/src/components/chat/ComposerCommandMenu.tsx` — The fork's grouped command sections with labels keep rendering instead of the parent's flat list.
-- `apps/web/src/components/settings/ProjectFaviconPickerDialog.tsx` — `apps/web/src/components/settings/ProjectFaviconPickerDialog.tsx` — The fork's hidden file-input browse path remains available where no native picker exists, so web favicon picking keeps working.
-- `apps/web/src/composer-logic.ts` — `apps/web/src/composer-logic.ts` — The fork's extended ComposerSlashCommand union (skills, new-thread, settings, commands, auto-pr) and its doc comment remain authoritative.
-- `apps/web/src/index.css` — `apps/web/src/index.css` — The ultrathink ring/chroma animations stay frozen when T3 Pretty scenery motion is off or the OS requests reduced motion.
-- `docs/user/composer.md` — `docs/user/composer.md` — T3 Pretty's Slash commands table keeps documenting the fork-only `/auto-pr` toggle and `$skill` mention flow.
-- `docs/user/composer.md` — `docs/user/composer.md` — The Linking files and skills section keeps the fork's Files/Skills split menu behavior.
-
-## Parent changes integrated at conflict boundaries
-
-- `apps/desktop/src/ipc/methods/window.ts` — `apps/desktop/src/ipc/methods/window.ts` — Integrated the parent's WORKSPACE_IMAGE_PREVIEW_EXTENSIONS import for the workspace image-preview dialog filters.
-- `apps/desktop/src/preload.ts` — `apps/desktop/src/preload.ts` — Integrated the parent's pickProjectFavicon IPC bridge for the native favicon picker.
-- `apps/server/src/assets/AssetAccess.ts` — `apps/server/src/assets/AssetAccess.ts` — Integrated the parent's external favicon override: absolute projectFaviconPath detection, project-favicon-external claims, and resolveCanonicalFile handling alongside the fork's managed flow.
-- `apps/web/src/components/ChatView.tsx` — `apps/web/src/components/ChatView.tsx` — Integrated the parent's ComposerSubmissionIntent tracking on the optimistic dispatch and the backgroundSubmissionPending surface, adapted to the fork's holdActive lifecycle.
-- `apps/web/src/components/ChatView.tsx` — `apps/web/src/components/ChatView.tsx` — Adopted the parent's resolveDraftHeroState helper (background submissions hold the hero state) while keeping the fork's scenery placement side effects.
-- `apps/web/src/components/chat/ChatHeader.tsx` — `apps/web/src/components/chat/ChatHeader.tsx` — Integrated the parent's pending-then-open title menu (double-click guard, chevron shortcut, TITLE_MENU_OPEN_DELAY_MS) and double-click rename handling.
-- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — `apps/web/src/components/chat/ComposerCommandMenu.tsx` — The parent's triggerKind prop now flows to ComposerCommandMenuItem inside the fork's grouped rendering.
-- `apps/web/src/components/settings/ProjectFaviconPickerDialog.tsx` — `apps/web/src/components/settings/ProjectFaviconPickerDialog.tsx` — Adopted the parent's first-party native Open-in-file-manager action (pickExternal, CommandFooterAction, toast errors) as the preferred desktop path; the fork file-input button is the fallback when pickExternal is unavailable.
-- `apps/web/src/composer-logic.ts` — `apps/web/src/composer-logic.ts` — Integrated the parent's ComposerSubmissionIntent foreground/background type alongside the fork union.
-- `apps/web/src/index.css` — `apps/web/src/index.css` — Integrated the parent's preview-loading-progress keyframes and reduced-motion handling.
-- `docs/user/composer.md` — `docs/user/composer.md` — Integrated the parent's Cmd+Enter background-thread start paragraph after the composer intro.
-
-## Parent changes intentionally omitted
-
-- `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
-
----
-
-# Additional reconciliation with newer T3 Pretty main
-
-- Parent nightly: `v0.0.34-nightly.20260822.1162`
-- Previously integrated parent nightly: `v0.0.34-nightly.20260822.1155`
-- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
-
-## T3 Pretty changes preserved at conflict boundaries
-
-- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Long-press handling for chat links remains available through `onLinkLongPress`, including direct handling by native selectable text and context propagation for links rendered inside rich markdown blocks.
-- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — The fork's `highlightCodeEnabled` control remains forwarded to `NativeMarkdownBlock`.
-- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — The mobile shrink-to-fit text reflow safeguard (`flexShrink: 1` and `minWidth: 0`) and existing native markdown chunk spacing remain intact.
-- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.types.ts` — Preserved the optional onLinkLongPress callback used by T3 Pretty mobile to expose copy and open actions when long-pressing chat links.
-- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Preserved useOutgoingMessagePreviewUris, which keeps local outgoing image previews visible for newly sent mobile messages.
-- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Preserved renderItem dependency tracking for threadId, workspaceRoot, and focus state so rows refresh with the correct thread/workspace context and active-screen behavior.
-- `apps/server/src/persistence/Migrations.ts` — The established T3 Pretty migration IDs 41–49 remain unchanged, avoiding corruption or reinterpretation of migration history on existing fork databases.
-- `apps/server/src/persistence/Migrations.ts` — Migration 41 continues to add orchestration-event recorded-at persistence.
-- `apps/server/src/persistence/Migrations.ts` — Migration 42 continues to preserve projection thread branch heads and associated PR branch identity behavior.
-- `apps/server/src/persistence/Migrations.ts` — Migration 43 continues to persist World Scenery thread assignments.
-- `apps/server/src/persistence/Migrations.ts` — Migration 44 continues to provide the fork's thread canvas schema.
-- `apps/server/src/persistence/Migrations.ts` — Migration 45 continues to provide thread-activity compaction metadata.
-- `apps/server/src/persistence/Migrations.ts` — Migration 46 continues to persist enabled skill IDs for the skills registry and per-thread materialization behavior.
-- `apps/server/src/persistence/Migrations.ts` — Migration 47 continues to clean up superseded tool-updated activities.
-- `apps/server/src/persistence/Migrations.ts` — Migration 48 continues to persist T3 Pretty's global and per-thread subagent policy.
-- `apps/server/src/persistence/Migrations.ts` — Migration 49 continues to provide the fork's ranked search index.
-- `apps/server/src/server.test.ts` — Preserved the T3 Pretty StorageInventoryService test dependency used by the fork's storage-management behavior.
-- `apps/server/src/ws.ts` — The ShellStream broadcaster dependency used by T3 Pretty's shell synchronization and resume behavior remains available.
-- `apps/server/src/ws.ts` — Bootstrap turn starts safely adopt an already-existing compatible thread, reject cross-project collisions, recover from concurrent duplicate-creation races, and reuse an existing prepared worktree when appropriate.
-- `apps/server/src/ws.ts` — Bootstrap thread creation continues to carry T3 Pretty's enabled-skill IDs and optional global/per-thread subagent policy.
-- `apps/server/src/ws.ts` — Managed project favicons continue to be released after successful favicon replacement or project deletion, preventing leaked fork-managed icon files.
-- `apps/web/src/components/ChatMarkdown.tsx` — T3 Pretty's single-pass extraction of markdown href and inline-code file candidates, including fenced-code, link-label, and markdown-looking inline-code edge cases.
-- `apps/web/src/components/ChatMarkdown.tsx` — T3 Pretty's ref-backed file-link metadata cache remains the first lookup, preserving its render hot-path optimization.
-- `apps/web/src/components/ChatMarkdown.tsx` — The fork's requirement that generated or workspace images remain pinned to the originating conversation is satisfied by the parent replacement's environment- and thread-scoped signed asset request.
-- `packages/ssh/src/tunnel.ts` — Windows SSH remote launch continues to invoke Node directly with the remote state key instead of attempting to run a POSIX shell.
-- `packages/ssh/src/tunnel.ts` — Remote launch script generation remains platform-specific: Windows uses buildRemoteWindowsLaunchScript, while POSIX uses buildRemoteLaunchScript.
-
-## Parent changes integrated at conflict boundaries
-
-- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Integrated upstream custom markdown image rendering by accepting `renderImage` and providing it through `MarkdownImageRendererContext` around the rendered markdown tree.
-- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.types.ts` — Integrated the optional renderImage prop and its MarkdownImageRenderer type contract for app-supplied rendering of markdown images, including workspace-relative image resolution.
-- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Integrated the parent useAssetUrlState API alongside the existing useAssetUrl import.
-- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Added renderMarkdownImage to the renderItem callback dependency list, preventing stale markdown image rendering behavior.
-- `apps/server/src/persistence/Migrations.ts` — The parent AuthSessionClientConnection migration is imported and registered in the fork as migration 50, so its first-party auth-session connection persistence behavior is applied after T3 Pretty's already-published migrations.
-- `apps/server/src/server.test.ts` — Integrated the parent AnalyticsService test dependency for the new telemetry/analytics implementation.
-- `apps/server/src/ws.ts` — WebSocket orchestration dispatches now carry the connecting client's surface and app-version origin metadata when available.
-- `apps/server/src/ws.ts` — Upstream analytics records client thread-start and turn-request events, including bootstrap turn starts that create a thread.
-- `apps/server/src/ws.ts` — Bootstrap-created threads and ordinary normalized commands are routed through the upstream dispatchFromClient wrapper while retaining T3 Pretty's surrounding safeguards.
-- `apps/web/src/components/ChatMarkdown.tsx` — Uncached markdown file links now fall back to resolveMarkdownFileLinkMeta, so valid links missed by the precomputed candidate cache still render as file chips.
-- `apps/web/src/components/ChatMarkdown.tsx` — The parent's first-party markdown image renderer replaces the fork-only renderer, including normalized source classification, constrained lazy loading for direct images, signed thread-scoped workspace assets, loading placeholders, and unavailable-image fallbacks.
-- `apps/web/src/components/ChatMarkdown.tsx` — The obsolete base extractMarkdownLinkHrefs helper remains removed; Pretty's newer combined candidate extractor serves the fork's cache instead.
-- `packages/ssh/src/tunnel.ts` — POSIX remote launches now invoke `sh` with `-l`, enabling login-shell environment initialization before executing the streamed launch script.
-
-## Parent changes intentionally omitted
-
-- `apps/server/src/persistence/Migrations.ts` — The parent's numeric assignment of AuthSessionClientConnection as migration 41.. Reason: Migration ID 41 is already published by T3 Pretty as OrchestrationEventRecordedAt, and IDs 42–49 are also occupied. Reusing or renumbering those IDs would regress existing fork databases, so the complete parent migration is retained under the next available ID, 50.
-
----
-
-# Additional reconciliation with newer T3 Pretty main
-
-- Parent nightly: `v0.0.34-nightly.20260823.1164`
-- Previously integrated parent nightly: `v0.0.34-nightly.20260822.1162`
-- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
-
-## T3 Pretty changes preserved at conflict boundaries
-
-- `apps/mobile/src/features/threads/ThreadFeed.tsx` — T3 Pretty's mobile user-message image source resolution and associated typed image handling remain available, protecting sent-image display behavior.
-- `apps/web/src/contextMenuFallback.ts` — Preserved the T3 Pretty in-app glass context-menu implementation's guard against inserting adjacent duplicate separators.
-- `apps/web/src/contextMenuFallback.ts` — Preserved separator accessibility semantics and existing glass-menu styling structure.
-- `apps/web/src/index.css` — Dialog glass continues to use the fork's purpose-specific --glass-blur-overlay value rather than collapsing back to the generic glass blur.
-- `apps/web/src/index.css` — Dropdown glass continues to use the fork's purpose-specific --glass-blur-raised value.
-- `apps/web/src/index.css` — T3 Pretty's dropdown rim lighting, dark-mode glass treatment, and Tailwind shadow-composition behavior remain intact.
-
-## Parent changes integrated at conflict boundaries
-
-- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Integrated the parent mobile markdown image maximum-width and display-size utilities.
-- `apps/web/src/contextMenuFallback.ts` — Integrated the parent's use of `var(--contrast-border)` for `separatorBefore` inline styling, improving separator contrast under themed context menus.
-- `apps/web/src/index.css` — Dialog and dropdown borders now use the parent's --contrast-foreground semantic token, improving border contrast across themes.
-
-## Parent changes intentionally omitted
-
-- `apps/web/src/index.css` — Use the generic --glass-blur value for dialog glass.. Reason: This would regress T3 Pretty's intentional overlay-specific blur hierarchy; the compatible upstream border-token change is integrated separately.
-- `apps/web/src/index.css` — Use the generic --glass-blur value for dropdown glass.. Reason: This would regress T3 Pretty's intentional raised-surface blur hierarchy; the compatible upstream border-token change is integrated separately.
-
----
-
-# Additional reconciliation with newer T3 Pretty main
-
-- Parent nightly: `v0.0.34-nightly.20260823.1167`
-- Previously integrated parent nightly: `v0.0.34-nightly.20260823.1166`
-- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
-
-## T3 Pretty changes preserved at conflict boundaries
-
-- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Preserved the mobile draft-image picker flow, including pending preview preparation through beginPendingPreviews and cleanup in the surrounding finally block.
-- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Preserved the fork's dedicated send lifecycle, queue/steer delivery handling, in-flight tracking, and T3 Pretty Live Activity branding in handleSend.
-- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Avoided accidentally sending a message when the user invokes the image picker.
-- `apps/mobile/src/lib/threadActivity.test.ts` — Incremental mobile feed derivation continues to reuse unchanged activity groups during streaming updates.
-- `apps/mobile/src/lib/threadActivity.test.ts` — Stable row identity coverage remains for unchanged messages and activities while replacing only the changed streaming message row.
-- `apps/mobile/src/lib/threadActivity.test.ts` — Out-of-order replay updates retain stateless sorting semantics and unaffected row identities.
-- `apps/mobile/src/lib/threadActivity.test.ts` — Equal-timestamp reordering retains stable-sort fallback coverage.
-- `apps/mobile/src/lib/threadActivity.test.ts` — Loaded-message window boundary changes remain verified against stateless feed derivation.
-- `apps/mobile/src/lib/threadActivity.test.ts` — Activity groups remain verified to split correctly when an initially empty streaming message becomes visible.
-- `apps/mobile/src/lib/threadActivity.ts` — T3 Pretty's centralized assembleThreadFeed pipeline remains authoritative instead of restoring the older duplicated sorting and work-log mapping implementation.
-- `apps/mobile/src/lib/threadActivity.ts` — T3 Pretty's buildActivityFeedEntries derivation remains in use, preserving fork activity filtering, Thinking-row behavior, generated headlines, tool handling, and other mobile work-log behavior encoded by that helper.
-- `apps/mobile/src/lib/threadActivity.ts` — The activity cutoff continues to use the oldest actually loaded message, preserving paginated-feed behavior.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Queued-message dispatch and retry state remain available for mobile send-progress and active-work calculations.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Optimistic starting-thread messages, queued messages, and server messages continue to be merged into the feed, with optimistic state cleared when the server message arrives.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Pretty's reusable thread-feed builder and feed-build performance spans remain in place for long-session mobile performance.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Messages continue to support standard queue/steer delivery through TurnDeliveryMode when sent during an active turn.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — The effective draft model selection is used for sending, and runtime mode is remapped only with the known selected provider driver, preserving stored provider-specific modes when the driver is unknown.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Composer content is cleared synchronously after enqueue and fully restored on durable-write failure without dropping attachments added while the write is pending.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Queue failures continue to use Pretty's immediate native Alert presentation rather than regressing its mobile error UX.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Active-work timing continues to account for optimistic sends, queued-head creation, queue dispatch, and the selected environment's connection state.
-- `apps/server/src/server.test.ts` — Retained ProviderSessionDirectory integration and its test-layer override, preserving T3 Pretty's session-scoped provider behavior and associated test coverage.
-- `apps/server/src/ws.ts` — Preserved `ProjectImportFaviconError`, retaining T3 Pretty's managed project-favicon import and error-handling path.
-- `apps/server/src/ws.ts` — Preserved `ProviderSessionDirectory` and its layer acquisition, retaining T3 Pretty's provider-session association used by session-pinned provider assets such as Grok-generated images.
-- `apps/web/src/components/ChatView.tsx` — T3 Pretty's painted appearance hook remains authoritative instead of reverting to the parent's generic theme hook, preserving fork-specific visual and theming behavior.
-- `apps/web/src/components/ChatView.tsx` — The composer continues receiving isInterrupting and isOptimisticWorking state, preserving T3 Pretty's running-agent queue/steer controls and optimistic working UX.
-
-## Parent changes integrated at conflict boundaries
-
-- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Retained the parent behavior that checks onSendMessage's returned message ID and does not arm agent-awareness Live Activity when sending returns null; this is already present in the adjacent handleSend callback.
-- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Retained post-send agent-awareness Live Activity arming for successful sends, composed into the fork's canonical send path rather than duplicated in the image-picker path.
-- `apps/mobile/src/lib/threadActivity.test.ts` — Added the parent regression test ensuring older local feedback command and assistant rows remain before a newer server-returned message.
-- `apps/mobile/src/lib/threadActivity.ts` — Optional localMessages are appended to loaded messages and included in message feed derivation, matching the parent mobile behavior.
-- `apps/mobile/src/lib/threadActivity.ts` — The pagination/activity cutoff remains based on loadedMessages rather than appended local messages, matching the parent implementation.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Added first-party Codex feedback command recognition and upload through threadEnvironment.uploadFeedback.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Added per-thread feedback submission tracking, including local user and assistant feed messages and suppression of interrupted submissions.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Added interrupted-command handling, Cause-based failure extraction, success/failure alerts, and haptic copying of the returned OpenAI feedback thread ID.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Integrated feedback messages into Pretty's existing optimized feed build rather than replacing its optimistic and queued-message pipeline.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Adopted the selectedEnvironmentRuntime supplied by useThreadSelection, avoiding a redundant remote-environment runtime subscription.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Applied feedback provider detection to the effective outbound model selection while retaining upstream's active-session Codex fallback.
-- `apps/server/src/server.test.ts` — Integrated the parent ProviderService import and configurable test-layer override.
-- `apps/server/src/server.test.ts` — Integrated ProviderAdapterRequestError for the parent's provider adapter error-path tests.
-- `apps/server/src/ws.ts` — Integrated `ProviderUploadFeedbackError` for the parent's provider-upload feedback RPC behavior.
-- `apps/server/src/ws.ts` — Integrated the parent's `ProviderService` import and service acquisition without displacing T3 Pretty's provider-session directory.
-- `apps/web/src/components/ChatView.tsx` — Imported the parent's shared writeTextToClipboard helper for the surrounding feedback functionality.
-- `apps/web/src/components/ChatView.tsx` — Integrated the parent's feedback-upload guard so the composer reports "Sending feedback" and prevents conflicting sends while feedback is uploading, while retaining the existing message-loading guard.
-
-## Parent changes intentionally omitted
-
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Report queued-message persistence failures through setPendingConnectionError.. Reason: That presentation conflicts with T3 Pretty's authoritative native mobile Alert behavior and would produce competing error surfaces; draft and attachment restoration is still preserved in full.
-- `apps/mobile/src/state/use-thread-composer-state.ts` — Determine the feedback provider solely from thread.modelSelection.. Reason: T3 Pretty supports draft-level model/provider selection, so using the persisted thread model can intercept a feedback-looking command for the wrong outbound provider. The resolution uses the effective send model and retains upstream's session.providerName fallback.
-
----
-
-# Additional reconciliation with newer T3 Pretty main
-
-- Parent nightly: `v0.0.34-nightly.20260823.1169`
-- Previously integrated parent nightly: `v0.0.34-nightly.20260823.1166`
-- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
-
-## T3 Pretty changes preserved at conflict boundaries
-
-- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Preserved T3 Pretty's thread rename action in the slim-row context menu.
-- `apps/mobile/src/features/threads/threadListV2.test.ts` — Pinned threads remain in the pinned card block when a stale settled override is still present; they land on the settled shelf only after persistence unpins them.
-- `apps/mobile/src/features/threads/threadListV2.test.ts` — Pull-request merges do not automatically settle or unpin T3 Pretty threads, including pinned threads.
-- `apps/mobile/src/features/threads/threadListV2.test.ts` — Inactivity does not silently demote a pinned thread to the settled shelf.
-- `apps/mobile/src/features/threads/threadListV2.test.ts` — Pinned settle transitions retain the fork's card/slim partition and landing behavior, preventing premature shelf departures.
-- `apps/web/src/components/ChatView.tsx` — Preserved the `liveHeadline={liveTurnHeadline}` timeline input that powers T3 Pretty's generated live activity headlines.
-- `apps/web/src/components/Sidebar.tsx` — T3 Pretty’s single-shelf classification remains intact, allowing dock attention to be calculated across all projects before applying the visible project scope.
-- `apps/web/src/components/Sidebar.tsx` — Snoozed threads remain excluded from the inbox/dock count and are placed on the snoozed shelf only once.
-- `apps/web/src/components/Sidebar.tsx` — A snoozed pin retains its pin and pinOrderKey so it returns to its exact pinned position after waking.
-- `apps/web/src/components/Sidebar.tsx` — Outside the snooze interval, pinning continues to override settlement, preventing stale or raced settlement state from hiding a pinned thread.
-- `scripts/build-desktop-artifact.ts` — Preserved the exported resolveCargoTargetDir helper, including support for trimmed CARGO_TARGET_DIR values, repo-relative resolution, and the in-tree resource-monitor target fallback.
-- `scripts/build-desktop-artifact.ts` — Preserved T3 Pretty's release-build compatibility with custom or cached Cargo target directories.
-
-## Parent changes integrated at conflict boundaries
-
-- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Integrated the parent behavior that exposes pin lifecycle and pin-reordering actions for pinned slim rows.
-- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Integrated the parent memo dependencies on pinMenuItem and thread.pinnedAt so slim-row actions update correctly when pin state or ordering capabilities change.
-- `apps/mobile/src/features/threads/threadListV2.test.ts` — Added upstream's pinned merged-thread regression scenario, including verification that the stored pinnedAt value remains intact, adapted to T3 Pretty's no-auto-settle policy.
-- `apps/mobile/src/features/threads/threadListV2.test.ts` — Added upstream's inactive pinned-thread fixture as regression coverage, adapted to assert the fork's pin-first partitioning.
-- `apps/mobile/src/features/threads/threadListV2.test.ts` — Integrated upstream's explicit autoSettleOnMerge: false API coverage and its pinned-card expectations.
-- `apps/web/src/components/ChatView.tsx` — Adopted `activeRunningTurnId` for `MessagesTimeline` instead of deriving the running turn ID directly from `activeThread.session`, preserving the parent's refactor and any centralized running-turn semantics.
-- `apps/web/src/components/Sidebar.tsx` — Integrated the parent clarification that snooze outranks both settlement and pinning until the thread wakes.
-- `apps/web/src/components/Sidebar.tsx` — Adapted the parent snoozed-row handling to assign the fork’s `snoozed` shelf rather than directly mutating the scoped list, preserving the parent-visible behavior within Pretty’s partition architecture.
-- `scripts/build-desktop-artifact.ts` — Exported stageResourceMonitor as introduced by the parent nightly, while retaining the fork's target-directory helper used by its implementation.
-
-## Parent changes intentionally omitted
-
-- `apps/mobile/src/features/threads/threadListV2.test.ts` — Treat a thread with both pinnedAt and settled state as unpinned and place it on the settled shelf immediately.. Reason: This conflicts with T3 Pretty's pinned-settle landing contract: the pin wins until persistence clears pinnedAt, avoiding a premature shelf transition.
-- `apps/mobile/src/features/threads/threadListV2.test.ts` — Automatically move a pinned thread to the settled shelf when its pull request merges under the default list policy.. Reason: T3 Pretty explicitly stopped auto-settling threads on pull-request merge; retaining the pin and active card is authoritative fork behavior.
-- `apps/mobile/src/features/threads/threadListV2.test.ts` — Automatically move an inactive pinned thread to the settled shelf while its persisted pinnedAt remains set.. Reason: T3 Pretty gives persisted pins precedence and requires an actual unpin before a pinned thread departs for the settled shelf.
-- `apps/web/src/components/Sidebar.tsx` — THEIRS removes the pre-settlement pinned-thread branch, which would make settlement take precedence when a thread is simultaneously pinned and settled.. Reason: That precedence conflicts with T3 Pretty’s documented lifecycle safeguard: pins must remain visible and must not auto-settle out of sight. Simultaneous state is expected only from stale or raced writes, so retaining pin-before-settlement prevents a fork behavior regression while omitting only the incompatible precedence change.
+- `.github/workflows/desktop-macos-preview-publish.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/release-desktop.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned

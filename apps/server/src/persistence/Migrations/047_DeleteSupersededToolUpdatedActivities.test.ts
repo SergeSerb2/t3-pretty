@@ -5,7 +5,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
 import { cleanupSupersededToolUpdates } from "./047_DeleteSupersededToolUpdatedActivities.ts";
-import * as NodeSqliteClient from "../NodeSqliteClient.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
 
@@ -13,7 +13,7 @@ layer("047_DeleteSupersededToolUpdatedActivities", (it) => {
   it.effect("deletes only superseded tool.updated rows with their events and receipts", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 46 });
+      yield* runMigrations({ toMigrationInclusive: 56 });
       // Rows: `upd-1` (superseded by `done-1`), `upd-late` (same group but
       // after the completion), `upd-other` (group with no completion),
       // `upd-turn2` (same group key in another turn), `done-1`.
@@ -55,7 +55,7 @@ layer("047_DeleteSupersededToolUpdatedActivities", (it) => {
           ('cmd-upd-turn2', 'thread', 'thread-1', '2026-01-01T00:00:00.000Z', 5, 'accepted')
       `;
 
-      yield* runMigrations({ toMigrationInclusive: 47 });
+      yield* runMigrations({ toMigrationInclusive: 57 });
       const deleted = yield* cleanupSupersededToolUpdates();
       assert.deepStrictEqual(deleted, { deletedEvents: 1, deletedActivities: 1 });
       // Idempotent: a second pass finds nothing.

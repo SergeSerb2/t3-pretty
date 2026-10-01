@@ -17,7 +17,7 @@ import {
   OrchestrationSearchThreadsResult,
   type OrchestrationSearchThreadsInput,
 } from "@t3tools/contracts";
-import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -474,7 +474,7 @@ const makeThreadSearch = Effect.gen(function* () {
             // Indexed user text is already marker-stripped; strip again so a
             // non-trailing hidden block can never leak into a snippet.
             const visibleText =
-              doc.role === "user" ? stripCreatePullRequestSuffix(detail.text) : detail.text;
+              doc.role === "user" ? stripHiddenInstructionSuffixes(detail.text) : detail.text;
             return {
               threadId: doc.threadId,
               projectId: detail.projectId,
