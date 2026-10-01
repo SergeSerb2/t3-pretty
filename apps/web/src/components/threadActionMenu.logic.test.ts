@@ -11,12 +11,15 @@ const baseState: ThreadActionMenuState = {
   autoSettleEnabled: true,
   isSnoozed: false,
   canSnoozeNow: true,
+  isStored: false,
+  canStoreNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
   supports: {
     settlement: true,
     autoSettleOptOut: true,
     snooze: true,
+    storage: false,
     pinning: true,
     titleRegeneration: true,
     projectTransfer: false,
@@ -81,6 +84,7 @@ describe("buildThreadActionMenuItems", () => {
           settlement: false,
           autoSettleOptOut: false,
           snooze: false,
+          storage: false,
           pinning: false,
           titleRegeneration: false,
           projectTransfer: false,
@@ -217,6 +221,30 @@ describe("buildThreadActionMenuItems", () => {
     expect(snooze?.children?.map((child) => child.id)).toEqual(["snooze:hour", "snooze:custom"]);
   });
 
+  it("offers Store on both surfaces after the other lifecycle items", () => {
+    const storage = { ...baseState.supports, storage: true };
+    expect(visibleIds({ ...baseState, supports: storage }).slice(0, 2)).toEqual(["pin", "store"]);
+    expect(visibleIds({ ...baseState, surface: "header", supports: storage }).slice(0, 4)).toEqual([
+      "pin",
+      "settle",
+      "snooze",
+      "store",
+    ]);
+    expect(visibleIds({ ...baseState, supports: storage, isStored: true })).toEqual(
+      expect.arrayContaining(["unstore"]),
+    );
+    expect(visibleIds({ ...baseState, supports: storage, isStored: true })).not.toContain("store");
+  });
+
+  it("disables Store when the thread is blocked on the user", () => {
+    const store = buildThreadActionMenuItems({
+      ...baseState,
+      supports: { ...baseState.supports, storage: true },
+      canStoreNow: false,
+    }).find((item) => item.id === "store");
+    expect(store?.disabled).toBe(true);
+  });
+
   it("disables title regeneration while one is in flight", () => {
     const item = buildThreadActionMenuItems({ ...baseState, isRegeneratingTitle: true }).find(
       (candidate) => candidate.id === "regenerate-title",
@@ -269,6 +297,7 @@ describe("buildThreadActionMenuItems", () => {
           settlement: false,
           autoSettleOptOut: false,
           snooze: false,
+          storage: false,
           pinning: false,
           titleRegeneration: false,
           projectTransfer: false,

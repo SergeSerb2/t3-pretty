@@ -18,7 +18,9 @@ import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import {
   canSnooze,
+  canStore,
   effectiveSnoozed,
+  effectiveStored,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
 import {
@@ -58,6 +60,7 @@ import {
   EyeIcon,
   GitBranchIcon,
   MessageCircleQuestionIcon,
+  PackageOpenIcon,
   PinIcon,
   PinOffIcon,
   PlusIcon,
@@ -195,6 +198,7 @@ import {
   sidebarMarkerId,
   sortLogicalProjectsForSidebar,
   sortPinnedThreadsForSidebar,
+  sortStoredThreadsForSidebar,
   sortThreadsForSidebar,
   useRetainedValue,
   useSidebarRowSubscriptionLease,
@@ -274,6 +278,7 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 // Fresh keys deliberately reset both shelves to collapsed for existing users.
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
+const STORED_SHELF_EXPANDED_KEY = "t3code:sidebar:stored-expanded";
 
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
@@ -367,6 +372,22 @@ const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, ProviderInstanceEntry> = new M
 // Collapsed shelves share one empty list so a route change alone does not
 // give the sidebar list a new identity.
 const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
+
+/** A collapsed shelf renders nothing except the open thread: a thread reached
+    by route (deep link, search, opened before it was parked elsewhere) keeps
+    its row, highlight, and way back. */
+function visibleShelfThreads(
+  threads: readonly EnvironmentThreadShell[],
+  expanded: boolean,
+  routeThreadKey: string | null,
+): readonly EnvironmentThreadShell[] {
+  if (expanded) return threads;
+  if (routeThreadKey === null) return EMPTY_THREADS;
+  const routeThread = threads.find(
+    (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
+  );
+  return routeThread === undefined ? EMPTY_THREADS : [routeThread];
+}
 
 function terminalProcessLabel(count: number): string {
   return `${count} terminal ${count === 1 ? "process" : "processes"} running`;
@@ -715,7 +736,7 @@ function SidebarDragBoundary(props: {
 
 // Shelf headers stay visible and keep their measured height while dragging.
 function SidebarSectionHeader(props: {
-  marker: "snoozed-header" | "settled-header";
+  marker: "snoozed-header" | "stored-header" | "settled-header";
   label: string;
   className?: string;
   // While dragging, the settled header reads at full strength and takes the
@@ -762,7 +783,7 @@ function SidebarSectionHeader(props: {
         type="button"
         onClick={props.toggle.onToggle}
         aria-expanded={props.toggle.expanded}
-        data-testid={`sidebar-${snoozed ? "snoozed" : "settled"}-shelf-toggle`}
+        data-testid={`sidebar-${props.marker.replace("-header", "")}-shelf-toggle`}
         className={cn(className, "cursor-pointer")}
       >
         {content}
@@ -1046,6 +1067,12 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
       Wake
     </>
   ),
+  unstore: (
+    <>
+      <PackageOpenIcon aria-hidden className="size-3" />
+      Unstore
+    </>
+  ),
 };
 
 const SidebarThreadRow = memo(function SidebarThreadRow(props: {
@@ -1053,7 +1080,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   variant: "card" | "slim";
   // Slim rows are either settled (action: un-settle) or merely quiet
   // (seen Ready threads — action: settle).
-  variantAction: "settle" | "unsettle" | "unsnooze";
+  variantAction: "settle" | "unsettle" | "unsnooze" | "unstore";
   // False on environments whose server predates thread.settle/unsettle:
   // the lifecycle affordances hide entirely rather than fail on click.
   settlementSupported: boolean;
@@ -1100,6 +1127,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   onUnsettle: (threadRef: ScopedThreadRef) => void;
   onSnooze: (threadRef: ScopedThreadRef, preset: Pick<SnoozePreset, "snoozedUntil">) => void;
   onUnsnooze: (threadRef: ScopedThreadRef) => void;
+  onUnstore: (threadRef: ScopedThreadRef) => void;
   onUnpin: (threadRef: ScopedThreadRef) => void;
   onAcknowledgeWoke: (threadRef: ScopedThreadRef, visitedAt: string) => void;
   /**
@@ -1130,6 +1158,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     onThreadClick,
     onUnsettle,
     onUnsnooze,
+    onUnstore,
     onUnpin,
     openPullRequestsInRightPanel,
     renamingTitle,
@@ -1394,6 +1423,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       onUnsnooze(threadRef);
     },
     [onUnsnooze, threadRef],
+  );
+  const handleUnstoreClick = useCallback(
+    (event: ReactMouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onUnstore(threadRef);
+    },
+    [onUnstore, threadRef],
   );
   const handleUnpinClick = useCallback(
     (event: ReactMouseEvent) => {
@@ -1812,6 +1849,26 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       <AlarmClockOffIcon className="mb-px size-3" />
                     </button>
                   )
+                ) : variantAction === "unstore" ? (
+                  // Only threads on storage-capable servers reach this shelf.
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          aria-label="Unstore thread"
+                          onClick={handleUnstoreClick}
+                          className={cn(
+                            "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
+                            isWoke && "group-hover/sidebar-row:static",
+                          )}
+                        />
+                      }
+                    >
+                      <PackageOpenIcon className="mb-px size-3.5" />
+                    </TooltipTrigger>
+                    <TooltipPopup side="top">Unstore thread</TooltipPopup>
+                  </Tooltip>
                 ) : !props.settlementSupported ? null : variantAction === "unsettle" ? (
                   <Tooltip>
                     <TooltipTrigger
@@ -2285,6 +2342,8 @@ export default function Sidebar() {
     unsettleThread,
     snoozeThread,
     unsnoozeThread,
+    storeThread,
+    unstoreThread,
     pinThread,
     unpinThread,
     confirmAndUnpinThread,
@@ -2595,6 +2654,7 @@ export default function Sidebar() {
     readonly section: "pinned" | "active" | "settled";
     readonly occurredAt: string;
     readonly clearsSnooze: boolean;
+    readonly clearsStore: boolean;
     /** Full destination order for pinned and active drops. */
     readonly order: readonly string[] | null;
     /** Destination order keys before the drop, to recognize concurrent writes. */
@@ -2609,6 +2669,7 @@ export default function Sidebar() {
     activeReorderableThreadKeys,
     activeThreads,
     snoozedThreads,
+    storedThreads,
     settledThreads,
     snoozeNow,
   } = useMemo(() => {
@@ -2627,6 +2688,7 @@ export default function Sidebar() {
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
     const snoozed: EnvironmentThreadShell[] = [];
+    const stored: EnvironmentThreadShell[] = [];
     const settled: EnvironmentThreadShell[] = [];
     const draggable = new Set<string>();
     const activeReorderable = new Set<string>();
@@ -2638,6 +2700,7 @@ export default function Sidebar() {
       // strand rows in a tail with no working affordances.
       const supportsSettlement = capabilities?.threadSettlement === true;
       const supportsSnooze = capabilities?.threadSnooze === true;
+      const supportsStorage = capabilities?.threadStorage === true;
       const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
       if (capabilities?.threadActiveReorder === true) activeReorderable.add(threadKey);
       // Older servers retain their existing drag actions. Active placement
@@ -2657,11 +2720,17 @@ export default function Sidebar() {
           : optimisticDrop.section === "settled"
             ? settled
             : active
-        ).push(
-          optimisticDrop.clearsSnooze
-            ? projected
-            : { ...projected, snoozedAt: thread.snoozedAt, snoozedUntil: thread.snoozedUntil },
-        );
+        ).push({
+          ...projected,
+          ...(optimisticDrop.clearsSnooze
+            ? {}
+            : { snoozedAt: thread.snoozedAt, snoozedUntil: thread.snoozedUntil }),
+          ...(optimisticDrop.clearsStore ? { storedAt: null } : {}),
+        });
+      } else if (supportsStorage && effectiveStored(thread, { now: preciseNow })) {
+        // Stored threads stay on their shelf except while working or waiting
+        // on the user; those surface in Active and return when the turn ends.
+        stored.push(thread);
       } else if (supportsSnooze && effectiveSnoozed(thread, { now: preciseNow })) {
         // Snooze outranks settlement and pinning until the thread wakes.
         snoozed.push(thread);
@@ -2705,6 +2774,7 @@ export default function Sidebar() {
           firstValidTimestampMs(left.snoozedUntil ?? null) -
           firstValidTimestampMs(right.snoozedUntil ?? null),
       ),
+      storedThreads: sortStoredThreadsForSidebar(stored),
       settledThreads: sortSettledThreads(settled),
       snoozeNow: preciseNow,
     };
@@ -2715,8 +2785,14 @@ export default function Sidebar() {
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const searchableThreads = useMemo(
-    () => [...pinnedThreads, ...activeThreads, ...snoozedThreads, ...settledThreads],
-    [activeThreads, pinnedThreads, settledThreads, snoozedThreads],
+    () => [
+      ...pinnedThreads,
+      ...activeThreads,
+      ...snoozedThreads,
+      ...storedThreads,
+      ...settledThreads,
+    ],
+    [activeThreads, pinnedThreads, settledThreads, snoozedThreads, storedThreads],
   );
   const searchEnvironmentIds = useMemo(
     () =>
@@ -2816,15 +2892,10 @@ export default function Sidebar() {
     () => setSettledShelfExpanded((value) => !value),
     [setSettledShelfExpanded],
   );
-  const renderedSettledThreads = useMemo(() => {
-    if (settledShelfExpanded) return visibleSettledThreads;
-    if (routeThreadKey === null) return EMPTY_THREADS;
-    const routeThread = visibleSettledThreads.find(
-      (thread) =>
-        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
-    );
-    return routeThread === undefined ? EMPTY_THREADS : [routeThread];
-  }, [routeThreadKey, settledShelfExpanded, visibleSettledThreads]);
+  const renderedSettledThreads = useMemo(
+    () => visibleShelfThreads(visibleSettledThreads, settledShelfExpanded, routeThreadKey),
+    [routeThreadKey, settledShelfExpanded, visibleSettledThreads],
+  );
 
   // The snoozed shelf is collapsed by default: out of the way, never gone.
   // Collapsed threads don't render (and so don't participate in jump
@@ -2838,23 +2909,40 @@ export default function Sidebar() {
     () => setSnoozedShelfExpanded((value) => !value),
     [setSnoozedShelfExpanded],
   );
-  const visibleSnoozedThreads = useMemo(() => {
-    if (snoozedShelfExpanded) return snoozedThreads;
-    // The open thread must never vanish behind the collapsed shelf: a
-    // snoozed thread reached by route (deep link, open before snoozing
-    // elsewhere) keeps its row — with highlight and wake affordance — same
-    // exception the settled tail's "Show more" makes.
-    if (routeThreadKey === null) return EMPTY_THREADS;
-    const routeThread = snoozedThreads.find(
-      (thread) =>
-        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
-    );
-    return routeThread === undefined ? EMPTY_THREADS : [routeThread];
-  }, [routeThreadKey, snoozedShelfExpanded, snoozedThreads]);
+  const visibleSnoozedThreads = useMemo(
+    () => visibleShelfThreads(snoozedThreads, snoozedShelfExpanded, routeThreadKey),
+    [routeThreadKey, snoozedShelfExpanded, snoozedThreads],
+  );
+  // The stored shelf follows the snoozed shelf's collapse model.
+  const [storedShelfExpanded, setStoredShelfExpanded] = useLocalStorage(
+    STORED_SHELF_EXPANDED_KEY,
+    false,
+    Schema.Boolean,
+  );
+  const toggleStoredShelf = useCallback(
+    () => setStoredShelfExpanded((value) => !value),
+    [setStoredShelfExpanded],
+  );
+  const visibleStoredThreads = useMemo(
+    () => visibleShelfThreads(storedThreads, storedShelfExpanded, routeThreadKey),
+    [routeThreadKey, storedShelfExpanded, storedThreads],
+  );
 
   const orderedThreads = useMemo(
-    () => [...pinnedThreads, ...activeThreads, ...visibleSnoozedThreads, ...renderedSettledThreads],
-    [pinnedThreads, activeThreads, visibleSnoozedThreads, renderedSettledThreads],
+    () => [
+      ...pinnedThreads,
+      ...activeThreads,
+      ...visibleSnoozedThreads,
+      ...visibleStoredThreads,
+      ...renderedSettledThreads,
+    ],
+    [
+      pinnedThreads,
+      activeThreads,
+      visibleSnoozedThreads,
+      visibleStoredThreads,
+      renderedSettledThreads,
+    ],
   );
   const orderedThreadKeys = useMemo(
     () =>
@@ -2910,6 +2998,17 @@ export default function Sidebar() {
   );
   const snoozedThreadKeysRef = useRef(snoozedThreadKeys);
   snoozedThreadKeysRef.current = snoozedThreadKeys;
+  const storedThreadKeys = useMemo(
+    () =>
+      new Set(
+        storedThreads.map((thread) =>
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        ),
+      ),
+    [storedThreads],
+  );
+  const storedThreadKeysRef = useRef(storedThreadKeys);
+  storedThreadKeysRef.current = storedThreadKeys;
 
   const jumpLabelByKey = useMemo(() => {
     const mapping = new Map<string, string>();
@@ -3113,8 +3212,8 @@ export default function Sidebar() {
   // A settle per thread at a time: double clicks and repeated menu picks
   // must not dispatch a second settle that fails and toasts a false error.
   const settlingThreadKeysRef = useRef(new Set<string>());
-  // Parking the thread you're looking at (settle or snooze) moves you
-  // forward: the next remaining card (never a settled or snoozed row, never
+  // Parking the thread you're looking at (settle, snooze, or store) moves you
+  // forward: the next remaining card (never a parked row, never
   // one leaving in the same batch), or a fresh draft in this project when it
   // was the last active one. Callers snapshot the plan BEFORE the command
   // mutates the partition; background parks never navigate (null plan).
@@ -3125,12 +3224,17 @@ export default function Sidebar() {
       const orderedKeys = orderedThreadKeysRef.current;
       const settledKeys = settledThreadKeysRef.current;
       const snoozedKeys = snoozedThreadKeysRef.current;
+      const storedKeys = storedThreadKeysRef.current;
       const currentIndex = orderedKeys.indexOf(threadKey);
       const nextCardKey =
         currentIndex === -1
           ? null
           : ([...orderedKeys.slice(currentIndex + 1), ...orderedKeys.slice(0, currentIndex)].find(
-              (key) => !settledKeys.has(key) && !snoozedKeys.has(key) && !coParkingKeys?.has(key),
+              (key) =>
+                !settledKeys.has(key) &&
+                !snoozedKeys.has(key) &&
+                !storedKeys.has(key) &&
+                !coParkingKeys?.has(key),
             ) ?? null);
       const nextThread = nextCardKey ? threadByKeyRef.current.get(nextCardKey) : null;
       return nextThread
@@ -3222,6 +3326,68 @@ export default function Sidebar() {
     },
     [unsnoozeThread],
   );
+  // One store per thread at a time — same double-dispatch guard as settle.
+  const storingThreadKeysRef = useRef(new Set<string>());
+  const attemptStore = useCallback(
+    (threadRef: ScopedThreadRef, opts: { coStoringKeys?: ReadonlySet<string> } = {}) => {
+      void (async () => {
+        const threadKey = scopedThreadKey(threadRef);
+        if (storingThreadKeysRef.current.has(threadKey)) return;
+        storingThreadKeysRef.current.add(threadKey);
+        try {
+          const navigateAfterStore = planForwardNavigation(threadKey, opts.coStoringKeys);
+          const result = await storeThread(threadRef, {
+            undoToast: opts.coStoringKeys === undefined,
+          });
+          if (result._tag === "Failure") {
+            if (!isAtomCommandInterrupted(result)) {
+              const error = squashAtomCommandFailure(result);
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Failed to store thread",
+                  description: error instanceof Error ? error.message : "An error occurred.",
+                }),
+              );
+            }
+            return;
+          }
+          if (
+            shouldNavigateAfterThreadPark({
+              threadKey,
+              currentThreadKey: routeThreadKeyRef.current,
+              action: "store",
+              now: new Date().toISOString(),
+              thread: readThreadShell(threadRef),
+            })
+          ) {
+            navigateAfterStore?.();
+          }
+        } finally {
+          storingThreadKeysRef.current.delete(threadKey);
+        }
+      })();
+    },
+    [planForwardNavigation, storeThread],
+  );
+  const attemptUnstore = useCallback(
+    (threadRef: ScopedThreadRef) => {
+      void (async () => {
+        const result = await unstoreThread(threadRef);
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to unstore thread",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        }
+      })();
+    },
+    [unstoreThread],
+  );
   const threadListRef = useRef<HTMLUListElement | null>(null);
   const dragLabelOffsetRef = useRef(0);
   const restrictBelowPins = useCallback<Modifier>(
@@ -3278,9 +3444,10 @@ export default function Sidebar() {
     add(pinnedThreads, "pinned");
     add(activeThreads, "active");
     add(snoozedThreads, "snoozed");
+    add(storedThreads, "stored");
     add(settledThreads, "settled");
     return map;
-  }, [activeThreads, pinnedThreads, settledThreads, snoozedThreads]);
+  }, [activeThreads, pinnedThreads, settledThreads, snoozedThreads, storedThreads]);
   const pinnedKeys = useMemo(
     () =>
       pinnedThreads.map((thread) =>
@@ -3308,13 +3475,16 @@ export default function Sidebar() {
       setOptimisticDrop(null);
       return;
     }
-    const canonicalSection = effectiveSnoozed(thread, { now: new Date().toISOString() })
-      ? "snoozed"
-      : thread.settledOverride === "settled"
-        ? "settled"
-        : thread.pinnedAt != null
-          ? "pinned"
-          : "active";
+    const canonicalNow = new Date().toISOString();
+    const canonicalSection = effectiveStored(thread, { now: canonicalNow })
+      ? "stored"
+      : effectiveSnoozed(thread, { now: canonicalNow })
+        ? "snoozed"
+        : thread.settledOverride === "settled"
+          ? "settled"
+          : thread.pinnedAt != null
+            ? "pinned"
+            : "active";
     if (
       canonicalSection !== optimisticDrop.sourceSection &&
       canonicalSection !== optimisticDrop.section
@@ -3323,12 +3493,13 @@ export default function Sidebar() {
       return;
     }
     if (optimisticDrop.order === null) {
-      // Settle also emits unpin/unsnooze events. Wait for the entire move
-      // before releasing the projected fields and sort timestamps.
+      // Settle also emits unpin/unsnooze/unstore events. Wait for the entire
+      // move before releasing the projected fields and sort timestamps.
       if (
         canonicalSection === optimisticDrop.section &&
         thread.pinnedAt == null &&
-        (!optimisticDrop.clearsSnooze || thread.snoozedUntil == null)
+        (!optimisticDrop.clearsSnooze || thread.snoozedUntil == null) &&
+        (!optimisticDrop.clearsStore || thread.storedAt == null)
       ) {
         setOptimisticDrop(null);
       }
@@ -3336,6 +3507,7 @@ export default function Sidebar() {
     }
     if (canonicalSection !== optimisticDrop.section) return;
     if (optimisticDrop.clearsSnooze && thread.snoozedUntil != null) return;
+    if (optimisticDrop.clearsStore && thread.storedAt != null) return;
     const destinationKeys = optimisticDrop.section === "pinned" ? pinnedKeys : activeKeys;
     const canonicalDestination = destinationKeys.flatMap((key) => {
       const canonical = canonicalByKey.get(key);
@@ -3449,6 +3621,7 @@ export default function Sidebar() {
       pinnedThreads.length +
         activeThreads.length +
         snoozedThreads.length +
+        storedThreads.length +
         settledThreads.length ===
       0
     ) {
@@ -3489,6 +3662,10 @@ export default function Sidebar() {
       items.push({ kind: "marker", marker: "snoozed-header" });
       items.push(...rows(visibleSnoozedThreads, "snoozed"));
     }
+    if (storedThreads.length > 0) {
+      items.push({ kind: "marker", marker: "stored-header" });
+      items.push(...rows(visibleStoredThreads, "stored"));
+    }
     items.push({ kind: "marker", marker: "settled-header" });
     items.push({ kind: "marker", marker: "settled-placeholder" });
     items.push(...rows(renderedSettledThreads, "settled"));
@@ -3502,7 +3679,9 @@ export default function Sidebar() {
     routeThreadKey,
     settledThreads.length,
     snoozedThreads.length,
+    storedThreads.length,
     visibleSnoozedThreads,
+    visibleStoredThreads,
   ]);
   // Strongest waiting-on-you / finished-PR status per project, plus a count
   // for the rail number badge.
@@ -3617,6 +3796,7 @@ export default function Sidebar() {
         settledVisibleCount,
         routeThreadKey,
         snoozedThreadCount: snoozedThreads.length,
+        storedThreadCount: storedThreads.length,
       }),
     [
       draggedSettledOrder,
@@ -3625,6 +3805,7 @@ export default function Sidebar() {
       settledVisibleCount,
       sidebarListItems,
       snoozedThreads.length,
+      storedThreads.length,
     ],
   );
   // Hidden and filtered threads keep their keys. Reserve those slots without
@@ -3743,6 +3924,11 @@ export default function Sidebar() {
           plan.kind === "pin" ||
           plan.kind === "settle" ||
           (plan.kind === "move-active" && plan.unsnooze),
+        // Pin and settle un-store server-side; Active drops say so explicitly.
+        clearsStore:
+          plan.kind === "pin" ||
+          plan.kind === "settle" ||
+          (plan.kind === "move-active" && plan.unstore),
         order: plan.kind === "settle" ? null : plan.order,
         keysAtDrop: target.section === "active" ? activeKeysById : pinnedKeysById,
         assignedKeys: new Map(assignments.map(({ id, orderKey }) => [id, orderKey])),
@@ -3800,6 +3986,8 @@ export default function Sidebar() {
               return;
             if (plan.unsnooze && !(await run(unsnoozeThread(threadRef), "Failed to wake thread")))
               return;
+            if (plan.unstore && !(await run(unstoreThread(threadRef), "Failed to unstore thread")))
+              return;
             break;
           case "pin":
             if (
@@ -3855,6 +4043,7 @@ export default function Sidebar() {
       unpinThread,
       unsettleThread,
       unsnoozeThread,
+      unstoreThread,
     ],
   );
   // One snooze per thread at a time — same double-dispatch guard as settle.
@@ -3952,6 +4141,13 @@ export default function Sidebar() {
           serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true &&
           canSnooze(thread, { now: selectionNow.toISOString() }),
       );
+      // Store (N) follows the same all-or-nothing rule. Rows already stored
+      // are skipped like settled rows under Settle (N).
+      const canStoreSelection = selectedThreads.every(
+        (thread) =>
+          serverConfigs.get(thread.environmentId)?.environment.capabilities.threadStorage ===
+            true && canStore(thread, { now: selectionNow.toISOString() }),
+      );
       const titleRegenerationThreads = selectedThreads.filter(
         (thread) =>
           serverConfigs.get(thread.environmentId)?.environment.capabilities
@@ -3996,6 +4192,7 @@ export default function Sidebar() {
                   },
                 ]
               : []),
+            ...(canStoreSelection ? [{ id: "store", label: `Store (${count})` }] : []),
             ...(titleRegenerationMenuItem ? [titleRegenerationMenuItem] : []),
             { id: "mark-unread", label: `Mark unread (${count})` },
             { id: "delete", label: `Delete (${count})`, destructive: true },
@@ -4090,6 +4287,17 @@ export default function Sidebar() {
         clearSelection();
         return;
       }
+      if (clicked.value === "store") {
+        // Same batch contract as Settle (N): siblings leave together, so
+        // post-store navigation skips them.
+        const coStoringKeys = new Set(threadKeys);
+        for (const thread of selectedThreads) {
+          if (thread.storedAt != null) continue;
+          attemptStore(scopeThreadRef(thread.environmentId, thread.id), { coStoringKeys });
+        }
+        clearSelection();
+        return;
+      }
       if (clicked.value === "mark-unread") {
         for (const threadKey of threadKeys) {
           const thread = threadByKeyRef.current.get(threadKey);
@@ -4140,6 +4348,7 @@ export default function Sidebar() {
     },
     [
       attemptSettle,
+      attemptStore,
       attemptUnpin,
       clearSelection,
       confirmThreadDelete,
@@ -4180,6 +4389,8 @@ export default function Sidebar() {
           serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true;
         const supportsPinning =
           serverConfigs.get(thread.environmentId)?.environment.capabilities.threadPinning === true;
+        const supportsStorage =
+          serverConfigs.get(thread.environmentId)?.environment.capabilities.threadStorage === true;
         const supportsTitleRegeneration =
           serverConfigs.get(thread.environmentId)?.environment.capabilities
             .threadTitleRegeneration === true;
@@ -4216,6 +4427,8 @@ export default function Sidebar() {
               autoSettleEnabled: thread.autoSettleDisabledAt == null,
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
+              isStored: thread.storedAt != null,
+              canStoreNow: canStore(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
               isRunning:
                 thread.session?.status === "running" && thread.session.activeTurnId != null,
@@ -4223,6 +4436,7 @@ export default function Sidebar() {
                 settlement: supportsSettlement,
                 autoSettleOptOut: supportsAutoSettleOptOut,
                 snooze: supportsSnooze,
+                storage: supportsStorage,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
                 projectTransfer: false,
@@ -4287,6 +4501,12 @@ export default function Sidebar() {
             return;
           case "unsnooze":
             attemptUnsnooze(threadRef);
+            return;
+          case "store":
+            attemptStore(threadRef);
+            return;
+          case "unstore":
+            attemptUnstore(threadRef);
             return;
           case "pin":
             attemptPin(threadRef);
@@ -4422,9 +4642,11 @@ export default function Sidebar() {
       attemptPin,
       attemptSettle,
       attemptSnooze,
+      attemptStore,
       attemptUnpin,
       attemptUnsettle,
       attemptUnsnooze,
+      attemptUnstore,
       confirmThreadArchive,
       confirmThreadDelete,
       copyBranchToClipboard,
@@ -4946,7 +5168,7 @@ export default function Sidebar() {
                             const threadKey = scopedThreadKey(
                               scopeThreadRef(thread.environmentId, thread.id),
                             );
-                            // Settled and snoozed are the ONLY things that collapse a
+                            // The parked shelves are the ONLY things that collapse a
                             // row: every other thread is a full card. Density comes
                             // from users (or the auto rules) actually parking work,
                             // not from the sidebar second-guessing what still matters.
@@ -4959,13 +5181,16 @@ export default function Sidebar() {
                                 key={`${threadKey}:${rowVariant}`}
                                 thread={thread}
                                 variant={rowVariant}
-                                // Snoozed rows wake, settled rows un-settle, and cards settle.
+                                // Snoozed rows wake, stored rows unstore, settled rows
+                                // un-settle, and cards settle.
                                 variantAction={
                                   section === "snoozed"
                                     ? "unsnooze"
-                                    : section === "settled"
-                                      ? "unsettle"
-                                      : "settle"
+                                    : section === "stored"
+                                      ? "unstore"
+                                      : section === "settled"
+                                        ? "unsettle"
+                                        : "settle"
                                 }
                                 settlementSupported={
                                   serverConfigs.get(thread.environmentId)?.environment.capabilities
@@ -5046,6 +5271,7 @@ export default function Sidebar() {
                                 onUnsettle={attemptUnsettle}
                                 onSnooze={attemptSnooze}
                                 onUnsnooze={attemptUnsnooze}
+                                onUnstore={attemptUnstore}
                                 onUnpin={attemptUnpin}
                                 onAcknowledgeWoke={acknowledgeWoke}
                                 onFileDropThreads={handleThreadFileDrop}
@@ -5176,12 +5402,34 @@ export default function Sidebar() {
                                   />,
                                 );
                                 break;
+                              case "stored-header":
+                                items.push(
+                                  <SidebarSectionHeader
+                                    key="stored-shelf-header"
+                                    marker="stored-header"
+                                    className={cn(snoozedThreads.length === 0 && "mt-auto")}
+                                    label={
+                                      storedShelfExpanded
+                                        ? "Stored"
+                                        : `Stored (${storedThreads.length})`
+                                    }
+                                    toggle={{
+                                      expanded: storedShelfExpanded,
+                                      onToggle: toggleStoredShelf,
+                                    }}
+                                  />,
+                                );
+                                break;
                               case "settled-header":
                                 items.push(
                                   <SidebarSectionHeader
                                     key="settled-shelf-header"
                                     marker="settled-header"
-                                    className={cn(snoozedThreads.length === 0 && "mt-auto")}
+                                    className={cn(
+                                      snoozedThreads.length === 0 &&
+                                        storedThreads.length === 0 &&
+                                        "mt-auto",
+                                    )}
                                     label={
                                       settledShelfExpanded
                                         ? "Settled"

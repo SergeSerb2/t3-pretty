@@ -20,6 +20,7 @@ import {
 } from "@t3tools/client-runtime/state/thread-sort";
 import {
   effectiveSnoozed,
+  effectiveStored,
   type ThreadSnoozeShell,
 } from "@t3tools/client-runtime/state/thread-settled";
 import {
@@ -37,17 +38,22 @@ import { isLatestTurnSettled } from "../session-logic";
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
   readonly currentThreadKey: string | null;
-  readonly action: "settle" | "snooze";
+  readonly action: "settle" | "snooze" | "store";
   readonly now: string;
-  readonly thread: (ThreadSnoozeShell & Pick<SidebarThreadSummary, "settledOverride">) | null;
+  readonly thread:
+    | (ThreadSnoozeShell &
+        Pick<SidebarThreadSummary, "settledOverride" | "storedAt" | "latestUserMessageAt">)
+    | null;
 }): boolean {
-  return (
-    input.threadKey === input.currentThreadKey &&
-    input.thread !== null &&
-    (input.action === "settle"
-      ? input.thread.settledOverride === "settled"
-      : effectiveSnoozed(input.thread, { now: input.now }))
-  );
+  if (input.threadKey !== input.currentThreadKey || input.thread === null) return false;
+  switch (input.action) {
+    case "settle":
+      return input.thread.settledOverride === "settled";
+    case "snooze":
+      return effectiveSnoozed(input.thread, { now: input.now });
+    case "store":
+      return effectiveStored(input.thread, { now: input.now });
+  }
 }
 
 const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
@@ -134,10 +140,11 @@ export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
 // Rows and section markers share one sortable list. The separators resolve
 // the lifecycle action; Sidebar.drag previews the resulting layout. Pinned
 // and active threads keep the dragged position; settled threads use time
-// order. Snoozed rows can leave the shelf, but dropping into it is not
-// supported because snoozing requires a wake time.
+// order. Snoozed and stored rows can leave their shelves, but dropping into
+// them is not supported: snoozing requires a wake time, and storing is a
+// deliberate act that belongs to the menu.
 
-export type SidebarSection = "pinned" | "active" | "snoozed" | "settled";
+export type SidebarSection = "pinned" | "active" | "snoozed" | "stored" | "settled";
 
 /** Sortable ids: thread rows use their scoped key; structural items use a
     colon-free prefix: scoped thread keys always contain a colon. */
@@ -152,7 +159,17 @@ export type SidebarListMarker =
   /** The boundary between pinned and active rows. */
   | "pinned-divider"
   | "snoozed-header"
+  | "stored-header"
   | "settled-header";
+
+/** Headers of the collapsible shelves below the inbox, top to bottom. */
+export const SIDEBAR_SHELF_HEADERS = ["snoozed-header", "stored-header", "settled-header"] as const;
+
+export function isSidebarShelfHeader(
+  marker: SidebarListMarker,
+): marker is (typeof SIDEBAR_SHELF_HEADERS)[number] {
+  return (SIDEBAR_SHELF_HEADERS as readonly string[]).includes(marker);
+}
 
 export function sidebarMarkerId(marker: SidebarListMarker): string {
   return `${SIDEBAR_MARKER_PREFIX}${marker}`;
@@ -179,7 +196,7 @@ export function sidebarListItemId(item: SidebarListItem): string {
 
 /** The section a slot belongs to, read off the markers around it: from
     the top down, everything before the pinned divider is pinned, then the
-    inbox until the snoozed header, the shelf until the settled header,
+    inbox until the snoozed header, then each shelf until the next header,
     then settled. */
 function sectionAtSidebarSlot(items: readonly SidebarListItem[], index: number): SidebarSection {
   let section: SidebarSection = "pinned";
@@ -188,13 +205,14 @@ function sectionAtSidebarSlot(items: readonly SidebarListItem[], index: number):
     if (item.kind !== "marker") continue;
     if (item.marker === "pinned-divider") section = "active";
     else if (item.marker === "snoozed-header") section = "snoozed";
+    else if (item.marker === "stored-header") section = "stored";
     else if (item.marker === "settled-header") section = "settled";
   }
   return section;
 }
 
 /** Resolve the destination section and manual order from an arrayMove across
- * the separators. The snoozed shelf is never a destination. */
+ * the separators. The snoozed and stored shelves are never destinations. */
 export type SidebarDropTarget = {
   readonly section: "pinned" | "active" | "settled";
   readonly pinnedOrder: readonly string[];
@@ -212,14 +230,14 @@ export function resolveSidebarDropTarget(
   const moved = items.filter((_, index) => index !== activeIndex);
   moved.splice(overIndex, 0, items[activeIndex]!);
   const section = sectionAtSidebarSlot(moved, overIndex);
-  if (section === "snoozed") return null;
+  if (section === "snoozed" || section === "stored") return null;
   const pinnedOrder: string[] = [];
   const activeOrder: string[] = [];
   let currentSection: SidebarSection = "pinned";
   for (const item of moved) {
     if (item.kind === "marker") {
       if (item.marker === "pinned-divider") currentSection = "active";
-      else if (item.marker === "snoozed-header" || item.marker === "settled-header") break;
+      else if (isSidebarShelfHeader(item.marker)) break;
     } else if (item.kind === "thread") {
       if (currentSection === "pinned") pinnedOrder.push(item.key);
       else activeOrder.push(item.key);
@@ -252,23 +270,25 @@ export type SidebarThreadDropPlan =
       readonly unpin: boolean;
       readonly unsettle: boolean;
       readonly unsnooze: boolean;
+      readonly unstore: boolean;
     }
   | { readonly kind: "settle" };
 
 /** What dropping in `to` does to a thread lifted from `from`, for the badge
     on the lifted row. Null while reordering inside one section and for the
-    snoozed shelf, which cannot be a drop target. */
-export type SidebarDropVerb = "pin" | "unpin" | "settle" | "unsettle" | "wake";
+    snoozed and stored shelves, which cannot be drop targets. */
+export type SidebarDropVerb = "pin" | "unpin" | "settle" | "unsettle" | "wake" | "unstore";
 
 export function resolveSidebarDropVerb(
   from: SidebarSection,
   to: SidebarSection | null,
 ): SidebarDropVerb | null {
-  if (to === null || to === from || to === "snoozed") return null;
+  if (to === null || to === from || to === "snoozed" || to === "stored") return null;
   if (to === "pinned") return "pin";
   if (to === "settled") return "settle";
   if (from === "pinned") return "unpin";
   if (from === "settled") return "unsettle";
+  if (from === "stored") return "unstore";
   return "wake";
 }
 
@@ -329,6 +349,8 @@ export function planSidebarThreadDrop(input: {
         unpin: activePinned,
         unsettle: activeSettled,
         unsnooze: activeSection === "snoozed",
+        // Pin and settle un-store server-side; Active needs the explicit write.
+        unstore: activeSection === "stored",
       };
     }
     case "settled":
@@ -1104,7 +1126,7 @@ const EMPTY_CONTENT_MATCH_KEYS: ReadonlySet<string> = new Set<string>();
  * Search the already-ordered sidebar thread collection by title or linked PR,
  * plus any thread whose messages the server matched (`contentMatchKeys`, keyed
  * by `threadSearchMatchKey`). Keeping the input order means lifecycle ordering
- * (active, snoozed, settled) remains stable while the user narrows the list.
+ * (active, snoozed, stored, settled) remains stable while the user narrows the list.
  */
 export function searchSidebarThreads<
   T extends {
@@ -1137,6 +1159,18 @@ export function searchSidebarThreads<
     }
   }
   return [...titleMatches, ...contentMatches];
+}
+
+// Stored rows order by when they were shelved, newest first: the order stays
+// put while a stored thread works, so the shelf never reshuffles under you.
+export function sortStoredThreadsForSidebar<
+  T extends { readonly id: string; readonly storedAt?: string | null | undefined },
+>(threads: readonly T[]): T[] {
+  return [...threads].toSorted(
+    (left, right) =>
+      firstValidTimestampMs(right.storedAt) - firstValidTimestampMs(left.storedAt) ||
+      left.id.localeCompare(right.id),
+  );
 }
 
 // Settled rows are history, so they order by when the work ENDED, not when

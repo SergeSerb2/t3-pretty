@@ -586,6 +586,29 @@ describe("sidebar drag projection", () => {
     expect(result.get("s")?.y).toBe(13);
   });
 
+  it("removes the stored header with its last row, but not while hidden rows remain", () => {
+    const items = [
+      pinnedHeader,
+      divider,
+      thread("a", "active"),
+      marker("snoozed-header"),
+      thread("z", "snoozed"),
+      marker("stored-header"),
+      thread("k", "stored"),
+      settledHeader,
+      thread("s", "settled"),
+    ];
+    const last = preview({ items, settledOrder: [], settledExpanded: true }, "k", "a");
+    expect(last.get(sidebarMarkerId("stored-header"))?.scaleY).toBe(0);
+    expect(last.get(sidebarMarkerId("snoozed-header"))?.scaleY).toBe(1);
+    const collapsed = preview(
+      { items, settledOrder: [], settledExpanded: true, storedThreadCount: 2 },
+      "k",
+      "a",
+    );
+    expect(collapsed.get(sidebarMarkerId("stored-header"))?.scaleY).toBe(1);
+  });
+
   it("keeps a collapsed settled target without inserting a hidden row", () => {
     const items = [
       pinnedHeader,

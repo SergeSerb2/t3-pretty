@@ -5,7 +5,7 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { canSnooze, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
+import { canSnooze, canStore, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import { EnvironmentId, type ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import * as Cause from "effect/Cause";
@@ -35,6 +35,7 @@ import {
   readEnvironmentSupportsActiveReorder,
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
+  readEnvironmentSupportsStorage,
   readEnvironmentThreadRefs,
   readProject,
   readThreadShell,
@@ -95,6 +96,30 @@ export class ThreadSnoozeBlockedError extends Schema.TaggedError<ThreadSnoozeBlo
 ) {
   override get message(): string {
     return "This thread is waiting on you. Respond to the pending request before snoozing it.";
+  }
+}
+
+export class ThreadStorageUnsupportedError extends Schema.TaggedError<ThreadStorageUnsupportedError>()(
+  "ThreadStorageUnsupportedError",
+  {
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+  },
+) {
+  override get message(): string {
+    return "This environment's server does not support storing threads yet. Update the server to use Store.";
+  }
+}
+
+export class ThreadStoreBlockedError extends Schema.TaggedError<ThreadStoreBlockedError>()(
+  "ThreadStoreBlockedError",
+  {
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+  },
+) {
+  override get message(): string {
+    return "This thread is waiting on you. Respond to the pending request before storing it.";
   }
 }
 
@@ -206,6 +231,20 @@ function mirrorLifecycleWriteIfRetargeted(
   return mutate(target);
 }
 
+/** One lifecycle write against the writable ref, mirrored onto the catalog
+    row when the thread was retargeted. */
+async function writeThreadLifecycle<R extends { readonly _tag: string }>(
+  target: ScopedThreadRef,
+  mutate: (ref: ScopedThreadRef) => Promise<R>,
+): Promise<R> {
+  const writable = readWritableThreadRef(target);
+  const result = await mutate(writable);
+  if (result._tag === "Success") {
+    await mirrorLifecycleWriteIfRetargeted(target, writable, mutate);
+  }
+  return result;
+}
+
 export function useThreadActions() {
   const closeTerminal = useAtomCommand(terminalEnvironment.close);
   const archiveThreadMutation = useAtomCommand(threadEnvironment.archive, {
@@ -242,6 +281,12 @@ export function useThreadActions() {
     reportFailure: false,
   });
   const unsnoozeThreadMutation = useAtomCommand(threadEnvironment.unsnooze, {
+    reportFailure: false,
+  });
+  const storeThreadMutation = useAtomCommand(threadEnvironment.store, {
+    reportFailure: false,
+  });
+  const unstoreThreadMutation = useAtomCommand(threadEnvironment.unstore, {
     reportFailure: false,
   });
   const stopThreadSession = useAtomCommand(threadEnvironment.stopSession);
@@ -739,15 +784,18 @@ export function useThreadActions() {
       const wokeAt = resolved
         ? threadWokeAt(resolved.thread, { now: new Date().toISOString() })
         : null;
-      // Settling also drops the pin and the snooze server-side, so Undo
-      // has to put those back as well.
+      // Settling also drops the pin, the snooze, and storage server-side, so
+      // Undo has to put those back as well.
       const pinOrderKey = resolved?.thread.pinnedAt != null ? resolved.thread.pinOrderKey : null;
       const wasPinned = resolved?.thread.pinnedAt != null;
       const snoozedUntil = resolved?.thread.snoozedUntil ?? null;
-      // An older unpin/snooze Undo would re-pin or re-snooze, and the server
-      // treats either as a promotion that un-settles; settling supersedes them.
+      const wasStored = resolved?.thread.storedAt != null;
+      // An older unpin/snooze/store Undo would re-pin, re-snooze, or re-store,
+      // and the server treats each as a promotion that un-settles; settling
+      // supersedes them.
       ThreadUndo.invalidate("pin", scopedThreadKey(target));
       ThreadUndo.invalidate("snooze", scopedThreadKey(target));
+      ThreadUndo.invalidate("store", scopedThreadKey(target));
       const action = ThreadUndo.begin("settle", scopedThreadKey(target));
       // Keep Pretty's optimistic departure animation while the lifecycle write
       // is in flight; classification clears it after a successful response.
@@ -785,6 +833,14 @@ export function useThreadActions() {
         undo: async () => {
           const unsettled = await unsettleThread(target);
           if (unsettled._tag !== "Success") return unsettled;
+          if (wasStored) {
+            return writeThreadLifecycle(target, (ref) =>
+              storeThreadMutation({
+                environmentId: ref.environmentId,
+                input: { threadId: ref.threadId },
+              }),
+            );
+          }
           if (wasPinned) {
             const pinned = await pinThread(
               target,
@@ -793,20 +849,12 @@ export function useThreadActions() {
             if (pinned._tag !== "Success") return pinned;
           }
           if (snoozedUntil !== null) {
-            const snoozeWritable = readWritableThreadRef(target);
-            const snoozed = await snoozeThreadMutation({
-              environmentId: snoozeWritable.environmentId,
-              input: { threadId: snoozeWritable.threadId, snoozedUntil },
-            });
-            if (snoozed._tag === "Success") {
-              await mirrorLifecycleWriteIfRetargeted(target, snoozeWritable, (ref) =>
-                snoozeThreadMutation({
-                  environmentId: ref.environmentId,
-                  input: { threadId: ref.threadId, snoozedUntil },
-                }),
-              );
-            }
-            return snoozed;
+            return writeThreadLifecycle(target, (ref) =>
+              snoozeThreadMutation({
+                environmentId: ref.environmentId,
+                input: { threadId: ref.threadId, snoozedUntil },
+              }),
+            );
           }
           return unsettled;
         },
@@ -820,6 +868,7 @@ export function useThreadActions() {
       resolveThreadTarget,
       settleThreadMutation,
       snoozeThreadMutation,
+      storeThreadMutation,
       unsettleThread,
     ],
   );
@@ -972,6 +1021,9 @@ export function useThreadActions() {
           ),
         );
       }
+      // Snoozing a stored thread un-stores it server-side; Undo re-stores.
+      const wasStored = resolved?.thread.storedAt != null;
+      ThreadUndo.invalidate("store", scopedThreadKey(target));
       const action = ThreadUndo.begin("snooze", scopedThreadKey(target));
       // Same optimistic departure contract as settle: the row slides out on
       // click, and the marker clears when the snoozed classification lands.
@@ -1005,12 +1057,149 @@ export function useThreadActions() {
       showThreadUndoNotice({
         action: "Snoozed",
         claim: action,
-        undo: () => unsnoozeThread(target),
+        undo: async () => {
+          const woke = await unsnoozeThread(target);
+          if (woke._tag !== "Success" || !wasStored) return woke;
+          return writeThreadLifecycle(target, (ref) =>
+            storeThreadMutation({
+              environmentId: ref.environmentId,
+              input: { threadId: ref.threadId },
+            }),
+          );
+        },
         failureTitle: "Failed to wake thread",
       });
       return result;
     },
-    [resolveThreadTarget, snoozeThreadMutation, unsnoozeThread],
+    [
+      resolveThreadTarget,
+      snoozeThreadMutation,
+      storeThreadMutation,
+      unsnoozeThread,
+    ],
+  );
+
+  const unstoreThread = useCallback(
+    async (target: ScopedThreadRef) => {
+      const writable = readWritableThreadRef(target);
+      if (!readEnvironmentSupportsStorage(writable.environmentId)) {
+        return AsyncResult.failure(
+          Cause.fail(
+            new ThreadStorageUnsupportedError({
+              environmentId: writable.environmentId,
+              threadId: writable.threadId,
+            }),
+          ),
+        );
+      }
+      ThreadUndo.invalidate("store", scopedThreadKey(target));
+      return writeThreadLifecycle(target, (ref) =>
+        unstoreThreadMutation({
+          environmentId: ref.environmentId,
+          input: { threadId: ref.threadId },
+        }),
+      );
+    },
+    [unstoreThreadMutation],
+  );
+
+  const storeThread = useCallback(
+    async (
+      target: ScopedThreadRef,
+      // Batch callers store a selection at once and stay silent, like settle.
+      opts: { undoToast?: boolean } = {},
+    ) => {
+      const writable = readWritableThreadRef(target);
+      // Version skew: never send the command to a server that predates it.
+      if (!readEnvironmentSupportsStorage(writable.environmentId)) {
+        return AsyncResult.failure(
+          Cause.fail(
+            new ThreadStorageUnsupportedError({
+              environmentId: writable.environmentId,
+              threadId: writable.threadId,
+            }),
+          ),
+        );
+      }
+      const resolved = resolveThreadTarget(target);
+      // Same blockers as snooze: storage must not bury a request the agent
+      // is waiting on.
+      if (resolved && !canStore(resolved.thread, { now: new Date().toISOString() })) {
+        return AsyncResult.failure(
+          Cause.fail(
+            new ThreadStoreBlockedError({
+              environmentId: resolved.threadRef.environmentId,
+              threadId: resolved.threadRef.threadId,
+            }),
+          ),
+        );
+      }
+      // Storing drops the pin, the snooze, and a settlement server-side, so
+      // Undo puts back whichever was there (settle clears the other two, so
+      // at most a pin and a snooze can coexist).
+      const wasSettled = resolved?.thread.settledOverride === "settled";
+      const wasPinned = resolved?.thread.pinnedAt != null;
+      const pinOrderKey = wasPinned ? (resolved?.thread.pinOrderKey ?? null) : null;
+      const snoozedUntil = resolved?.thread.snoozedUntil ?? null;
+      const threadKey = scopedThreadKey(target);
+      ThreadUndo.invalidate("pin", threadKey);
+      ThreadUndo.invalidate("snooze", threadKey);
+      ThreadUndo.invalidate("settle", threadKey);
+      const action = ThreadUndo.begin("store", threadKey);
+      const result = await writeThreadLifecycle(target, (ref) =>
+        storeThreadMutation({
+          environmentId: ref.environmentId,
+          input: { threadId: ref.threadId },
+        }),
+      );
+      if (result._tag !== "Success" || opts.undoToast === false) {
+        action.finish();
+        return result;
+      }
+      // Storing hides the row, so keep its confirmation in the sidebar.
+      showThreadUndoNotice({
+        action: "Stored",
+        claim: action,
+        undo: async () => {
+          const unstored = await unstoreThread(target);
+          if (unstored._tag !== "Success") return unstored;
+          if (wasSettled) {
+            return writeThreadLifecycle(target, (ref) =>
+              settleThreadMutation({
+                environmentId: ref.environmentId,
+                input: { threadId: ref.threadId },
+              }),
+            );
+          }
+          if (wasPinned) {
+            const pinned = await pinThread(
+              target,
+              pinOrderKey == null ? {} : { orderKey: pinOrderKey },
+            );
+            if (pinned._tag !== "Success") return pinned;
+          }
+          if (snoozedUntil !== null) {
+            return writeThreadLifecycle(target, (ref) =>
+              snoozeThreadMutation({
+                environmentId: ref.environmentId,
+                input: { threadId: ref.threadId, snoozedUntil },
+              }),
+            );
+          }
+          return unstored;
+        },
+        failureTitle: "Failed to undo store",
+      });
+      return result;
+    },
+    [
+      pinThread,
+      resolveThreadTarget,
+      settleThreadMutation,
+      snoozeThreadMutation,
+      storeThreadMutation,
+      unstoreThread,
+    ],
   );
 
   const confirmAndDeleteThread = useCallback(
@@ -1052,6 +1241,8 @@ export function useThreadActions() {
       unsettleThread,
       snoozeThread,
       unsnoozeThread,
+      storeThread,
+      unstoreThread,
       pinThread,
       unpinThread,
       confirmAndUnpinThread,
@@ -1070,10 +1261,12 @@ export function useThreadActions() {
       setThreadAutoSettle,
       settleThread,
       snoozeThread,
+      storeThread,
       unarchiveThread,
       unpinThread,
       unsettleThread,
       unsnoozeThread,
+      unstoreThread,
     ],
   );
 }

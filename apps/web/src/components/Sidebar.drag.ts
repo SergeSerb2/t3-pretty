@@ -1,7 +1,9 @@
 import { closestCenter, type CollisionDetection, type Modifier } from "@dnd-kit/core";
 import { verticalListSortingStrategy, type SortingStrategy } from "@dnd-kit/sortable";
 import {
+  isSidebarShelfHeader,
   resolveSidebarDropTarget,
+  SIDEBAR_SHELF_HEADERS,
   sidebarListItemId,
   sidebarMarkerId,
   type SidebarListItem,
@@ -57,13 +59,9 @@ export function createSidebarCollisionDetection(
       if (pointer.x >= boundary.left && pointer.x <= boundary.right) {
         if (pointer.y < previousY && pointer.y <= boundary.bottom) boundarySection = "pinned";
         else if (pointer.y > previousY && pointer.y >= boundary.top) boundarySection = "active";
-        const nextHeader =
-          args.droppableContainers.find(
-            (container) => container.id === sidebarMarkerId("snoozed-header"),
-          ) ??
-          args.droppableContainers.find(
-            (container) => container.id === sidebarMarkerId("settled-header"),
-          );
+        const nextHeader = SIDEBAR_SHELF_HEADERS.map((header) =>
+          args.droppableContainers.find((container) => container.id === sidebarMarkerId(header)),
+        ).find((container) => container !== undefined);
         const activeBottom = nextHeader?.node.current?.getBoundingClientRect().top;
         if (boundarySection === "pinned" || (activeBottom != null && pointer.y < activeBottom)) {
           const target = collisions.find((collision) => {
@@ -101,6 +99,7 @@ export function createSidebarSortingStrategy(input: {
   settledVisibleCount?: number;
   routeThreadKey?: string | null;
   snoozedThreadCount?: number;
+  storedThreadCount?: number;
   cardHeight?: number;
   slimHeight?: number;
   /** Space each pinned boundary opens for its label while dragging. The
@@ -122,6 +121,7 @@ export function createSidebarSortingStrategy(input: {
       pinned: [],
       active: [],
       snoozed: [],
+      stored: [],
       settled: [],
     };
     let cardHeight = input.cardHeight;
@@ -129,10 +129,7 @@ export function createSidebarSortingStrategy(input: {
     let headerScale: number | undefined;
     for (const [index, item] of items.entries()) {
       if (item.kind !== "thread") {
-        if (
-          item.kind === "marker" &&
-          (item.marker === "settled-header" || item.marker === "snoozed-header")
-        ) {
+        if (item.kind === "marker" && isSidebarShelfHeader(item.marker)) {
           const height = rects[index]?.height;
           if (height) headerScale ??= height / 32;
         }
@@ -179,18 +176,25 @@ export function createSidebarSortingStrategy(input: {
       if (groups[name].length > 0) projected.push(...groups[name]);
       else marker(`${name}-placeholder`);
     };
+    // A shelf keeps its header while it still has rows, including collapsed
+    // rows that are counted but not rendered.
+    const shelf = (name: "snoozed" | "stored", count: number | undefined) => {
+      const header = `${name}-header` as const;
+      if (
+        groups[name].length > 0 ||
+        ((active.section !== name || (count ?? 0) > 1) &&
+          items.some((item) => item.kind === "marker" && item.marker === header))
+      ) {
+        marker(header);
+        projected.push(...groups[name]);
+      }
+    };
     marker("pinned-header");
     projected.push(...groups.pinned);
     marker("pinned-divider");
     section("active");
-    if (
-      groups.snoozed.length > 0 ||
-      ((active.section !== "snoozed" || (input.snoozedThreadCount ?? 0) > 1) &&
-        items.some((item) => item.kind === "marker" && item.marker === "snoozed-header"))
-    ) {
-      marker("snoozed-header");
-      projected.push(...groups.snoozed);
-    }
+    shelf("snoozed", input.snoozedThreadCount);
+    shelf("stored", input.storedThreadCount);
     marker("settled-header");
     section("settled");
     const heights = projected.map((item) => {
@@ -211,9 +215,7 @@ export function createSidebarSortingStrategy(input: {
             : (rect?.height ?? fallback);
     });
     const firstShelf = items.findIndex(
-      (item) =>
-        item.kind === "marker" &&
-        (item.marker === "snoozed-header" || item.marker === "settled-header"),
+      (item) => item.kind === "marker" && isSidebarShelfHeader(item.marker),
     );
     const shelfRect = rects[firstShelf];
     const beforeShelf = rects[firstShelf - 1];
@@ -230,10 +232,7 @@ export function createSidebarSortingStrategy(input: {
     const result = items.map(() => hidden);
     let top = rects[0].top;
     for (const [projectedIndex, item] of projected.entries()) {
-      if (
-        item.kind === "marker" &&
-        (item.marker === "snoozed-header" || item.marker === "settled-header")
-      ) {
+      if (item.kind === "marker" && isSidebarShelfHeader(item.marker)) {
         top += shelfSpace;
         shelfSpace = 0;
       }

@@ -15,6 +15,8 @@ const commands = vi.hoisted(() => ({
   unsettle: vi.fn(),
   snooze: vi.fn(),
   unsnooze: vi.fn(),
+  store: vi.fn(),
+  unstore: vi.fn(),
 }));
 const router = vi.hoisted(() => ({
   navigate: vi.fn(async () => {}),
@@ -38,6 +40,9 @@ const threadShell = vi.hoisted(() => ({
   pinOrderKey: "a0",
   pinnedAt: null as string | null,
   snoozedUntil: null as string | null,
+  storedAt: null as string | null,
+  settledOverride: null as "settled" | "active" | null,
+  hasPendingApprovals: false,
   projectId: "project",
   environmentId: "undo-env",
   session: null,
@@ -48,6 +53,7 @@ vi.mock("../state/entities", async (original) => ({
   readEnvironmentSupportsPinReorder: () => true,
   readEnvironmentSupportsSettlement: () => true,
   readEnvironmentSupportsSnooze: () => true,
+  readEnvironmentSupportsStorage: () => true,
   readThreadShell: () => threadShell,
 }));
 vi.mock("../state/use-atom-command", () => ({
@@ -69,6 +75,10 @@ vi.mock("../state/use-atom-command", () => ({
         return commands.snooze;
       case threadEnvironment.unsnooze:
         return commands.unsnooze;
+      case threadEnvironment.store:
+        return commands.store;
+      case threadEnvironment.unstore:
+        return commands.unstore;
       default:
         return vi.fn();
     }
@@ -94,6 +104,9 @@ beforeEach(() => {
   router.state.matches[0]!.params = {};
   threadShell.pinnedAt = null;
   threadShell.snoozedUntil = null;
+  threadShell.storedAt = null;
+  threadShell.settledOverride = null;
+  threadShell.hasPendingApprovals = false;
 });
 afterEach(() => {
   vi.runAllTimers();
@@ -214,5 +227,86 @@ describe("settle and snooze Undo", () => {
       environmentId: target.environmentId,
       input: { threadId: target.threadId, reason: "user" },
     });
+  });
+});
+
+describe("store Undo", () => {
+  const threadInput = { environmentId: target.environmentId, input: { threadId: target.threadId } };
+
+  it("unstores from the toast, once", async () => {
+    const add = vi.spyOn(toastManager, "add").mockReturnValue("toast");
+    vi.spyOn(toastManager, "close").mockImplementation(() => {});
+    const actions = useThreadActions();
+    await actions.storeThread(target);
+    expect(commands.store).toHaveBeenCalledExactlyOnceWith(threadInput);
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ title: "Thread stored" }));
+    const undo = undoOf(add, 0);
+    await undo();
+    await undo();
+    expect(commands.unstore).toHaveBeenCalledExactlyOnceWith(threadInput);
+    expect(commands.pin).not.toHaveBeenCalled();
+    expect(commands.settle).not.toHaveBeenCalled();
+  });
+
+  it("puts back the pin and snooze that storing cleared", async () => {
+    const add = vi.spyOn(toastManager, "add").mockReturnValue("toast");
+    vi.spyOn(toastManager, "close").mockImplementation(() => {});
+    const snoozedUntil = "2030-01-01T09:00:00.000Z";
+    threadShell.pinnedAt = "2026-01-01T00:00:00.000Z";
+    threadShell.snoozedUntil = snoozedUntil;
+    await useThreadActions().storeThread(target);
+    await undoOf(add, 0)();
+    expect(commands.unstore).toHaveBeenCalledOnce();
+    expect(commands.pin).toHaveBeenCalledExactlyOnceWith({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, orderKey: "a0" },
+    });
+    expect(commands.snooze).toHaveBeenCalledExactlyOnceWith({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, snoozedUntil },
+    });
+  });
+
+  it("re-settles a thread stored from the Settled shelf", async () => {
+    const add = vi.spyOn(toastManager, "add").mockReturnValue("toast");
+    vi.spyOn(toastManager, "close").mockImplementation(() => {});
+    threadShell.settledOverride = "settled";
+    await useThreadActions().storeThread(target);
+    await undoOf(add, 0)();
+    expect(commands.unstore).toHaveBeenCalledOnce();
+    expect(commands.settle).toHaveBeenCalledExactlyOnceWith(threadInput);
+  });
+
+  it("refuses to store a thread that is waiting on the user", async () => {
+    threadShell.hasPendingApprovals = true;
+    const result = await useThreadActions().storeThread(target);
+    expect(result._tag).toBe("Failure");
+    expect(commands.store).not.toHaveBeenCalled();
+  });
+
+  it("re-stores a stored thread after undoing a settle or a snooze", async () => {
+    const add = vi.spyOn(toastManager, "add").mockReturnValue("toast");
+    vi.spyOn(toastManager, "close").mockImplementation(() => {});
+    threadShell.storedAt = "2026-01-01T00:00:00.000Z";
+    const actions = useThreadActions();
+    await actions.settleThread(target);
+    await undoOf(add, 0)();
+    expect(commands.unsettle).toHaveBeenCalledOnce();
+    expect(commands.store).toHaveBeenCalledExactlyOnceWith(threadInput);
+    await actions.snoozeThread(target, new Date(Date.now() + 60_000).toISOString());
+    await undoOf(add, 1)();
+    expect(commands.unsnooze).toHaveBeenCalledOnce();
+    expect(commands.store).toHaveBeenCalledTimes(2);
+  });
+
+  it("expires the store Undo once the thread is unstored by hand", async () => {
+    const add = vi.spyOn(toastManager, "add").mockReturnValue("toast");
+    vi.spyOn(toastManager, "close").mockImplementation(() => {});
+    const actions = useThreadActions();
+    await actions.storeThread(target);
+    const staleUndo = undoOf(add, 0);
+    await actions.unstoreThread(target);
+    await staleUndo();
+    expect(commands.unstore).toHaveBeenCalledOnce();
   });
 });
