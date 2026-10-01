@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.45-nightly.20261001.2539003040",
+    date: "2026-10-01",
+    items: [
+      {
+        kind: "new",
+        title: "Make sidebar and top bar glass adjustable",
+      },
+      {
+        kind: "fixed",
+        title: "Hide the project rail scrollbar",
+      },
+      {
+        kind: "fixed",
+        title: "EAS polling diagnostics out of captured result",
+      },
+      {
+        kind: "new",
+        title: "Float iOS surfaces as frosted glass over scenery",
+      },
+      {
+        kind: "new",
+        title: "Stored shelf for long-term threads",
+      },
+      {
+        kind: "fixed",
+        title: "Long project names sit cleanly in the new-thread headline",
+      },
+    ],
+  },
+  {
     version: "0.0.45-nightly.20261001.2539003029",
     date: "2026-10-01",
     items: [
