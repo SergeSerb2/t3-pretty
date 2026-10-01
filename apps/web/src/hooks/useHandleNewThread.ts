@@ -24,7 +24,7 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { readProjects, readThreadShell, useProjects, useThread } from "../state/entities";
+import { readProjects, readThreadShell, useProjects, useThreadShell } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import {
@@ -459,7 +459,10 @@ export function useHandleNewThread() {
   });
   const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
   const routeDraftId = routeTarget?.kind === "draft" ? routeTarget.draftId : null;
-  const activeThread = useThread(routeThreadRef);
+  // Shell metadata is enough to place a new thread. The detail document
+  // (messages, activities) changes on every streamed delta; subscribing to it
+  // here re-rendered the sidebar, shortcuts, and command palette with the chat.
+  const activeThread = useThreadShell(routeThreadRef);
   const getDraftThread = useComposerDraftStore((store) => store.getDraftThread);
   const activeDraftThread = useComposerDraftStore(() =>
     routeTarget

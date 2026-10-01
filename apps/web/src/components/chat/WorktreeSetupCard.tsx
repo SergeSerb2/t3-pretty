@@ -20,7 +20,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "~/components/ui/button";
 import { Spinner } from "~/components/ui/spinner";
 import { MiddleTruncate } from "../ui/middle-truncate";
-import { observeVisibleAnimation } from "~/lib/visibleAnimation";
+import { observeLiveActivityMotion } from "~/lib/liveActivityClock";
 import { cn } from "~/lib/utils";
 
 interface WorktreeSetupCardProps {
@@ -149,7 +149,7 @@ function SetupHeaderRow({
         )}
       >
         <span
-          ref={running ? observeVisibleAnimation : undefined}
+          ref={running ? observeLiveActivityMotion : undefined}
           className="relative min-w-0 shrink overflow-hidden whitespace-nowrap"
         >
           <span className="block truncate">{text}</span>
@@ -189,7 +189,7 @@ function StageRow({
           : stage.detail;
   return (
     <div
-      ref={running ? observeVisibleAnimation : undefined}
+      ref={running ? observeLiveActivityMotion : undefined}
       className={cn(
         "relative flex min-h-6 min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-0.5 py-0.5 text-sm leading-relaxed",
         stageRowClassName(stage.status),

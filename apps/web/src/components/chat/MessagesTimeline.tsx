@@ -58,7 +58,7 @@ import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
-import { observeVisibleAnimation } from "../../lib/visibleAnimation";
+import { observeLiveActivityMotion } from "../../lib/liveActivityClock";
 import {
   createContext,
   memo,
@@ -1378,10 +1378,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             maintainScrollAtEndThreshold={1}
             onScroll={handleScroll}
             onItemSizeChanged={reportContentOverflow}
-            className={cn(
-              "h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden",
-              topFadeEnabled && "topbar-scroll-fade",
-            )}
+            className="h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] [-ms-overflow-style:none] [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden"
             ListHeaderComponent={
               loadEarlier !== null ? (
                 <TimelineLoadEarlierHeader
@@ -1397,6 +1394,12 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             }
             ListFooterComponent={timelineListFooter}
           />
+          {topFadeEnabled ? (
+            <div
+              aria-hidden
+              className="topbar-scroll-fade pointer-events-none absolute inset-x-0 top-0 z-10"
+            />
+          ) : null}
           <TimelineMinimap
             items={minimapItems}
             hasPersistentGutter={minimapHasPersistentGutter}
@@ -2656,7 +2659,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
     <div className="border-b border-border/60 pb-2 pt-1">
       <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
         <span
-          ref={shimmer ? observeVisibleAnimation : undefined}
+          ref={shimmer ? observeLiveActivityMotion : undefined}
           className="relative shrink-0 overflow-hidden whitespace-nowrap"
         >
           {label}
@@ -2896,7 +2899,7 @@ function ReasoningTraceBlock({
             <BrainIcon aria-hidden className="block size-4 shrink-0 stroke-2 opacity-70" />
           </span>
           <span
-            ref={streaming ? observeVisibleAnimation : undefined}
+            ref={streaming ? observeLiveActivityMotion : undefined}
             className="relative min-w-0 flex-1 truncate text-secondary-label"
           >
             {headerText}
@@ -3289,7 +3292,7 @@ function LiveActivityRow({
   const showShimmer = animated && shimmer;
   return (
     <div
-      ref={animated ? observeVisibleAnimation : undefined}
+      ref={animated ? observeLiveActivityMotion : undefined}
       className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed"
     >
       <LiveActivityContent
