@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.45-nightly.20261001.2539003018",
+    date: "2026-10-01",
+    items: [
+      {
+        kind: "new",
+        title: "Stored shelf for long-term threads",
+      },
+      {
+        kind: "fixed",
+        title: "Long project names sit cleanly in the new-thread headline",
+      },
+      {
+        kind: "fixed",
+        title: "MCP server configuration for provider sessions",
+      },
+      {
+        kind: "fixed",
+        title: "Handle soft-exit curl empty URL in ios-mobile tip packaging",
+      },
+      {
+        kind: "fixed",
+        title: "Drop leftover ConnectionFormField accessibilityLabel props",
+      },
+      {
+        kind: "fixed",
+        title: "Refresh EAS cloud IPA status without build:view --non-interactive",
+      },
+    ],
+  },
+  {
     version: "0.0.45-nightly.20261001.2539003015",
     date: "2026-10-01",
     items: [
