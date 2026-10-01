@@ -145,6 +145,8 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
           capabilities: scope.capabilities,
+          preview: scope.capabilities.has("preview"),
+          servers: McpProviderSession.builtInMcpServers(endpoint, scope.capabilities),
         },
       };
     },

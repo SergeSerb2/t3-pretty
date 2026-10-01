@@ -7,6 +7,7 @@ import {
   ApprovalRequestId,
   CodexSettings,
   EventId,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderItemId,
@@ -47,6 +48,11 @@ import {
   type CodexThreadSnapshot,
 } from "./CodexSessionRuntime.ts";
 import { makeCodexAdapter } from "./CodexAdapter.ts";
+import { HttpServer } from "effect/unstable/http";
+import * as NetAddress from "effect/unstable/net/NetAddress";
+import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
+import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* CodexAdapter`.
@@ -249,6 +255,56 @@ const validationLayer = it.layer(
 );
 
 validationLayer("CodexAdapterLive validation", (it) => {
+  it.effect("starts fresh and resumed threads and sends turns with real MCP credentials", () =>
+    Effect.gen(function* () {
+      const registry = yield* McpSessionRegistry.__testing.make().pipe(
+        Effect.provideService(
+          HttpServer.HttpServer,
+          HttpServer.HttpServer.of({
+            address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 43123),
+            serve: (() => Effect.void) as HttpServer.HttpServer["Service"]["serve"],
+          }),
+        ),
+        Effect.provideService(
+          ServerEnvironment.ServerEnvironment,
+          ServerEnvironment.ServerEnvironment.of({
+            getEnvironmentId: Effect.succeed(EnvironmentId.make("mcp-regression")),
+            getDescriptor: Effect.die("unused"),
+          }),
+        ),
+      );
+      const adapter = yield* CodexAdapter;
+      for (const resumed of [false, true]) {
+        const threadId = asThreadId(`mcp-regression-${resumed}`);
+        const issued = yield* registry.issue({
+          threadId,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          capabilities: new Set(),
+        });
+        yield* Effect.acquireRelease(
+          Effect.sync(() => McpProviderSession.setMcpProviderSession(issued.config)),
+          () => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+        );
+        yield* adapter.startSession({
+          provider: ProviderDriverKind.make("codex"),
+          threadId,
+          runtimeMode: "full-access",
+          ...(resumed ? { nativeSessionId: "existing-native-thread" } : {}),
+        });
+        const runtime = validationRuntimeFactory.lastRuntime!;
+        NodeAssert.equal(runtime.options.computerToolsAvailable, false);
+        NodeAssert.ok(
+          runtime.options.appServerArgs?.includes(
+            "mcp_servers.t3-code.url=http://127.0.0.1:43123/mcp",
+          ),
+        );
+        yield* adapter.sendTurn({ threadId, input: "regression message" });
+        yield* adapter.sendTurn({ threadId, input: "follow-up message" });
+        NodeAssert.equal(runtime.sendTurnImpl.mock.calls.length, 2);
+        yield* adapter.stopSession(threadId);
+      }
+    }).pipe(Effect.scoped),
+  );
   it.effect("returns validation error for non-codex provider on startSession", () =>
     Effect.gen(function* () {
       const adapter = yield* CodexAdapter;
