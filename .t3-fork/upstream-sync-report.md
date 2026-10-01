@@ -228,3 +228,90 @@
 ## Parent changes intentionally omitted
 
 - None. The resolver did not omit any parent change to protect T3 Pretty.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.45-nightly.20260930.2510`
+- Previously integrated parent nightly: `v0.0.45-nightly.20260930.2493`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The World Scenery daily-photo place remains visible above the composer when scenery chrome is active and the keyboard is hidden.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Workspace controls retain T3 Pretty's NewTaskGlassChip presentation and scenery-aware active styling.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Preserved T3 Pretty's useCallback dependency for its existing callback-based mobile new-task behavior.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Preserved the LegendList-based virtualized and recycled project list, including estimated item sizing, stable scope keys, and extraData updates for environment and reserved-destination state.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Preserved T3 Pretty's distinct filtered-empty state and its existing mobile styling, project/environment navigation, loading presentation, and platform-specific controls.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — T3 Pretty's recycled/virtualized project-scope list remains intact instead of reverting to the parent's older ScrollView-based rendering.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — The fork's Android MaterialListRow project rendering, rounded scope grouping, reserved-destination disabling, and project favicon presentation are preserved.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — The fork's existing non-Android renderProjectScope path and platform-specific project-selection behavior are preserved.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved T3 Pretty's per-workspace-mode auto-create-PR and auto-babysit preferences.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved draft-scoped PR overrides while editing queued pending tasks.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved preference-hydration gating so submission cannot race persisted create-PR or babysit choices.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved coupled toggle behavior: disabling create-PR disables babysitting, while enabling babysitting enables create-PR.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved reactive updates for T3 Pretty's per-environment automatic pull-request creation preference.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved reactive updates for T3 Pretty's per-environment pull-request babysitting preference, ensuring Merge/PR+ behavior remains effective for queued and edited tasks.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Kept the fork's resolved `runtimeMode` dependency already present later in the dependency list rather than restoring the obsolete `defaultRuntimeMode` dependency.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved authorization for T3 Pretty project favicon imports.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved read/operate authorization distinctions for project transfer inspection, preparation, sending, and cancellation.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved T3 Pretty agent-instruction list, read, and write authorization.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved T3 Pretty skills state, marketplace, installation, removal, and location-setting authorization.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved read-only access to marketplace refresh so read-only clients can explicitly refresh marketplace data.
+- `apps/web/src/components/CommandPalette.tsx` — Preserved the HouseIcon import used by T3 Pretty's fork-specific home screen and navigation behavior.
+- `apps/web/src/components/NoProjectsHero.tsx` — T3 Pretty's custom no-project hero description presentation, including the explicit top margin and softened muted-foreground color.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Preserved T3 Pretty's `collectOpenProjectPullRequests` import, which supports pull-request-aware thread nesting and stable PR nest behavior.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Preserved the `useEffect` and `useRef` hooks required by draft attachment state handling, including branch restoration/reset behavior.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Preserved T3 Pretty's inline pull-request attachment selector below the draft headline.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Preserved use of the fork-compatible PullRequestGlyph through the existing pullRequestSelector implementation.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Preserved visual separation for the pull-request selector with the prior 0.75rem spacing.
+- `apps/web/src/routes/_chat.tsx` — Preserved T3 Pretty's `useIsMobile` integration and the responsive/mobile behavior that consumes it in the chat route.
+- `apps/web/src/routes/_chat.tsx` — Preserved `scopedProjectRef` in the keyboard shortcut effect dependencies, maintaining T3 Pretty's behavior for creating new threads within the filtered sidebar project.
+- `packages/contracts/src/rpc.ts` — Preserved T3 Pretty's ProjectImportFaviconError, ProjectImportFaviconInput, and ProjectImportFaviconResult RPC contract imports.
+- `packages/contracts/src/rpc.ts` — Preserved the T3 Pretty project favicon import RPC.
+- `packages/contracts/src/rpc.ts` — Preserved T3 Pretty project-transfer inspect, prepare, send, and cancel RPCs.
+- `packages/contracts/src/rpc.ts` — Preserved fork-specific agent-instruction and automation-run RPCs.
+- `packages/contracts/src/rpc.ts` — Preserved managed storage inventory, streaming inventory, and orphan-removal RPCs.
+- `packages/contracts/src/rpc.ts` — Preserved the T3 Pretty skills marketplace and app integration RPC surface, including authorization, token, OAuth client, disconnect, and test operations.
+- `packages/contracts/src/rpc.ts` — Preserved the project favicon-import RPC and its authorization/error contract.
+- `packages/contracts/src/rpc.ts` — Preserved project transfer inspect, prepare, send, and cancel RPCs used by T3 Pretty's cross-environment/T3 Connect transfer behavior.
+- `packages/contracts/src/rpc.ts` — Preserved agent-instruction list, read, and write RPCs.
+- `packages/contracts/src/rpc.ts` — Preserved automation run-listing and run-detail RPCs.
+- `packages/contracts/src/rpc.ts` — Preserved the complete skills state, installation, marketplace, refresh, and per-location enablement RPC surface.
+- `packages/contracts/src/rpc.ts` — Preserved app integration management RPCs for configuration, authorization, credentials, disconnection, and connection testing.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Workspace controls are now rendered only when flow.canChooseWorkspace is true, preventing unsupported workspace selection UI from appearing.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Integrated the parent imports for Effect Cause inspection and AsyncResult handling.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Added the parent's conditional start-without-a-project action through canStartScratch, startScratchLabel, and startScratch().
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Used a secondary MaterialButton for the Android scratch action and the parent's subtle Pressable presentation on iOS, while retaining the primary add-project action first.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Added the upstream conditional “No project” scratch-task entry when scratch tasks are available, no scratch project exists, and projects are present.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Integrated the upstream Android MaterialListRow version of the scratch entry with its subtitle and text-bubble icon.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Integrated the upstream accessible non-Android scratch entry, including its button role and label, subtitle, icons, and platform-specific styling.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Adapted the upstream entry to the fork's list architecture as ListFooterComponent rather than restoring the obsolete ScrollView/project-map implementation.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Integrated the parent guard that forces scratch/non-worktree-capable projects to use local workspace mode even if a stale draft contains another mode; PR preferences consequently resolve and persist against the effective local mode.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Added `canChooseWorkspace` to the callback dependency list so changes to whether workspace selection is allowed correctly rebuild pending-task messages and clear stale workspace choices for no-project tasks.
+- `apps/server/src/auth/RpcAuthorization.ts` — Added authorization for WS_METHODS.projectsEnsureScratch using AuthOrchestrationOperateScope, matching the parent implementation's mutating behavior.
+- `apps/web/src/components/CommandPalette.tsx` — Integrated the parent nightly's MessageSquareDashedIcon import for its new command-palette behavior.
+- `apps/web/src/components/NoProjectsHero.tsx` — The empty-state description now advertises starting without a project when a scratch environment is available.
+- `apps/web/src/components/NoProjectsHero.tsx` — The hero action row uses a gap between the Add project and Start without a project buttons.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated upstream `isScratchProject` support for recognizing scratch projects.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated upstream `MessageSquareDashedIcon` alongside the existing add-project icon.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated upstream `useAtomValue` access for server keybindings.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Retained the expanded React hook imports shared by both sides.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated the scratch-draft-specific “What should we work on?” headline.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated the full-width heading layout inside the centered hero container.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated the reserved fixed-height secondary row that prevents headline movement when projectless threads are available.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated movement of the project selector into the secondary row for scratch drafts and the “start without a project” shortcut for project drafts.
+- `apps/web/src/routes/_chat.tsx` — Integrated the parent `useScratchProject` hook import, supporting the upstream scratch-environment and scratch-thread behavior already used by `ChatRouteGlobalShortcuts`.
+- `apps/web/src/routes/_chat.tsx` — Added `scratchEnvironmentId` to the keyboard shortcut effect dependencies so upstream scratch-thread creation uses the current environment resolver and satisfies hook dependency correctness.
+- `packages/contracts/src/rpc.ts` — Integrated the parent ProjectEnsureScratchResult contract import.
+- `packages/contracts/src/rpc.ts` — Added the parent `projects.ensureScratch` RPC method alongside the existing T3 Pretty project registry methods.
+- `packages/contracts/src/rpc.ts` — Added the parent WsProjectsEnsureScratchRpc contract, including its empty payload, ProjectEnsureScratchResult response, and orchestration/authorization error union.
+- `packages/contracts/src/rpc.ts` — Retained the upstream documentation that the RPC finds or creates the Scratch project under ServerConfig.scratchWorkspaceRoot.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Retain `defaultRuntimeMode` in the callback dependency list.. Reason: The composed callback uses T3 Pretty's resolved `runtimeMode`, which is already included later in the dependency list, and no longer references `defaultRuntimeMode`; retaining it would be a stale dependency from the parent's older runtime-mode implementation.
