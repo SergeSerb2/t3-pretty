@@ -12,9 +12,9 @@ import * as Option from "effect/Option";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
-import type { NetworkInterfaces } from "./DesktopNetworkInterfaces.ts";
+import { isIpv4Family, type NetworkInterfaces } from "./DesktopNetworkInterfaces.ts";
 
-export { isTailscaleIpv4Address, parseTailscaleMagicDnsName } from "@t3tools/tailscale";
+export { parseTailscaleMagicDnsName } from "@t3tools/tailscale";
 
 const TAILSCALE_ENDPOINT_PROVIDER: AdvertisedEndpointProvider = {
   id: "tailscale",
@@ -35,7 +35,7 @@ function resolveTailscaleIpAdvertisedEndpoints(input: {
 
     for (const address of interfaceAddresses) {
       if (address.internal) continue;
-      if (address.family !== "IPv4") continue;
+      if (!isIpv4Family(address.family)) continue;
       if (!isTailscaleIpv4Address(address.address)) continue;
       if (seen.has(address.address)) continue;
       seen.add(address.address);

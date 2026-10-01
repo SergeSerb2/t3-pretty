@@ -16,9 +16,9 @@ export {
  * that send it must fall back to standard search/toolbar primitives when this
  * is false.
  *
- * iOS 27 is excluded: those betas churned the glass selectors the native
- * patch calls on the first Home frame, which aborted launch before React
- * could recover.
+ * Disabled on every iOS version: the native patch can still construct
+ * glass chrome on the first Home frame (item groups / sharesBackground after
+ * #708). TestFlight 163 still aborted, so JS cannot be the only gate.
  */
 export const NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED = isNativeMailSearchToolbarSupported(
   NATIVE_LIQUID_GLASS_SUPPORTED,

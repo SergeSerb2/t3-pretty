@@ -44,7 +44,6 @@ export function ProjectFaviconPickerDialog(props: {
   readonly onOpenChange: (open: boolean) => void;
   readonly onPickExternal?: () => Promise<string | null>;
   readonly onSelect: (path: string) => void;
-  readonly onSelectComputerFile: (file: File) => void;
   readonly open: boolean;
   readonly projectName: string;
 }) {
@@ -84,7 +83,6 @@ export function ProjectFaviconPickerDialog(props: {
     event.currentTarget.value = "";
     if (!file) return;
     props.onOpenChange(false);
-    props.onSelectComputerFile(file);
   };
 
   return (
@@ -92,7 +90,7 @@ export function ProjectFaviconPickerDialog(props: {
       {props.open ? (
         <CommandDialogPopup
           aria-label="Choose project icon"
-          className="overflow-hidden p-0"
+          className="overflow-hidden"
           onBackdropPointerDown={() => props.onOpenChange(false)}
         >
           <CommandPaletteContent
@@ -147,7 +145,7 @@ export function ProjectFaviconPickerDialog(props: {
               setHighlightedItemValue(null);
               setQuery(value);
             }}
-            panelClassName="max-h-[min(34rem,76vh)]"
+            panelSize="tall-list"
             testId="project-favicon-picker"
             value={query}
           >

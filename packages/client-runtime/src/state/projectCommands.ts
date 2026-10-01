@@ -35,6 +35,8 @@ export interface OptimisticProjectFileTarget {
   readonly relativePath: string;
 }
 
+export const PROJECT_LARGE_QUERY_IDLE_TTL_MS = 60_000;
+
 function optimisticProjectFileKey(target: OptimisticProjectFileTarget): string {
   return JSON.stringify([target.environmentId, target.cwd, target.relativePath]);
 }
@@ -59,18 +61,19 @@ export function createProjectEnvironmentAtoms<R, E>(
       label: "environment-data:projects:search-entries",
       tag: WS_METHODS.projectsSearchEntries,
       staleTimeMs: 15_000,
+      idleTtlMs: PROJECT_LARGE_QUERY_IDLE_TTL_MS,
     }),
     listEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:list-entries",
       tag: WS_METHODS.projectsListEntries,
       staleTimeMs: 30_000,
-      idleTtlMs: 5 * 60_000,
+      idleTtlMs: PROJECT_LARGE_QUERY_IDLE_TTL_MS,
     }),
     readFile: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:read-file",
       tag: WS_METHODS.projectsReadFile,
       staleTimeMs: 30_000,
-      idleTtlMs: 5 * 60_000,
+      idleTtlMs: PROJECT_LARGE_QUERY_IDLE_TTL_MS,
     }),
     optimisticFile: (target: OptimisticProjectFileTarget) =>
       optimisticFileFamily(optimisticProjectFileKey(target)),
@@ -91,6 +94,13 @@ export function createProjectEnvironmentAtoms<R, E>(
       execute: (input: DeleteProjectInput) => deleteProject(input),
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
+    }),
+    // Finds or creates the environment's Scratch project and returns its id.
+    ensureScratch: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:ensure-scratch",
+      tag: WS_METHODS.projectsEnsureScratch,
+      scheduler: projectScheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
     writeFile: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:write-file",

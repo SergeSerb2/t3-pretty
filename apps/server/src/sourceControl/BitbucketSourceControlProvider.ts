@@ -1,5 +1,4 @@
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
 
@@ -17,6 +16,7 @@ function toChangeRequest(summary: NormalizedBitbucketPullRequestRecord): ChangeR
     baseRefName: summary.baseRefName,
     headRefName: summary.headRefName,
     state: summary.state,
+    ...(summary.isDraft === true ? { isDraft: true } : {}),
     updatedAt: summary.updatedAt ?? Option.none(),
     mergedAt: summary.mergedAt ?? Option.none(),
     ...(summary.isCrossRepository !== undefined
@@ -186,8 +186,6 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(SourceControlProvider.SourceControlProvider, make);
-
 export const makeDiscovery = Effect.gen(function* () {
   const bitbucket = yield* BitbucketApi.BitbucketApi;
 
@@ -195,8 +193,7 @@ export const makeDiscovery = Effect.gen(function* () {
     type: "api",
     kind: "bitbucket",
     label: "Bitbucket",
-    installHint:
-      "Set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN on the server (use a Bitbucket API token with pull request, repository, and user read scopes).",
+    installHint: "Add a Bitbucket token in Settings → Source Control.",
     probeAuth: bitbucket.probeAuth,
   } satisfies SourceControlApiDiscoverySpec;
 });

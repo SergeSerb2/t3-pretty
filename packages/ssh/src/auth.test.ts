@@ -12,6 +12,7 @@ import {
   buildSshChildEnvironment,
   isSshAuthFailure,
 } from "./auth.ts";
+import { SshCommandError } from "./errors.ts";
 
 describe("ssh auth", () => {
   it.effect("detects ssh auth failures from common permission denied messages", () =>
@@ -25,6 +26,29 @@ describe("ssh auth", () => {
         true,
       );
       assert.equal(isSshAuthFailure(new Error("Permission denied (publickey).")), true);
+      assert.equal(
+        isSshAuthFailure(
+          new Error(
+            "julius@100.65.180.100: Permission denied (gssapi-keyex,gssapi-with-mic,publickey,password).",
+          ),
+        ),
+        true,
+      );
+      assert.equal(isSshAuthFailure(new Error("Permission denied (none).")), true);
+      assert.equal(isSshAuthFailure(new Error("Permission denied, please try again.")), true);
+      assert.equal(
+        isSshAuthFailure(
+          new SshCommandError({
+            message:
+              "julius@100.65.180.100: Permission denied (gssapi-keyex,gssapi-with-mic,publickey,password).",
+            command: ["ssh"],
+            exitCode: 255,
+            stderr:
+              "julius@100.65.180.100: Permission denied (gssapi-keyex,gssapi-with-mic,publickey,password).",
+          }),
+        ),
+        true,
+      );
       assert.equal(isSshAuthFailure(new Error("Connection timed out")), false);
       assert.equal(isSshAuthFailure(new Error("mkdir: Permission denied")), false);
     }),

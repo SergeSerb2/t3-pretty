@@ -1,6 +1,6 @@
 import {
-  isWorkspaceBrowserPreviewPath,
-  isWorkspaceImagePreviewPath,
+  isWorkspaceAudioPreviewPath,
+  isWorkspaceVideoPreviewPath,
 } from "@t3tools/shared/filePreview";
 
 export interface FileBreadcrumb {
@@ -9,12 +9,24 @@ export interface FileBreadcrumb {
   readonly kind: "project" | "directory" | "file";
 }
 
+// Matches ProjectReadFileInput's relative-path ceiling. Route input reaches
+// this boundary before RPC schema encoding, so keep the intermediate join
+// bounded as well as the final path.
+const MOBILE_FILE_ROUTE_PATH_MAX_LENGTH = 512;
+
 function isWindowsAbsolutePath(value: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\");
 }
 
-function isAbsolutePath(value: string): boolean {
+/** A file route holding an absolute path shows a host file outside the workspace. */
+export function isAbsolutePath(value: string): boolean {
   return value.startsWith("/") || isWindowsAbsolutePath(value);
+}
+
+/** Route segments that `normalizeRoutePath` joins back into the same path, root included. */
+export function fileRoutePathSegments(path: string): string[] {
+  const segments = path.split("/").filter((segment) => segment.length > 0);
+  return path.startsWith("/") ? ["", ...segments] : segments;
 }
 
 function isWindowsPathStyle(value: string): boolean {
@@ -61,6 +73,32 @@ function normalizeRelativePath(value: string): string | null {
   return segments.length > 0 ? segments.join("/") : null;
 }
 
+export function normalizeMobileFileRoutePath(
+  value: string | ReadonlyArray<string> | undefined,
+): string | null {
+  if (value === undefined) {
+    return null;
+  }
+
+  const segments = typeof value === "string" ? [value] : value;
+  let pathLength = Math.max(0, segments.length - 1);
+  for (const segment of segments) {
+    pathLength += segment.length;
+    if (pathLength > MOBILE_FILE_ROUTE_PATH_MAX_LENGTH) {
+      return null;
+    }
+  }
+
+  const path = segments.join("/");
+  if (path.trim().length === 0) {
+    return null;
+  }
+  const normalized = normalizeRelativePath(path);
+  return normalized !== null && normalized.length <= MOBILE_FILE_ROUTE_PATH_MAX_LENGTH
+    ? normalized
+    : null;
+}
+
 export function resolveWorkspaceRelativeFilePath(
   workspaceRoot: string | null | undefined,
   targetPath: string,
@@ -84,15 +122,20 @@ export function resolveWorkspaceRelativeFilePath(
     return null;
   }
 
-  return normalizeRelativePath(normalizedTarget.slice(normalizedRoot.length + 1));
+  const relativePath = normalizedTarget.slice(normalizedRoot.length + 1);
+  // `/repo/../x` starts with the root but escapes it.
+  if (relativePath.split("/").includes("..")) {
+    return null;
+  }
+  return normalizeRelativePath(relativePath);
 }
 
-export function isBrowserPreviewFile(path: string): boolean {
-  return isWorkspaceBrowserPreviewPath(path);
+export function isVideoPreviewFile(path: string): boolean {
+  return isWorkspaceVideoPreviewPath(path);
 }
 
-export function isImagePreviewFile(path: string): boolean {
-  return isWorkspaceImagePreviewPath(path);
+export function isAudioPreviewFile(path: string): boolean {
+  return isWorkspaceAudioPreviewPath(path.split(/[?#]/, 1)[0] ?? "");
 }
 
 export function isSvgImagePreviewFile(path: string): boolean {
@@ -113,4 +156,18 @@ export function fileBreadcrumbs(projectName: string, relativePath: string): File
       kind: index === parts.length - 1 ? ("file" as const) : ("directory" as const),
     })),
   ];
+}
+
+/**
+ * The location line under a file's name: `project · parent/dir`. A host file outside the
+ * workspace is not under the project, so it shows its directory alone.
+ */
+export function fileHeaderSubtitle(projectName: string, relativePath: string): string {
+  const parentDir = relativePath.slice(
+    0,
+    Math.max(relativePath.lastIndexOf("/"), relativePath.lastIndexOf("\\"), 0),
+  );
+  return isAbsolutePath(relativePath)
+    ? parentDir
+    : [projectName, parentDir].filter(Boolean).join(" · ");
 }

@@ -28,6 +28,7 @@ function isLegacyBackendCategory(category: ResourceTelemetryProcessCategory): bo
   );
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("makeProcessResourceMonitor")(function* () {
   const telemetry = yield* ResourceTelemetry.ResourceTelemetry;
   const readHistory: ProcessResourceMonitor["Service"]["readHistory"] = (input) =>
@@ -71,6 +72,7 @@ export const make = Effect.fn("makeProcessResourceMonitor")(function* () {
             maxProcessCount: bucket.maxProcessCount,
           })),
           topProcesses,
+          ...(history.topProcessesTruncated === true ? { topProcessesTruncated: true } : {}),
           error: history.health.native.lastError.pipe(
             Option.map((message) => ({
               failureTag: "ProcessDiagnosticsQueryFailedError" as const,

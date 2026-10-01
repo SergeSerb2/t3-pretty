@@ -32,6 +32,13 @@ describe("formatDiffStat", () => {
     expect(formatDiffStat(0, 0)).toBeNull();
     expect(formatDiffStat(12, 3)).toBe("+12 −3");
   });
+
+  it("does not expose corrupt host counts as misleading diff stats", () => {
+    expect(formatDiffStat(Number.NaN, 3)).toBeNull();
+    expect(formatDiffStat(12, Number.POSITIVE_INFINITY)).toBeNull();
+    expect(formatDiffStat(-1, 3)).toBeNull();
+    expect(formatDiffStat(1.5, 3)).toBeNull();
+  });
 });
 
 describe("review and check labels", () => {

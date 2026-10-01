@@ -7,8 +7,15 @@ interface ParsedSemver {
 
 const SEMVER_NUMBER_SEGMENT = /^\d+$/;
 
+function splitPrerelease(version: string): readonly [string, string | undefined] {
+  const separator = version.indexOf("-");
+  return separator < 0
+    ? [version, undefined]
+    : [version.slice(0, separator), version.slice(separator + 1)];
+}
+
 export function normalizeSemverVersion(version: string): string {
-  const [main, prerelease] = version.trim().split("-", 2);
+  const [main, prerelease] = splitPrerelease(version.trim());
   const segments: string[] = [];
   for (const segment of (main ?? "").split(".")) {
     const trimmed = segment.trim();
@@ -31,7 +38,7 @@ export function normalizeSemverVersion(version: string): string {
 
 export function parseSemver(value: string): ParsedSemver | null {
   const normalized = normalizeSemverVersion(value).replace(/^v/, "");
-  const [main = "", prerelease] = normalized.split("-", 2);
+  const [main, prerelease] = splitPrerelease(normalized);
   const segments = main.split(".");
   if (segments.length !== 3) {
     return null;
@@ -52,7 +59,7 @@ export function parseSemver(value: string): ParsedSemver | null {
   const major = Number.parseInt(majorSegment, 10);
   const minor = Number.parseInt(minorSegment, 10);
   const patch = Number.parseInt(patchSegment, 10);
-  if (![major, minor, patch].every(Number.isInteger)) {
+  if (![major, minor, patch].every(Number.isSafeInteger)) {
     return null;
   }
 
@@ -83,7 +90,12 @@ function comparePrereleaseIdentifier(left: string, right: string): number {
   const rightNumeric = SEMVER_NUMBER_SEGMENT.test(right);
 
   if (leftNumeric && rightNumeric) {
-    return Number.parseInt(left, 10) - Number.parseInt(right, 10);
+    const normalizedLeft = left.replace(/^0+(?=\d)/u, "");
+    const normalizedRight = right.replace(/^0+(?=\d)/u, "");
+    if (normalizedLeft.length !== normalizedRight.length) {
+      return normalizedLeft.length < normalizedRight.length ? -1 : 1;
+    }
+    return normalizedLeft === normalizedRight ? 0 : normalizedLeft < normalizedRight ? -1 : 1;
   }
   if (leftNumeric) {
     return -1;
@@ -154,7 +166,7 @@ export const satisfiesSemverRange: (rawVersion: string, range: string) => boolea
   function satisfiesSemverRange(rawVersion, range) {
     const normalizedVersion = String(rawVersion).trim().replace(/^v/, "");
     const versionMatch = normalizedVersion.match(
-      /^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-[0-9A-Za-z.-]+)?$/,
+      /^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?$/,
     );
     if (!versionMatch) {
       return false;
@@ -164,7 +176,15 @@ export const satisfiesSemverRange: (rawVersion: string, range: string) => boolea
       major: Number(versionMatch[1]),
       minor: Number(versionMatch[2] || 0),
       patch: Number(versionMatch[3] || 0),
+      prerelease: versionMatch[4] || "",
     };
+    if (
+      !Number.isSafeInteger(version.major) ||
+      !Number.isSafeInteger(version.minor) ||
+      !Number.isSafeInteger(version.patch)
+    ) {
+      return false;
+    }
 
     return range.split("||").some((group) => {
       const comparators = group.trim().split(/\s+/).filter(Boolean);
@@ -189,6 +209,13 @@ export const satisfiesSemverRange: (rawVersion: string, range: string) => boolea
           minor: Number(targetMatch[2] || 0),
           patch: Number(targetMatch[3] || 0),
         };
+        if (
+          !Number.isSafeInteger(target.major) ||
+          !Number.isSafeInteger(target.minor) ||
+          !Number.isSafeInteger(target.patch)
+        ) {
+          return false;
+        }
         const compared =
           version.major !== target.major
             ? version.major > target.major
@@ -202,7 +229,9 @@ export const satisfiesSemverRange: (rawVersion: string, range: string) => boolea
                 ? version.patch > target.patch
                   ? 1
                   : -1
-                : 0;
+                : version.prerelease
+                  ? -1
+                  : 0;
         const operator = match[1] || "=";
         switch (operator) {
           case "^":
