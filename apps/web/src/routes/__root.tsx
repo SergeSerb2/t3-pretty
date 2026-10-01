@@ -299,6 +299,8 @@ function ContrastAppearanceSync() {
 
 function GlassAppearanceSync() {
   const glassOpacity = useClientSettings((settings) => settings.glassOpacity);
+  const chromeGlassOpacity = useClientSettings((settings) => settings.chromeGlassOpacity);
+  const chromeGlassBlur = useClientSettings((settings) => settings.chromeGlassBlur);
 
   useEffect(() => {
     const style = document.documentElement.style;
@@ -308,7 +310,10 @@ function GlassAppearanceSync() {
     } else {
       style.removeProperty("--glass-blur");
     }
-  }, [glassOpacity]);
+    // Inline on <html> so a scenery stylesheet rule cannot pin the plate.
+    style.setProperty("--workspace-glass-opacity", `${chromeGlassOpacity}%`);
+    style.setProperty("--workspace-glass-blur", `${chromeGlassBlur}px`);
+  }, [chromeGlassBlur, chromeGlassOpacity, glassOpacity]);
 
   return null;
 }
