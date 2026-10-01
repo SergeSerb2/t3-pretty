@@ -14,6 +14,7 @@ import {
 } from "../../lib/composerEnterBehavior";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { SettingsSection } from "./components/SettingsSection";
+import { SheetSurface } from "../../components/SheetSurface";
 
 const ENTER_BEHAVIOR_OPTIONS: ReadonlyArray<{
   readonly behavior: ComposerEnterBehavior;
@@ -43,7 +44,7 @@ export function SettingsKeyboardRouteScreen() {
     : null;
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       {Platform.OS === "android" ? (
         <>
           <NativeStackScreenOptions options={{ headerShown: false }} />
@@ -96,6 +97,6 @@ export function SettingsKeyboardRouteScreen() {
           Applies to the composer when a hardware keyboard is connected.
         </Text>
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }

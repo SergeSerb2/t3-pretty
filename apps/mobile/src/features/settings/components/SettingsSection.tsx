@@ -1,13 +1,15 @@
 import type { ReactNode } from "react";
-import { Platform, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 
 import { AppText as Text } from "../../../components/AppText";
+import { useGlassChromeActive } from "../../scenery/SceneryProvider";
 
 export function SettingsSection(props: {
   readonly title?: string;
   readonly trailing?: ReactNode;
   readonly children: ReactNode;
 }) {
+  const glass = useGlassChromeActive();
   return (
     <View className="gap-2">
       {props.title ? (
@@ -28,8 +30,11 @@ export function SettingsSection(props: {
         className={
           Platform.OS === "android"
             ? "overflow-hidden rounded-[28px] bg-grouped-card"
-            : "overflow-hidden rounded-[24px] border-continuous bg-grouped-card"
+            : glass
+              ? "overflow-hidden rounded-[24px] border-continuous border-chrome-glass-border bg-chrome-glass"
+              : "overflow-hidden rounded-[24px] border-continuous bg-grouped-card"
         }
+        style={glass ? { borderWidth: StyleSheet.hairlineWidth } : undefined}
       >
         {props.children}
       </View>

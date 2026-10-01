@@ -39,6 +39,7 @@ import {
   type StoragePendingAction,
   worktreeShouldForceRemove,
 } from "./environmentStorage.logic";
+import { SheetSurface } from "../../components/SheetSurface";
 
 export function SettingsEnvironmentStorageRouteScreen() {
   const insets = useSafeAreaInsets();
@@ -220,7 +221,7 @@ export function SettingsEnvironmentStorageRouteScreen() {
   );
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentInset={{ bottom: Math.max(insets.bottom, 18) }}
@@ -253,7 +254,7 @@ export function SettingsEnvironmentStorageRouteScreen() {
           ))
         )}
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }
 

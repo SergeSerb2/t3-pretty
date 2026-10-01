@@ -35,3 +35,21 @@ describe.each([
     },
   );
 });
+
+describe("ios glass rows", () => {
+  it.each(MOBILE_THEME_IDS)("floats phone rows over scenery for %s", (themeId) => {
+    for (const appearance of ["light", "dark"] as const) {
+      const theme = getMobileThemeVariables(themeId, appearance);
+      const glass = iosAppearance(theme, false, false, true);
+
+      expect(glass.cardStyle?.backgroundColor).toBe(theme["--color-chrome-glass"]);
+      // Swipe actions reveal the photo, not an opaque plate.
+      expect(glass.swipeBackgroundColor).toBe("transparent");
+      expect(glass.swipeActionsBackgroundColor).toBe(theme["--color-chrome-glass"]);
+      // The sidebar keeps its opaque selection treatment.
+      expect(iosAppearance(theme, true, true, true).style?.backgroundColor).toBe(
+        theme["--color-thread-selected"],
+      );
+    }
+  });
+});

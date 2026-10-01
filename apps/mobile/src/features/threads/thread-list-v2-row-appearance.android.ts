@@ -20,6 +20,8 @@ export function getThreadListV2RowAppearance(
   theme: MobileThemeVariables,
   sidebarPane: boolean,
   selected: boolean,
+  // Scenery glass rows are iOS-only; Android keeps its tonal Material rows.
+  _glass = false,
 ) {
   const selectedBackgroundColor = theme["--color-thread-selected"];
   const backgroundColor = theme[sidebarPane ? "--color-drawer" : "--color-screen"];
@@ -55,6 +57,7 @@ export function getThreadListV2RowAppearance(
     cardStyle: sidebarPane ? { ...style, paddingHorizontal: 12, paddingVertical: 10 } : style,
     swipeContainerStyle,
     swipeBackgroundColor: backgroundColor,
+    swipeActionsBackgroundColor: backgroundColor,
     providerIconSurfaceColor: selected ? selectedBackgroundColor : backgroundColor,
   };
 }

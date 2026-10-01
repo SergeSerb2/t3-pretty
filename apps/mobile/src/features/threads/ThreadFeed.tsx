@@ -83,10 +83,12 @@ import {
   type ColorValue,
   useWindowDimensions,
   View,
+  type ViewStyle,
 } from "react-native";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
 import { isPdfFile } from "../../lib/filePreview";
-import { flattenThemeColor } from "../../lib/mobileTheme";
+import { flattenThemeColor, themeColorWithAlpha } from "../../lib/mobileTheme";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { PresentationSource } from "../../components/NativePresentation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn, type SharedValue } from "react-native-reanimated";
@@ -1382,7 +1384,7 @@ function renderFeedEntry(
     readonly renderViewedImage: MarkdownImageRenderer;
     readonly iconSubtleColor: string | import("react-native").ColorValue;
     readonly screenColor: string;
-    readonly userBubbleColor: string | import("react-native").ColorValue;
+    readonly userBubbleSurface: ViewStyle;
     readonly markdownStyles: MarkdownStyleSets;
     readonly reviewCommentColors: ReviewCommentColors;
     readonly reviewCommentBubbleWidth: number;
@@ -1393,7 +1395,7 @@ function renderFeedEntry(
   },
 ) {
   const entry = info.item;
-  const { markdownStyles, iconSubtleColor, userBubbleColor } = props;
+  const { markdownStyles, iconSubtleColor, userBubbleSurface } = props;
 
   if (entry.type === "turn-fold") {
     return (
@@ -1565,7 +1567,7 @@ function renderFeedEntry(
           <View
             className="min-w-0 gap-2 rounded-[20px] px-3.5 py-2.5"
             style={{
-              backgroundColor: userBubbleColor,
+              ...userBubbleSurface,
               maxWidth: props.userBubbleMaxWidth,
               ...(hasReviewCommentContext
                 ? { width: props.reviewCommentBubbleWidth }
@@ -2084,6 +2086,22 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const iconSubtleColor = theme["--color-icon-subtle"];
   const screenColor = theme["--color-screen"];
   const userBubbleColor = theme["--color-user-bubble"];
+  const chromeGlassBorder = theme["--color-chrome-glass-border"];
+  const glassBubble = useGlassChromeActive();
+  // Over scenery the bubble is tinted glass: the sage tint stays dense enough
+  // to carry its text while the photo reads through, with a hairline edge.
+  const userBubbleSurface = useMemo<ViewStyle>(
+    () =>
+      glassBubble
+        ? {
+            backgroundColor: themeColorWithAlpha(userBubbleColor, 0.78),
+            borderColor: chromeGlassBorder,
+            borderCurve: "continuous",
+            borderWidth: StyleSheet.hairlineWidth,
+          }
+        : { backgroundColor: userBubbleColor },
+    [chromeGlassBorder, glassBubble, userBubbleColor],
+  );
   const onMarkdownLinkPress = useCallback(
     (href: string) => {
       const presentation = resolveMarkdownLinkPresentation(href);
@@ -2307,7 +2325,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       markdownStyles,
       reviewCommentColors,
       themeAppearance,
-      userBubbleColor,
+      userBubbleSurface,
       viewportWidth,
     }),
     [
@@ -2323,7 +2341,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       markdownStyles,
       reviewCommentColors,
       themeAppearance,
-      userBubbleColor,
+      userBubbleSurface,
       viewportWidth,
     ],
   );
@@ -2789,7 +2807,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             renderViewedImage,
             iconSubtleColor,
             screenColor,
-            userBubbleColor,
+            userBubbleSurface,
             markdownStyles,
             reviewCommentColors,
             reviewCommentBubbleWidth,
@@ -2825,7 +2843,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.activeWorkStartedAt,
       iconSubtleColor,
       screenColor,
-      userBubbleColor,
+      userBubbleSurface,
       markdownStyles,
       reviewCommentColors,
       reviewCommentBubbleWidth,

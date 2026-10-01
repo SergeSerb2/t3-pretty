@@ -31,6 +31,7 @@ import {
   sortedAppConnections,
   uniqueAppSlug,
 } from "./apps/appsSettings.logic";
+import { SheetSurface } from "../../components/SheetSurface";
 
 type SettingsAppEditParams = {
   readonly environmentId: string;
@@ -63,14 +64,14 @@ export function SettingsAppEditRouteScreen({ route }: StaticScreenProps<Settings
   // stream has produced the record it is editing.
   if (connectionId !== undefined && (apps === null || existing === undefined)) {
     return (
-      <View collapsable={false} className="flex-1 bg-sheet">
+      <SheetSurface>
         <NativeStackScreenOptions options={{ title: "App" }} />
         <View className="px-5 pt-6">
           <Text className="text-base text-foreground-muted">
             {apps === null ? "Waiting for this environment…" : "This app is no longer available."}
           </Text>
         </View>
-      </View>
+      </SheetSurface>
     );
   }
 
@@ -179,7 +180,7 @@ function AppEditor(props: {
   ]);
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <NativeStackScreenOptions
         options={{ title: existing === undefined ? "Custom MCP server" : existing.name }}
       />
@@ -297,7 +298,7 @@ function AppEditor(props: {
           </Pressable>
         ) : null}
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }
 

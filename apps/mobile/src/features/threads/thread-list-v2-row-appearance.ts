@@ -5,6 +5,9 @@ export const THREAD_LIST_V2_MONO_FONT = "Menlo";
 export const THREAD_LIST_V2_ROW_CONTENT_CLASS_NAME = "px-5 py-2.5";
 export const THREAD_LIST_V2_ROW_DIVIDERS = true;
 
+/** Inset frosted card radius; slim settled rows read as capsules. */
+const THREAD_LIST_GLASS_RADIUS = 22;
+
 export const selectedThreadRowColors = {
   foregroundClassName: "text-thread-selected-foreground",
   mutedForegroundClassName: "text-thread-selected-foreground-muted",
@@ -20,7 +23,9 @@ export function getThreadListV2RowAppearance(
   theme: MobileThemeVariables,
   sidebarPane: boolean,
   selected: boolean,
+  glass = false,
 ) {
+  if (glass && !sidebarPane) return getGlassRowAppearance(theme);
   const selectedBackgroundColor = theme["--color-thread-selected"];
   const style: ViewStyle | undefined = sidebarPane
     ? {
@@ -53,11 +58,53 @@ export function getThreadListV2RowAppearance(
     cardStyle: sidebarPane ? { ...style, paddingHorizontal: 12, paddingVertical: 10 } : undefined,
     swipeContainerStyle,
     swipeBackgroundColor: theme[sidebarPane ? "--color-drawer" : "--color-screen"],
+    swipeActionsBackgroundColor: theme[sidebarPane ? "--color-drawer" : "--color-screen"],
     // Provider badges blend into the surface beneath them.
     providerIconSurfaceColor: sidebarPane
       ? selected
         ? selectedBackgroundColor
         : theme["--color-drawer"]
       : theme["--color-screen"],
+  };
+}
+
+/**
+ * Rows become translucent cards over the CDN pre-blurred photo, so the
+ * frosted look costs no live blur; the wash under them still carries text
+ * contrast. Shadows stay off: per-row shadows force offscreen passes while
+ * the list scrolls.
+ */
+function getGlassRowAppearance(theme: MobileThemeVariables) {
+  const backgroundColor = theme["--color-chrome-glass"];
+  const card: ViewStyle = {
+    backgroundColor,
+    borderColor: theme["--color-chrome-glass-border"],
+    borderCurve: "continuous",
+    borderRadius: THREAD_LIST_GLASS_RADIUS,
+    borderWidth: 0.5,
+  };
+  return {
+    className: undefined,
+    interactionClassName: "bg-row-hover",
+    interactionOpacity: 1,
+    foregroundClassName: "text-foreground",
+    mutedForegroundClassName: "text-foreground-muted",
+    tertiaryForegroundClassName: "text-foreground-tertiary",
+    mutedIconTintClassName: "accent-foreground-muted",
+    tertiaryIconTintClassName: "accent-foreground-tertiary",
+    style: card,
+    cardStyle: card,
+    swipeContainerStyle: {
+      borderCurve: "continuous",
+      borderRadius: THREAD_LIST_GLASS_RADIUS,
+      marginHorizontal: 12,
+      marginVertical: 4,
+      overflow: "hidden",
+    } satisfies ViewStyle,
+    swipeBackgroundColor: "transparent",
+    // The revealed tray continues the card's glass so labels never sit on raw photo.
+    swipeActionsBackgroundColor: backgroundColor,
+    // No opaque surface to cut the badge out of; the badge sits on the glass.
+    providerIconSurfaceColor: "transparent",
   };
 }

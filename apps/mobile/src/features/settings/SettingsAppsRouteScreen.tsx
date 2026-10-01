@@ -47,6 +47,7 @@ import {
   sortedAppConnections,
   type AppStatus,
 } from "./apps/appsSettings.logic";
+import { SheetSurface } from "../../components/SheetSurface";
 
 const EMPTY_APPS: AppsSettings = { connections: {}, oauthClients: {} };
 
@@ -354,7 +355,7 @@ export function SettingsAppsRouteScreen() {
   );
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentInset={{ bottom: Math.max(insets.bottom, 18) }}
@@ -484,7 +485,7 @@ export function SettingsAppsRouteScreen() {
           </>
         )}
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }
 
