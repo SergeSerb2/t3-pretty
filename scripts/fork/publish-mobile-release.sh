@@ -546,7 +546,7 @@ eas_cloud_wait_outcome() {
 soft_exit_known_eas_cloud_build() {
   local build_id="$1"
   local reason="$2"
-  annotate warning "EAS cloud IPA $build_id is still running (${reason}). Next ios-mobile will reattach from the persisted build id; not spending another Expo build credit."
+  annotate warning "EAS cloud IPA $build_id is still running (${reason}). Next ios-mobile will reattach from the persisted build id; not spending another Expo build credit." >&2
   restore_eas_json
   exit 0
 }
@@ -563,7 +563,8 @@ view_eas_cloud_build() {
 
 # Poll Expo until the IPA is finished, the compile failed, the wait
 # budget expires, refresh stays stale, or this agent is signaled. Prints
-# id\nartifact_url when finished. Soft-exits 0 when the id is known and
+# id\nartifact_url on stdout when finished; diagnostics go to stderr.
+# Soft-exits 0 when the id is known and
 # Expo has not failed the compile, so a Windows agent drop cannot red tip
 # packaging solely because the waiter died (BK #2922).
 await_eas_cloud_build() {
@@ -600,7 +601,7 @@ await_eas_cloud_build() {
       record_local_eas_inflight "$build_id" "$next_fingerprint" "$next_commit" "$build_number" "$status" || true
     else
       view_failures=$((view_failures + 1))
-      echo "Could not refresh EAS cloud IPA $build_id (${view_failures}/${max_view_failures}); will reattach if status stays unavailable."
+      echo "Could not refresh EAS cloud IPA $build_id (${view_failures}/${max_view_failures}); will reattach if status stays unavailable." >&2
     fi
     timed_out=0
     if (( SECONDS >= deadline )); then
@@ -636,7 +637,7 @@ await_eas_cloud_build() {
         soft_exit_known_eas_cloud_build "$build_id" "status=${status:-unknown}; not holding this agent"
         ;;
       *)
-        echo "Waiting for EAS cloud IPA $build_id (${status:-unknown}); will reattach if this agent drops."
+        echo "Waiting for EAS cloud IPA $build_id (${status:-unknown}); will reattach if this agent drops." >&2
         sleep "$poll_seconds" || true
         ;;
     esac

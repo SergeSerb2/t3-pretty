@@ -1650,7 +1650,10 @@ describe("iOS EAS cloud wait / reattach", () => {
   const buildId = "9312795f-d30f-4cc8-a20b-aea2931a4232";
 
   function runAwait(viewBuild, { waitSeconds = "0", invoke = true, extra = "" } = {}) {
-    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-eas-wait-"));
+    // Node resolves macOS /var symlinks before comparing the helper entrypoint.
+    const root = NodeFS.realpathSync(
+      NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-eas-wait-")),
+    );
     const tmp = NodePath.join(root, "tmp");
     const inflight = NodePath.join(root, "ios-eas-inflight");
     const viewJson = NodePath.join(root, "view.json");
@@ -1724,21 +1727,63 @@ describe("iOS EAS cloud wait / reattach", () => {
     });
     try {
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-      assert.deepEqual(result.stdout.trim().split("\n").slice(-2), [buildId, artifact]);
+      assert.deepEqual(result.stdout.trim().split("\n"), [buildId, artifact]);
       assert.include(NodeFS.readFileSync(inflight, "utf8"), `id=${buildId}`);
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
   });
 
+  it("captures only the result through queued-to-finished status transitions", () => {
+    const artifact = "https://expo.invalid/application.ipa";
+    const { result, root, inflight } = runAwait(
+      { id: buildId },
+      {
+        waitSeconds: "30",
+        invoke: false,
+        extra: [
+          "poll=0",
+          "sleep() { :; }",
+          "view_eas_cloud_build() {",
+          '  case "$poll" in',
+          "    0) status=NEW ;;",
+          "    1) status=IN_QUEUE ;;",
+          "    2) status=IN_PROGRESS ;;",
+          "    *) status=FINISHED ;;",
+          "  esac",
+          `  printf '{"id":"${buildId}","status":"%s","appBuildVersion":"173","artifacts":{"applicationArchiveUrl":"${artifact}"}}' "$status" > "$2"`,
+          "  poll=$((poll + 1))",
+          "}",
+          `details="$(await_eas_cloud_build "${buildId}" abc123 1a8ceaddec412a8dea57cb08cef38fbc8ef66270 173)"`,
+          'printf "%s\\n" "$details"',
+        ].join("\n"),
+      },
+    );
+    try {
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.equal(result.stdout, `${buildId}\n${artifact}\n`);
+      for (const status of ["NEW", "IN_QUEUE", "IN_PROGRESS"]) {
+        assert.include(result.stderr, `(${status})`);
+      }
+      const persisted = NodeFS.readFileSync(inflight, "utf8");
+      assert.include(persisted, `id=${buildId}`);
+      assert.include(persisted, "status=FINISHED");
+      assert.include(persisted, "buildNumber=173");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("fails the job when the reattached EAS compile errored", () => {
-    const { result, root } = runAwait({
+    const { result, root, inflight } = runAwait({
       id: buildId,
       status: "ERRORED",
       error: { errorCode: "EAS_BUILD_UNKNOWN_ERROR", message: "compile failed" },
     });
     try {
       assert.notEqual(result.status, 0);
+      assert.equal(result.stdout, "");
+      assert.include(NodeFS.readFileSync(inflight, "utf8"), "status=ERRORED");
       assert.include(result.stderr, "EAS cloud iOS build failed.");
       assert.include(result.stderr, "reported");
     } finally {
@@ -1758,8 +1803,9 @@ describe("iOS EAS cloud wait / reattach", () => {
     );
     try {
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-      assert.include(result.stdout, "still running");
-      assert.include(result.stdout, "not holding this agent");
+      assert.equal(result.stdout, "");
+      assert.include(result.stderr, "still running");
+      assert.include(result.stderr, "not holding this agent");
       const persisted = NodeFS.readFileSync(inflight, "utf8");
       assert.include(persisted, `id=${buildId}`);
       assert.include(persisted, "fingerprint=abc123");
@@ -1785,8 +1831,9 @@ describe("iOS EAS cloud wait / reattach", () => {
     );
     try {
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-      assert.include(result.stdout, "could not refresh status after 3 polls");
-      assert.include(result.stdout, "still running");
+      assert.equal(result.stdout, "");
+      assert.include(result.stderr, "could not refresh status after 3 polls");
+      assert.include(result.stderr, "still running");
       const persisted = NodeFS.readFileSync(inflight, "utf8");
       assert.include(persisted, `id=${buildId}`);
       assert.include(persisted, "fingerprint=abc123");
@@ -1804,19 +1851,14 @@ describe("iOS EAS cloud wait / reattach", () => {
       },
       {
         waitSeconds: "30",
-        invoke: false,
-        extra: [
-          `await_eas_cloud_build "${buildId}" abc123 1a8ceaddec412a8dea57cb08cef38fbc8ef66270 173 &`,
-          "waiter=$!",
-          "sleep 0.2",
-          'kill -TERM "$waiter"',
-          'wait "$waiter"',
-        ].join("\n"),
+        // Signal the owned waiter only after its trap is installed and polling starts.
+        extra: 'sleep() { kill -TERM "$$"; }',
       },
     );
     try {
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-      assert.include(result.stdout, "waiter interrupted");
+      assert.equal(result.stdout, "");
+      assert.include(result.stderr, "waiter interrupted");
       assert.include(NodeFS.readFileSync(inflight, "utf8"), `id=${buildId}`);
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
