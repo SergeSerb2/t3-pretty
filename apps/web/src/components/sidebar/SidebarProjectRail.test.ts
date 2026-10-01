@@ -32,6 +32,15 @@ describe("project rail folders", () => {
     expect(folderCssSource).not.toContain("scale(0)");
   });
 
+  it("scrolls a long rail without reserving a scrollbar gutter", () => {
+    expect(railSource).toContain("rail-project-scroll");
+    expect(folderCssSource).toContain(`.rail-project-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}`);
+  });
+
   it("shows a live thread count instead of shortcut indexes", () => {
     expect(railSource).not.toContain("visibleProjectJumpNumbers");
     expect(railSource).not.toContain("jumpNumber");
