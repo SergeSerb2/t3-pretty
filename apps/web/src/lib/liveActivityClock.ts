@@ -20,10 +20,15 @@ interface LiveActivityClockEntry {
   holders: number;
 }
 
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+const FORCED_COLORS_QUERY = "(forced-colors: active)";
+
 const entries = new Map<HTMLElement, LiveActivityClockEntry>();
 let timer: ReturnType<typeof setInterval> | null = null;
 let listening = false;
 let unsubscribeState: (() => void) | null = null;
+let reducedMotionQuery: MediaQueryList | null = null;
+let forcedColorsQuery: MediaQueryList | null = null;
 
 function documentHidden(): boolean {
   return typeof document !== "undefined" && document.hidden;
@@ -46,6 +51,10 @@ function tick(now: number): void {
   }
 }
 
+function motionSuppressed(): boolean {
+  return Boolean(reducedMotionQuery?.matches || forcedColorsQuery?.matches);
+}
+
 function anyRunning(): boolean {
   if (documentHidden()) return false;
   for (const entry of entries.values()) {
@@ -56,19 +65,35 @@ function anyRunning(): boolean {
   return false;
 }
 
+function parkEntries(resetPhase: boolean): void {
+  for (const entry of entries.values()) {
+    entry.lastNow = null;
+    if (!resetPhase) continue;
+    entry.elapsed = 0;
+    entry.element.style.setProperty(LIVE_ACTIVITY_PHASE_PROPERTY, "0");
+  }
+}
+
 function syncTimer(): void {
   // A paused row must not keep a 30 fps timer. Scrolling it back on screen
   // reports through subscribeVisibleAnimationState, which calls this again.
-  const shouldRun = anyRunning();
+  // Reduced motion and forced colors also drop a mid-sweep phase so the
+  // counter label is not left translated after the shine is hidden.
+  const suppressed = motionSuppressed();
+  const shouldRun = !suppressed && anyRunning();
   if (shouldRun && timer === null) {
     timer = setInterval(() => tick(Date.now()), LIVE_ACTIVITY_FRAME_MS);
   } else if (!shouldRun && timer !== null) {
     clearInterval(timer);
     timer = null;
-    for (const entry of entries.values()) entry.lastNow = null;
+    parkEntries(suppressed);
     return;
   }
-  if (shouldRun) tick(Date.now());
+  if (!shouldRun) {
+    if (suppressed) parkEntries(true);
+    return;
+  }
+  tick(Date.now());
 }
 
 function onVisibleAnimationState(element: HTMLElement | SVGElement): void {
@@ -80,11 +105,20 @@ function onVisibilityChange(): void {
   syncTimer();
 }
 
+function watchMotionQuery(query: string): MediaQueryList | null {
+  if (typeof globalThis.matchMedia !== "function") return null;
+  const list = globalThis.matchMedia(query);
+  list.addEventListener?.("change", onVisibilityChange);
+  return list;
+}
+
 function ensureVisibilityListener(): void {
   if (listening || typeof document === "undefined") return;
   listening = true;
   document.addEventListener("visibilitychange", onVisibilityChange);
   unsubscribeState = subscribeVisibleAnimationState(onVisibleAnimationState);
+  reducedMotionQuery = watchMotionQuery(REDUCED_MOTION_QUERY);
+  forcedColorsQuery = watchMotionQuery(FORCED_COLORS_QUERY);
 }
 
 function releaseVisibilityListener(): void {
@@ -93,6 +127,10 @@ function releaseVisibilityListener(): void {
   document.removeEventListener("visibilitychange", onVisibilityChange);
   unsubscribeState?.();
   unsubscribeState = null;
+  reducedMotionQuery?.removeEventListener?.("change", onVisibilityChange);
+  forcedColorsQuery?.removeEventListener?.("change", onVisibilityChange);
+  reducedMotionQuery = null;
+  forcedColorsQuery = null;
 }
 
 /** Keep `element` on the shared shine clock until the returned release runs. */

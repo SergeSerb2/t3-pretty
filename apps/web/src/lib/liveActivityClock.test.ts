@@ -156,4 +156,22 @@ describe("live activity clock", () => {
     releaseSecond?.();
     expect(phase(second)).toBe("");
   });
+
+  it("resets a mid-sweep phase while reduced motion is on", () => {
+    vi.stubGlobal("document", fakeDocument);
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(prefers-reduced-motion: reduce)",
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    vi.useFakeTimers();
+    const element = fakeElement();
+    element.style.setProperty("--visible-animation-state", "running");
+    element.style.setProperty(LIVE_ACTIVITY_PHASE_PROPERTY, "0.4000");
+    const release = registerLiveActivityClock(element);
+    expect(phase(element)).toBe("0");
+    vi.advanceTimersByTime(LIVE_ACTIVITY_FRAME_MS * 4);
+    expect(phase(element)).toBe("0");
+    release?.();
+  });
 });

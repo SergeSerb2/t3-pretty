@@ -946,12 +946,17 @@ html[data-window-inactive]
 
   @media (prefers-reduced-motion: reduce), (forced-colors: active) {
     opacity: 0;
+    transform: none;
   }
 }
 
 @utility live-activity-focus-counter {
   width: 100%;
   transform: translateX(calc(var(--live-activity-phase, 0) * -100%));
+
+  @media (prefers-reduced-motion: reduce), (forced-colors: active) {
+    transform: none;
+  }
 }
 
 @utility live-activity-focus-aligned {

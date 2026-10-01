@@ -116,6 +116,9 @@ describe("working-row thinking indicator contract", () => {
     expect(indexStylesSource).toContain(
       "transform: translateX(calc(var(--live-activity-phase, 0) * -100%));",
     );
+    expect(indexStylesSource).toMatch(
+      /@utility live-activity-focus-counter \{[^}]*transform: none;/s,
+    );
     expect(indexStylesSource).not.toContain("animation: live-activity-focus");
     expect(indexStylesSource).not.toContain("animation: live-tool-shine");
   });
