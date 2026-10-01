@@ -356,3 +356,5 @@
 - `.github/workflows/desktop-macos-preview-publish.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `.github/workflows/release-desktop.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `desktop-typecheck` failed after merging `v0.0.45-nightly.20261001.2539`; repaired with `gpt-5.6-sol`: Adapted the new download test to T3 Pretty’s preview-WebContents mock architecture while preserving the parent test behavior, eliminating both `never` property-access errors.
+  - edited `apps/desktop/src/preview/Manager.test.ts`
