@@ -40,6 +40,31 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "already has a production binary");
   });
 
+  it("reuses the existing EAS build in build mode without starting another IPA", () => {
+    const buildId = "6fd3a4ab-ee53-46b9-8b70-93554ca5d8cb";
+    for (const status of ["IN_QUEUE", "FINISHED"]) {
+      const output = run([
+        "--force",
+        "true",
+        "--fingerprint-json",
+        JSON.stringify({ hash: "abc123" }),
+        "--builds-json",
+        JSON.stringify([
+          {
+            id: buildId,
+            platform: "IOS",
+            buildProfile: "production",
+            status,
+            runtimeVersion: "abc123",
+            artifacts: { applicationArchiveUrl: "https://expo.invalid/application.ipa" },
+          },
+        ]),
+      ]);
+      assert.include(output, "should_build=true");
+      assert.include(output, `reuse_build_id=${buildId}`);
+    }
+  });
+
   it("rebuilds when both the hosted EAS binary and submitted fingerprint are stale", () => {
     const output = run([
       "--fingerprint-json",
