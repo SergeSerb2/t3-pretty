@@ -85,7 +85,7 @@ load_secret CLI_PROXY_API_KEY
 ensure_node
 
 export ORIGIN_REPO="${ORIGIN_REPO:-serbinenko/t3-pretty}"
-export CLI_PROXY_REVIEW_MODEL="${CLI_PROXY_REVIEW_MODEL:-grok-4.7-fast}"
+export CLI_PROXY_REVIEW_MODEL="${CLI_PROXY_REVIEW_MODEL:-grok-4.7-build-fast}"
 # high effort regularly exceeds the request timeout on Grok review requests.
 export CLI_PROXY_REVIEW_EFFORT="${CLI_PROXY_REVIEW_EFFORT:-low}"
 export CLI_PROXY_API_URL="${CLI_PROXY_API_URL:-https://cli-proxy-api-production-1615.up.railway.app/v1}"

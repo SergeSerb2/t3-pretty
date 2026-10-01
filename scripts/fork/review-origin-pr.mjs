@@ -14,7 +14,7 @@ import {
 } from "./origin-forge.mjs";
 
 export const REVIEW_MARKER = "t3-pretty-grok-review";
-export const DEFAULT_MODEL = "grok-4.7-fast";
+export const DEFAULT_MODEL = "grok-4.7-build-fast";
 export const DEFAULT_CLI_PROXY_API_URL = "https://cli-proxy-api-production-1615.up.railway.app/v1";
 export const MAX_DIFF_CHARS = 120_000;
 export const MAX_ISSUES = 12;
