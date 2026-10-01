@@ -315,3 +315,44 @@
 ## Parent changes intentionally omitted
 
 - `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Retain `defaultRuntimeMode` in the callback dependency list.. Reason: The composed callback uses T3 Pretty's resolved `runtimeMode`, which is already included later in the dependency list, and no longer references `defaultRuntimeMode`; retaining it would be a stale dependency from the parent's older runtime-mode implementation.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.45-nightly.20261001.2525`
+- Previously integrated parent nightly: `v0.0.45-nightly.20260930.2510`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved favicon import as an orchestration operate-scope action.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved project-transfer authorization: inspection remains readable, while prepare, send, and cancel require operate scope.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved agent-instruction list/read access under read scope and writes under operate scope.
+- `apps/server/src/auth/RpcAuthorization.ts` — Preserved skill state and marketplace reads, skill mutations under operate scope, and the fork's intentional read-scope treatment of marketplace refresh for read-only clients.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Preserved T3 Pretty's grouped command-menu rendering, including Built-in, Provider, Skills, Files, and Apps sections and conditional section labels.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Preserved the fork's richer slash-command and @-mention menu organization rather than reverting to one ungrouped command list.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — The project-rail architecture remains authoritative: obsolete inline project-scope and project-creation controls are not restored in the thread header.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — The full-width, bordered, theme-aware “Search threads” control and its Pretty-specific icon, placeholder, focus, hover, and clear-button styling are preserved.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — The compact two-row scoped layout is preserved, including placing the new-thread control beside search for the all-project view and beside the scope title for a selected project.
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — The existing new-thread shortcut and Shift+click current-project behavior remain intact through the shared newThreadButton.
+- `packages/contracts/src/rpc.ts` — Project favicon import and project-transfer RPC methods remain available.
+- `packages/contracts/src/rpc.ts` — Agent instruction file list/read/write RPC methods remain available.
+- `packages/contracts/src/rpc.ts` — Automation run listing and lookup RPC methods remain available.
+- `packages/contracts/src/rpc.ts` — Managed storage inventory streaming and orphan-removal RPC methods remain available.
+- `packages/contracts/src/rpc.ts` — T3 Pretty skills marketplace, skill-location, and app integration RPC methods remain available.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/server/src/auth/RpcAuthorization.ts` — Added projectsCreateNew to the authorization map with AuthOrchestrationOperateScope, ensuring project creation is treated as a mutating operation.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Added the upstream list ID and trigger-specific accessible label to CommandList.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Added upstream-generated stable option IDs to every ComposerCommandMenuItem, supporting the item's existing rendered DOM ID and accessible active-option relationships.
+- `packages/contracts/src/rpc.ts` — Added the parent projects.createNew RPC method mapping alongside the existing project registry methods.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/sidebar/SidebarThreadHeader.tsx` — Rename the inline project-creation button from “New project” to “Add project”.. Reason: T3 Pretty replaced sidebar project-folder controls with a project rail, so this component no longer has an inline project-creation button or the associated hasProjects, projectScope, onNewProject, FolderPlusIcon, and searchFieldRef APIs. Restoring that control solely to apply the label change would regress the fork architecture and would not compile against the current component interface.
+- `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/desktop-macos-preview-publish.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/release-desktop.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
