@@ -1312,7 +1312,7 @@ export function AppearanceSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("car-display")}
-          description="Larger tap targets and an overlay sidebar for Tesla's passenger browser. Auto turns on when this page loads in a Tesla."
+          description="Large thread list and New thread button for Tesla's passenger browser. Opening a thread does not raise the keyboard. Auto turns on when this page loads in a Tesla."
           resetAction={
             teslaTouchPreference !== "auto" ? (
               <SettingResetButton

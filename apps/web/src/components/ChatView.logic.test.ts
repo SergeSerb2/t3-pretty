@@ -48,7 +48,11 @@ import {
   getStartedThreadModelChangeBlockReason,
   hasEnvironmentReconnectWarningGraceElapsed,
   hasServerAcknowledgedLocalDispatch,
+  pointerDownOpensTeslaComposer,
+  shouldAutofocusComposerOnThreadEntry,
   shouldRefocusComposerOnWindowFocus,
+  TESLA_COMPOSER_FOCUS_GRACE_MS,
+  teslaComposerFocusAllowed,
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
   recallCheckoutIsRepo,
@@ -2102,6 +2106,87 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
         latestTurnStartFailureId: "turn-start-failure-new",
       }),
     ).toBe(true);
+  });
+});
+
+describe("Tesla composer focus", () => {
+  it("does not focus the composer when a thread opens in the car", () => {
+    expect(shouldAutofocusComposerOnThreadEntry(true)).toBe(false);
+    expect(shouldAutofocusComposerOnThreadEntry(false)).toBe(true);
+  });
+
+  it("allows composer focus only in the moment after a tap on it", () => {
+    expect(teslaComposerFocusAllowed({ now: 1_000, composerPressedAt: null })).toBe(false);
+    expect(teslaComposerFocusAllowed({ now: 1_000, composerPressedAt: 1_000 })).toBe(true);
+    expect(
+      teslaComposerFocusAllowed({
+        now: 1_000 + TESLA_COMPOSER_FOCUS_GRACE_MS,
+        composerPressedAt: 1_000,
+      }),
+    ).toBe(true);
+    expect(
+      teslaComposerFocusAllowed({
+        now: 1_001 + TESLA_COMPOSER_FOCUS_GRACE_MS,
+        composerPressedAt: 1_000,
+      }),
+    ).toBe(false);
+  });
+
+  it("treats a tap on the editor as typing and a tap on send as not", () => {
+    type FakeNode = {
+      tagName: string;
+      attrs: Record<string, string>;
+      parent: FakeNode | null;
+      closest: (selector: string) => Element | null;
+      matches: (selector: string) => boolean;
+    };
+    function matches(node: FakeNode, selector: string) {
+      if (selector.startsWith("[")) {
+        const body = selector.slice(1, -1);
+        const eq = body.indexOf("=");
+        if (eq === -1) return node.attrs[body] !== undefined;
+        const name = body.slice(0, eq);
+        const value = body.slice(eq + 1).replace(/^['"]|['"]$/g, "");
+        return node.attrs[name] === value;
+      }
+      return node.tagName === selector;
+    }
+    function node(
+      tagName: string,
+      attrs: Record<string, string>,
+      parent: FakeNode | null,
+    ): FakeNode {
+      const created: FakeNode = {
+        tagName,
+        attrs,
+        parent,
+        closest(selector: string) {
+          const parts = selector.split(",").map((part) => part.trim());
+          let current: FakeNode | null = created;
+          while (current !== null) {
+            if (parts.some((part) => matches(current as FakeNode, part))) {
+              return current as unknown as Element;
+            }
+            current = current.parent;
+          }
+          return null;
+        },
+        matches(selector: string) {
+          return matches(created, selector);
+        },
+      };
+      return created;
+    }
+
+    const surface = node("div", { "data-slot": "composer-shell" }, null);
+    const editor = node("div", { "data-testid": "composer-editor" }, surface);
+    const send = node("button", {}, surface);
+    const row = node("div", { "data-testid": "sidebar-row-card" }, null);
+
+    expect(pointerDownOpensTeslaComposer(editor as unknown as Element)).toBe(true);
+    expect(pointerDownOpensTeslaComposer(surface as unknown as Element)).toBe(true);
+    expect(pointerDownOpensTeslaComposer(send as unknown as Element)).toBe(false);
+    expect(pointerDownOpensTeslaComposer(row as unknown as Element)).toBe(false);
   });
 });
 

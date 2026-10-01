@@ -271,7 +271,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "car-display",
     title: "Car display",
     to: "/settings/appearance",
-    searchTerms: ["tesla passenger touch infotainment vehicle browser overlay"],
+    searchTerms: ["tesla passenger touch infotainment vehicle browser keyboard threads"],
   },
   {
     id: "setting-photo-blur",

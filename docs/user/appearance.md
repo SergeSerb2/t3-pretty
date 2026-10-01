@@ -27,10 +27,11 @@ sidebar at its previous width. Drag the sidebar edge to resize it.
 
 ## Car display
 
-On web, T3 Code switches to a larger-touch layout in Tesla's passenger browser. Controls get
-bigger tap targets, the sidebar and right panel open as overlays, and hover-only actions stay
-visible. Use **Settings → Appearance → Car display** or **Car display** in the command palette to
-force it on or off. Add `?tesla-touch=1` to the page URL to preview it in any browser.
+On web, T3 Code switches to a touch layout in Tesla's passenger browser. The thread list stays
+on screen beside the conversation, with a large New thread button and finger-sized rows. Opening
+a thread does not raise the on-screen keyboard; tap the message field when you want to type.
+Use **Settings → Appearance → Car display** or **Car display** in the command palette to force it
+on or off. Add `?tesla-touch=1` to the page URL to preview it in any browser.
 
 ## Motion
 

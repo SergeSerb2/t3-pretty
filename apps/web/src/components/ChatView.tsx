@@ -509,7 +509,11 @@ import {
   startNewThreadForProject,
   codexArtifactTemplatePromptToAppend,
   waitForStartedServerThread,
+  pointerDownOpensTeslaComposer,
+  shouldAutofocusComposerOnThreadEntry,
   shouldRefocusComposerOnWindowFocus,
+  TESLA_COMPOSER_EDITOR_SELECTOR,
+  teslaComposerFocusAllowed,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -4295,12 +4299,62 @@ export default function ChatView(props: ChatViewProps) {
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
   }, [composerRef]);
+  const teslaComposerPressedAtRef = useRef<number | null>(null);
   useEffect(() => subscribeSnapShotComposerFocus(focusComposer), [focusComposer]);
+  // The car browser opens its keyboard for any focused text field. Thread
+  // changes, window focus, and restored drafts all focus the composer on a
+  // desk. Here that focus is dropped unless the passenger just tapped the
+  // composer, and the field asks for no keyboard until that tap.
+  useEffect(() => {
+    if (!teslaTouch) return;
+    const editors = () => document.querySelectorAll<HTMLElement>(TESLA_COMPOSER_EDITOR_SELECTOR);
+    const setComposerInputMode = (mode: "none" | "text") => {
+      for (const editor of editors()) editor.setAttribute("inputmode", mode);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !pointerDownOpensTeslaComposer(target)) {
+        teslaComposerPressedAtRef.current = null;
+        return;
+      }
+      teslaComposerPressedAtRef.current = performance.now();
+      setComposerInputMode("text");
+    };
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.closest(TESLA_COMPOSER_EDITOR_SELECTOR) === null) return;
+      if (
+        teslaComposerFocusAllowed({
+          now: performance.now(),
+          composerPressedAt: teslaComposerPressedAtRef.current,
+        })
+      ) {
+        return;
+      }
+      target.blur();
+      setComposerInputMode("none");
+    };
+    setComposerInputMode("none");
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("focusin", onFocusIn, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("focusin", onFocusIn, true);
+      for (const editor of editors()) editor.removeAttribute("inputmode");
+    };
+  }, [teslaTouch]);
   const scheduleComposerFocus = useCallback(() => {
+    if (teslaTouch) {
+      teslaComposerPressedAtRef.current = performance.now();
+      document
+        .querySelector<HTMLElement>(TESLA_COMPOSER_EDITOR_SELECTOR)
+        ?.setAttribute("inputmode", "text");
+    }
     window.requestAnimationFrame(() => {
       focusComposer();
     });
-  }, [focusComposer]);
+  }, [focusComposer, teslaTouch]);
   const useArtifactTemplate = useCallback(
     (template: CodexArtifactTemplate) => {
       const composer = composerRef.current;
@@ -5866,13 +5920,28 @@ export default function ChatView(props: ChatViewProps) {
 
   useEffect(() => {
     if (!activeThread?.id || terminalUiState.terminalOpen) return;
+    if (!shouldAutofocusComposerOnThreadEntry(teslaTouch)) {
+      teslaComposerPressedAtRef.current = null;
+      const frame = window.requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (
+          active instanceof HTMLElement &&
+          active.closest(TESLA_COMPOSER_EDITOR_SELECTOR) !== null
+        ) {
+          active.blur();
+        }
+      });
+      return () => {
+        window.cancelAnimationFrame(frame);
+      };
+    }
     const frame = window.requestAnimationFrame(() => {
       focusComposer();
     });
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposer, terminalUiState.terminalOpen]);
+  }, [activeThread?.id, focusComposer, terminalUiState.terminalOpen, teslaTouch]);
 
   // Tabbing back into the app lands focus wherever it last was, often the right panel or the
   // body. Put it in the composer unless something that takes typing already holds it. The
@@ -5880,7 +5949,7 @@ export default function ChatView(props: ChatViewProps) {
   // terminal is a surface and is recognized by the predicate instead. Mobile is left alone so
   // returning to the app does not raise the keyboard.
   useEffect(() => {
-    if (!activeThread?.id || terminalUiState.terminalOpen || isMobileViewport) return;
+    if (!activeThread?.id || terminalUiState.terminalOpen || isMobileViewport || teslaTouch) return;
     let frame: number | null = null;
     const onWindowFocus = () => {
       if (frame !== null) window.cancelAnimationFrame(frame);
@@ -5899,7 +5968,7 @@ export default function ChatView(props: ChatViewProps) {
       window.removeEventListener("focus", onWindowFocus);
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposer, isMobileViewport, terminalUiState.terminalOpen]);
+  }, [activeThread?.id, focusComposer, isMobileViewport, terminalUiState.terminalOpen, teslaTouch]);
 
   useEffect(() => {
     if (!activeThread?.id) return;
@@ -6815,6 +6884,7 @@ export default function ChatView(props: ChatViewProps) {
       return;
     } else if (previous && !current) {
       terminalUiOpenByThreadRef.current[activeThreadKey] = current;
+      if (teslaTouch) return;
       const frame = window.requestAnimationFrame(() => {
         focusComposer();
       });
@@ -6824,7 +6894,7 @@ export default function ChatView(props: ChatViewProps) {
     }
 
     terminalUiOpenByThreadRef.current[activeThreadKey] = current;
-  }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
+  }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen, teslaTouch]);
 
   const getShortcutContext = useCallback(
     (eventTarget: EventTarget | null = document.activeElement) => ({
@@ -6863,6 +6933,7 @@ export default function ChatView(props: ChatViewProps) {
       const shortcutContext = getShortcutContext(event.target);
 
       if (
+        !teslaTouch &&
         !shortcutContext.terminalFocus &&
         !shortcutContext.modelPickerOpen &&
         shouldTypeToFocusComposer(event)
@@ -7123,6 +7194,7 @@ export default function ChatView(props: ChatViewProps) {
     toggleRightPanelMaximized,
     toggleTerminalVisibility,
     composerRef,
+    teslaTouch,
   ]);
 
   // Paste-to-focus: the resting composer blurs on a click into the timeline,
@@ -7144,6 +7216,12 @@ export default function ChatView(props: ChatViewProps) {
       const text = pasteTextToFocusComposer(event);
       const clipboardData = event.clipboardData;
       if (text === null || clipboardData === null) return;
+      if (teslaTouch) {
+        teslaComposerPressedAtRef.current = performance.now();
+        document
+          .querySelector<HTMLElement>(TESLA_COMPOSER_EDITOR_SELECTOR)
+          ?.setAttribute("inputmode", "text");
+      }
       const bypassAutoAttachment = Date.now() <= pasteAsTextShortcutUntilRef.current;
       pasteAsTextShortcutUntilRef.current = 0;
       if (
@@ -7161,7 +7239,7 @@ export default function ChatView(props: ChatViewProps) {
       window.removeEventListener("keydown", keyHandler, true);
       window.removeEventListener("paste", handler, true);
     };
-  }, [activeThreadId, composerRef]);
+  }, [activeThreadId, composerRef, teslaTouch]);
 
   const [pendingRevert, setPendingRevert] = useState<{
     turnCount: number;

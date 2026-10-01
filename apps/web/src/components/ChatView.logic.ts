@@ -1589,6 +1589,45 @@ export function hasOptimisticWorkingSettled(input: {
   );
 }
 
+/**
+ * Opening a thread focuses the composer on a desk. In the car that focus
+ * raises the on-screen keyboard, so the passenger has to dismiss it before
+ * they can read. The composer focuses only after they tap it.
+ */
+export function shouldAutofocusComposerOnThreadEntry(teslaTouch: boolean): boolean {
+  return !teslaTouch;
+}
+
+/** How long a tap on the composer may be followed by its focus event. */
+export const TESLA_COMPOSER_FOCUS_GRACE_MS = 800;
+
+export const TESLA_COMPOSER_EDITOR_SELECTOR = "[data-testid='composer-editor'], .composer-tiptap";
+
+const TESLA_COMPOSER_SURFACE_SELECTOR =
+  "[data-chat-composer-main-surface='true'], [data-slot='composer-shell']";
+
+const TESLA_COMPOSER_CONTROL_SELECTOR =
+  "button, a, input, select, textarea, [role='button'], [role='menuitem'], [data-slot='select-trigger']";
+
+/**
+ * A tap types only when it lands on the editor or the empty padding around
+ * it. Send, the model picker, and other controls must not raise the keyboard.
+ */
+export function pointerDownOpensTeslaComposer(target: Element): boolean {
+  if (target.closest(TESLA_COMPOSER_EDITOR_SELECTOR) !== null) return true;
+  if (target.closest(TESLA_COMPOSER_SURFACE_SELECTOR) === null) return false;
+  return target.closest(TESLA_COMPOSER_CONTROL_SELECTOR) === null;
+}
+
+export function teslaComposerFocusAllowed(input: {
+  readonly now: number;
+  readonly composerPressedAt: number | null;
+}): boolean {
+  if (input.composerPressedAt === null) return false;
+  const age = input.now - input.composerPressedAt;
+  return age >= 0 && age <= TESLA_COMPOSER_FOCUS_GRACE_MS;
+}
+
 // Returning to the window should land the caret in the composer, so the reader can type right
 // away. The exceptions are places where focus is deliberate: another text field, a terminal in
 // the drawer or the right panel, or an open dialog or popup. A focused button outside those is
