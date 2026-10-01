@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.45-nightly.20261001.2539003048",
+    date: "2026-10-01",
+    items: [
+      {
+        kind: "new",
+        title: "Let the composer hover follow the pointer",
+      },
+      {
+        kind: "new",
+        title: "Dock a touch console for the Tesla browser",
+      },
+      {
+        kind: "improved",
+        title: "The desktop renderer from compositing at display refresh",
+      },
+      {
+        kind: "new",
+        title: "Make sidebar and top bar glass adjustable",
+      },
+      {
+        kind: "fixed",
+        title: "Hide the project rail scrollbar",
+      },
+      {
+        kind: "fixed",
+        title: "EAS polling diagnostics out of captured result",
+      },
+    ],
+  },
+  {
     version: "0.0.45-nightly.20261001.2539003040",
     date: "2026-10-01",
     items: [
