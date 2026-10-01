@@ -542,7 +542,7 @@ export function SettingsPageContainer({
     >
       <div className="relative flex min-h-0 flex-1 flex-col" data-chrome-fade-top="">
         <div
-          className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto"
+          className="scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto"
           data-settings-page-scroll
         >
           <WorkspacePageContainer width={width} className={cn("gap-8", className)}>
@@ -550,6 +550,10 @@ export function SettingsPageContainer({
             {children}
           </WorkspacePageContainer>
         </div>
+        <div
+          aria-hidden
+          className="topbar-scroll-fade pointer-events-none absolute inset-x-0 top-0 z-10 [right:var(--app-scrollbar-width)]"
+        />
       </div>
     </SettingsSearchTargetProvider>
   );

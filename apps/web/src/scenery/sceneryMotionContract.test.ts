@@ -106,11 +106,21 @@ describe("working-row thinking indicator contract", () => {
 
   it("the shimmer overlay's utilities still exist, so it never paints as an unmasked bold copy", () => {
     expect(messagesTimelineSource).toContain('className="live-activity-focus ');
+    expect(messagesTimelineSource).toContain("observeLiveActivityMotion");
     expect(indexStylesSource).toContain("@utility live-activity-focus {");
     expect(indexStylesSource).toContain("@utility live-activity-focus-counter {");
     expect(indexStylesSource).toContain("@utility live-activity-focus-aligned {");
-    expect(indexStylesSource).toContain("@keyframes live-activity-focus {");
-    expect(indexStylesSource).toContain("@keyframes live-activity-focus-counter {");
+    expect(indexStylesSource).toContain(
+      "transform: translateX(calc(var(--live-activity-phase, 0) * 100%));",
+    );
+    expect(indexStylesSource).toContain(
+      "transform: translateX(calc(var(--live-activity-phase, 0) * -100%));",
+    );
+    expect(indexStylesSource).toMatch(
+      /@utility live-activity-focus-counter \{[^}]*transform: none;/s,
+    );
+    expect(indexStylesSource).not.toContain("animation: live-activity-focus");
+    expect(indexStylesSource).not.toContain("animation: live-tool-shine");
   });
 
   it("does not overlay thinking orbs on the working row, scroll pill, or hero", () => {
