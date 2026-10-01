@@ -268,6 +268,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["transparent transparency solid menus dialogs composer"],
   },
   {
+    id: "setting-sidebar-opacity",
+    title: "Sidebar opacity",
+    to: "/settings/appearance",
+    searchTerms: ["top bar title bar chrome translucent liquid glass frosted"],
+  },
+  {
+    id: "setting-sidebar-blur",
+    title: "Sidebar blur",
+    to: "/settings/appearance",
+    searchTerms: ["frost frosted blur liquid glass top bar title bar chrome"],
+  },
+  {
     id: "car-display",
     title: "Car display",
     to: "/settings/appearance",

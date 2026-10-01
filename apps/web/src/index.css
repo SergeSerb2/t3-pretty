@@ -312,6 +312,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   /* Corner radius of the thread pane where it meets the sidebar. Kept off
      the glass plates: a radius on either plate leaves a wedge at the seam. */
   --workspace-frame-radius: 12px;
+  /* Sidebar and top bar share these. Appearance writes the first two on
+     <html>; these are the defaults before that write. Plates must not
+     redeclare them, or the sliders cannot inherit. 68% / 32px / 1.6 is a
+     step more opaque, more frosted, and more liquid than the old 42% / 16px
+     plate. Keep the numbers aligned with chromeGlassOpacity and
+     chromeGlassBlur in packages/contracts/src/settings.ts. */
+  --workspace-glass-opacity: 68%;
+  --workspace-glass-blur: 32px;
+  --workspace-glass-saturation: 1.6;
   --workspace-controls-top: 0px;
   --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
   --workspace-controls-right: calc(env(safe-area-inset-right) + 0.75rem);
@@ -691,8 +700,7 @@ html[data-status-pulse="1"] .status-ping {
 }
 
 html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
-  -webkit-mask-image: none;
-  mask-image: none;
+  display: none;
 }
 
 @utility dropdown-glass {
@@ -819,44 +827,22 @@ html[data-window-inactive]
   }
 }
 
+/* Painted over the scrollport instead of masking it. A mask on the scroller
+   forces the whole column into one surface that re-composites on every
+   scroll and stream frame. The stops match the old mask: full page color at
+   the top, clear at the bottom of the titlebar band. */
 @utility topbar-scroll-fade {
-  --topbar-scroll-fade-height: var(--workspace-titlebar-scroll-fade-height);
-  -webkit-mask-image:
-    linear-gradient(
-      to bottom,
-      transparent 0%,
-      rgb(0 0 0 / 10%) 10%,
-      rgb(0 0 0 / 30%) 24%,
-      rgb(0 0 0 / 58%) 42%,
-      rgb(0 0 0 / 82%) 62%,
-      rgb(0 0 0 / 96%) 82%,
-      black 100%
-    ),
-    linear-gradient(black, black), linear-gradient(black, black);
-  -webkit-mask-position: top, bottom, right;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size:
-    100% calc(var(--topbar-scroll-fade-height) + 1px),
-    100% calc(100% - var(--topbar-scroll-fade-height)),
-    var(--app-scrollbar-width) 100%;
-  mask-image:
-    linear-gradient(
-      to bottom,
-      transparent 0%,
-      rgb(0 0 0 / 10%) 10%,
-      rgb(0 0 0 / 30%) 24%,
-      rgb(0 0 0 / 58%) 42%,
-      rgb(0 0 0 / 82%) 62%,
-      rgb(0 0 0 / 96%) 82%,
-      black 100%
-    ),
-    linear-gradient(black, black), linear-gradient(black, black);
-  mask-position: top, bottom, right;
-  mask-repeat: no-repeat;
-  mask-size:
-    100% calc(var(--topbar-scroll-fade-height) + 1px),
-    100% calc(100% - var(--topbar-scroll-fade-height)),
-    var(--app-scrollbar-width) 100%;
+  height: var(--workspace-titlebar-scroll-fade-height);
+  background: linear-gradient(
+    to bottom,
+    var(--background) 0%,
+    color-mix(in srgb, var(--background) 90%, transparent) 10%,
+    color-mix(in srgb, var(--background) 70%, transparent) 24%,
+    color-mix(in srgb, var(--background) 42%, transparent) 42%,
+    color-mix(in srgb, var(--background) 18%, transparent) 62%,
+    color-mix(in srgb, var(--background) 4%, transparent) 82%,
+    transparent 100%
+  );
 }
 
 /* Virtualizers own their native scroll element, so they cannot use ScrollArea's
@@ -902,19 +888,6 @@ html[data-window-inactive]
   }
 }
 
-@keyframes live-tool-shine {
-  from {
-    background-position:
-      -4.5rem 0,
-      0 0;
-  }
-  to {
-    background-position:
-      calc(100% + 4.5rem) 0,
-      0 0;
-  }
-}
-
 @utility live-tool-shine {
   @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
     color: transparent;
@@ -926,8 +899,10 @@ html[data-window-inactive]
       100% 100%;
     background-repeat: no-repeat;
     background-clip: text;
-    animation: live-tool-shine 2.2s steps(30) infinite;
-    animation-play-state: var(--visible-animation-state, paused);
+    /* Phase comes from the shared 30 fps clock, not a display-rate animation. */
+    background-position:
+      calc(-4.5rem + (100% + 9rem) * var(--live-activity-phase, 0)) 0,
+      0 0;
   }
 }
 
@@ -935,24 +910,6 @@ html[data-window-inactive]
   animation: var(--animate-spin);
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
-}
-
-@keyframes live-activity-focus {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(100%);
-  }
-}
-
-@keyframes live-activity-focus-counter {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-100%);
-  }
 }
 
 @utility live-activity-focus {
@@ -985,26 +942,20 @@ html[data-window-inactive]
     transparent 100%
   );
   mask-repeat: no-repeat;
-  animation: live-activity-focus 2.2s linear infinite;
-  animation-play-state: var(--visible-animation-state, paused);
-  will-change: var(--visible-animation-will-change, auto);
+  transform: translateX(calc(var(--live-activity-phase, 0) * 100%));
 
   @media (prefers-reduced-motion: reduce), (forced-colors: active) {
-    animation: none;
     opacity: 0;
-    will-change: auto;
+    transform: none;
   }
 }
 
 @utility live-activity-focus-counter {
   width: 100%;
-  animation: live-activity-focus-counter 2.2s linear infinite;
-  animation-play-state: var(--visible-animation-state, paused);
-  will-change: var(--visible-animation-will-change, auto);
+  transform: translateX(calc(var(--live-activity-phase, 0) * -100%));
 
   @media (prefers-reduced-motion: reduce), (forced-colors: active) {
-    animation: none;
-    will-change: auto;
+    transform: none;
   }
 }
 
@@ -3076,9 +3027,10 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
 
 /* One chrome plane. Sidebar and titlebar share --sidebar so a solid
    fallback cannot split them into two tints. Hosts stay clear so ::after
-   can sample the scenery; html beats .bg-*. Chrome keeps its own
-   opacity/blur so the settings slider, a 100% glass setting, and a stuck
-   data-window-interacting flag cannot flatten it.
+   can sample the scenery; html beats .bg-*. Opacity and blur stay on
+   <html> (--workspace-glass-*) so the sidebar sliders can change them.
+   The menu glass slider, a 100% glass setting, and a stuck
+   data-window-interacting flag must not flatten this plate.
    The top band is one surface: no per-plate drop shadow and no sheen that
    restarts on the seam. A hairline closes the band; the column edge starts
    under that line, so the inner corner is not two cards stepping on each other. */
@@ -3090,8 +3042,6 @@ html
     [data-pull-requests-header]
   ) {
   --workspace-glass-surface: var(--sidebar);
-  --workspace-glass-opacity: 42%;
-  --workspace-glass-blur: 16px;
   background-color: transparent;
 }
 
@@ -3136,13 +3086,13 @@ html
   pointer-events: none;
   background: color-mix(
     in srgb,
-    var(--workspace-glass-surface) var(--workspace-glass-opacity, 42%),
+    var(--workspace-glass-surface) var(--workspace-glass-opacity, 68%),
     transparent
   );
-  -webkit-backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
-    saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
-    saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--workspace-glass-blur, 32px))
+    saturate(var(--workspace-glass-saturation, 1.6));
+  backdrop-filter: blur(var(--workspace-glass-blur, 32px))
+    saturate(var(--workspace-glass-saturation, 1.6));
   -webkit-mask-image: radial-gradient(
     circle at 100% 100%,
     transparent var(--workspace-frame-radius),
@@ -3196,13 +3146,13 @@ html
   pointer-events: none;
   background: color-mix(
     in srgb,
-    var(--workspace-glass-surface) var(--workspace-glass-opacity, var(--glass-opacity)),
+    var(--workspace-glass-surface) var(--workspace-glass-opacity, 68%),
     transparent
   );
-  -webkit-backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
-    saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
-    saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--workspace-glass-blur, 32px))
+    saturate(var(--workspace-glass-saturation, 1.6));
+  backdrop-filter: blur(var(--workspace-glass-blur, 32px))
+    saturate(var(--workspace-glass-saturation, 1.6));
 }
 
 /* The underline of the top band. Same weight as the sidebar header line, so

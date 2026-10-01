@@ -685,7 +685,7 @@ export function SidebarProjectRail({
         ) : null}
         <div
           className={cn(
-            "flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden py-0.5",
+            "rail-project-scroll flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden py-0.5",
             dropHighlight === "list" && "rounded-lg",
             dropHighlight === "list" && RAIL_DROP_HIGHLIGHT_CLASS,
             dropHighlight === "folder-end" && RAIL_FOLDER_AFTER_CLASS,

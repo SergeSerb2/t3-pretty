@@ -472,10 +472,24 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
   return typeof payload.agentId === "string" && payload.agentId.trim().length > 0;
 }
 
+function activitiesInDisplayOrder(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): ReadonlyArray<OrchestrationThreadActivity> {
+  for (let index = 1; index < activities.length; index += 1) {
+    if (compareActivitiesByOrder(activities[index - 1]!, activities[index]!) > 0) {
+      // Hermes has no Array#toSorted. Copy only when the stream is out of order.
+      const ordered = activities.slice();
+      ordered.sort(compareActivitiesByOrder);
+      return ordered;
+    }
+  }
+  return activities;
+}
+
 export function deriveWorkLogEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): WorkLogEntry[] {
-  const ordered = [...activities].toSorted(compareActivitiesByOrder);
+  const ordered = activitiesInDisplayOrder(activities);
   // A launch tool and its task lifecycle describe the same run. Only hide
   // launch rows once their tool-use id has an agent row to replace them.
   const agentLaunchToolIds = new Set<string>();

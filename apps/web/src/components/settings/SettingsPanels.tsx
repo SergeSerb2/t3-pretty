@@ -27,6 +27,8 @@ import {
   type EnvironmentIdentificationMode,
   MAX_APPEARANCE_CONTRAST,
   MAX_CODE_FONT_SIZE,
+  MAX_CHROME_GLASS_BLUR,
+  MAX_CHROME_GLASS_OPACITY,
   MAX_GLASS_OPACITY,
   MAX_INTERFACE_FONT_SIZE,
   MAX_PANEL_ANIMATION_DURATION_MS,
@@ -35,6 +37,8 @@ import {
   MAX_TERMINAL_FONT_SIZE,
   MIN_CODE_FONT_SIZE,
   MIN_APPEARANCE_CONTRAST,
+  MIN_CHROME_GLASS_BLUR,
+  MIN_CHROME_GLASS_OPACITY,
   MIN_GLASS_OPACITY,
   MIN_INTERFACE_FONT_SIZE,
   MIN_PANEL_ANIMATION_DURATION_MS,
@@ -543,6 +547,12 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Contrast"]
         : []),
       ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? ["Glass opacity"] : []),
+      ...(settings.chromeGlassOpacity !== DEFAULT_UNIFIED_SETTINGS.chromeGlassOpacity
+        ? ["Sidebar opacity"]
+        : []),
+      ...(settings.chromeGlassBlur !== DEFAULT_UNIFIED_SETTINGS.chromeGlassBlur
+        ? ["Sidebar blur"]
+        : []),
       ...(settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme
         ? ["Diff colors"]
         : []),
@@ -688,6 +698,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontSizePrompt,
       settings.fontSizeTerminal,
       settings.glassOpacity,
+      settings.chromeGlassOpacity,
+      settings.chromeGlassBlur,
       settings.panelAnimationDurationMs,
       settings.responseStreamingMode,
       settings.enableProviderUpdateChecks,
@@ -789,6 +801,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
+      chromeGlassOpacity: DEFAULT_UNIFIED_SETTINGS.chromeGlassOpacity,
+      chromeGlassBlur: DEFAULT_UNIFIED_SETTINGS.chromeGlassBlur,
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
@@ -1187,6 +1201,20 @@ export function AppearanceSettingsPanel() {
     "--settings-slider-progress": `${glassOpacityRatio * 100}%`,
     "--settings-slider-fill-offset": `${0.5 - glassOpacityRatio}rem`,
   } as CSSProperties;
+  const chromeGlassOpacityRatio =
+    (settings.chromeGlassOpacity - MIN_CHROME_GLASS_OPACITY) /
+    (MAX_CHROME_GLASS_OPACITY - MIN_CHROME_GLASS_OPACITY);
+  const chromeGlassOpacitySliderStyle = {
+    "--settings-slider-progress": `${chromeGlassOpacityRatio * 100}%`,
+    "--settings-slider-fill-offset": `${0.5 - chromeGlassOpacityRatio}rem`,
+  } as CSSProperties;
+  const chromeGlassBlurRatio =
+    (settings.chromeGlassBlur - MIN_CHROME_GLASS_BLUR) /
+    (MAX_CHROME_GLASS_BLUR - MIN_CHROME_GLASS_BLUR);
+  const chromeGlassBlurSliderStyle = {
+    "--settings-slider-progress": `${chromeGlassBlurRatio * 100}%`,
+    "--settings-slider-fill-offset": `${0.5 - chromeGlassBlurRatio}rem`,
+  } as CSSProperties;
   const appearanceContrastRatio =
     (settings.appearanceContrast - MIN_APPEARANCE_CONTRAST) /
     (MAX_APPEARANCE_CONTRAST - MIN_APPEARANCE_CONTRAST);
@@ -1305,6 +1333,100 @@ export function AppearanceSettingsPanel() {
                 style={glassOpacitySliderStyle}
                 type="range"
                 value={settings.glassOpacity}
+              />
+            </div>
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("setting-sidebar-opacity")}
+          description="How solid the sidebar and top bar are. Higher values cover more of what is behind them."
+          resetAction={
+            settings.chromeGlassOpacity !== DEFAULT_UNIFIED_SETTINGS.chromeGlassOpacity ? (
+              <SettingResetButton
+                label="sidebar opacity"
+                onClick={() =>
+                  updateSettings({
+                    chromeGlassOpacity: DEFAULT_UNIFIED_SETTINGS.chromeGlassOpacity,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <div className="flex w-full items-center gap-3 sm:w-52">
+              <output
+                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+                htmlFor="sidebar-opacity"
+              >
+                {settings.chromeGlassOpacity}%
+              </output>
+              <input
+                aria-label="Sidebar opacity"
+                className="settings-slider min-w-0 flex-1"
+                id="sidebar-opacity"
+                max={MAX_CHROME_GLASS_OPACITY}
+                min={MIN_CHROME_GLASS_OPACITY}
+                onChange={(event) => {
+                  const chromeGlassOpacity = Number(event.currentTarget.value);
+                  if (
+                    Number.isInteger(chromeGlassOpacity) &&
+                    chromeGlassOpacity >= MIN_CHROME_GLASS_OPACITY &&
+                    chromeGlassOpacity <= MAX_CHROME_GLASS_OPACITY
+                  ) {
+                    updateSettings({ chromeGlassOpacity });
+                  }
+                }}
+                step={1}
+                style={chromeGlassOpacitySliderStyle}
+                type="range"
+                value={settings.chromeGlassOpacity}
+              />
+            </div>
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("setting-sidebar-blur")}
+          description="How much the sidebar and top bar blur what is behind them. Higher values look more like frosted glass."
+          resetAction={
+            settings.chromeGlassBlur !== DEFAULT_UNIFIED_SETTINGS.chromeGlassBlur ? (
+              <SettingResetButton
+                label="sidebar blur"
+                onClick={() =>
+                  updateSettings({ chromeGlassBlur: DEFAULT_UNIFIED_SETTINGS.chromeGlassBlur })
+                }
+              />
+            ) : null
+          }
+          control={
+            <div className="flex w-full items-center gap-3 sm:w-52">
+              <output
+                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+                htmlFor="sidebar-blur"
+              >
+                {settings.chromeGlassBlur}px
+              </output>
+              <input
+                aria-label="Sidebar blur"
+                className="settings-slider min-w-0 flex-1"
+                id="sidebar-blur"
+                max={MAX_CHROME_GLASS_BLUR}
+                min={MIN_CHROME_GLASS_BLUR}
+                onChange={(event) => {
+                  const chromeGlassBlur = Number(event.currentTarget.value);
+                  if (
+                    Number.isInteger(chromeGlassBlur) &&
+                    chromeGlassBlur >= MIN_CHROME_GLASS_BLUR &&
+                    chromeGlassBlur <= MAX_CHROME_GLASS_BLUR
+                  ) {
+                    updateSettings({ chromeGlassBlur });
+                  }
+                }}
+                step={1}
+                style={chromeGlassBlurSliderStyle}
+                type="range"
+                value={settings.chromeGlassBlur}
               />
             </div>
           }
