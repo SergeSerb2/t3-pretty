@@ -125,16 +125,21 @@ function SidebarProvider({
 }) {
   const isNarrowViewport = useIsMobile();
   const teslaTouch = useTeslaTouchUi();
-  const isMobile = isNarrowViewport || teslaTouch;
+  // The car screen is a wide landscape display. A phone sheet hides the
+  // thread list; the dock stays open for the whole visit and does not write
+  // over the desk sidebar preference.
+  const isMobile = isNarrowViewport && !teslaTouch;
   const [openMobile, setOpenMobile] = React.useState(false);
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
   const [_open, _setOpen] = React.useState(defaultOpen);
-  const open = openProp ?? _open;
+  const storedOpen = openProp ?? _open;
+  const open = teslaTouch ? true : storedOpen;
   const setOpen = React.useCallback(
     async (value: boolean | ((value: boolean) => boolean)) => {
-      const openState = typeof value === "function" ? value(open) : value;
+      if (teslaTouch) return;
+      const openState = typeof value === "function" ? value(storedOpen) : value;
       if (setOpenProp) {
         setOpenProp(openState);
       } else {
@@ -149,7 +154,7 @@ function SidebarProvider({
         value: String(openState),
       });
     },
-    [setOpenProp, open],
+    [setOpenProp, storedOpen, teslaTouch],
   );
 
   // We add a state so that we can do data-state="expanded" or "collapsed".

@@ -2236,7 +2236,7 @@ function OpenCommandPaletteDialog(props: {
               mode === "auto"
                 ? "On in Tesla's passenger browser"
                 : mode === "on"
-                  ? "Large-touch layout"
+                  ? "Touch layout for the car screen"
                   : "Desktop layout",
             searchTerms: [TESLA_TOUCH_PREFERENCE_LABELS[mode], "car display", "tesla"],
             icon: <CarFrontIcon className={ITEM_ICON_CLASS} />,

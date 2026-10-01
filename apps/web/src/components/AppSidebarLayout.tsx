@@ -30,6 +30,7 @@ import { resolveThreadRouteRef } from "../threadRoutes";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
+import { useTeslaTouchUi } from "../teslaTouchUi";
 import {
   hideMacosWindowButtonsThenReleaseInset,
   MACOS_TRAFFIC_LIGHT_REVEAL_DELAY_MS,
@@ -351,6 +352,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
+  const teslaTouch = useTeslaTouchUi();
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Stable options object: the drag limits resolve against the live window at
   // drag time, so no viewport subscription is needed here and the rail never
@@ -383,7 +385,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       : false;
   });
   const sidebarProviderStyle = {
-    "--sidebar-width": resolveThreadSidebarCssWidth(sidebarWidth),
+    "--sidebar-width": teslaTouch
+      ? "min(34rem, max(20rem, 40vw))"
+      : resolveThreadSidebarCssWidth(sidebarWidth),
+    ...(teslaTouch ? { "--sidebar-width-icon": "5.75rem" } : {}),
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
   } as CSSProperties;
 
@@ -475,7 +480,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           className="workspace-sidebar-glass group-data-[side=left]:border-r-0 text-sidebar-foreground"
           role="navigation"
           aria-label={isOnSettings ? "Settings" : "Threads"}
-          resizable={sidebarResizable}
+          resizable={teslaTouch ? false : sidebarResizable}
         >
           {isOnSettings ? (
             <>

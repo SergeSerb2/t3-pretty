@@ -1,5 +1,6 @@
 /**
  * Tesla's passenger browser is Chromium on a large landscape touchscreen.
+ * Car display docks the thread list and does not focus the composer on entry.
  * It looks like a desktop viewport, so phone breakpoints never fire, but the
  * only input is a finger — and some firmware still reports a fine pointer.
  *

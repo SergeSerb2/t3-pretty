@@ -121,6 +121,11 @@ export interface ComposerPromptEditorProps {
   skills: ReadonlyArray<ServerProviderSkill>;
   disabled: boolean;
   placeholder: string;
+  /**
+   * `none` keeps the car browser from raising its keyboard when the field
+   * is focused by the page. A tap sets `text` before the caret is placed.
+   */
+  inputMode?: "none" | "text" | undefined;
   ariaLabel?: string | undefined;
   /** Identifies an editor with suggestions, even while its list is closed. */
   suggestionListId?: string | undefined;
@@ -597,6 +602,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     skills,
     disabled,
     placeholder,
+    inputMode,
     ariaLabel,
     suggestionListId,
     activeSuggestionId,
@@ -777,8 +783,18 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
           }
         : {}),
       "aria-placeholder": placeholder,
+      ...(inputMode ? { inputmode: inputMode } : {}),
     }),
-    [activeSuggestionId, ariaLabel, className, disabled, placeholder, richText, suggestionListId],
+    [
+      activeSuggestionId,
+      ariaLabel,
+      className,
+      disabled,
+      inputMode,
+      placeholder,
+      richText,
+      suggestionListId,
+    ],
   );
 
   const editor = useEditor(
