@@ -119,10 +119,20 @@ describe("scenery structural contract with upstream markup", () => {
 
 describe("glass contract with upstream chrome", () => {
   it("the composer still wears the glass shell driven by the --glass vars", () => {
-    expect(chatViewSource).toContain("chat-composer-glass-shell");
+    expect(chatViewSource).toContain("<ComposerSurface.Shell");
     expect(indexCssSource).toContain("var(--chat-composer-glass-surface) var(--glass-opacity)");
-    expect(indexCssSource).toContain("var(--composer-hover-dur, 1)");
+    expect(indexCssSource).toContain("--composer-hover-dur: 1");
     expect(composerSpecularSource).toContain('"--composer-hover-dur"');
+  });
+
+  it("composer hover timing follows separate enter and exit speeds", () => {
+    expect(indexCssSource).toContain("--composer-hover-k: var(--composer-hover-out)");
+    expect(indexCssSource).toContain("--composer-hover-k: var(--composer-hover-in)");
+    expect(indexCssSource).toContain("--composer-hover-settle:");
+    expect(composerSpecularSource).toContain('"--composer-hover-in"');
+    expect(composerSpecularSource).toContain('"--composer-hover-out"');
+    expect(composerSpecularSource).toContain('"--composer-hover-settle"');
+    expect(indexCssSource).not.toContain("clamp(0.8, var(--composer-hover-dur, 1), 1.2)");
   });
 
   it("composer glass stacks without trapping backdrop-filter in a Backdrop Root", () => {
@@ -160,7 +170,7 @@ describe("glass contract with upstream chrome", () => {
   it("composites the faint composer glow after rendering full-range gradients", () => {
     const specularLayers = indexCssSource.slice(
       indexCssSource.indexOf(".chat-composer-specular::before"),
-      indexCssSource.indexOf('[data-slot="composer-shell"]:hover .chat-composer-specular::after'),
+      indexCssSource.indexOf('[data-slot="composer-shell"]:hover .chat-composer-specular::before'),
     );
     expect(
       specularLayers.match(
