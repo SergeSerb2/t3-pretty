@@ -312,6 +312,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   /* Corner radius of the thread pane where it meets the sidebar. Kept off
      the glass plates: a radius on either plate leaves a wedge at the seam. */
   --workspace-frame-radius: 12px;
+  /* Sidebar and top bar share these. Appearance writes the first two on
+     <html>; these are the defaults before that write. Plates must not
+     redeclare them, or the sliders cannot inherit. 68% / 32px / 1.6 is a
+     step more opaque, more frosted, and more liquid than the old 42% / 16px
+     plate. Keep the numbers aligned with chromeGlassOpacity and
+     chromeGlassBlur in packages/contracts/src/settings.ts. */
+  --workspace-glass-opacity: 68%;
+  --workspace-glass-blur: 32px;
+  --workspace-glass-saturation: 1.6;
   --workspace-controls-top: 0px;
   --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
   --workspace-controls-right: calc(env(safe-area-inset-right) + 0.75rem);
@@ -3076,9 +3085,10 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
 
 /* One chrome plane. Sidebar and titlebar share --sidebar so a solid
    fallback cannot split them into two tints. Hosts stay clear so ::after
-   can sample the scenery; html beats .bg-*. Chrome keeps its own
-   opacity/blur so the settings slider, a 100% glass setting, and a stuck
-   data-window-interacting flag cannot flatten it.
+   can sample the scenery; html beats .bg-*. Opacity and blur stay on
+   <html> (--workspace-glass-*) so the sidebar sliders can change them.
+   The menu glass slider, a 100% glass setting, and a stuck
+   data-window-interacting flag must not flatten this plate.
    The top band is one surface: no per-plate drop shadow and no sheen that
    restarts on the seam. A hairline closes the band; the column edge starts
    under that line, so the inner corner is not two cards stepping on each other. */
@@ -3090,8 +3100,6 @@ html
     [data-pull-requests-header]
   ) {
   --workspace-glass-surface: var(--sidebar);
-  --workspace-glass-opacity: 42%;
-  --workspace-glass-blur: 16px;
   background-color: transparent;
 }
 
@@ -3136,13 +3144,13 @@ html
   pointer-events: none;
   background: color-mix(
     in srgb,
-    var(--workspace-glass-surface) var(--workspace-glass-opacity, 42%),
+    var(--workspace-glass-surface) var(--workspace-glass-opacity, 68%),
     transparent
   );
-  -webkit-backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
-    saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
-    saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--workspace-glass-blur, 32px))
+    saturate(var(--workspace-glass-saturation, 1.6));
+  backdrop-filter: blur(var(--workspace-glass-blur, 32px))
+    saturate(var(--workspace-glass-saturation, 1.6));
   -webkit-mask-image: radial-gradient(
     circle at 100% 100%,
     transparent var(--workspace-frame-radius),
@@ -3196,13 +3204,13 @@ html
   pointer-events: none;
   background: color-mix(
     in srgb,
-    var(--workspace-glass-surface) var(--workspace-glass-opacity, var(--glass-opacity)),
+    var(--workspace-glass-surface) var(--workspace-glass-opacity, 68%),
     transparent
   );
-  -webkit-backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
-    saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))
-    saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--workspace-glass-blur, 32px))
+    saturate(var(--workspace-glass-saturation, 1.6));
+  backdrop-filter: blur(var(--workspace-glass-blur, 32px))
+    saturate(var(--workspace-glass-saturation, 1.6));
 }
 
 /* The underline of the top band. Same weight as the sidebar header line, so

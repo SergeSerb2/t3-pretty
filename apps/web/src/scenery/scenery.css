@@ -456,13 +456,12 @@ html:not(.dark) .scenery-attribution:hover {
    [data-theme-id] outranks index.css's themed blocks without relying on
    emission order. */
 
-/* Shared chrome plate. Sidebar, right panel, and the bottom terminal all
-   sample this so they meet as one material instead of three independently
-   tuned fills. */
+/* Right panel and the bottom terminal sample this fill. The sidebar and
+   top bar keep --workspace-glass-* so Appearance can drive that one plate
+   over a photo too. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] {
   --scenery-chrome-fill: color-mix(in srgb, var(--sidebar) 42%, transparent);
   --scenery-chrome-fill-solid: color-mix(in srgb, var(--sidebar) 92%, transparent);
-  --workspace-glass-opacity: 42%;
 }
 
 /* The routed <main> and the thread view root paint the whole chat column.
@@ -516,8 +515,8 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-h
 
 /* Composer: upstream's own glass shell (chat-composer-glass-shell and the
    floating pills) reads these vars; at the stock 80% fill it looks solid
-   over the wash. 42% matches the sidebar/header chrome plate so the chat
-   box reads as the same frosted glass. Scoped to the chat column so it
+   over the wash. 42% keeps the chat box lighter than the sidebar and top
+   bar, which follow --workspace-glass-*. Scoped to the chat column so it
    wins over the inline root-level value the Settings "Glass opacity"
    slider writes — that slider keeps governing every other theme. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]

@@ -505,6 +505,34 @@ describe("ClientSettings recording input overlays", () => {
   });
 });
 
+describe("ClientSettings chrome glass", () => {
+  it("defaults the sidebar and top bar to a more opaque frosted plate", () => {
+    const settings = decodeClientSettings({});
+    expect(settings.chromeGlassOpacity).toBe(68);
+    expect(settings.chromeGlassBlur).toBe(32);
+  });
+
+  it.each([23, 101, 68.5])("rejects an invalid chrome glass opacity: %s", (value) => {
+    expect(() => decodeClientSettings({ chromeGlassOpacity: value })).toThrow();
+    expect(() => decodeClientSettingsPatch({ chromeGlassOpacity: value })).toThrow();
+  });
+
+  it.each([24, 68, 100])("accepts a chrome glass opacity in range: %s", (value) => {
+    expect(decodeClientSettings({ chromeGlassOpacity: value }).chromeGlassOpacity).toBe(value);
+    expect(decodeClientSettingsPatch({ chromeGlassOpacity: value }).chromeGlassOpacity).toBe(value);
+  });
+
+  it.each([-1, 65, 16.5])("rejects an invalid chrome glass blur: %s", (value) => {
+    expect(() => decodeClientSettings({ chromeGlassBlur: value })).toThrow();
+    expect(() => decodeClientSettingsPatch({ chromeGlassBlur: value })).toThrow();
+  });
+
+  it.each([0, 32, 64])("accepts a chrome glass blur in range: %s", (value) => {
+    expect(decodeClientSettings({ chromeGlassBlur: value }).chromeGlassBlur).toBe(value);
+    expect(decodeClientSettingsPatch({ chromeGlassBlur: value }).chromeGlassBlur).toBe(value);
+  });
+});
+
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
     expect(decodeClientSettings({}).glassOpacity).toBe(80);
@@ -797,7 +825,6 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     });
     expect(() => decodeServerSettings({ homeSuggestionsTime: "9am" })).toThrow();
   });
-
 
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
