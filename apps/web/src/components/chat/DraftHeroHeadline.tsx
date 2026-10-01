@@ -244,16 +244,24 @@ export function DraftHeroHeadline({
             // The trigger's accessible name comes from its visible text (the
             // project title) so the hero sentence reads naturally: an
             // aria-label here would replace the title with an action phrase
-            // mid-sentence and baffle screen-reader users.
+            // mid-sentence and baffle screen-reader users. The truncating span
+            // is overflow-hidden, which drops its baseline to its bottom edge,
+            // so the trigger aligns to the bottom to stay level with the text.
             <MenuTrigger
               render={<InlineButton tone="picker" />}
               data-draft-project-trigger=""
-              className="pointer-events-auto max-w-64 align-baseline"
+              className="pointer-events-auto max-w-[min(32rem,80vw)] align-bottom"
             />
           }
         >
           <span className="min-w-0 truncate">
-            {isScratchDraft ? "No project" : (activeProjectDisplayName ?? "Choose a project")}
+            {isScratchDraft ? (
+              "No project"
+            ) : activeProjectDisplayName ? (
+              <ProjectHeroName name={activeProjectDisplayName} />
+            ) : (
+              "Choose a project"
+            )}
           </span>
         </TooltipTrigger>
         {activeProjectDisplayName && !isScratchDraft ? (
@@ -452,12 +460,14 @@ export function DraftHeroHeadline({
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
       <h1
         aria-label={headingLabel}
-        className="w-full text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl"
+        className="w-full text-balance text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl"
       >
         {isScratchDraft ? (
           <>What should we work on?</>
         ) : hasResolvedProject ? (
-          <>What should we build in {projectSelector}?</>
+          <>
+            What should we build in <span className="whitespace-nowrap">{projectSelector}?</span>
+          </>
         ) : canChooseProject ? (
           <>{projectSelector} to start</>
         ) : (
@@ -473,5 +483,18 @@ export function DraftHeroHeadline({
       )}
       {pullRequestSelector ? <div className="mt-3">{pullRequestSelector}</div> : null}
     </div>
+  );
+}
+
+// Repository-style names ("owner/repo") lead with the repo; the owner recedes
+// so a long name reads at a glance and truncates on the part users scan least.
+function ProjectHeroName({ name }: { readonly name: string }) {
+  const slash = name.lastIndexOf("/");
+  if (slash <= 0 || slash === name.length - 1) return name;
+  return (
+    <>
+      <span className="font-normal text-muted-foreground">{name.slice(0, slash + 1)}</span>
+      {name.slice(slash + 1)}
+    </>
   );
 }
