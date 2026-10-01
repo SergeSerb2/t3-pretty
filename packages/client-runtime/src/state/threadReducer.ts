@@ -135,6 +135,7 @@ export function applyThreadDetailEvent(
           autoSettleDisabledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
+          storedAt: null,
           pinnedAt: null,
           pinOrderKey: null,
           titleRegeneration: null,
@@ -218,6 +219,26 @@ export function applyThreadDetailEvent(
           ...thread,
           snoozedUntil: null,
           snoozedAt: null,
+          updatedAt: event.payload.updatedAt,
+        },
+      };
+
+    case "thread.stored":
+      return {
+        kind: "updated",
+        thread: { ...thread, storedAt: event.payload.storedAt, updatedAt: event.payload.updatedAt },
+      };
+
+    case "thread.unstored":
+      return {
+        kind: "updated",
+        thread: {
+          ...thread,
+          storedAt: null,
+          // Leaving the shelf re-enters Active at the top, like un-settle.
+          ...(thread.storedAt != null
+            ? { unsettledAt: event.payload.updatedAt, activeOrderKey: null }
+            : {}),
           updatedAt: event.payload.updatedAt,
         },
       };

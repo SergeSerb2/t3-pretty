@@ -40,6 +40,7 @@ export function threadDetailToShell(
     settledAt: thread.settledAt,
     snoozedUntil: thread.snoozedUntil ?? null,
     snoozedAt: thread.snoozedAt ?? null,
+    storedAt: thread.storedAt ?? null,
     session: thread.session,
     latestUserMessageAt: latestUserMessageAt(thread),
     hasPendingApprovals: false,

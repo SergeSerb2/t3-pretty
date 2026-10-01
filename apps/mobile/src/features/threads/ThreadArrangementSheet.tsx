@@ -1,7 +1,7 @@
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { effectiveSnoozed, effectiveStored } from "@t3tools/client-runtime/state/thread-settled";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, FlatList, Modal, Pressable, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
@@ -31,7 +31,7 @@ import { getThreadListV2OrderedSection } from "./threadListV2";
 const ROW_HEIGHT = 56;
 const HEADER_HEIGHT = 48;
 const keyOf = (thread: EnvironmentThreadShell) => scopedThreadKey(thread.environmentId, thread.id);
-type Section = "pinned" | "active" | "snoozed" | "settled";
+type Section = "pinned" | "active" | "snoozed" | "stored" | "settled";
 type Destination = Exclude<ThreadMoveDestination, string>;
 type Row = {
   key: string;
@@ -155,7 +155,7 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
   const dropBusy = useAtomValue(threadDropBusyAtom);
   const { moveThread } = useThreadListActions();
   const [now, setNow] = useState(() => new Date().toISOString());
-  const [expanded, setExpanded] = useState({ snoozed: false, settled: false });
+  const [expanded, setExpanded] = useState({ snoozed: false, stored: false, settled: false });
   useEffect(() => {
     const wakeAt = Math.min(
       ...threads.flatMap((thread) => {
@@ -171,6 +171,11 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
     return () => clearTimeout(timer);
   }, [threads, now]);
   const sections = useMemo(() => {
+    const storageEnvironmentIds = new Set(
+      [...configs].flatMap(([id, config]) =>
+        config.environment.capabilities.threadStorage ? [id] : [],
+      ),
+    );
     const shared = {
       threads,
       now,
@@ -186,6 +191,7 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
           config.environment.capabilities.threadSnooze ? [id] : [],
         ),
       ),
+      storageEnvironmentIds,
     };
     const pinned = getThreadListV2OrderedSection({ ...shared, section: "pinned" });
     const active = getThreadListV2OrderedSection({ ...shared, section: "active" });
@@ -193,11 +199,17 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
     const parked = threads.filter(
       (thread) => thread.archivedAt === null && !visible.has(keyOf(thread)),
     );
+    const stored = parked.filter(
+      (thread) =>
+        storageEnvironmentIds.has(thread.environmentId) && effectiveStored(thread, { now }),
+    );
+    const unstored = parked.filter((thread) => !stored.includes(thread));
     return {
       pinned,
       active,
-      snoozed: parked.filter((thread) => effectiveSnoozed(thread, { now })),
-      settled: parked.filter((thread) => !effectiveSnoozed(thread, { now })),
+      snoozed: unstored.filter((thread) => effectiveSnoozed(thread, { now })),
+      stored,
+      settled: unstored.filter((thread) => !effectiveSnoozed(thread, { now })),
     };
   }, [threads, configs, now, queuedThreadKeys, pendingOrder]);
   const planners = useMemo(() => {
@@ -223,11 +235,18 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
   const rows = useMemo(() => {
     const result: Row[] = [];
     let offset = 0;
-    for (const section of ["pinned", "active", "snoozed", "settled"] as const) {
-      if (section === "snoozed" && sections[section].length === 0) continue;
+    for (const section of ["pinned", "active", "snoozed", "stored", "settled"] as const) {
+      if ((section === "snoozed" || section === "stored") && sections[section].length === 0) {
+        continue;
+      }
       result.push({ key: section, section, offset, height: HEADER_HEIGHT });
       offset += HEADER_HEIGHT;
-      if ((section === "snoozed" || section === "settled") && !expanded[section]) continue;
+      if (
+        (section === "snoozed" || section === "stored" || section === "settled") &&
+        !expanded[section]
+      ) {
+        continue;
+      }
       for (const thread of sections[section]) {
         result.push({ key: keyOf(thread), section, thread, offset, height: ROW_HEIGHT });
         offset += ROW_HEIGHT;
@@ -433,7 +452,10 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
                           !capabilities?.threadSettlement) ||
                         (section === "active" &&
                           item.section === "snoozed" &&
-                          !capabilities?.threadSnooze)
+                          !capabilities?.threadSnooze) ||
+                        (section === "active" &&
+                          item.section === "stored" &&
+                          !capabilities?.threadStorage)
                       )
                         return [];
                       return planners[section](item.key, {
@@ -513,7 +535,11 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
                         className="flex-1 justify-center self-stretch"
                         onPress={() => {
                           const section = item.section;
-                          if (section === "snoozed" || section === "settled")
+                          if (
+                            section === "snoozed" ||
+                            section === "stored" ||
+                            section === "settled"
+                          )
                             setExpanded((value) => ({ ...value, [section]: !value[section] }));
                         }}
                       >

@@ -649,6 +649,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             unsettledAt: null,
             snoozedUntil: null,
             snoozedAt: null,
+            storedAt: null,
             pinnedAt: null,
             pinOrderKey: null,
             activeOrderKey: null,
@@ -764,6 +765,40 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...existingRow.value,
             snoozedUntil: null,
             snoozedAt: null,
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "thread.stored": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            storedAt: event.payload.storedAt,
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "thread.unstored": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            storedAt: null,
+            // Leaving the shelf re-enters Active at the top, like un-settle.
+            ...(existingRow.value.storedAt != null
+              ? { unsettledAt: event.payload.updatedAt, activeOrderKey: null }
+              : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;

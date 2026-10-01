@@ -46,6 +46,7 @@ import {
   sortSettledThreadsForSidebar,
   filterSidebarProjectScopeItems,
   reduceSidebarProjectScopeMenuState,
+  sortStoredThreadsForSidebar,
   resolveSidebarDropTarget,
   pinOrderKeyBetween,
   planPinnedReorder,
@@ -1373,6 +1374,32 @@ describe("resolveSidebarDropTarget", () => {
     expect(resolve("a1", sidebarMarkerId("snoozed-header"))).toBeNull();
   });
 
+  it("never lands in the stored shelf, but lets its rows leave", () => {
+    // Active a1 | Snoozed z1 | Stored k1 k2 | Settled s1
+    const withStored: readonly SidebarListItem[] = [
+      marker("pinned-header"),
+      marker("pinned-divider"),
+      thread("a1", "active"),
+      marker("snoozed-header"),
+      thread("z1", "snoozed"),
+      marker("stored-header"),
+      thread("k1", "stored"),
+      thread("k2", "stored"),
+      marker("settled-header"),
+      thread("s1", "settled"),
+    ];
+    expect(resolveSidebarDropTarget(withStored, "a1", "k1")).toBeNull();
+    expect(resolveSidebarDropTarget(withStored, "a1", sidebarMarkerId("stored-header"))).toBeNull();
+    // Reordering inside the shelf is not a destination either.
+    expect(resolveSidebarDropTarget(withStored, "k1", "k2")).toBeNull();
+    expect(resolveSidebarDropTarget(withStored, "k1", "a1")).toEqual({
+      section: "active",
+      pinnedOrder: [],
+      activeOrder: ["k1", "a1"],
+    });
+    expect(resolveSidebarDropTarget(withStored, "k2", "s1")?.section).toBe("settled");
+  });
+
   it("lands on a placeholder when the section is otherwise empty", () => {
     const withPlaceholder: readonly SidebarListItem[] = [
       marker("pinned-header"),
@@ -1425,7 +1452,7 @@ describe("planSidebarThreadDrop", () => {
   const plan = (
     overrides: Partial<Omit<Parameters<typeof planSidebarThreadDrop>[0], "target">> & {
       activeKey: string;
-      activeSection: "pinned" | "active" | "snoozed" | "settled";
+      activeSection: SidebarSection;
       target: Omit<Parameters<typeof planSidebarThreadDrop>[0]["target"], "activeOrder"> & {
         activeOrder?: readonly string[];
       };
@@ -1486,6 +1513,7 @@ describe("planSidebarThreadDrop", () => {
     { key: "p2", section: "pinned" as const, unpin: true, unsettle: false, unsnooze: false },
     { key: "s1", section: "settled" as const, unpin: false, unsettle: true, unsnooze: false },
     { key: "z1", section: "snoozed" as const, unpin: false, unsettle: false, unsnooze: true },
+    { key: "k1", section: "stored" as const, unpin: false, unsettle: false, unsnooze: false },
   ])("moves a $section thread to the chosen Active slot", (source) => {
     const order = ["a1", source.key, "a2", "a3"];
     const result = plan({
@@ -1500,6 +1528,7 @@ describe("planSidebarThreadDrop", () => {
       unpin: source.unpin,
       unsettle: source.unsettle,
       unsnooze: source.unsnooze,
+      unstore: source.section === "stored",
     });
     if (result.kind !== "move-active") return;
     const key = result.assignments[0]!.orderKey;
@@ -1530,6 +1559,7 @@ describe("planSidebarThreadDrop", () => {
       unpin: hiddenState.activePinned,
       unsettle: hiddenState.activeSettled,
       unsnooze: true,
+      unstore: false,
     });
   });
 
@@ -1548,7 +1578,7 @@ describe("planSidebarThreadDrop", () => {
     });
     expect(first.kind).toBe("move-active");
     if (first.kind !== "move-active") return;
-    expect(first.unpin || first.unsettle || first.unsnooze).toBe(false);
+    expect(first.unpin || first.unsettle || first.unsnooze || first.unstore).toBe(false);
     const savedKeys = new Map(first.assignments.map(({ id, orderKey }) => [id, orderKey]));
     const savedRows = rows.map((row) => ({
       ...row,
@@ -3179,6 +3209,9 @@ describe("resolveSidebarDropVerb", () => {
     expect(resolveSidebarDropVerb("active", "settled")).toBe("settle");
     expect(resolveSidebarDropVerb("pinned", "settled")).toBe("settle");
     expect(resolveSidebarDropVerb("snoozed", "settled")).toBe("settle");
+    expect(resolveSidebarDropVerb("stored", "active")).toBe("unstore");
+    expect(resolveSidebarDropVerb("stored", "pinned")).toBe("pin");
+    expect(resolveSidebarDropVerb("stored", "settled")).toBe("settle");
   });
 
   it("stays silent for same-section reorders, no target, and the snoozed shelf", () => {
@@ -3186,6 +3219,7 @@ describe("resolveSidebarDropVerb", () => {
     expect(resolveSidebarDropVerb("pinned", "pinned")).toBeNull();
     expect(resolveSidebarDropVerb("active", null)).toBeNull();
     expect(resolveSidebarDropVerb("active", "snoozed")).toBeNull();
+    expect(resolveSidebarDropVerb("active", "stored")).toBeNull();
   });
 });
 
@@ -3223,9 +3257,49 @@ describe("navigation after parking a thread", () => {
             latestTurn: null,
             hasPendingApprovals,
             hasPendingUserInput: false,
+            storedAt: null,
+            latestUserMessageAt: null,
           },
         }),
       ).toBe(expected);
     },
   );
+
+  it.each([
+    ["an idle", false, true],
+    ["a blocked", true, false],
+  ] as const)("store of %s thread navigates: %s", (_state, hasPendingApprovals, expected) => {
+    expect(
+      shouldNavigateAfterThreadPark({
+        threadKey: "thread",
+        currentThreadKey: "thread",
+        action: "store",
+        now: "2026-09-12T10:00:00.000Z",
+        thread: {
+          settledOverride: null,
+          snoozedUntil: null,
+          snoozedAt: null,
+          storedAt: "2026-09-12T09:59:00.000Z",
+          latestUserMessageAt: null,
+          // A blocked stored thread stays in Active, so the reader stays too.
+          session: null,
+          latestTurn: null,
+          hasPendingApprovals,
+          hasPendingUserInput: false,
+        },
+      }),
+    ).toBe(expected);
+  });
+});
+
+describe("sortStoredThreadsForSidebar", () => {
+  it("puts the most recently stored first and sinks malformed timestamps", () => {
+    expect(
+      sortStoredThreadsForSidebar([
+        { id: "older", storedAt: "2026-09-01T00:00:00.000Z" },
+        { id: "broken", storedAt: "not a date" },
+        { id: "newer", storedAt: "2026-09-10T00:00:00.000Z" },
+      ]).map((thread) => thread.id),
+    ).toEqual(["newer", "older", "broken"]);
+  });
 });

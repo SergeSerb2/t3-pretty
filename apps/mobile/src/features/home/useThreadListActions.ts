@@ -1,6 +1,11 @@
 import type { ThreadMoveDestination } from "../threads/threadOrder";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { canSnooze, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import {
+  canSnooze,
+  canStore,
+  effectiveSnoozed,
+  effectiveStored,
+} from "@t3tools/client-runtime/state/thread-settled";
 import * as Cause from "effect/Cause";
 import * as Haptics from "expo-haptics";
 import { useCallback, useRef } from "react";
@@ -50,6 +55,18 @@ function environmentSupportsSnooze(environmentId: EnvironmentThreadShell["enviro
     appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
       .threadSnooze === true
   );
+}
+
+function environmentSupportsStorage(environmentId: EnvironmentThreadShell["environmentId"]) {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadStorage === true
+  );
+}
+
+function lifecycleFailureMessage(cause: Cause.Cause<unknown>, fallback: string): string {
+  const error = Cause.squash(cause);
+  return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback;
 }
 
 async function mirrorLifecycleWriteIfRetargeted(
@@ -340,6 +357,8 @@ export function useThreadListActions(): {
   readonly settleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly snoozeThread: (thread: EnvironmentThreadShell, snoozedUntil: string) => Promise<boolean>;
   readonly unsnoozeThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  readonly storeThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  readonly unstoreThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly unsettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly pinThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly unpinThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
@@ -358,6 +377,8 @@ export function useThreadListActions(): {
   const executeAction = useThreadActionExecutor();
   const snoozeMutation = useAtomCommand(threadEnvironment.snooze, { reportFailure: false });
   const unsnoozeMutation = useAtomCommand(threadEnvironment.unsnooze, { reportFailure: false });
+  const storeMutation = useAtomCommand(threadEnvironment.store, { reportFailure: false });
+  const unstoreMutation = useAtomCommand(threadEnvironment.unstore, { reportFailure: false });
   const pinMutation = useAtomCommand(threadEnvironment.pin, { reportFailure: false });
   const unpinMutation = useAtomCommand(threadEnvironment.unpin, { reportFailure: false });
   const setAutoSettleMutation = useAtomCommand(threadEnvironment.setAutoSettle, {
@@ -367,6 +388,7 @@ export function useThreadListActions(): {
     reportFailure: false,
   });
   const snoozeInFlightThreadKeys = useRef(new Set<string>());
+  const storeInFlightThreadKeys = useRef(new Set<string>());
   const titleRegenerationInFlightThreadKeys = useRef(new Set<string>());
 
   const archiveThread = useCallback(
@@ -503,6 +525,75 @@ export function useThreadListActions(): {
       }
     },
     [unsnoozeMutation],
+  );
+  // Store and Unstore move the row between Active and the Stored shelf, so
+  // both play the row's departure like Snooze and Wake.
+  const runStorageCommand = useCallback(
+    async (thread: EnvironmentThreadShell, direction: "store" | "unstore") => {
+      const failureTitle =
+        direction === "store" ? "Could not store thread" : "Could not unstore thread";
+      const key = scopedThreadKey(thread.environmentId, thread.id);
+      if (storeInFlightThreadKeys.current.has(key)) {
+        return false;
+      }
+      storeInFlightThreadKeys.current.add(key);
+      try {
+        const writableEnvironmentId = writableThreadEnvironmentId(thread.environmentId, thread.id);
+        if (!environmentSupportsStorage(writableEnvironmentId)) {
+          Alert.alert(
+            failureTitle,
+            "This environment's server does not support stored threads yet. Update the server to use Store.",
+          );
+          return false;
+        }
+        if (direction === "store" && !canStore(thread, { now: new Date().toISOString() })) {
+          Alert.alert(
+            failureTitle,
+            thread.hasPendingApprovals || thread.hasPendingUserInput
+              ? "This thread is waiting on you. Respond to the pending request before storing it."
+              : "This thread is still starting a turn. Try again once it's running.",
+          );
+          return false;
+        }
+
+        selectionHaptic();
+        const mutate = direction === "store" ? storeMutation : unstoreMutation;
+        const result = await withThreadDismissal(
+          key,
+          () => mutate({ environmentId: writableEnvironmentId, input: { threadId: thread.id } }),
+          (result) => result._tag === "Success",
+        );
+        if (result._tag === "Success") {
+          await mirrorLifecycleWriteIfRetargeted(
+            thread.environmentId,
+            writableEnvironmentId,
+            (environmentId) => mutate({ environmentId, input: { threadId: thread.id } }),
+          );
+          return true;
+        }
+        Alert.alert(
+          failureTitle,
+          lifecycleFailureMessage(
+            result.cause,
+            direction === "store"
+              ? "The thread could not be stored."
+              : "The thread could not be unstored.",
+          ),
+        );
+        return false;
+      } finally {
+        storeInFlightThreadKeys.current.delete(key);
+      }
+    },
+    [storeMutation, unstoreMutation],
+  );
+  const storeThread = useCallback(
+    (thread: EnvironmentThreadShell) => runStorageCommand(thread, "store"),
+    [runStorageCommand],
+  );
+  const unstoreThread = useCallback(
+    (thread: EnvironmentThreadShell) => runStorageCommand(thread, "unstore"),
+    [runStorageCommand],
   );
   const unsettleThread = useCallback(
     async (thread: EnvironmentThreadShell) => (await executeAction("unsettle", thread)) === true,
@@ -776,6 +867,11 @@ export function useThreadListActions(): {
             config.environment.capabilities.threadSnooze === true ? [id] : [],
           ),
         ),
+        storageEnvironmentIds: new Set(
+          [...configs].flatMap(([id, config]) =>
+            config.environment.capabilities.threadStorage === true ? [id] : [],
+          ),
+        ),
       });
       const assignments = createThreadMovePlanner({
         allThreads: shells,
@@ -795,7 +891,9 @@ export function useThreadListActions(): {
           (thread.settledOverride === "settled" &&
             !environmentSupportsSettlement(writableEnvironmentId)) ||
           (effectiveSnoozed(thread, { now: new Date().toISOString() }) &&
-            !environmentSupportsSnooze(writableEnvironmentId)))
+            !environmentSupportsSnooze(writableEnvironmentId)) ||
+          (effectiveStored(thread, { now: new Date().toISOString() }) &&
+            !environmentSupportsStorage(writableEnvironmentId)))
       )
         return false;
       const shellByKey = new Map(
@@ -844,6 +942,7 @@ export function useThreadListActions(): {
             if (lifecycle.unpin && !(await unpinThread(thread))) return false;
             if (lifecycle.unsettle && !(await unsettleThread(thread))) return false;
             if (lifecycle.unsnooze && !(await unsnoozeThread(thread))) return false;
+            if (lifecycle.unstore && !(await unstoreThread(thread))) return false;
           }
         }
         for (const assignment of assignments) {
@@ -904,6 +1003,7 @@ export function useThreadListActions(): {
       unpinThread,
       unsettleThread,
       unsnoozeThread,
+      unstoreThread,
     ],
   );
 
@@ -915,6 +1015,8 @@ export function useThreadListActions(): {
     settleThread,
     snoozeThread,
     unsnoozeThread,
+    storeThread,
+    unstoreThread,
     unsettleThread,
     pinThread,
     unpinThread,

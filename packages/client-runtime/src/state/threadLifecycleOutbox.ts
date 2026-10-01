@@ -86,6 +86,9 @@ export function asQueuedThreadLifecycleCommand(
         reason: cmd.reason,
       };
     }
+    case "thread.store":
+    case "thread.unstore":
+      return { type: command.type, commandId: command.commandId, threadId: command.threadId };
     case "thread.pin": {
       const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.pin" }>;
       return {
@@ -218,6 +221,7 @@ export function applyPendingThreadLifecycleToThread<
     | "settledAt"
     | "snoozedUntil"
     | "snoozedAt"
+    | "storedAt"
     | "pinnedAt"
     | "pinOrderKey"
     | "activeOrderKey"
@@ -242,6 +246,7 @@ function applyQueuedThreadLifecycleCommand<
     | "settledAt"
     | "snoozedUntil"
     | "snoozedAt"
+    | "storedAt"
     | "pinnedAt"
     | "pinOrderKey"
     | "activeOrderKey"
@@ -256,6 +261,7 @@ function applyQueuedThreadLifecycleCommand<
         settledAt: entry.queuedAt,
         snoozedUntil: null,
         snoozedAt: null,
+        storedAt: null,
         pinnedAt: null,
         pinOrderKey: null,
         updatedAt: entry.queuedAt,
@@ -272,6 +278,7 @@ function applyQueuedThreadLifecycleCommand<
         ...thread,
         snoozedUntil: entry.command.snoozedUntil,
         snoozedAt: entry.queuedAt,
+        storedAt: null,
         updatedAt: entry.queuedAt,
       };
     case "thread.unsnooze":
@@ -279,6 +286,30 @@ function applyQueuedThreadLifecycleCommand<
         ...thread,
         snoozedUntil: null,
         snoozedAt: null,
+        updatedAt: entry.queuedAt,
+      };
+    // Mirrors the decider: storing parks the thread, so it spends settle,
+    // snooze, and pin; unstoring returns it to Active as a user unsettle.
+    case "thread.store":
+      return {
+        ...thread,
+        storedAt: thread.storedAt ?? entry.queuedAt,
+        settledOverride:
+          thread.settledOverride === "settled" ? ("active" as const) : thread.settledOverride,
+        settledAt: thread.settledOverride === "settled" ? null : thread.settledAt,
+        snoozedUntil: null,
+        snoozedAt: null,
+        pinnedAt: null,
+        pinOrderKey: null,
+        updatedAt: thread.storedAt == null ? entry.queuedAt : thread.updatedAt,
+      };
+    case "thread.unstore":
+      if (thread.storedAt == null) return thread;
+      return {
+        ...thread,
+        storedAt: null,
+        settledOverride: "active" as const,
+        settledAt: null,
         updatedAt: entry.queuedAt,
       };
     case "thread.pin": {
@@ -294,6 +325,7 @@ function applyQueuedThreadLifecycleCommand<
         settledAt: thread.settledOverride === "settled" ? null : thread.settledAt,
         snoozedUntil: null,
         snoozedAt: null,
+        storedAt: null,
         updatedAt: alreadyPinned ? thread.updatedAt : entry.queuedAt,
       };
     }

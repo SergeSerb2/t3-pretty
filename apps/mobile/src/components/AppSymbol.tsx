@@ -48,6 +48,7 @@ import IconDeviceDesktop from "@tabler/icons-react-native/IconDeviceDesktop";
 import IconDeviceLaptop from "@tabler/icons-react-native/IconDeviceLaptop";
 import IconDeviceMobile from "@tabler/icons-react-native/IconDeviceMobile";
 import IconDots from "@tabler/icons-react-native/IconDots";
+import IconDownload from "@tabler/icons-react-native/IconDownload";
 import IconDotsVertical from "@tabler/icons-react-native/IconDotsVertical";
 import IconDotsCircleHorizontal from "@tabler/icons-react-native/IconDotsCircleHorizontal";
 import IconEdit from "@tabler/icons-react-native/IconEdit";
@@ -64,6 +65,7 @@ import IconGitMerge from "@tabler/icons-react-native/IconGitMerge";
 import IconGitPullRequest from "@tabler/icons-react-native/IconGitPullRequest";
 import IconHammer from "@tabler/icons-react-native/IconHammer";
 import IconHome from "@tabler/icons-react-native/IconHome";
+import IconInbox from "@tabler/icons-react-native/IconInbox";
 import IconInfoCircle from "@tabler/icons-react-native/IconInfoCircle";
 import IconKey from "@tabler/icons-react-native/IconKey";
 import IconKeyboard from "@tabler/icons-react-native/IconKeyboard";
@@ -224,7 +226,9 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "textformat.size": IconTypography,
   "textformat.size.larger": IconTextIncrease,
   "textformat.size.smaller": IconTextDecrease,
+  "tray.and.arrow.down": IconDownload,
   "tray.and.arrow.up": IconUpload,
+  "tray.full": IconInbox,
   trash: IconTrash,
   "wifi.slash": IconWifiOff,
   xmark: IconX,

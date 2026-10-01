@@ -20,6 +20,8 @@ export type ThreadActionMenuId =
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
+  | "store"
+  | "unstore"
   | "rename"
   | "regenerate-title"
   | "mark-unread"
@@ -52,6 +54,10 @@ export interface ThreadActionMenuState {
   readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
+  /** Raw storedAt, not the shelf classification: a stored thread that is
+      working right now is still stored, and still offers Unstore. */
+  readonly isStored: boolean;
+  readonly canStoreNow: boolean;
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects a thread with an active turn, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
@@ -65,6 +71,7 @@ export interface ThreadActionMenuState {
     /** Server understands thread.auto-settle.set. */
     readonly autoSettleOptOut: boolean;
     readonly snooze: boolean;
+    readonly storage: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
     readonly projectTransfer: boolean;
@@ -150,6 +157,20 @@ export function buildThreadActionMenuItems(
             },
       );
     }
+  }
+
+  // Both surfaces: the sidebar row has no hover affordance for storage.
+  if (state.supports.storage) {
+    lifecycle.push(
+      state.isStored
+        ? { id: "unstore", label: "Unstore thread", icon: "package-open" }
+        : {
+            id: "store",
+            label: "Store thread",
+            icon: "package",
+            disabled: !state.canStoreNow,
+          },
+    );
   }
 
   const edit: ContextMenuItem<ThreadActionMenuId>[] = [

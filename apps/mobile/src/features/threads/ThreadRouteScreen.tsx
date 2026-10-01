@@ -484,7 +484,8 @@ function ThreadRouteContent(
   const selectedThreadDetailWorktreePath = selectedThreadDetail?.worktreePath ?? null;
 
   const serverConfigs = useServerConfigs();
-  const { settleThread, snoozeThread, unsnoozeThread, unsettleThread } = useThreadListActions();
+  const { settleThread, snoozeThread, storeThread, unsnoozeThread, unsettleThread, unstoreThread } =
+    useThreadListActions();
   const settlementSupported =
     selectedThread != null &&
     serverConfigs.get(selectedThread.environmentId)?.environment.capabilities.threadSettlement ===
@@ -492,6 +493,10 @@ function ThreadRouteContent(
   const snoozeSupported =
     selectedThread != null &&
     serverConfigs.get(selectedThread.environmentId)?.environment.capabilities.threadSnooze === true;
+  const storageSupported =
+    selectedThread != null &&
+    serverConfigs.get(selectedThread.environmentId)?.environment.capabilities.threadStorage ===
+      true;
   const handleReconnectEnvironment = useCallback(() => {
     if (!environmentId) {
       return;
@@ -838,6 +843,18 @@ function ThreadRouteContent(
     onUnsnooze: () => {
       if (selectedThread) {
         void unsnoozeThread(selectedThread);
+      }
+    },
+    storageSupported,
+    stored: selectedThread?.storedAt != null,
+    onStore: () => {
+      if (selectedThread) {
+        void storeThread(selectedThread);
+      }
+    },
+    onUnstore: () => {
+      if (selectedThread) {
+        void unstoreThread(selectedThread);
       }
     },
   };

@@ -29,6 +29,16 @@ export const QueuedThreadLifecycleCommand = Schema.Union([
     reason: Schema.Literal("user"),
   }),
   Schema.Struct({
+    type: Schema.Literal("thread.store"),
+    commandId: CommandId,
+    threadId: ThreadId,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.unstore"),
+    commandId: CommandId,
+    threadId: ThreadId,
+  }),
+  Schema.Struct({
     type: Schema.Literal("thread.pin"),
     commandId: CommandId,
     threadId: ThreadId,
@@ -73,7 +83,13 @@ export type ThreadLifecyclePendingByEnvironment = ReadonlyMap<
 
 export const EMPTY_THREAD_LIFECYCLE_PENDING: ThreadLifecyclePendingByEnvironment = new Map();
 
-export type ThreadLifecycleDomain = "settle" | "snooze" | "pin" | "pin-order" | "active-order";
+export type ThreadLifecycleDomain =
+  | "settle"
+  | "snooze"
+  | "store"
+  | "pin"
+  | "pin-order"
+  | "active-order";
 
 const DOMAIN_BITS: Record<ThreadLifecycleDomain, number> = {
   settle: 1,
@@ -81,6 +97,7 @@ const DOMAIN_BITS: Record<ThreadLifecycleDomain, number> = {
   pin: 4,
   "pin-order": 8,
   "active-order": 16,
+  store: 32,
 };
 
 export function threadLifecycleDomainBit(domain: ThreadLifecycleDomain): number {
@@ -97,6 +114,9 @@ export function threadLifecycleDomain(
     case "thread.snooze":
     case "thread.unsnooze":
       return "snooze";
+    case "thread.store":
+    case "thread.unstore":
+      return "store";
     case "thread.pin":
     case "thread.unpin":
       return "pin";

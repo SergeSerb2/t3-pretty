@@ -45,7 +45,7 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 
 Pin a thread from its menu to keep it above your active work.
 
-On web and desktop, unpinning, settling, snoozing, and archiving a thread each show
+On web and desktop, unpinning, settling, snoozing, storing, and archiving a thread each show
 a notification with **Undo** for five seconds. Undo restores the thread's previous
 state, including its pinned position, and reopens an archived thread you were
 viewing. `mod+z` triggers the most recent Undo when no text field is focused; see
@@ -66,11 +66,11 @@ the pinned section to pin it at the spot you drop it; drag a pinned thread down 
 list to unpin it. Dragging a thread onto the **Settled** header settles it, and dragging a settled
 thread into the active list un-settles it. A snoozed thread can be dragged out of the snoozed
 shelf, which wakes it, but threads cannot be dragged into the shelf because snoozing needs a wake
-time. Dragging a pinned thread out of the pinned section does not ask for unpin confirmation.
+time. A stored thread can likewise be dragged out of the stored shelf, which unstores it. Dragging a pinned thread out of the pinned section does not ask for unpin confirmation.
 Pinned and active boundary labels appear only while dragging, without moving the rows. The
 other rows slide aside to show where the thread will land. When you cross into another section,
 the dragged thread shows the action the drop performs, with its icon: **Pin**, **Unpin**,
-**Settle**, **Un-settle**, or **Wake**. Its status and hover actions hide during the drag. A pinned
+**Settle**, **Un-settle**, **Wake**, or **Unstore**. Its status and hover actions hide during the drag. A pinned
 thread keeps its pin only while it stays in the pinned section; once it leaves, the badge takes
 over. Reordering within the same section shows no badge. When there are no pins, drag to the top
 edge to pin a thread. Section labels stay readable for the whole drag, and the section the
@@ -81,8 +81,8 @@ Drag within the pinned or active section to change its order. Other rows slide a
 spot where the thread will land. Drops into either section keep the position you choose. On
 mobile, open a thread's menu and choose **Arrange threads**. Drag a handle within or between
 **Pinned** and **Active** to reorder, pin, or unpin. Drop onto the **Settled** divider to
-settle a thread. The dragged card shows the action before you release it. Expand **Snoozed**
-or **Settled** to drag a parked thread back into either live section. Each drop saves; **Done** returns to the thread list.
+settle a thread. The dragged card shows the action before you release it. Expand **Snoozed**,
+**Stored**, or **Settled** to drag a parked thread back into either live section. Each drop saves; **Done** returns to the thread list.
 **Move up** and **Move down** are also available in the thread menu. The server
 saves the order, so it survives a refresh and appears on your other connected devices.
 If that machine is offline, the new order is kept on this device and applied when it
@@ -208,3 +208,16 @@ Choose **Snooze → Custom…** from a thread's menu to pick a date and time in 
 local time zone, or a duration in minutes, hours, or days. Durations start when
 you confirm; one day means 24 hours. On web and desktop, you can also snooze
 several selected threads together. Choose **Wake thread** to bring a thread back early.
+
+## Store long-term threads
+
+Store a thread you will come back to but don't want in your active list, such as
+ongoing research or a long-running project. Choose **Store thread** from its menu on
+web and desktop, or **Store** on mobile. Stored threads move to the **Stored** shelf,
+newest first, and never wake on a timer, settle automatically, or get archived.
+
+You can keep working in a stored thread. While its agent is running or waiting on you,
+it appears in the active list; when the turn ends it returns to the shelf. Choose
+**Unstore thread** to bring it back to the top of the active list. Settling, snoozing,
+or pinning a stored thread also takes it out of storage. Storing requires an updated
+server in that environment.

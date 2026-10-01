@@ -228,6 +228,33 @@ export function canSnooze(
 }
 
 /**
+ * Same blockers as snooze: storing hides the thread from the inbox, so it
+ * must not bury a request the agent is waiting on.
+ */
+export const canStore = canSnooze;
+
+/**
+ * Stored resolution: a stored thread lives on the Stored shelf except while
+ * it is working or waiting on the user. Unlike snooze, nothing spends the
+ * storage: once the turn ends the thread goes back to the shelf.
+ */
+export function effectiveStored(
+  shell: Pick<
+    OrchestrationThreadShell,
+    | "storedAt"
+    | "hasPendingApprovals"
+    | "hasPendingUserInput"
+    | "session"
+    | "latestUserMessageAt"
+    | "latestTurn"
+  >,
+  options: { readonly now: string },
+): boolean {
+  // Same blockers that hold a settled thread active.
+  return shell.storedAt != null && canSettle(shell, options);
+}
+
+/**
  * Snoozed resolution: hidden from the inbox while the wake time is in the
  * future and the thread has not raised its hand. Timer wakes are derived —
  * no server event fires when snoozedUntil passes; the stale fields simply
@@ -330,6 +357,8 @@ export function effectiveSettled(
     if (!serverAdjudicated) return false;
   }
   if (shell.settledOverride === "settled") return true;
+  // Stored threads are kept on purpose: never settle them by inactivity or PR.
+  if (shell.storedAt != null) return false;
   // "active" is the explicit keep-active pin: it suppresses auto-settle
   // until real activity clears it server-side.
   if (shell.settledOverride === "active") return false;

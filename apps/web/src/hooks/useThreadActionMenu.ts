@@ -8,6 +8,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   canSnooze,
+  canStore,
   effectiveSettled,
   effectiveSnoozed,
   type ChangeRequestSettleSource,
@@ -28,6 +29,7 @@ import {
   readEnvironmentSupportsPinning,
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
+  readEnvironmentSupportsStorage,
   readEnvironmentSupportsTitleRegeneration,
   readThreadShell,
 } from "../state/entities";
@@ -51,14 +53,14 @@ function failureToast(title: string, error: unknown) {
 }
 
 /**
- * The per-thread action menu (pin, settle, snooze, rename, copy, delete…) as
+ * The per-thread action menu (pin, settle, snooze, store, rename, copy…) as
  * a self-contained hook, for surfaces other than the sidebar row — today the
  * chat header. Renders through the in-app context menu and dispatches
  * through the same mutations the sidebar uses.
  *
- * Unlike the sidebar, settle and snooze here never navigate away: the caller
- * is acting on the thread they are reading, and ChatView's parked-thread
- * banner already offers the way back.
+ * Unlike the sidebar, settle, snooze, and store here never navigate away:
+ * the caller is acting on the thread they are reading, and this menu (or
+ * ChatView's parked-thread banner) already offers the way back.
  */
 export function useThreadActionMenu(input: {
   readonly threadRef: ScopedThreadRef | null;
@@ -74,6 +76,8 @@ export function useThreadActionMenu(input: {
     unsettleThread,
     snoozeThread,
     unsnoozeThread,
+    storeThread,
+    unstoreThread,
     pinThread,
     confirmAndUnpinThread,
     setThreadAutoSettle,
@@ -125,6 +129,7 @@ export function useThreadActionMenu(input: {
           settlement: readEnvironmentSupportsSettlement(threadRef.environmentId),
           autoSettleOptOut: readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
           snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
+          storage: readEnvironmentSupportsStorage(threadRef.environmentId),
           pinning: readEnvironmentSupportsPinning(threadRef.environmentId),
           titleRegeneration: readEnvironmentSupportsTitleRegeneration(threadRef.environmentId),
           projectTransfer: false,
@@ -152,6 +157,8 @@ export function useThreadActionMenu(input: {
           autoSettleEnabled: thread.autoSettleDisabledAt == null,
           isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
           canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
+          isStored: thread.storedAt != null,
+          canStoreNow: canStore(thread, { now: now.toISOString() }),
           isRegeneratingTitle,
           isRunning: thread.session?.status === "running" && thread.session.activeTurnId != null,
           supports,
@@ -206,6 +213,12 @@ export function useThreadActionMenu(input: {
             return;
           case "unsnooze":
             await reportFailure("Failed to wake thread", () => unsnoozeThread(threadRef));
+            return;
+          case "store":
+            await reportFailure("Failed to store thread", () => storeThread(threadRef));
+            return;
+          case "unstore":
+            await reportFailure("Failed to unstore thread", () => unstoreThread(threadRef));
             return;
           case "pin":
             await reportFailure("Failed to pin thread", () => pinThread(threadRef));
@@ -337,10 +350,12 @@ export function useThreadActionMenu(input: {
       setThreadAutoSettle,
       settleThread,
       snoozeThread,
+      storeThread,
       threadRef,
       timestampFormat,
       unsettleThread,
       unsnoozeThread,
+      unstoreThread,
       updateThreadMetadata,
     ],
   );

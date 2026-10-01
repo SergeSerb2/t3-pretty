@@ -44,6 +44,8 @@ export type SettleThreadInput = CommandInput<"thread.settle">;
 export type UnsettleThreadInput = CommandInput<"thread.unsettle">;
 export type SnoozeThreadInput = CommandInput<"thread.snooze">;
 export type UnsnoozeThreadInput = CommandInput<"thread.unsnooze">;
+export type StoreThreadInput = CommandInput<"thread.store">;
+export type UnstoreThreadInput = CommandInput<"thread.unstore">;
 export type PinThreadInput = CommandInput<"thread.pin">;
 export type UnpinThreadInput = CommandInput<"thread.unpin">;
 export type ReorderPinnedThreadInput = CommandInput<"thread.pin.reorder">;
@@ -98,7 +100,7 @@ function dispatch(command: ClientOrchestrationCommand) {
   return request(ORCHESTRATION_WS_METHODS.dispatchCommand, command);
 }
 
-/** Park settle/snooze/pin/reorder when the environment has no session; reconnect drains. */
+/** Park settle/snooze/store/pin/reorder when the environment has no session; reconnect drains. */
 function dispatchOrEnqueue(command: ClientOrchestrationCommand) {
   return dispatch(command).pipe(
     Effect.catchTag("EnvironmentRpcUnavailableError", (error) =>
@@ -228,6 +230,26 @@ export const unsnoozeThread: (input: UnsnoozeThreadInput) => CommandEffect = Eff
   return yield* dispatchOrEnqueue({
     ...input,
     type: "thread.unsnooze",
+    commandId: yield* commandId(input),
+  });
+});
+
+export const storeThread: (input: StoreThreadInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.storeThread",
+)(function* (input) {
+  return yield* dispatchOrEnqueue({
+    ...input,
+    type: "thread.store",
+    commandId: yield* commandId(input),
+  });
+});
+
+export const unstoreThread: (input: UnstoreThreadInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.unstoreThread",
+)(function* (input) {
+  return yield* dispatchOrEnqueue({
+    ...input,
+    type: "thread.unstore",
     commandId: yield* commandId(input),
   });
 });

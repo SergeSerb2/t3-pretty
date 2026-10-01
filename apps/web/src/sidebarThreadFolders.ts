@@ -4,7 +4,7 @@ import {
   type ThreadPullRequestNestInput,
 } from "@t3tools/shared/threadPullRequestNesting";
 
-type NestSection = "pinned" | "active" | "snoozed" | "settled";
+type NestSection = "pinned" | "active" | "snoozed" | "stored" | "settled";
 
 export interface SidebarNestedListItem<T> {
   readonly kind: "thread";
