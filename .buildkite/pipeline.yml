@@ -43,15 +43,9 @@
 #                     and/or the macos-release file-store fallbacks.
 #                     Hosted M4 lacks those today (BK 1876/1878/1880).
 #                     Temporary packaging also runs here: macos-dmg,
-#                     publish-cli, and android-mobile (os=macos). ios-mobile
-#                     is a single cluster queue: windows-release (serge-pc).
-#                     Cluster `agents.queue` must be one string — a YAML
-#                     list is uploaded as '["windows-release",
-#                     "macos-release"]' and rejected (BK #2823). Expo
-#                     cloud does not need Xcode, so Windows is the host
-#                     when Macs are flaky. Do not add macos-release here:
-#                     that pool includes review-only Linux whose stale
-#                     hook still prints "Refusing ios-mobile."
+#                     publish-cli, android-mobile, and ios-mobile (os=macos).
+#                     iOS orchestration uses Expo EAS cloud even when the
+#                     Mac has Xcode. The os pin excludes review-only Linux.
 #   windows-release — serge-pc native NSIS (cannot run on Mac)
 #
 # TODO: restore hosted queues for packaging (macos-large DMG/iOS,
@@ -63,9 +57,9 @@
 # like os=macos can leave hosted M4 unmatched. Until then,
 # macos-release Apple-keychain jobs (DMG, Android, relay) keep an os
 # pin so the mixed pool (Serge Mac + Linux review +
-# m1-linux-t3code-fork) cannot take them. ios-mobile is the exception:
-# Expo cloud OTA/IPA does not need Xcode, so it uses windows-release
-# only and skips the macos-release mixed pool. Origin PR
+# m1-linux-t3code-fork) cannot take them. iOS orchestration uses the
+# same os=macos pin and explicitly keeps IPA compilation in Expo cloud.
+# Origin PR
 # review and comments stay queue-wide so the review-only Linux agent
 # can take them. The Buildkite default upload step is
 # macos-release + os=macos in pipeline settings (not this file).
@@ -310,17 +304,18 @@ steps:
     priority: 20
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
-    # Single queue: windows-release (serge-pc). Buildkite clusters reject
-    # a YAML/JSON list as agents.queue (BK #2823). macos-release is the
-    # mixed pool (Serge Mac + review-only Linux + m1-linux-t3code-fork);
-    # the Linux hook on disk still refuses ios-mobile until recopied.
-    # Hosted macos-large auto-cancels in ~100ms (BK #1944/#1948).
+    # Windows fails before checkout (Access denied / exit 5). Use the
+    # working self-hosted Mac; os=macos excludes the mixed pool's Linux
+    # agents. Keep one queue string: Buildkite rejects queue lists.
     # Daily cap: two iOS Expo spends (OTA or cloud IPA) per
     # America/Vancouver day. T3CODE_IOS_LOCAL_XCODE=1 forces local
     # Xcode. T3CODE_IOS_ALLOW_EAS_CLOUD=1 forces cloud even with Xcode.
     agents:
-      queue: windows-release
+      queue: macos-release
+      os: macos
     env:
+      # The Mac orchestrates EAS; native IPA compilation stays in Expo cloud.
+      T3CODE_IOS_ALLOW_EAS_CLOUD: "1"
       APP_VARIANT: production
       NODE_OPTIONS: "--max-old-space-size=8192"
       LANG: en_US.UTF-8
