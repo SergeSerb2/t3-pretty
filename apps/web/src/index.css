@@ -1930,30 +1930,47 @@ html[data-window-inactive]
       )
       .chat-composer-glass-host
       [data-chat-composer-main-surface="true"]::after,
-    .chat-composer-top-drawer::before {
+    .chat-composer-top-drawer::before,
+    [data-slot="composer-host"]::after,
+    [data-slot="composer-shell"] [data-chat-composer-main-surface]::after {
       transition: none;
     }
   }
 
-  /* The current composer owns its hover feedback independently of its glass
-     geometry. Retargetable fades respond quickly and settle without a bounce. */
+  /* The composer answers the hand that crossed its edge. Enter and exit keep
+     their own multipliers (`--composer-hover-in` / `--composer-hover-out`),
+     written from pointer speed. Exit is the resting value: the light leaves
+     immediately and the extra time is the tail, so a slow hand lingers and a
+     fast one lets go. Enter is quicker, and a fast arrival compresses the
+     rim → core → halo stagger into one motion. Ease-out on both, so the
+     response starts at once. The halo's size follows `--composer-hover-settle`. */
   [data-slot="composer-shell"] {
-    --composer-hover-k: clamp(0.8, var(--composer-hover-dur, 1), 1.2);
-    --composer-hover-ease: ease;
-    --composer-light-t: 240ms;
-    --composer-bloom-t: 240ms;
+    --composer-hover-in: 1;
+    --composer-hover-out: 1;
+    --composer-hover-settle: 0;
+    --composer-hover-k: var(--composer-hover-out);
+    --composer-hover-ease: cubic-bezier(0.23, 1, 0.32, 1);
+    --composer-rim-t: 320ms;
+    --composer-light-t: 400ms;
+    --composer-bloom-t: 280ms;
     --composer-light-delay: 0ms;
+    --composer-bloom-delay: 0ms;
   }
 
   [data-slot="composer-host"]::after,
   [data-slot="composer-shell"] [data-chat-composer-main-surface]::after {
-    transition: border-color 180ms ease;
+    transition: border-color calc(var(--composer-rim-t, 200ms) * var(--composer-hover-k, 1))
+      var(--composer-hover-ease, cubic-bezier(0.23, 1, 0.32, 1));
   }
 
   @media (hover: hover) and (pointer: fine) {
     [data-slot="composer-shell"]:hover {
-      --composer-light-t: 180ms;
-      --composer-bloom-t: 180ms;
+      --composer-hover-k: var(--composer-hover-in);
+      --composer-rim-t: 160ms;
+      --composer-light-t: 260ms;
+      --composer-bloom-t: 340ms;
+      --composer-light-delay: calc(28ms * var(--composer-hover-in));
+      --composer-bloom-delay: calc(48ms * var(--composer-hover-in));
     }
 
     [data-slot="composer-shell"]:hover [data-slot="composer-host"]::after,
@@ -1971,16 +1988,16 @@ html[data-window-inactive]
      and moved with `translate` only, so every pointer update is a compositor
      transform on an existing layer. The listener (ComposerSpecular) only
      writes coordinates while the pointer moves inside the composer; a still
-     pointer is zero work. Approach speed is sampled on document pointermove
-     (numbers only) and written to --composer-hover-dur on hover cross.
+     pointer does not sample. Approach speed is sampled on document pointermove
+     (numbers only) and warms --composer-hover-in / --composer-hover-out.
      The layer spans the whole glass shell — context strip included — clipped
      to the same joined silhouette as the shell's glass, so the glow follows
      the pointer down into the strip instead of cutting off at the composer
-     lip. A wider halo (::after) sits under the core and gently grows to
-     full size on hover; `scale` transitions independently of the per-frame
-     `translate` updates, so tracking stays instant while the bloom settles.
-     Enter and exit timing come from the shell's --composer-* hover vars: the
-     light follows the rim and fades slightly longer on the way out.
+     lip. A wider halo (::after) sits under the core. Its scale follows
+     --composer-hover-settle (tight while the hand is still moving, full once
+     the pointer rests) and transitions independently of the per-frame
+     `translate`, so tracking stays instant. Enter and exit timing come from
+     the shell's --composer-* hover vars.
      Each gradient keeps a full-range alpha ramp and applies its faintness as
      post-render opacity, avoiding the visible steps in a 2.5–6% ramp. */
   @media (hover: hover) and (pointer: fine) {
@@ -2067,10 +2084,10 @@ html[data-window-inactive]
       background: radial-gradient(circle closest-side, var(--foreground), transparent);
       opacity: 0.035;
       translate: var(--spec-x, -560px) var(--spec-y, -560px);
-      scale: 0.95;
+      scale: calc(0.93 + 0.07 * var(--composer-hover-settle, 0));
       will-change: translate;
       transition: scale calc(var(--composer-bloom-t) * var(--composer-hover-k))
-        var(--composer-hover-ease) var(--composer-light-delay);
+        var(--composer-hover-ease) var(--composer-bloom-delay, 0ms);
 
       @variant dark {
         background: radial-gradient(circle closest-side, white, transparent);
@@ -2078,8 +2095,7 @@ html[data-window-inactive]
       }
     }
 
-    [data-slot="composer-shell"]:hover .chat-composer-specular::before,
-    [data-slot="composer-shell"]:hover .chat-composer-specular::after {
+    [data-slot="composer-shell"]:hover .chat-composer-specular::before {
       scale: 1;
     }
   }
@@ -2094,6 +2110,13 @@ html[data-window-inactive]
      its pointer work while the attribute is absent. */
   html:not([data-scenery-motion]) .chat-composer-specular {
     display: none;
+  }
+
+  html:not([data-scenery-motion]) [data-slot="composer-host"]::after,
+  html:not([data-scenery-motion])
+    [data-slot="composer-shell"]
+    [data-chat-composer-main-surface]::after {
+    transition: none;
   }
 
   .chat-composer-glass-shell-with-context .chat-composer-glass-host::after,
