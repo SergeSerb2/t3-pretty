@@ -63,6 +63,7 @@ export function mergeEnvironmentThread(
     autoSettleDisabledAt: shell.autoSettleDisabledAt,
     snoozedUntil: shell.snoozedUntil,
     snoozedAt: shell.snoozedAt,
+    storedAt: shell.storedAt,
     pinnedAt: shell.pinnedAt,
     pinOrderKey: shell.pinOrderKey,
     scenery: shell.scenery,

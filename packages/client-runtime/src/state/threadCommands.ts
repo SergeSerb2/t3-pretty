@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts";
 
 import { createOptimisticThreadLifecycle } from "./threadLifecycle.ts";
-import { canSnooze } from "./threadSettled.ts";
+import { canSnooze, canStore } from "./threadSettled.ts";
 
 import {
   createAtomCommandScheduler,
@@ -35,6 +35,7 @@ import {
   type SetThreadAutoSettleInput,
   type SettleThreadInput,
   type SnoozeThreadInput,
+  type StoreThreadInput,
   type StartThreadTurnInput,
   type StopThreadSessionInput,
   type UnarchiveThreadInput,
@@ -42,6 +43,7 @@ import {
   type UnpinThreadInput,
   type UnsettleThreadInput,
   type UnsnoozeThreadInput,
+  type UnstoreThreadInput,
   type UpdateThreadMetadataInput,
   archiveThread,
   createThread,
@@ -63,6 +65,7 @@ import {
   setThreadAutoSettle,
   settleThread,
   snoozeThread,
+  storeThread,
   startThreadTurn,
   stopThreadSession,
   unarchiveThread,
@@ -70,6 +73,7 @@ import {
   unpinThread,
   unsettleThread,
   unsnoozeThread,
+  unstoreThread,
   updateThreadMetadata,
 } from "../operations/commands.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
@@ -95,6 +99,7 @@ export type {
   SetThreadAutoSettleInput,
   SettleThreadInput,
   SnoozeThreadInput,
+  StoreThreadInput,
   StartThreadTurnInput,
   StopThreadSessionInput,
   UnarchiveThreadInput,
@@ -102,6 +107,7 @@ export type {
   UnpinThreadInput,
   UnsettleThreadInput,
   UnsnoozeThreadInput,
+  UnstoreThreadInput,
   UpdateThreadMetadataInput,
 } from "../operations/commands.ts";
 
@@ -161,6 +167,18 @@ export function createThreadEnvironmentAtoms<R, E>(
     unsnooze: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:unsnooze",
       execute: (input: UnsnoozeThreadInput) => unsnoozeThread(input),
+      scheduler,
+      concurrency,
+    }),
+    store: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:store",
+      execute: (input: StoreThreadInput) => storeThread(input),
+      scheduler,
+      concurrency,
+    }),
+    unstore: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:unstore",
+      execute: (input: UnstoreThreadInput) => unstoreThread(input),
       scheduler,
       concurrency,
     }),
@@ -320,6 +338,7 @@ export function createThreadEnvironmentAtoms<R, E>(
             pinOrderKey: null,
             snoozedAt: null,
             snoozedUntil: null,
+            storedAt: null,
           },
     ),
     unsettle: optimistic.wrap(commands.unsettle, (thread, input, now) => ({
@@ -338,6 +357,33 @@ export function createThreadEnvironmentAtoms<R, E>(
             hasPendingUserInput: false,
             snoozedUntil: input.snoozedUntil,
             snoozedAt: thread.snoozedUntil === input.snoozedUntil ? (thread.snoozedAt ?? now) : now,
+            storedAt: null,
+          },
+    ),
+    store: optimistic.wrap(commands.store, (thread, _input, now, accepted) =>
+      !accepted && !canStore(thread, { now })
+        ? thread
+        : {
+            ...thread,
+            storedAt: thread.storedAt ?? now,
+            ...(thread.settledOverride === "settled"
+              ? { settledOverride: "active" as const, settledAt: null, unsettledAt: now }
+              : {}),
+            snoozedUntil: null,
+            snoozedAt: null,
+            pinnedAt: null,
+            pinOrderKey: null,
+          },
+    ),
+    unstore: optimistic.wrap(commands.unstore, (thread, _input, now) =>
+      thread.storedAt == null
+        ? thread
+        : {
+            ...thread,
+            storedAt: null,
+            settledOverride: "active" as const,
+            settledAt: null,
+            unsettledAt: now,
           },
     ),
     unsnooze: optimistic.wrap(commands.unsnooze, (thread) => ({
@@ -358,6 +404,7 @@ export function createThreadEnvironmentAtoms<R, E>(
         : {}),
       snoozedUntil: null,
       snoozedAt: null,
+      storedAt: null,
     })),
     unpin: optimistic.wrap(commands.unpin, (thread) => ({
       ...thread,

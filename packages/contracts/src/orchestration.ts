@@ -931,6 +931,11 @@ export const OrchestrationThread = Schema.Struct({
   // Optional so payloads from pre-snooze servers still decode.
   snoozedUntil: Schema.optional(Schema.NullOr(IsoDateTime)),
   snoozedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  // Stored is a sticky shelf for long-term threads: no wake timer, never
+  // auto-settled or auto-archived, and it survives activity. Clients show a
+  // stored thread as active only while it is working or waiting on the user.
+  // Optional so payloads from pre-storage servers still decode.
+  storedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   // Active pinned threads render in the pinned block. Settled and snoozed
   // threads remain in their respective shelves even when pinned.
   // Optional so payloads from pre-pinning servers still decode.
@@ -1018,6 +1023,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   unsettledAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   snoozedUntil: Schema.optional(Schema.NullOr(IsoDateTime)),
   snoozedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  storedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
@@ -1336,6 +1342,18 @@ const ThreadUnsnoozeCommand = Schema.Struct({
   reason: Schema.Literal("user"),
 });
 
+const ThreadStoreCommand = Schema.Struct({
+  type: Schema.Literal("thread.store"),
+  commandId: CommandId,
+  threadId: ThreadId,
+});
+
+const ThreadUnstoreCommand = Schema.Struct({
+  type: Schema.Literal("thread.unstore"),
+  commandId: CommandId,
+  threadId: ThreadId,
+});
+
 const ThreadPinCommand = Schema.Struct({
   type: Schema.Literal("thread.pin"),
   commandId: CommandId,
@@ -1578,6 +1596,8 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadUnsettleCommand,
   ThreadSnoozeCommand,
   ThreadUnsnoozeCommand,
+  ThreadStoreCommand,
+  ThreadUnstoreCommand,
   ThreadPinCommand,
   ThreadUnpinCommand,
   ThreadPinReorderCommand,
@@ -1671,6 +1691,8 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadUnsettleCommand,
   ThreadSnoozeCommand,
   ThreadUnsnoozeCommand,
+  ThreadStoreCommand,
+  ThreadUnstoreCommand,
   ThreadPinCommand,
   ThreadUnpinCommand,
   ThreadPinReorderCommand,
@@ -1909,6 +1931,8 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.unsettled",
   "thread.snoozed",
   "thread.unsnoozed",
+  "thread.stored",
+  "thread.unstored",
   "thread.pinned",
   "thread.unpinned",
   "thread.pin-reordered",
@@ -2040,6 +2064,17 @@ export const ThreadUnsnoozedPayload = Schema.Struct({
   // thread.unsettled's activity resets. Timer wakes emit no event: clients
   // derive them from snoozedUntil passing.
   reason: Schema.Literals(["user", "activity"]),
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadStoredPayload = Schema.Struct({
+  threadId: ThreadId,
+  storedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadUnstoredPayload = Schema.Struct({
+  threadId: ThreadId,
   updatedAt: IsoDateTime,
 });
 
@@ -2260,6 +2295,8 @@ export type ThreadSettledPayload = typeof ThreadSettledPayload.Type;
 export type ThreadUnsettledPayload = typeof ThreadUnsettledPayload.Type;
 export type ThreadSnoozedPayload = typeof ThreadSnoozedPayload.Type;
 export type ThreadUnsnoozedPayload = typeof ThreadUnsnoozedPayload.Type;
+export type ThreadStoredPayload = typeof ThreadStoredPayload.Type;
+export type ThreadUnstoredPayload = typeof ThreadUnstoredPayload.Type;
 export type ThreadPinnedPayload = typeof ThreadPinnedPayload.Type;
 export type ThreadUnpinnedPayload = typeof ThreadUnpinnedPayload.Type;
 export type ThreadPinReorderedPayload = typeof ThreadPinReorderedPayload.Type;
@@ -2386,6 +2423,16 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.unsnoozed"),
     payload: ThreadUnsnoozedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.stored"),
+    payload: ThreadStoredPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.unstored"),
+    payload: ThreadUnstoredPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

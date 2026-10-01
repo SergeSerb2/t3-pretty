@@ -135,6 +135,7 @@ export function applyThreadDetailEvent(
           autoSettleDisabledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
+          storedAt: null,
           pinnedAt: null,
           pinOrderKey: null,
           titleRegeneration: null,
@@ -220,6 +221,18 @@ export function applyThreadDetailEvent(
           snoozedAt: null,
           updatedAt: event.payload.updatedAt,
         },
+      };
+
+    case "thread.stored":
+      return {
+        kind: "updated",
+        thread: { ...thread, storedAt: event.payload.storedAt, updatedAt: event.payload.updatedAt },
+      };
+
+    case "thread.unstored":
+      return {
+        kind: "updated",
+        thread: { ...thread, storedAt: null, updatedAt: event.payload.updatedAt },
       };
 
     case "thread.pinned":
