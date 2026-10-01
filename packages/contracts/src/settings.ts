@@ -117,6 +117,39 @@ export const GlassOpacity = Schema.Int.check(
 export type GlassOpacity = typeof GlassOpacity.Type;
 const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
 
+/**
+ * Fill of the shared sidebar and top bar plate. Kept apart from `glassOpacity`,
+ * which still drives menus, dialogs, and the composer. 68% is a step more
+ * opaque than the old 42% plate while the surface stays translucent.
+ * CSS default: `--workspace-glass-opacity: 68%` in apps/web/src/index.css.
+ */
+export const MIN_CHROME_GLASS_OPACITY = 24;
+export const MAX_CHROME_GLASS_OPACITY = 100;
+export const ChromeGlassOpacity = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_CHROME_GLASS_OPACITY,
+    maximum: MAX_CHROME_GLASS_OPACITY,
+  }),
+);
+export type ChromeGlassOpacity = typeof ChromeGlassOpacity.Type;
+const DEFAULT_CHROME_GLASS_OPACITY: ChromeGlassOpacity = 68;
+
+/**
+ * Backdrop blur, in CSS pixels, for that same sidebar and top bar plate.
+ * 32px is a step more frosted than the old 16px. CSS default:
+ * `--workspace-glass-blur: 32px` in apps/web/src/index.css.
+ */
+export const MIN_CHROME_GLASS_BLUR = 0;
+export const MAX_CHROME_GLASS_BLUR = 64;
+export const ChromeGlassBlur = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_CHROME_GLASS_BLUR,
+    maximum: MAX_CHROME_GLASS_BLUR,
+  }),
+);
+export type ChromeGlassBlur = typeof ChromeGlassBlur.Type;
+const DEFAULT_CHROME_GLASS_BLUR: ChromeGlassBlur = 32;
+
 export const MIN_APPEARANCE_CONTRAST = 50;
 export const MAX_APPEARANCE_CONTRAST = 200;
 export const AppearanceContrast = Schema.Int.check(
@@ -396,6 +429,12 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   glassOpacity: GlassOpacity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_GLASS_OPACITY)),
+  ),
+  chromeGlassOpacity: ChromeGlassOpacity.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CHROME_GLASS_OPACITY)),
+  ),
+  chromeGlassBlur: ChromeGlassBlur.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CHROME_GLASS_BLUR)),
   ),
   fontSizeInterface: InterfaceFontSize.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_INTERFACE_FONT_SIZE)),
@@ -1752,6 +1791,8 @@ export const ClientSettingsPatch = Schema.Struct({
   diffLayout: Schema.optionalKey(DiffLayout),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
+  chromeGlassOpacity: Schema.optionalKey(ChromeGlassOpacity),
+  chromeGlassBlur: Schema.optionalKey(ChromeGlassBlur),
   onboardingCompletedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
   fontSizeInterface: Schema.optionalKey(InterfaceFontSize),
   fontSizePrompt: Schema.optionalKey(PromptFontSize),

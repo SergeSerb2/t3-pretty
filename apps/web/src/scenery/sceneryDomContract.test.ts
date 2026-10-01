@@ -178,9 +178,19 @@ describe("glass contract with upstream chrome", () => {
   });
 
   it("sidebar and titlebar share one chrome glass material", () => {
+    expect(indexCssSource).toContain("--workspace-glass-opacity: 68%;");
+    expect(indexCssSource).toContain("--workspace-glass-blur: 32px;");
+    expect(indexCssSource).toContain("--workspace-glass-saturation: 1.6;");
     expect(indexCssSource).toMatch(
-      /html\s+:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\) \{\s*--workspace-glass-surface: var\(--sidebar\);\s*--workspace-glass-opacity: 42%;\s*--workspace-glass-blur: 16px;\s*background-color: transparent;/s,
+      /html\s+:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\) \{\s*--workspace-glass-surface: var\(--sidebar\);\s*background-color: transparent;/s,
     );
+    const plateRule =
+      indexCssSource.match(
+        /html\s+:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\) \{[^}]+\}/,
+      )?.[0] ?? "";
+    expect(plateRule).not.toContain("--workspace-glass-opacity:");
+    expect(plateRule).not.toContain("--workspace-glass-blur:");
+    expect(sceneryCssSource).not.toContain("--workspace-glass-opacity:");
     expect(indexCssSource).not.toContain("--workspace-glass-surface: var(--toolbar-background);");
     const sidebarRule = indexCssSource.match(/\.workspace-sidebar-glass \{[^}]+\}/)?.[0] ?? "";
     expect(sidebarRule).not.toContain("background-color: var(--sidebar)");
@@ -219,7 +229,7 @@ describe("glass contract with upstream chrome", () => {
       /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\) > \* \{\s*z-index: 1;/,
     );
     expect(indexCssSource).toMatch(
-      /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]*z-index: 0;[^}]*pointer-events: none;[^}]*backdrop-filter: blur\(var\(--workspace-glass-blur, var\(--glass-blur\)\)\)/s,
+      /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]*z-index: 0;[^}]*pointer-events: none;[^}]*backdrop-filter: blur\(var\(--workspace-glass-blur, 32px\)\)\s+saturate\(var\(--workspace-glass-saturation, 1\.6\)\)/s,
     );
     expect(chatViewSource).toContain("overflow-clip bg-background");
     expect(chatViewSource).toContain("overflow-x-clip");
@@ -247,9 +257,7 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain(
       "top: calc(var(--workspace-topbar-height) + var(--workspace-frame-radius) - 1px)",
     );
-    expect(indexCssSource).toContain(
-      "backdrop-filter: blur(var(--workspace-glass-blur, var(--glass-blur)))",
-    );
+    expect(indexCssSource).toContain("backdrop-filter: blur(var(--workspace-glass-blur, 32px))");
     expect(indexCssSource).toContain("box-shadow: inset 0 -1px 0 var(--workspace-frame-line);");
     const headerPlate = indexCssSource.match(
       /:is\(\s*\.workspace-sidebar-glass,\s*\[data-workspace-header\],\s*\[data-chat-header\],\s*\[data-pull-requests-header\]\s*\)::after\s*\{[^}]+\}/s,
