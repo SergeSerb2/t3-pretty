@@ -4764,32 +4764,36 @@ describe("PreviewManager", () => {
     withManager((manager) =>
       Effect.gen(function* () {
         let humanInput: ((event: unknown, signal?: unknown) => void) | undefined;
-        const wc = makeTestPreviewWebContents(vi.fn());
-        Object.assign(wc, {
+        let holdEvaluate = false;
+        let releaseEvaluate: (() => void) | undefined;
+        const wc = makeTestPreviewWebContents(vi.fn(), 42, undefined, {
           isDevToolsOpened: () => false,
           loadURL: vi.fn(async () => undefined),
           reload: vi.fn(),
-        });
-        Object.assign(wc.ipc, {
-          on: vi.fn((channel: string, listener: typeof humanInput) => {
-            if (channel === "preview:human-input") humanInput = listener;
-          }),
-        });
-        let holdEvaluate = false;
-        let releaseEvaluate: (() => void) | undefined;
-        Object.assign(wc.debugger, {
-          sendCommand: vi.fn(async (method: string, params?: { expression?: string }) => {
-            if (method !== "Runtime.evaluate") return undefined;
-            if (params?.expression?.includes("matched"))
-              return { result: { value: { matched: true } } };
-            if (holdEvaluate) {
-              holdEvaluate = false;
-              await new Promise<void>((resolve) => {
-                releaseEvaluate = resolve;
-              });
-            }
-            return { result: { value: 42 } };
-          }),
+          ipc: {
+            on: vi.fn((channel: string, listener: typeof humanInput) => {
+              if (channel === "preview:human-input") humanInput = listener;
+            }),
+            off: vi.fn(),
+          },
+          debugger: {
+            isAttached: () => false,
+            attach: vi.fn(),
+            sendCommand: vi.fn(async (method: string, params?: { expression?: string }) => {
+              if (method !== "Runtime.evaluate") return undefined;
+              if (params?.expression?.includes("matched"))
+                return { result: { value: { matched: true } } };
+              if (holdEvaluate) {
+                holdEvaluate = false;
+                await new Promise<void>((resolve) => {
+                  releaseEvaluate = resolve;
+                });
+              }
+              return { result: { value: 42 } };
+            }),
+            on: vi.fn(),
+            off: vi.fn(),
+          },
         });
         fromId.mockReturnValue(wc);
         const takeovers = [yield* Deferred.make<void>(), yield* Deferred.make<void>()];
