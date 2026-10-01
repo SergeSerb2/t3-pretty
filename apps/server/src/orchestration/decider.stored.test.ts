@@ -205,6 +205,26 @@ it.layer(NodeServices.layer)("stored thread decider", (it) => {
     }),
   );
 
+  it.effect("unstoring a thread stored from Settled still lands at the top of Active", () =>
+    Effect.gen(function* () {
+      // Storing a settled thread leaves the keep-active override behind, and
+      // the thread may still hold an old arranged slot.
+      const { thread } = yield* decideAndProject(
+        makeReadModel({
+          storedAt: STORED_AT,
+          settledOverride: "active",
+          unsettledAt: STORED_AT,
+          activeOrderKey: "m",
+        }),
+        unstore,
+      );
+      expect(thread.storedAt).toBeNull();
+      expect(thread.unsettledAt).toBe(thread.updatedAt);
+      expect(thread.unsettledAt).not.toBe(STORED_AT);
+      expect(thread.activeOrderKey).toBeNull();
+    }),
+  );
+
   it.effect("unstoring a thread that is not stored is a silent no-op", () =>
     Effect.gen(function* () {
       const { types, thread } = yield* decideAndProject(makeReadModel(), unstore);

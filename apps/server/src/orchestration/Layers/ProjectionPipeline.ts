@@ -795,6 +795,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             storedAt: null,
+            // Leaving the shelf re-enters Active at the top, like un-settle.
+            ...(existingRow.value.storedAt != null
+              ? { unsettledAt: event.payload.updatedAt, activeOrderKey: null }
+              : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;

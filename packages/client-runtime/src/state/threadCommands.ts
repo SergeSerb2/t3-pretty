@@ -384,6 +384,7 @@ export function createThreadEnvironmentAtoms<R, E>(
             settledOverride: "active" as const,
             settledAt: null,
             unsettledAt: now,
+            activeOrderKey: null,
           },
     ),
     unsnooze: optimistic.wrap(commands.unsnooze, (thread) => ({

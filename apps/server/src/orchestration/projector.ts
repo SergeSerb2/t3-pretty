@@ -587,13 +587,20 @@ export function projectEvent(
 
     case "thread.unstored":
       return decodeForEvent(ThreadUnstoredPayload, event.payload, event.type, "payload").pipe(
-        Effect.map((payload) => ({
-          ...nextBase,
-          threads: updateThread(nextBase.threads, payload.threadId, {
-            storedAt: null,
-            updatedAt: payload.updatedAt,
-          }),
-        })),
+        Effect.map((payload) => {
+          const existing = nextBase.threads.find((thread) => thread.id === payload.threadId);
+          return {
+            ...nextBase,
+            threads: updateThread(nextBase.threads, payload.threadId, {
+              storedAt: null,
+              // Leaving the shelf re-enters Active at the top, like un-settle.
+              ...(existing?.storedAt != null
+                ? { unsettledAt: payload.updatedAt, activeOrderKey: null }
+                : {}),
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
       );
 
     case "thread.pinned":

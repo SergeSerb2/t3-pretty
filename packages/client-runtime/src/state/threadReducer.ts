@@ -232,7 +232,15 @@ export function applyThreadDetailEvent(
     case "thread.unstored":
       return {
         kind: "updated",
-        thread: { ...thread, storedAt: null, updatedAt: event.payload.updatedAt },
+        thread: {
+          ...thread,
+          storedAt: null,
+          // Leaving the shelf re-enters Active at the top, like un-settle.
+          ...(thread.storedAt != null
+            ? { unsettledAt: event.payload.updatedAt, activeOrderKey: null }
+            : {}),
+          updatedAt: event.payload.updatedAt,
+        },
       };
 
     case "thread.pinned":
