@@ -77,7 +77,7 @@ import Migration0062 from "./Migrations/051_ProjectionThreadMessageContext.ts";
 import Migration0063 from "./Migrations/052_ProjectionThreadTitleState.ts";
 import Migration0064 from "./Migrations/053_PullRequestFilesViewed.ts";
 import Migration0065 from "./Migrations/054_ProjectionThreadsAutoSettleDisabledAt.ts";
-import Migration0066 from "./Migrations/066_ProjectionThreadsStored.ts";
+import Migration0066 from "./Migrations/055_ProjectionThreadsStored.ts";
 
 /**
  * Migration loader with all migrations defined inline.

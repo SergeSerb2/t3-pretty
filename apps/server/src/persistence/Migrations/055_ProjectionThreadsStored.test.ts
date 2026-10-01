@@ -4,9 +4,9 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { runMigrations } from "../Migrations.ts";
-import migrateStored from "./066_ProjectionThreadsStored.ts";
+import migrateStored from "./055_ProjectionThreadsStored.ts";
 
-it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("066_ProjectionThreadsStored", (it) => {
+it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("055_ProjectionThreadsStored", (it) => {
   it.effect("migrates existing threads as not stored and is safe to rerun", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
