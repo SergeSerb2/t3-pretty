@@ -42,7 +42,7 @@ describe("Origin Grok PR review", () => {
     try {
       delete process.env.CLI_PROXY_REVIEW_MODEL;
       await callGrokReview({ prompt: "Review this diff", apiKey: "clip_test" });
-      assert.equal(requests[0].model, "grok-4.7-fast");
+      assert.equal(requests[0].model, "grok-4.7-build-fast");
       assert.equal(requests[0].url, `${DEFAULT_CLI_PROXY_API_URL}/responses`);
       process.env.CLI_PROXY_REVIEW_MODEL = " grok-custom ";
       assert.equal(grokModel(), "grok-custom");
@@ -264,7 +264,7 @@ describe("Origin Grok review workflow wiring", () => {
     assert.notInclude(reviewStep, "build.pull_request");
     assert.include(reviewStep, "briefly waits for the PR");
     assert.include(reviewCi, "review-origin-pr.mjs");
-    assert.include(reviewCi, "grok-4.7-fast");
+    assert.include(reviewCi, "grok-4.7-build-fast");
     assert.include(reviewCi, "CLI_PROXY_API_KEY");
     assert.include(reviewCi, "cli-proxy-api-production-1615.up.railway.app");
     assert.include(reviewCi, "origin-forge.mjs");

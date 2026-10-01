@@ -269,11 +269,11 @@ without pretending that a newer upstream tag was integrated before its sync pull
   Used to open, merge, and tag on Origin.
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used by the trusted scheduled
   sync workflow for conflict resolution, native Mac/Windows packagers for What's New changelog
-  generation, and Origin pull-request review (`grok-4.7-fast` via
+  generation, and Origin pull-request review (`grok-4.7-build-fast` via
   `https://cli-proxy-api-production-1615.up.railway.app/v1`). Store it as a Buildkite cluster
   secret or a file under `~/.config/t3-pretty/`, not a GitHub Actions `secrets.*` mapping.
   `CLI_PROXY_CHANGELOG_EFFORT` optionally overrides the changelog reasoning effort (default
-  `high`). `CLI_PROXY_REVIEW_MODEL` defaults to `grok-4.7-fast`. Do not add an xAI / Grok API key
+  `high`). `CLI_PROXY_REVIEW_MODEL` defaults to `grok-4.7-build-fast`. Do not add an xAI / Grok API key
   for reviews.
 - Relay secrets on the same cluster: `CLOUDFLARE_API_TOKEN`, `PLANETSCALE_API_TOKEN_ID`,
   `PLANETSCALE_API_TOKEN`, `AXIOM_TOKEN`, `CLERK_SECRET_KEY`, `APNS_PRIVATE_KEY`. Public
