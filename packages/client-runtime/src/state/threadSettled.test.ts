@@ -11,6 +11,7 @@ import {
   canSettle,
   changeRequestAutoSettles,
   effectiveSettled,
+  effectiveStored,
   hasQueuedTurnStart,
   threadLastActivityAt,
   type ChangeRequestStateLike,
@@ -565,5 +566,45 @@ describe("canSettle", () => {
     });
     expect(canSettle(blocked, { now: NOW })).toBe(false);
     expect(effectiveSettled(blocked, { now: NOW, autoSettleAfterDays: 3 })).toBe(false);
+  });
+});
+
+describe("effectiveStored", () => {
+  const stored = (input: Parameters<typeof makeShell>[0]) => ({
+    ...makeShell(input),
+    storedAt: FRESH,
+  });
+
+  it("keeps an idle stored thread on the shelf however long it has been quiet", () => {
+    const shell = stored({ activityAt: STALE });
+    expect(effectiveStored(shell, { now: NOW })).toBe(true);
+    // Storage is the user's "keep this": inactivity and closed PRs never settle it.
+    expect(effectiveSettled(shell, { now: NOW, autoSettleAfterDays: 3 })).toBe(false);
+    expect(
+      effectiveSettled(shell, {
+        now: NOW,
+        autoSettleAfterDays: 3,
+        changeRequest: { state: "closed" },
+      }),
+    ).toBe(false);
+  });
+
+  it("surfaces a stored thread while it works or waits on the user", () => {
+    expect(
+      effectiveStored(stored({ activityAt: FRESH, sessionStatus: "running" }), { now: NOW }),
+    ).toBe(false);
+    expect(effectiveStored(stored({ activityAt: FRESH, pending: "approval" }), { now: NOW })).toBe(
+      false,
+    );
+    expect(
+      effectiveStored(
+        { ...stored({ activityAt: FRESH }), latestUserMessageAt: "2026-04-09T23:59:30.000Z" },
+        { now: NOW },
+      ),
+    ).toBe(false);
+  });
+
+  it("is false for threads that were never stored", () => {
+    expect(effectiveStored(makeShell({ activityAt: FRESH }), { now: NOW })).toBe(false);
   });
 });

@@ -365,6 +365,58 @@ describe("pending thread lifecycle overlay", () => {
     expect(overlayed.settledAt).toBeNull();
   });
 
+  it("applies store by parking the thread and unstore by returning it to active", () => {
+    const stored = applyPendingThreadLifecycleToThread(
+      makeShell({
+        settledOverride: "settled",
+        settledAt: "2026-08-14T00:00:00.000Z",
+        pinnedAt: "2026-08-14T00:00:00.000Z",
+        pinOrderKey: "a0",
+        snoozedUntil: "2026-08-16T12:00:00.000Z",
+        snoozedAt: "2026-08-15T00:00:00.000Z",
+      }),
+      [
+        entry({
+          command: {
+            type: "thread.store",
+            commandId: CommandId.make("store"),
+            threadId: THREAD_ID,
+          },
+        }),
+      ],
+    );
+    expect(stored.storedAt).toBe("2026-08-15T12:00:00.000Z");
+    expect(stored.settledOverride).toBe("active");
+    expect(stored.pinnedAt).toBeNull();
+    expect(stored.snoozedUntil).toBeNull();
+
+    const unstored = applyPendingThreadLifecycleToThread(stored, [
+      entry({
+        queuedAt: "2026-08-15T13:00:00.000Z",
+        command: {
+          type: "thread.unstore",
+          commandId: CommandId.make("unstore"),
+          threadId: THREAD_ID,
+        },
+      }),
+    ]);
+    expect(unstored.storedAt).toBeNull();
+    expect(unstored.settledOverride).toBe("active");
+
+    // Settling a stored thread takes it out of storage, as on the server.
+    const settled = applyPendingThreadLifecycleToThread(stored, [
+      entry({
+        command: {
+          type: "thread.settle",
+          commandId: CommandId.make("settle"),
+          threadId: THREAD_ID,
+        },
+      }),
+    ]);
+    expect(settled.storedAt).toBeNull();
+    expect(settled.settledOverride).toBe("settled");
+  });
+
   it("applies pin, unpin, and reorder overlays", () => {
     const pinned = applyPendingThreadLifecycleToThread(
       makeShell({
