@@ -678,14 +678,14 @@ ${setup}
     assert.notInclude(pipeline, "\n    secrets:");
   });
 
-  it("releases Windows on every non-scheduled main build", () => {
+  it("releases Windows on non-scheduled main builds except an explicit iOS-only run", () => {
     const windowsStep = pipeline.slice(
       pipeline.indexOf(":windows: Windows NSIS"),
       pipeline.indexOf(":linux: Linux x64 AppImage"),
     );
-    assert.include(windowsStep, 'if: build.branch == "main" && build.source != "schedule"\n');
+    assert.include(windowsStep, '(build.branch == "main" && build.source != "schedule")');
     assert.notInclude(windowsStep, "build.message");
-    assert.notInclude(windowsStep, "build.env(");
+    assert.include(windowsStep, 'build.env("T3CODE_IOS_ONLY") != "1"');
   });
 
   it("keeps the native Windows release unattended and repairs its Rust toolchain", () => {
