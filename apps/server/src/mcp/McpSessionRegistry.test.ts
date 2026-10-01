@@ -7,6 +7,7 @@ import * as NetAddress from "effect/unstable/net/NetAddress";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
+import type * as McpInvocationContext from "./McpInvocationContext.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
 const makeFakeHttpServer = (hostname: string, port = 43123) =>
@@ -49,7 +50,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
 
     const resolved = yield* registry.resolve(token);
     expect(resolved?.threadId).toBe(threadId);
-    expect(Array.from(resolved?.capabilities ?? []).sort()).toEqual(["preview"]);
+    expect(Array.from(resolved?.capabilities ?? []).sort()).toEqual(["preview", "pull-requests"]);
 
     yield* registry.revokeThread(threadId);
     expect(yield* registry.resolve(token)).toBeUndefined();
@@ -69,9 +70,11 @@ it.effect("stores only the capabilities requested for a provider session", () =>
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
 
     expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual([
+      "pull-requests",
       "computer-use",
     ]);
     expect(issued.config.servers).toEqual([
+      { name: "t3-code", url: "http://127.0.0.1:43123/mcp" },
       {
         name: "t3-code-computer",
         url: "http://127.0.0.1:43123/mcp/computer-use",
@@ -97,16 +100,18 @@ it.effect("attaches one server per granted capability", () =>
   }),
 );
 
-it.effect("defaults omitted capabilities to no built-in tools", () =>
+it.effect("keeps the base toolkit without granting optional tools", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry(() => 1_000);
     const issued = yield* registry.issue({
       threadId: ThreadId.make("thread-no-tools"),
       providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(),
     });
 
-    expect(issued.config.capabilities.size).toBe(0);
-    expect(issued.config.servers).toEqual([]);
+    expect([...issued.config.capabilities]).toEqual(["pull-requests"]);
+    expect(issued.config.preview).toBe(false);
+    expect(issued.config.servers).toEqual([{ name: "t3-code", url: "http://127.0.0.1:43123/mcp" }]);
   }),
 );
 
@@ -135,7 +140,9 @@ it.effect("grants pull-requests, preview, and device only when requested", () =>
 
     expect(yield* capabilitiesOf(withPreview)).toEqual(["preview", "pull-requests"]);
     expect(yield* capabilitiesOf(withoutPreview)).toEqual(["pull-requests"]);
-    expect(yield* capabilitiesOf(withDevice)).toEqual(["device"]);
+    expect(yield* capabilitiesOf(withDevice)).toEqual(["device", "pull-requests"]);
+    expect(withPreview.config.preview).toBe(true);
+    expect(withoutPreview.config.preview).toBe(false);
   }),
 );
 
@@ -149,14 +156,16 @@ it.effect("rejects oversized bearer tokens before hashing", () =>
   }),
 );
 
-it.effect("atomically replaces the previous credential for the same thread", () =>
+it.effect("revokes the previous credential before replacing it for the same thread", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry(() => 1_000);
     const request = {
       threadId: ThreadId.make("thread-replaced"),
       providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set<McpInvocationContext.McpCapability>(),
     };
     const first = yield* registry.issue(request);
+    yield* registry.revokeThread(request.threadId);
     const second = yield* registry.issue(request);
     const firstToken = first.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const secondToken = second.config.authorizationHeader.replace(/^Bearer\s+/, "");
