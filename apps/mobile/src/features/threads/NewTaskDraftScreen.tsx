@@ -1691,9 +1691,11 @@ export function NewTaskDraftScreen(props: {
       {sceneryChrome && dailyPhoto !== null && !isKeyboardVisible ? (
         <NewTaskSceneryPlace photo={dailyPhoto} />
       ) : null}
-      <View className="pb-1">
-        <NewTaskGlassChip active={sceneryChrome}>{workspaceControls}</NewTaskGlassChip>
-      </View>
+      {flow.canChooseWorkspace ? (
+        <View className="pb-1">
+          <NewTaskGlassChip active={sceneryChrome}>{workspaceControls}</NewTaskGlassChip>
+        </View>
+      ) : null}
 
       {modelUnavailable ? (
         <Pressable

@@ -217,6 +217,7 @@ import {
   RelayClientStatusSchema,
 } from "./relayClient.ts";
 import {
+  ProjectEnsureScratchResult,
   ProjectImportFaviconError,
   ProjectImportFaviconInput,
   ProjectImportFaviconResult,
@@ -354,6 +355,7 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+  projectsEnsureScratch: "projects.ensureScratch",
   projectsImportFavicon: "projects.importFavicon",
   projectTransfersInspect: "projectTransfers.inspect",
   projectTransfersPrepare: "projectTransfers.prepare",
@@ -1244,6 +1246,13 @@ const WsAppsTestRpc = Rpc.make(WS_METHODS.appsTest, {
   error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
 });
 
+// Finds or creates the Scratch project rooted at ServerConfig.scratchWorkspaceRoot.
+const WsProjectsEnsureScratchRpc = Rpc.make(WS_METHODS.projectsEnsureScratch, {
+  payload: Schema.Struct({}),
+  success: ProjectEnsureScratchResult,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
 const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: LaunchEditorInput,
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
@@ -1812,6 +1821,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsReadFileRpc,
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
+  WsProjectsEnsureScratchRpc,
   WsProjectsWriteFileRpc,
   WsProjectsImportFaviconRpc,
   WsProjectTransfersInspectRpc,
