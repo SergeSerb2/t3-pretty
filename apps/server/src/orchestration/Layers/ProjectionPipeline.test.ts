@@ -745,6 +745,38 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           activeOrderKey: null,
         },
       ]);
+
+      // Stored lifecycle: storedAt survives unrelated full-row upserts and is
+      // cleared by thread.unstored.
+      const storedAt = "2026-01-01T00:00:03.000Z";
+      const storageEvents = [
+        { type: "thread.stored", payload: { storedAt }, expected: storedAt },
+        { type: "thread.meta-updated", payload: { title: "Kept" }, expected: storedAt },
+        { type: "thread.unstored", payload: {}, expected: null },
+      ] as const;
+      for (const [index, event] of storageEvents.entries()) {
+        yield* eventStore.append({
+          type: event.type,
+          eventId: EventId.make(`evt-storage-${index}`),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-1"),
+          occurredAt: storedAt,
+          commandId: CommandId.make(`cmd-storage-${index}`),
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: {
+            ...event.payload,
+            threadId: ThreadId.make("thread-1"),
+            updatedAt: storedAt,
+          },
+        });
+        yield* projectionPipeline.bootstrap;
+        const storedRows = yield* sql<{ readonly storedAt: string | null }>`
+          SELECT stored_at AS "storedAt" FROM projection_threads WHERE thread_id = 'thread-1'
+        `;
+        assert.deepEqual(storedRows, [{ storedAt: event.expected }]);
+      }
     }),
   );
 });

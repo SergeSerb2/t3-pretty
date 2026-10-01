@@ -206,6 +206,13 @@ describe("resolveAutoSettlementAt", () => {
     ).toBe(false);
   });
 
+  it("never settles a stored thread, by inactivity or by a merged PR", () => {
+    const stored = makeThread({ storedAt: "2026-08-02T00:00:00.000Z" });
+    expect(decide(makeThread())).toBe(true);
+    expect(decide(stored)).toBe(false);
+    expect(decide(stored, { state: "merged", mergedAt: "2026-08-26T00:00:00.000Z" })).toBe(false);
+  });
+
   it("allows a fresh completion to wake snooze before settlement", () => {
     expect(
       decide(

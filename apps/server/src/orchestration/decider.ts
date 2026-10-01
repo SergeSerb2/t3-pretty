@@ -493,9 +493,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      // Stored threads are kept on purpose and never settle by inactivity.
       if (
         command.type === "thread.auto-settle" &&
-        (thread.settledOverride !== null || thread.autoSettleDisabledAt != null)
+        (thread.settledOverride !== null ||
+          thread.autoSettleDisabledAt != null ||
+          thread.storedAt != null)
       ) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
@@ -608,6 +611,21 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           },
         });
       }
+      if (thread.storedAt != null) {
+        companionEvents.push({
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.unstored",
+          payload: {
+            threadId: command.threadId,
+            updatedAt: occurredAt,
+          },
+        });
+      }
       return companionEvents.length > 0 ? [settledEvent, ...companionEvents] : settledEvent;
     }
 
@@ -685,14 +703,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         thread.snoozedUntil === command.snoozedUntil && thread.snoozedAt != null
           ? thread.snoozedAt
           : null;
-      return {
+      const snoozedEvent = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
           aggregateId: command.threadId,
           occurredAt,
           commandId: command.commandId,
         })),
-        type: "thread.snoozed",
+        type: "thread.snoozed" as const,
         payload: {
           threadId: command.threadId,
           snoozedUntil: command.snoozedUntil,
@@ -700,6 +718,27 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: existingSnoozedAt !== null ? thread.updatedAt : occurredAt,
         },
       };
+      // A snooze carries a return ticket, which storage never spends: the
+      // thread leaves the Stored shelf instead of holding two parked states.
+      if (thread.storedAt == null) {
+        return snoozedEvent;
+      }
+      return [
+        snoozedEvent,
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.unstored" as const,
+          payload: {
+            threadId: command.threadId,
+            updatedAt: occurredAt,
+          },
+        },
+      ];
     }
 
     case "thread.unsnooze": {
@@ -727,6 +766,150 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: alreadyAwake ? thread.updatedAt : occurredAt,
         },
       };
+    }
+
+    case "thread.store": {
+      const thread = yield* requireThreadNotArchived({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const occurredAt = yield* nowIso;
+      // Same blockers as snooze: storing hides the thread from Active, so it
+      // must not bury a request the agent is waiting on or a just-queued
+      // turn. A running session is fine; storage never pauses the agent.
+      if (openRequests(thread).size > 0) {
+        return yield* Effect.fail(
+          new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `thread ${command.threadId} has a pending approval or user-input request and cannot be stored`,
+          }),
+        );
+      }
+      if (hasQueuedTurnStartForThread(thread, occurredAt)) {
+        return yield* Effect.fail(
+          new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `thread ${command.threadId} has a queued turn start and cannot be stored`,
+          }),
+        );
+      }
+      // Idempotent by re-emission (see thread.settle): a duplicate store
+      // keeps the original storedAt and updatedAt.
+      const existingStoredAt = thread.storedAt ?? null;
+      const storedEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.stored" as const,
+        payload: {
+          threadId: command.threadId,
+          storedAt: existingStoredAt ?? occurredAt,
+          updatedAt: existingStoredAt !== null ? thread.updatedAt : occurredAt,
+        },
+      };
+      // Storage is its own shelf: it replaces settle, snooze, and pin rather
+      // than stacking with them.
+      const companionEvents: Array<Omit<OrchestrationEvent, "sequence">> = [];
+      if (thread.settledOverride === "settled") {
+        companionEvents.push({
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.unsettled",
+          payload: {
+            threadId: command.threadId,
+            reason: "user",
+            updatedAt: occurredAt,
+          },
+        });
+      }
+      if (thread.snoozedUntil != null) {
+        companionEvents.push({
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.unsnoozed",
+          payload: {
+            threadId: command.threadId,
+            reason: "user",
+            updatedAt: occurredAt,
+          },
+        });
+      }
+      if (thread.pinnedAt != null) {
+        companionEvents.push({
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.unpinned",
+          payload: {
+            threadId: command.threadId,
+            updatedAt: occurredAt,
+          },
+        });
+      }
+      return companionEvents.length > 0 ? [storedEvent, ...companionEvents] : storedEvent;
+    }
+
+    case "thread.unstore": {
+      const thread = yield* requireThreadNotArchived({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      // Idempotent by re-emission (see thread.settle): unstoring a thread
+      // that is not stored keeps updatedAt.
+      const wasStored = thread.storedAt != null;
+      const occurredAt = yield* nowIso;
+      const unstoredEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.unstored" as const,
+        payload: {
+          threadId: command.threadId,
+          updatedAt: wasStored ? occurredAt : thread.updatedAt,
+        },
+      };
+      if (!wasStored) {
+        return unstoredEvent;
+      }
+      // Taking a thread off the shelf is a user re-entry into Active: the
+      // keep-active override stamps unsettledAt for ordering and protects it
+      // from an immediate inactivity auto-settle.
+      return [
+        unstoredEvent,
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.unsettled" as const,
+          payload: {
+            threadId: command.threadId,
+            reason: "user" as const,
+            updatedAt: occurredAt,
+          },
+        },
+      ];
     }
 
     case "thread.pin": {
@@ -794,6 +977,21 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           payload: {
             threadId: command.threadId,
             reason: "user",
+            updatedAt: occurredAt,
+          },
+        });
+      }
+      if (thread.storedAt != null) {
+        promotionEvents.push({
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.unstored",
+          payload: {
+            threadId: command.threadId,
             updatedAt: occurredAt,
           },
         });

@@ -484,6 +484,7 @@ function remapTransferredThread(
     unsettledAt: null,
     snoozedUntil: null,
     snoozedAt: null,
+    storedAt: null,
     pinnedAt: null,
     pinOrderKey: null,
     titleRegeneration: null,

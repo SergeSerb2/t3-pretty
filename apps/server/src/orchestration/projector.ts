@@ -48,10 +48,12 @@ import {
   ThreadPullRequestSyncedPayload,
   ThreadPullRequestUnlinkedPayload,
   ThreadSnoozedPayload,
+  ThreadStoredPayload,
   ThreadUnpinnedPayload,
   ThreadUnarchivedPayload,
   ThreadUnsettledPayload,
   ThreadUnsnoozedPayload,
+  ThreadUnstoredPayload,
   ThreadRevertedPayload,
   ThreadSessionSetPayload,
   ThreadTurnDiffCompletedPayload,
@@ -459,6 +461,7 @@ export function projectEvent(
             autoSettleDisabledAt: null,
             snoozedUntil: null,
             snoozedAt: null,
+            storedAt: null,
             deletedAt: null,
             messages: [],
             activities: [],
@@ -566,6 +569,28 @@ export function projectEvent(
           threads: updateThread(nextBase.threads, payload.threadId, {
             snoozedUntil: null,
             snoozedAt: null,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.stored":
+      return decodeForEvent(ThreadStoredPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            storedAt: payload.storedAt,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.unstored":
+      return decodeForEvent(ThreadUnstoredPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            storedAt: null,
             updatedAt: payload.updatedAt,
           }),
         })),
