@@ -118,35 +118,54 @@ type ThreadGitControlsProps = ThreadGitMenuProps & {
   readonly onUnsettle: () => void;
   readonly onSnooze: (snoozedUntil: string) => void;
   readonly onUnsnooze: () => void;
+  readonly storageSupported: boolean;
+  readonly stored: boolean;
+  readonly onStore: () => void;
+  readonly onUnstore: () => void;
 };
 
-function presentSnoozePresetMenu(onSnooze: (snoozedUntil: string) => void): void {
+function presentSnoozePresetMenu(
+  onSnooze: (snoozedUntil: string) => void,
+  onStore: (() => void) | null,
+): void {
   const displayedPresets = resolveSnoozePresets(new Date());
   presentActionListMenu({
     placement: "top-end",
     title: "Snooze",
-    items: displayedPresets.map((preset) => ({
-      description: preset.whenLabel,
-      iconName: "clock",
-      label: preset.label,
-      onPress: () => {
-        const selection = resolveThreadListV2SnoozeMenuSelection({
-          event: `snooze:${preset.id}`,
-          displayedPresets,
-          now: new Date(),
-        });
-        if (selection._tag === "selected") {
-          onSnooze(selection.preset.snoozedUntil);
-          return;
-        }
-        if (selection._tag === "expired") {
-          Alert.alert(
-            "Could not snooze thread",
-            "That snooze time has passed. Choose another time.",
-          );
-        }
-      },
-    })),
+    items: [
+      ...displayedPresets.map((preset) => ({
+        description: preset.whenLabel,
+        iconName: "clock",
+        label: preset.label,
+        onPress: () => {
+          const selection = resolveThreadListV2SnoozeMenuSelection({
+            event: `snooze:${preset.id}`,
+            displayedPresets,
+            now: new Date(),
+          });
+          if (selection._tag === "selected") {
+            onSnooze(selection.preset.snoozedUntil);
+            return;
+          }
+          if (selection._tag === "expired") {
+            Alert.alert(
+              "Could not snooze thread",
+              "That snooze time has passed. Choose another time.",
+            );
+          }
+        },
+      })),
+      ...(onStore === null
+        ? []
+        : [
+            {
+              description: "No wake time",
+              iconName: "tray.and.arrow.down",
+              label: "Store",
+              onPress: onStore,
+            },
+          ]),
+    ],
   });
 }
 
@@ -339,6 +358,8 @@ export function useThreadDetailHeaderActionItems(
     supported: props.snoozeSupported,
     snoozed: props.snoozed,
     canSnooze: props.canSnoozeThread,
+    storageSupported: props.storageSupported,
+    stored: props.stored,
   });
   const openPr = props.gitStatus?.pr?.state === "open" ? props.gitStatus.pr : null;
   const pr = resolveThreadHeaderPrPresentation({
@@ -371,7 +392,13 @@ export function useThreadDetailHeaderActionItems(
         onPress:
           snooze.action === "wake"
             ? props.onUnsnooze
-            : () => presentSnoozePresetMenu(props.onSnooze),
+            : snooze.action === "unstore"
+              ? props.onUnstore
+              : () =>
+                  presentSnoozePresetMenu(
+                    props.onSnooze,
+                    snooze.offersStore ? props.onStore : null,
+                  ),
         sharesBackground: true,
         type: "button",
         variant: "plain",
@@ -410,12 +437,16 @@ export function useThreadDetailHeaderActionItems(
       props.canSnoozeThread,
       props.onSettle,
       props.onSnooze,
+      props.onStore,
       props.onUnsnooze,
       props.onUnsettle,
+      props.onUnstore,
       props.settled,
       props.settlementSupported,
       props.snoozeSupported,
       props.snoozed,
+      props.storageSupported,
+      props.stored,
       settle,
       snooze,
     ],
@@ -447,6 +478,8 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
     supported: props.snoozeSupported,
     snoozed: props.snoozed,
     canSnooze: props.canSnoozeThread,
+    storageSupported: props.storageSupported,
+    stored: props.stored,
   });
   const openPr = props.gitStatus?.pr?.state === "open" ? props.gitStatus.pr : null;
   const pr = resolveThreadHeaderPrPresentation({
@@ -494,12 +527,12 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
           </NativeHeaderToolbar.MenuAction>
         ))}
       </NativeHeaderToolbar.Menu>
-      {snooze.action === "wake" ? (
+      {snooze.action === "wake" || snooze.action === "unstore" ? (
         <NativeHeaderToolbar.Button
           accessibilityLabel={snooze.accessibilityLabel}
           disabled={snooze.disabled}
           icon={snooze.icon}
-          onPress={props.onUnsnooze}
+          onPress={snooze.action === "wake" ? props.onUnsnooze : props.onUnstore}
         />
       ) : (
         <NativeHeaderToolbar.Menu
@@ -533,6 +566,15 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
               <NativeHeaderToolbar.Label>{preset.label}</NativeHeaderToolbar.Label>
             </NativeHeaderToolbar.MenuAction>
           ))}
+          {snooze.offersStore ? (
+            <NativeHeaderToolbar.MenuAction
+              icon="tray.and.arrow.down"
+              onPress={props.onStore}
+              subtitle="No wake time"
+            >
+              <NativeHeaderToolbar.Label>Store</NativeHeaderToolbar.Label>
+            </NativeHeaderToolbar.MenuAction>
+          ) : null}
         </NativeHeaderToolbar.Menu>
       )}
       <NativeHeaderToolbar.Button

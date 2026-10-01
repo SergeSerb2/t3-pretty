@@ -63,6 +63,7 @@ import {
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
+  ThreadListV2StoredShelfHeader,
 } from "./thread-list-v2-items";
 import { useThreadRowProviderInstanceResolver } from "./thread-provider-instance";
 import {
@@ -157,6 +158,8 @@ function ThreadNavigationSidebarPane(
     settleThread,
     snoozeThread,
     unsnoozeThread,
+    storeThread,
+    unstoreThread,
     unsettleThread,
     pinThread,
     unpinThread,
@@ -309,8 +312,10 @@ function ThreadNavigationSidebarPane(
     loaded: shelfPreferencesLoaded,
     settledShelfExpanded,
     snoozedShelfExpanded,
+    storedShelfExpanded,
     toggleSettledShelf,
     toggleSnoozedShelf,
+    toggleStoredShelf,
   } = useThreadListV2ShelfPreferences();
   // The queued-start and snooze helpers need a clock while the pane stays open.
   const [nowMinute, setNowMinute] = useState(() => new Date().toISOString().slice(0, 16));
@@ -346,6 +351,15 @@ function ThreadNavigationSidebarPane(
     const supported = new Set<EnvironmentId>();
     for (const [environmentId, config] of serverConfigs) {
       if (config.environment.capabilities.threadSnooze === true) {
+        supported.add(environmentId);
+      }
+    }
+    return supported;
+  }, [serverConfigs]);
+  const storageEnvironmentIds = useMemo(() => {
+    const supported = new Set<EnvironmentId>();
+    for (const [environmentId, config] of serverConfigs) {
+      if (config.environment.capabilities.threadStorage === true) {
         supported.add(environmentId);
       }
     }
@@ -435,6 +449,7 @@ function ThreadNavigationSidebarPane(
           now: new Date().toISOString(),
           settlementEnvironmentIds,
           snoozeEnvironmentIds,
+          storageEnvironmentIds,
           queuedThreadKeys,
         }),
       });
@@ -446,6 +461,7 @@ function ThreadNavigationSidebarPane(
     queuedThreadKeys,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
+    storageEnvironmentIds,
     nowMinute,
     snoozeWakeTick,
   ]);
@@ -459,10 +475,12 @@ function ThreadNavigationSidebarPane(
       matchedThreadKeys,
       settlementEnvironmentIds,
       snoozeEnvironmentIds,
+      storageEnvironmentIds,
       queuedThreadKeys,
       settledLimit: settledVisibleCount,
       now: new Date().toISOString(),
       snoozedShelfExpanded,
+      storedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey: props.selectedThreadKey ?? null,
       isPrNestExpanded: (key) => !collapsedPrNests.has(key),
@@ -473,6 +491,7 @@ function ThreadNavigationSidebarPane(
     nowMinute,
     snoozeWakeTick,
     snoozedShelfExpanded,
+    storedShelfExpanded,
     settledShelfExpanded,
     props.selectedThreadKey,
     options.selectedEnvironmentId,
@@ -481,6 +500,7 @@ function ThreadNavigationSidebarPane(
     settledVisibleCount,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
+    storageEnvironmentIds,
     threads,
     selectedProjectScope,
     collapsedPrNests,
@@ -523,6 +543,9 @@ function ThreadNavigationSidebarPane(
       snoozedCount: threadListV2Layout.snoozedCount,
       snoozedShelfExpanded,
       snoozedShelfHeaderIndex: threadListV2Layout.snoozedShelfHeaderIndex,
+      storedCount: threadListV2Layout.storedCount,
+      storedShelfExpanded,
+      storedShelfHeaderIndex: threadListV2Layout.storedShelfHeaderIndex,
       settledCount: threadListV2Layout.settledCount,
       settledShelfExpanded,
       settledShelfHeaderIndex: threadListV2Layout.settledShelfHeaderIndex,
@@ -552,6 +575,7 @@ function ThreadNavigationSidebarPane(
     shelfPreferencesLoaded,
     snoozedShelfExpanded,
     snoozeEnvironmentIds,
+    storedShelfExpanded,
     threadListV2Layout,
   ]);
   const listMenuActions = useMemo<MenuAction[]>(
@@ -783,6 +807,7 @@ function ThreadNavigationSidebarPane(
               variant={item.item.variant}
               hasQueuedMessages={item.hasQueuedMessages}
               snoozed={item.item.snoozed}
+              stored={item.item.stored}
               pinned={item.item.pinned}
               snoozePresetMinute={item.snoozePresetMinute ?? ""}
               snoozeWakeLabelText={item.snoozeWakeLabelText}
@@ -825,6 +850,7 @@ function ThreadNavigationSidebarPane(
               settlementSupported={settlementEnvironmentIds.has(thread.environmentId)}
               onSettleThread={settleThread}
               snoozeSupported={snoozeEnvironmentIds.has(thread.environmentId)}
+              storageSupported={storageEnvironmentIds.has(thread.environmentId)}
               pinningSupported={pinningEnvironmentIds.has(thread.environmentId)}
               autoSettleOptOutSupported={autoSettleOptOutEnvironmentIds.has(thread.environmentId)}
               reorderSupported={
@@ -836,6 +862,8 @@ function ThreadNavigationSidebarPane(
               canMoveDown={item.canMoveDown}
               onSnoozeThread={snoozeThread}
               onUnsnoozeThread={unsnoozeThread}
+              onStoreThread={storeThread}
+              onUnstoreThread={unstoreThread}
               onUnsettleThread={unsettleThread}
               onPinThread={pinThread}
               onUnpinThread={unpinThread}
@@ -854,6 +882,16 @@ function ThreadNavigationSidebarPane(
               disabled={item.disabled}
               expanded={item.expanded}
               onToggle={toggleSnoozedShelf}
+              pane="sidebar"
+            />
+          );
+        case "v2-stored-shelf":
+          return (
+            <ThreadListV2StoredShelfHeader
+              count={item.count}
+              disabled={item.disabled}
+              expanded={item.expanded}
+              onToggle={toggleStoredShelf}
               pane="sidebar"
             />
           );
@@ -912,11 +950,15 @@ function ThreadNavigationSidebarPane(
       snoozeEnvironmentIds,
       snoozeThread,
       resolveProviderInstance,
+      storageEnvironmentIds,
+      storeThread,
       toggleSettledShelf,
       toggleSnoozedShelf,
+      toggleStoredShelf,
       unpinThread,
       unsettleThread,
       unsnoozeThread,
+      unstoreThread,
       collapsedPrNests,
       togglePrNest,
     ],

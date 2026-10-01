@@ -67,6 +67,11 @@ export function beginPendingThreadOrder(pending: PendingThreadOrder) {
           config.environment.capabilities.threadSnooze === true ? [id] : [],
         ),
       ),
+      storageEnvironmentIds: new Set(
+        [...configs].flatMap(([id, config]) =>
+          config.environment.capabilities.threadStorage === true ? [id] : [],
+        ),
+      ),
     });
     const next = reconcilePendingThreadOrder(current, ordered);
     if (next === null) cancel();

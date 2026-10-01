@@ -4,7 +4,7 @@ import {
   pinOrderKeyBetween,
   planPinnedReorder,
 } from "@t3tools/client-runtime/state/thread-sort";
-import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { effectiveSnoozed, effectiveStored } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 export type ThreadMoveDestination =
@@ -307,24 +307,29 @@ export function threadDropLifecycle(
   section: "pinned" | "active",
   now: string,
 ) {
-  if (section === "pinned") return { pin: true, unpin: false, unsettle: false, unsnooze: false };
+  // The server un-stores on pin, so pinning needs no separate unstore.
+  if (section === "pinned") {
+    return { pin: true, unpin: false, unsettle: false, unsnooze: false, unstore: false };
+  }
   return {
     pin: false,
     unpin: thread.pinnedAt != null,
     unsettle: thread.settledOverride === "settled",
     unsnooze: effectiveSnoozed(thread, { now }),
+    unstore: effectiveStored(thread, { now }),
   };
 }
 
-export type ThreadDragSection = "pinned" | "active" | "snoozed" | "settled";
+export type ThreadDragSection = "pinned" | "active" | "snoozed" | "stored" | "settled";
 
 /** The action shown during hover describes the lifecycle change made on drop. */
 export function threadDragAction(source: ThreadDragSection, destination: ThreadDragSection) {
-  if (destination === "snoozed") return null;
+  if (destination === "snoozed" || destination === "stored") return null;
   if (destination === "settled") return source === "settled" ? null : "Settle";
   if (source === destination) return "Reorder";
   if (destination === "pinned") return "Pin";
   if (source === "pinned") return "Unpin";
   if (source === "settled") return "Unsettle";
+  if (source === "stored") return "Unstore";
   return "Unsnooze";
 }

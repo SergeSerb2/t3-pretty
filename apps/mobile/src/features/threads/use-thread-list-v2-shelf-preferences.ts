@@ -15,11 +15,15 @@ export function useThreadListV2ShelfPreferences() {
   const loaded = AsyncResult.isSuccess(preferencesResult);
   const snoozedShelfExpanded =
     loaded && preferencesResult.value.threadListSnoozedShelfExpanded === true;
+  const storedShelfExpanded =
+    loaded && preferencesResult.value.threadListStoredShelfExpanded === true;
   const settledShelfExpanded =
     loaded && preferencesResult.value.threadListSettledShelfExpanded === true;
   const snoozedShelfExpandedRef = useRef(snoozedShelfExpanded);
+  const storedShelfExpandedRef = useRef(storedShelfExpanded);
   const settledShelfExpandedRef = useRef(settledShelfExpanded);
   snoozedShelfExpandedRef.current = snoozedShelfExpanded;
+  storedShelfExpandedRef.current = storedShelfExpanded;
   settledShelfExpandedRef.current = settledShelfExpanded;
 
   const toggleSnoozedShelf = useCallback(() => {
@@ -27,6 +31,12 @@ export function useThreadListV2ShelfPreferences() {
     const expanded = !snoozedShelfExpandedRef.current;
     snoozedShelfExpandedRef.current = expanded;
     savePreferences({ threadListSnoozedShelfExpanded: expanded });
+  }, [loaded, savePreferences]);
+  const toggleStoredShelf = useCallback(() => {
+    if (!loaded) return;
+    const expanded = !storedShelfExpandedRef.current;
+    storedShelfExpandedRef.current = expanded;
+    savePreferences({ threadListStoredShelfExpanded: expanded });
   }, [loaded, savePreferences]);
   const toggleSettledShelf = useCallback(() => {
     if (!loaded) return;
@@ -39,7 +49,9 @@ export function useThreadListV2ShelfPreferences() {
     loaded,
     settledShelfExpanded,
     snoozedShelfExpanded,
+    storedShelfExpanded,
     toggleSettledShelf,
     toggleSnoozedShelf,
+    toggleStoredShelf,
   } as const;
 }

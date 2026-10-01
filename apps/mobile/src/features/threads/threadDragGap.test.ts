@@ -30,6 +30,8 @@ describe("drag action labels", () => {
     expect(threadDragAction("pinned", "active")).toBe("Unpin");
     expect(threadDragAction("settled", "active")).toBe("Unsettle");
     expect(threadDragAction("snoozed", "active")).toBe("Unsnooze");
+    expect(threadDragAction("stored", "active")).toBe("Unstore");
+    expect(threadDragAction("stored", "settled")).toBe("Settle");
     expect(threadDragAction("active", "settled")).toBe("Settle");
     expect(threadDragAction("pinned", "settled")).toBe("Settle");
     expect(threadDragAction("active", "active")).toBe("Reorder");
@@ -37,6 +39,7 @@ describe("drag action labels", () => {
   it("does not offer a parked-section reorder or snooze without a wake time", () => {
     expect(threadDragAction("settled", "settled")).toBeNull();
     expect(threadDragAction("active", "snoozed")).toBeNull();
+    expect(threadDragAction("active", "stored")).toBeNull();
     expect(
       threadOrderAfterMove(["a", "b"], "a", {
         section: "settled",

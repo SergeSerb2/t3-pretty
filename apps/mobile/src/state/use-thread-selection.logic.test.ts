@@ -247,7 +247,19 @@ describe("threadDetailToShell", () => {
       hasActionableProposedPlan: false,
       snoozedUntil: null,
       snoozedAt: null,
+      storedAt: null,
     });
+  });
+
+  it("carries storedAt so a cold deep link still knows the thread is stored", () => {
+    const detail = makeThread({
+      id: threadRef.threadId,
+      projectId: ProjectId.make("project-1"),
+      title: "Detail thread",
+      storedAt: "2026-04-01T00:00:05.000Z",
+    });
+
+    expect(threadDetailToShell(environmentId, detail).storedAt).toBe("2026-04-01T00:00:05.000Z");
   });
 
   it("copies enabledSkillIds from the detail thread", () => {

@@ -65,6 +65,7 @@ export function optimisticStartingThreadToShell(
     settledAt: null,
     snoozedUntil: null,
     snoozedAt: null,
+    storedAt: null,
     session: {
       threadId: thread.threadId,
       status: "starting",
