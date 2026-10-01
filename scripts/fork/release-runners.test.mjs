@@ -318,11 +318,11 @@ ${setup}
     const relayStep = pipeline.slice(pipeline.indexOf(":cloud: Relay"));
     assert.include(dmgStep, "queue: macos-release");
     assert.include(dmgStep, "os: macos");
-    assert.include(iosStep, "queue: windows-release");
+    assert.include(iosStep, "queue: macos-release");
     assert.notInclude(iosStep, "- windows-release");
     assert.notInclude(iosStep, "- macos-release");
     assert.notInclude(iosStep, "os: linux");
-    assert.notInclude(iosStep, "os: macos");
+    assert.include(iosStep, "os: macos");
     assert.equal(
       (pipeline.match(/^[ \t]*queue:[ \t]*$/gm) || []).length,
       0,
@@ -373,9 +373,9 @@ ${setup}
       pipeline.indexOf(":iphone: iOS OTA + TestFlight"),
       pipeline.indexOf(":android: Android Internal"),
     );
-    assert.include(iosStep, "T3CODE_IOS_ALLOW_EAS_CLOUD");
+    assert.include(iosStep, 'T3CODE_IOS_ALLOW_EAS_CLOUD: "1"');
     assert.include(iosStep, "T3CODE_IOS_LOCAL_XCODE");
-    assert.include(iosStep, "queue: windows-release");
+    assert.include(iosStep, "queue: macos-release");
     assert.notInclude(iosStep, "- windows-release");
     assert.notInclude(iosStep, "- macos-release");
     assert.notInclude(iosStep, "T3CODE_FORCE_IOS");
