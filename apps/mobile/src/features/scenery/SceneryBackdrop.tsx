@@ -31,7 +31,6 @@ import {
 } from "./sceneryLogic";
 import { useScenery } from "./SceneryProvider";
 import { useSyncedThreadSceneryPhoto } from "./useSyncedThreadScenery";
-import { useReduceTransparency } from "./useReduceTransparency";
 
 function SceneryGradient(props: { readonly seed: string; readonly opacity?: number }) {
   const pair = gradientPair(props.seed);
@@ -75,11 +74,17 @@ export function SceneryBackdrop(props: {
    *  photo-of-the-day rotation. */
   readonly threadKey: string | null;
 }) {
-  const { enabled, blur, translucency, dailyPhoto, photoForThreadKey, ensureThreadAssignment } =
-    useScenery();
+  const {
+    enabled,
+    blur,
+    translucency,
+    dailyPhoto,
+    photoForThreadKey,
+    ensureThreadAssignment,
+    reduceTransparency,
+  } = useScenery();
   const { themeId } = useAppearancePreferences();
   const colorScheme = useColorScheme() === "light" ? "light" : "dark";
-  const reduceTransparency = useReduceTransparency();
   const { width: windowWidth } = useWindowDimensions();
   const photosActive = enabled && !isBoringMobileTheme(themeId);
 

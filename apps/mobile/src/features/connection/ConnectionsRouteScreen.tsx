@@ -3,13 +3,14 @@ import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useNavigation } from "@react-navigation/native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { LocalEnvironmentList } from "./LocalEnvironmentList";
 import { GitHubRoutingSettings } from "./GitHubRoutingSettings";
+import { SheetSurface } from "../../components/SheetSurface";
 
 export function ConnectionsRouteScreen() {
   const {
@@ -27,7 +28,7 @@ export function ConnectionsRouteScreen() {
   }, []);
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       {Platform.OS === "android" ? (
         <AndroidScreenHeader
           title="Environments"
@@ -71,6 +72,6 @@ export function ConnectionsRouteScreen() {
         />
         <GitHubRoutingSettings />
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }

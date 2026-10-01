@@ -84,6 +84,7 @@ import {
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
 import { resolveAddProjectEnvironment } from "./AddProjectScreen.logic";
+import { SheetSurface } from "../../components/SheetSurface";
 
 interface EnvironmentOption {
   readonly environmentId: EnvironmentId;
@@ -957,7 +958,7 @@ function FolderBrowser(props: {
     // Keep a non-collapsible native wrapper around the list. Native-stack
     // form sheets otherwise risk treating the full-height scroll surface as a
     // header sibling during keyboard-driven relayout.
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <LegendList
         className="flex-1"
         contentInsetAdjustmentBehavior="automatic"
@@ -1024,7 +1025,7 @@ function FolderBrowser(props: {
         renderItem={renderBrowseEntry}
         showsVerticalScrollIndicator={false}
       />
-    </View>
+    </SheetSurface>
   );
 }
 

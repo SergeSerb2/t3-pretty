@@ -30,7 +30,7 @@ import {
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
-import { useSceneryChromeActive } from "../scenery/SceneryProvider";
+import { useGlassChromeActive, useSceneryChromeActive } from "../scenery/SceneryProvider";
 
 import { cn } from "../../lib/cn";
 import { AppText as Text } from "../../components/AppText";
@@ -65,6 +65,7 @@ import {
   type ThreadListV2ListItem,
 } from "../threads/threadListV2";
 import { useThreadListV2ShelfPreferences } from "../threads/use-thread-list-v2-shelf-preferences";
+import { ThreadListGlassContext } from "../threads/thread-list-glass-context";
 import { ANDROID_HOME_FAB_EDGE_GAP } from "./AndroidHomeFab";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
@@ -235,6 +236,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const [collapsedPrNests, setCollapsedPrNests] = useState<ReadonlySet<string>>(() => new Set());
   const isFocused = useIsFocused();
   const sceneryChrome = useSceneryChromeActive();
+  const glassRows = useGlassChromeActive();
   const queuedThreadKeys = useQueuedThreadKeys();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const insets = useSafeAreaInsets();
@@ -1094,61 +1096,63 @@ export function HomeScreen(props: HomeScreenProps) {
         {/* Shared with the iPad sidebar: cells are reused across data
             rebuilds and `itemsAreEqual` keeps a minute tick (or an unrelated
             shell update) from re-rendering untouched rows. */}
-        <SwipeableScrollGateProvider enabled={swipeEnabled} activation={swipeRowActivation}>
-          <LegendList
-            ref={listRef}
-            onLoad={() => activateVisibleRows(threadListV2Items)}
-            onTouchStart={(event) => trackListTouches(event, true)}
-            onTouchEnd={(event) => trackListTouches(event, false)}
-            onTouchCancel={(event) => trackListTouches(event, false)}
-            data={threadListV2Items}
-            renderItem={renderV2Item}
-            keyExtractor={v2KeyExtractor}
-            getItemType={(item) => item.type}
-            itemsAreEqual={threadListV2ListItemsAreEqual}
-            estimatedItemSize={ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT}
-            drawDistance={THREAD_LIST_V2_DRAW_DISTANCE}
-            recycleItems
-            extraData={v2ExtraData}
-            ListHeaderComponent={v2ListHeader}
-            ListFooterComponent={
-              settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
-                sceneryChrome ? (
-                  <Pressable
-                    onPress={showMoreSettled}
-                    className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
-                    style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-                  >
-                    <Text className="text-xs font-t3-medium text-foreground-muted">
-                      Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
-                    </Text>
-                  </Pressable>
-                ) : (
-                  <ThreadListV2ShowMoreRow
-                    hiddenCount={threadListV2Layout.hiddenSettledCount}
-                    onPress={showMoreSettled}
-                  />
-                )
-              ) : null
-            }
-            ListEmptyComponent={v2ListEmpty}
-            style={{ flex: 1 }}
-            automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
-            contentInsetAdjustmentBehavior={Platform.OS === "ios" ? "automatic" : "never"}
-            showsVerticalScrollIndicator={false}
-            keyboardDismissMode="on-drag"
-            keyboardShouldPersistTaps="handled"
-            {...scrollGateHandlers}
-            scrollEventThrottle={16}
-            contentContainerStyle={{
-              paddingBottom:
-                Platform.OS === "ios"
-                  ? iosListBottomPad
-                  : Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
-                    (Platform.OS === "android" ? fabClearance : 88),
-            }}
-          />
-        </SwipeableScrollGateProvider>
+        <ThreadListGlassContext value={glassRows}>
+          <SwipeableScrollGateProvider enabled={swipeEnabled} activation={swipeRowActivation}>
+            <LegendList
+              ref={listRef}
+              onLoad={() => activateVisibleRows(threadListV2Items)}
+              onTouchStart={(event) => trackListTouches(event, true)}
+              onTouchEnd={(event) => trackListTouches(event, false)}
+              onTouchCancel={(event) => trackListTouches(event, false)}
+              data={threadListV2Items}
+              renderItem={renderV2Item}
+              keyExtractor={v2KeyExtractor}
+              getItemType={(item) => item.type}
+              itemsAreEqual={threadListV2ListItemsAreEqual}
+              estimatedItemSize={ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT}
+              drawDistance={THREAD_LIST_V2_DRAW_DISTANCE}
+              recycleItems
+              extraData={v2ExtraData}
+              ListHeaderComponent={v2ListHeader}
+              ListFooterComponent={
+                settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
+                  sceneryChrome ? (
+                    <Pressable
+                      onPress={showMoreSettled}
+                      className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
+                      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                    >
+                      <Text className="text-xs font-t3-medium text-foreground-muted">
+                        Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <ThreadListV2ShowMoreRow
+                      hiddenCount={threadListV2Layout.hiddenSettledCount}
+                      onPress={showMoreSettled}
+                    />
+                  )
+                ) : null
+              }
+              ListEmptyComponent={v2ListEmpty}
+              style={{ flex: 1 }}
+              automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
+              contentInsetAdjustmentBehavior={Platform.OS === "ios" ? "automatic" : "never"}
+              showsVerticalScrollIndicator={false}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+              {...scrollGateHandlers}
+              scrollEventThrottle={16}
+              contentContainerStyle={{
+                paddingBottom:
+                  Platform.OS === "ios"
+                    ? iosListBottomPad
+                    : Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
+                      (Platform.OS === "android" ? fabClearance : 88),
+              }}
+            />
+          </SwipeableScrollGateProvider>
+        </ThreadListGlassContext>
       </View>
     </View>
   );

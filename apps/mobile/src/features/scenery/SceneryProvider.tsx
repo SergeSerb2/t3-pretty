@@ -23,6 +23,7 @@ import {
 
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
+import { Platform } from "react-native";
 
 import {
   resolveSharedSceneryPhotoSet,
@@ -79,6 +80,8 @@ function resolveScenery(raw: MobileSceneryPreferences | null | undefined): Resol
 
 interface SceneryContextValue extends ResolvedScenery {
   readonly isReady: boolean;
+  /** iOS Reduce Transparency, read once here rather than per consumer. */
+  readonly reduceTransparency: boolean;
   /** Assigned photo for a thread key, or the deterministic hash fallback. */
   readonly photoForThreadKey: (threadKey: string) => SceneryPhoto | null;
   /** Today's featured photo for the no-thread home screen. */
@@ -111,6 +114,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     [preferencesResult],
   );
   const isReady = AsyncResult.isSuccess(preferencesResult) && !preferencesResult.waiting;
+  const reduceTransparency = useReduceTransparency();
 
   // Writes read through a ref so a same-tick burst of first-sight assignments
   // (e.g. restoring a back stack) cannot drop each other while the optimistic
@@ -327,6 +331,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     (): SceneryContextValue => ({
       ...scenery,
       isReady,
+      reduceTransparency,
       photoForThreadKey,
       dailyPhoto,
       ensureThreadAssignment,
@@ -338,6 +343,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     [
       scenery,
       isReady,
+      reduceTransparency,
       photoForThreadKey,
       dailyPhoto,
       ensureThreadAssignment,
@@ -370,9 +376,16 @@ function useSceneryPhotosAllowed(): boolean {
  */
 export function useSceneryChromeActive(): boolean {
   const context = use(SceneryContext);
-  const reduceTransparency = useReduceTransparency();
   const photosAllowed = useSceneryPhotosAllowed();
-  return context !== null && context.enabled && photosAllowed && !reduceTransparency;
+  return context !== null && context.enabled && photosAllowed && !context.reduceTransparency;
+}
+
+/**
+ * True when iOS surfaces float as frosted glass over the scenery photo.
+ * Android keeps its tonal Material surfaces.
+ */
+export function useGlassChromeActive(): boolean {
+  return useSceneryChromeActive() && Platform.OS === "ios";
 }
 
 /** Photo bound to a thread key, assigning one on first sight. */

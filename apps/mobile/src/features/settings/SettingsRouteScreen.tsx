@@ -1,7 +1,7 @@
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { useAuth, useUser } from "@clerk/expo";
 import { useNavigation } from "@react-navigation/native";
-import { Platform, View } from "react-native";
+import { Platform } from "react-native";
 import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -17,6 +17,7 @@ import {
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
+import { SheetSurface } from "../../components/SheetSurface";
 
 export function SettingsRouteScreen() {
   const navigation = useNavigation();
@@ -63,7 +64,7 @@ function ConfiguredSettingsRouteScreen() {
       : (user?.primaryEmailAddress?.emailAddress ?? "Signed in");
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -91,7 +92,7 @@ function ConfiguredSettingsRouteScreen() {
 
         <SettingsIndexSections />
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -101,7 +102,7 @@ function LocalSettingsRouteScreen() {
   const environmentCount = Object.keys(savedConnectionsById).length;
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -123,7 +124,7 @@ function LocalSettingsRouteScreen() {
 
         <SettingsIndexSections />
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }
 

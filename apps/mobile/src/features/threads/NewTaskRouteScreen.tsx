@@ -32,6 +32,8 @@ import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { filterProjectScopes, getProjectScopeSelectionTarget } from "./new-task-project-selection";
+import { SheetSurface } from "../../components/SheetSurface";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
@@ -245,6 +247,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     [incomingShare, navigation, releaseShareReservation, reservedDestinationProject, setProject],
   );
 
+  const glass = useGlassChromeActive();
   const renderProjectScope = useCallback(
     ({ item: scope, index }: { item: (typeof projectScopes)[number]; index: number }) => {
       const hasMultipleProjects = scope.projects.length > 1;
@@ -255,7 +258,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       return (
         <View
           className={cn(
-            "overflow-hidden bg-card",
+            "overflow-hidden",
+            glass ? "bg-chrome-glass" : "bg-card",
             index === 0 && "rounded-t-[24px]",
             index === projectScopes.length - 1 && "rounded-b-[24px]",
             index > 0 && "border-t border-border-subtle",
@@ -267,7 +271,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             accessibilityState={{ disabled: reservedDestinationProject !== null }}
             disabled={reservedDestinationProject !== null}
             onPress={() => void selectProject(selectionTarget)}
-            className="flex-row items-center gap-3 bg-card px-4 py-3.5"
+            className={cn("flex-row items-center gap-3 px-4 py-3.5", !glass && "bg-card")}
           >
             <View className="h-7 w-7 items-center justify-center">
               <ProjectFavicon
@@ -299,7 +303,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         </View>
       );
     },
-    [projectScopes, reservedDestinationProject, selectProject, selectedEnvironmentId],
+    [glass, projectScopes, reservedDestinationProject, selectProject, selectedEnvironmentId],
   );
 
   async function startScratch(): Promise<void> {
@@ -363,7 +367,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   }, [incomingShare, isFocused, navigation, reservedDestinationProject]);
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <NewTaskHeader
         title={screenTitle}
         subtitle={incomingShareSubtitle}
@@ -406,7 +410,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 collapsable={false}
                 className={cn(
                   "items-center gap-3 px-6 py-8",
-                  Platform.OS !== "android" && "rounded-[24px] bg-card",
+                  Platform.OS !== "android" &&
+                    (glass ? "rounded-[24px] bg-chrome-glass" : "rounded-[24px] bg-card"),
                 )}
               >
                 {projectEmptyState.loading ? (
@@ -534,12 +539,18 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   />
                 </View>
               ) : (
-                <View collapsable={false} className="overflow-hidden rounded-[24px] bg-card">
+                <View
+                  collapsable={false}
+                  className={cn(
+                    "overflow-hidden rounded-[24px]",
+                    glass ? "bg-chrome-glass" : "bg-card",
+                  )}
+                >
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="No project"
                     onPress={() => void startScratch()}
-                    className="flex-row items-center gap-3 bg-card px-4 py-3.5"
+                    className={cn("flex-row items-center gap-3 px-4 py-3.5", !glass && "bg-card")}
                   >
                     <View className="h-7 w-7 items-center justify-center">
                       <SymbolView
@@ -571,6 +582,6 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
           }
         />
       </MaterialScreenContent>
-    </View>
+    </SheetSurface>
   );
 }

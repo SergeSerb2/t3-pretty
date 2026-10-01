@@ -33,6 +33,7 @@ import { useServerConfigs } from "../../state/entities";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import type { ArchivedThreadGroup, ArchivedThreadSortOrder } from "./archivedThreadList";
 import { SettingsScreenContent } from "../settings/components/SettingsScreen";
+import { SheetSurface } from "../../components/SheetSurface";
 
 export interface ArchivedThreadsHeaderEnvironment {
   readonly environmentId: EnvironmentId;
@@ -413,7 +414,7 @@ export function ArchivedThreadsScreen(props: {
   return (
     // Keep the list inside this native container. Form-sheet resizing otherwise
     // treats the flattened background as a header and shrinks the list to zero.
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <ArchivedThreadsHeader
         environments={props.environments}
         searchQuery={props.searchQuery}
@@ -458,6 +459,6 @@ export function ArchivedThreadsScreen(props: {
           />
         </GestureDetector>
       </SettingsScreenContent>
-    </View>
+    </SheetSurface>
   );
 }

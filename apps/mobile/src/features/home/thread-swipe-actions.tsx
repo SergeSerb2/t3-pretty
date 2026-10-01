@@ -232,6 +232,8 @@ export function useSwipeableScrollGate(options?: {
 
 interface ThreadSwipeableProps {
   readonly backgroundColor: ColorValue;
+  /** Fill behind the revealed actions; defaults to `backgroundColor`. */
+  readonly actionsBackgroundColor?: ColorValue;
   readonly children: (close: () => void) => ReactNode;
   /** Uses action visuals that fit inside compact 44pt rows. The press target
    * still spans the row's full height and width. */
@@ -477,7 +479,7 @@ function ThreadSwipeableRow(props: ThreadSwipeableProps) {
               style={actionStyle}
             >
               <ThreadSwipeActions
-                backgroundColor={props.backgroundColor}
+                backgroundColor={props.actionsBackgroundColor ?? props.backgroundColor}
                 compact={props.compactActions === true}
                 fullSwipeAction={fullSwipeAction}
                 fullSwipeThreshold={fullSwipeThreshold}

@@ -23,7 +23,7 @@ import {
   resolveSnoozePresets,
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { MenuAction } from "@react-native-menu/menu";
-import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
+import { memo, use, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { Alert, Pressable, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
@@ -54,6 +54,7 @@ import {
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
 import { ThreadActiveSubagentCount } from "./thread-active-subagent-count";
+import { ThreadListGlassContext } from "./thread-list-glass-context";
 import type { ThreadStatusPresentation } from "./threadPresentation";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
@@ -129,9 +130,11 @@ function ThreadListV2Section(props: {
 }) {
   const snoozed = props.tone === "snoozed";
   const sidebarPane = props.pane === "sidebar";
+  // Glass cards inset 12 + pad 16: the label lines up with card text.
+  const glass = use(ThreadListGlassContext) && !sidebarPane;
   const className = cn(
     "mb-1.5 mt-4 flex-row items-center gap-2.5",
-    props.pane === "sidebar" ? "px-3" : "px-5",
+    sidebarPane ? "px-3" : glass ? "px-7" : "px-5",
   );
   const content = (
     <>
@@ -140,7 +143,7 @@ function ThreadListV2Section(props: {
           "text-xs font-t3-medium",
           sidebarPane
             ? "text-drawer-foreground-muted"
-            : snoozed
+            : snoozed || glass
               ? "text-foreground-secondary"
               : "text-foreground-tertiary",
         )}
@@ -306,6 +309,9 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
 }) {
   const { pendingTask, onSelectPendingTask, onDeletePendingTask } = props;
   const sidebarPane = props.pane === "sidebar";
+  const glass = use(ThreadListGlassContext) && !sidebarPane;
+  const theme = useUniwindTheme();
+  const glassAppearance = glass ? getThreadListV2RowAppearance(theme, false, false, true) : null;
   const isDraft = pendingTask.kind === "draft";
   const projectTitle = props.projectTitle ?? props.project?.title ?? pendingTask.projectTitle ?? "";
   const branch = pendingTask.branch;
@@ -437,21 +443,25 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
           accessibilityLabel={pendingTask.title}
           accessibilityRole="button"
           key={pendingTask.key}
-          className={sidebarPane ? "bg-drawer" : "bg-screen"}
+          className={glassAppearance ? undefined : sidebarPane ? "bg-drawer" : "bg-screen"}
           interactionClassName={sidebarPane ? "bg-thread-hover" : "bg-row-hover"}
           onPress={() => onSelectPendingTask(pendingTask)}
           style={
-            sidebarPane
-              ? {
-                  borderRadius: SIDEBAR_V2_ROW_RADIUS,
-                  paddingHorizontal: 12,
-                  paddingVertical: 10,
-                }
-              : undefined
+            glassAppearance
+              ? [glassAppearance.swipeContainerStyle, glassAppearance.cardStyle]
+              : sidebarPane
+                ? {
+                    borderRadius: SIDEBAR_V2_ROW_RADIUS,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                  }
+                : undefined
           }
         >
           {sidebarPane ? (
             rowContent
+          ) : glassAppearance ? (
+            <View className="px-4 py-3">{rowContent}</View>
           ) : (
             <View>
               <View className="px-5 py-2.5">{rowContent}</View>
@@ -600,7 +610,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const theme = useUniwindTheme();
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected === true;
-  const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected);
+  const glass = use(ThreadListGlassContext) && !sidebarPane;
+  const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected, glass);
   const subagentColor = selected
     ? String(
         theme[
@@ -799,7 +810,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ...autoSettleMenuItems,
       { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
     ],
-    [arrangementMenuItems, autoSettleMenuItems, snoozePresetActions, storageMenuItems, titleMenuItems],
+    [
+      arrangementMenuItems,
+      autoSettleMenuItems,
+      snoozePresetActions,
+      storageMenuItems,
+      titleMenuItems,
+    ],
   );
   const cardMenuActions = useMemo<MenuAction[]>(
     () => [
@@ -1255,12 +1272,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
              actions reveal behind the row. */
           <View>
             <View
-              className={THREAD_LIST_V2_ROW_CONTENT_CLASS_NAME}
+              className={glass ? "px-4 py-3" : THREAD_LIST_V2_ROW_CONTENT_CLASS_NAME}
               style={props.nest === "child" ? { paddingLeft: 36 } : undefined}
             >
               {cardContent}
             </View>
-            {THREAD_LIST_V2_ROW_DIVIDERS && props.showTrailingDivider !== false ? (
+            {THREAD_LIST_V2_ROW_DIVIDERS && !glass && props.showTrailingDivider !== false ? (
               <View className="ml-5 h-px bg-border-subtle" />
             ) : null}
           </View>
@@ -1286,7 +1303,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         <View
           className={cn(
             "min-h-[44px] flex-row items-center gap-2.5 py-2",
-            sidebarPane ? "px-3" : "px-5",
+            sidebarPane ? "px-3" : glass ? "px-4" : "px-5",
           )}
           style={props.nest === "child" ? { paddingLeft: sidebarPane ? 28 : 36 } : undefined}
         >
@@ -1357,6 +1374,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         dormant={dormant}
         threadKey={`${thread.environmentId}:${thread.id}`}
         backgroundColor={rowAppearance.swipeBackgroundColor}
+        actionsBackgroundColor={rowAppearance.swipeActionsBackgroundColor}
         compactActions={variant === "slim"}
         containerStyle={rowAppearance.swipeContainerStyle}
         enableTrackpadSwipe

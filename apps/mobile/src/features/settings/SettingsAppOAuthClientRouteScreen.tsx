@@ -19,6 +19,7 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { ConnectionSheetButton } from "../connection/ConnectionSheetButton";
 import { SettingsSection } from "./components/SettingsSection";
 import { appsCallbackOrigin, appsOAuthRedirectUri } from "./apps/appsSettings.logic";
+import { SheetSurface } from "../../components/SheetSurface";
 
 type SettingsAppOAuthClientParams = {
   readonly environmentId: string;
@@ -84,19 +85,19 @@ export function SettingsAppOAuthClientRouteScreen({
 
   if (family === undefined) {
     return (
-      <View collapsable={false} className="flex-1 bg-sheet">
+      <SheetSurface>
         <NativeStackScreenOptions options={{ title: "OAuth client" }} />
         <View className="px-5 pt-6">
           <Text className="text-base text-foreground-muted">
             This app store does not know that OAuth client family.
           </Text>
         </View>
-      </View>
+      </SheetSurface>
     );
   }
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <NativeStackScreenOptions options={{ title: family.name }} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
@@ -209,6 +210,6 @@ export function SettingsAppOAuthClientRouteScreen({
           </View>
         </SettingsSection>
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }

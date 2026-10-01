@@ -1,10 +1,11 @@
 import { useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
-import { Platform, View } from "react-native";
+import { Platform } from "react-native";
 
 import type { ScreenHeaderProps } from "../../../components/ScreenHeader.types";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import { MaterialScreenContent as SettingsScreenContent } from "../../../components/MaterialScreenContent";
+import { SheetSurface } from "../../../components/SheetSurface";
 
 export { SettingsScreenContent };
 
@@ -18,7 +19,7 @@ export function SettingsScreen(
   const navigation = useNavigation();
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <ScreenHeader
         title={props.title}
         actions={props.actions}
@@ -32,6 +33,6 @@ export function SettingsScreen(
       ) : (
         <SettingsScreenContent>{props.children}</SettingsScreenContent>
       )}
-    </View>
+    </SheetSurface>
   );
 }

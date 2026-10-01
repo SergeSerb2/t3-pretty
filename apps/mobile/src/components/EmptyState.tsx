@@ -1,9 +1,11 @@
-import { Pressable, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import type { ReactNode } from "react";
 import Animated from "react-native-reanimated";
 
 import { AppText as Text } from "./AppText";
+import { cn } from "../lib/cn";
 import { enterFade } from "../lib/motion";
+import { useGlassChromeActive } from "../features/scenery/SceneryProvider";
 
 export function EmptyState(props: {
   readonly title: string;
@@ -13,6 +15,7 @@ export function EmptyState(props: {
   readonly action?: ReactNode;
   readonly variant?: "card" | "plain";
 }) {
+  const glass = useGlassChromeActive();
   if (props.variant === "plain") {
     return (
       <Animated.View entering={enterFade} className="items-center px-8 py-8">
@@ -38,7 +41,16 @@ export function EmptyState(props: {
   }
 
   return (
-    <Animated.View entering={enterFade} className="rounded-[22px] border border-border bg-card p-5">
+    <Animated.View
+      entering={enterFade}
+      className={cn(
+        "rounded-[22px] p-5",
+        glass ? "border-chrome-glass-border bg-chrome-glass" : "border border-border bg-card",
+      )}
+      style={
+        glass ? { borderCurve: "continuous", borderWidth: StyleSheet.hairlineWidth } : undefined
+      }
+    >
       <Text className="font-t3-bold text-lg text-foreground">{props.title}</Text>
       <Text className="mt-2 font-sans text-sm leading-relaxed text-foreground-muted">
         {props.detail}
