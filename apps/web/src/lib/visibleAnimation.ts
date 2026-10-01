@@ -4,6 +4,7 @@ interface ObservedAnimation {
 }
 
 const animations = new Map<Element, ObservedAnimation>();
+const stateListeners = new Set<(element: HTMLElement | SVGElement) => void>();
 let observer: IntersectionObserver | null = null;
 let reducedMotion: MediaQueryList | null = null;
 
@@ -15,6 +16,17 @@ function updateAnimation(animation: ObservedAnimation) {
     "--visible-animation-will-change",
     running ? "transform" : "auto",
   );
+  for (const listener of stateListeners) listener(animation.element);
+}
+
+/** Fires after an observed element's running flag changes. */
+export function subscribeVisibleAnimationState(
+  listener: (element: HTMLElement | SVGElement) => void,
+): () => void {
+  stateListeners.add(listener);
+  return () => {
+    stateListeners.delete(listener);
+  };
 }
 
 function updateAnimations() {

@@ -691,8 +691,7 @@ html[data-status-pulse="1"] .status-ping {
 }
 
 html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
-  -webkit-mask-image: none;
-  mask-image: none;
+  display: none;
 }
 
 @utility dropdown-glass {
@@ -819,44 +818,22 @@ html[data-window-inactive]
   }
 }
 
+/* Painted over the scrollport instead of masking it. A mask on the scroller
+   forces the whole column into one surface that re-composites on every
+   scroll and stream frame. The stops match the old mask: full page color at
+   the top, clear at the bottom of the titlebar band. */
 @utility topbar-scroll-fade {
-  --topbar-scroll-fade-height: var(--workspace-titlebar-scroll-fade-height);
-  -webkit-mask-image:
-    linear-gradient(
-      to bottom,
-      transparent 0%,
-      rgb(0 0 0 / 10%) 10%,
-      rgb(0 0 0 / 30%) 24%,
-      rgb(0 0 0 / 58%) 42%,
-      rgb(0 0 0 / 82%) 62%,
-      rgb(0 0 0 / 96%) 82%,
-      black 100%
-    ),
-    linear-gradient(black, black), linear-gradient(black, black);
-  -webkit-mask-position: top, bottom, right;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size:
-    100% calc(var(--topbar-scroll-fade-height) + 1px),
-    100% calc(100% - var(--topbar-scroll-fade-height)),
-    var(--app-scrollbar-width) 100%;
-  mask-image:
-    linear-gradient(
-      to bottom,
-      transparent 0%,
-      rgb(0 0 0 / 10%) 10%,
-      rgb(0 0 0 / 30%) 24%,
-      rgb(0 0 0 / 58%) 42%,
-      rgb(0 0 0 / 82%) 62%,
-      rgb(0 0 0 / 96%) 82%,
-      black 100%
-    ),
-    linear-gradient(black, black), linear-gradient(black, black);
-  mask-position: top, bottom, right;
-  mask-repeat: no-repeat;
-  mask-size:
-    100% calc(var(--topbar-scroll-fade-height) + 1px),
-    100% calc(100% - var(--topbar-scroll-fade-height)),
-    var(--app-scrollbar-width) 100%;
+  height: var(--workspace-titlebar-scroll-fade-height);
+  background: linear-gradient(
+    to bottom,
+    var(--background) 0%,
+    color-mix(in srgb, var(--background) 90%, transparent) 10%,
+    color-mix(in srgb, var(--background) 70%, transparent) 24%,
+    color-mix(in srgb, var(--background) 42%, transparent) 42%,
+    color-mix(in srgb, var(--background) 18%, transparent) 62%,
+    color-mix(in srgb, var(--background) 4%, transparent) 82%,
+    transparent 100%
+  );
 }
 
 /* Virtualizers own their native scroll element, so they cannot use ScrollArea's
@@ -902,19 +879,6 @@ html[data-window-inactive]
   }
 }
 
-@keyframes live-tool-shine {
-  from {
-    background-position:
-      -4.5rem 0,
-      0 0;
-  }
-  to {
-    background-position:
-      calc(100% + 4.5rem) 0,
-      0 0;
-  }
-}
-
 @utility live-tool-shine {
   @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
     color: transparent;
@@ -926,8 +890,10 @@ html[data-window-inactive]
       100% 100%;
     background-repeat: no-repeat;
     background-clip: text;
-    animation: live-tool-shine 2.2s steps(30) infinite;
-    animation-play-state: var(--visible-animation-state, paused);
+    /* Phase comes from the shared 30 fps clock, not a display-rate animation. */
+    background-position:
+      calc(-4.5rem + (100% + 9rem) * var(--live-activity-phase, 0)) 0,
+      0 0;
   }
 }
 
@@ -935,24 +901,6 @@ html[data-window-inactive]
   animation: var(--animate-spin);
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
-}
-
-@keyframes live-activity-focus {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(100%);
-  }
-}
-
-@keyframes live-activity-focus-counter {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-100%);
-  }
 }
 
 @utility live-activity-focus {
@@ -985,27 +933,16 @@ html[data-window-inactive]
     transparent 100%
   );
   mask-repeat: no-repeat;
-  animation: live-activity-focus 2.2s linear infinite;
-  animation-play-state: var(--visible-animation-state, paused);
-  will-change: var(--visible-animation-will-change, auto);
+  transform: translateX(calc(var(--live-activity-phase, 0) * 100%));
 
   @media (prefers-reduced-motion: reduce), (forced-colors: active) {
-    animation: none;
     opacity: 0;
-    will-change: auto;
   }
 }
 
 @utility live-activity-focus-counter {
   width: 100%;
-  animation: live-activity-focus-counter 2.2s linear infinite;
-  animation-play-state: var(--visible-animation-state, paused);
-  will-change: var(--visible-animation-will-change, auto);
-
-  @media (prefers-reduced-motion: reduce), (forced-colors: active) {
-    animation: none;
-    will-change: auto;
-  }
+  transform: translateX(calc(var(--live-activity-phase, 0) * -100%));
 }
 
 @utility live-activity-focus-aligned {
