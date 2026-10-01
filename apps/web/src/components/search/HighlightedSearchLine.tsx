@@ -111,7 +111,7 @@ function HighlightedTokens(props: {
     .map((segment) =>
       segment.isMatch ? (
         <mark
-          className="rounded-[2px] bg-primary/25 text-inherit"
+          className="rounded-xs bg-primary/25 text-inherit"
           key={`${segment.start}:${segment.end}:match`}
           style={tokenStyle(segment.token)}
         >
@@ -169,7 +169,10 @@ export const HighlightedSearchLine = memo(function HighlightedSearchLine(props: 
   );
 
   return (
-    <RenderErrorBoundary fallback={fallback}>
+    <RenderErrorBoundary
+      fallback={fallback}
+      resetKeys={[props.match.lineContent, props.path, props.theme]}
+    >
       <Suspense fallback={fallback}>
         <SyntaxHighlightedTokens
           line={props.match.lineContent}

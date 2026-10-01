@@ -10,6 +10,7 @@ import {
   isWithinManagedRoot,
   removableSettledWorktrees,
   shouldPublishStorageProgress,
+  storagePathsOverlap,
   type StorageMeasuredWorktree,
   type StorageThreadSnapshot,
 } from "./storageInventory.ts";
@@ -131,6 +132,41 @@ describe("storage inventory assembly", () => {
     expect(inventory.totalBytes).toBe(4096);
   });
 
+  it("attributes an active and archived shared checkout only once", () => {
+    const shared = "/tmp/worktrees/app/shared";
+    const inventory = assembleStorageInventory({
+      snapshots: [
+        snapshot({ threadId: ThreadId.make("active"), worktreePath: shared }),
+        snapshot({
+          threadId: ThreadId.make("archived"),
+          worktreePath: shared,
+          isArchived: true,
+        }),
+      ],
+      measurements: new Map([[shared, measurement(shared, 4096)]]),
+      orphanWorktrees: [],
+      managedWorktreesRoot: "/tmp/worktrees",
+    });
+
+    expect(inventory.activeWorktreeBytes).toBe(4096);
+    expect(inventory.archivedWorktreeBytes).toBe(0);
+    expect(inventory.totalBytes).toBe(4096);
+  });
+
+  it("saturates byte totals at the largest safe wire integer", () => {
+    const activePath = "/tmp/worktrees/app/active";
+    const inventory = assembleStorageInventory({
+      snapshots: [snapshot({ threadId: ThreadId.make("active"), worktreePath: activePath })],
+      measurements: new Map([[activePath, measurement(activePath, Number.MAX_SAFE_INTEGER)]]),
+      orphanWorktrees: [
+        { path: "/tmp/worktrees/app/orphan", displayName: "orphan", diskUsageBytes: 1 },
+      ],
+      managedWorktreesRoot: "/tmp/worktrees",
+    });
+
+    expect(inventory.totalBytes).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
   it("filters removable settled lists and never treats unknown dirty as clean", () => {
     const clean = "/tmp/worktrees/app/clean";
     const dirty = "/tmp/worktrees/app/dirty";
@@ -217,6 +253,15 @@ describe("storage path sandbox", () => {
     const owned = new Set(["/tmp/worktrees/app/feature"]);
     expect(hasOwnedDescendant("/tmp/worktrees/app", owned)).toBe(true);
     expect(hasOwnedDescendant("/tmp/worktrees/other", owned)).toBe(false);
+  });
+
+  it("detects deletion overlap in either direction", () => {
+    expect(storagePathsOverlap("/tmp/worktrees/app", "/tmp/worktrees/app/feature")).toBe(true);
+    expect(storagePathsOverlap("/tmp/worktrees/app/feature", "/tmp/worktrees/app")).toBe(true);
+    expect(storagePathsOverlap("/tmp/worktrees/app/feature", "/tmp/worktrees/app/feature")).toBe(
+      true,
+    );
+    expect(storagePathsOverlap("/tmp/worktrees/app/one", "/tmp/worktrees/app/two")).toBe(false);
   });
 });
 

@@ -8,7 +8,6 @@ import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { PullRequestActionChip, PullRequestChipRow } from "./PullRequestActionChip";
 import { PullRequestActorAvatar } from "./PullRequestActorAvatar";
 import {
@@ -38,6 +37,7 @@ export function PullRequestConversation(props: {
   readonly onReply: (threadId: string) => void;
   readonly onFixThread: (thread: PullRequestReviewThread) => void;
   readonly onFixAll?: () => void;
+  readonly onFixContinuously?: () => void;
   readonly onToggleResolved: (
     thread: PullRequestReviewThread,
     resolved: boolean,
@@ -78,6 +78,7 @@ export function PullRequestConversation(props: {
         {props.detail.viewerPermissions.comment ||
         props.canReview ||
         props.onFixAll !== undefined ||
+        props.onFixContinuously !== undefined ||
         props.hiddenGrokReviewSummaryCount > 0 ? (
           <PullRequestChipRow>
             {props.detail.viewerPermissions.comment ? (
@@ -88,6 +89,13 @@ export function PullRequestConversation(props: {
             ) : null}
             {props.onFixAll !== undefined ? (
               <PullRequestActionChip icon="hammer" label="Fix all" onPress={props.onFixAll} />
+            ) : null}
+            {props.onFixContinuously !== undefined ? (
+              <PullRequestActionChip
+                icon="arrow.clockwise"
+                label="Fix continuously"
+                onPress={props.onFixContinuously}
+              />
             ) : null}
             {props.hiddenGrokReviewSummaryCount > 0 ? (
               <PullRequestActionChip
@@ -252,7 +260,6 @@ function ReviewThreadCard(props: {
   readonly onFix: () => void;
   readonly onToggleResolved: () => void;
 }) {
-  const muted = String(useThemeColor("--color-icon-subtle"));
   const [expanded, setExpanded] = useState(!props.resolved);
   const commentCount = props.thread.commentCount ?? props.thread.comments.length;
 
@@ -279,7 +286,9 @@ function ReviewThreadCard(props: {
             <SymbolView
               name={props.resolved ? "checkmark.circle" : "text.bubble"}
               size={14}
-              tintColor={props.resolved ? "#059669" : muted}
+              tintColorClassName={
+                props.resolved ? "accent-adaptive-emerald-600-400" : "accent-icon-subtle"
+              }
               type="monochrome"
             />
           </View>
@@ -302,7 +311,7 @@ function ReviewThreadCard(props: {
           <SymbolView
             name={expanded ? "chevron.up" : "chevron.down"}
             size={11}
-            tintColor={muted}
+            tintColorClassName="accent-icon-subtle"
             type="monochrome"
           />
         </Pressable>

@@ -1,8 +1,9 @@
 import {
   EnvironmentId,
+  ThreadId,
   ProjectId,
   ProviderInstanceId,
-  ThreadId,
+  MessageId,
   type OrchestrationThreadDetailSnapshot,
   type VcsListRefsResult,
 } from "@t3tools/contracts";
@@ -11,7 +12,11 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { type ClientCacheKind, MobileDatabase } from "../persistence/mobile-database";
-import { make, THREAD_SNAPSHOT_CACHE_MAX_ENTRIES } from "./environment-cache-store";
+import {
+  make,
+  THREAD_SNAPSHOT_CACHE_MAX_ENTRIES,
+  VCS_REFS_CACHE_MAX_ENTRIES,
+} from "./environment-cache-store";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 const REFS: VcsListRefsResult = {
@@ -45,6 +50,7 @@ function makeThreadSnapshot(threadId: string): OrchestrationThreadDetailSnapshot
       branch: "main",
       worktreePath: null,
       enabledSkillIds: [],
+      pullRequests: [],
       latestTurn: null,
       createdAt: "2026-04-01T00:00:00.000Z",
       updatedAt: "2026-04-01T00:00:00.000Z",
@@ -73,6 +79,12 @@ function makeDatabase() {
   const database = MobileDatabase.of({
     loadCache: (environmentId, kind, cacheKey) =>
       Effect.succeed(Option.fromUndefinedOr(values.get(cacheId(environmentId, kind, cacheKey)))),
+    listCache: (kind) =>
+      Effect.sync(() =>
+        [...values.entries()]
+          .filter(([key]) => key.split(":")[1] === kind)
+          .map(([, payload]) => payload),
+      ),
     saveCache: (environmentId, kind, cacheKey, _schemaVersion, payload) =>
       Effect.sync(() => {
         const id = cacheId(environmentId, kind, cacheKey);
@@ -86,9 +98,9 @@ function makeDatabase() {
         values.delete(id);
         updatedAt.delete(id);
       }),
-    pruneThreadCache: (environmentId, keep) =>
+    pruneCacheKind: (environmentId, kind, keep) =>
       Effect.sync(() => {
-        const prefix = `${environmentId}:thread:`;
+        const prefix = `${environmentId}:${kind}:`;
         const ids = [...values.keys()].filter((key) => key.startsWith(prefix));
         // Same ordering as the SQLite query: updated_at DESC, cache_key ASC.
         ids.sort((left, right) => {
@@ -121,6 +133,81 @@ function makeDatabase() {
 }
 
 describe("mobile SQLite environment cache store", () => {
+  it.effect(
+    "invalidates pre-thinking thread caches while preserving current snapshots and other caches",
+    () =>
+      Effect.gen(function* () {
+        const memory = makeDatabase();
+        const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+        const now = "2026-09-04T00:00:00.000Z";
+        const snapshot: OrchestrationThreadDetailSnapshot = {
+          snapshotSequence: 2,
+          thread: {
+            id: ThreadId.make("thread-1"),
+            projectId: ProjectId.make("project-1"),
+            title: "Thread",
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            pullRequests: [],
+            worktreePath: null,
+            enabledSkillIds: [],
+            latestTurn: null,
+            createdAt: now,
+            updatedAt: now,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            deletedAt: null,
+            messages: [
+              {
+                id: MessageId.make("thinking-1"),
+                role: "reasoning",
+                text: "Checking the evidence.",
+                turnId: null,
+                streaming: false,
+                createdAt: now,
+                updatedAt: now,
+              },
+            ],
+            proposedPlans: [],
+            activities: [],
+            checkpoints: [],
+            session: null,
+          },
+          page: { beforeCursor: null, hasMore: false, snapshotSequence: 2, threadSequence: 2 },
+        };
+        yield* store.saveThread(ENVIRONMENT_ID, snapshot);
+        yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo", REFS);
+        expect(yield* store.loadThread(ENVIRONMENT_ID, snapshot.thread.id)).toEqual(
+          Option.some(snapshot),
+        );
+        const id = cacheId(ENVIRONMENT_ID, "thread", snapshot.thread.id);
+        memory.values.set(
+          id,
+          JSON.stringify({
+            schemaVersion: 3,
+            environmentId: ENVIRONMENT_ID,
+            threadId: snapshot.thread.id,
+            snapshot: {
+              ...snapshot,
+              thread: {
+                ...snapshot.thread,
+                messages: snapshot.thread.messages.map((message) => ({
+                  ...message,
+                  role: "system",
+                })),
+              },
+            },
+          }),
+        );
+        expect(yield* store.loadThread(ENVIRONMENT_ID, snapshot.thread.id)).toEqual(Option.none());
+        expect(memory.removed).toEqual([id]);
+        expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo")).toEqual(Option.some(REFS));
+      }),
+  );
+
   it.effect("round-trips schema-validated VCS refs", () =>
     Effect.gen(function* () {
       const memory = makeDatabase();
@@ -129,6 +216,29 @@ describe("mobile SQLite environment cache store", () => {
       yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo", REFS);
 
       expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo")).toEqual(Option.some(REFS));
+    }),
+  );
+
+  it.effect("evicts the oldest VCS ref snapshots beyond the per-environment bound", () =>
+    Effect.gen(function* () {
+      const memory = makeDatabase();
+      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+      const otherEnvironmentId = EnvironmentId.make("environment-2");
+
+      yield* store.saveVcsRefs(otherEnvironmentId, "/other-repo", REFS);
+      for (let index = 1; index <= VCS_REFS_CACHE_MAX_ENTRIES + 1; index += 1) {
+        yield* store.saveVcsRefs(ENVIRONMENT_ID, `/repo-${index}`, REFS);
+      }
+
+      expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo-1")).toEqual(Option.none());
+      for (let index = 2; index <= VCS_REFS_CACHE_MAX_ENTRIES + 1; index += 1) {
+        expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, `/repo-${index}`)).toEqual(
+          Option.some(REFS),
+        );
+      }
+      expect(yield* store.loadVcsRefs(otherEnvironmentId, "/other-repo")).toEqual(
+        Option.some(REFS),
+      );
     }),
   );
 

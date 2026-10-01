@@ -23,6 +23,9 @@ export interface CreateAdvertisedEndpointInput {
 
 export function normalizeHttpBaseUrl(rawValue: string): string {
   const url = new URL(rawValue);
+  if (url.username.length > 0 || url.password.length > 0) {
+    throw new Error("Endpoint URLs must not include credentials.");
+  }
   if (url.protocol === "ws:") {
     url.protocol = "http:";
   } else if (url.protocol === "wss:") {

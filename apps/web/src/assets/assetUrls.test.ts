@@ -12,6 +12,28 @@ describe("resolveAssetUrl", () => {
   it("rejects an invalid environment base URL", () => {
     expect(resolveAssetUrl("not a URL", "/api/assets/signed-token/favicon.png")).toBeNull();
   });
+
+  it("rejects asset URLs that escape the environment origin", () => {
+    expect(
+      resolveAssetUrl("https://environment.example/base/", "//attacker.example/image.png"),
+    ).toBeNull();
+    expect(
+      resolveAssetUrl("https://environment.example/base/", "https://attacker.example/image.png"),
+    ).toBeNull();
+  });
+
+  it("keeps a local-server asset URL when that server is allowed to serve the file", () => {
+    const localUrl = "https://local.test/api/assets/local/media";
+    expect(resolveAssetUrl("https://remote.test/", localUrl, "https://local.test")).toBe(localUrl);
+    expect(resolveAssetUrl("https://remote.test/", localUrl)).toBeNull();
+    expect(
+      resolveAssetUrl(
+        "https://remote.test/",
+        "https://attacker.example/api/assets/x",
+        "https://local.test",
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("queryable asset resources", () => {
