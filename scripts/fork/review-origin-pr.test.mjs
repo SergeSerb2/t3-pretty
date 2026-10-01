@@ -10,10 +10,12 @@ import {
   DEFAULT_CLI_PROXY_API_URL,
   DEFAULT_MODEL,
   alreadyReviewed,
+  callGrokReview,
   cliProxyApiKey,
   cliProxyApiUrl,
   formatIssueBody,
   formatReviewBody,
+  grokModel,
   parseReviewResponse,
   prNumberFromEvent,
   resolveExplicitPr,
@@ -27,6 +29,51 @@ import {
 const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 
 describe("Origin Grok PR review", () => {
+  it("requests Grok 4.7 Fast by default while preserving a configured override", async () => {
+    const previousModel = process.env.CLI_PROXY_REVIEW_MODEL;
+    const previousFetch = globalThis.fetch;
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url, ...JSON.parse(init.body) });
+      return new Response(
+        JSON.stringify({ output_text: JSON.stringify({ summary: "Looks safe.", issues: [] }) }),
+      );
+    };
+    try {
+      delete process.env.CLI_PROXY_REVIEW_MODEL;
+      await callGrokReview({ prompt: "Review this diff", apiKey: "clip_test" });
+      assert.equal(requests[0].model, "grok-4.7-fast");
+      assert.equal(requests[0].url, `${DEFAULT_CLI_PROXY_API_URL}/responses`);
+      process.env.CLI_PROXY_REVIEW_MODEL = " grok-custom ";
+      assert.equal(grokModel(), "grok-custom");
+      await callGrokReview({ prompt: "Review this diff", apiKey: "clip_test" });
+      assert.equal(requests[1].model, "grok-custom");
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousModel === undefined) delete process.env.CLI_PROXY_REVIEW_MODEL;
+      else process.env.CLI_PROXY_REVIEW_MODEL = previousModel;
+    }
+  });
+
+  it("preserves the upstream upgrade requirement when the proxy rejects an outdated client", async () => {
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          error:
+            "Your Grok CLI version (0.2.120) is outdated. Please update to version 1.0.13 or later.",
+        }),
+        { status: 426 },
+      );
+    try {
+      await expect(
+        callGrokReview({ prompt: "Review this diff", apiKey: "clip_test" }),
+      ).rejects.toThrow(/426: .*0\.2\.120.*1\.0\.13/);
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  });
+
   it("skips main and automation branches unless forced", () => {
     assert.match(shouldSkipBranch(""), /No Origin pull request/);
     assert.match(shouldSkipBranch("main"), /main/);
@@ -174,7 +221,7 @@ here you go
       url: "https://cursor.com/codebase/serbinenko/t3-pretty/pull/44",
     });
     assert.include(body, reviewMarker("deadbeef"));
-    assert.include(body, "Grok 4.6 review");
+    assert.include(body, "Grok review");
     assert.include(body, "1 bug(s)");
     assert.include(body, "origin pr thread resolve");
     assert.notInclude(body, "### bug — Non-monotonic versions");
@@ -183,7 +230,7 @@ here you go
 });
 
 describe("Origin Grok review workflow wiring", () => {
-  it("runs Origin PR review from self-hosted macos-release with Grok 4.6", () => {
+  it("runs Origin PR review from self-hosted macos-release with Grok 4.7 Fast", () => {
     const reviewCi = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
@@ -217,7 +264,7 @@ describe("Origin Grok review workflow wiring", () => {
     assert.notInclude(reviewStep, "build.pull_request");
     assert.include(reviewStep, "briefly waits for the PR");
     assert.include(reviewCi, "review-origin-pr.mjs");
-    assert.include(reviewCi, "grok-4.6");
+    assert.include(reviewCi, "grok-4.7-fast");
     assert.include(reviewCi, "CLI_PROXY_API_KEY");
     assert.include(reviewCi, "cli-proxy-api-production-1615.up.railway.app");
     assert.include(reviewCi, "origin-forge.mjs");
