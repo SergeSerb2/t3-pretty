@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.45-nightly.20261001.2539003012",
+    date: "2026-10-01",
+    items: [
+      {
+        kind: "fixed",
+        title: "MCP server configuration for provider sessions",
+      },
+      {
+        kind: "fixed",
+        title: "Handle soft-exit curl empty URL in ios-mobile tip packaging",
+      },
+      {
+        kind: "fixed",
+        title: "Drop leftover ConnectionFormField accessibilityLabel props",
+      },
+      {
+        kind: "fixed",
+        title: "Refresh EAS cloud IPA status without build:view --non-interactive",
+      },
+      {
+        kind: "fixed",
+        title: "Reattach ios-mobile to an in-flight EAS IPA after agent loss",
+      },
+      {
+        kind: "fixed",
+        title: "Wrap Playwright inject script in Effect.succeed",
+      },
+    ],
+  },
+  {
     version: "0.0.45-nightly.20261001.2539003010",
     date: "2026-10-01",
     items: [
