@@ -12,6 +12,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
+import { ThreadSearch as RankedThreadSearch, ThreadSearchLive } from "../search/ThreadSearch.ts";
+import { rankedSearchTerms } from "../search/tokenizer.ts";
 
 /** Carries no query text: search input is user content. */
 export class ThreadSearchError extends Schema.TaggedError<ThreadSearchError>()(
@@ -77,6 +79,7 @@ export class ThreadSearch extends Context.Service<
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const ranked = yield* RankedThreadSearch;
 
   // One best match per thread: user messages outrank assistant ones, then the
   // newest message wins. Threads order by match kind, then recency.
@@ -101,6 +104,7 @@ export const make = Effect.gen(function* () {
         WHERE threads.deleted_at IS NULL
           AND threads.archived_at IS NULL
           AND projects.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs AS run WHERE run.run_id = messages.run_id AND run.status = 'rolled_back')
           AND messages.streaming = 0
           AND messages.role IN ('user', 'assistant')
           AND json_extract(messages.payload_json, '$.text') LIKE ${pattern} ESCAPE '!'
@@ -138,6 +142,12 @@ export const make = Effect.gen(function* () {
 
   const search: ThreadSearch["Service"]["search"] = Effect.fn("ThreadSearch.search")(
     function* (input) {
+      const terms = rankedSearchTerms(input.query);
+      if (terms !== null) {
+        return yield* ranked.searchThreads({ request: input, terms }).pipe(
+          Effect.mapError((cause) => new ThreadSearchError({ operation: "query", cause })),
+        );
+      }
       const rows = yield* searchRows({
         pattern: `%${escapeLikePattern(input.query)}%`,
         limit: input.limit ?? 50,
@@ -165,4 +175,4 @@ export const make = Effect.gen(function* () {
   return ThreadSearch.of({ search });
 });
 
-export const layer = Layer.effect(ThreadSearch, make);
+export const layer = Layer.effect(ThreadSearch, make).pipe(Layer.provide(ThreadSearchLive));
