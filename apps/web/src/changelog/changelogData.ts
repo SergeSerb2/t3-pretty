@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.45-nightly.20261002.2595003058",
+    date: "2026-10-02",
+    items: [
+      {
+        kind: "fixed",
+        title: "Unblock tested SDK58 mobile and desktop release notices [skip ci]",
+      },
+      {
+        kind: "new",
+        title: "Integrate tested upstream orchestrator V2 into Pretty [skip ci]",
+      },
+      {
+        kind: "new",
+        title: "Let the composer hover follow the pointer",
+      },
+      {
+        kind: "new",
+        title: "Dock a touch console for the Tesla browser",
+      },
+      {
+        kind: "improved",
+        title: "The desktop renderer from compositing at display refresh",
+      },
+      {
+        kind: "new",
+        title: "Make sidebar and top bar glass adjustable",
+      },
+    ],
+  },
+  {
     version: "0.0.45-nightly.20261001.2539003048",
     date: "2026-10-01",
     items: [
