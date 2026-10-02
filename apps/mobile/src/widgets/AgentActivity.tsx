@@ -95,6 +95,8 @@ export function AgentActivity(
         return isLightScheme ? "#dc2626" : "#fca5a5"; // red-600 / red-300
       case "completed":
         return isLightScheme ? "#059669" : "#6ee7b7"; // emerald-600 / emerald-300
+      case "stale":
+        return secondaryForeground;
       case "starting":
       case "running":
       default:
@@ -110,20 +112,30 @@ export function AgentActivity(
     if (phase === "running" || phase === "starting") return 2;
     return 3;
   };
-  const ordered = [...props.activities].sort(
+  // Past the stale date the system stops vouching for the content, so every
+  // in-flight row degrades to "stale" rather than claiming an agent is still
+  // working. Terminal phases keep their own state.
+  const activities: ReadonlyArray<AgentActivityRowProps> = environment.isStale
+    ? props.activities.map((row) =>
+        row.phase === "completed" || row.phase === "failed"
+          ? row
+          : { ...row, phase: "stale", status: "Out of date" },
+      )
+    : props.activities;
+  const ordered = [...activities].sort(
     (a, b) => phasePriority(a.phase) - phasePriority(b.phase),
   );
   const heroRow = ordered[0];
 
-  const approvalRows = props.activities.filter((row) => row.phase === "waiting_for_approval");
-  const inputRows = props.activities.filter((row) => row.phase === "waiting_for_input");
-  const attentionRows = props.activities.filter(
+  const approvalRows = activities.filter((row) => row.phase === "waiting_for_approval");
+  const inputRows = activities.filter((row) => row.phase === "waiting_for_input");
+  const attentionRows = activities.filter(
     (row) => row.phase === "waiting_for_approval" || row.phase === "waiting_for_input",
   );
   const attentionRow = ordered.find(
     (row) => row.phase === "waiting_for_approval" || row.phase === "waiting_for_input",
   );
-  const failedRows = props.activities.filter((row) => row.phase === "failed");
+  const failedRows = activities.filter((row) => row.phase === "failed");
   const failedRow = failedRows[0];
   const tintColor = phaseTint(attentionRow?.phase ?? failedRow?.phase ?? heroRow?.phase);
   const headerTint = attentionRow
@@ -151,7 +163,7 @@ export function AgentActivity(
         : inputRows.length > 0 && approvalRows.length === 0
           ? `${inputRows.length} ${inputRows.length === 1 ? "input" : "inputs"}`
           : `${attentionRows.length} need you`;
-  const workingLabel = workingCount > 0 ? `${workingCount} working` : "";
+  const workingLabel = environment.isStale ? "Out of date" : workingCount > 0 ? `${workingCount} working` : "";
   const failedLabel = failedCount > 0 ? `${failedCount} failed` : "";
   // One summary line, attention first: "1 approval · 2 working · 1 failed".
   // Each count keeps its own phase tint so mixed states stay scannable —

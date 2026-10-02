@@ -236,6 +236,7 @@ function liveActivityAlertPayload(alert: ApnsLiveActivityAlert) {
       title: alert.title,
       body: alert.body,
       sound: "default",
+      "thread-id": notificationThreadId(notification),
     },
   };
 }
@@ -328,6 +329,12 @@ function makeLiveActivityRequest(input: MakeLiveActivityRequestInput): ApnsLiveA
   };
 }
 
+function notificationThreadId(notification: ApnsNotificationPayload): string {
+  return notification.threadId.length > 0
+    ? `${notification.environmentId}/${notification.threadId}`
+    : "t3-agent-alerts";
+}
+
 function makePushNotificationRequest(input: {
   readonly token: string;
   readonly notification: ApnsNotificationPayload;
@@ -340,6 +347,7 @@ function makePushNotificationRequest(input: {
         body: useOriginalCopy ? notification.body : "Agent activity needs attention",
       },
       sound: "default",
+      "thread-id": notificationThreadId(notification),
     },
     ...(includeRouting
       ? {

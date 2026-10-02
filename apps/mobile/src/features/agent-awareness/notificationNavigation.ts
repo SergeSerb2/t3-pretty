@@ -1,8 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import * as Notifications from "expo-notifications";
 import { useLinkTo } from "@react-navigation/native";
 
-import { routeAgentNotificationResponseOnce } from "./notificationPayload";
+import { routeAgentNotificationResponseOnce, threadDeepLinkOnScreen } from "./notificationPayload";
 import {
   consumeLastAgentNotificationResponse,
   shouldConsumeLastAgentNotificationResponse,
@@ -12,9 +12,31 @@ import {
 // dedupe history across navigation-root remounts so a failed native clear or a
 // development Strict Mode remount cannot route the same tap twice.
 const handledAgentNotificationResponseIds = new Set<string>();
+import { setAndroidThreadOnScreen } from "./androidNotifications";
+import { foregroundNotificationBehavior } from "./foregroundNotificationBehavior";
 
-export function useAgentNotificationNavigation(): void {
+export function useAgentNotificationNavigation(pathname: string): void {
   const linkTo = useLinkTo();
+  // Read through a ref so the native handler registered once below sees the
+  // current route without re-registering on every navigation.
+  const deepLinkOnScreen = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const thread = threadDeepLinkOnScreen(pathname);
+    deepLinkOnScreen.current = thread;
+    // Android alerts are built natively from FCM data, so update the native
+    // route at commit time alongside the iOS handler's route reference.
+    setAndroidThreadOnScreen(thread);
+  }, [pathname]);
+
+  useEffect(() => {
+    Notifications.setNotificationHandler({
+      handleNotification: (notification) =>
+        Promise.resolve(foregroundNotificationBehavior(notification, deepLinkOnScreen.current)),
+    });
+    return () => {
+      Notifications.setNotificationHandler(null);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;

@@ -5,7 +5,7 @@ import type { NativeSyntheticEvent, ViewProps } from "react-native";
 import type { HardwareKeyboardCommand } from "../features/keyboard/hardwareKeyboardCommands";
 import { resolveNativeHardwareKeyboardCommand } from "./T3KeyboardCommands.logic";
 
-interface NativeKeyboardCommandsProps extends ViewProps, PropsWithChildren {
+interface NativeKeyboardCommandsProps extends ViewProps {
   readonly enabledCommands: ReadonlyArray<HardwareKeyboardCommand>;
   readonly onCommand: (event: NativeSyntheticEvent<{ readonly command?: unknown }>) => void;
 }
