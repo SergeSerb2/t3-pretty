@@ -184,7 +184,6 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
       assert.equal(environment.linuxWmClass, "t3code-dev");
       assert.equal(environment.linuxDesktopEntryName, "com.t3tools.T3Code.Development.desktop");
-      assert.equal(environment.userDataDirName, "t3code-dev");
       assert.include(environment.developmentDockIconPath, "t3-pretty-internal-1024.png");
     }),
   );

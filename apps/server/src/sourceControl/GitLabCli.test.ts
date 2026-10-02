@@ -1,3 +1,5 @@
+import * as Option from "effect/Option";
+import * as DateTime from "effect/DateTime";
 import { assert, it, afterEach, expect, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -74,7 +76,6 @@ layer("GitLabCli.layer", (it) => {
         headRefName: "feature/mr-threads",
         state: "closed",
         closedAt: "2026-08-23T10:00:00Z",
-        mergedAt: null,
         isCrossRepository: true,
         headRepositoryNameWithOwner: "octocat/t3code",
         headRepositoryOwnerLogin: "octocat",
@@ -135,7 +136,7 @@ layer("GitLabCli.layer", (it) => {
           headRefName: "feature/mr-list",
           state: "merged",
           closedAt: null,
-          mergedAt: "2026-08-23T11:00:00Z",
+          mergedAt: Option.some(DateTime.makeUnsafe("2026-08-23T11:00:00Z")),
         },
       ]);
       expect(mockedRun).toHaveBeenCalledWith(

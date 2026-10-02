@@ -123,6 +123,7 @@ const failingSessionLookupCredentialLayer = Layer.effect(
 
 const activeSessionOverflowRepositoryLayer = Layer.succeed(AuthSessions.AuthSessionRepository, {
   create: () => Effect.void,
+  createIfAbsent: () => Effect.void,
   createReplacingActive: () => Effect.succeed([]),
   getById: () => Effect.succeed(Option.none()),
   listActive: () =>

@@ -67,7 +67,7 @@ describe("resolveGeneratedImageAssetPath", () => {
       {
         id: "image-1",
         createdAt: "2026-08-20T00:00:00.000Z",
-        turnId: "turn-1" as never,
+        runId: "turn-1" as never,
         label: "Generated image",
         tone: "tool",
         itemType: "image_generation",
@@ -76,7 +76,7 @@ describe("resolveGeneratedImageAssetPath", () => {
       {
         id: "image-2",
         createdAt: "2026-08-20T00:01:00.000Z",
-        turnId: "turn-2" as never,
+        runId: "turn-2" as never,
         label: "Generated image",
         tone: "tool",
         itemType: "image_generation",

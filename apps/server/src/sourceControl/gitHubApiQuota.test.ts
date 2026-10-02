@@ -62,6 +62,13 @@ describe("createGitHubApiQuota", () => {
     expect(quota.blockedUntil("github.example.com", 1_000)).toBeNull();
   });
 
+  it("honors a server retry time longer than local backoff", () => {
+    const quota = createGitHubApiQuota();
+    quota.noteRateLimit("github.com", 1_000, 121_000);
+    expect(quota.blockedUntil("github.com", 31_000)).toBe(121_000);
+    expect(quota.blockedUntil("github.com", 121_000)).toBeNull();
+  });
+
   it("clears a host on the next success", () => {
     const quota = createGitHubApiQuota();
     quota.noteRateLimit("github.com", 1_000);

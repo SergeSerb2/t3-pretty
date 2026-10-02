@@ -48,7 +48,7 @@ export const mobileBackgroundActivityObserverLayer = Layer.succeed(
 
 export const mobileBackgroundActivityReporterLayer = Layer.effectDiscard(
   Effect.gen(function* () {
-    const registry = yield* EnvironmentRegistry;
+    const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
     const storage = yield* MobileStorage.MobileStorage;
     const ephemeralClientId = `ephemeral-mobile-client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     const clientId = yield* storage.loadOrCreateAgentAwarenessDeviceId.pipe(

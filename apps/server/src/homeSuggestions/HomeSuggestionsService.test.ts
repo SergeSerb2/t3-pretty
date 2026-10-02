@@ -2,6 +2,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   HomeSuggestionId,
+  MessageId,
   ProjectId,
   ProviderInstanceId,
   TextGenerationError,
@@ -10,8 +11,7 @@ import {
   type HomeSuggestionsDigest,
   type HomeSuggestionsSnapshot,
   type OrchestrationProjectShell,
-  type OrchestrationThread,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ThreadShell,
   type ServerSettings,
 } from "@t3tools/contracts";
 import type {
@@ -32,13 +32,16 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 
 import { BackgroundPolicy } from "../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../config.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
+import { ProjectService } from "../project/ProjectService.ts";
+import { transferProjection } from "../project/ProjectTransfer.testkit.ts";
 import { ServerActivation } from "../serverActivation.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import {
@@ -75,7 +78,7 @@ const project: OrchestrationProjectShell = {
   updatedAt: NOW,
 };
 
-const thread: OrchestrationThreadShell = {
+const thread: OrchestrationV2ThreadShell = {
   id: ThreadId.make("thread-1"),
   projectId: PROJECT_ID,
   title: "Add a home screen",
@@ -86,16 +89,34 @@ const thread: OrchestrationThreadShell = {
   branch: null,
   worktreePath: null,
   pullRequests: [],
-  latestTurn: null,
-  createdAt: "2026-09-20T00:00:00.000Z",
-  updatedAt: NOW,
+  providerInstanceId: ProviderInstanceId.make("codex"),
+  createdBy: "user",
+  creationSource: "web",
+  lineage: {
+    parentThreadId: null,
+    relationshipToParent: null,
+    rootThreadId: ThreadId.make("thread-1"),
+  },
+  forkedFrom: null,
+  activeProviderThreadId: null,
+  latestRunId: null,
+  activeRunId: null,
+  status: "idle",
+  pendingRuntimeRequest: null,
+  latestVisibleMessage: null,
+  pendingBackgroundTasks: [],
+  providerInstanceHistory: [],
+  itemCount: 0,
+  visibleItemCount: 0,
+  deletedAt: null,
+  createdAt: DateTime.makeUnsafe("2026-09-20T00:00:00.000Z"),
+  updatedAt: DateTime.makeUnsafe(NOW),
   archivedAt: null,
   settledOverride: null,
   settledAt: null,
-  session: null,
+
   latestUserMessageAt: null,
-  hasPendingApprovals: false,
-  hasPendingUserInput: false,
+
   hasActionableProposedPlan: false,
 };
 
@@ -137,28 +158,38 @@ const makeHarness = Effect.fn("makeHarness")(function* (
   const dependencies = Layer.mergeAll(
     ServerConfig.layerTest(process.cwd(), baseDir),
     ServerSettingsService.layerTest(options.settings ?? {}),
-    Layer.mock(ProjectionSnapshotQuery)({
+    Layer.mock(ProjectService)({
+      listShells: () =>
+        options.projectsRef === undefined ? Effect.succeed(projects) : Ref.get(options.projectsRef),
+    }),
+    Layer.mock(ProjectionStoreV2)({
       getShellSnapshot: () =>
-        (options.projectsRef === undefined
-          ? Effect.succeed(projects)
-          : Ref.get(options.projectsRef)
-        ).pipe(
-          Effect.map((list) => ({
-            snapshotSequence: 1,
-            projects: list,
-            threads: [thread],
-            updatedAt: NOW,
+        Effect.succeed({
+          schemaVersion: 2,
+          snapshotSequence: 1,
+          threads: [thread],
+          archivedThreads: [],
+        }),
+      getThreadRecords: () =>
+        Effect.succeed({
+          ...transferProjection(thread.id),
+          messages: [
+            { role: "user" as const, text: "Build a home screen" },
+            { role: "assistant" as const, text: "Done." },
+          ].map((message, index) => ({
+            ...message,
+            id: MessageId.make(`home-message-${index}`),
+            threadId: thread.id,
+            createdBy: "user" as const,
+            creationSource: "web" as const,
+            runId: null,
+            nodeId: null,
+            attachments: [],
+            streaming: false,
+            createdAt: thread.createdAt,
+            updatedAt: thread.updatedAt,
           })),
-        ),
-      getThreadDetailById: () =>
-        Effect.succeed(
-          Option.some({
-            messages: [
-              { role: "user", text: "Build a home screen" },
-              { role: "assistant", text: "Done." },
-            ],
-          } as unknown as OrchestrationThread),
-        ),
+        }),
     }),
     Layer.mock(TextGeneration)({
       generateHomeSuggestions: (input) =>
@@ -173,7 +204,13 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     Layer.mock(BackgroundPolicy)({
       snapshot: Effect.succeed({
         hostPower: {
-          state: "unknown",
+          idle: "unknown",
+          idleSeconds: null,
+          locked: "unknown",
+          onBattery: "unknown",
+          lowPowerMode: "unknown",
+          thermalState: "unknown",
+          stale: true,
           suspended: options.suspended ?? false,
           source: "unknown",
           updatedAt: DateTime.makeUnsafe(NOW),
@@ -183,7 +220,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (
         activeScopeKeys: [],
         shouldRunOpportunisticWork: false,
         updatedAt: DateTime.makeUnsafe(NOW),
-      } as never),
+      }),
     }),
     Layer.succeed(ServerActivation, Deferred.await(activation)),
     Layer.succeed(Crypto.Crypto, testCrypto),
@@ -434,7 +471,7 @@ describe("HomeSuggestionsService", () => {
         yield* fs.makeDirectory(config.stateDir, { recursive: true });
         yield* fs.writeFileString(
           path.join(config.stateDir, HomeSuggestions.HOME_SUGGESTIONS_FILE_NAME),
-          JSON.stringify({
+          yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({
             generatedAt: NOW,
             suggestions: [
               {

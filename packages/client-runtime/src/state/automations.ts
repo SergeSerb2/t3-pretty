@@ -1,41 +1,43 @@
 // @effect-diagnostics globalDate:off -- Run history is grouped by calendar day in the viewer's zone and labelled from a caller-supplied "now".
 /**
  * Automations state shared by web and mobile: the per-environment rows carried
- * on the shell snapshot, the paged run queries, the four orchestration
+ * on the independently revisioned stream, the paged run queries, the automation
  * commands, and the pure presentation helpers both clients render.
  *
  * The row atoms are identity-stable — an automation object only changes when
- * the server sends `automation-upserted` for it — so `listRuns` can use a row
+ * the server sends `automation.updated` for it — so `listRuns` can use a row
  * as its refresh trigger without refetching on every streamed token.
  */
 import {
   AutomationId,
   AutomationRunId,
   CommandId,
-  ORCHESTRATION_WS_METHODS,
   WS_METHODS,
   type AutomationRun,
   type AutomationRunStatus,
   type AutomationShell,
-  type ClientOrchestrationCommand,
+  type AutomationClientCommand,
   type EnvironmentId,
-  type OrchestrationShellSnapshot,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ThreadShell,
   type ScopedProjectRef,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import { Atom } from "effect/unstable/reactivity";
+import * as Stream from "effect/Stream";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
-import { request } from "../rpc/client.ts";
+import { request, subscribe } from "../rpc/client.ts";
 import type { EnvironmentCatalogState } from "./connections.ts";
 import { arrayElementsEqual, projectKey, parseProjectKey } from "./entities.ts";
 import {
   createAtomCommandScheduler,
   createEnvironmentCommand,
+  createEnvironmentSubscriptionAtomFamily,
   createEnvironmentRpcQueryAtomFamily,
 } from "./runtime.ts";
 
@@ -61,7 +63,7 @@ export interface ScopedAutomationRef {
  * has not arrived yet) stays visible so it is never unreachable.
  */
 export function isAutomationRunThread(
-  thread: Pick<OrchestrationThreadShell, "automationRun">,
+  thread: Pick<OrchestrationV2ThreadShell, "automationRun">,
   automations: ReadonlyMap<AutomationId, AutomationShell>,
 ): boolean {
   const run = thread.automationRun ?? null;
@@ -194,7 +196,7 @@ export function condenseAutomationRunGroup(
 export type AutomationStatus = "running" | "needs-attention" | "failed" | "paused" | "idle";
 
 type AutomationRunThreadShell = Pick<
-  OrchestrationThreadShell,
+  import("./models.ts").EnvironmentThreadShell,
   "hasPendingApprovals" | "hasPendingUserInput"
 >;
 
@@ -274,8 +276,8 @@ export function formatUntilLabel(iso: string, nowMs: number): string {
 // Commands
 // ---------------------------------------------------------------------------
 
-type CommandOf<T extends ClientOrchestrationCommand["type"]> = Extract<
-  ClientOrchestrationCommand,
+type CommandOf<T extends AutomationClientCommand["type"]> = Extract<
+  AutomationClientCommand,
   { readonly type: T }
 >;
 type AutomationCreateCommand = CommandOf<"automation.create">;
@@ -329,8 +331,8 @@ const commandMetadata = Effect.fn("EnvironmentAutomations.commandMetadata")(func
   };
 });
 
-function dispatch(command: ClientOrchestrationCommand) {
-  return request(ORCHESTRATION_WS_METHODS.dispatchCommand, command);
+function dispatch(command: AutomationClientCommand) {
+  return request(WS_METHODS.automationsDispatch, command);
 }
 
 const createAutomation = Effect.fn("EnvironmentAutomations.create")(function* (
@@ -422,7 +424,7 @@ export function createAutomationEnvironmentAtoms<R, E>(
   input: {
     readonly snapshotAtom: (
       environmentId: EnvironmentId,
-    ) => Atom.Atom<OrchestrationShellSnapshot | null>;
+    ) => Atom.Atom<OrchestrationV2ShellSnapshot | null>;
     readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
   },
 ) {
@@ -443,14 +445,26 @@ export function createAutomationEnvironmentAtoms<R, E>(
     return value;
   };
 
-  // Reading the array off the snapshot in its own atom is what keeps thread
-  // traffic away from the rows: the snapshot object changes on every
-  // thread-touched, this value does not.
+  const subscription = createEnvironmentSubscriptionAtomFamily(runtime, {
+    label: "environment-automations-stream",
+    restartOnReconnect: true,
+    subscribe: (_input: {}) => subscribe(WS_METHODS.automationsSubscribe, {}).pipe(
+      Stream.scan({revision: -1, rows: EMPTY_AUTOMATIONS}, (state, message) => {
+        if (message.type === "automation.snapshot") return {revision: message.revision, rows: message.automations};
+        if (message.revision <= state.revision) return state;
+        return {revision: message.revision, rows: message.type === "automation.removed"
+          ? state.rows.filter((row) => row.id !== message.automationId)
+          : state.rows.some((row) => row.id === message.automation.id)
+            ? state.rows.map((row) => row.id === message.automation.id ? message.automation : row)
+            : [...state.rows, message.automation]};
+      }),
+    ),
+  });
   const sourceAutomationsAtom = Atom.family((environmentId: EnvironmentId) =>
-    Atom.make(
-      (get): ReadonlyArray<AutomationShell> =>
-        get(input.snapshotAtom(environmentId))?.automations ?? EMPTY_AUTOMATIONS,
-    ).pipe(Atom.withLabel(`environment-automations-source:${environmentId}`)),
+    Atom.make((get): ReadonlyArray<AutomationShell> => Option.match(
+      AsyncResult.value(get(subscription({environmentId, input: {}}))),
+      {onNone: () => get(input.snapshotAtom(environmentId))?.automations ?? EMPTY_AUTOMATIONS, onSome: (state) => state.rows},
+    )).pipe(Atom.withLabel(`environment-automations-source:${environmentId}`)),
   );
 
   const environmentAutomationsAtom = Atom.family((environmentId: EnvironmentId) =>

@@ -8,7 +8,8 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
-import { OrchestrationProject, OrchestrationThread } from "./orchestration.ts";
+import { Project } from "./project.ts";
+import { OrchestrationV2ThreadProjectionJson } from "./orchestrationV2.ts";
 
 // Stays below the server's 128 MiB HTTP body ceiling and common managed-tunnel
 // request limits. Dependency/build caches are excluded before compression.
@@ -23,11 +24,11 @@ export const ProjectTransferManifest = Schema.Struct({
   // only accept v1, so a multi-thread move cannot delete the source after a
   // partial import. Single-thread moves stay on v1 so those destinations can
   // complete them.
-  version: Schema.Literals([1, 2]),
+  version: Schema.Literal(3),
   sourceEnvironmentId: EnvironmentId,
-  project: OrchestrationProject,
-  thread: OrchestrationThread,
-  additionalThreads: Schema.optionalKey(Schema.Array(OrchestrationThread)),
+  project: Project,
+  thread: OrchestrationV2ThreadProjectionJson,
+  additionalThreads: Schema.optionalKey(Schema.Array(OrchestrationV2ThreadProjectionJson)),
   includesGitMetadata: Schema.Boolean,
   skippedAttachmentCount: NonNegativeInt,
 });

@@ -49,6 +49,7 @@ export interface McpProviderSessionConfig {
    * and never consult `endpoint` directly.
    */
   readonly servers: ReadonlyArray<McpProviderSessionServer>;
+  readonly browserToolsAvailable: boolean;
   /**
    * Set when the session may drive devices. Adapters spread this into the
    * provider subprocess environment so the `agent-device` CLI is on PATH and
@@ -98,6 +99,6 @@ export function clearMcpProviderSession(threadId: ThreadId): void {
   sessionsByThread.delete(threadId);
 }
 
-export function clearAllMcpProviderSessions(): void {
+function clearAllMcpProviderSessions(): void {
   sessionsByThread.clear();
 }

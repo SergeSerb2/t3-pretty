@@ -320,7 +320,7 @@ it.effect("routes Azure DevOps remotes to the Azure DevOps provider", () =>
   }),
 );
 
-it.effect("dies with Service not found when OriginCli is omitted from the CLI merge", () =>
+it.effect("propagates OriginCli layer construction failures", () =>
   Effect.gen(function* () {
     const exit = yield* SourceControlProviderRegistry.SourceControlProviderRegistry.pipe(
       Effect.provide(
@@ -328,6 +328,7 @@ it.effect("dies with Service not found when OriginCli is omitted from the CLI me
           Layer.provide(
             Layer.mergeAll(
               NodeServices.layer,
+              Layer.effect(OriginCli.OriginCli, Effect.die(new Error("Service not found: t3/sourceControl/OriginCli"))),
               Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
               Layer.mock(BitbucketApi.BitbucketApi)({}),
               Layer.mock(GitHubCli.GitHubCli)({}),
@@ -355,7 +356,7 @@ it.effect("dies with Service not found when OriginCli is omitted from the CLI me
   }),
 );
 
-it.effect("dies with Service not found when ForgejoCli is omitted from the CLI merge", () =>
+it.effect("propagates ForgejoCli layer construction failures", () =>
   Effect.gen(function* () {
     const exit = yield* SourceControlProviderRegistry.SourceControlProviderRegistry.pipe(
       Effect.provide(
@@ -363,6 +364,7 @@ it.effect("dies with Service not found when ForgejoCli is omitted from the CLI m
           Layer.provide(
             Layer.mergeAll(
               NodeServices.layer,
+              Layer.effect(ForgejoCli.ForgejoCli, Effect.die(new Error("Service not found: t3/sourceControl/ForgejoCli"))),
               Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
               Layer.mock(BitbucketApi.BitbucketApi)({}),
               Layer.mock(GitHubCli.GitHubCli)({}),

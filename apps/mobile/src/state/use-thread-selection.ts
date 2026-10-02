@@ -3,14 +3,16 @@ import { useRoute, type RouteProp } from "@react-navigation/native";
 import { useMemo, useRef, useState } from "react";
 import {
   EnvironmentId,
-  type OrchestrationThread,
   ThreadId,
   type ScopedProjectRef,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import {
+  type EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
 import * as Option from "effect/Option";
 
+import { threadDetailToShell } from "./use-thread-selection.logic";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { useProject, useThreadShell } from "../state/entities";
 import { useEnvironmentThread } from "../state/threads";
@@ -36,57 +38,6 @@ function firstRouteParam(value: string | string[] | undefined): string | null {
   }
 
   return value ?? null;
-}
-
-function latestUserMessageAt(thread: OrchestrationThread): OrchestrationThread["updatedAt"] | null {
-  for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
-    const message = thread.messages[index];
-    if (message?.role === "user") {
-      return message.createdAt;
-    }
-  }
-
-  return null;
-}
-
-function threadDetailToShell(
-  environmentId: EnvironmentId,
-  thread: OrchestrationThread,
-): EnvironmentThreadShell {
-  return {
-    environmentId,
-    id: thread.id,
-    projectId: thread.projectId,
-    title: thread.title,
-    modelSelection: thread.modelSelection,
-    runtimeMode: thread.runtimeMode,
-    interactionMode: thread.interactionMode,
-    branch: thread.branch,
-    worktreePath: thread.worktreePath,
-    linkedPullRequest: thread.linkedPullRequest ?? null,
-    pullRequests: thread.pullRequests,
-    branchPullRequest: thread.branchPullRequest ?? null,
-    latestTurn: thread.latestTurn,
-    createdAt: thread.createdAt,
-    updatedAt: thread.updatedAt,
-    archivedAt: thread.archivedAt,
-    settledOverride: thread.settledOverride,
-    settledAt: thread.settledAt,
-    unsettledAt: thread.unsettledAt,
-    activeOrderKey: thread.activeOrderKey,
-    autoSettleDisabledAt: thread.autoSettleDisabledAt,
-    pinnedAt: thread.pinnedAt,
-    pinOrderKey: thread.pinOrderKey,
-    snoozedUntil: thread.snoozedUntil ?? null,
-    snoozedAt: thread.snoozedAt ?? null,
-    storedAt: thread.storedAt ?? null,
-    enabledSkillIds: thread.enabledSkillIds,
-    session: thread.session,
-    latestUserMessageAt: latestUserMessageAt(thread),
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
-  };
 }
 
 function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefined) {
@@ -136,9 +87,14 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
     pendingCreation.outcome?.kind === "delivered"
       ? selectedThreadRef
       : null;
+  const [previousCreation, setPreviousCreation] = useState<PendingThreadCreation | null>(null);
+  // Normal selection is shell-only. Detail readers subscribe separately; only
+  // optimistic creation needs the projection here until its prompt arrives.
+  const needsDetail =
+    selectedThreadShell === null || pendingCreation !== null || previousCreation !== null;
   const selectedThreadDetailState = useEnvironmentThread(
-    selectedThreadDetailRef?.environmentId ?? null,
-    selectedThreadDetailRef?.threadId ?? null,
+    needsDetail ? (selectedThreadDetailRef?.environmentId ?? null) : null,
+    needsDetail ? (selectedThreadDetailRef?.threadId ?? null) : null,
   );
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
   const selectedThread = useMemo(
@@ -151,7 +107,6 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
           : null),
     [pendingCreation, selectedThreadDetail, selectedThreadRef, selectedThreadShell],
   );
-  const [previousCreation, setPreviousCreation] = useState<PendingThreadCreation | null>(null);
   const selectedThreadCreation = resolvePendingThreadCreation({
     threadKey: selectedThreadKey,
     pending: pendingCreation,
@@ -181,7 +136,7 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
       selectedThreadRef,
       selectedThread,
       selectedThreadCreation,
-      selectedThreadDetailState,
+      selectedThreadDetailRef,
       selectedThreadProject,
       selectedEnvironmentConnection,
       selectedEnvironmentRuntime,
@@ -191,7 +146,7 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
       selectedEnvironmentRuntime,
       selectedThread,
       selectedThreadCreation,
-      selectedThreadDetailState,
+      selectedThreadDetailRef,
       selectedThreadProject,
       selectedThreadRef,
     ],

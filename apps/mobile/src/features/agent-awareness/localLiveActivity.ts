@@ -2,7 +2,7 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import { projectThreadAwareness } from "@t3tools/shared/agentAwareness";
+import { projectThreadAwarenessV2 } from "@t3tools/shared/agentAwareness";
 
 import type {
   AgentActivityPhase,
@@ -104,21 +104,20 @@ export function buildLocalLiveActivityProps(input: {
     if (!project) {
       continue;
     }
-    const state = projectThreadAwareness({
+    const state = projectThreadAwarenessV2({
       environmentId: thread.environmentId,
       project,
-      thread,
+      thread: thread.source,
     });
     if (!state) {
       continue;
     }
-    // Ready/idle shells with no materialized turn project as completed in
-    // the shared helper so the relay can tombstone them. Locally that would
-    // arm a Done lock-screen card for every recently touched idle thread.
+    // A terminal shell needs a materialized completed run before it can arm
+    // a local Done card; metadata-only shells must not create lock-screen rows.
     if (
       state.phase === "completed" &&
-      thread.latestTurn?.state !== "completed" &&
-      thread.latestTurn?.completedAt == null
+      thread.latestRun?.status !== "completed" &&
+      thread.latestRun?.completedAt == null
     ) {
       continue;
     }
@@ -131,6 +130,12 @@ export function buildLocalLiveActivityProps(input: {
     ) {
       continue;
     }
+    const plan = thread.planProgress;
+    const progress = plan && plan.totalSteps > 0
+      ? Math.max(0, Math.min(1, plan.completedSteps / plan.totalSteps))
+      : undefined;
+    const startedAt = state.startedAt ?? thread.latestRun?.startedAt ?? undefined;
+    const runningDetail = thread.liveHeadline ?? plan?.step ?? state.detail;
     rows.push({
       environmentId: state.environmentId,
       threadId: state.threadId,
@@ -139,11 +144,11 @@ export function buildLocalLiveActivityProps(input: {
       modelTitle: state.modelTitle,
       phase: state.phase,
       status:
-        state.phase === "running" && state.detail ? state.detail : statusForPhase(state.phase),
+        state.phase === "running" && runningDetail ? runningDetail : statusForPhase(state.phase),
       updatedAt: state.updatedAt,
       deepLink: state.deepLink,
-      ...(state.progress === undefined ? {} : { progress: state.progress }),
-      ...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
+      ...(progress === undefined ? {} : { progress }),
+      ...(startedAt === undefined ? {} : { startedAt }),
     });
   }
 

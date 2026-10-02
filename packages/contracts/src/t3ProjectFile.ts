@@ -2,12 +2,7 @@ import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
-import {
-  PROJECT_SCRIPT_COMMAND_MAX_LENGTH,
-  PROJECT_SCRIPT_NAME_MAX_LENGTH,
-  PROJECT_SCRIPT_PREVIEW_URL_MAX_LENGTH,
-  ProjectScriptIcon,
-} from "./orchestration.ts";
+import { ProjectScriptIcon, PROJECT_SCRIPT_COMMAND_MAX_LENGTH, PROJECT_SCRIPT_NAME_MAX_LENGTH, PROJECT_SCRIPT_PREVIEW_URL_MAX_LENGTH } from "./project.ts";
 import type { ProjectScopedServerSettingKey, ServerSettings } from "./settings.ts";
 
 /** File name of the checked-in T3 project file, resolved at the workspace root. */

@@ -1,3 +1,4 @@
+import { Alert, AlertDescription } from "../ui/alert";
 import type { AuthSessionState } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import React, { startTransition, useEffect, useRef, useState, useCallback } from "react";
@@ -132,9 +133,9 @@ export function PairingRouteSurface({
         </div>
 
         {errorMessage ? (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/6 px-3 py-2 text-sm text-destructive">
-            {errorMessage}
-          </div>
+          <Alert variant="error">
+            <AlertDescription>{errorMessage}</AlertDescription>
+          </Alert>
         ) : null}
 
         <div className="flex flex-wrap gap-2">

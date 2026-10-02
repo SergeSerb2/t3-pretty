@@ -9,7 +9,7 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
-  EnvironmentOrchestrationHttpApi,
+  EnvironmentHttpApi,
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -20,7 +20,7 @@ import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as DateTime from "effect/DateTime";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
@@ -30,7 +30,7 @@ import * as CliError from "effect/unstable/cli/CliError";
 import * as TestConsole from "effect/testing/TestConsole";
 import { Command } from "effect/unstable/cli";
 
-import { cli, makeCli } from "./bin.ts";
+import { cli, makeCli } from "./binCli.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import {
   SERVICE_LAUNCHER_CONTEXT_ENV,
@@ -38,11 +38,17 @@ import {
 } from "./cloud/serviceProtocol.ts";
 import * as ServerConfig from "./config.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
-import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
-import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
-import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
-import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
-import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
+import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
+import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegistry.ts";
+import { makeOrchestratorV2ReplayLayerWithRegistry } from "./orchestration-v2/testkit/ProviderReplayHarness.ts";
+import { ProjectServiceLayerLive } from "./orchestration-v2/runtimeLayer.ts";
+import { projectHttpApiLayer } from "./project/http.ts";
+import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
+import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
+import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
+import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import {
@@ -72,7 +78,7 @@ const DisconnectedLauncherChildLayer = Layer.mergeAll(
     off: () => undefined,
   }),
 );
-class ProjectCliHttpApi extends HttpApi.make("environment").add(EnvironmentOrchestrationHttpApi) {}
+class ProjectCliHttpApi extends HttpApi.make("environment").add(EnvironmentHttpApi.groups.projects) {}
 
 const connectCli = makeCli({ cloudEnabled: true });
 const noConnectCli = makeCli({ cloudEnabled: false });
@@ -127,22 +133,52 @@ const makeCliTestServerConfig = (baseDir: string) =>
     } satisfies ServerConfig.ServerConfig["Service"];
   });
 
-const makeProjectPersistenceLayer = (config: ServerConfig.ServerConfig["Service"]) =>
-  Layer.mergeAll(
-    OrchestrationLayerLive.pipe(
-      Layer.provideMerge(RepositoryIdentityResolver.layer),
-      Layer.provideMerge(SqlitePersistenceLayerLive),
+const makeProjectPersistenceLayer = (config: ServerConfig.ServerConfig["Service"]) => {
+  // Replay fixtures require a closed database layer; migration/import errors fail setup.
+  const databaseLayer = SqlitePersistenceLayerLive.pipe(
+    Layer.provide(ServerConfig.layer(config)),
+    Layer.provide(NodeServices.layer),
+    Layer.orDie,
+  );
+  return Layer.mergeAll(
+    makeOrchestratorV2ReplayLayerWithRegistry(
+      { name: "project-cli-controls" },
+      ProviderAdapterRegistry.makeLayer([]),
+      { databaseLayer, runEffectWorker: false },
     ),
-    WorkspacePaths.layer,
-  ).pipe(Layer.provideMerge(NodeServices.layer), Layer.provide(ServerConfig.layer(config)));
+    ProjectServiceLayerLive.pipe(
+      Layer.provideMerge(ProjectEnrichmentService.layer),
+      Layer.provideMerge(RepositoryIdentityResolver.layer),
+      Layer.provideMerge(ProjectFaviconResolver.layer),
+      Layer.provideMerge(T3ProjectFileLoader.layer),
+      Layer.provideMerge(WorkspacePaths.layer),
+    ),
+    ProjectionStore.layer,
+    ProjectStore.layer,
+  ).pipe(
+    Layer.provideMerge(databaseLayer),
+    Layer.provideMerge(NodeServices.layer),
+    Layer.provide(ServerConfig.layer(config)),
+  );
+};
+
+// Read tombstones too: CLI force-removal tests must verify durable deletion,
+// while the navigation shell deliberately omits deleted projects and threads.
+const readPersistedState = Effect.gen(function* () {
+  const projects = yield* ProjectStore.ProjectStoreV2;
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const sql = yield* SqlClient.SqlClient;
+  const rows = yield* projects.list({ includeDeleted: true });
+  const threadIds = yield* sql<{ readonly id: string }>`
+    SELECT thread_id AS id FROM orchestration_v2_projection_threads`;
+  const threads = yield* Effect.forEach(threadIds, ({ id }) => projections.getThread(ThreadId.make(id)));
+  return { projects: rows.map((row) => ({ ...row, id: row.projectId })), threads };
+});
 
 const readPersistedSnapshot = (baseDir: string) =>
   Effect.gen(function* () {
     const config = yield* makeCliTestServerConfig(baseDir);
-    return yield* Effect.gen(function* () {
-      const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-      return yield* projectionSnapshotQuery.getSnapshot();
-    }).pipe(Effect.provide(makeProjectPersistenceLayer(config)));
+    return yield* readPersistedState.pipe(Effect.provide(makeProjectPersistenceLayer(config)));
   });
 
 const makeProjectLookupFixture = Effect.fn("makeProjectLookupFixture")(function* (
@@ -165,7 +201,7 @@ const makeProjectLookupFixture = Effect.fn("makeProjectLookupFixture")(function*
   if (withThread) {
     const config = yield* makeCliTestServerConfig(baseDir);
     yield* Effect.gen(function* () {
-      const engine = yield* OrchestrationEngine.OrchestrationEngineService;
+      const engine = yield* Orchestrator.OrchestratorV2;
       yield* engine.dispatch({
         type: "thread.create",
         commandId: CommandId.make("cmd-project-lookup-thread"),
@@ -177,7 +213,8 @@ const makeProjectLookupFixture = Effect.fn("makeProjectLookupFixture")(function*
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
-        createdAt: DateTime.formatIso(yield* DateTime.now),
+        createdBy: "user",
+        creationSource: "web",
       });
     }).pipe(Effect.provide(makeProjectPersistenceLayer(config)));
   }
@@ -369,11 +406,12 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
     const config = yield* makeCliTestServerConfig(baseDir);
     const routesLayer = HttpApiBuilder.layer(ProjectCliHttpApi).pipe(
       Layer.provide(
-        orchestrationHttpApiLayer.pipe(
+        projectHttpApiLayer.pipe(
           Layer.provide(
-            Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({
-              get: () => Effect.succeed(null),
-              discard: () => Effect.void,
+            Layer.succeed(ServerRuntimeStartup.ServerRuntimeStartup, {
+              awaitCommandReady: Effect.void,
+              markHttpListening: Effect.void,
+              enqueueCommand: (operation) => operation,
             }),
           ),
         ),
@@ -776,7 +814,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
 
       const config = yield* makeCliTestServerConfig(baseDir);
       yield* Effect.gen(function* () {
-        const engine = yield* OrchestrationEngine.OrchestrationEngineService;
+        const engine = yield* Orchestrator.OrchestratorV2;
         yield* engine.dispatch({
           type: "thread.create",
           commandId: CommandId.make("cmd-cli-force-remove-thread"),
@@ -792,7 +830,8 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
           branch: null,
           worktreePath: null,
           enabledSkillIds: [],
-          createdAt: DateTime.formatIso(yield* DateTime.now),
+          createdBy: "user",
+          creationSource: "web",
         });
       }).pipe(Effect.provide(makeProjectPersistenceLayer(config)));
 
@@ -836,8 +875,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
             "--base-dir",
             baseDir,
           ]);
-          const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-          const readModel = yield* projectionSnapshotQuery.getSnapshot();
+          const readModel = yield* readPersistedState;
           const addedProject = readModel.projects.find(
             (project) => project.workspaceRoot === workspaceRoot && project.deletedAt === null,
           );

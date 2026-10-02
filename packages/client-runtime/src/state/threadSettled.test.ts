@@ -1,9 +1,12 @@
+import type { EnvironmentThreadShell } from "./models.ts";
+import { presentThreadShell } from "./models.ts";
+import { v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
+import { EnvironmentId } from "@t3tools/contracts";
 import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  TurnId,
-  type OrchestrationThreadShell,
+  RunId,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -35,7 +38,7 @@ describe("changeRequestAutoSettles", () => {
   const idleThread = {
     createdAt: THREAD_CREATED_AT,
     latestUserMessageAt: null,
-    latestTurn: null,
+    latestRun: null,
   };
 
   it("ignores a closed change request last touched before the thread existed", () => {
@@ -61,7 +64,7 @@ describe("changeRequestAutoSettles", () => {
     const revived = {
       createdAt: THREAD_CREATED_AT,
       latestUserMessageAt: "2026-04-05T00:00:00.000Z",
-      latestTurn: null,
+      latestRun: null,
     };
     expect(
       changeRequestAutoSettles(
@@ -84,9 +87,9 @@ describe("changeRequestAutoSettles", () => {
     const midTurnClose = {
       createdAt: THREAD_CREATED_AT,
       latestUserMessageAt: "2026-04-02T00:00:00.000Z",
-      latestTurn: {
-        turnId: TurnId.make("turn-mid"),
-        state: "completed" as const,
+      latestRun: {
+        runId: RunId.make("turn-mid"),
+        status: "completed" as const,
         requestedAt: "2026-04-02T00:00:00.000Z",
         startedAt: "2026-04-02T00:00:05.000Z",
         completedAt: "2026-04-02T00:20:00.000Z",
@@ -123,9 +126,10 @@ function makeShell(input: {
   readonly activityAt: string | null;
   readonly sessionStatus?: "starting" | "running";
   readonly pending?: "approval" | "user-input";
-}): OrchestrationThreadShell {
+}): EnvironmentThreadShell {
   const threadId = ThreadId.make("thread-1");
   return {
+    ...presentThreadShell(EnvironmentId.make("test"), v2ThreadShell),
     id: threadId,
     projectId: ProjectId.make("project-1"),
     title: "Thread",
@@ -136,12 +140,12 @@ function makeShell(input: {
     worktreePath: null,
     pullRequests: [],
     enabledSkillIds: [],
-    latestTurn:
+    latestRun:
       input.activityAt === null
         ? null
         : {
-            turnId: TurnId.make("turn-1"),
-            state: "completed",
+            runId: RunId.make("turn-1"),
+            status: "completed",
             requestedAt: input.activityAt,
             startedAt: null,
             completedAt: null,
@@ -152,15 +156,14 @@ function makeShell(input: {
     archivedAt: null,
     settledOverride: input.settledOverride ?? null,
     settledAt: input.settledOverride === "settled" ? NOW : null,
-    session:
+    runtime:
       input.sessionStatus === undefined
         ? null
         : {
-            threadId,
+            providerInstanceId: ProviderInstanceId.make("codex"),
             status: input.sessionStatus,
             providerName: "Codex",
-            runtimeMode: "full-access",
-            activeTurnId: null,
+            activeRunId: null,
             lastError: null,
             updatedAt: NOW,
           },
@@ -174,12 +177,12 @@ function makeShell(input: {
 describe("threadLastActivityAt", () => {
   it("returns the latest real user or turn activity and ignores thread/session updates", () => {
     const shell = makeShell({ activityAt: null, sessionStatus: "running" });
-    const withActivity: OrchestrationThreadShell = {
+    const withActivity: EnvironmentThreadShell = {
       ...shell,
       latestUserMessageAt: "2026-04-04T00:00:00.000Z",
-      latestTurn: {
-        turnId: TurnId.make("turn-1"),
-        state: "completed",
+      latestRun: {
+        runId: RunId.make("turn-1"),
+        status: "completed",
         requestedAt: "2026-04-03T00:00:00.000Z",
         startedAt: "2026-04-05T00:00:00.000Z",
         completedAt: "2026-04-06T00:00:00.000Z",
@@ -365,30 +368,29 @@ describe("effectiveSettled", () => {
       settledOverride: null,
       activityAt: STALE,
     });
-    const queued: OrchestrationThreadShell = {
+    const queued: EnvironmentThreadShell = {
       ...base,
       latestUserMessageAt: requestedAt,
-      latestTurn: null,
-      session: null,
+      latestRun: null,
+      runtime: null,
     };
-    const starting: OrchestrationThreadShell = {
+    const starting: EnvironmentThreadShell = {
       ...queued,
-      session: {
-        threadId: queued.id,
+      runtime: {
+        providerInstanceId: ProviderInstanceId.make("codex"),
         status: "starting",
         providerName: "Codex",
-        runtimeMode: "full-access",
-        activeTurnId: null,
+        activeRunId: null,
         lastError: null,
         updatedAt: requestedAt,
       },
     };
-    const running: OrchestrationThreadShell = {
+    const running: EnvironmentThreadShell = {
       ...starting,
-      session: {
-        ...starting.session!,
+      runtime: {
+        ...starting.runtime!,
         status: "running",
-        activeTurnId: TurnId.make("turn-new"),
+        activeRunId: RunId.make("turn-new"),
       },
     };
 
@@ -420,7 +422,7 @@ describe("hasQueuedTurnStart", () => {
   const JUST_AFTER = { now: "2026-04-09T12:00:30.000Z" };
 
   it("flags a user message no turn has picked up, within the grace window", () => {
-    const noTurn = { latestUserMessageAt: QUEUED_AT, latestTurn: null, session: null };
+    const noTurn = { latestUserMessageAt: QUEUED_AT, latestRun: null, runtime: null };
     expect(hasQueuedTurnStart(noTurn, JUST_AFTER)).toBe(true);
 
     const staleTurn = {
@@ -431,9 +433,9 @@ describe("hasQueuedTurnStart", () => {
   });
 
   it("expires after the grace window: an unadopted message is a failed start, not queued work", () => {
-    const noTurn = { latestUserMessageAt: QUEUED_AT, latestTurn: null, session: null };
+    const noTurn = { latestUserMessageAt: QUEUED_AT, latestRun: null, runtime: null };
     expect(hasQueuedTurnStart(noTurn, { now: "2026-04-09T12:03:00.000Z" })).toBe(false);
-    // Historical shells (e.g. from servers that never carried latestTurn)
+    // Historical shells (e.g. from servers that never carried latestRun)
     // must never read as queued.
     expect(hasQueuedTurnStart(noTurn, { now: NOW })).toBe(false);
   });
@@ -449,12 +451,12 @@ describe("hasQueuedTurnStart", () => {
     const failedShell = {
       ...failed,
       latestUserMessageAt: QUEUED_AT,
-      session: {
+      runtime: {
         threadId: failed.id,
-        status: "error" as const,
+        status: "failed" as const,
         providerName: "Codex",
         runtimeMode: "full-access" as const,
-        activeTurnId: null,
+        activeRunId: null,
         lastError: "boom",
         updatedAt: NOW,
       },
@@ -471,15 +473,15 @@ describe("hasQueuedTurnStart", () => {
     // must not hold the queued state for the whole skew.
     const skewed = {
       latestUserMessageAt: "2026-04-09T13:00:00.000Z",
-      latestTurn: null,
-      session: null,
+      latestRun: null,
+      runtime: null,
     };
     expect(hasQueuedTurnStart(skewed, { now: "2026-04-09T12:00:00.000Z" })).toBe(false);
     // A small negative age (within the grace window) still reads as queued.
     const slightlyAhead = {
       latestUserMessageAt: "2026-04-09T12:00:30.000Z",
-      latestTurn: null,
-      session: null,
+      latestRun: null,
+      runtime: null,
     };
     expect(hasQueuedTurnStart(slightlyAhead, { now: "2026-04-09T12:00:00.000Z" })).toBe(true);
   });

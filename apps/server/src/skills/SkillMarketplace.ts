@@ -127,7 +127,7 @@ const encodeCachedMarketplaceListing = Schema.encodeEffect(CachedMarketplaceList
 const isSkillsError = Schema.is(SkillsError);
 
 export interface SkillMarketplaceQuery {
-  readonly repo?: string;
+  readonly repo?: string | undefined;
 }
 
 export class SkillMarketplace extends Context.Service<

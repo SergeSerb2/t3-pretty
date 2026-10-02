@@ -24,9 +24,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { timingSafeEqualBase64Url } from "../auth/utils.ts";
-import { isOrchestrationCommandRejection } from "../orchestration/Errors.ts";
-import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as AutomationStore from "./AutomationStore.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 
 export const AUTOMATION_WEBHOOK_PATH = "/hooks/automations/:automationId/:token";
@@ -53,8 +51,8 @@ export const layer = Layer.unwrap(
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
         const params = yield* HttpRouter.params;
-        const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-        const engine = yield* OrchestrationEngine.OrchestrationEngineService;
+        const snapshots = yield* AutomationStore.AutomationStore;
+        const engine = yield* AutomationStore.AutomationStore;
         const settingsService = yield* ServerSettingsService;
         const crypto = yield* Crypto.Crypto;
 
@@ -123,8 +121,11 @@ export const layer = Layer.unwrap(
           .pipe(Effect.result);
         if (Result.isFailure(dispatched)) {
           const failure = dispatched.failure;
-          if (isOrchestrationCommandRejection(failure)) {
-            return reply(409, { reason: "detail" in failure ? failure.detail : failure.message });
+          if (
+            Schema.is(AutomationStore.AutomationStoreError)(failure) &&
+            failure.cause === undefined
+          ) {
+            return reply(409, { reason: failure.detail });
           }
           yield* Effect.logWarning("automation webhook dispatch failed", {
             automationId: automation.id,

@@ -19,6 +19,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Terminal from "effect/Terminal";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";

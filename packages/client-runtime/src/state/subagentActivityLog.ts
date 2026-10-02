@@ -19,7 +19,16 @@
  * reference (safe under React strict-mode double-invoke), and unchanged
  * agents keep their state object identity so memoized rows don't re-render.
  */
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+export interface SubagentObservedActivity {
+ readonly id: string;
+ readonly kind: string;
+ readonly summary: string;
+ readonly payload: unknown;
+ readonly createdAt: string;
+ readonly tone?: string;
+ readonly turnId?: string | null;
+ readonly sequence?: number;
+}
 import type { RuntimeSubagent, RuntimeSubagentStatus } from "./subagentRuntime.ts";
 import { isTerminalSubagentStatus } from "./subagentRuntime.ts";
 import { compareIsoDateTimes } from "./threadSort.ts";
@@ -137,7 +146,7 @@ function stripToolPrefix(detail: string | undefined, toolName: string | undefine
 }
 
 function completedToolSummary(
-  activity: OrchestrationThreadActivity,
+  activity: SubagentObservedActivity,
   payload: Record<string, unknown>,
   toolName: string | undefined,
 ): string {
@@ -193,7 +202,7 @@ function completedToolSummary(
  * stable, non-duplicated action per tool use.
  */
 function attributedToolEntries(
-  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  activities: ReadonlyArray<SubagentObservedActivity>,
 ): ReadonlyMap<string, ReadonlyArray<AttributedToolEntry>> {
   const byAgent = new Map<string, AttributedToolEntry[]>();
   for (const activity of activities) {
@@ -431,7 +440,7 @@ function advanceAgent(
 export function advanceSubagentActivityLog(
   previous: SubagentActivityLog,
   agents: ReadonlyArray<RuntimeSubagent>,
-  activities: ReadonlyArray<OrchestrationThreadActivity> = [],
+  activities: ReadonlyArray<SubagentObservedActivity> = [],
 ): SubagentActivityLog {
   const toolsByAgent = attributedToolEntries(activities);
   let next: Map<string, SubagentActivityLogState> | null = null;

@@ -59,7 +59,7 @@ export interface ThreadActionMenuState {
   readonly isStored: boolean;
   readonly canStoreNow: boolean;
   readonly isRegeneratingTitle: boolean;
-  /** Archive rejects a thread with an active turn, so disable it here rather than let the action fail. */
+  /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
   /**
    * Sidebar rows already expose settle/snooze on hover, so those items are

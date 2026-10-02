@@ -1,6 +1,7 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { useInPlaceChange } from "~/scenery/useInPlaceChange";
 import { type EnvironmentId, type ThreadId } from "@t3tools/contracts";
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { ChangeRequestSettleSource } from "@t3tools/client-runtime/state/thread-settled";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   isAtomCommandInterrupted,
@@ -32,7 +33,6 @@ import {
   WorkspaceBreadcrumbText,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
-import { useInPlaceChange } from "~/scenery/useInPlaceChange";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -42,7 +42,6 @@ interface ChatHeaderProps {
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
   rightPanelOpen: boolean;
-  readonly changeRequest: ChangeRequestSettleSource | null;
   onNewThreadInProject: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
 }
@@ -68,7 +67,6 @@ export function resolveRenameCommit(input: {
 // events (the second click dismisses it and dblclick still fires), so it
 // opens immediately.
 const TITLE_MENU_OPEN_DELAY_MS = 500;
-
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
   activeThreadId,
@@ -76,7 +74,6 @@ export const ChatHeader = memo(function ChatHeader({
   isServerThread,
   activeProject,
   rightPanelOpen,
-  changeRequest,
   onNewThreadInProject,
   onOpenProjectSettings,
 }: ChatHeaderProps) {
@@ -94,16 +91,27 @@ export const ChatHeader = memo(function ChatHeader({
   // Inline rename, keyed by thread: navigating away drops an in-progress
   // rename instead of committing stale text. Cleared on thread change (not
   // just hidden) so returning to the thread doesn't revive the old draft.
-  const [renaming, setRenaming] = useState<{ threadId: ThreadId; title: string } | null>(null);
-  if (renaming !== null && renaming.threadId !== activeThreadId) {
+  const [renaming, setRenaming] = useState<{
+    threadId: ThreadId;
+    environmentId: EnvironmentId;
+    title: string;
+  } | null>(null);
+  if (
+    renaming !== null &&
+    (renaming.threadId !== activeThreadId || renaming.environmentId !== activeThreadEnvironmentId)
+  ) {
     setRenaming(null);
   }
   const renamingTitle = renaming?.threadId === activeThreadId ? renaming.title : null;
   const renameCommittedRef = useRef(false);
   const startRename = useCallback(() => {
     renameCommittedRef.current = false;
-    setRenaming({ threadId: activeThreadId, title: activeThreadTitle });
-  }, [activeThreadId, activeThreadTitle]);
+    setRenaming({
+      threadId: activeThreadId,
+      environmentId: activeThreadEnvironmentId,
+      title: activeThreadTitle,
+    });
+  }, [activeThreadEnvironmentId, activeThreadId, activeThreadTitle]);
   const commitRename = useCallback(
     (title: string) => {
       setRenaming(null);
@@ -132,7 +140,7 @@ export const ChatHeader = memo(function ChatHeader({
   const { openMenu, closeMenu } = useThreadActionMenu({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
-    changeRequest,
+    changeRequest: null,
     onStartRename: startRename,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -148,7 +156,7 @@ export const ChatHeader = memo(function ChatHeader({
     () => () => {
       cancelPendingTitleMenu();
     },
-    [activeThreadId, cancelPendingTitleMenu],
+    [activeThreadEnvironmentId, activeThreadId, cancelPendingTitleMenu],
   );
   const openTitleMenuNow = useCallback(() => {
     cancelPendingTitleMenu();
@@ -228,12 +236,8 @@ export const ChatHeader = memo(function ChatHeader({
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-1 items-center",
-        // Same 200ms linear slide as the right panel gap. The reserved slot
-        // keeps the title clear of the parked terminal / right-panel toggles.
-        "transition-[padding-right] duration-200 ease-linear motion-reduce:transition-none",
-        rightPanelOpen ? "pr-0" : "pr-16",
-        "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:motion-safe:ease-out",
+        "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
+        rightPanelOpen ? "pr-10" : "pr-24",
       )}
       onContextMenu={handleHeaderContextMenu}
     >
@@ -280,6 +284,15 @@ export const ChatHeader = memo(function ChatHeader({
               defaultValue={renamingTitle}
               onBlur={(event) => {
                 if (renameCommittedRef.current) return;
+                // Focus landing on a navigation button means the rename was
+                // abandoned — discard it rather than persisting a half-draft.
+                if (
+                  event.relatedTarget instanceof HTMLElement &&
+                  event.relatedTarget.closest("button")
+                ) {
+                  setRenaming(null);
+                  return;
+                }
                 commitRename(event.currentTarget.value);
               }}
               onFocus={(event) => event.currentTarget.select()}

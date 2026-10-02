@@ -11,7 +11,7 @@ import {
   THREAD_TURN_START_BRANCH_MAX_LENGTH,
   THREAD_TURN_START_PATH_MAX_LENGTH,
   THREAD_TURN_START_TITLE_MAX_LENGTH,
-} from "./orchestration.ts";
+} from "./providerPolicy.ts";
 
 export const STORAGE_INVENTORY_MAX_ENTRIES = 4_096;
 export const STORAGE_INVENTORY_MAX_STRING_CHARS = 16 * 1024 * 1024;

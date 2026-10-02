@@ -10,13 +10,10 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-export type McpCapability =
-  | "automations"
-  | "computer-use"
-  | "device"
-  | "preview"
-  | "pull-requests"
-  | "secrets";
+const ALL_MCP_CAPABILITIES = [
+  "automations", "computer-use", "device", "preview", "pull-requests", "secrets", "orchestration", "worktree",
+] as const;
+export type McpCapability = (typeof ALL_MCP_CAPABILITIES)[number];
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;

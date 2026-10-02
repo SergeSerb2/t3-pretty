@@ -18,9 +18,9 @@ import {
   type HomeSuggestion,
   type HomeSuggestionsDigest,
   type HomeSuggestionsTime,
-  type OrchestrationMessage,
+  type OrchestrationV2ConversationMessage,
   type OrchestrationProjectShell,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ThreadShell,
   type ProjectId,
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
@@ -43,24 +43,24 @@ const PROMPT_MAX_CHARS = 4_000;
 export const HOME_SUGGESTIONS_TITLE_MEMORY = 40;
 
 export interface DigestThread {
-  readonly shell: OrchestrationThreadShell;
-  readonly messages: ReadonlyArray<Pick<OrchestrationMessage, "role" | "text">>;
+  readonly shell: OrchestrationV2ThreadShell;
+  readonly messages: ReadonlyArray<Pick<OrchestrationV2ConversationMessage, "role" | "text">>;
 }
 
-const byUpdatedAtDesc = (left: OrchestrationThreadShell, right: OrchestrationThreadShell) =>
-  Date.parse(right.updatedAt) - Date.parse(left.updatedAt) || left.id.localeCompare(right.id);
+const byUpdatedAtDesc = (left: OrchestrationV2ThreadShell, right: OrchestrationV2ThreadShell) =>
+  DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt) || left.id.localeCompare(right.id);
 
 /**
  * Newest live threads first, capped overall and per project, so the digest
  * reflects what the developer touched last without reading the whole history.
  */
 export function selectDigestThreads(
-  threads: ReadonlyArray<OrchestrationThreadShell>,
+  threads: ReadonlyArray<OrchestrationV2ThreadShell>,
   projects: ReadonlyArray<OrchestrationProjectShell>,
-): ReadonlyArray<OrchestrationThreadShell> {
+): ReadonlyArray<OrchestrationV2ThreadShell> {
   const projectIds = new Set(projects.map((project) => project.id));
   const perProject = new Map<ProjectId, number>();
-  const selected: OrchestrationThreadShell[] = [];
+  const selected: OrchestrationV2ThreadShell[] = [];
   for (const thread of [...threads].sort(byUpdatedAtDesc)) {
     if (thread.archivedAt !== null || !projectIds.has(thread.projectId)) continue;
     const count = perProject.get(thread.projectId) ?? 0;
@@ -77,7 +77,7 @@ function clip(text: string, max: number): string {
   return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1)}…`;
 }
 
-function messageText(message: Pick<OrchestrationMessage, "role" | "text">): string {
+function messageText(message: Pick<OrchestrationV2ConversationMessage, "role" | "text">): string {
   const text =
     message.role === "assistant"
       ? assistantCitationsToPlainText(message.text)
@@ -127,8 +127,8 @@ export function buildEnvironmentDigest(input: {
   const latestByProject = new Map<ProjectId, string>();
   for (const thread of input.threads) {
     const current = latestByProject.get(thread.shell.projectId);
-    if (current === undefined || Date.parse(thread.shell.updatedAt) > Date.parse(current)) {
-      latestByProject.set(thread.shell.projectId, thread.shell.updatedAt);
+    if (current === undefined || DateTime.toEpochMillis(thread.shell.updatedAt) > Date.parse(current)) {
+      latestByProject.set(thread.shell.projectId, DateTime.formatIso(thread.shell.updatedAt));
     }
   }
   const projects = input.projects
@@ -150,8 +150,8 @@ export function buildEnvironmentDigest(input: {
     return {
       projectId: thread.shell.projectId,
       title: clip(thread.shell.title, TITLE_MAX_CHARS),
-      updatedAt: thread.shell.updatedAt,
-      status: thread.shell.latestTurn?.state ?? "idle",
+      updatedAt: DateTime.formatIso(thread.shell.updatedAt),
+      status: thread.shell.status,
       asked: first ? clip(messageText(first), FIRST_MESSAGE_MAX_CHARS) : "",
       outcome: last ? clip(messageText(last), LAST_MESSAGE_MAX_CHARS) : "",
     };

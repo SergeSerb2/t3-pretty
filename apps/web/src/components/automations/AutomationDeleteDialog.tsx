@@ -62,7 +62,7 @@ function RunThreadCountNote({ automation }: { automation: EnvironmentAutomation 
   const [count] = useState(
     () =>
       appAtomRegistry
-        .get(environmentThreadShells.allThreadShellsAtom)
+        .get(environmentThreadShells.threadShellsAtom)
         .filter(
           (thread) =>
             thread.environmentId === automation.environmentId &&

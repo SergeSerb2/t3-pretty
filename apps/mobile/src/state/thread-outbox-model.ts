@@ -29,6 +29,7 @@ import {
 import * as Schema from "effect/Schema";
 
 import { DraftComposerAttachmentSchema } from "../lib/composer-image-schema";
+import type { ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
 import type { DraftComposerAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { compareTimestamps } from "../lib/time";
@@ -62,6 +63,7 @@ export const QueuedThreadMessageSchema = Schema.Struct({
     Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
   ),
   modelSelection: Schema.optional(ModelSelection),
+  dispatchMode: Schema.optional(Schema.Literals(["auto", "queue", "steer", "restart"])),
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
   // How the server should land this message on a running turn: "steer" feeds
@@ -99,7 +101,13 @@ export interface QueuedThreadMessage {
   readonly modelSelection?: ModelSelectionType;
   readonly runtimeMode?: RuntimeModeType;
   readonly interactionMode?: ProviderInteractionModeType;
-  readonly delivery?: TurnDeliveryMode;
+  /**
+   * How this message should be delivered if a turn is still running when the
+   * outbox drains. Captured at enqueue time because the drain can fire long
+   * after the tap. Absent on rows written before follow-up behavior existed,
+   * which keep the previous always-queue delivery.
+   */
+  readonly dispatchMode?: ComposerDispatchMode;
   readonly creation?: QueuedThreadCreation;
   readonly createdAt: string;
 }
@@ -145,8 +153,11 @@ export function encodeQueuedThreadMessage(message: QueuedThreadMessage): unknown
 }
 
 export function decodeQueuedThreadMessage(value: unknown): QueuedThreadMessage {
-  const { schemaVersion: _, ...message } = decodeStoredQueuedThreadMessage(value);
-  return message;
+  const { schemaVersion: _, delivery, ...message } = decodeStoredQueuedThreadMessage(value);
+  // Preserve fork queues persisted before V2 replaced turn delivery with run
+  // dispatch. Steering remains best-effort if its original turn has settled.
+  const dispatchMode = message.dispatchMode ?? (delivery === "queue" ? "queue" : delivery === "steer" ? "auto" : undefined);
+  return { ...message, ...(dispatchMode === undefined ? {} : { dispatchMode }) };
 }
 
 export function groupQueuedThreadMessages(

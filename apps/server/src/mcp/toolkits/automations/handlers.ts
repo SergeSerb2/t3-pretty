@@ -27,10 +27,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 
-import type { OrchestrationDispatchError } from "../../../orchestration/Errors.ts";
-import { isOrchestrationCommandInvariantError } from "../../../orchestration/Errors.ts";
-import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { AutomationStore, AutomationStoreError } from "../../../automations/AutomationStore.ts";
+import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { AutomationsToolkit } from "./tools.ts";
 
@@ -66,23 +64,23 @@ interface AutomationsCaller {
 const requireCaller = (operation: AutomationsOperation) =>
   Effect.gen(function* () {
     const scope = yield* McpInvocationContext.requireAutomationsCapability();
-    const projection = yield* ProjectionSnapshotQuery;
+    const projection = yield* ThreadManagement.ThreadManagementService;
     const thread = yield* projection
-      .getThreadShellById(scope.threadId)
+      .getThreadShell(scope.threadId)
       .pipe(
         Effect.mapError(
           (cause) =>
             new AutomationsError({ operation, message: "Could not read this thread.", cause }),
         ),
       );
-    if (Option.isNone(thread)) {
+    if (thread === null) {
       return yield* failure(operation, "This thread is no longer available.");
     }
     return {
       threadId: scope.threadId,
-      projectId: thread.value.projectId,
-      runtimeMode: thread.value.runtimeMode,
-      isRunThread: (thread.value.automationRun ?? null) !== null,
+      projectId: thread.projectId,
+      runtimeMode: thread.runtimeMode,
+      isRunThread: (thread.automationRun ?? null) !== null,
     } satisfies AutomationsCaller;
   });
 
@@ -110,7 +108,7 @@ const requireAutomation = (
   automationId: AutomationId,
 ) =>
   Effect.gen(function* () {
-    const projection = yield* ProjectionSnapshotQuery;
+    const projection = yield* AutomationStore;
     const automation = yield* projection.getAutomationShellById(automationId).pipe(
       Effect.mapError(
         (cause) =>
@@ -187,16 +185,13 @@ const mutationNote = (automation: AutomationShell, clampedFrom: RuntimeMode | nu
 };
 
 const dispatchFailure =
-  (operation: AutomationsOperation, automationId: AutomationId) =>
-  (cause: OrchestrationDispatchError) =>
+  (operation: AutomationsOperation, automationId: AutomationId) => (cause: AutomationStoreError) =>
     new AutomationsError({
       operation,
       automationId,
       // Decider rejections carry a plain sentence written for humans; anything
       // else is infrastructure the agent can do nothing about.
-      message: isOrchestrationCommandInvariantError(cause)
-        ? cause.detail
-        : "The server could not apply this change.",
+      message: cause.cause === undefined ? cause.detail : "The server could not apply this change.",
       cause,
     });
 
@@ -217,7 +212,7 @@ const mutationResult = (
   clampedFrom: RuntimeMode | null,
 ) =>
   Effect.gen(function* () {
-    const projection = yield* ProjectionSnapshotQuery;
+    const projection = yield* AutomationStore;
     const automation = yield* projection.getAutomationShellById(automationId).pipe(
       Effect.mapError(
         (cause) =>
@@ -248,7 +243,7 @@ export const automationsToolkitHandlers = {
   automations_list: () =>
     Effect.gen(function* () {
       const caller = yield* requireCaller("list");
-      const projection = yield* ProjectionSnapshotQuery;
+      const projection = yield* AutomationStore;
       const automations = yield* projection.listAutomationShells().pipe(
         Effect.mapError(
           (cause) =>
@@ -268,7 +263,7 @@ export const automationsToolkitHandlers = {
     Effect.gen(function* () {
       const caller = yield* requireCaller("get");
       const automation = yield* requireAutomation("get", caller, input.automationId);
-      const projection = yield* ProjectionSnapshotQuery;
+      const projection = yield* AutomationStore;
       const page = yield* projection
         .listAutomationRuns({ automationId: automation.id, limit: RECENT_RUNS_LIMIT })
         .pipe(
@@ -294,7 +289,7 @@ export const automationsToolkitHandlers = {
         caller.runtimeMode,
       );
       const automationId = AutomationId.make(yield* randomId);
-      const engine = yield* OrchestrationEngineService;
+      const engine = yield* AutomationStore;
       yield* engine
         .dispatch({
           type: "automation.create",
@@ -317,6 +312,7 @@ export const automationsToolkitHandlers = {
           timeoutMinutes: input.timeoutMinutes ?? DEFAULT_AUTOMATION_TIMEOUT_MINUTES,
           sourceThreadId: caller.threadId,
           createdAt: yield* nowIso,
+          updatedAt: yield* nowIso,
         })
         .pipe(Effect.mapError(dispatchFailure("create", automationId)));
       return yield* mutationResult("create", automationId, clampedFrom);
@@ -354,7 +350,7 @@ export const automationsToolkitHandlers = {
           : { minIntervalSeconds: input.minIntervalSeconds }),
         ...(input.timeoutMinutes === undefined ? {} : { timeoutMinutes: input.timeoutMinutes }),
       };
-      const engine = yield* OrchestrationEngineService;
+      const engine = yield* AutomationStore;
       yield* engine
         .dispatch({
           type: "automation.update",
@@ -372,7 +368,7 @@ export const automationsToolkitHandlers = {
     Effect.gen(function* () {
       const caller = yield* requireWritingCaller("delete");
       const automation = yield* requireAutomation("delete", caller, input.automationId);
-      const engine = yield* OrchestrationEngineService;
+      const engine = yield* AutomationStore;
       yield* engine
         .dispatch({
           type: "automation.delete",
@@ -388,7 +384,7 @@ export const automationsToolkitHandlers = {
       const caller = yield* requireWritingCaller("run-now");
       const automation = yield* requireAutomation("run-now", caller, input.automationId);
       const runId = AutomationRunId.make(yield* randomId);
-      const engine = yield* OrchestrationEngineService;
+      const engine = yield* AutomationStore;
       yield* engine
         .dispatch({
           type: "automation.run.request",
@@ -406,7 +402,7 @@ export const automationsToolkitHandlers = {
     Effect.gen(function* () {
       const caller = yield* requireCaller("list-runs");
       const automation = yield* requireAutomation("list-runs", caller, input.automationId);
-      const projection = yield* ProjectionSnapshotQuery;
+      const projection = yield* AutomationStore;
       const page = yield* projection
         .listAutomationRuns({
           automationId: automation.id,

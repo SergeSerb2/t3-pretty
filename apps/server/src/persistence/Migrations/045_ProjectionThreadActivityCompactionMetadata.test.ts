@@ -6,7 +6,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
-const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
 layer("045_ProjectionThreadActivityCompactionMetadata", (it) => {
   it.effect("backfills lossless tool and context compaction metadata", () =>
@@ -72,5 +72,5 @@ it.effect("upgrades a fork database with existing compaction metadata without ov
       { projection_group_key: "id:current-id", context_used_tokens: 123 },
     ]);
     assert.deepStrictEqual(yield* runMigrations(), []);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );

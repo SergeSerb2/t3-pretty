@@ -15,7 +15,7 @@ import {
 import {
   THREAD_TURN_START_PATH_MAX_LENGTH,
   THREAD_TURN_START_TITLE_MAX_LENGTH,
-} from "./orchestration.ts";
+} from "./providerPolicy.ts";
 
 const decodeProviderSessionStartInput = Schema.decodeUnknownSync(ProviderSessionStartInput);
 const decodeProviderSendTurnInput = Schema.decodeUnknownSync(ProviderSendTurnInput);

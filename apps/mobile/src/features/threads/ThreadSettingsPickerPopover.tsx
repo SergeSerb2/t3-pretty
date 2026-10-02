@@ -1,6 +1,6 @@
 import type { RuntimeMode } from "@t3tools/contracts";
 import * as Haptics from "expo-haptics";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import {
   Keyboard,
   Pressable,
@@ -87,8 +87,8 @@ export function ThreadSettingsPickerPopover(props: {
 }) {
   const [anchor, setAnchor] = useState<AnchorSnapshot | null>(null);
   const [modelQuery, setModelQuery] = useState("");
-  const anchorRef = useRef<View | null>(null);
-  const searchInputRef = useRef<TextInput>(null);
+  const anchorRef = useRef<ComponentRef<typeof View> | null>(null);
+  const searchInputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
@@ -192,9 +192,9 @@ export function ThreadSettingsPickerPopover(props: {
         accessibilityLabel={props.accessibilityLabel}
         accessibilityRole="button"
         collapsable={false}
-        onPress={(event) => {
+        onPress={() => {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-          event.currentTarget.measureInWindow((x, y, width, height) => {
+          anchorRef.current?.measureInWindow((x, y, width, height) => {
             setAnchor({ x, y, width, height });
           });
         }}

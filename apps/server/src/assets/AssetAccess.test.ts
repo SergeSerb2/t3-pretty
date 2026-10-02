@@ -726,10 +726,12 @@ describe("AssetAccess", () => {
       expect(yield* resolveAsset(token, "report.html")).toEqual({
         kind: "file",
         path: canonicalHtmlPath,
+        source: "workspace-file",
       });
       expect(yield* resolveAsset(token, "report.css")).toEqual({
         kind: "file",
         path: canonicalCssPath,
+        source: "workspace-file",
       });
       expect(yield* resolveAsset(token, "../secret.txt")).toBeNull();
     }).pipe(Effect.provide(testLayer)),
@@ -787,6 +789,7 @@ describe("AssetAccess", () => {
       expect(yield* resolveAsset(token, "report.html")).toEqual({
         kind: "file",
         path: canonicalHtmlPath,
+        source: "workspace-file",
       });
     }).pipe(Effect.provide(testLayer)),
   );
@@ -1005,6 +1008,8 @@ describe("AssetAccess", () => {
           yield* resolveAsset(suffix.slice(0, separatorIndex), suffix.slice(separatorIndex + 1)),
         ).toEqual({
           kind: "file",
+          source: "attachment",
+          attachmentId,
           path: attachmentPath,
           fileName: "recording.wav",
           mimeType: disposition === "inline" ? "audio/wav" : "application/octet-stream",

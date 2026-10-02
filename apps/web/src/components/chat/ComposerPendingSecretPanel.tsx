@@ -1,4 +1,4 @@
-import { type ApprovalRequestId } from "@t3tools/contracts";
+import { type RuntimeRequestId } from "@t3tools/contracts";
 import { type PendingSecretRequest } from "@t3tools/client-runtime/pending-requests";
 import { memo, useState, type KeyboardEvent } from "react";
 import { Button } from "../ui/button";
@@ -8,8 +8,8 @@ import { ComposerBanner } from "./ComposerBanner";
 interface PendingSecretPanelProps {
   request: PendingSecretRequest;
   isResponding: boolean;
-  onProvide: (requestId: ApprovalRequestId, value: string) => void;
-  onDecline: (requestId: ApprovalRequestId) => void;
+  onProvide: (requestId: RuntimeRequestId, value: string) => void;
+  onDecline: (requestId: RuntimeRequestId) => void;
 }
 
 /**

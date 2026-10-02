@@ -40,7 +40,6 @@ import {
   hasProjectSettingsOverrides,
   resolveProjectSettings,
 } from "@t3tools/shared/projectSettings";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
   detectSourceControlProviderFromGitRemoteUrl,
   mergeGitStatusParts,
@@ -62,9 +61,12 @@ import {
   customTextGenerationPolicy,
   repositoryConventionsTextGenerationPolicy,
 } from "../textGeneration/TextGenerationPresets.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
+import { detachStackFrame } from "./detachStackFrame.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -98,6 +100,19 @@ interface SourceControlTextGenerationSettings {
   readonly style: SourceControlWritingStyleSettings;
 }
 
+/** Verified repository identity retained when a merged head branch is deleted. */
+export interface GitBranchHeadAssociation {
+  readonly headRef: string;
+  readonly repositoryNameWithOwner: string | null;
+  readonly ownerLogin?: string | null;
+  readonly isCrossRepository?: boolean;
+}
+export interface GitPullRequestBranchObservation {
+  readonly pullRequest: Omit<GitBranchPullRequest, "repositoryKey" | "closedAt" | "mergedAt"> | null;
+  readonly mergedAt: string | null;
+  readonly headAssociation: GitBranchHeadAssociation;
+}
+
 export class GitManager extends Context.Service<
   GitManager,
   {
@@ -116,6 +131,11 @@ export class GitManager extends Context.Service<
       input: { readonly cwd: string; readonly branch: string },
       options?: { readonly refresh?: boolean },
     ) => Effect.Effect<GitBranchPullRequest | null, GitManagerServiceError>;
+    readonly pullRequestForBranch: (input: {
+      readonly cwd: string;
+      readonly branch: string;
+      readonly headAssociation?: GitBranchHeadAssociation;
+    }) => Effect.Effect<GitPullRequestBranchObservation, GitManagerServiceError>;
     readonly invalidateLocalStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateRemoteStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
@@ -455,7 +475,7 @@ function toPullRequestInfo(summary: ChangeRequest): PullRequestInfo {
     state: summary.state ?? "open",
     ...(summary.isDraft === true ? { isDraft: true } : {}),
     closedAt: summary.closedAt ?? null,
-    mergedAt: summary.mergedAt ?? null,
+    mergedAt: summary.mergedAt == null ? null : Option.match(summary.mergedAt, {onNone: () => null, onSome: DateTime.formatIso}),
     updatedAt: summary.updatedAt,
     ...(summary.isCrossRepository !== undefined
       ? { isCrossRepository: summary.isCrossRepository }
@@ -705,27 +725,25 @@ export const make = Effect.gen(function* () {
 
   const sourceControlProvider = (cwd: string) => sourceControlProviders.resolve({ cwd });
   const serverSettingsService = yield* ServerSettings.ServerSettingsService;
-  // Optional: git actions also run from the CLI and tests without orchestration.
-  const projectionQuery = yield* Effect.serviceOption(
-    ProjectionSnapshotQuery.ProjectionSnapshotQuery,
-  );
+  const threads = yield* ProjectionStore.ProjectionStoreV2;
+  const projects = yield* ProjectStore.ProjectStoreV2;
   /** Environment settings with the acting project's overrides applied. */
   const projectSettingsFor = Effect.fnUntraced(function* (input: {
     readonly cwd: string;
     readonly threadId?: ThreadId | undefined;
   }) {
     const settings = yield* serverSettingsService.getSettings;
-    if (!hasProjectSettingsOverrides(settings) || Option.isNone(projectionQuery)) return settings;
-    const projectId = yield* (
-      input.threadId !== undefined
-        ? projectionQuery.value
-            .getThreadShellById(input.threadId)
-            .pipe(Effect.map(Option.map((thread) => thread.projectId)))
-        : projectionQuery.value
-            .getActiveProjectByWorkspaceRoot(input.cwd)
-            .pipe(Effect.map(Option.map((project) => project.id)))
-    ).pipe(Effect.orElseSucceed(() => Option.none<ProjectId>()));
-    return resolveProjectSettings(settings, Option.getOrNull(projectId)).settings;
+    if (!hasProjectSettingsOverrides(settings)) return settings;
+    const projectId: ProjectId | null = yield* input.threadId !== undefined
+      ? threads.getThreadShell(input.threadId).pipe(
+          Effect.map((thread) => thread?.projectId ?? null),
+          Effect.orElseSucceed(() => null),
+        )
+      : projects.findActiveByWorkspaceRoot(input.cwd).pipe(
+          Effect.map((project) => Option.getOrNull(project)?.projectId ?? null),
+          Effect.orElseSucceed(() => null),
+        );
+    return resolveProjectSettings(settings, projectId).settings;
   });
   const readRepositoryInstructions = (cwd: string, fileName: string) =>
     Effect.gen(function* () {
@@ -1015,7 +1033,7 @@ export const make = Effect.gen(function* () {
   } satisfies GitVcsDriver.GitStatusDetails;
   const readLocalStatus = Effect.fn("readLocalStatus")(function* (cwd: string) {
     const details = yield* gitCore
-      .statusDetailsLocal(cwd)
+      .statusDetailsLocal(cwd, { includeDivergence: false })
       .pipe(
         Effect.catchIf(isNotGitRepositoryError, () => Effect.succeed(nonRepositoryStatusDetails)),
       );
@@ -1140,6 +1158,7 @@ export const make = Effect.gen(function* () {
       },
     },
   );
+  const getPrLookup = (key: string) => detachStackFrame(Cache.get(prLookupCache, key));
   // A transient lookup failure (rate limit, network blip) must not clear an
   // already-known PR badge, so the last successful answer per branch sticks
   // around as the fallback. Keep the resolved head context with it so a
@@ -1220,7 +1239,7 @@ export const make = Effect.gen(function* () {
         yield* Cache.invalidate(prLookupCache, cacheKey);
       }
     }
-    return yield* Cache.get(prLookupCache, cacheKey).pipe(
+    return yield* getPrLookup(cacheKey).pipe(
       Effect.map(({ latest, headContext }) => {
         if (!latest) return { pr: null, headContext };
         // On the default branch, only surface open PRs.
@@ -2230,7 +2249,7 @@ export const make = Effect.gen(function* () {
       );
       if (Option.isSome(cached)) yield* Cache.invalidate(prLookupCache, cacheKey);
     }
-    let cached = yield* Cache.get(prLookupCache, cacheKey);
+    let cached = yield* getPrLookup(cacheKey);
     // The cached head context may have resolved on a different remote than
     // the saved upstream: a branch tracking origin/main but pushed to a fork
     // is looked up on the fork. Verify against the remote the lookup used.
@@ -2258,7 +2277,7 @@ export const make = Effect.gen(function* () {
     }
     if (!hasSameIdentity(cached.headContext, currentIdentity)) {
       yield* Cache.invalidate(prLookupCache, cacheKey);
-      cached = yield* Cache.get(prLookupCache, cacheKey);
+      cached = yield* getPrLookup(cacheKey);
       const refreshedIdentity = yield* resolvePrLookupRepositoryIdentity(
         cacheCwd,
         branch,
@@ -2292,6 +2311,68 @@ export const make = Effect.gen(function* () {
       // The returned PR URL names the repository that actually owns it.
       repositoryKey: pullRequestRepositoryKey(latest.url),
     };
+  });
+  const savedAssociationPrCache = yield* Cache.makeWith((key: string) => Effect.gen(function* () {
+    const [cwd = "", branch = "", remoteName = "", headRef = "", repositoryNameWithOwner = "", ownerLogin = "", crossRepository = "0"] = key.split("\u0000");
+    const resolved = yield* resolveBranchHeadContext(cwd, {branch, upstreamRef: null, remoteName});
+    const context: BranchHeadContext = {
+      ...resolved,
+      headBranch: headRef,
+      headRepositoryNameWithOwner: repositoryNameWithOwner || null,
+      headRepositoryOwnerLogin: ownerLogin || null,
+      isCrossRepository: crossRepository === "1",
+      headSelectors: ownerLogin ? [`${ownerLogin}:${headRef}`, headRef] : [headRef],
+      preferredHeadSelector: ownerLogin && crossRepository === "1" ? `${ownerLogin}:${headRef}` : headRef,
+    };
+    return yield* findLatestPrForHeadContext(cwd, context);
+  }), {capacity: PR_LOOKUP_CACHE_CAPACITY, timeToLive: (exit) => Exit.isSuccess(exit) ? PR_LOOKUP_CACHE_TTL : Duration.zero});
+  const pullRequestForBranch: GitManager["Service"]["pullRequestForBranch"] = Effect.fn("pullRequestForBranch")(function* ({cwd, branch, headAssociation}) {
+    const cacheCwd = yield* normalizeStatusCacheKey(cwd);
+    const savedRemote = yield* readConfigValueNullable(cacheCwd, `branch.${branch}.remote`);
+    const savedMerge = yield* readConfigValueNullable(cacheCwd, `branch.${branch}.merge`);
+    let remoteName = savedRemote ?? (yield* findRemoteTrackingRemote(cacheCwd, branch, null));
+    if (headAssociation?.repositoryNameWithOwner != null) {
+      const remotes = yield* gitCore.execute({operation: "GitManager.pullRequestForBranch.remotes", cwd: cacheCwd, args: ["remote"]});
+      let matchedRemote: string | null = null;
+      for (const candidate of remotes.stdout.split("\n").map((name) => name.trim()).filter(Boolean)) {
+        const identity = yield* resolveRemoteRepositoryContext(cacheCwd, candidate);
+        if (identity.repositoryNameWithOwner?.toLowerCase() === headAssociation.repositoryNameWithOwner.toLowerCase()) {
+          matchedRemote = candidate;
+          break;
+        }
+      }
+      if (matchedRemote === null) return yield* new GitManagerError({operation: "pullRequestForBranch", cwd: cacheCwd, detail: `Saved repository identity for ${branch} is no longer configured.`});
+      remoteName = matchedRemote;
+    }
+    const {headContext: resolved, lookup} = yield* resolveLookupHeadContext(cacheCwd, {
+      branch,
+      upstreamRef: savedRemote != null && savedMerge != null ? `${savedRemote}/${savedMerge.replace(/^refs\/heads\//, "")}` : null,
+      defaultBranch: null,
+      ...(remoteName == null ? {} : {remoteName}),
+    });
+    const headContext: BranchHeadContext = headAssociation == null ? resolved : {
+      ...resolved,
+      headBranch: headAssociation.headRef,
+      headRepositoryNameWithOwner: headAssociation.repositoryNameWithOwner,
+      headRepositoryOwnerLogin: headAssociation.ownerLogin ?? null,
+      isCrossRepository: headAssociation.isCrossRepository ?? false,
+      headSelectors: headAssociation.ownerLogin ? [`${headAssociation.ownerLogin}:${headAssociation.headRef}`, headAssociation.headRef] : [headAssociation.headRef],
+      preferredHeadSelector: headAssociation.ownerLogin && headAssociation.isCrossRepository ? `${headAssociation.ownerLogin}:${headAssociation.headRef}` : headAssociation.headRef,
+    };
+    const association: GitBranchHeadAssociation = {
+      headRef: headAssociation?.headRef ?? (lookup ? headContext.headBranch : branch),
+      repositoryNameWithOwner: headContext.headRepositoryNameWithOwner,
+      ownerLogin: headContext.headRepositoryOwnerLogin,
+      isCrossRepository: headContext.isCrossRepository,
+    };
+    if (headAssociation === undefined) {
+      const cached = yield* branchPullRequest({cwd: cacheCwd, branch});
+      if (cached === null) return {pullRequest: null, mergedAt: null, headAssociation: association};
+      const {closedAt: _closedAt, mergedAt, repositoryKey: _repositoryKey, ...pullRequest} = cached;
+      return {pullRequest, mergedAt: mergedAt ?? null, headAssociation: association};
+    }
+    const latest = yield* Cache.get(savedAssociationPrCache, [cacheCwd, branch, remoteName ?? "", association.headRef, association.repositoryNameWithOwner ?? "", association.ownerLogin ?? "", association.isCrossRepository ? "1" : "0", String(prLookupEpoch(cacheCwd)), headContext.headRemoteUrlKey ?? "", headContext.targetRemoteUrlKey ?? ""].join("\u0000"));
+    return {pullRequest: latest == null ? null : toStatusPr(latest), mergedAt: latest?.mergedAt ?? null, headAssociation: association};
   });
   const invalidateLocalStatus: GitManager["Service"]["invalidateLocalStatus"] = Effect.fn(
     "invalidateLocalStatus",
@@ -2850,6 +2931,7 @@ export const make = Effect.gen(function* () {
     remoteStatus,
     status,
     branchPullRequest,
+    pullRequestForBranch,
     invalidateLocalStatus,
     invalidateRemoteStatus,
     invalidateStatus,

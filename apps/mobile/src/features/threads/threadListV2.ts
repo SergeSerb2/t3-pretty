@@ -15,6 +15,7 @@ import {
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import {
   sortActiveThreadsByOrderKey,
@@ -24,6 +25,7 @@ import {
 } from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
+import type { ThreadListProvider } from "../../state/thread-list-environments";
 import type { ThreadMoveAvailability } from "./threadOrder";
 
 import { relativeTime } from "../../lib/time";
@@ -38,28 +40,47 @@ import {
 export { snoozeWakeLabel };
 
 /**
+ * Provider drivers for a row's trailing icon stack, back to front. Instances
+ * missing from the environment's config are skipped, and an unresolved
+ * current provider yields nothing so the row never draws a stale stack.
+ */
+export function resolveThreadListV2ProviderDrivers(
+  thread: Pick<EnvironmentThreadShell, "providerInstanceHistory" | "modelSelection" | "runtime">,
+  providers: ReadonlyArray<ThreadListProvider> | undefined,
+): ReadonlyArray<string> {
+  if (providers === undefined) return [];
+  const stack = resolveThreadProviderStack(thread);
+  const drivers = stack.flatMap((instanceId) => {
+    const driver = providers.find((provider) => provider.instanceId === instanceId)?.driver;
+    return driver === undefined ? [] : [driver];
+  });
+  const currentDriver = providers.find(
+    (provider) => provider.instanceId === stack[stack.length - 1],
+  )?.driver;
+  return currentDriver === undefined ? [] : drivers;
+}
+
+/**
  * Thread List v2 model, ported from the web sidebar v2
  * (apps/web/src/components/Sidebar.logic.ts + SidebarV2.tsx).
  *
- * Visual states: color is reserved for "act now" (approval), "in motion"
- * (working/monitoring), "broken" (failed), and finished (done). Ready is the
- * unlabeled resting state.
+ * Six visual states. Color distinguishes approval, input, active work, and
+ * failures. Ready is the unlabeled resting state; waiting (runtime status "idle") is the agent
+ * parked on open background tasks, grey like working rather than a false Done.
+ * The orchestrator v2 presentation bridge parks runtime at idle when the
+ * post-settlement background roster is nonempty.
  */
 export type ThreadListV2Status =
   | "approval"
   | "input"
   | "working"
-  | "monitoring"
+  | "waiting"
   | "failed"
+  | "limited"
+  | "monitoring"
   | "done"
   | "ready";
-export type ThreadListV2SwipeAction =
-  | "archive"
-  | "settle"
-  | "unsettle"
-  | "snooze"
-  | "unsnooze"
-  | "unstore";
+export type ThreadListV2SwipeAction = "archive" | "settle" | "unsettle" | "snooze" | "unsnooze" | "unstore";
 
 export function resolveThreadListV2SnoozeMenuSelection(input: {
   readonly event: string;
@@ -125,7 +146,7 @@ export function resolveThreadListV2SwipeActions(input: {
 export function resolveThreadListV2SnoozeGateExpiryMs(
   thread: Pick<
     EnvironmentThreadShell,
-    "hasPendingApprovals" | "hasPendingUserInput" | "latestUserMessageAt" | "latestTurn" | "session"
+    "hasPendingApprovals" | "hasPendingUserInput" | "latestRun" | "latestUserMessageAt" | "runtime"
   >,
   options: { readonly now: string },
 ): number | null {
@@ -142,15 +163,29 @@ export function resolveThreadListV2SnoozeGateExpiryMs(
 export const THREAD_LIST_V2_SETTLED_INITIAL_COUNT = 10;
 export const THREAD_LIST_V2_SETTLED_PAGE_COUNT = 25;
 
+/**
+ * Completed-but-not-yet-seen, mirroring the web sidebar's
+ * hasUnseenCompletion. The visited watermark is server state
+ * (thread.lastVisitedAt), so the marker agrees across web and mobile.
+ * Never-visited threads count as read — a fresh environment must not light
+ * up its whole history — and pre-tracking servers (field absent) never
+ * report unread.
+ */
+export function threadHasUnseenCompletion(
+  thread: Pick<EnvironmentThreadShell, "latestRun" | "lastVisitedAt">,
+): boolean {
+  const completedAt = thread.latestRun?.completedAt;
+  if (!completedAt) return false;
+  const completedAtMs = Date.parse(completedAt);
+  if (Number.isNaN(completedAtMs)) return false;
+  if (!thread.lastVisitedAt) return false;
+  const lastVisitedAtMs = Date.parse(thread.lastVisitedAt);
+  if (Number.isNaN(lastVisitedAtMs)) return true;
+  return completedAtMs > lastVisitedAtMs;
+}
+
 export function resolveThreadListV2Status(
-  thread: Pick<
-    EnvironmentThreadShell,
-    | "hasPendingApprovals"
-    | "hasPendingUserInput"
-    | "session"
-    | "backgroundLiveness"
-    | "pullRequests"
-  >,
+  thread: Pick<EnvironmentThreadShell, "hasPendingApprovals" | "hasPendingUserInput" | "runtime" | "backgroundLiveness" | "pullRequests">,
 ): ThreadListV2Status {
   if (thread.hasPendingApprovals) {
     return "approval";
@@ -158,11 +193,14 @@ export function resolveThreadListV2Status(
   if (thread.hasPendingUserInput) {
     return "input";
   }
-  if (thread.session?.status === "running" || thread.session?.status === "starting") {
+  if (
+    thread.runtime !== null &&
+    ["preparing", "queued", "starting", "running", "waiting"].includes(thread.runtime.status)
+  ) {
     return "working";
   }
-  if (thread.session?.status === "error") {
-    return "failed";
+  if (thread.runtime?.status === "failed") {
+    return thread.runtime.lastErrorClass === "usage_limit" ? "limited" : "failed";
   }
   if (thread.backgroundLiveness === "working") {
     return "working";
@@ -172,6 +210,9 @@ export function resolveThreadListV2Status(
   }
   if (thread.backgroundLiveness === "monitoring") {
     return "monitoring";
+  }
+  if (thread.runtime?.status === "idle") {
+    return "waiting";
   }
   return "ready";
 }
@@ -209,7 +250,8 @@ export function getThreadListV2OrderedSection(input: {
   readonly queuedThreadKeys?: ReadonlySet<string>;
 }): EnvironmentThreadShell[] {
   const threads = input.threads.filter((thread) => {
-    if (thread.archivedAt !== null) return false;
+    if (thread.archivedAt !== null || thread.lineage.relationshipToParent === "subagent")
+      return false;
     if (
       (input.storageEnvironmentIds?.has(thread.environmentId) ?? true) &&
       effectiveStored(thread, { now: input.now }) &&
@@ -492,8 +534,11 @@ function resolveThreadListV2ItemTimeLabel(
 ): string {
   const { thread, variant, snoozed, stored } = item;
   if (showSnoozeWakeLabel) return "";
-  if (variant === "card" && resolveThreadListV2Status(thread) !== "ready") return "";
-  // Shelf rows label by the same stamp they sort by.
+  if (
+    variant === "card" &&
+    (resolveThreadListV2Status(thread) !== "ready" || threadHasUnseenCompletion(thread))
+  )
+    return "";
   const settledTimestamp =
     variant === "slim" && !snoozed
       ? stored
@@ -708,7 +753,8 @@ export function buildThreadListV2Items(input: {
   const stored: EnvironmentThreadShell[] = [];
   let nextSnoozeWakeAt: string | null = null;
   for (const thread of input.threads) {
-    // Callers pass live shells. The server stamps settledOverride for the tail.
+    if (thread.archivedAt !== null || thread.lineage.relationshipToParent === "subagent") continue;
+    // The server stamps settledOverride for the tail.
     if (input.environmentId !== null && thread.environmentId !== input.environmentId) continue;
     if (projectKeys !== null && !projectKeys.has(`${thread.environmentId}:${thread.projectId}`)) {
       continue;

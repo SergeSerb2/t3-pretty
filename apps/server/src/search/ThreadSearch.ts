@@ -25,7 +25,8 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import {
-  isPersistenceError,
+  PersistenceSqlError,
+  PersistenceDecodeError,
   toPersistenceDecodeError,
   toPersistenceSqlError,
   type ProjectionRepositoryError,
@@ -43,6 +44,8 @@ const MAX_CANDIDATES = 500;
 
 const BM25_K1 = 1.2;
 const BM25_B = 0.75;
+
+const isPersistenceError = Schema.is(Schema.Union([PersistenceSqlError, PersistenceDecodeError]));
 
 const decodeSearchThreadsResult = Schema.decodeUnknownEffect(OrchestrationSearchThreadsResult);
 
@@ -127,7 +130,7 @@ const makeThreadSearch = Effect.gen(function* () {
       FROM search_index_postings AS postings
       INNER JOIN search_index_docs AS docs
         ON docs.message_id = postings.message_id
-      INNER JOIN projection_threads AS threads
+      INNER JOIN orchestration_v2_projection_threads AS threads
         ON threads.thread_id = docs.thread_id
       INNER JOIN projection_projects AS projects
         ON projects.project_id = threads.project_id
@@ -165,7 +168,7 @@ const makeThreadSearch = Effect.gen(function* () {
       FROM search_index_postings AS postings
       INNER JOIN search_index_docs AS docs
         ON docs.message_id = postings.message_id
-      INNER JOIN projection_threads AS threads
+      INNER JOIN orchestration_v2_projection_threads AS threads
         ON threads.thread_id = docs.thread_id
       INNER JOIN projection_projects AS projects
         ON projects.project_id = threads.project_id
@@ -420,7 +423,7 @@ const makeThreadSearch = Effect.gen(function* () {
           ? []
           : yield* sql<{ readonly threadId: string; readonly threadUpdatedAt: string }>`
               SELECT thread_id AS "threadId", updated_at AS "threadUpdatedAt"
-              FROM projection_threads
+              FROM orchestration_v2_projection_threads
               WHERE ${sql.in(
                 "thread_id",
                 rankedThreads.map(([threadId]) => threadId),
@@ -460,9 +463,9 @@ const makeThreadSearch = Effect.gen(function* () {
               SELECT
                 threads.project_id AS "projectId",
                 threads.updated_at AS "threadUpdatedAt",
-                messages.text AS "text"
-              FROM projection_threads AS threads
-              INNER JOIN projection_thread_messages AS messages
+                json_extract(messages.payload_json, '$.text') AS "text"
+              FROM orchestration_v2_projection_threads AS threads
+              INNER JOIN orchestration_v2_projection_messages AS messages
                 ON messages.message_id = ${doc.messageId}
               WHERE threads.thread_id = ${doc.threadId}
               LIMIT 1

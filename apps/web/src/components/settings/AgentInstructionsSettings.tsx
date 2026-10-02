@@ -1,3 +1,4 @@
+import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 /**
  * Settings › Instructions — view and edit the markdown guidance files coding
  * agents load: global per-provider files (`~/.codex/AGENTS.md`,
@@ -273,8 +274,7 @@ function InstructionListSkeleton({ rows }: { rows: number }) {
 function InstructionFileIcon({ file }: { file: AgentInstructionFile }) {
   const driverOption = getDriverOption(file.driver);
   if (driverOption !== undefined) {
-    const DriverIcon = driverOption.icon;
-    return <DriverIcon className="size-4.5" />;
+    return <ProviderInstanceIcon displayName={driverOption.label} driverKind={driverOption.value} className="size-4.5" />;
   }
   if (file.fileName.startsWith("CLAUDE")) {
     return <ClaudeAI className="size-4.5" />;

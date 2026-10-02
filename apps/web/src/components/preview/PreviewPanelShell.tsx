@@ -1,3 +1,4 @@
+import type { PreviewPanelInlineSize } from "~/hooks/usePreviewPanelInlineSize";
 import {
   Fragment,
   type CSSProperties,
@@ -65,6 +66,7 @@ export function PreviewPanelShell(props: {
   widthStorageKey?: string;
   /** Overrides the initial width (px) before the user has resized the panel. */
   defaultWidth?: number;
+  inlineSize?: PreviewPanelInlineSize;
   children: ReactNode;
 }) {
   const useDragRegion = isElectron && props.mode !== "sheet" && props.mode !== "embedded";
@@ -76,13 +78,15 @@ export function PreviewPanelShell(props: {
   // Only inline non-maximized mode applies `width`/`maxWidth`; skip the
   // container measurement (and its re-renders) everywhere else.
   const maxWidth = useClampedMaxWidth(hostRef, isInline && !maximized);
-  const { width, isResizing, handlers } = useResizableWidth({
+  const localSize = useResizableWidth({
     storageKey: props.widthStorageKey ?? PREVIEW_PANEL_WIDTH_STORAGE_KEY,
     defaultWidth: props.defaultWidth ?? PREVIEW_PANEL_DEFAULT_WIDTH,
     minWidth: PREVIEW_PANEL_MIN_WIDTH,
     maxWidth,
     edge: "left",
   });
+  const { width, handlers } = props.inlineSize ?? localSize;
+  const isResizing = localSize.isResizing;
   // Derive suppression before the layout commits so the browser never creates
   // a width transition for resize or maximize changes.
   const [layoutTransition, setLayoutTransition] = useState(() => ({

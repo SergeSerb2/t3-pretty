@@ -1,3 +1,4 @@
+// @effect-diagnostics globalErrorInEffectFailure:off -- Tests exercise the caller-supplied error factory.
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";

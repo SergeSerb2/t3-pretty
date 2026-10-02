@@ -90,8 +90,6 @@ export class DesktopEnvironment extends Context.Service<
     readonly linuxWmClass: string;
     readonly linuxApplicationsDir: string;
     readonly appImagePath: Option.Option<string>;
-    readonly userDataDirName: string;
-    readonly legacyUserDataDirName: string;
     readonly defaultDesktopSettings: DesktopAppSettings.DesktopSettings;
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
@@ -197,19 +195,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  const userDataDirName = isInternalBuild
-    ? isDevelopment
-      ? "t3code-dev"
-      : "t3code"
-    : isDevelopment
-      ? "t3pretty-dev"
-      : "t3pretty";
-  // Keep the upstream names as migration inputs so the rebrand reuses existing local state.
-  const legacyUserDataDirName = isInternalBuild
-    ? isDevelopment
-      ? "T3 Code (Dev)"
-      : "T3 Code (Alpha)"
-    : userDataDirName;
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -271,8 +256,8 @@ const make = Effect.fn("desktop.environment.make")(function* (
     linuxDesktopEntryName: isInternalBuild
       ? resolveLinuxDesktopEntryName(isDevelopment)
       : resolveLinuxDesktopEntryName(isDevelopment).replace(
-          /^t3code(?:-dev)?\.desktop$/,
-          isDevelopment ? "t3pretty-dev.desktop" : "t3pretty.desktop",
+          /^com\.t3tools\.T3Code/,
+          "com.sergeserb.T3Pretty",
         ),
     linuxWmClass: isInternalBuild
       ? isDevelopment
@@ -283,8 +268,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
         : "t3pretty",
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
-    userDataDirName,
-    legacyUserDataDirName,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,

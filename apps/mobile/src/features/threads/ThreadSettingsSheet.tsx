@@ -63,6 +63,7 @@ import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { applyProviderOptionSelection } from "../../lib/providerOptions";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { rememberModelOptions } from "../../state/use-model-option-memory";
 import {
   NativeHeaderToolbar,
   NativeStackScreenOptions,
@@ -86,9 +87,9 @@ import {
 } from "../layout/native-mail-search-toolbar";
 import { ModelRow, ChoiceRow } from "./ThreadSettingsRows";
 import {
-  runtimeModeChoicesForProvider,
+  compatibleRuntimeModeForChoices,
+  runtimeModeChoicesForSupportedModes,
   selectableChoices,
-  selectedModelProviderDriver,
 } from "./thread-settings-options";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { buildThreadModelIdentity } from "./threadModelIdentity";
@@ -154,7 +155,7 @@ export function threadSettingsSummaryLabel(input: {
     providerDriver: null,
     optionDescriptors: input.optionDescriptors,
   });
-  const runtime = runtimeModeChoicesForProvider(input.providerDriver).find(
+  const runtime = runtimeModeChoicesForSupportedModes(undefined).find(
     (choice) =>
       choice.mode === displayRuntimeModeForProviderDriver(input.providerDriver, input.runtimeMode),
   );
@@ -173,6 +174,7 @@ const FAVORITES_PROVIDER_FILTER = "@favorites";
 /** Provider catalog header with its harness logo and disclosure state. */
 function ProviderHeader(props: {
   readonly driver: string | undefined;
+  readonly iconUrl: string | undefined;
   readonly label: string;
   readonly collapsible: boolean;
   readonly collapsed: boolean;
@@ -181,7 +183,7 @@ function ProviderHeader(props: {
 }) {
   const content = (
     <>
-      <ProviderIcon provider={props.driver} size={15} />
+      <ProviderIcon iconUrl={props.iconUrl} provider={props.driver} size={15} />
       <Text className="text-sm font-t3-medium text-foreground-muted">{props.label}</Text>
       {props.collapsible ? (
         <>
@@ -405,8 +407,8 @@ type ThreadSettingsSessionValue = {
   readonly favoritesLoaded: boolean;
   readonly toggleFavorite: (option: ModelOption) => void;
   readonly runtimeMode: RuntimeMode;
+  readonly runtimeModeChoices: ReturnType<typeof runtimeModeChoicesForSupportedModes>;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
-  readonly runtimeModeChoices: ReturnType<typeof runtimeModeChoicesForProvider>;
   readonly displayedDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly displayedModel: ModelOption | null;
   readonly providerExpansionOverrides: ReadonlySet<string>;
@@ -505,39 +507,27 @@ function ThreadSettingsSessionProvider(
         : props.optionDescriptors,
     [pendingModel, props.optionDescriptors],
   );
-  const visibleDescriptors = useMemo(
-    () => visibleSheetOptionDescriptors(displayedDescriptors),
-    [displayedDescriptors],
-  );
-  // Runtime modes follow the same staged model as the option rows above.
-  const runtimeModeChoices = useMemo(
+  const displayedModel = useMemo(
     () =>
-      runtimeModeChoicesForProvider(
-        pendingModel?.providerDriver ??
-          selectedModelProviderDriver({
-            providerGroups: props.providerGroups,
-            selectedModel: props.selectedModel,
-          }),
-      ),
-    [pendingModel?.providerDriver, props.providerGroups, props.selectedModel],
+      pendingModel ??
+      props.providerGroups.flatMap((group) => group.models).find((option) => isApplied(option)) ??
+      null,
+    [isApplied, pendingModel, props.providerGroups],
   );
+  const runtimeModeChoices = runtimeModeChoicesForSupportedModes(
+    displayedModel?.supportedRuntimeModes,
+  );
+  const compatibleRuntimeMode = compatibleRuntimeModeForChoices(
+    props.runtimeMode,
+    runtimeModeChoices,
+  );
+
+  const visibleDescriptors = useMemo(() => visibleSheetOptionDescriptors(displayedDescriptors), [displayedDescriptors]);
 
   const hasLegacyModels = useMemo(
     () => props.providerGroups.some((group) => group.models.some((model) => model.isLegacy)),
     [props.providerGroups],
   );
-  const displayedModel = useMemo(() => {
-    if (pendingModel) {
-      return pendingModel;
-    }
-    for (const group of props.providerGroups) {
-      const applied = group.models.find(isApplied);
-      if (applied) {
-        return applied;
-      }
-    }
-    return null;
-  }, [isApplied, pendingModel, props.providerGroups]);
   const commitPendingModel = useCallback(() => {
     if (pendingModel) {
       if (!canCommitPendingModel(pendingModel, props.providerGroups)) {
@@ -560,6 +550,7 @@ function ThreadSettingsSessionProvider(
         return;
       }
       if (pendingModel) {
+        rememberModelOptions(pendingModel.selection.instanceId, pendingModel.selection.model, next);
         setPendingModel({
           ...pendingModel,
           selection: { ...pendingModel.selection, options: next },
@@ -600,7 +591,7 @@ function ThreadSettingsSessionProvider(
       environmentId: props.environmentId,
       providerInstanceId: props.providerInstanceId,
       providerGroups: props.providerGroups,
-      runtimeMode: props.runtimeMode,
+      runtimeMode: compatibleRuntimeMode,
       onUpdateRuntimeMode: props.onUpdateRuntimeMode,
       runtimeModeChoices,
       displayedDescriptors: visibleDescriptors,
@@ -631,6 +622,7 @@ function ThreadSettingsSessionProvider(
       commitPendingModel,
       visibleDescriptors,
       displayedModel,
+      compatibleRuntimeMode,
       favoriteKeys,
       favoritesLoaded,
       providerExpansionOverrides,
@@ -646,7 +638,6 @@ function ThreadSettingsSessionProvider(
       providerFilter,
       props.onUpdateRuntimeMode,
       props.providerGroups,
-      props.runtimeMode,
       runtimeModeChoices,
       searchQuery,
       showLegacyToggle,
@@ -673,6 +664,7 @@ function useThreadSettingsSession() {
 type ThreadSettingsProviderCatalog = {
   readonly key: string;
   readonly driver: string | undefined;
+  readonly iconUrl: string | undefined;
   readonly label: string;
   readonly collapsible: boolean;
   readonly collapsed: boolean;
@@ -737,6 +729,7 @@ function ThreadSettingsProviderListHeader(props: {
       collapsible={props.provider.collapsible}
       collapsed={props.provider.collapsed}
       driver={props.provider.driver}
+      iconUrl={props.provider.iconUrl}
       label={props.provider.label}
       modelCount={props.provider.modelCount}
       onToggle={onToggle}
@@ -794,6 +787,7 @@ function useThreadSettingsCatalogItems(
         const provider: ThreadSettingsProviderCatalog = {
           key: group.providerKey,
           driver,
+          iconUrl: group.models[0]?.providerIconUrl,
           label: group.providerLabel,
           collapsible,
           collapsed,
@@ -1237,7 +1231,7 @@ function ThreadSettingsChoiceContent(props: {
       contentInsetAdjustmentBehavior="automatic"
       showsVerticalScrollIndicator={false}
     >
-      <View className="overflow-hidden rounded-2xl bg-card">
+      <View className="overflow-hidden rounded-2xl bg-grouped-card">
         {submenuContent.rows.map((row, index) => (
           <ChoiceRow
             key={row.id}
@@ -1659,6 +1653,17 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerNavigatorProps
         />
       </ThreadSettingsPickerStack.Navigator>
     </ThreadSettingsPickerPresentationContext.Provider>
+  );
+}
+
+/** Shared model catalog and option screens, bound to the caller's draft. */
+export function ThreadSettingsPickerScreen(
+  props: ThreadSettingsSessionProps & { readonly onClose: () => void },
+) {
+  return (
+    <ThreadSettingsSessionProvider {...props}>
+      <ThreadSettingsPickerNavigator onClose={props.onClose} onActivePageChange={() => {}} />
+    </ThreadSettingsSessionProvider>
   );
 }
 

@@ -29,6 +29,7 @@ function renderPendingActions(isRunning: boolean) {
         isComplete: true,
       },
       isRunning,
+      canInterrupt: isRunning,
       showPlanFollowUpPrompt: false,
       promptHasText: false,
       isSendBusy: false,
@@ -50,6 +51,7 @@ function renderStandaloneStop(isInterrupting = false) {
       compact: true,
       pendingAction: null,
       isRunning: true,
+      canInterrupt: true,
       showPlanFollowUpPrompt: false,
       promptHasText: false,
       isSendBusy: false,
@@ -66,34 +68,13 @@ function renderStandaloneStop(isInterrupting = false) {
   );
 }
 
-function renderRunningActions(withQueueMenu: boolean, hasSendableContent: boolean) {
-  return renderToStaticMarkup(
-    createElement(ComposerPrimaryActions, {
-      compact: true,
-      pendingAction: null,
-      isRunning: true,
-      showPlanFollowUpPrompt: false,
-      promptHasText: hasSendableContent,
-      isSendBusy: false,
-      sendDisabledReason: null,
-      isConnecting: false,
-      isEnvironmentUnavailable: false,
-      isPreparingWorktree: false,
-      hasSendableContent,
-      ...(withQueueMenu ? { onQueueSend: () => {} } : {}),
-      onPreviousPendingQuestion: () => {},
-      onInterrupt: () => {},
-      onImplementPlanInNewThread: () => {},
-    }),
-  );
-}
-
 function renderSendButton(sendDisabledReason: string | null = null) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
       pendingAction: null,
       isRunning: false,
+      canInterrupt: false,
       showPlanFollowUpPrompt: false,
       promptHasText: true,
       isSendBusy: false,
@@ -163,30 +144,5 @@ describe("ComposerPrimaryActions", () => {
 
     expect(markup).not.toContain("stage-nightly");
     expect(markup).toContain("bg-message-action text-message-action-foreground");
-  });
-
-  it("renders send-now alongside stop while running", () => {
-    const markup = renderRunningActions(false, true);
-
-    expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).toContain('aria-label="Send now"');
-    expect(markup).toContain('type="submit"');
-    expect(markup).toContain("size-9 sm:size-8");
-    expect(markup).not.toContain('aria-label="Send options"');
-  });
-
-  it("renders the queue menu next to send-now while running when queueing is available", () => {
-    const markup = renderRunningActions(true, true);
-
-    expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).toContain('aria-label="Send now"');
-    expect(markup).toContain('aria-label="Send options"');
-  });
-
-  it("keeps stop as the only action while running with an empty composer", () => {
-    const markup = renderRunningActions(false, false);
-
-    expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).not.toContain('aria-label="Send now"');
   });
 });

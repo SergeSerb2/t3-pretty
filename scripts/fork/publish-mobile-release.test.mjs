@@ -288,18 +288,28 @@ function makeFingerprintIpa({ fingerprint, runtimeVersion, binaryPlist } = {}) {
   return { root, ipa };
 }
 
-function pathWithoutPlutil() {
-  const current = process.env.PATH || "";
-  return current
-    .split(NodePath.delimiter)
-    .filter((directory) => {
-      if (!directory) return false;
-      return (
-        !NodeFS.existsSync(NodePath.join(directory, "plutil")) &&
-        !NodeFS.existsSync(NodePath.join(directory, "plutil.exe"))
-      );
-    })
-    .join(NodePath.delimiter);
+function pathWithoutPlutil(root) {
+  // Removing directories containing plutil also hides required tools in /usr/bin
+  // on macOS. Give the fixture its own PATH with only the tools it actually needs.
+  const bin = NodePath.join(root, "without-plutil-bin");
+  NodeFS.mkdirSync(bin);
+  const directories = (process.env.PATH || "").split(NodePath.delimiter).filter(Boolean);
+  for (const command of ["bash", "unzip", "awk", "tr"]) {
+    const executable = directories
+      .map((directory) => NodePath.resolve(directory, command))
+      .find((candidate) => {
+        try {
+          NodeFS.accessSync(candidate, NodeFS.constants.X_OK);
+          return NodeFS.statSync(candidate).isFile();
+        } catch {
+          return false;
+        }
+      });
+    assert.ok(executable, `${command} is required by the IPA fingerprint fixture`);
+    NodeFS.symlinkSync(executable, NodePath.join(bin, command));
+  }
+  NodeFS.symlinkSync(process.execPath, NodePath.join(bin, "node"));
+  return bin;
 }
 
 function verifyIpaFingerprint(ipa, expected, env = {}) {
@@ -1606,7 +1616,12 @@ describe("iOS embedded runtime fingerprint", () => {
     const xml = makeFingerprintIpa({ runtimeVersion: embedded });
     const binary = makeFingerprintIpa({ binaryPlist: true });
     try {
-      const env = { PATH: pathWithoutPlutil() };
+      const env = { PATH: pathWithoutPlutil(xml.root) };
+      const plutil = NodeChildProcess.spawnSync("bash", ["-c", "command -v plutil"], {
+        encoding: "utf8",
+        env: { ...process.env, ...env },
+      });
+      assert.equal(plutil.status, 1, `${plutil.stdout}\n${plutil.stderr}`);
       const xmlMatch = verifyIpaFingerprint(xml.ipa, embedded, env);
       assert.equal(xmlMatch.status, 0, `${xmlMatch.stdout}\n${xmlMatch.stderr}`);
       assert.equal(xmlMatch.stdout.trim(), embedded);

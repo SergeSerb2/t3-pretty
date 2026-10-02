@@ -7,7 +7,7 @@ import { runMigrations } from "../Migrations.ts";
 import { cleanupSupersededToolUpdates } from "./047_DeleteSupersededToolUpdatedActivities.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
-const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
 layer("047_DeleteSupersededToolUpdatedActivities", (it) => {
   it.effect("deletes only superseded tool.updated rows with their events and receipts", () =>

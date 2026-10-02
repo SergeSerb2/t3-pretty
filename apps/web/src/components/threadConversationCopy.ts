@@ -1,5 +1,5 @@
 import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/threads";
-import type { OrchestrationMessage, ScopedThreadRef } from "@t3tools/contracts";
+import type { OrchestrationV2ProjectedTurnItem, ScopedThreadRef } from "@t3tools/contracts";
 import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
@@ -11,7 +11,7 @@ import { environmentThreads } from "../state/threads";
 
 export function formatThreadConversation(
   title: string,
-  messages: ReadonlyArray<Pick<OrchestrationMessage, "role" | "text">>,
+  messages: ReadonlyArray<{ readonly role: string; readonly text: string }>,
 ): string {
   const body: string[] = [];
   const trimmedTitle = title.trim();
@@ -29,9 +29,17 @@ export function formatThreadConversation(
   return body.join("\n\n");
 }
 
+function messagesFromTurnItems(items: ReadonlyArray<OrchestrationV2ProjectedTurnItem>) {
+  return items.flatMap(({ item }) =>
+    item.type === "user_message" || item.type === "assistant_message"
+      ? [{ role: item.type === "user_message" ? "user" : "assistant", text: item.text }]
+      : [],
+  );
+}
+
 function conversationFromMessages(
   title: string,
-  messages: ReadonlyArray<Pick<OrchestrationMessage, "role" | "text">>,
+  messages: ReadonlyArray<{ readonly role: string; readonly text: string }>,
 ): string | null {
   const text = formatThreadConversation(title, messages);
   return text.length > 0 ? text : null;
@@ -52,7 +60,9 @@ export function loadThreadConversationText(
 ): Promise<string | null> {
   const loaded = readThreadDetail(threadRef);
   if (loaded !== null) {
-    return Promise.resolve(conversationFromMessages(title, loaded.messages));
+    return Promise.resolve(
+      conversationFromMessages(title, messagesFromTurnItems(loaded.projection.visibleTurnItems)),
+    );
   }
 
   return new Promise((resolve, reject) => {
@@ -99,7 +109,9 @@ export function loadThreadConversationText(
           // unloaded thread never resolves as an empty conversation.
           return;
         }
-        finish(conversationFromMessages(title, state.data.value.messages));
+        finish(
+          conversationFromMessages(title, messagesFromTurnItems(state.data.value.visibleTurnItems)),
+        );
       },
       { immediate: true },
     );

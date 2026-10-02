@@ -143,6 +143,15 @@ describe("thread outbox", () => {
       decodeQueuedThreadMessage(JSON.parse(JSON.stringify(encodeQueuedThreadMessage(message)))),
     ).toEqual(message);
   });
+  it("retains queue mode when a queued provider switch reloads from storage", () => {
+    const message: QueuedThreadMessage = {
+      ...queuedMessage({ messageId: "queued-switch", createdAt: "2026-09-17T09:00:00.000Z" }),
+      dispatchMode: "queue",
+    };
+    expect(
+      decodeQueuedThreadMessage(JSON.parse(JSON.stringify(encodeQueuedThreadMessage(message)))),
+    ).toEqual(message);
+  });
   it.each(["read", "json", "schema"] as const)(
     "recovers usable messages without permitting cleanup after a record %s failure",
     async (failure) => {
@@ -467,13 +476,13 @@ describe("thread outbox", () => {
     });
     const queued = {
       ...queuedMessage({ messageId: "message-2", createdAt: "2026-06-08T10:00:02.000Z" }),
-      delivery: "queue",
+      dispatchMode: "queue",
     } satisfies QueuedThreadMessage;
 
     expect(decodeQueuedThreadMessage(encodeQueuedThreadMessage(queued))).toEqual(queued);
     // Omitted stays omitted: the server steers the running turn by default.
     expect(decodeQueuedThreadMessage(encodeQueuedThreadMessage(steering))).not.toHaveProperty(
-      "delivery",
+      "dispatchMode",
     );
 
     const registry = AtomRegistry.make();
@@ -1594,4 +1603,10 @@ describe("thread outbox", () => {
       }),
     ).toBe("restore");
   });
+});
+
+it("migrates persisted fork queue and steering choices to V2 dispatch", () => {
+  const message = queuedMessage({ messageId: "legacy", createdAt: "2026-06-08T10:00:01.000Z" });
+  expect(decodeQueuedThreadMessage({ ...message, schemaVersion: 3, delivery: "queue" })).toEqual({ ...message, dispatchMode: "queue" });
+  expect(decodeQueuedThreadMessage({ ...message, schemaVersion: 3, delivery: "steer" })).toEqual({ ...message, dispatchMode: "auto" });
 });

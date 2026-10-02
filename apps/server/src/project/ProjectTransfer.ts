@@ -5,16 +5,16 @@ import * as NodePath from "node:path";
 import {
   CommandId,
   EventId,
-  MessageId,
   PROJECT_TRANSFER_MAX_ARCHIVE_BYTES,
   PROJECT_TRANSFER_UPLOAD_URL_TTL_MS,
   ProjectId,
   ProjectTransferError,
   ProjectTransferResult,
   ThreadId,
-  TurnId,
-  type OrchestrationProject,
-  type OrchestrationThread,
+  type Project,
+  OrchestrationV2ThreadProjectionJson,
+  OrchestrationV2DomainEvent,
+  type OrchestrationV2ThreadProjection,
   type ProjectTransferInspectInput,
   type ProjectTransferManifest,
   type ProjectTransferMode,
@@ -41,11 +41,15 @@ import {
   timingSafeEqualBase64Url,
 } from "../auth/utils.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import { resolveThreadWorkspaceCwd } from "../checkpointing/Utils.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { EventSinkV2 } from "../orchestration-v2/EventSink.ts";
+import { ProjectService } from "./ProjectService.ts";
+import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
+import {
+  remapTransferredProjections,
+  eventsForTransferredProjection,
+} from "./ProjectTransferV2.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
 import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
@@ -113,21 +117,27 @@ function transferMode(mode: ProjectTransferMode | undefined): ProjectTransferMod
   return mode ?? "copy";
 }
 
-function stripThreadForTransfer(thread: OrchestrationThread): OrchestrationThread {
+function stripThreadForTransfer(
+  projection: OrchestrationV2ThreadProjection,
+): OrchestrationV2ThreadProjectionJson {
   return {
-    ...thread,
-    messages: thread.messages.map((message) => ({
+    ...projection,
+    messages: projection.messages.map((message) => ({
       ...message,
       attachments: [],
       streaming: false,
     })),
+    turnItems: projection.turnItems.map((item) => ({
+      ...item,
+      ...("attachments" in item ? { attachments: [] } : {}),
+    })),
     checkpoints: [],
-    session: null,
+    checkpointScopes: [],
   };
 }
 
-function countAttachments(thread: OrchestrationThread): number {
-  return thread.messages.reduce((count, message) => count + (message.attachments?.length ?? 0), 0);
+function countAttachments(projection: OrchestrationV2ThreadProjection): number {
+  return projection.messages.reduce((count, message) => count + message.attachments.length, 0);
 }
 
 const runProcess = (input: ProcessRunner.ProcessRunInput) =>
@@ -148,16 +158,22 @@ function decodeUploadClaims(encoded: string): ProjectTransferUploadClaims | null
   }
 }
 
-function isBusy(thread: OrchestrationThread): boolean {
+function isBusy(projection: OrchestrationV2ThreadProjection): boolean {
   return (
-    thread.latestTurn?.state === "running" ||
-    thread.session?.status === "starting" ||
-    thread.session?.status === "running"
+    projection.runs.some((run) =>
+      ["queued", "starting", "running", "waiting", "preparing"].includes(run.status),
+    ) ||
+    projection.providerSessions.some((session) =>
+      ["starting", "running", "waiting"].includes(session.status),
+    )
   );
 }
 
 export function manifestThreadIds(manifest: ProjectTransferManifest): ReadonlyArray<ThreadId> {
-  return [manifest.thread.id, ...(manifest.additionalThreads ?? []).map((thread) => thread.id)];
+  return [
+    manifest.thread.thread.id,
+    ...(manifest.additionalThreads ?? []).map((projection) => projection.thread.id),
+  ];
 }
 
 export function sameThreadIdSet(
@@ -175,14 +191,13 @@ export function sameThreadIdSet(
 
 export function requireMoveSiblingThread(input: {
   readonly title: string;
-  readonly detail: OrchestrationThread | undefined;
+  readonly detail: OrchestrationV2ThreadProjection | undefined;
   readonly shell:
     | {
-        readonly hasPendingApprovals?: boolean;
-        readonly hasPendingUserInput?: boolean;
+        readonly pendingRuntimeRequest: { readonly kind: string } | null;
       }
     | undefined;
-}): OrchestrationThread | ProjectTransferError {
+}): OrchestrationV2ThreadProjection | ProjectTransferError {
   if (input.detail === undefined) {
     return transferError(
       "workspace_not_found",
@@ -192,19 +207,19 @@ export function requireMoveSiblingThread(input: {
   if (isBusy(input.detail)) {
     return transferError(
       "thread_busy",
-      `Wait for "${input.detail.title}" to finish before moving this project.`,
+      `Wait for "${input.detail.thread.title}" to finish before moving this project.`,
     );
   }
   if (input.shell === undefined) {
     return transferError(
       "workspace_not_found",
-      `Could not load "${input.detail.title}" to move this project. Try again once it is fully available.`,
+      `Could not load "${input.detail.thread.title}" to move this project. Try again once it is fully available.`,
     );
   }
-  if (input.shell.hasPendingApprovals || input.shell.hasPendingUserInput) {
+  if (input.shell.pendingRuntimeRequest !== null) {
     return transferError(
       "thread_busy",
-      `Resolve the pending approval or question on "${input.detail.title}" before moving this project.`,
+      `Resolve the pending approval or question on "${input.detail.thread.title}" before moving this project.`,
     );
   }
   return input.detail;
@@ -213,8 +228,11 @@ export function requireMoveSiblingThread(input: {
 const inspectTransferSource = Effect.fn("ProjectTransfer.inspectSource")(function* (
   input: ProjectTransferInspectInput,
 ) {
-  const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-  const thread = Option.getOrUndefined(yield* snapshots.getThreadDetailById(input.threadId));
+  const snapshots = yield* ProjectionStoreV2;
+  const projects = yield* ProjectService;
+  const thread = Option.getOrUndefined(
+    yield* snapshots.getThreadProjection(input.threadId).pipe(Effect.option),
+  );
   if (!thread) {
     return yield* transferError("thread_not_found", "The source thread no longer exists.");
   }
@@ -224,20 +242,20 @@ const inspectTransferSource = Effect.fn("ProjectTransfer.inspectSource")(functio
       "Wait for the current turn to finish before transferring this thread.",
     );
   }
-  const threadShell = Option.getOrUndefined(yield* snapshots.getThreadShellById(input.threadId));
-  if (threadShell?.hasPendingApprovals || threadShell?.hasPendingUserInput) {
+  const threadShell = Option.getOrUndefined(
+    yield* snapshots.getThreadShell(input.threadId).pipe(Effect.map(Option.fromNullishOr)),
+  );
+  if (threadShell?.pendingRuntimeRequest != null) {
     return yield* transferError(
       "thread_busy",
       "Resolve the pending approval or question before transferring this thread.",
     );
   }
-  const projectShell = Option.getOrUndefined(
-    yield* snapshots.getProjectShellById(thread.projectId),
-  );
+  const projectShell = Option.getOrUndefined(yield* projects.getById(thread.thread.projectId));
   if (!projectShell) {
     return yield* transferError("thread_not_found", "The source project no longer exists.");
   }
-  const workspaceRoot = resolveThreadWorkspaceCwd({ thread, projects: [projectShell] });
+  const workspaceRoot = thread.thread.worktreePath ?? projectShell.workspaceRoot;
   if (!workspaceRoot) {
     return yield* transferError(
       "workspace_not_found",
@@ -258,31 +276,33 @@ const inspectTransferSource = Effect.fn("ProjectTransfer.inspectSource")(functio
   const includesGitMetadata = Option.isSome(gitStat) && gitStat.value.type === "Directory";
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const sourceEnvironmentId = yield* environment.getEnvironmentId;
-  const project: OrchestrationProject = {
-    ...projectShell,
-    deletedAt: null,
-  };
+  const project: Project = projectShell;
   const mode = transferMode(input.mode);
-  const additionalThreads: OrchestrationThread[] = [];
+  const additionalThreads: OrchestrationV2ThreadProjectionJson[] = [];
   let skippedAttachmentCount = countAttachments(thread);
   if (mode === "move") {
-    const snapshot = yield* snapshots
-      .getCommandReadModel()
-      .pipe(
-        Effect.mapError(() =>
-          transferError("workspace_not_found", "Could not list the other threads in this project."),
-        ),
-      );
-    for (const sibling of snapshot.threads) {
+    const [activeSnapshot, archiveSnapshot] = yield* Effect.all([
+      snapshots.getShellSnapshot({ location: "active" }),
+      snapshots.getShellSnapshot({ location: "archive" }),
+    ]).pipe(
+      Effect.mapError(() =>
+        transferError("workspace_not_found", "Could not list other project threads."),
+      ),
+    );
+    for (const sibling of [...activeSnapshot.threads, ...archiveSnapshot.archivedThreads]) {
       if (
-        sibling.projectId !== thread.projectId ||
-        sibling.id === thread.id ||
+        sibling.projectId !== thread.thread.projectId ||
+        sibling.id === thread.thread.id ||
         sibling.deletedAt !== null
       ) {
         continue;
       }
-      const siblingDetail = Option.getOrUndefined(yield* snapshots.getThreadDetailById(sibling.id));
-      const siblingShell = Option.getOrUndefined(yield* snapshots.getThreadShellById(sibling.id));
+      const siblingDetail = Option.getOrUndefined(
+        yield* snapshots.getThreadProjection(sibling.id).pipe(Effect.option),
+      );
+      const siblingShell = Option.getOrUndefined(
+        yield* snapshots.getThreadShell(sibling.id).pipe(Effect.map(Option.fromNullishOr)),
+      );
       const resolved = requireMoveSiblingThread({
         title: sibling.title,
         detail: siblingDetail,
@@ -296,7 +316,7 @@ const inspectTransferSource = Effect.fn("ProjectTransfer.inspectSource")(functio
     }
   }
   const manifest: ProjectTransferManifest = {
-    version: additionalThreads.length > 0 ? 2 : 1,
+    version: 3,
     sourceEnvironmentId,
     project,
     thread: stripThreadForTransfer(thread),
@@ -424,86 +444,8 @@ export const validateProjectTransferUploadToken = Effect.fn("ProjectTransfer.val
   },
 );
 
-function remapTransferredThread(
-  manifest: ProjectTransferManifest,
-  projectId: ProjectId,
-  threadId: ThreadId,
-  importedAt: string,
-  modelSelection: OrchestrationThread["modelSelection"],
-): OrchestrationThread {
-  const turnIds = new Map<string, TurnId>();
-  const remapTurnId = (turnId: TurnId | null): TurnId | null => {
-    if (turnId === null) return null;
-    const existing = turnIds.get(turnId);
-    if (existing) return existing;
-    const next = TurnId.make(NodeCrypto.randomUUID());
-    turnIds.set(turnId, next);
-    return next;
-  };
-  const messages = manifest.thread.messages.map((message) => ({
-    ...message,
-    id: MessageId.make(NodeCrypto.randomUUID()),
-    turnId: remapTurnId(message.turnId),
-    attachments: [],
-    streaming: false,
-  }));
-  const activities = manifest.thread.activities.map((activity) => ({
-    ...activity,
-    id: EventId.make(NodeCrypto.randomUUID()),
-    turnId: remapTurnId(activity.turnId),
-  }));
-  activities.push({
-    id: EventId.make(NodeCrypto.randomUUID()),
-    tone: "info",
-    kind: "thread.transferred",
-    summary: "Transferred from another connection",
-    payload: {
-      sourceEnvironmentId: manifest.sourceEnvironmentId,
-      sourceThreadId: manifest.thread.id,
-      includesGitMetadata: manifest.includesGitMetadata,
-      skippedAttachmentCount: manifest.skippedAttachmentCount,
-    },
-    turnId: null,
-    createdAt: importedAt,
-  });
-
-  return {
-    ...manifest.thread,
-    id: threadId,
-    projectId,
-    modelSelection,
-    branch: manifest.includesGitMetadata ? manifest.thread.branch : null,
-    branchEventId: undefined,
-    worktreePath: null,
-    linkedPullRequest: null,
-    latestTurn: null,
-    updatedAt: importedAt,
-    archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
-    unsettledAt: null,
-    snoozedUntil: null,
-    snoozedAt: null,
-    storedAt: null,
-    pinnedAt: null,
-    pinOrderKey: null,
-    titleRegeneration: null,
-    deletedAt: null,
-    messages,
-    proposedPlans: manifest.thread.proposedPlans.map((plan) => ({
-      ...plan,
-      id: `transfer-${NodeCrypto.randomUUID()}`,
-      turnId: remapTurnId(plan.turnId),
-      implementationThreadId: null,
-    })),
-    activities,
-    checkpoints: [],
-    session: null,
-  };
-}
-
 const destinationModelSelection = Effect.fn("ProjectTransfer.destinationModel")(function* (
-  source: OrchestrationThread["modelSelection"],
+  source: OrchestrationV2ThreadProjectionJson["thread"]["modelSelection"],
 ) {
   const providers = yield* ProviderRegistry.ProviderRegistry;
   const snapshots = yield* providers.getProviders;
@@ -540,7 +482,8 @@ export const receiveProjectTransfer = Effect.fn("ProjectTransfer.receive")(funct
   | FileSystem.FileSystem
   | Path.Path
   | ProviderRegistry.ProviderRegistry
-  | OrchestrationEngine.OrchestrationEngineService
+  | EventSinkV2
+  | ProjectService
 > {
   const pending = pendingTransfers.get(claims.transferId);
   pendingTransfers.delete(claims.transferId);
@@ -550,12 +493,14 @@ export const receiveProjectTransfer = Effect.fn("ProjectTransfer.receive")(funct
 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const engine = yield* OrchestrationEngine.OrchestrationEngineService;
+  const projects = yield* ProjectService;
+  const eventSink = yield* EventSinkV2;
   const archivePath = path.join(pending.stagingRoot, TRANSFER_ARCHIVE_NAME);
   const extractedPath = path.join(pending.stagingRoot, "workspace");
   let receivedBytes = 0;
   let destinationCreated = false;
   let importSucceeded = false;
+  let createdProjectId: ProjectId | null = null;
 
   return yield* Effect.gen(function* () {
     yield* Stream.run(
@@ -605,63 +550,61 @@ export const receiveProjectTransfer = Effect.fn("ProjectTransfer.receive")(funct
         const projectId = ProjectId.make(NodeCrypto.randomUUID());
         const threadId = ThreadId.make(NodeCrypto.randomUUID());
         const importedAt = DateTime.formatIso(yield* DateTime.now);
-        const modelSelection = yield* destinationModelSelection(
-          pending.manifest.thread.modelSelection,
-        );
         const defaultModelSelection = pending.manifest.project.defaultModelSelection
           ? yield* destinationModelSelection(pending.manifest.project.defaultModelSelection)
           : null;
-        const project: OrchestrationProject = {
-          ...pending.manifest.project,
-          id: projectId,
-          workspaceRoot: pending.destinationPath,
-          defaultModelSelection,
-          repositoryIdentity: pending.manifest.includesGitMetadata
-            ? (pending.manifest.project.repositoryIdentity ?? null)
-            : null,
-          faviconPath: null,
-          updatedAt: importedAt,
-          deletedAt: null,
-        };
-        const thread = remapTransferredThread(
-          pending.manifest,
-          projectId,
-          threadId,
-          importedAt,
-          modelSelection,
-        );
-        const additionalThreads = yield* Effect.forEach(
-          pending.manifest.additionalThreads ?? [],
-          (sourceThread) =>
-            Effect.gen(function* () {
-              const destinationThreadId = ThreadId.make(NodeCrypto.randomUUID());
-              const destinationModel = yield* destinationModelSelection(
-                sourceThread.modelSelection,
-              );
-              return {
-                thread: remapTransferredThread(
-                  { ...pending.manifest, thread: sourceThread },
-                  projectId,
-                  destinationThreadId,
-                  importedAt,
-                  destinationModel,
-                ),
-                sourceThreadId: sourceThread.id,
-              };
-            }),
-        );
-        yield* engine.dispatch({
-          type: "project.transfer.import",
+        yield* projects.create({
           commandId: CommandId.make(NodeCrypto.randomUUID()),
-          project,
-          thread,
-          ...(additionalThreads.length > 0 ? { additionalThreads } : {}),
-          sourceEnvironmentId: pending.manifest.sourceEnvironmentId,
-          sourceThreadId: pending.manifest.thread.id,
-          includesGitMetadata: pending.manifest.includesGitMetadata,
-          skippedAttachmentCount: pending.manifest.skippedAttachmentCount,
-          importedAt,
+          projectId,
+          title: pending.manifest.project.title,
+          workspaceRoot: pending.destinationPath,
+          scripts: pending.manifest.project.scripts,
         });
+        createdProjectId = projectId;
+        const imported = remapTransferredProjections({
+          projections: [pending.manifest.thread, ...(pending.manifest.additionalThreads ?? [])],
+          projectId,
+          firstThreadId: threadId,
+          importedAt,
+          workspaceRoot: pending.destinationPath,
+          includesGitMetadata: pending.manifest.includesGitMetadata,
+        });
+        yield* projects.update({
+          commandId: CommandId.make(NodeCrypto.randomUUID()),
+          projectId,
+          defaultModelSelection,
+          defaultThreadEnvMode: pending.manifest.project.defaultThreadEnvMode,
+          autoPull: pending.manifest.project.autoPull,
+          projectIcon: pending.manifest.project.projectIcon,
+        });
+        const projections = yield* Effect.forEach(imported, (json) =>
+          Effect.gen(function* () {
+            const modelSelection = yield* destinationModelSelection(json.thread.modelSelection);
+            return {
+              ...json,
+              thread: {
+                ...json.thread,
+                modelSelection,
+                providerInstanceId: modelSelection.instanceId,
+              },
+            };
+          }),
+        );
+        yield* eventSink
+          .write({
+            events: projections.flatMap(eventsForTransferredProjection),
+          })
+          .pipe(
+            Effect.onError(() =>
+              projects
+                .delete({
+                  commandId: CommandId.make(NodeCrypto.randomUUID()),
+                  projectId,
+                  force: true,
+                })
+                .pipe(Effect.orElseSucceed(() => undefined)),
+            ),
+          );
         importSucceeded = true;
 
         return {
@@ -683,6 +626,17 @@ export const receiveProjectTransfer = Effect.fn("ProjectTransfer.receive")(funct
     Effect.ensuring(
       Effect.all(
         [
+          Effect.suspend(() =>
+            createdProjectId !== null && !importSucceeded
+              ? projects
+                  .delete({
+                    commandId: CommandId.make(NodeCrypto.randomUUID()),
+                    projectId: createdProjectId,
+                    force: true,
+                  })
+                  .pipe(Effect.orElseSucceed(() => undefined))
+              : Effect.void,
+          ),
           fileSystem.remove(pending.stagingRoot, { recursive: true, force: true }),
           Effect.suspend(() =>
             destinationCreated && !importSucceeded
@@ -700,9 +654,8 @@ const removeTransferredSource = Effect.fn("ProjectTransfer.removeSource")(functi
   readonly manifest: ProjectTransferManifest;
   readonly workspaceRoot: string;
 }) {
-  const engine = yield* OrchestrationEngine.OrchestrationEngineService;
-  yield* engine.dispatch({
-    type: "project.delete",
+  const projects = yield* ProjectService;
+  yield* projects.delete({
     commandId: CommandId.make(NodeCrypto.randomUUID()),
     projectId: inspected.manifest.project.id,
     force: true,
@@ -712,8 +665,8 @@ const removeTransferredSource = Effect.fn("ProjectTransfer.removeSource")(functi
     const path = yield* Path.Path;
     const projectsRoot = path.join(config.baseDir, "projects");
     if (!isManagedProjectWorkspace(inspected.workspaceRoot, projectsRoot)) return;
-    const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-    const stillActive = yield* snapshots.getActiveProjectByWorkspaceRoot(inspected.workspaceRoot);
+    const projects = yield* ProjectService;
+    const stillActive = yield* projects.getByWorkspaceRoot(inspected.workspaceRoot);
     if (Option.isSome(stillActive) && stillActive.value.id !== inspected.manifest.project.id) {
       return;
     }
@@ -762,7 +715,9 @@ export const sendProjectTransfer = Effect.fn("ProjectTransfer.send")(function* (
           : transferError("workspace_not_found", "Could not read the source workspace."),
       ),
     );
-    if (inspected.manifest.thread.updatedAt !== input.expectedUpdatedAt) {
+    if (
+      DateTime.formatIso(inspected.manifest.thread.thread.updatedAt) !== input.expectedUpdatedAt
+    ) {
       return yield* transferError(
         "thread_changed",
         "The thread changed after the transfer started. Review it and try again.",

@@ -1,4 +1,4 @@
-import { ApprovalRequestId, EnvironmentId } from "@t3tools/contracts";
+import { RuntimeRequestId, EnvironmentId } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -22,7 +22,7 @@ describe("QuestionAnswerHistory", () => {
         <QuestionAnswerHistory
           environmentId={EnvironmentId.make("environment-local")}
           answer={{
-            requestId: ApprovalRequestId.make("question-request"),
+            requestId: RuntimeRequestId.make("question-request"),
             answers,
             questionTextById: { file: "Provide a spec", image: "Provide a screenshot" },
             attachmentsByQuestionId: {

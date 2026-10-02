@@ -137,7 +137,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
   }>({ threadId: null, completedAt: null });
   useEffect(() => {
     const threadId = selectedThread?.id ?? null;
-    const completedAt = selectedThread?.latestTurn?.completedAt ?? null;
+    const completedAt = selectedThread?.latestRun?.completedAt ?? null;
     const previous = turnCompleteRefreshRef.current;
     turnCompleteRefreshRef.current = { threadId, completedAt };
     if (threadId === null) {
@@ -154,7 +154,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
       return;
     }
     void refreshSelectedThreadGitStatus({ quiet: true });
-  }, [refreshSelectedThreadGitStatus, selectedThread?.id, selectedThread?.latestTurn?.completedAt]);
+  }, [refreshSelectedThreadGitStatus, selectedThread?.id, selectedThread?.latestRun?.completedAt]);
 
   const runSelectedThreadGitMutation = useCallback(
     async <T, E>(
@@ -341,7 +341,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
           // must be known: an unloaded current path is not a move.
           if (
             shouldStopSessionOnWorktreeMove({
-              sessionStatus: thread.session?.status,
+              sessionStatus: thread.runtime?.status,
               currentWorktreePath: selectedThreadWorktreePath,
               nextWorktreePath: result.value.worktree.path,
             })

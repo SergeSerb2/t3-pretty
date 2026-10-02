@@ -95,6 +95,8 @@ export type ThreadGitMenuProps = {
   readonly gitOperationLabel: string | null;
   readonly onOpenFilesInspector?: () => void;
   readonly onOpenGitInspector?: () => void;
+  /** Present only on a thread whose work can be merged into the one it came from. */
+  readonly onMergeBack?: () => void;
   readonly onPull: () => Promise<void>;
   readonly onRunAction: (input: GitActionRequestInput) => Promise<GitRunStackedActionResult | null>;
 };
@@ -403,6 +405,65 @@ export function useThreadDetailHeaderActionItems(
         type: "button",
         variant: "plain",
       },
+      git: {
+        accessibilityLabel: "Git actions",
+        icon: { name: "point.topleft.down.curvedto.point.bottomright.up", type: "sfSymbol" },
+        identifier: "thread-right-git",
+        label: "Git",
+        menu: {
+          items: [
+            {
+              description: compactMenuStatus(props.gitStatus),
+              disabled: true,
+              icon: {
+                name: "point.topleft.down.curvedto.point.bottomright.up",
+                type: "sfSymbol",
+              },
+              label: compactMenuBranchLabel(model.currentBranchLabel),
+              onPress: (): void => {},
+              type: "action",
+            },
+            {
+              description: model.quickActionHint ?? undefined,
+              disabled: model.quickAction.disabled,
+              icon: { name: model.quickActionIcon, type: "sfSymbol" },
+              label: model.quickAction.label,
+              onPress: (): void => void model.runQuickAction(),
+              type: "action",
+            },
+            {
+              description: "Turn diffs and worktree changes",
+              disabled: !model.isRepo,
+              icon: { name: "text.bubble", type: "sfSymbol" },
+              label: "Review changes",
+              onPress: model.openReview,
+              type: "action",
+            },
+            ...(props.onMergeBack
+              ? [
+                  {
+                    description: "Bring this thread's latest turn into its source",
+                    icon: { name: "arrow.triangle.merge", type: "sfSymbol" as const },
+                    label: "Merge back to source",
+                    onPress: props.onMergeBack,
+                    type: "action" as const,
+                  },
+                ]
+              : []),
+            {
+              description: "Commit, files, branches",
+              icon: { name: "ellipsis", type: "sfSymbol" },
+              label: "More",
+              onPress: model.openGitInspector,
+              type: "action",
+            },
+          ],
+          title: "Git",
+        },
+        sharesBackground: true,
+        type: "button",
+        variant: "plain",
+      },
       pr: {
         accessibilityLabel: pr.accessibilityLabel,
         disabled: pr.disabled,
@@ -432,23 +493,19 @@ export function useThreadDetailHeaderActionItems(
       model.runQuickAction,
       openPr,
       pr,
-      props.canOpenFiles,
       props.canSettleThread,
       props.canSnoozeThread,
       props.onSettle,
       props.onSnooze,
       props.onStore,
-      props.onUnsnooze,
-      props.onUnsettle,
       props.onUnstore,
-      props.settled,
-      props.settlementSupported,
-      props.snoozeSupported,
-      props.snoozed,
-      props.storageSupported,
-      props.stored,
-      settle,
+      props.onUnsnooze,
       snooze,
+      props.canOpenFiles,
+      props.gitStatus,
+      props.onMergeBack,
+      props.onOpenTerminal,
+      props.projectScripts,
     ],
   );
 }

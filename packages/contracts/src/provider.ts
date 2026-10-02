@@ -11,10 +11,12 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderModelId } from "./model.ts";
 import {
-  ChatAttachment,
-  ModelSelection,
   getProviderAttachmentLimitError,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  ChatAttachment,
+} from "./chatAttachment.ts";
+import { ModelSelection } from "./modelSelection.ts";
+import {
   ProviderApprovalDecision,
   ProviderApprovalPolicy,
   ProviderInteractionMode,
@@ -26,7 +28,7 @@ import {
   TurnDeliveryMode,
   THREAD_TURN_START_PATH_MAX_LENGTH,
   THREAD_TURN_START_TITLE_MAX_LENGTH,
-} from "./orchestration.ts";
+} from "./providerPolicy.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
 import { ResolvedSubagentPolicy } from "./subagentPolicy.ts";
 

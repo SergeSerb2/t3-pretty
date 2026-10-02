@@ -604,8 +604,8 @@ export const assetRouteLayer = HttpRouter.add(
       }
       const config = yield* ServerConfig.ServerConfig;
       const requestedPath =
-        asset.source === "attachment" &&
-        asset.attachmentId !== undefined &&
+        "source" in asset && asset.source === "attachment" &&
+        "attachmentId" in asset && asset.attachmentId !== undefined &&
         url.value.searchParams.get("variant") === ATTACHMENT_FEED_PREVIEW_VARIANT
           ? yield* resolveAttachmentFeedPreview({
               attachmentsDir: config.attachmentsDir,

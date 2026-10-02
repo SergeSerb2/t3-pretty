@@ -173,3 +173,7 @@ export function parseConnectAuthCode(blob: string): ConnectAuthCode | null {
   const state = trimmed.slice(separatorIndex + 1);
   return { code, state };
 }
+
+export function connectCallbackUrl(hostedAppUrl: string): string {
+  return hostedAppRouteUrl(hostedAppUrl, "/connect/callback").toString();
+}

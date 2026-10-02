@@ -6,12 +6,12 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { HttpClient } from "effect/unstable/http";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
-import { RemoteEnvironmentAuthorization } from "../authorization/service.ts";
-import { EnvironmentRegistry } from "../connection/registry.ts";
+import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
+import * as EnvironmentRegistry from "../connection/registry.ts";
 import type { PreparedConnection } from "../connection/model.ts";
-import { EnvironmentSupervisor } from "../connection/supervisor.ts";
+import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
-import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
+import * as ManagedRelay from "../relay/managedRelay.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
@@ -33,19 +33,22 @@ function initialConfigOption<E>(
 // Bounded so a wedged environment cannot pin the permissions check (and with it
 // the settings UI) in a loading state for long.
 const DEFAULT_SESSION_STATE_TIMEOUT_MS = 6_000;
-export const SESSION_STATE_IDLE_TTL_MS = 5 * 60_000;
 
 /**
  * Read the granted scopes of this client's session on one environment via its
  * `/api/auth/session` endpoint, using the connection's authentication method
  * and refreshing relay credentials when needed.
  */
+export const SESSION_STATE_IDLE_TTL_MS = 60_000;
+
 export const fetchEnvironmentSessionState = Effect.fn(
   "clientRuntime.state.fetchEnvironmentSessionState",
 )(function* (input: {
   readonly prepared: PreparedConnection;
-  readonly signer: Option.Option<ManagedRelayDpopSigner["Service"]>;
-  readonly remoteAuthorization?: Option.Option<RemoteEnvironmentAuthorization["Service"]>;
+  readonly signer: Option.Option<ManagedRelay.ManagedRelayDpopSigner["Service"]>;
+  readonly remoteAuthorization?: Option.Option<
+    RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]
+  >;
   readonly timeoutMs?: number;
 }) {
   return yield* executeAuthenticatedEnvironmentHttpRequest({
@@ -61,31 +64,29 @@ export const fetchEnvironmentSessionState = Effect.fn(
 });
 
 export function createEnvironmentSessionAtoms<R, E>(
-  runtime: Atom.AtomRuntime<EnvironmentRegistry | HttpClient.HttpClient | R, E>,
+  runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | HttpClient.HttpClient | R, E>,
 ) {
   const initialConfigAtom = Atom.family((environmentId: EnvironmentId) =>
-    runtime
-      .atom(
-        followStreamInEnvironment(
-          environmentId,
-          Stream.unwrap(
-            EnvironmentSupervisor.pipe(
-              Effect.map((supervisor) =>
-                SubscriptionRef.changes(supervisor.session).pipe(
-                  Stream.mapEffect(
-                    Option.match({
-                      onNone: () => Effect.succeed(Option.none<ServerConfig>()),
-                      onSome: (session) => initialConfigOption(session.initialConfig),
-                    }),
-                  ),
+    runtime.atom(
+      followStreamInEnvironment(
+        environmentId,
+        Stream.unwrap(
+          EnvironmentSupervisor.EnvironmentSupervisor.pipe(
+            Effect.map((supervisor) =>
+              SubscriptionRef.changes(supervisor.session).pipe(
+                Stream.mapEffect(
+                  Option.match({
+                    onNone: () => Effect.succeed(Option.none<ServerConfig>()),
+                    onSome: (session) => initialConfigOption(session.initialConfig),
+                  }),
                 ),
               ),
             ),
           ),
         ),
-        { initialValue: Option.none() },
-      )
-      .pipe(Atom.setIdleTTL(SESSION_STATE_IDLE_TTL_MS)),
+      ),
+      { initialValue: Option.none() },
+    ),
   );
 
   // This is only the bootstrap config captured when a transport session is
@@ -102,19 +103,17 @@ export function createEnvironmentSessionAtoms<R, E>(
   );
 
   const preparedConnectionAtom = Atom.family((environmentId: EnvironmentId) =>
-    runtime
-      .atom(
-        followStreamInEnvironment(
-          environmentId,
-          Stream.unwrap(
-            EnvironmentSupervisor.pipe(
-              Effect.map((supervisor) => SubscriptionRef.changes(supervisor.prepared)),
-            ),
+    runtime.atom(
+      followStreamInEnvironment(
+        environmentId,
+        Stream.unwrap(
+          EnvironmentSupervisor.EnvironmentSupervisor.pipe(
+            Effect.map((supervisor) => SubscriptionRef.changes(supervisor.prepared)),
           ),
         ),
-        { initialValue: Option.none<PreparedConnection>() },
-      )
-      .pipe(Atom.setIdleTTL(SESSION_STATE_IDLE_TTL_MS)),
+      ),
+      { initialValue: Option.none<PreparedConnection>() },
+    ),
   );
 
   const preparedConnectionValueAtom = Atom.family((environmentId: EnvironmentId) =>
@@ -136,8 +135,10 @@ export function createEnvironmentSessionAtoms<R, E>(
           return Effect.never;
         }
         return Effect.gen(function* () {
-          const signer = yield* Effect.serviceOption(ManagedRelayDpopSigner);
-          const remoteAuthorization = yield* Effect.serviceOption(RemoteEnvironmentAuthorization);
+          const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
+          const remoteAuthorization = yield* Effect.serviceOption(
+            RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
+          );
           return yield* fetchEnvironmentSessionState({ prepared, signer, remoteAuthorization });
         });
       })

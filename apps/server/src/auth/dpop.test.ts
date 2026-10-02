@@ -1,16 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import * as Duration from "effect/Duration";
-import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
-import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import {
-  DPOP_REPLAY_RETENTION,
   mapDpopFailureReason,
   mapDpopReplayStoreError,
-  scheduleDpopReplayStateRemoval,
 } from "./dpop.ts";
 
 const storeFailure = (tag: "AlreadyExists" | "PermissionDenied") =>
@@ -22,18 +16,6 @@ const storeFailure = (tag: "AlreadyExists" | "PermissionDenied") =>
       method: "open",
       pathOrDescriptor: "dpop-proof.bin",
     }),
-  });
-
-const makeRemovalTrackingStore = (removed: Array<string>) =>
-  ServerSecretStore.ServerSecretStore.of({
-    get: () => Effect.succeed(Option.none()),
-    set: () => Effect.void,
-    create: () => Effect.void,
-    getOrCreateRandom: (_name, bytes) => Effect.succeed(new Uint8Array(bytes)),
-    remove: (name) =>
-      Effect.sync(() => {
-        removed.push(name);
-      }),
   });
 
 describe("mapDpopReplayStoreError", () => {
@@ -58,25 +40,7 @@ describe("mapDpopReplayStoreError", () => {
   });
 });
 
-describe("DPoP replay retention", () => {
-  it.effect("prunes accepted proof state only after the complete proof window", () =>
-    Effect.gen(function* () {
-      const removed: Array<string> = [];
-      yield* scheduleDpopReplayStateRemoval(
-        makeRemovalTrackingStore(removed),
-        "dpop-proof-safe-key",
-      );
-
-      expect(Duration.toMillis(DPOP_REPLAY_RETENTION)).toBe(305_000);
-      yield* TestClock.adjust("304 seconds");
-      expect(removed).toEqual([]);
-
-      yield* TestClock.adjust("1 second");
-      yield* Effect.yieldNow;
-      expect(removed).toEqual(["dpop-proof-safe-key"]);
-    }).pipe(Effect.provide(TestClock.layer())),
-  );
-});
+// Durable replay marker expiry is covered by replayMarkers.test.ts.
 
 describe("mapDpopFailureReason", () => {
   it("maps verifier failures to safe client-facing categories", () => {

@@ -15,6 +15,7 @@ import {
   SKILL_DESCRIPTION_MAX_LENGTH,
   SKILL_NAME_MAX_LENGTH,
   SKILL_STATE_MAX_ITEMS,
+  type RuntimeMode,
   type ModelCapabilities,
   type ServerProvider,
   type ServerProviderAuth,
@@ -86,6 +87,7 @@ export interface ServerProviderPresentation {
   readonly badgeLabel?: string;
   readonly showInteractionModeToggle?: boolean;
   readonly reportsContextWindow?: boolean;
+  readonly supportedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   readonly requiresNewThreadForModelChange?: boolean;
   readonly supportsNativeResume?: boolean;
   readonly supportsConversationRollback?: boolean;
@@ -390,6 +392,9 @@ export function buildServerProvider(input: {
     ...(typeof input.presentation.reportsContextWindow === "boolean"
       ? { reportsContextWindow: input.presentation.reportsContextWindow }
       : {}),
+    ...(input.presentation.supportedRuntimeModes === undefined
+      ? {}
+      : { supportedRuntimeModes: [...input.presentation.supportedRuntimeModes] }),
     ...(typeof input.presentation.requiresNewThreadForModelChange === "boolean"
       ? { requiresNewThreadForModelChange: input.presentation.requiresNewThreadForModelChange }
       : {}),

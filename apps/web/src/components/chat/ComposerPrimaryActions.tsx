@@ -1,12 +1,26 @@
-import { memo, type PointerEventHandler } from "react";
-import { ArrowUpIcon, ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
+import { ArrowUpIcon } from "lucide-react";
+import { memo, type MouseEventHandler, type PointerEventHandler } from "react";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  CornerUpRightIcon,
+  ListPlusIcon,
+  PlayIcon,
+} from "lucide-react";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
+import { useShortcutModifierState } from "../../shortcutModifierState";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { composerFloatingLayerProps } from "./composerEventScope";
+import {
+  alternateComposerDispatchAction,
+  resolveComposerDispatchMode,
+} from "@t3tools/client-runtime/state/composer-dispatch";
 
 interface PendingActionState {
   questionIndex: number;
@@ -19,7 +33,12 @@ interface PendingActionState {
 interface ComposerPrimaryActionsProps {
   compact: boolean;
   pendingAction: PendingActionState | null;
+  /** The turn is running: sending steers or queues instead of starting a turn. */
   isRunning: boolean;
+  /** Stop can reach a run, including one still preparing or starting. */
+  canInterrupt: boolean;
+  followUpBehavior?: "queue" | "steer";
+  alternateShortcutLabel?: string | null;
   showPlanFollowUpPrompt: boolean;
   promptHasText: boolean;
   isSendBusy: boolean;
@@ -30,11 +49,11 @@ interface ComposerPrimaryActionsProps {
   isEnvironmentUnavailable: boolean;
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
+  canResume?: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
-  /** Queue the draft for the next turn instead of steering the running one.
-   * When set, a running turn renders the send button as a split control with
-   * a "Queue for next turn" menu next to stop. */
-  onQueueSend?: () => void;
+  isEditingQueuedMessage?: boolean;
+  onSubmitMessage?: MouseEventHandler<HTMLButtonElement>;
+  onResume?: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -71,6 +90,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   compact,
   pendingAction,
   isRunning,
+  canInterrupt,
+  followUpBehavior = "steer",
+  alternateShortcutLabel = null,
   showPlanFollowUpPrompt,
   promptHasText,
   isSendBusy,
@@ -80,8 +102,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   isEnvironmentUnavailable,
   isPreparingWorktree,
   hasSendableContent,
+  canResume = false,
   preserveComposerFocusOnPointerDown = false,
-  onQueueSend,
+  isEditingQueuedMessage = false,
+  onSubmitMessage,
+  onResume,
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
@@ -90,44 +115,48 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     ? { onPointerDown: preventPointerFocus }
     : undefined;
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
+  const shortcutModifiers = useShortcutModifierState();
+  const isQueuing =
+    !isEditingQueuedMessage &&
+    resolveComposerDispatchMode({
+      running: isRunning,
+      activeTurnDefault: followUpBehavior,
+      alternateModifier: shortcutModifiers.metaKey || shortcutModifiers.ctrlKey,
+    }) === "queue";
+  const alternateAction = alternateComposerDispatchAction(followUpBehavior);
   const isSendDisabled = sendDisabledReason !== null;
   const stageBackdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
   );
 
   const renderStopGenerationButton = (insidePendingAction: boolean) => (
-    <button
-      type="button"
-      className={cn(
-        "flex cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] transition-all duration-150 hover:bg-destructive hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none",
-        insidePendingAction
-          ? "size-8 sm:size-7"
-          : hasSendableContent
-            ? "size-9 sm:size-8"
-            : "size-8 sm:h-8 sm:w-8",
-      )}
-      {...pointerFocusProps}
-      onClick={onInterrupt}
-      // Never disabled while interrupting: a turn that does not settle must not
-      // leave the only stop affordance dead. The label stays put because the
-      // scenery press feedback keys on it.
-      aria-busy={isInterrupting}
-      aria-label="Stop generation"
-    >
-      {isInterrupting ? (
-        <Spinner className="size-3.5" aria-hidden="true" />
-      ) : (
+    <Tooltip key="interrupt">
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            className={cn(
+              "flex cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-all duration-150 hover:bg-destructive hover:scale-105 active:inset-shadow-control-pressed active:shadow-none [&_svg]:pointer-events-none",
+              insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
+            )}
+            {...pointerFocusProps}
+            onClick={onInterrupt}
+            aria-label="Stop generation"
+          />
+        }
+      >
         <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
           <rect x="2" y="2" width="8" height="8" rx="1.5" />
         </svg>
-      )}
-    </button>
+      </TooltipTrigger>
+      <TooltipPopup>Interrupt</TooltipPopup>
+    </Tooltip>
   );
 
   if (pendingAction) {
     return (
       <div className={cn("flex items-center justify-end", compact ? "gap-1.5" : "gap-2")}>
-        {isRunning ? renderStopGenerationButton(true) : null}
+        {canInterrupt ? renderStopGenerationButton(true) : null}
         {pendingAction.questionIndex > 0 ? (
           compact ? (
             <Button
@@ -173,7 +202,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
-  if (showPlanFollowUpPrompt) {
+  if (showPlanFollowUpPrompt && (promptHasText || !canResume)) {
     if (promptHasText) {
       return (
         <button
@@ -227,99 +256,83 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
-  const renderSendButton = (shape: "round" | "split") => (
+  if (canInterrupt && !hasSendableContent && !isEditingQueuedMessage) {
+    return renderStopGenerationButton(false);
+  }
+
+  const showResume = canResume && !hasSendableContent && !isEditingQueuedMessage;
+  const submitLabel = showResume
+    ? "Resume thread"
+    : isEditingQueuedMessage
+      ? "Update queued message"
+      : isQueuing
+        ? "Queue message"
+        : isRunning
+          ? "Steer message"
+          : "Submit message";
+  const submitStatus = isEnvironmentUnavailable
+    ? "Environment disconnected"
+    : (sendDisabledReason ??
+      (isConnecting
+        ? "Connecting"
+        : isPreparingWorktree
+          ? "Preparing worktree"
+          : isSendBusy
+            ? isEditingQueuedMessage
+              ? "Updating queued message"
+              : "Submitting message"
+            : null));
+  const submitTooltip =
+    submitStatus ??
+    (isRunning && !isEditingQueuedMessage
+      ? `Click to ${followUpBehavior}, Ctrl/⌘-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
+      : submitLabel);
+
+  const sendButton = (
     <button
-      type="submit"
-      data-animate-ui-icons
+      type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-[0_1px_--theme(--color-white/16%)] hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8",
-        shape === "split" ? "rounded-l-full rounded-r-none hover:scale-100" : "rounded-full",
+        "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
         stageBackdropVariant
           ? "bg-transparent text-white enabled:shadow-black/24 enabled:hover:brightness-110"
           : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover",
       )}
       {...pointerFocusProps}
+      onClick={showResume ? onResume : onSubmitMessage}
       disabled={
         isSendBusy ||
         isSendDisabled ||
         isConnecting ||
         isEnvironmentUnavailable ||
-        !hasSendableContent
+        (!hasSendableContent && !showResume)
       }
-      aria-label={
-        isEnvironmentUnavailable
-          ? "Environment disconnected"
-          : sendDisabledReason
-            ? sendDisabledReason
-            : isConnecting
-              ? "Connecting"
-              : isPreparingWorktree
-                ? "Preparing worktree"
-                : isSendBusy
-                  ? "Sending"
-                  : isRunning
-                    ? "Send now"
-                    : "Send message"
-      }
+      aria-label={submitStatus ?? submitLabel}
     >
       {stageBackdropVariant ? (
-        <span className="absolute inset-0 -z-10" aria-hidden="true">
+        <span className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
           <StageBackdropButtonArt variant={stageBackdropVariant} />
         </span>
       ) : null}
       {isConnecting || isSendBusy ? (
         <Spinner size="sm" aria-hidden="true" />
+      ) : showResume ? (
+        <PlayIcon className="size-4 fill-current" aria-hidden="true" />
+      ) : isEditingQueuedMessage ? (
+        <CheckIcon className="size-4" aria-hidden="true" />
+      ) : isQueuing ? (
+        <ListPlusIcon className="size-4" aria-hidden="true" />
+      ) : isRunning ? (
+        <CornerUpRightIcon className="size-4" aria-hidden="true" />
       ) : (
         <ArrowUpIcon className="size-3.5" aria-hidden="true" />
       )}
     </button>
   );
 
-  if (!isRunning) {
-    return renderSendButton("round");
-  }
-
-  // While a turn runs, send is always available beside stop: submit steers the
-  // running turn, and the menu queues the draft for the next turn instead.
-  const sendActionsDisabled =
-    isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable;
   return (
-    <>
-      {renderStopGenerationButton(false)}
-      {hasSendableContent ? (
-        onQueueSend ? (
-          <div className="flex items-center" data-chat-composer-send-while-running="true">
-            {renderSendButton("split")}
-            <Menu>
-              <MenuTrigger
-                render={
-                  <button
-                    type="button"
-                    data-animate-ui-icons
-                    className={cn(
-                      "flex h-9 w-5 items-center justify-center overflow-hidden rounded-l-none rounded-r-full border-l shadow-xs transition-all duration-150 enabled:cursor-pointer disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none sm:h-8",
-                      "border-l-message-action-foreground/20 bg-message-action text-message-action-foreground hover:bg-message-action-hover",
-                    )}
-                    aria-label="Send options"
-                    {...pointerFocusProps}
-                    disabled={sendActionsDisabled}
-                  />
-                }
-              >
-                <ChevronDownIcon className="size-3.5" />
-              </MenuTrigger>
-              <MenuPopup align="end" side="top" {...composerFloatingLayerProps}>
-                <MenuItem disabled={sendActionsDisabled} onClick={() => onQueueSend()}>
-                  Queue for next turn
-                  <span className="text-muted-foreground ml-auto pl-3 text-xs">⌥⏎</span>
-                </MenuItem>
-              </MenuPopup>
-            </Menu>
-          </div>
-        ) : (
-          renderSendButton("round")
-        )
-      ) : null}
-    </>
+    <Tooltip key="submit">
+      <TooltipTrigger render={<span className="inline-flex" />}>{sendButton}</TooltipTrigger>
+      <TooltipPopup>{submitTooltip}</TooltipPopup>
+    </Tooltip>
   );
 });

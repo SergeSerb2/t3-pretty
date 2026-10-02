@@ -46,7 +46,6 @@ it.effect("maps GitLab MR summaries into provider-neutral change requests", () =
       headRefName: "feature/source-control",
       state: "closed",
       closedAt: "2026-08-23T10:00:00Z",
-      mergedAt: null,
       updatedAt: Option.none(),
       mergedAt: Option.none(),
       isCrossRepository: true,

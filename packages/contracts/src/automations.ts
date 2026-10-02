@@ -18,6 +18,7 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
+  CommandId,
   AutomationId,
   AutomationRunId,
   IsoDateTime,
@@ -27,7 +28,8 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
-import { DEFAULT_RUNTIME_MODE, ModelSelection, RuntimeMode } from "./modelSelection.ts";
+import { ModelSelection } from "./modelSelection.ts";
+import { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
 
 export const AUTOMATION_MAX_TRIGGERS = 8;
 export const AUTOMATION_KEEP_RUN_THREADS = 25;
@@ -685,6 +687,67 @@ export type AutomationsValidateScheduleResult = typeof AutomationsValidateSchedu
 // ── Settings ─────────────────────────────────────────────────────────
 
 export const AutomationsSettings = Schema.Struct({
+  gitPollIntervalSeconds: Schema.Int.check(Schema.isBetween({ minimum: 60, maximum: 86400 })).pipe(Schema.withDecodingDefault(Effect.succeed(300))),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type AutomationsSettings = typeof AutomationsSettings.Type;
+
+export const AutomationCreateCommand = Schema.Struct({
+  type: Schema.Literal("automation.create"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  projectId: ProjectId,
+  ...AutomationEditableFields.fields,
+  sourceThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const AutomationUpdateCommand = Schema.Struct({
+  type: Schema.Literal("automation.update"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  patch: AutomationPatch,
+  rotateWebhookToken: Schema.optional(Schema.Literal(true)),
+  updatedAt: IsoDateTime,
+});
+
+export const AutomationDeleteCommand = Schema.Struct({
+  type: Schema.Literal("automation.delete"),
+  commandId: CommandId,
+  automationId: AutomationId,
+});
+
+export const AutomationRunRequestCommand = Schema.Struct({
+  type: Schema.Literal("automation.run.request"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  runId: AutomationRunId,
+  trigger: AutomationRunTrigger,
+  requestedAt: IsoDateTime,
+});
+
+
+export const AutomationRunStartedCommand = Schema.Struct({
+ type: Schema.Literal("automation.run.started"), commandId: CommandId, automationId: AutomationId, runId: AutomationRunId,
+ threadId: ThreadId, startedAt: IsoDateTime,
+});
+export const AutomationRunFinishedCommand = Schema.Struct({
+ type: Schema.Literal("automation.run.finished"), commandId: CommandId, automationId: AutomationId, runId: AutomationRunId,
+ status: AutomationRunFinishedStatus, finishedAt: IsoDateTime, error: Schema.NullOr(Schema.String), summary: Schema.NullOr(AutomationRunSummary),
+});
+export const AutomationRunMissedCommand = Schema.Struct({
+ type: Schema.Literal("automation.run.missed"), commandId: CommandId, automationId: AutomationId, runId: AutomationRunId,
+ scheduledFor: IsoDateTime, at: IsoDateTime,
+});
+export const AutomationClientCommand = Schema.Union([AutomationCreateCommand, AutomationUpdateCommand, AutomationDeleteCommand, AutomationRunRequestCommand]);
+export type AutomationClientCommand = typeof AutomationClientCommand.Type;
+export const AutomationCommand = Schema.Union([AutomationClientCommand, AutomationRunStartedCommand, AutomationRunFinishedCommand, AutomationRunMissedCommand]);
+export type AutomationCommand = typeof AutomationCommand.Type;
+
+export const AutomationStreamMessage = Schema.Union([
+ Schema.Struct({type: Schema.Literal("automation.snapshot"), automations: Schema.Array(AutomationShell), revision: NonNegativeInt}),
+ Schema.Struct({type: Schema.Literal("automation.updated"), automation: AutomationShell, revision: NonNegativeInt}),
+ Schema.Struct({type: Schema.Literal("automation.removed"), automationId: AutomationId, revision: NonNegativeInt}),
+]);
+export type AutomationStreamMessage = typeof AutomationStreamMessage.Type;

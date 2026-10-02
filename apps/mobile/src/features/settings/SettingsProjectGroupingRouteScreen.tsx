@@ -2,17 +2,17 @@ import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollVie
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { SidebarProjectGroupingMode } from "@t3tools/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "../../components/AppText";
-import { SymbolView } from "../../components/AppSymbol";
 import { SettingsScreen } from "./components/SettingsScreen";
 import {
   mobileProjectGroupingModePatch,
   resolveMobileProjectGroupingSettings,
 } from "../../state/project-grouping";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { Pressable, View } from "react-native";
+import { SymbolView } from "../../components/AppSymbol";
+import { AppText as Text } from "../../components/AppText";
 import { SettingsSection } from "./components/SettingsSection";
 
 const GROUPING_OPTIONS: ReadonlyArray<{
