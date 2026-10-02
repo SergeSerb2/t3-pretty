@@ -1,97 +1,18 @@
-import type {
-  VcsCreateRefInput,
-  VcsCreateRefResult,
-  VcsCreateWorktreeInput,
-  VcsCreateWorktreeResult,
-  VcsInitInput,
-  VcsListRefsInput,
-  VcsListRefsResult,
-  VcsPullInput,
-  VcsPullResult,
-  VcsRemoveWorktreeInput,
-  VcsSwitchRefInput,
-  VcsSwitchRefResult,
-  GitPreparePullRequestThreadInput,
-  GitPreparePullRequestThreadResult,
-  GitPullRequestRefInput,
-  GitResolvePullRequestResult,
-  VcsStatusInput,
-  VcsStatusResult,
-} from "./git.ts";
-import type {
-  ReviewDiffFileContentsInput,
-  ReviewDiffFileContentsResult,
-  ReviewDiffPreviewInput,
-  ReviewDiffPreviewResult,
-} from "./review.ts";
-import type { FilesystemBrowseInput, FilesystemBrowseResult } from "./filesystem.ts";
-import type { AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
-import type {
-  ProjectListEntriesInput,
-  ProjectListEntriesResult,
-  ProjectReadFileInput,
-  ProjectReadFileResult,
-  ProjectSearchEntriesInput,
-  ProjectSearchEntriesResult,
-  ProjectWriteFileInput,
-  ProjectWriteFileResult,
-  ProjectImportFaviconInput,
-  ProjectImportFaviconResult,
-} from "./project.ts";
-import type {
-  TerminalAttachInput,
-  TerminalAttachStreamEvent,
-  TerminalClearInput,
-  TerminalCloseInput,
-  TerminalMetadataStreamEvent,
-  TerminalOpenInput,
-  TerminalResizeInput,
-  TerminalRestartInput,
-  TerminalSessionSnapshot,
-  TerminalWriteInput,
-} from "./terminal.ts";
 import * as Schema from "effect/Schema";
-import { EnvironmentId, PortSchema, TrimmedNonEmptyString } from "./baseSchemas.ts";
-import type {
-  DiscoveredLocalServerList,
-  PreviewCloseInput,
-  PreviewEvent,
-  PreviewListInput,
-  PreviewListResult,
-  PreviewNavigateInput,
-  PreviewOpenInput,
-  PreviewRefreshInput,
-  PreviewReportStatusInput,
-  PreviewResizeInput,
-  PreviewSessionSnapshot,
-} from "./preview.ts";
-import { PREVIEW_VIEWPORT_MAX_AREA, PREVIEW_VIEWPORT_MAX_DIMENSION } from "./preview.ts";
+
 import {
   PreviewAutomationClickInput,
   PreviewAutomationEvaluateInput,
-  PreviewAutomationHost,
-  PreviewAutomationHostFocus,
   PreviewAutomationPressInput,
-  PreviewAutomationResponse,
   PreviewAutomationScrollInput,
   PreviewAutomationSnapshot,
   PreviewAutomationStatus,
-  PreviewAutomationStreamEvent,
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
 } from "./previewAutomation.ts";
-import type {
-  ClientOrchestrationCommand,
-  OrchestrationGetFullThreadDiffInput,
-  OrchestrationGetFullThreadDiffResult,
-  OrchestrationGetTurnDiffInput,
-  OrchestrationGetTurnDiffResult,
-  OrchestrationShellSnapshot,
-  OrchestrationShellStreamItem,
-  OrchestrationSubscribeThreadInput,
-  OrchestrationThreadStreamItem,
-} from "./orchestration.ts";
-import { SnapShotSource } from "./orchestration.ts";
+import { SnapShotSource } from "./chatAttachment.ts";
+import { EnvironmentId, PortSchema, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { PREVIEW_VIEWPORT_MAX_AREA, PREVIEW_VIEWPORT_MAX_DIMENSION } from "./preview.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 import type {
   BrowserImportResult,
@@ -103,14 +24,7 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
-import type {
-  SourceControlCloneRepositoryInput,
-  SourceControlCloneRepositoryResult,
-  SourceControlPublishRepositoryInput,
-  SourceControlPublishRepositoryResult,
-  SourceControlRepositoryInfo,
-  SourceControlRepositoryLookupInput,
-} from "./sourceControl.ts";
+
 import type {
   DesktopAppActivationRequest,
   DesktopAppActivationResponse,
@@ -121,16 +35,14 @@ export interface ContextMenuItem<T extends string = string> {
   label: string;
   destructive?: boolean;
   disabled?: boolean;
-  /** Renders as a non-interactive section header label. */
+  /** Renders as a non-interactive section header label. Web fallback only — stripped on desktop native menus. */
   header?: boolean;
-  /** Horizontal rule. In-app menus render it; native Electron menus skip it. */
   separator?: boolean;
-  /** Icon keyword resolved by the in-app menu. */
+  activateOnClick?: boolean;
+  /** Icon keyword resolved by the web fallback. Stripped on desktop native menus. */
   icon?: string;
   /** Inserts a visual section divider immediately before this item. */
   separatorBefore?: boolean;
-  /** Clicking the parent row selects this item. Hover still opens children. */
-  activateOnClick?: boolean;
   /** Shows a check mark. Used to mark the current option inside a submenu. */
   checked?: boolean;
   children?: readonly ContextMenuItem<T>[];
@@ -147,9 +59,9 @@ export interface ContextMenuItemSchemaType {
   readonly disabled?: boolean;
   readonly header?: boolean;
   readonly separator?: boolean;
+  readonly activateOnClick?: boolean;
   readonly icon?: string;
   readonly separatorBefore?: boolean;
-  readonly activateOnClick?: boolean;
   readonly checked?: boolean;
   readonly children?: readonly ContextMenuItemSchemaType[];
 }
@@ -400,12 +312,6 @@ export interface DesktopRuntimeInfo {
   runningUnderArm64Translation: boolean;
 }
 
-export const DesktopRuntimeInfoSchema = Schema.Struct({
-  hostArch: DesktopRuntimeArchSchema,
-  appArch: DesktopRuntimeArchSchema,
-  runningUnderArm64Translation: Schema.Boolean,
-});
-
 export interface DesktopUpdateState {
   enabled: boolean;
   status: DesktopUpdateStatus;
@@ -432,8 +338,8 @@ export interface DesktopUpdateReleaseNote {
 }
 
 export const DesktopUpdateReleaseNoteSchema = Schema.Struct({
-  version: Schema.String.check(Schema.isMaxLength(128)),
-  items: Schema.Array(Schema.String.check(Schema.isMaxLength(220))).check(Schema.isMaxLength(8)),
+  version: Schema.String,
+  items: Schema.Array(Schema.String),
   totalItems: Schema.Number,
 });
 
@@ -441,17 +347,17 @@ export const DesktopUpdateStateSchema = Schema.Struct({
   enabled: Schema.Boolean,
   status: DesktopUpdateStatusSchema,
   channel: DesktopUpdateChannelSchema,
-  currentVersion: Schema.String.check(Schema.isMaxLength(128)),
+  currentVersion: Schema.String,
   hostArch: DesktopRuntimeArchSchema,
   appArch: DesktopRuntimeArchSchema,
   runningUnderArm64Translation: Schema.Boolean,
-  availableVersion: Schema.NullOr(Schema.String.check(Schema.isMaxLength(128))),
-  downloadedVersion: Schema.NullOr(Schema.String.check(Schema.isMaxLength(128))),
-  releaseNotes: Schema.Array(DesktopUpdateReleaseNoteSchema).check(Schema.isMaxLength(6)),
+  availableVersion: Schema.NullOr(Schema.String),
+  downloadedVersion: Schema.NullOr(Schema.String),
+  releaseNotes: Schema.Array(DesktopUpdateReleaseNoteSchema),
   omittedReleaseCount: Schema.Number,
   downloadPercent: Schema.NullOr(Schema.Number),
-  checkedAt: Schema.NullOr(Schema.String.check(Schema.isMaxLength(128))),
-  message: Schema.NullOr(Schema.String.check(Schema.isMaxLength(8_192))),
+  checkedAt: Schema.NullOr(Schema.String),
+  message: Schema.NullOr(Schema.String),
   errorContext: Schema.NullOr(Schema.Literals(["check", "download", "install"])),
   canRetry: Schema.Boolean,
 });
@@ -611,7 +517,7 @@ export const DesktopSshPasswordPromptCancelledType = "ssh-password-prompt-cancel
 
 export const DesktopSshPasswordPromptCancelledResultSchema = Schema.Struct({
   type: Schema.Literal(DesktopSshPasswordPromptCancelledType),
-  message: Schema.String.check(Schema.isMaxLength(8_192)),
+  message: Schema.String,
 });
 
 export const DesktopSshEnvironmentEnsureOptionsSchema = Schema.Struct({
@@ -649,15 +555,15 @@ export const DesktopSshPasswordPromptResolutionInputSchema = Schema.Struct({
 
 export const PersistedSavedEnvironmentRecordSchema = Schema.Struct({
   environmentId: EnvironmentId,
-  label: DesktopEnvironmentLabelSchema,
-  wsBaseUrl: DesktopUrlSchema,
-  httpBaseUrl: DesktopUrlSchema,
-  createdAt: DesktopTimestampSchema,
-  lastConnectedAt: Schema.NullOr(DesktopTimestampSchema),
+  label: Schema.String,
+  wsBaseUrl: Schema.String,
+  httpBaseUrl: Schema.String,
+  createdAt: Schema.String,
+  lastConnectedAt: Schema.NullOr(Schema.String),
   desktopSsh: Schema.optionalKey(DesktopSshEnvironmentTargetSchema),
   relayManaged: Schema.optionalKey(
     Schema.Struct({
-      relayUrl: DesktopUrlSchema,
+      relayUrl: Schema.String,
     }),
   ),
 });
@@ -680,10 +586,10 @@ export interface DesktopServerExposureState {
 
 export const DesktopServerExposureStateSchema = Schema.Struct({
   mode: DesktopServerExposureModeSchema,
-  endpointUrl: Schema.NullOr(DesktopUrlSchema),
-  advertisedHost: Schema.NullOr(DesktopSshHostnameSchema),
+  endpointUrl: Schema.NullOr(Schema.String),
+  advertisedHost: Schema.NullOr(Schema.String),
   tailscaleServeEnabled: Schema.Boolean,
-  tailscaleServePort: PortSchema,
+  tailscaleServePort: Schema.Number,
 });
 
 export interface PickFolderOptions {
@@ -713,9 +619,9 @@ export interface PickedThemeFile {
 }
 
 export const PickedThemeFileSchema = Schema.Struct({
-  name: Schema.String.check(Schema.isMaxLength(1_024)),
+  name: Schema.String,
   size: Schema.Number,
-  text: Schema.String.check(Schema.isMaxLength(256 * 1024)),
+  text: Schema.String,
 });
 
 export interface DesktopWslDistro {
@@ -723,6 +629,7 @@ export interface DesktopWslDistro {
   isDefault: boolean;
   version: 1 | 2;
 }
+
 
 export const DesktopWslDistroSchema = Schema.Struct({
   name: DesktopWslDistroNameSchema,
@@ -756,8 +663,8 @@ export const DesktopWslStateSchema = Schema.Struct({
   distro: Schema.NullOr(DesktopWslDistroNameSchema),
   available: Schema.Boolean,
   wslOnly: Schema.Boolean,
-  distros: Schema.Array(DesktopWslDistroSchema).check(Schema.isMaxLength(64)),
-  preflightError: Schema.NullOr(Schema.String.check(Schema.isMaxLength(8_192))),
+  distros: Schema.Array(DesktopWslDistroSchema),
+  preflightError: Schema.NullOr(Schema.String),
 });
 
 /**
@@ -787,29 +694,12 @@ export const DesktopPreviewColorSchemeSchema: Schema.Codec<DesktopPreviewColorSc
 
 export const FAVICON_DATA_URL_MAX_LENGTH = 8192;
 export const FAVICON_CAPTURED_AT_MAX = 8_640_000_000_000_000;
-// Runtime tab ids JSON-encode environment, thread, server-epoch, and server tab
-// identities, so they are intentionally larger than the server-local 128-char
-// tab id contract.
-export const DESKTOP_PREVIEW_TAB_ID_MAX_LENGTH = 1_024;
 
 export interface DesktopPreviewFavicon {
   dataUrl: string;
   pageUrl: string;
   capturedAt: number;
 }
-
-export const DesktopPreviewFaviconSchema: Schema.Codec<DesktopPreviewFavicon> = Schema.Struct({
-  dataUrl: Schema.String.check(
-    Schema.isMaxLength(FAVICON_DATA_URL_MAX_LENGTH),
-    Schema.isPattern(/^data:image\/png;base64,[a-z0-9+/]+={0,2}$/i),
-  ),
-  pageUrl: Schema.String.check(Schema.isMaxLength(2_048)),
-  capturedAt: Schema.Number.check(
-    Schema.isFinite(),
-    Schema.isGreaterThanOrEqualTo(0),
-    Schema.isLessThanOrEqualTo(FAVICON_CAPTURED_AT_MAX),
-  ),
-});
 
 export interface DesktopPreviewTabState {
   tabId: string;
@@ -842,7 +732,6 @@ export interface DesktopPreviewTabState {
 
 export const DesktopPreviewTabIdSchema = Schema.String.check(Schema.isTrimmed()).check(
   Schema.isNonEmpty(),
-  Schema.isMaxLength(DESKTOP_PREVIEW_TAB_ID_MAX_LENGTH),
 );
 
 export const DesktopPreviewAutomationStatusSchema = Schema.Struct({
@@ -851,42 +740,6 @@ export const DesktopPreviewAutomationStatusSchema = Schema.Struct({
 });
 export type DesktopPreviewAutomationStatus = typeof DesktopPreviewAutomationStatusSchema.Type;
 
-export const DesktopPreviewNavStatusSchema = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("Idle") }),
-  Schema.Struct({
-    kind: Schema.Literal("Loading"),
-    url: Schema.String,
-    title: Schema.String,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("Success"),
-    url: Schema.String,
-    title: Schema.String,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("LoadFailed"),
-    url: Schema.String,
-    title: Schema.String,
-    code: Schema.Number,
-    description: Schema.String,
-  }),
-]);
-
-export const DesktopPreviewTabStateSchema: Schema.Codec<DesktopPreviewTabState> = Schema.Struct({
-  tabId: DesktopPreviewTabIdSchema,
-  webContentsId: Schema.NullOr(Schema.Int),
-  navStatus: DesktopPreviewNavStatusSchema,
-  canGoBack: Schema.Boolean,
-  canGoForward: Schema.Boolean,
-  zoomFactor: Schema.Number,
-  pictureInPicture: Schema.Boolean,
-  colorScheme: DesktopPreviewColorSchemeSchema,
-  audioMuted: Schema.Boolean,
-  audible: Schema.Boolean,
-  controller: Schema.Literals(["human", "agent", "none"]),
-  favicon: Schema.optionalKey(DesktopPreviewFaviconSchema),
-  updatedAt: Schema.String,
-});
 export interface DesktopPreviewPointerEvent {
   tabId: string;
   phase: "move" | "click" | "type" | "press" | "scroll";
@@ -929,6 +782,7 @@ export interface DesktopPreviewRecordingInputEvent {
   readonly tabId: string;
   readonly input: DesktopPreviewRecordingInput;
 }
+
 /**
  * Static config a renderer needs to mount a preview `<webview>`. Returned
  * atomically by `DesktopPreviewBridge.getPreviewConfig()` so the renderer
@@ -1505,7 +1359,20 @@ export type DesktopDictationEvent =
   | { readonly type: "ended" };
 
 export interface DesktopBridge {
+  onLocalBackendReady?: (listener: () => void) => () => void;
+  setWindowButtonVisibility?: (visible: boolean) => Promise<void>;
+  onWindowActiveStateChange?: (listener: (active: boolean) => void) => () => void;
+  onWindowInteractingChange?: (listener: (interacting: boolean) => void) => () => void;
+  setDockAttention?: (input: { count: number }) => Promise<void>;
+  onEditContextMenu?: (listener: (request: DesktopEditContextMenuRequest) => void) => () => void;
+  resolveEditContextMenu?: (requestId: string, itemId: string | null) => Promise<void>;
+  startDictation?: (input?: { locale?: string }) => Promise<void>;
+  stopDictation?: () => Promise<void>;
+  cancelDictation?: () => Promise<void>;
+  onDictationEvent?: (listener: (event: DesktopDictationEvent) => void) => () => void;
   getAppBranding: () => DesktopAppBranding | null;
+  /** Absolute path of a dropped or picked file; absent on desktop builds predating it. */
+  getPathForFile?: (file: object) => string;
   /** The desktop client's OS platform, read from Electron's preload process. */
   getClientPlatform?: () => string;
   setNotificationBadge?: (badge: { count: number; image: string | null }) => Promise<void>;
@@ -1521,16 +1388,9 @@ export interface DesktopBridge {
   // One bootstrap per pool instance currently registered with bootstrap
   // info (omits instances whose backend hasn't produced a config yet).
   // The primary backend is identified by id === PRIMARY_LOCAL_ENVIRONMENT_ID.
-  getLocalEnvironmentBootstraps: () =>
-    | readonly DesktopEnvironmentBootstrap[]
-    | Promise<readonly DesktopEnvironmentBootstrap[]>;
+  getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[] | Promise<readonly DesktopEnvironmentBootstrap[]>;
   getLocalEnvironmentEnabled?: () => boolean;
   setLocalEnvironmentEnabled?: (enabled: boolean) => Promise<void>;
-  // Fires each time a desktop-managed backend becomes reachable (first boot,
-  // restart, WSL swap). The window no longer waits for the backend, so this is
-  // how the renderer learns to re-read the bootstrap topology right away.
-  // Optional: older preloads do not expose it.
-  onLocalBackendReady?: (listener: () => void) => () => void;
   getLocalEnvironmentBearerToken: () => Promise<string>;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
@@ -1590,14 +1450,6 @@ export interface DesktopBridge {
   /** Optional while older desktop shells can host a newer web client. */
   pickProjectFavicon?: (initialPath?: string) => Promise<string | null>;
   /**
-   * Absolute filesystem path for a user-picked File, via Electron
-   * `webUtils.getPathForFile`. Optional on older desktop builds and absent on
-   * web. Returns an empty string when the File is not backed by a disk path.
-   * The argument is the renderer `File` object (typed as `object` so contracts
-   * stay DOM-free).
-   */
-  getPathForFile?: (file: object) => string;
-  /**
    * Multi-select JSON file picker that opens in the VS Code extensions
    * directory when one exists. Optional: older desktop builds lack it, and
    * web callers fall back to a plain file input.
@@ -1608,14 +1460,6 @@ export interface DesktopBridge {
     items: readonly ContextMenuItem<T>[],
     position?: ContextMenuPosition,
   ) => Promise<T | null>;
-  /**
-   * Desktop edit menus (spellcheck, copy link/image, cut/copy/paste) are
-   * authored in the main process from Electron's context-menu params, then
-   * painted in the renderer. Optional: older desktop builds popup native
-   * instead.
-   */
-  onEditContextMenu?: (listener: (request: DesktopEditContextMenuRequest) => void) => () => void;
-  resolveEditContextMenu?: (requestId: string, itemId: string | null) => Promise<void>;
   /** Receives a local OAuth code for a sign-in owned by a remote environment. */
   receiveProviderAuthCallback?: (authorizationUrl: string) => Promise<string>;
   cancelProviderAuthCallback?: (authorizationUrl: string) => Promise<void>;
@@ -1636,49 +1480,19 @@ export interface DesktopBridge {
   pasteAsText?: () => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   onSnapShotEvent?: (listener: (event: DesktopSnapShotEvent) => void) => () => void;
-  /** Quit-confirmation hint pushes. Optional: older desktop builds never emit them. */
+  /**
+   * Quit-confirmation hint pushes. Optional: older desktop builds never emit
+   * them.
+   */
   onQuitShortcut?: (listener: (event: QuitShortcutHintEvent) => void) => () => void;
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
-  /**
-   * Show or hide native macOS traffic lights. The collapsed icon rail is too
-   * narrow for them; the renderer hides them there and restores them when the
-   * sidebar expands or peeks. Optional: older desktop builds lack it, and it is a
-   * no-op off macOS.
-   */
-  setWindowButtonVisibility?: (visible: boolean) => Promise<void>;
-  /**
-   * Native window key state, pushed from the main process. Not the renderer's
-   * own focus: focus moving into an embedded preview blurs the renderer while
-   * the window is still key. Optional; older desktop builds never emit it.
-   */
-  onWindowActiveStateChange?: (listener: (active: boolean) => void) => () => void;
-  /**
-   * True while the user is dragging or resizing the window, so the renderer
-   * can drop expensive effects for the duration of the gesture. Optional;
-   * older desktop builds never emit it.
-   */
-  onWindowInteractingChange?: (listener: (interacting: boolean) => void) => () => void;
-  /**
-   * How many threads are waiting on the human. Sets the dock badge and, when
-   * the total grows while the app is in the background, bounces the dock once.
-   * Optional: older desktop builds lack it, and it is a no-op off macOS.
-   */
-  setDockAttention?: (input: { count: number }) => Promise<void>;
   getUpdateState: () => Promise<DesktopUpdateState>;
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
-  /**
-   * macOS on-device dictation via Speech.framework. Optional: web clients and
-   * older desktop shells omit it and fall back to the browser Speech API.
-   */
-  startDictation?: (input?: { locale?: string }) => Promise<void>;
-  stopDictation?: () => Promise<void>;
-  cancelDictation?: () => Promise<void>;
-  onDictationEvent?: (listener: (event: DesktopDictationEvent) => void) => () => void;
   /** Present when the desktop shell accepts `t3 app` activation requests. */
   appActivation?: {
     setReady: (ready: boolean) => Promise<void>;
@@ -1691,6 +1505,9 @@ export interface DesktopBridge {
    */
   preview?: DesktopPreviewBridge;
 }
+
+/** Renderer callback invoked by Electron with a fresh user gesture before display-media capture. */
+export const DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER = "__t3DesktopPreviewRecordingCapture";
 
 export interface DesktopPreviewBridge {
   createTab: (tabId: string, defaults?: DesktopPreviewTabDefaults) => Promise<void>;
@@ -1759,7 +1576,7 @@ export interface DesktopPreviewBridge {
   };
   recording: {
     onInput: (listener: (event: DesktopPreviewRecordingInputEvent) => void) => () => void;
-    startScreencast: (tabId: string) => Promise<DesktopPreviewRecordingSource>;
+    startScreencast: (tabId: string) => Promise<void>;
     stopScreencast: (tabId: string) => Promise<void>;
     save: (
       tabId: string,
@@ -1818,138 +1635,5 @@ export interface LocalApi {
   persistence: {
     getClientSettings: () => Promise<ClientSettings | null>;
     setClientSettings: (settings: ClientSettings) => Promise<void>;
-  };
-}
-
-/**
- * APIs bound to a specific backend environment connection.
- *
- * These operations must always be routed with explicit environment context.
- * They represent remote stateful capabilities such as orchestration, terminal,
- * project, VCS, and provider operations. In multi-environment mode, each environment gets
- * its own instance of this surface, and callers should resolve it by
- * `environmentId` rather than reaching through the local desktop bridge.
- */
-export interface EnvironmentApi {
-  terminal: {
-    open: (input: typeof TerminalOpenInput.Encoded) => Promise<TerminalSessionSnapshot>;
-    attach: (
-      input: typeof TerminalAttachInput.Encoded,
-      callback: (event: TerminalAttachStreamEvent) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-    write: (input: typeof TerminalWriteInput.Encoded) => Promise<void>;
-    resize: (input: typeof TerminalResizeInput.Encoded) => Promise<void>;
-    clear: (input: typeof TerminalClearInput.Encoded) => Promise<void>;
-    restart: (input: typeof TerminalRestartInput.Encoded) => Promise<TerminalSessionSnapshot>;
-    close: (input: typeof TerminalCloseInput.Encoded) => Promise<void>;
-    onMetadata: (
-      callback: (event: TerminalMetadataStreamEvent) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-  };
-  projects: {
-    listEntries: (input: ProjectListEntriesInput) => Promise<ProjectListEntriesResult>;
-    readFile: (input: ProjectReadFileInput) => Promise<ProjectReadFileResult>;
-    searchEntries: (input: ProjectSearchEntriesInput) => Promise<ProjectSearchEntriesResult>;
-    writeFile: (input: ProjectWriteFileInput) => Promise<ProjectWriteFileResult>;
-    importFavicon: (input: ProjectImportFaviconInput) => Promise<ProjectImportFaviconResult>;
-  };
-  filesystem: {
-    browse: (input: FilesystemBrowseInput) => Promise<FilesystemBrowseResult>;
-  };
-  assets: {
-    createUrl: (input: AssetCreateUrlInput) => Promise<AssetCreateUrlResult>;
-  };
-  sourceControl: {
-    lookupRepository: (
-      input: SourceControlRepositoryLookupInput,
-    ) => Promise<SourceControlRepositoryInfo>;
-    cloneRepository: (
-      input: SourceControlCloneRepositoryInput,
-    ) => Promise<SourceControlCloneRepositoryResult>;
-    publishRepository: (
-      input: SourceControlPublishRepositoryInput,
-    ) => Promise<SourceControlPublishRepositoryResult>;
-  };
-  vcs: {
-    listRefs: (input: VcsListRefsInput) => Promise<VcsListRefsResult>;
-    createWorktree: (input: VcsCreateWorktreeInput) => Promise<VcsCreateWorktreeResult>;
-    removeWorktree: (input: VcsRemoveWorktreeInput) => Promise<void>;
-    createRef: (input: VcsCreateRefInput) => Promise<VcsCreateRefResult>;
-    switchRef: (input: VcsSwitchRefInput) => Promise<VcsSwitchRefResult>;
-    init: (input: VcsInitInput) => Promise<void>;
-    pull: (input: VcsPullInput) => Promise<VcsPullResult>;
-    refreshStatus: (input: VcsStatusInput) => Promise<VcsStatusResult>;
-    onStatus: (
-      input: VcsStatusInput,
-      callback: (status: VcsStatusResult) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-  };
-  git: {
-    resolvePullRequest: (input: GitPullRequestRefInput) => Promise<GitResolvePullRequestResult>;
-    preparePullRequestThread: (
-      input: GitPreparePullRequestThreadInput,
-    ) => Promise<GitPreparePullRequestThreadResult>;
-  };
-  review: {
-    getDiffPreview: (input: ReviewDiffPreviewInput) => Promise<ReviewDiffPreviewResult>;
-    getDiffFileContents: (
-      input: ReviewDiffFileContentsInput,
-    ) => Promise<ReviewDiffFileContentsResult>;
-  };
-  orchestration: {
-    dispatchCommand: (command: ClientOrchestrationCommand) => Promise<{ sequence: number }>;
-    getTurnDiff: (input: OrchestrationGetTurnDiffInput) => Promise<OrchestrationGetTurnDiffResult>;
-    getFullThreadDiff: (
-      input: OrchestrationGetFullThreadDiffInput,
-    ) => Promise<OrchestrationGetFullThreadDiffResult>;
-    getArchivedShellSnapshot: () => Promise<OrchestrationShellSnapshot>;
-    subscribeShell: (
-      callback: (event: OrchestrationShellStreamItem) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-    subscribeThread: (
-      input: OrchestrationSubscribeThreadInput,
-      callback: (event: OrchestrationThreadStreamItem) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-  };
-  preview: {
-    open: (input: typeof PreviewOpenInput.Encoded) => Promise<PreviewSessionSnapshot>;
-    navigate: (input: typeof PreviewNavigateInput.Encoded) => Promise<PreviewSessionSnapshot>;
-    resize: (input: typeof PreviewResizeInput.Encoded) => Promise<PreviewSessionSnapshot>;
-    refresh: (input: typeof PreviewRefreshInput.Encoded) => Promise<void>;
-    close: (input: typeof PreviewCloseInput.Encoded) => Promise<void>;
-    list: (input: typeof PreviewListInput.Encoded) => Promise<PreviewListResult>;
-    reportStatus: (input: typeof PreviewReportStatusInput.Encoded) => Promise<void>;
-    automation: {
-      connect: (
-        input: PreviewAutomationHost,
-        callback: (event: PreviewAutomationStreamEvent) => void,
-        options?: { onResubscribe?: () => void },
-      ) => () => void;
-      respond: (response: PreviewAutomationResponse) => Promise<void>;
-      focusHost: (input: PreviewAutomationHostFocus) => Promise<void>;
-    };
-    onEvent: (
-      callback: (event: PreviewEvent) => void,
-      options?: { onResubscribe?: () => void },
-    ) => () => void;
-    subscribePorts: (
-      callback: (servers: DiscoveredLocalServerList) => void,
-      options?: { onResubscribe?: () => void },
-    ) => () => void;
   };
 }

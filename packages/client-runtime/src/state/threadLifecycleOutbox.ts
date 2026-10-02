@@ -1,10 +1,10 @@
 import {
   CommandId,
   EnvironmentId,
-  ORCHESTRATION_WS_METHODS,
-  type ClientOrchestrationCommand,
-  type OrchestrationShellSnapshot,
-  type OrchestrationThreadShell,
+  ORCHESTRATION_V2_WS_METHODS,
+  type OrchestrationV2Command,
+  type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -48,11 +48,11 @@ export {
 export const QUEUED_THREAD_LIFECYCLE_DISPATCH_RESULT = { sequence: 0 } as const;
 
 export function asQueuedThreadLifecycleCommand(
-  command: ClientOrchestrationCommand,
+  command: OrchestrationV2Command,
 ): QueuedThreadLifecycleCommand | null {
   switch (command.type) {
     case "thread.settle": {
-      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.settle" }>;
+      const cmd = command as Extract<OrchestrationV2Command, { type: "thread.settle" }>;
       return {
         type: "thread.settle",
         commandId: cmd.commandId,
@@ -60,7 +60,7 @@ export function asQueuedThreadLifecycleCommand(
       };
     }
     case "thread.unsettle": {
-      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.unsettle" }>;
+      const cmd = command as Extract<OrchestrationV2Command, { type: "thread.unsettle" }>;
       return {
         type: "thread.unsettle",
         commandId: cmd.commandId,
@@ -69,7 +69,7 @@ export function asQueuedThreadLifecycleCommand(
       };
     }
     case "thread.snooze": {
-      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.snooze" }>;
+      const cmd = command as Extract<OrchestrationV2Command, { type: "thread.snooze" }>;
       return {
         type: "thread.snooze",
         commandId: cmd.commandId,
@@ -78,7 +78,7 @@ export function asQueuedThreadLifecycleCommand(
       };
     }
     case "thread.unsnooze": {
-      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.unsnooze" }>;
+      const cmd = command as Extract<OrchestrationV2Command, { type: "thread.unsnooze" }>;
       return {
         type: "thread.unsnooze",
         commandId: cmd.commandId,
@@ -90,7 +90,7 @@ export function asQueuedThreadLifecycleCommand(
     case "thread.unstore":
       return { type: command.type, commandId: command.commandId, threadId: command.threadId };
     case "thread.pin": {
-      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.pin" }>;
+      const cmd = command as Extract<OrchestrationV2Command, { type: "thread.pin" }>;
       return {
         type: "thread.pin",
         commandId: cmd.commandId,
@@ -99,7 +99,7 @@ export function asQueuedThreadLifecycleCommand(
       };
     }
     case "thread.unpin": {
-      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.unpin" }>;
+      const cmd = command as Extract<OrchestrationV2Command, { type: "thread.unpin" }>;
       return {
         type: "thread.unpin",
         commandId: cmd.commandId,
@@ -107,7 +107,7 @@ export function asQueuedThreadLifecycleCommand(
       };
     }
     case "thread.pin.reorder": {
-      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.pin.reorder" }>;
+      const cmd = command as Extract<OrchestrationV2Command, { type: "thread.pin.reorder" }>;
       return {
         type: "thread.pin.reorder",
         commandId: cmd.commandId,
@@ -116,7 +116,7 @@ export function asQueuedThreadLifecycleCommand(
       };
     }
     case "thread.active.reorder": {
-      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.active.reorder" }>;
+      const cmd = command as Extract<OrchestrationV2Command, { type: "thread.active.reorder" }>;
       return {
         type: "thread.active.reorder",
         commandId: cmd.commandId,
@@ -213,9 +213,21 @@ export function coalescePendingThreadLifecycleEntryBatch(
   return retainedReversed;
 }
 
+interface LifecycleThread {
+ readonly id: OrchestrationV2ThreadShell["id"];
+ readonly settledOverride: "settled" | "active" | null;
+ readonly settledAt: string | DateTime.Utc | null;
+ readonly snoozedUntil?: string | DateTime.Utc | null | undefined;
+ readonly snoozedAt?: string | DateTime.Utc | null | undefined;
+ readonly storedAt?: string | DateTime.Utc | null | undefined;
+ readonly pinnedAt?: string | DateTime.Utc | null | undefined;
+ readonly pinOrderKey?: string | null | undefined;
+ readonly activeOrderKey?: string | null | undefined;
+ readonly updatedAt: string | DateTime.Utc;
+}
 export function applyPendingThreadLifecycleToThread<
   T extends Pick<
-    OrchestrationThreadShell,
+    LifecycleThread,
     | "id"
     | "settledOverride"
     | "settledAt"
@@ -240,7 +252,7 @@ export function applyPendingThreadLifecycleToThread<
 
 function applyQueuedThreadLifecycleCommand<
   T extends Pick<
-    OrchestrationThreadShell,
+    LifecycleThread,
     | "id"
     | "settledOverride"
     | "settledAt"
@@ -253,47 +265,51 @@ function applyQueuedThreadLifecycleCommand<
     | "updatedAt"
   >,
 >(thread: T, entry: PendingThreadLifecycleEntry): T {
+  const queuedAt = typeof thread.updatedAt === "string" ? entry.queuedAt : DateTime.makeUnsafe(entry.queuedAt);
+  const snoozedUntil = entry.command.type === "thread.snooze"
+    ? typeof thread.updatedAt === "string" ? entry.command.snoozedUntil : DateTime.makeUnsafe(entry.command.snoozedUntil)
+    : null;
   switch (entry.command.type) {
     case "thread.settle":
       return {
         ...thread,
         settledOverride: "settled" as const,
-        settledAt: entry.queuedAt,
+        settledAt: queuedAt,
         snoozedUntil: null,
         snoozedAt: null,
         storedAt: null,
         pinnedAt: null,
         pinOrderKey: null,
-        updatedAt: entry.queuedAt,
+        updatedAt: queuedAt,
       };
     case "thread.unsettle":
       return {
         ...thread,
         settledOverride: "active" as const,
         settledAt: null,
-        updatedAt: entry.queuedAt,
+        updatedAt: queuedAt,
       };
     case "thread.snooze":
       return {
         ...thread,
-        snoozedUntil: entry.command.snoozedUntil,
-        snoozedAt: entry.queuedAt,
+        snoozedUntil: snoozedUntil,
+        snoozedAt: queuedAt,
         storedAt: null,
-        updatedAt: entry.queuedAt,
+        updatedAt: queuedAt,
       };
     case "thread.unsnooze":
       return {
         ...thread,
         snoozedUntil: null,
         snoozedAt: null,
-        updatedAt: entry.queuedAt,
+        updatedAt: queuedAt,
       };
     // Mirrors the decider: storing parks the thread, so it spends settle,
     // snooze, and pin; unstoring returns it to Active as a user unsettle.
     case "thread.store":
       return {
         ...thread,
-        storedAt: thread.storedAt ?? entry.queuedAt,
+        storedAt: thread.storedAt ?? queuedAt,
         settledOverride:
           thread.settledOverride === "settled" ? ("active" as const) : thread.settledOverride,
         settledAt: thread.settledOverride === "settled" ? null : thread.settledAt,
@@ -301,7 +317,7 @@ function applyQueuedThreadLifecycleCommand<
         snoozedAt: null,
         pinnedAt: null,
         pinOrderKey: null,
-        updatedAt: thread.storedAt == null ? entry.queuedAt : thread.updatedAt,
+        updatedAt: thread.storedAt == null ? queuedAt : thread.updatedAt,
       };
     case "thread.unstore":
       if (thread.storedAt == null) return thread;
@@ -310,13 +326,13 @@ function applyQueuedThreadLifecycleCommand<
         storedAt: null,
         settledOverride: "active" as const,
         settledAt: null,
-        updatedAt: entry.queuedAt,
+        updatedAt: queuedAt,
       };
     case "thread.pin": {
       const alreadyPinned = thread.pinnedAt != null;
       return {
         ...thread,
-        pinnedAt: thread.pinnedAt ?? entry.queuedAt,
+        pinnedAt: thread.pinnedAt ?? queuedAt,
         ...(!alreadyPinned && entry.command.orderKey !== undefined
           ? { pinOrderKey: entry.command.orderKey }
           : {}),
@@ -326,7 +342,7 @@ function applyQueuedThreadLifecycleCommand<
         snoozedUntil: null,
         snoozedAt: null,
         storedAt: null,
-        updatedAt: alreadyPinned ? thread.updatedAt : entry.queuedAt,
+        updatedAt: alreadyPinned ? thread.updatedAt : queuedAt,
       };
     }
     case "thread.unpin":
@@ -334,14 +350,14 @@ function applyQueuedThreadLifecycleCommand<
         ...thread,
         pinnedAt: null,
         pinOrderKey: null,
-        updatedAt: thread.pinnedAt == null ? thread.updatedAt : entry.queuedAt,
+        updatedAt: thread.pinnedAt == null ? thread.updatedAt : queuedAt,
       };
     case "thread.pin.reorder":
       return {
         ...thread,
         pinOrderKey: entry.command.orderKey,
         updatedAt:
-          thread.pinOrderKey === entry.command.orderKey ? thread.updatedAt : entry.queuedAt,
+          thread.pinOrderKey === entry.command.orderKey ? thread.updatedAt : queuedAt,
       };
     case "thread.active.reorder":
       // Arranging the list is not thread activity — same as the server decider.
@@ -352,10 +368,10 @@ function applyQueuedThreadLifecycleCommand<
   }
 }
 
-export function applyPendingThreadLifecycleToSnapshot(
-  snapshot: OrchestrationShellSnapshot,
+export function applyPendingThreadLifecycleToSnapshot<T extends { readonly threads: ReadonlyArray<LifecycleThread> }>(
+  snapshot: T,
   pending: ReadonlyArray<PendingThreadLifecycleEntry>,
-): OrchestrationShellSnapshot {
+): T {
   if (pending.length === 0) {
     return snapshot;
   }
@@ -392,7 +408,7 @@ export class ThreadLifecycleOutbox extends Context.Service<
     readonly pending: SubscriptionRef.SubscriptionRef<ThreadLifecyclePendingByEnvironment>;
     readonly enqueue: (
       environmentId: EnvironmentId,
-      command: ClientOrchestrationCommand,
+      command: OrchestrationV2Command,
     ) => Effect.Effect<boolean>;
     readonly watchAndDrain: (supervisor: EnvironmentSupervisor["Service"]) => Effect.Effect<void>;
   }
@@ -542,7 +558,7 @@ export const makeThreadLifecycleOutbox = Effect.fn("ThreadLifecycleOutbox.make")
 
   const enqueue = Effect.fn("ThreadLifecycleOutbox.enqueue")(function* (
     environmentId: EnvironmentId,
-    command: ClientOrchestrationCommand,
+    command: OrchestrationV2Command,
   ) {
     const queued = asQueuedThreadLifecycleCommand(command);
     if (queued === null) {
@@ -587,7 +603,7 @@ export const makeThreadLifecycleOutbox = Effect.fn("ThreadLifecycleOutbox.make")
           if (Option.isNone(session)) {
             return;
           }
-          const result = yield* session.value.client[ORCHESTRATION_WS_METHODS.dispatchCommand](
+          const result = yield* session.value.client[ORCHESTRATION_V2_WS_METHODS.dispatchCommand](
             entry.command,
           ).pipe(Effect.result);
           if (Result.isSuccess(result)) {
@@ -596,7 +612,7 @@ export const makeThreadLifecycleOutbox = Effect.fn("ThreadLifecycleOutbox.make")
           }
           // The server rejected the parked command (wake time already passed,
           // thread gone, invariants). Drop it so the live snapshot wins.
-          if (result.failure._tag === "OrchestrationDispatchCommandError") {
+          if (result.failure._tag === "OrchestrationV2DispatchCommandError") {
             yield* Effect.logWarning(
               "Dropped a queued thread lifecycle command the server rejected.",
               {

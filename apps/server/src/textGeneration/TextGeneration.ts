@@ -2,12 +2,17 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
-import type { ChatAttachment, ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   TextGenerationError,
+} from "@t3tools/contracts";
+import type {
+  BranchNamingOptions,
+  ChatAttachment,
+  ModelSelection,
+  ProviderInstanceId,
 } from "@t3tools/contracts";
 
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
@@ -56,6 +61,7 @@ export interface PrContentGenerationResult {
 }
 
 export interface BranchNameGenerationInput {
+  naming?: BranchNamingOptions | undefined;
   cwd: string;
   message: string;
   attachments?: ReadonlyArray<ChatAttachment> | undefined;
@@ -273,16 +279,13 @@ function fallbackModelSelection(instance: ProviderInstance): ModelSelection {
 }
 
 const snapshotAllowsTextGeneration = (instance: ProviderInstance): Effect.Effect<boolean> =>
-  typeof instance.snapshot.getSnapshot !== "function"
-    ? Effect.succeed(true)
-    : instance.snapshot.getSnapshot.pipe(
-        Effect.map(
-          (snapshot) =>
-            snapshot.auth?.status !== "unauthenticated" &&
-            snapshot.supportsTextGeneration !== false,
-        ),
-        Effect.catchCause(() => Effect.succeed(true)),
-      );
+  instance.snapshot.getSnapshot.pipe(
+    Effect.map(
+      (snapshot) =>
+        snapshot.auth?.status !== "unauthenticated" && snapshot.supportsTextGeneration !== false,
+    ),
+    Effect.catchCause(() => Effect.succeed(true)),
+  );
 
 const runWithTextGenerationFallback = <A>(
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],

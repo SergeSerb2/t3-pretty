@@ -1,3 +1,4 @@
+import { type ScopedThreadRef } from "@t3tools/contracts";
 import {
   formatProviderSkillDisplayName,
   resolveProviderSkillSourceKind,
@@ -15,6 +16,7 @@ import {
   BlocksIcon,
   BotIcon,
   FolderIcon,
+  MessagesSquareIcon,
   PackageIcon,
   SettingsIcon,
   UserRoundIcon,
@@ -85,6 +87,13 @@ export type ComposerCommandItem =
       id: string;
       type: "pull-request";
       pullRequest: PullRequestContextMetadata;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "thread";
+      thread: ScopedThreadRef;
       label: string;
       description: string;
     };

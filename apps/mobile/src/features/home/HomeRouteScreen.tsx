@@ -2,12 +2,13 @@ import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 import { useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Platform, useWindowDimensions, View } from "react-native";
+import { Platform, View, useWindowDimensions } from "react-native";
+
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 
 import { EmptyState } from "../../components/EmptyState";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
-import { useProjects, useServerConfigs } from "../../state/entities";
-import { usePresentedThreadShells } from "../../state/optimistic-thread-send";
+import { useProjects, useServerConfigs, useNavigationThreadShells } from "../../state/entities";
 import { usePendingNewTasks } from "../../state/use-pending-new-tasks";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
@@ -34,7 +35,7 @@ export function HomeRouteScreen() {
   const { layout, panes } = useAdaptiveWorkspaceLayout();
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
-  const threads = usePresentedThreadShells();
+  const threads = useNavigationThreadShells();
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const navigation = useNavigation();
@@ -52,6 +53,20 @@ export function HomeRouteScreen() {
   const openAutomations = useCallback(() => {
     navigation.navigate("Automations");
   }, [navigation]);
+  const handleNewThreadOnBranch = useCallback(
+    (thread: EnvironmentThreadShell) => {
+      navigation.navigate("NewTaskSheet", {
+        screen: "NewTaskDraft",
+        params: {
+          environmentId: String(thread.environmentId),
+          projectId: String(thread.projectId),
+          branch: thread.branch,
+          worktreePath: thread.worktreePath,
+        },
+      });
+    },
+    [navigation],
+  );
 
   useEffect(() => {
     void checkForAppUpdateOnLaunch();
@@ -278,17 +293,7 @@ export function HomeRouteScreen() {
           }}
           onSelectPendingTask={openPendingTask}
           onDeletePendingTask={confirmDeletePendingTask}
-          onNewThreadOnBranch={(thread) => {
-            navigation.navigate("NewTaskSheet", {
-              screen: "NewTaskDraft",
-              params: {
-                environmentId: String(thread.environmentId),
-                projectId: String(thread.projectId),
-                branch: thread.branch,
-                worktreePath: thread.worktreePath,
-              },
-            });
-          }}
+          onNewThreadOnBranch={handleNewThreadOnBranch}
           onNewThreadInProject={(project) => {
             navigation.navigate("NewTaskSheet", {
               screen: "NewTaskDraft",

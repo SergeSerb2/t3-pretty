@@ -36,6 +36,7 @@ describe("connectAuth", () => {
         hostedAppUrl,
         state: "state-1",
         challenge: "challenge-1",
+        loopbackPort: 34338,
       }),
     );
 

@@ -1,3 +1,4 @@
+import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import type { ChangeRequest } from "@t3tools/contracts";
@@ -35,7 +36,7 @@ export function toForgejoChangeRequest(raw: typeof ForgejoPullRequestSchema.Type
     baseRefName: raw.base.ref,
     headRefName: raw.head.ref,
     closedAt: raw.closed_at ?? null,
-    mergedAt: raw.merged_at ?? null,
+    mergedAt: raw.merged_at == null ? Option.none() : Option.some(DateTime.makeUnsafe(raw.merged_at)),
     updatedAt: raw.updated_at ?? Option.none(),
     isCrossRepository:
       raw.head.repo !== null &&

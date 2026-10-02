@@ -8,8 +8,8 @@ import {
   AutomationsError,
   CommandId,
   EnvironmentId,
-  type OrchestrationCommand,
-  type OrchestrationThreadShell,
+  type AutomationCommand,
+  type OrchestrationV2ThreadShell,
   ProjectId,
   ProviderInstanceId,
   type RuntimeMode,
@@ -20,8 +20,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { AutomationStore } from "../../../automations/AutomationStore.ts";
+import { ThreadManagementService } from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { automationsToolkitHandlers } from "./handlers.ts";
 
@@ -52,30 +52,14 @@ const makeScope = (
 
 const makeThreadShell = (input: {
   readonly runtimeMode?: RuntimeMode;
-  readonly automationRun?: OrchestrationThreadShell["automationRun"];
-}): OrchestrationThreadShell => ({
-  id: threadId,
-  projectId,
-  title: "Caller thread",
-  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.1-codex" },
-  runtimeMode: input.runtimeMode ?? "full-access",
-  interactionMode: "default",
-  branch: null,
-  worktreePath: null,
-  latestTurn: null,
-  createdAt: NOW,
-  updatedAt: NOW,
-  archivedAt: null,
-  settledOverride: null,
-  settledAt: null,
-  enabledSkillIds: [],
-  ...(input.automationRun === undefined ? {} : { automationRun: input.automationRun }),
-  session: null,
-  latestUserMessageAt: null,
-  hasPendingApprovals: false,
-  hasPendingUserInput: false,
-  hasActionableProposedPlan: false,
-});
+  readonly automationRun?: OrchestrationV2ThreadShell["automationRun"];
+}): OrchestrationV2ThreadShell =>
+  ({
+    id: threadId,
+    projectId,
+    runtimeMode: input.runtimeMode ?? "full-access",
+    automationRun: input.automationRun ?? null,
+  }) as OrchestrationV2ThreadShell;
 
 const makeAutomationShell = (input: {
   readonly projectId?: ProjectId;
@@ -112,19 +96,21 @@ const makeAutomationShell = (input: {
 
 interface HarnessInput {
   readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
-  readonly thread?: OrchestrationThreadShell;
+  readonly thread?: OrchestrationV2ThreadShell;
   readonly automation?: AutomationShell | null;
 }
 
 const makeHarness = (input: HarnessInput = {}) => {
-  const dispatched: Array<OrchestrationCommand> = [];
+  const dispatched: Array<AutomationCommand> = [];
   const threadReads: Array<ThreadId> = [];
-  const projection = stub<ProjectionSnapshotQuery["Service"]>({
-    getThreadShellById: (id) =>
+  const threadService = stub<ThreadManagementService["Service"]>({
+    getThreadShell: (id) =>
       Effect.sync(() => {
         threadReads.push(id);
-        return Option.some(input.thread ?? makeThreadShell({}));
+        return input.thread ?? makeThreadShell({});
       }),
+  });
+  const projection = stub<AutomationStore["Service"]>({
     getAutomationShellById: () =>
       Effect.succeed(
         input.automation === undefined || input.automation === null
@@ -133,12 +119,10 @@ const makeHarness = (input: HarnessInput = {}) => {
       ),
     listAutomationShells: () =>
       Effect.succeed([makeAutomationShell({}), makeAutomationShell({ projectId: otherProjectId })]),
-  });
-  const engine = stub<OrchestrationEngineService["Service"]>({
     dispatch: (command) =>
       Effect.sync(() => {
         dispatched.push(command);
-        return { sequence: dispatched.length };
+        return;
       }),
   });
   const run = <A, E>(
@@ -146,8 +130,8 @@ const makeHarness = (input: HarnessInput = {}) => {
       A,
       E,
       | McpInvocationContext.McpInvocationContext
-      | ProjectionSnapshotQuery
-      | OrchestrationEngineService
+      | AutomationStore
+      | ThreadManagementService
       | Crypto.Crypto
     >,
   ) =>
@@ -156,8 +140,8 @@ const makeHarness = (input: HarnessInput = {}) => {
         McpInvocationContext.McpInvocationContext,
         makeScope(input.capabilities ?? new Set(["automations"])),
       ),
-      Effect.provideService(ProjectionSnapshotQuery, projection),
-      Effect.provideService(OrchestrationEngineService, engine),
+      Effect.provideService(AutomationStore, projection),
+      Effect.provideService(ThreadManagementService, threadService),
       Effect.provide(NodeServices.layer),
     );
   return { dispatched, threadReads, run };

@@ -71,7 +71,7 @@ describe("providerModelsFromSettings", () => {
     const models = providerModelsFromSettings(
       [],
       ["bare", { slug: "named", name: "Named", capabilities }],
-      OPENCODE_CUSTOM_MODEL_CAPABILITIES,
+      CUSTOM_MODEL_CAPABILITIES,
     );
 
     expect(models).toEqual([
@@ -79,7 +79,7 @@ describe("providerModelsFromSettings", () => {
         slug: "bare",
         name: "bare",
         isCustom: true,
-        capabilities: OPENCODE_CUSTOM_MODEL_CAPABILITIES,
+        capabilities: CUSTOM_MODEL_CAPABILITIES,
       },
       { slug: "named", name: "Named", isCustom: true, capabilities },
     ]);

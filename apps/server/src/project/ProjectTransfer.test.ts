@@ -8,14 +8,16 @@ import {
   EnvironmentId,
   ProjectId,
   ProjectTransferError,
-  ProviderInstanceId,
   ThreadId,
-  type OrchestrationThread,
-  type ProjectTransferManifest,
+  type OrchestrationV2ThreadProjection,
+  ProjectTransferManifest,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
+
+import { TRANSFER_TEST_NOW, transferProjection, transferRun } from "./ProjectTransfer.testkit.ts";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -30,15 +32,18 @@ import {
   validateProjectTransferUploadToken,
 } from "./ProjectTransfer.ts";
 
+const encodeManifest = Schema.encodeEffect(ProjectTransferManifest);
+const decodeManifest = Schema.decodeEffect(ProjectTransferManifest);
+
 const testLayer = ServerSecretStore.layer.pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-project-transfer-" })),
   Layer.provideMerge(NodeServices.layer),
 );
 
-const NOW = "2026-08-28T12:00:00.000Z";
+const NOW = TRANSFER_TEST_NOW;
 const projectId = ProjectId.make("source-project");
 const manifest: ProjectTransferManifest = {
-  version: 1,
+  version: 3,
   sourceEnvironmentId: EnvironmentId.make("source-environment"),
   project: {
     id: projectId,
@@ -51,29 +56,7 @@ const manifest: ProjectTransferManifest = {
     updatedAt: NOW,
     deletedAt: null,
   },
-  thread: {
-    id: ThreadId.make("source-thread"),
-    projectId,
-    title: "Aerospace Lingo",
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: "main",
-    worktreePath: null,
-    latestTurn: null,
-    createdAt: NOW,
-    updatedAt: NOW,
-    archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
-    deletedAt: null,
-    enabledSkillIds: [],
-    messages: [],
-    proposedPlans: [],
-    activities: [],
-    checkpoints: [],
-    session: null,
-  },
+  thread: transferProjection(),
   includesGitMetadata: true,
   skippedAttachmentCount: 0,
 };
@@ -85,7 +68,9 @@ describe("ProjectTransfer", () => {
       const occupied = NodePath.join(config.baseDir, "projects", "Aerospace-Lingo");
       NodeFS.mkdirSync(occupied, { recursive: true });
 
-      const prepared = yield* prepareProjectTransfer({ manifest });
+      const prepared = yield* prepareProjectTransfer({
+        manifest: yield* encodeManifest(manifest).pipe(Effect.flatMap(decodeManifest)),
+      });
       expect(prepared.destinationPath).toBe(`${occupied}-2`);
       expect(prepared.relativeUrl).toMatch(
         new RegExp(`^${PROJECT_TRANSFER_UPLOAD_ROUTE_PREFIX}/[^.]+\\.[^.]+$`),
@@ -107,7 +92,9 @@ describe("ProjectTransfer", () => {
 
   it.effect("rejects expired and tampered upload paths", () =>
     Effect.gen(function* () {
-      const prepared = yield* prepareProjectTransfer({ manifest });
+      const prepared = yield* prepareProjectTransfer({
+        manifest: yield* encodeManifest(manifest).pipe(Effect.flatMap(decodeManifest)),
+      });
       const token = prepared.relativeUrl.slice(`${PROJECT_TRANSFER_UPLOAD_ROUTE_PREFIX}/`.length);
       const [payload, signature] = token.split(".");
       expect(yield* validateProjectTransferUploadToken(`${payload}x.${signature}`)).toBeNull();
@@ -133,7 +120,7 @@ describe("ProjectTransfer", () => {
   it.effect("prepares a whole-project move manifest", () =>
     Effect.gen(function* () {
       const prepared = yield* prepareProjectTransfer({
-        manifest: { ...manifest, version: 2, additionalThreads: [] },
+        manifest: { ...manifest, version: 3, additionalThreads: [] },
       });
       expect(prepared.destinationPath).toContain("Aerospace-Lingo");
       yield* cancelProjectTransfer({ transferId: prepared.transferId });
@@ -144,14 +131,14 @@ describe("ProjectTransfer", () => {
     const idle = requireMoveSiblingThread({
       title: "Sibling",
       detail: manifest.thread,
-      shell: { hasPendingApprovals: false, hasPendingUserInput: false },
+      shell: { pendingRuntimeRequest: null },
     });
     expect(idle).toEqual(manifest.thread);
 
     const missingDetail = requireMoveSiblingThread({
       title: "History",
       detail: undefined,
-      shell: { hasPendingApprovals: false },
+      shell: { pendingRuntimeRequest: null },
     });
     expect(missingDetail).toBeInstanceOf(ProjectTransferError);
     expect(missingDetail).toMatchObject({
@@ -168,24 +155,16 @@ describe("ProjectTransfer", () => {
     expect(missingShell).toBeInstanceOf(ProjectTransferError);
     expect(missingShell).toMatchObject({ reason: "workspace_not_found" });
 
-    const busy: OrchestrationThread = {
+    const busy: OrchestrationV2ThreadProjection = {
       ...manifest.thread,
-      title: "Running sibling",
-      session: {
-        threadId: manifest.thread.id,
-        status: "running",
-        providerName: null,
-        runtimeMode: "full-access",
-        activeTurnId: null,
-        lastError: null,
-        updatedAt: NOW,
-      },
+      thread: { ...manifest.thread.thread, title: "Running sibling" },
+      runs: [transferRun(manifest.thread, "running")],
     };
     expect(
       requireMoveSiblingThread({
-        title: busy.title,
+        title: busy.thread.title,
         detail: busy,
-        shell: {},
+        shell: { pendingRuntimeRequest: null },
       }),
     ).toMatchObject({
       reason: "thread_busy",
@@ -193,9 +172,9 @@ describe("ProjectTransfer", () => {
     });
     expect(
       requireMoveSiblingThread({
-        title: manifest.thread.title,
+        title: manifest.thread.thread.title,
         detail: manifest.thread,
-        shell: { hasPendingApprovals: true },
+        shell: { pendingRuntimeRequest: { kind: "approval" } },
       }),
     ).toMatchObject({ reason: "thread_busy" });
   });
@@ -204,12 +183,27 @@ describe("ProjectTransfer", () => {
     const siblingId = ThreadId.make("sibling-thread");
     const ids = manifestThreadIds({
       ...manifest,
-      version: 2,
-      additionalThreads: [{ ...manifest.thread, id: siblingId }],
+      version: 3,
+      additionalThreads: [
+        { ...manifest.thread, thread: { ...manifest.thread.thread, id: siblingId } },
+      ],
     });
-    expect(ids).toEqual([manifest.thread.id, siblingId]);
-    expect(sameThreadIdSet(ids, [siblingId, manifest.thread.id])).toBe(true);
-    expect(sameThreadIdSet(ids, [manifest.thread.id])).toBe(false);
+    expect(ids).toEqual([manifest.thread.thread.id, siblingId]);
+    expect(sameThreadIdSet(ids, [siblingId, manifest.thread.thread.id])).toBe(true);
+    expect(sameThreadIdSet(ids, [manifest.thread.thread.id])).toBe(false);
     expect(sameThreadIdSet(ids, [...ids, ThreadId.make("extra-thread")])).toBe(false);
   });
+});
+
+it("blocks a project move throughout every active V2 run phase", () => {
+  for (const status of ["queued", "preparing", "starting", "running", "waiting"] as const) {
+    const projection = { ...manifest.thread, runs: [transferRun(manifest.thread, status)] };
+    expect(
+      requireMoveSiblingThread({
+        title: projection.thread.title,
+        detail: projection,
+        shell: { pendingRuntimeRequest: null },
+      }),
+    ).toMatchObject({ reason: "thread_busy" });
+  }
 });

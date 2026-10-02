@@ -289,6 +289,7 @@ export const DesktopHostTelemetrySnapshot = Schema.Struct({
   power: DesktopHostPowerSnapshot,
   speedLimitPercent: Schema.OptionFromNullOr(Schema.Number),
   electronProcesses: Schema.Array(DesktopElectronProcessMetric),
+  electronProcessesTruncated: Schema.optional(Schema.Boolean),
 });
 export type DesktopHostTelemetrySnapshot = typeof DesktopHostTelemetrySnapshot.Type;
 
@@ -468,6 +469,7 @@ export type ResourceAttributionEntry = typeof ResourceAttributionEntry.Type;
 export const ResourceAttributionSnapshot = Schema.Struct({
   readAt: Schema.DateTimeUtc,
   entries: Schema.Array(ResourceAttributionEntry),
+  entriesTruncated: Schema.optional(Schema.Boolean),
 });
 export type ResourceAttributionSnapshot = typeof ResourceAttributionSnapshot.Type;
 
@@ -475,6 +477,7 @@ export const ResourceTelemetrySnapshot = Schema.Struct({
   readAt: Schema.DateTimeUtc,
   sampleIntervalMs: NonNegativeInt,
   processes: Schema.Array(ResourceTelemetryProcess),
+  processesTruncated: Schema.optional(Schema.Boolean),
   groups: ResourceTelemetryGroups,
   power: HostPowerSnapshot,
   speedLimitPercent: Schema.Option(Schema.Number),
@@ -531,6 +534,7 @@ export const ResourceTelemetryHistory = Schema.Struct({
   retainedSampleCount: NonNegativeInt,
   buckets: Schema.Array(ResourceTelemetryHistoryBucket),
   topProcesses: Schema.Array(ResourceTelemetryProcessSummary),
+  topProcessesTruncated: Schema.optional(Schema.Boolean),
   health: ResourceTelemetryHealth,
 });
 export type ResourceTelemetryHistory = typeof ResourceTelemetryHistory.Type;

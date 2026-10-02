@@ -7,7 +7,7 @@ import {
   ThreadId,
   type HomeSuggestionsTime,
   type OrchestrationProjectShell,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
@@ -64,8 +64,8 @@ function makeThread(
   id: string,
   projectId: string,
   updatedAt: string,
-  overrides: Partial<OrchestrationThreadShell> = {},
-): OrchestrationThreadShell {
+  overrides: Partial<OrchestrationV2ThreadShell> = {},
+): OrchestrationV2ThreadShell {
   return {
     id: ThreadId.make(id),
     projectId: ProjectId.make(projectId),
@@ -77,16 +77,30 @@ function makeThread(
     branch: null,
     worktreePath: null,
     pullRequests: [],
-    latestTurn: null,
-    createdAt: "2026-09-01T00:00:00.000Z",
-    updatedAt,
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    createdBy: "user",
+    creationSource: "web",
+    lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make(id) },
+    forkedFrom: null,
+    activeProviderThreadId: null,
+    latestRunId: null,
+    activeRunId: null,
+    status: "idle",
+    pendingRuntimeRequest: null,
+    latestVisibleMessage: null,
+    pendingBackgroundTasks: [],
+    providerInstanceHistory: [],
+    itemCount: 0,
+    visibleItemCount: 0,
+    deletedAt: null,
+    createdAt: DateTime.makeUnsafe("2026-09-01T00:00:00.000Z"),
+    updatedAt: DateTime.makeUnsafe(updatedAt),
     archivedAt: null,
     settledOverride: null,
     settledAt: null,
-    session: null,
+
     latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
+
     hasActionableProposedPlan: false,
     ...overrides,
   };
@@ -104,7 +118,7 @@ describe("selectDigestThreads", () => {
     );
     const beta = [makeThread("b0", "beta", "2026-09-10T00:00:00.000Z")];
     const archived = makeThread("archived", "beta", "2026-09-21T00:00:00.000Z", {
-      archivedAt: "2026-09-21T01:00:00.000Z",
+      archivedAt: DateTime.makeUnsafe("2026-09-21T01:00:00.000Z"),
     });
     const orphan = makeThread("orphan", "gone", "2026-09-21T00:00:00.000Z");
 
@@ -139,21 +153,14 @@ describe("buildHomeSuggestionsDigest", () => {
         {
           shell: makeThread("t1", "busy", "2026-09-21T09:00:00.000Z", {
             title: "Fix the flaky login test",
-            latestTurn: {
-              turnId: "turn-1" as never,
-              state: "completed",
-              requestedAt: "2026-09-21T08:00:00.000Z",
-              startedAt: null,
-              completedAt: null,
-              assistantMessageId: null,
-            },
+            status: "completed",
           }),
           messages: [
             {
               role: "user",
               text: 'Make login.test.ts pass\n\n<create_pull_request_instructions source="t3-auto-pr">\nsecret\n</create_pull_request_instructions>',
             },
-            { role: "reasoning", text: "thinking" },
+            { role: "system", text: "thinking" },
             { role: "assistant", text: "Done, the retry was racing the cookie write." },
           ],
         },

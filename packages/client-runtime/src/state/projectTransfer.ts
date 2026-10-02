@@ -5,6 +5,7 @@ import {
   type ProjectTransferMode,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -101,14 +102,14 @@ export const transferProjectThread = Effect.fn("ProjectTransfer.transfer")(funct
       input.sourceEnvironmentId,
       request(WS_METHODS.projectTransfersSend, {
         threadId: input.threadId,
-        expectedUpdatedAt: manifest.thread.updatedAt,
+        expectedUpdatedAt: DateTime.formatIso(manifest.thread.thread.updatedAt),
         destinationUrl,
         mode: input.mode,
         ...(input.mode === "move"
           ? {
               expectedThreadIds: [
-                manifest.thread.id,
-                ...(manifest.additionalThreads ?? []).map((thread) => thread.id),
+                manifest.thread.thread.id,
+                ...(manifest.additionalThreads ?? []).map((projection) => projection.thread.id),
               ],
             }
           : {}),

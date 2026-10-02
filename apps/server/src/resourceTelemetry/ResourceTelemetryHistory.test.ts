@@ -376,7 +376,7 @@ describe("buildResourceTelemetryHistory", () => {
       desktopSnapshot: Option.none(),
       snapshots: [
         {
-          version: 2,
+          version: 3,
           type: "snapshot",
           sequence: 1,
           sampledAtUnixMs: STARTED_AT_MS,

@@ -254,7 +254,8 @@ steps:
     # not cancel the Windows agent job while it is still waiting.
     # Scheduled builds exist only to run upstream sync. Do not rebuild NSIS
     # every four hours when main has not changed.
-    if: 'build.env("T3CODE_IOS_ONLY") != "1" && (build.branch == "main" && build.source != "schedule")'
+    # Opt-in per build when the Windows release host is unavailable.
+    if: 'build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_SKIP_WINDOWS") != "1" && (build.branch == "main" && build.source != "schedule")'
     timeout_in_minutes: 90
     agents:
       queue: windows-release

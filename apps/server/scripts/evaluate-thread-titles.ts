@@ -24,6 +24,7 @@ import {
 import * as ThreadTitleLinks from "../src/textGeneration/ThreadTitleLinks.ts";
 import * as SourceControlProviderRegistry from "../src/sourceControl/SourceControlProviderRegistry.ts";
 import * as GitHubCli from "../src/sourceControl/GitHubCli.ts";
+import * as OriginCli from "../src/sourceControl/OriginCli.ts";
 import * as GitLabCli from "../src/sourceControl/GitLabCli.ts";
 import * as ForgejoCli from "../src/sourceControl/ForgejoCli.ts";
 import * as AzureDevOpsCli from "../src/sourceControl/AzureDevOpsCli.ts";
@@ -153,6 +154,7 @@ await Effect.runPromise(
           Layer.provide(
             Layer.mergeAll(
               GitHubCli.layer,
+              OriginCli.layer,
               GitLabCli.layer,
               ForgejoCli.layer,
               AzureDevOpsCli.layer,

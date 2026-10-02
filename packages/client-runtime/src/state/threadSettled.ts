@@ -1,5 +1,34 @@
+import type { EnvironmentThreadShell } from "./models.ts";
 // @effect-diagnostics globalDate:off -- UI snooze presets use local calendar boundaries and Intl labels.
-import type { OrchestrationThreadShell } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
+
+interface SettlementRunLike {
+  readonly turnId?: unknown;
+  readonly assistantMessageId?: unknown;
+  readonly status?: string;
+  readonly state?: string;
+  readonly requestedAt?: string | null;
+  readonly startedAt?: string | null;
+  readonly completedAt?: string | null;
+}
+
+interface SettlementRuntimeLike {
+  readonly threadId?: unknown;
+  readonly providerName?: unknown;
+  readonly runtimeMode?: unknown;
+  readonly activeTurnId?: unknown;
+  readonly lastError?: unknown;
+  readonly status: string;
+  readonly updatedAt?: string;
+}
+
+interface QueuedThreadShell {
+  readonly latestUserMessageAt?: string | null;
+  readonly latestTurn?: SettlementRunLike | null;
+  readonly latestRun?: SettlementRunLike | null;
+  readonly session?: SettlementRuntimeLike | null;
+  readonly runtime?: SettlementRuntimeLike | null;
+}
 
 export type ChangeRequestStateLike = "open" | "closed" | "merged";
 
@@ -15,8 +44,8 @@ export interface ChangeRequestSettleSource {
 
 /** Parent-compatible thread timeline shape accepted by the settle APIs. */
 export type ThreadActivitySource = Pick<
-  OrchestrationThreadShell,
-  "createdAt" | "latestUserMessageAt" | "latestTurn"
+  EnvironmentThreadShell,
+  "createdAt" | "latestUserMessageAt" | "latestRun"
 >;
 
 /**
@@ -27,7 +56,7 @@ export type ThreadActivitySource = Pick<
  */
 function threadUserActivityAnchorAt(thread: ThreadActivitySource): string {
   const messageAt = thread.latestUserMessageAt;
-  const requestedAt = thread.latestTurn?.requestedAt;
+  const requestedAt = thread.latestRun?.requestedAt;
   let anchor = thread.createdAt;
   for (const candidate of [messageAt, requestedAt]) {
     if (candidate != null && Date.parse(candidate) > Date.parse(anchor)) {
@@ -64,13 +93,13 @@ export function changeRequestAutoSettles(
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 export function threadLastActivityAt(
-  shell: Pick<OrchestrationThreadShell, "latestUserMessageAt" | "latestTurn">,
+  shell: Pick<EnvironmentThreadShell, "latestUserMessageAt" | "latestRun">,
 ): string | null {
   const candidates = [
     shell.latestUserMessageAt,
-    shell.latestTurn?.requestedAt,
-    shell.latestTurn?.startedAt,
-    shell.latestTurn?.completedAt,
+    shell.latestRun?.requestedAt,
+    shell.latestRun?.startedAt,
+    shell.latestRun?.completedAt,
   ];
   let latest: string | null = null;
   let latestTimestamp = Number.NEGATIVE_INFINITY;
@@ -106,13 +135,20 @@ export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
  * within the adoption grace window.
  */
 export function hasQueuedTurnStart(
-  shell: Pick<OrchestrationThreadShell, "latestUserMessageAt" | "latestTurn" | "session">,
+  shell: QueuedThreadShell,
   options: { readonly now: string },
 ): boolean {
+  if (
+    shell.runtime?.status === "preparing" ||
+    shell.runtime?.status === "queued" ||
+    shell.runtime?.status === "starting"
+  ) {
+    return true;
+  }
   if (shell.latestUserMessageAt == null) return false;
   // A failed session start clears the queued state: the failure is already
   // visible (status edge / error).
-  if (shell.session?.status === "error") return false;
+  if ((shell.runtime?.status === "failed" || shell.runtime?.status === "error")) return false;
   const messageAt = Date.parse(shell.latestUserMessageAt);
   if (Number.isNaN(messageAt)) return false;
   const nowMs = Date.parse(options.now);
@@ -122,7 +158,7 @@ export function hasQueuedTurnStart(
   // that would otherwise hold the queued state for the whole skew. Mirrors
   // the decider's guard.
   if (Math.abs(nowMs - messageAt) > QUEUED_TURN_START_GRACE_MS) return false;
-  const turn = shell.latestTurn;
+  const turn = shell.latestRun ?? shell.latestTurn ?? null;
   if (turn === null) return true;
   return [turn.requestedAt, turn.startedAt, turn.completedAt].every(
     (candidate) => candidate == null || Date.parse(candidate) < messageAt,
@@ -138,13 +174,13 @@ export function hasQueuedTurnStart(
  */
 export function canSettle(
   shell: Pick<
-    OrchestrationThreadShell,
-    "hasPendingApprovals" | "hasPendingUserInput" | "session" | "latestUserMessageAt" | "latestTurn"
+    ThreadSnoozeShell,
+    "hasPendingApprovals" | "hasPendingUserInput" | "runtime" | "latestUserMessageAt" | "latestRun"
   >,
   options: { readonly now: string },
 ): boolean {
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return false;
-  if (shell.session?.status === "starting" || shell.session?.status === "running") return false;
+  if (shell.runtime != null && ["preparing", "queued", "starting", "running", "waiting"].includes(shell.runtime.status)) return false;
   // Queued work is as blocked-on-progress as a live session: settling it
   // (or auto-settling it on a closed PR) would hide a just-requested turn.
   if (hasQueuedTurnStart(shell, options)) return false;
@@ -157,15 +193,12 @@ export function canSettle(
  * "active" in the data model and is only suppressed from the inbox until
  * its wake time passes or the thread demands attention.
  */
-export type ThreadSnoozeShell = Pick<
-  OrchestrationThreadShell,
-  | "snoozedUntil"
-  | "snoozedAt"
-  | "hasPendingApprovals"
-  | "hasPendingUserInput"
-  | "session"
-  | "latestTurn"
->;
+export interface ThreadSnoozeShell extends QueuedThreadShell {
+  readonly snoozedUntil?: string | null;
+  readonly snoozedAt?: string | null;
+  readonly hasPendingApprovals: boolean;
+  readonly hasPendingUserInput: boolean;
+}
 
 function happenedAfterSnooze(eventAt: string, snoozedAt: string | null | undefined): boolean {
   if (snoozedAt == null) return true;
@@ -186,21 +219,24 @@ function happenedAfterSnooze(eventAt: string, snoozedAt: string | null | undefin
  */
 export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean {
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return true;
+  const runtime = shell.runtime ?? shell.session ?? null;
+  const latestRun = shell.latestRun ?? shell.latestTurn ?? null;
   // Only a FRESH failure raises the hand: a thread snoozed while already
   // failed stays snoozed — that snooze was the user saying "I saw it, not
   // now". session.updatedAt stamps the status edge, so an error newer than
   // the snooze is new information.
   if (
-    shell.session?.status === "error" &&
-    happenedAfterSnooze(shell.session.updatedAt, shell.snoozedAt)
+    (runtime?.status === "error" || runtime?.status === "failed") &&
+    (shell.snoozedAt == null ||
+      (runtime.updatedAt != null && Date.parse(runtime.updatedAt) > Date.parse(shell.snoozedAt)))
   ) {
     return true;
   }
   if (
     shell.snoozedAt != null &&
-    shell.latestTurn?.state === "completed" &&
-    shell.latestTurn.completedAt != null &&
-    happenedAfterSnooze(shell.latestTurn.completedAt, shell.snoozedAt)
+    (latestRun?.state === "completed" || latestRun?.status === "completed") &&
+    latestRun.completedAt != null &&
+    Date.parse(latestRun.completedAt) > Date.parse(shell.snoozedAt)
   ) {
     return true;
   }
@@ -217,8 +253,14 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
  */
 export function canSnooze(
   shell: Pick<
-    OrchestrationThreadShell,
-    "hasPendingApprovals" | "hasPendingUserInput" | "latestUserMessageAt" | "latestTurn" | "session"
+    ThreadSnoozeShell,
+    | "hasPendingApprovals"
+    | "hasPendingUserInput"
+    | "latestUserMessageAt"
+    | "latestRun"
+    | "latestTurn"
+    | "runtime"
+    | "session"
   >,
   options: { readonly now: string },
 ): boolean {
@@ -239,18 +281,9 @@ export const canStore = canSnooze;
  * storage: once the turn ends the thread goes back to the shelf.
  */
 export function effectiveStored(
-  shell: Pick<
-    OrchestrationThreadShell,
-    | "storedAt"
-    | "hasPendingApprovals"
-    | "hasPendingUserInput"
-    | "session"
-    | "latestUserMessageAt"
-    | "latestTurn"
-  >,
+  shell: ThreadSnoozeShell & { readonly storedAt?: string | null },
   options: { readonly now: string },
 ): boolean {
-  // Same blockers that hold a settled thread active.
   return shell.storedAt != null && canSettle(shell, options);
 }
 
@@ -297,15 +330,17 @@ export function threadWokeAt(
   // indicator the user already cleared by visiting (snoozedUntil is newer
   // than that visit's lastVisitedAt).
   if (threadRaisedHandWhileSnoozed(shell)) {
+    const latestRun = shell.latestRun ?? shell.latestTurn ?? null;
+    const runtime = shell.runtime ?? shell.session ?? null;
     if (
       shell.snoozedAt != null &&
-      shell.latestTurn?.state === "completed" &&
-      shell.latestTurn.completedAt != null &&
-      happenedAfterSnooze(shell.latestTurn.completedAt, shell.snoozedAt)
+      (latestRun?.state === "completed" || latestRun?.status === "completed") &&
+      latestRun.completedAt != null &&
+      Date.parse(latestRun.completedAt) > Date.parse(shell.snoozedAt)
     ) {
-      return shell.latestTurn.completedAt;
+      return latestRun.completedAt;
     }
-    return shell.session?.updatedAt ?? shell.snoozedAt ?? null;
+    return runtime?.updatedAt ?? shell.snoozedAt ?? null;
   }
   // No raised hand: woke iff the timer elapsed (still-snoozed → null).
   return wakeAtMs <= Date.parse(options.now) ? shell.snoozedUntil : null;
@@ -325,7 +360,7 @@ export function threadWokeAt(
  * an override never goes stale silently.
  */
 export function effectiveSettled(
-  shell: OrchestrationThreadShell,
+  shell: EnvironmentThreadShell,
   options: {
     readonly now: string;
     readonly autoSettleAfterDays: number | null;
@@ -339,7 +374,7 @@ export function effectiveSettled(
 ): boolean {
   // Blocked work must remain visible even when a user explicitly settled it.
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return false;
-  if (shell.session?.status === "starting" || shell.session?.status === "running") return false;
+  if (shell.runtime != null && ["preparing", "queued", "starting", "running", "waiting"].includes(shell.runtime.status)) return false;
   if (hasQueuedTurnStart(shell, { now: options.now })) {
     // The queued-turn blocker alone is forgivable: it is clock-derived, and
     // list callers pass a coarser `now` than the settle action used. When
@@ -412,7 +447,7 @@ function snoozeTimeOfDayLabel(date: Date): string {
 }
 
 function snoozeAtHour(base: Date, hour: number): Date {
-  const next = new Date(base);
+  const next = DateTime.toDate(DateTime.makeUnsafe(base));
   next.setHours(hour, 0, 0, 0);
   return next;
 }
@@ -421,7 +456,7 @@ function snoozeAtHour(base: Date, hour: number): Date {
 // land on the wrong local day across DST transitions (a spring-forward day
 // is 23 hours, so 23:30 + 24h skips the whole next day).
 function addSnoozeDays(base: Date, days: number): Date {
-  const next = new Date(base);
+  const next = DateTime.toDate(DateTime.makeUnsafe(base));
   next.setDate(next.getDate() + days);
   return next;
 }
@@ -434,8 +469,8 @@ function addSnoozeDays(base: Date, days: number): Date {
  * morning, so only "Tomorrow" is offered.
  */
 export function resolveSnoozePresets(now: Date): ReadonlyArray<SnoozePreset> {
-  const inAnHour = new Date(now.getTime() + HOUR_MS);
-  const inThreeHours = new Date(now.getTime() + 3 * HOUR_MS);
+  const inAnHour = DateTime.toDate(DateTime.makeUnsafe(now.getTime() + HOUR_MS));
+  const inThreeHours = DateTime.toDate(DateTime.makeUnsafe(now.getTime() + 3 * HOUR_MS));
   const presets: SnoozePreset[] = [
     {
       id: "hour",

@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { ApprovalRequestId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { RuntimeRequestId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 /** Upper bound for a pasted API key. Matches the per-variable limit in provider environments. */
 export const SECRET_REQUEST_VALUE_MAX_LENGTH = 16_384;
@@ -20,7 +20,7 @@ export type ThreadSecretRequestResponse = typeof ThreadSecretRequestResponse.Typ
 
 export const ThreadSecretRequestRespondInput = Schema.Struct({
   threadId: ThreadId,
-  requestId: ApprovalRequestId,
+  requestId: RuntimeRequestId,
   response: ThreadSecretRequestResponse,
 });
 export type ThreadSecretRequestRespondInput = typeof ThreadSecretRequestRespondInput.Type;

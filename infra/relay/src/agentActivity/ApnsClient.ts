@@ -8,7 +8,7 @@ import * as Stream from "effect/Stream";
 import * as Headers from "effect/unstable/http/Headers";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import { ApnsEnvironment as ApnsEnvironmentSchema, type ApnsCredentials } from "../Config.ts";
+import { ApnsEnvironment, type ApnsCredentials } from "../Config.ts";
 import type { ApnsLiveActivityAlert, ApnsNotificationPayload } from "./apnsDeliveryJobs.ts";
 import {
   sanitizeAgentActivityAggregateState,
@@ -73,7 +73,7 @@ export class ApnsHttpRequestError extends Schema.TaggedError<ApnsHttpRequestErro
   {
     requestKind: ApnsRequestKindSchema,
     event: Schema.NullOr(ApnsLiveActivityEventSchema),
-    environment: ApnsEnvironmentSchema,
+    environment: ApnsEnvironment,
     bundleId: Schema.String,
     tokenSuffix: Schema.String,
     stage: Schema.Literals(["validate-payload", "send", "read-response", "deadline"]),
@@ -236,6 +236,7 @@ function liveActivityAlertPayload(alert: ApnsLiveActivityAlert) {
       title: alert.title,
       body: alert.body,
       sound: "default",
+      "thread-id": notificationThreadId(notification),
     },
   };
 }
@@ -328,6 +329,12 @@ function makeLiveActivityRequest(input: MakeLiveActivityRequestInput): ApnsLiveA
   };
 }
 
+function notificationThreadId(notification: ApnsNotificationPayload): string {
+  return notification.threadId.length > 0
+    ? `${notification.environmentId}/${notification.threadId}`
+    : "t3-agent-alerts";
+}
+
 function makePushNotificationRequest(input: {
   readonly token: string;
   readonly notification: ApnsNotificationPayload;
@@ -340,6 +347,7 @@ function makePushNotificationRequest(input: {
         body: useOriginalCopy ? notification.body : "Agent activity needs attention",
       },
       sound: "default",
+      "thread-id": notificationThreadId(notification),
     },
     ...(includeRouting
       ? {

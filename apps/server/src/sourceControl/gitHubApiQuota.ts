@@ -55,7 +55,7 @@ export function gitHubApiHostFromArgs(args: ReadonlyArray<string>): string {
 export interface GitHubApiQuota {
   readonly blockedUntil: (host: string, nowMs: number) => number | null;
   readonly noteSuccess: (host: string) => void;
-  readonly noteRateLimit: (host: string, nowMs: number) => Duration.Duration;
+  readonly noteRateLimit: (host: string, nowMs: number, retryAtMs?: number) => Duration.Duration;
 }
 
 export function createGitHubApiQuota(): GitHubApiQuota {
@@ -82,7 +82,7 @@ export function createGitHubApiQuota(): GitHubApiQuota {
     noteSuccess: (host) => {
       state.delete(quotaHost(host));
     },
-    noteRateLimit: (host, nowMs) => {
+    noteRateLimit: (host, nowMs, retryAtMs) => {
       for (const [key, entry] of state) {
         if (nowMs >= entry.cooldownUntilMs) state.delete(key);
       }
@@ -97,7 +97,7 @@ export function createGitHubApiQuota(): GitHubApiQuota {
       }
       state.set(key, {
         consecutive,
-        cooldownUntilMs: nowMs + Duration.toMillis(cooldown),
+        cooldownUntilMs: Math.max(nowMs + Duration.toMillis(cooldown), retryAtMs ?? nowMs),
       });
       return cooldown;
     },

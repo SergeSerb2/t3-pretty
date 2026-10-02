@@ -24,9 +24,9 @@ import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-import { IMAGE_EXTENSION_BY_MIME_TYPE } from "../imageMime.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as Mime from "effect/unstable/http/Mime";
+import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
+import { ProjectService } from "./ProjectService.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -54,13 +54,7 @@ function hasImageCapableInstance(instances: ReadonlyArray<ProviderInstance>): bo
 }
 
 function mimeTypeForPath(filePath: string): string {
-  const extension = filePath.slice(filePath.lastIndexOf(".")).toLowerCase();
-  for (const [mimeType, mimeExtension] of Object.entries(IMAGE_EXTENSION_BY_MIME_TYPE)) {
-    if (mimeExtension === extension) {
-      return mimeType;
-    }
-  }
-  return "image/png";
+  return Option.getOrElse(Mime.getType(filePath), () => "image/png");
 }
 
 function resolveInsideWorkspaceImagePath(
@@ -130,10 +124,10 @@ function pickImageCapableSelection(
 
 const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettingsService;
-  const projection = yield* ProjectionSnapshotQuery;
+  const projects = yield* ProjectService;
   const textGeneration = yield* TextGeneration;
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
-  const orchestrationEngine = yield* OrchestrationEngineService;
+  const applicationEvents = yield* OrchestrationEventStore;
   const crypto = yield* Crypto.Crypto;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -156,7 +150,7 @@ const make = Effect.gen(function* () {
     if (!settings.autoGenerateProjectIcons) {
       return;
     }
-    const projectOption = yield* projection.getProjectShellById(projectId).pipe(
+    const projectOption = yield* projects.getShell(projectId).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("project icon generation could not load project", {
           projectId,
@@ -254,9 +248,8 @@ const make = Effect.gen(function* () {
     const commandId = yield* crypto.randomUUIDv4.pipe(
       Effect.map((uuid) => CommandId.make(`server:project-icon:${uuid}`)),
     );
-    const updated = yield* orchestrationEngine
-      .dispatch({
-        type: "project.meta.update",
+    const updated = yield* projects
+      .update({
         commandId,
         projectId,
         faviconPath: imported.faviconPath,
@@ -291,7 +284,7 @@ const make = Effect.gen(function* () {
 
   const enqueueEligibleProjects = Effect.fn("ProjectIconReactor.enqueueEligibleProjects")(
     function* () {
-      const snapshot = yield* projection.getShellSnapshot().pipe(
+      const snapshot = yield* projects.listShells().pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("project icon backfill could not list projects", {
             cause: Cause.pretty(cause),
@@ -301,7 +294,7 @@ const make = Effect.gen(function* () {
       if (!snapshot) {
         return;
       }
-      for (const project of snapshot.projects) {
+      for (const project of snapshot) {
         if (projectNeedsGeneratedIcon(project.faviconPath)) {
           yield* worker.enqueue(project.id, true);
         }
@@ -328,8 +321,8 @@ const make = Effect.gen(function* () {
       }
 
       yield* forkParked(
-        Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
-          if (event.type !== "project.created") {
+        Stream.runForEach(applicationEvents.streamProjectedApplicationEvents({ project: (event) => event }), (event) => {
+          if (!("aggregateKind" in event) || event.aggregateKind !== "project" || event.type !== "project.created") {
             return Effect.void;
           }
           return Ref.get(enabledRef).pipe(

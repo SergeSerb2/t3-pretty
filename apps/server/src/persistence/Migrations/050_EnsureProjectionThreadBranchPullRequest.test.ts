@@ -7,7 +7,7 @@ import { runMigrations } from "../Migrations.ts";
 import ensureProjectionThreadBranchPullRequest from "./050_EnsureProjectionThreadBranchPullRequest.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
-const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
 const threadColumns = Effect.fn("threadColumns")(function* () {
   const sql = yield* SqlClient.SqlClient;

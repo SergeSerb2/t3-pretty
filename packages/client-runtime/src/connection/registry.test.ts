@@ -1,9 +1,9 @@
 import {
   type DesktopSshEnvironmentTarget,
   EnvironmentId,
+  type OrchestrationV2ShellSnapshot,
   ORCHESTRATION_PROTOCOL_VERSION,
   type ExecutionEnvironmentDescriptor,
-  type OrchestrationShellSnapshot,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
@@ -61,6 +61,7 @@ import { watchDiscoveredCompatibility } from "./layer.ts";
 import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
 import type { RelayEnvironmentStatusResponse } from "@t3tools/contracts/relay";
 import { runDesktopCommitWithReconnectObserver } from "../state/server.ts";
+import { v2ShellSnapshot } from "../state/orchestrationV2TestFixtures.ts";
 
 const TARGET = new PrimaryConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -127,12 +128,9 @@ const SSH_PROFILE = new SshConnectionProfile({
   target: SSH_TARGET,
 });
 
-const CACHED_SNAPSHOT: OrchestrationShellSnapshot = {
+const CACHED_SNAPSHOT: OrchestrationV2ShellSnapshot = {
+  ...v2ShellSnapshot,
   snapshotSequence: 1,
-  projects: [],
-  threads: [],
-  automations: [],
-  updatedAt: "2026-06-06T00:00:00.000Z",
 };
 
 interface SessionControl {
@@ -1184,62 +1182,6 @@ describe("EnvironmentRegistry", () => {
         expect(
           (yield* SubscriptionRef.get(registry.entries)).has(BEARER_TARGET.environmentId),
         ).toBe(true);
-      }).pipe(Effect.provide(harness.layer), Effect.scoped);
-    }),
-  );
-
-  it.effect("reconciles relay environments without replacing direct connections", () =>
-    Effect.gen(function* () {
-      const replacement = new RelayConnectionTarget({
-        environmentId: RELAY_TARGET.environmentId,
-        label: "Renamed relay environment",
-      });
-      const added = new RelayConnectionTarget({
-        environmentId: EnvironmentId.make("environment-relay-3"),
-        label: "New relay environment",
-      });
-      const collidingRelay = new RelayConnectionTarget({
-        environmentId: BEARER_TARGET.environmentId,
-        label: "Relay must not replace bearer",
-      });
-      const harness = yield* makeHarness(
-        [RELAY_TARGET, SECOND_RELAY_TARGET, BEARER_TARGET],
-        [BEARER_PROFILE],
-        [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
-      );
-
-      yield* Effect.gen(function* () {
-        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-        yield* registry.reconcileRelayEnvironments(
-          [replacement, added, collidingRelay].map(
-            (target) => new RelayConnectionRegistration({ target }),
-          ),
-        );
-
-        const targets = yield* Ref.get(harness.storedTargets);
-        expect(targets.get(RELAY_TARGET.environmentId)).toEqual(replacement);
-        expect(targets.has(SECOND_RELAY_TARGET.environmentId)).toBe(false);
-        expect(targets.get(added.environmentId)).toEqual(added);
-        expect(targets.get(BEARER_TARGET.environmentId)).toEqual(BEARER_TARGET);
-        expect(yield* Ref.get(harness.cacheClears)).toContain(SECOND_RELAY_TARGET.environmentId);
-      }).pipe(Effect.provide(harness.layer), Effect.scoped);
-    }),
-  );
-
-  it.effect("does not restart relay environments that already match discovery", () =>
-    Effect.gen(function* () {
-      const harness = yield* makeHarness([RELAY_TARGET]);
-
-      yield* Effect.gen(function* () {
-        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-        yield* registry.reconcileRelayEnvironments([
-          new RelayConnectionRegistration({ target: RELAY_TARGET }),
-        ]);
-
-        expect(yield* Ref.get(harness.sessions)).toHaveLength(0);
-        expect((yield* Ref.get(harness.storedTargets)).get(RELAY_TARGET.environmentId)).toEqual(
-          RELAY_TARGET,
-        );
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

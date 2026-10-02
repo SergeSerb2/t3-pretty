@@ -5,7 +5,7 @@ import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { describe, expect } from "vite-plus/test";
 
-import { ProviderInstanceId, TextGenerationError } from "@t3tools/contracts";
+import { ProviderInstanceId, TextGenerationError, type ServerProvider } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
@@ -45,8 +45,13 @@ const makeStubInstance = (
     },
     displayName: undefined,
     enabled: true,
-    snapshot: {} as ProviderInstance["snapshot"],
-    adapter: {} as ProviderInstance["adapter"],
+    snapshot: {
+      getSnapshot: Effect.succeed({
+        auth: { status: "authenticated" },
+        supportsTextGeneration: true,
+      } as ServerProvider),
+    } as ProviderInstance["snapshot"],
+    orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
     textGeneration,
   }) satisfies ProviderInstance;
 
@@ -285,6 +290,66 @@ describe("TextGeneration.make", () => {
       });
 
       expect(result.title).toBe("Fix remote task headlines");
+    }),
+  );
+
+  it.effect("skips unauthenticated providers when routing an auth fallback", () =>
+    Effect.gen(function* () {
+      const codexId = ProviderInstanceId.make("codex");
+      const signedOutId = ProviderInstanceId.make("cursor");
+      const healthyId = ProviderInstanceId.make("claudeAgent");
+      const primary = makeStubInstance(
+        codexId,
+        makeStubTextGeneration({
+          generateThreadTitle: () =>
+            Effect.fail(
+              new TextGenerationError({
+                operation: "generateThreadTitle",
+                detail: "401 unauthorized",
+              }),
+            ),
+        }),
+      );
+      const signedOut = makeStubInstance(
+        signedOutId,
+        makeStubTextGeneration({
+          generateThreadTitle: () => Effect.die("Signed out provider must not be invoked"),
+        }),
+      );
+      const signedOutInstance = {
+        ...signedOut,
+        snapshot: {
+          ...signedOut.snapshot,
+          getSnapshot: Effect.succeed({
+            auth: { status: "unauthenticated" },
+            supportsTextGeneration: true,
+          } as ServerProvider),
+        },
+      };
+      const healthy = makeStubInstance(
+        healthyId,
+        makeStubTextGeneration({
+          generateThreadTitle: () => Effect.succeed({ title: "Healthy fallback" }),
+        }),
+      );
+      const generation = yield* TextGeneration.make.pipe(
+        Effect.provideService(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          makeStubRegistry([primary, signedOutInstance, healthy]),
+        ),
+        Effect.provide(
+          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => Effect.die("No link lookup expected"),
+          }),
+        ),
+      );
+      const result = yield* generation.generateThreadTitle({
+        cwd: process.cwd(),
+        message: "Fix routing",
+        linkedContext: "",
+        modelSelection: createModelSelection(codexId, "default"),
+      });
+      expect(result.title).toBe("Healthy fallback");
     }),
   );
 

@@ -358,3 +358,20 @@
 - `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `desktop-typecheck` failed after merging `v0.0.45-nightly.20261001.2539`; repaired with `gpt-5.6-sol`: Adapted the new download test to T3 Pretty’s preview-WebContents mock architecture while preserving the parent test behavior, eliminating both `never` property-access errors.
   - edited `apps/desktop/src/preview/Manager.test.ts`
+
+
+---
+
+# Orchestrator V2 integration, 2026-10-02
+
+The latest published installable parent nightly at inspection was `v0.0.45-nightly.20261002.2595`. Integration includes later upstream source through `cc1e634bfa62edd56ff792eea666e436fdef788f`, including orchestrator PR #2829 (`de343914273eceb852a1d1d739cd1d38df7796ee`) and its merged dependencies. The post-nightly source is recorded separately in `upstream-commit`; no unpublished preview is labeled an installable nightly.
+
+This integration replaces V1 runtime, event transport and provider adapters with the upstream V2 orchestrator. Pretty ports preserve automation scheduling/webhooks/MCP, stored and settled/snoozed thread controls, skills/subagent policy, scenery, rich Agents activity, generated image cards, secrets request privacy, ranked thread search, project transfer and managed icons, mobile durable outboxes/native activity, preview/recording and branding. Shipped fork migration numbers remain stable; new migrations append rather than overwrite applied ledger entries.
+
+The authoritative destination is `serbinenko/t3-pretty` on Origin. The user t3code fork integration is https://github.com/SergeSerb2/t3code/pull/1 at `d9fc790335abf45793f3cd6bdc304da9246cfaa0`; its exact main hosted verification and server artifact are https://github.com/SergeSerb2/t3code/actions/runs/37066641611.
+
+Selective builds may opt out of the physical Windows job with per-run `T3CODE_SKIP_WINDOWS=1`; default routing and the existing Windows target/queue remain unchanged. No physical Windows or unrelated media processing operations are part of this integration.
+
+Preserved baseline limitation: selected skills and subagent policy are persisted and exposed through V2 metadata/RPC/UI. The original shipped fork `d50b36971c` had no live `renderSkillsPrelude` or `resolveSubagentPolicy` consumer in provider command/runtime adapters; this integration does not claim new turn-time injection or fleet policy enforcement. Provider-native skill invocation remains supported independently. Existing pure helper tests and new V2 metadata/control tests cover the behavior that was implemented.
+
+Validation is scoped and serialized to avoid contention with unrelated workers. Server/web/mobile/desktop typechecks pass. Focused validation covers V2 event/SQL controls, MCP and secret privacy, native/history imports and replay, transfer/search/home/storage, web shelves and generated images, mobile outboxes/activity, desktop profiles/branding, provider routing, quota cooldowns and release guards. The server bundle builds successfully and its `--help` entry point runs. Release artifacts still require an authenticated selective Buildkite run; a local server bundle is not an installer or a mobile submission.

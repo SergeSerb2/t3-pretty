@@ -159,13 +159,15 @@ and enable the provider you want. Installation, login, and configuration belong
 to that environment's machine, even when you connect from a phone or another
 computer.
 
-| Provider    | Runtime / CLI                                                                                                              | Default binary                | Authenticate with                                    |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------- |
-| Codex       | [Connect with ChatGPT](./providers-codex.md#connect-with-chatgpt), or [Codex CLI](https://developers.openai.com/codex/cli) | Managed by T3 Code or `codex` | **Connect with ChatGPT** in T3 Code or `codex login` |
-| Claude      | [Claude Code](https://claude.com/product/claude-code)                                                                      | `claude`                      | `claude auth login`                                  |
-| Cursor      | [Cursor CLI](https://cursor.com/cli)                                                                                       | `cursor-agent`                | `agent login`                                        |
-| Grok Build  | [Grok Build CLI](https://x.ai/cli)                                                                                         | `grok`                        | `grok login`                                         |
-| Antigravity | [Official ACP agent](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json)                 | Managed by T3 Code            | **Sign in with Google** in T3 Code                   |
+| Provider    | Install and authenticate                                                                                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex       | [Connect with ChatGPT](./providers-codex.md#connect-with-chatgpt), or install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`. |
+| Claude      | Install [Claude Code](https://claude.com/product/claude-code), then run `claude auth login`.                                                              |
+| Cursor      | Install [Cursor CLI](https://cursor.com/cli), then run `agent login`.                                                                                     |
+| Grok Build  | Install [Grok Build CLI](https://x.ai/cli), then run `grok login`.                                                                                        |
+| OpenCode    | Install [OpenCode](https://opencode.ai), then run `opencode auth login`.                                                                                  |
+| Antigravity | Install and sign in with Google from T3 Code's provider settings.                                                                                         |
+| Pi          | Install [Pi](https://pi.dev), then run `pi` once to finish its login or API-key setup.                                                                    |
 
 Codex and Claude are on by default. Cursor, Grok Build, and Antigravity are off
 by default. Turn them on in **Settings** → **Providers** using each provider's card when you want
@@ -240,9 +242,9 @@ Provider auth is required before you start a session with that provider, not bef
 T3 Code. You can install T3 Code, open it, and add providers afterwards. A provider that is not
 authenticated shows its status and setup instructions in **Settings**.
 
-For provider-specific setup and multi-account configuration, see
-[Codex](./providers-codex.md), [Claude](./providers-claude.md), and
-[Antigravity](./providers-antigravity.md#accounts-and-removal).
+For provider-specific setup and accounts, see [Codex](./providers-codex.md),
+[Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
+[Antigravity](./providers-antigravity.md), and [Pi](./providers-pi.md).
 
 ## Next steps
 

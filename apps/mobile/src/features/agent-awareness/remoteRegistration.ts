@@ -118,6 +118,11 @@ let activityPushTokenSubscription: { remove: () => void } | null = null;
 // sign-out/identity change alongside the device registration state.
 const ACTIVITY_TOKEN_REREGISTER_INTERVAL_MS = 60_000;
 const MAX_RECENTLY_REGISTERED_ACTIVITY_TOKENS = 32;
+// Locally started activities carry the same stale window the relay puts on
+// every push (STALE_AFTER_SECONDS in ApnsClient.ts), so a card whose relay
+// registration never lands still degrades instead of looking alive forever.
+const LIVE_ACTIVITY_STALE_AFTER_MS = 10 * 60_000;
+const liveActivityStaleDate = () => new Date(Date.now() + LIVE_ACTIVITY_STALE_AFTER_MS);
 const registeredActivityPushTokens = new Map<string, number>();
 let lastAppliedLiveActivityFingerprint: string | null = null;
 let pendingLocalLiveActivityFingerprint: string | null = null;
@@ -664,7 +669,7 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
         },
       ],
     };
-    const activity = startAgentLiveActivity(props);
+    const activity = startAgentLiveActivity(props, liveActivityStaleDate());
     if (!activity) {
       return;
     }
@@ -718,7 +723,7 @@ export function applyLocalLiveActivityProps(props: AgentActivityProps): void {
       return;
     }
     if (instances.length === 0) {
-      const activity = startAgentLiveActivity(props);
+      const activity = startAgentLiveActivity(props, liveActivityStaleDate());
       if (!activity) {
         return;
       }
@@ -1430,7 +1435,7 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
                   activeCount: aggregate.activeCount,
                   updatedAt: aggregate.updatedAt,
                   activities: aggregate.activities,
-                });
+                }, liveActivityStaleDate());
               },
               catch: (cause) =>
                 new AgentAwarenessOperationError({

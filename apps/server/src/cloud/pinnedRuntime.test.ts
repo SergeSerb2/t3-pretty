@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -469,11 +470,11 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
             yield* fs
               .writeFileString(
                 path.join(fffDir, "package.json"),
-                `${JSON.stringify({
+                `${yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({
                   exports: {
                     ".": { import: "./dist/src/index.js", types: "./dist/src/index.d.ts" },
                   },
-                })}\n`,
+                }).pipe(Effect.orDie)}\n`,
               )
               .pipe(Effect.orDie);
             return {
@@ -520,7 +521,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       assert.equal(yield* fs.readLink(paths.entryPath), path.join("node_modules", ".bin", "t3"));
       assert.equal(yield* fs.readFileString(paths.sentinelPath), `${version}\n`);
       assert.deepEqual(
-        JSON.parse(
+        yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(
           yield* fs.readFileString(
             path.join(paths.versionDir, "node_modules", "@ff-labs", "fff-node", "package.json"),
           ),

@@ -13,13 +13,8 @@ import * as ConnectionOnboarding from "./onboarding.ts";
 import * as PlatformConnectionSource from "../platform/source.ts";
 import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
-import * as RpcSession from "../rpc/session.ts";
 import { threadLifecycleOutboxLayer } from "../state/threadLifecycleOutbox.ts";
-import { warmThreadStatesLayer } from "../state/threads.ts";
-
-const authorizationLayer = RemoteEnvironmentAuthorization.layer;
-
-const resolverLayer = ConnectionResolver.layer.pipe(Layer.provide(authorizationLayer));
+import * as RpcSession from "../rpc/session.ts";
 
 export const watchDiscoveredCompatibility = Effect.fn("connection.watchDiscoveredCompatibility")(
   function* () {
@@ -72,14 +67,15 @@ export const watchDiscoveredCompatibility = Effect.fn("connection.watchDiscovere
 );
 
 export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
-  const sessionLayer = RpcSession.layerWithOptions(options);
   const driverLayer = ConnectionDriver.layer.pipe(
-    Layer.provide(Layer.mergeAll(resolverLayer, sessionLayer)),
+    Layer.provide(Layer.mergeAll(ConnectionResolver.layer, RpcSession.layer(options))),
   );
   const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(driverLayer));
   const onboardingLayer = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));
-  const connectionServicesLayer = Layer.mergeAll(registryLayer, onboardingLayer).pipe(
-    Layer.provideMerge(RelayEnvironmentDiscovery.layer),
+  const connectionServicesLayer = Layer.mergeAll(
+    registryLayer,
+    RelayEnvironmentDiscovery.layer,
+    onboardingLayer,
   );
   const connectionStartupLayer = Layer.effectDiscard(
     Effect.gen(function* () {
@@ -95,9 +91,8 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
   );
   return connectionStartupLayer.pipe(
     Layer.provideMerge(connectionServicesLayer),
-    Layer.provideMerge(authorizationLayer),
+    Layer.provideMerge(RemoteEnvironmentAuthorization.layer),
     Layer.provideMerge(threadLifecycleOutboxLayer),
-    Layer.provideMerge(warmThreadStatesLayer),
   );
 }
 

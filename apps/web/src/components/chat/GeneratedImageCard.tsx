@@ -185,7 +185,7 @@ export function generatedImagePathsByTurnFromWorkEntries(
   const byTurn = new Map<string, string[]>();
   for (const entry of workEntries) {
     const path = generatedImageWorkEntryPath(entry);
-    const turnId = entry.turnId;
+    const turnId = entry.runId;
     if (!path || !turnId) {
       continue;
     }

@@ -1,4 +1,4 @@
-import { ENTITY_ID_MAX_LENGTH, type OrchestrationSessionStatus } from "@t3tools/contracts";
+import { ENTITY_ID_MAX_LENGTH, type OrchestrationV2RunStatus } from "@t3tools/contracts";
 
 import { stripHiddenInstructionSuffixes } from "./hiddenInstructionBlocks.ts";
 
@@ -9,9 +9,9 @@ export type NativeResumeCommand =
   | { readonly _tag: "Invalid" };
 
 export function isNativeResumeSessionReady(
-  status: OrchestrationSessionStatus | null | undefined,
+  status: OrchestrationV2RunStatus | "idle" | "ready" | null | undefined,
 ): boolean {
-  return status === "ready";
+  return status === "idle" || status === "ready";
 }
 
 export function restoreFailedNativeResumePrompt(

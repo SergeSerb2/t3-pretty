@@ -109,6 +109,8 @@ export function mightCarryUsage(line: string, provider: UsageProviderKind): bool
       return line.includes('"token_count"');
     case "grok":
       return line.includes('"turn_completed"');
+    default:
+    case "antigravity":
     case "cursor":
       // Cursor's ACP session store does not persist token usage today.
       return false;

@@ -5,7 +5,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
   type AutomationShell,
-  type OrchestrationCommand,
+  type AutomationCommand,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -15,9 +15,7 @@ import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import { HttpBody, HttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
 
-import { OrchestrationCommandInvariantError } from "../orchestration/Errors.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { AutomationStore, AutomationStoreError } from "./AutomationStore.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import * as AutomationWebhookHttp from "./AutomationWebhookHttp.ts";
 
@@ -68,20 +66,18 @@ const makeHarness = Effect.fn("makeWebhookHarness")(function* (options: {
   readonly automationsEnabled?: boolean;
   readonly rejectWith?: string;
 }) {
-  const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
+  const commands = yield* Ref.make<ReadonlyArray<AutomationCommand>>([]);
   const dependencies = Layer.mergeAll(
-    Layer.mock(ProjectionSnapshotQuery)({
+    Layer.mock(AutomationStore)({
       getAutomationShellById: () => Effect.succeed(Option.fromNullishOr(options.automation)),
-    }),
-    Layer.mock(OrchestrationEngineService)({
       dispatch: (command) =>
         Ref.update(commands, (recorded) => [...recorded, command]).pipe(
           Effect.andThen(
             options.rejectWith === undefined
-              ? Effect.succeed({ sequence: 1 })
+              ? Effect.void
               : Effect.fail(
-                  new OrchestrationCommandInvariantError({
-                    commandType: command.type,
+                  new AutomationStoreError({
+                    automationId: command.automationId,
                     detail: options.rejectWith,
                   }),
                 ),

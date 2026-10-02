@@ -2,7 +2,6 @@ import {
   ConnectionOnboarding,
   ConnectionTransientError,
   EnvironmentRegistry,
-  preparePairingRegistration,
 } from "@t3tools/client-runtime/connection";
 import {
   createAtomCommandScheduler,
@@ -49,26 +48,16 @@ export const connectPairingUrl = createRuntimeCommand(connectionAtomRuntime, {
   scheduler: onboardingScheduler,
   concurrency: { mode: "singleFlight", key: (pairingUrl: string) => pairingUrl },
   execute: (pairingUrl: string) =>
-    withOnboardingDeadline(
-      "Pairing with the environment timed out.",
-      Effect.gen(function* () {
-        const generation = pairingAttemptGeneration + 1;
-        pairingAttemptGeneration = generation;
-        const prepared = yield* preparePairingRegistration({ pairingUrl }).pipe(Effect.result);
-        if (pairingAttemptGeneration !== generation) {
-          return yield* Effect.interrupt;
-        }
-        if (prepared._tag === "Failure") {
-          return yield* Effect.fail(prepared.failure);
-        }
-        const registry = yield* EnvironmentRegistry;
-        yield* registry.register(prepared.success);
-        if (pairingAttemptGeneration !== generation) {
-          return yield* Effect.interrupt;
-        }
-        return prepared.success.target.environmentId;
-      }),
-    ),
+    withOnboardingDeadline("Pairing with the environment timed out.", Effect.gen(function* () {
+      const generation = ++pairingAttemptGeneration;
+      const prepared = yield* ConnectionOnboarding.preparePairingRegistration({ pairingUrl }).pipe(Effect.result);
+      if (generation !== pairingAttemptGeneration) return yield* Effect.interrupt;
+      if (prepared._tag === "Failure") return yield* Effect.fail(prepared.failure);
+      const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+      yield* registry.register(prepared.success);
+      if (generation !== pairingAttemptGeneration) return yield* Effect.interrupt;
+      return prepared.success.target.environmentId;
+    })),
 });
 
 export const updateBearerConnection = createRuntimeCommand(connectionAtomRuntime, {
@@ -83,8 +72,8 @@ export const updateBearerConnection = createRuntimeCommand(connectionAtomRuntime
     readonly label: string;
     readonly httpBaseUrl: string;
   }) =>
-    withOnboardingDeadline(
-      "Saving the environment connection timed out.",
-      ConnectionOnboarding.pipe(Effect.flatMap((onboarding) => onboarding.updateBearer(input))),
-    ),
+    withOnboardingDeadline("Saving the environment connection timed out.",
+      ConnectionOnboarding.ConnectionOnboarding.pipe(
+        Effect.flatMap((onboarding) => onboarding.updateBearer(input)),
+      )),
 });

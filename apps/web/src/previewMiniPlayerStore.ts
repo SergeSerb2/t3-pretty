@@ -31,6 +31,7 @@ export interface PreviewMiniPlayerState {
   readonly position: PreviewMiniPlayerPosition | null;
   /** Height always follows the mirrored source's aspect ratio. */
   readonly width: number | null;
+  readonly lastInteraction: "drag" | "resize";
 }
 
 interface PreviewMiniPlayerStoreState {
@@ -50,7 +51,12 @@ interface PreviewMiniPlayerStoreState {
     sourceKey: string,
     position: PreviewMiniPlayerPosition,
   ) => void;
-  readonly resize: (ref: ScopedThreadRef, sourceKey: string, width: number) => void;
+  readonly resize: (
+    ref: ScopedThreadRef,
+    sourceKey: string,
+    width: number,
+    position?: PreviewMiniPlayerPosition,
+  ) => void;
   readonly removeThread: (ref: ScopedThreadRef) => void;
 }
 
@@ -110,6 +116,7 @@ function openedPlayer(
         source,
         position: current?.position ?? null,
         width: current?.width ?? null,
+        lastInteraction: current?.lastInteraction ?? "drag",
       },
     },
   };

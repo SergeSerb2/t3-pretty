@@ -1,3 +1,4 @@
+import { makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -547,6 +548,8 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly number: number;
     }) => Effect.Effect<ProviderChangeRequestSummary, GitHubPullRequestCliError>;
 
+    readonly revalidateChecks: Effect.Success<typeof makeChecksRevalidator>;
+
     readonly getPullRequestDetail: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -1095,6 +1098,7 @@ function actionArgs(
 export const make = Effect.gen(function* () {
   const github = yield* GitHubCli.GitHubCli;
   const graphQlBudget = yield* GitHubGraphQlBudget.GitHubGraphQlBudget;
+  const revalidateChecks = yield* makeChecksRevalidator;
   const routingIdentities = new Map<
     string,
     {
@@ -1826,7 +1830,12 @@ export const make = Effect.gen(function* () {
       const batchable = entries.filter(
         (entry) => buildPullRequestSummariesGraphQlQuery([entry.request]) !== null,
       );
-      const query = buildPullRequestSummariesGraphQlQuery(batchable.map((entry) => entry.request));
+      // Stack membership rides along where GitHub serves stacks, so the background sync can skip
+      // the REST stack read for pull requests that are in none.
+      const query = buildPullRequestSummariesGraphQlQuery(
+        batchable.map((entry) => entry.request),
+        first.request.host === "github.com",
+      );
       const batched =
         query === null
           ? Effect.succeed(new Map<number, GitHubPullRequestSummary>())
@@ -1885,6 +1894,7 @@ export const make = Effect.gen(function* () {
 
   return GitHubPullRequestCli.of({
     withVerifiedCredential,
+    revalidateChecks,
     getRoutingIdentity,
     getViewerLogin: (input) =>
       getRoutingIdentity(input).pipe(Effect.map((identity) => identity.viewer)),

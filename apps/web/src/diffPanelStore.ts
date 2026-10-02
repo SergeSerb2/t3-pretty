@@ -1,5 +1,7 @@
-import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { type ScopedThreadRef, TurnId } from "@t3tools/contracts";
+import { resolveStorage } from "./lib/storage";
+import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { RunId, type ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -8,7 +10,7 @@ import { resolveLocalStorage } from "./lib/storage";
 export type DiffPanelSelection =
   | { kind: "branch"; baseRef: string | null }
   | { kind: "unstaged" }
-  | { kind: "turn"; turnId: TurnId; filePath: string | null; revealRequestId: number };
+  | { kind: "turn"; turnId: RunId; filePath: string | null; revealRequestId: number };
 
 export type DiffRenderMode = "stacked" | "split";
 
@@ -21,8 +23,8 @@ interface DiffPanelStoreState {
   setDiffRenderMode: (mode: DiffRenderMode) => void;
   selectGitScope: (ref: ScopedThreadRef, scope: "branch" | "unstaged") => void;
   selectBranchBaseRef: (ref: ScopedThreadRef, baseRef: string | null) => void;
-  selectTurn: (ref: ScopedThreadRef, turnId: TurnId, filePath?: string) => void;
-  reconcileTurnSelection: (ref: ScopedThreadRef, availableTurnIds: ReadonlyArray<TurnId>) => void;
+  selectTurn: (ref: ScopedThreadRef, turnId: RunId, filePath?: string) => void;
+  reconcileTurnSelection: (ref: ScopedThreadRef, availableTurnIds: ReadonlyArray<RunId>) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
 
@@ -46,7 +48,7 @@ function sanitizePersistedDiffSelection(value: unknown): DiffPanelSelection | nu
       if (typeof selection.turnId !== "string" || selection.turnId.length === 0) return null;
       return {
         kind: "turn",
-        turnId: TurnId.make(selection.turnId),
+        turnId: RunId.make(selection.turnId),
         filePath: typeof selection.filePath === "string" ? selection.filePath.trim() || null : null,
         revealRequestId:
           typeof selection.revealRequestId === "number" &&
@@ -194,8 +196,10 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
     }),
     {
       name: "t3code:diff-panel-state:v1",
-      version: 1,
-      storage: createJSONStorage(resolveLocalStorage),
+      version: 2,
+      storage: createJSONStorage(() =>
+        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+      ),
       partialize: (state) => ({
         byThreadKey: state.byThreadKey,
         branchBaseRefByThreadKey: state.branchBaseRefByThreadKey,

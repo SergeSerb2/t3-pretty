@@ -25,16 +25,19 @@ not prevent the agent from asking questions about the task.
 ## Provider differences
 
 Providers enforce permissions differently. Some read-only actions can proceed in **Supervised**.
-**Auto**: routine actions proceed without you; risky ones still ask. Codex delegates routine
-approvals to an AI reviewer, Claude uses its own auto permission mode, and Cursor uses Smart Auto
-review. Providers without an equivalent, such as Antigravity, fall back to asking, like
-Supervised.
+**Auto** uses automatic review on Codex, Claude, Cursor, and Grok; providers without an equivalent,
+including OpenCode and Antigravity, fall back to asking. On Grok, commands its review blocks come
+to you for approval.
 
-**Full access**: allow commands and edits without prompts. The default. The agent runs
+**Full access** allows commands and edits without prompts. The default. The agent runs
 unattended until it finishes or asks a question of its own.
 
-For Grok, **Always allow this session** remembers the matching command or tool input. Other
-actions still require approval.
+Grok offers no **Auto-accept edits**. A Grok thread already set to it runs in **Supervised**. Grok
+file-change approvals offer **Allow all edits this session**. Its command approvals have no
+session-wide choice, because Grok would remember that command for the whole project.
+
+ACP Registry agents run their own tools in their own mode; T3 Code answers their approval requests
+by the permission mode. See [ACP Registry permissions](./providers-acp.md#permissions-and-terminals).
 
 Mobile offers the same modes with the same labels and descriptions.
 

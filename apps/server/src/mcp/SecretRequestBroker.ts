@@ -1,13 +1,15 @@
 import {
   EventId,
   type ProviderInstanceEnvironmentVariable,
-  type ProviderRuntimeEvent,
+  type OrchestrationV2RuntimeRequest,
+  type OrchestrationV2TurnItem,
+  TurnItemId,
   RuntimeRequestId,
   SecretRequestError,
   type ThreadId,
   type ThreadSecretRequestRespondInput,
   type ThreadSecretRequestRespondResult,
-  type UserInputQuestion,
+  type OrchestrationV2UserInputQuestion,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -20,8 +22,10 @@ import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import * as ProviderService from "../provider/Services/ProviderService.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as EventSink from "../orchestration-v2/EventSink.ts";
+import * as DateTime from "effect/DateTime";
 import * as ServerSettings from "../serverSettings.ts";
 import type * as McpInvocationContext from "./McpInvocationContext.ts";
 
@@ -86,17 +90,11 @@ interface PendingSecretRequest {
   releaseWith: SecretRequestOutcome | null;
 }
 
-/** Runtime events after which the agent can no longer receive the tool result. */
-const isTerminalForThread = (event: ProviderRuntimeEvent, threadId: ThreadId): boolean =>
-  event.threadId === threadId &&
-  (event.type === "turn.completed" ||
-    event.type === "turn.aborted" ||
-    event.type === "session.exited");
-
 const make = Effect.gen(function* () {
-  const providerService = yield* ProviderService.ProviderService;
+  const threads = yield* ThreadManagement.ThreadManagementService;
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const events = yield* EventSink.EventSinkV2;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
-  const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
@@ -107,9 +105,8 @@ const make = Effect.gen(function* () {
     path.join(serverConfig.secretsDir, `${ServerSettings.globalEnvironmentSecretName(name)}.bin`);
 
   const uuid = crypto.randomUUIDv4.pipe(Effect.orDie);
-  const now = () => new Date().toISOString();
 
-  const questionFor = (input: SecretRequestInput): UserInputQuestion => ({
+  const questionFor = (input: SecretRequestInput): OrchestrationV2UserInputQuestion => ({
     id: input.name,
     header: input.service ? `${input.service} API key` : "API key needed",
     question: input.purpose,
@@ -145,7 +142,7 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const request: SecretRequestBroker["Service"]["request"] = Effect.fn(
+  const requestUnchecked: SecretRequestBroker["Service"]["request"] = Effect.fn(
     "SecretRequestBroker.request",
   )(function* (input) {
     const threadId = input.scope.threadId;
@@ -154,15 +151,12 @@ const make = Effect.gen(function* () {
         return yield* new SecretRequestPendingError({ threadId });
       }
     }
-    const instance = yield* providerService.getInstanceInfo(input.scope.providerInstanceId).pipe(
-      Effect.map((info) => info.driverKind),
-      Effect.orDie,
-    );
-    const thread = yield* snapshots.getThreadShellById(threadId).pipe(
-      Effect.map(Option.getOrUndefined),
-      Effect.orElseSucceed(() => undefined),
-    );
-    const turnId = thread?.latestTurn?.state === "running" ? thread.latestTurn.turnId : undefined;
+    const projection = yield* threads.getThreadRecords(threadId, ["runs", "runtimeRequests"]).pipe(Effect.orDie);
+    const run = projection.runs.findLast((candidate) => candidate.status === "running");
+    if (run?.rootNodeId == null) return { status: "cancelled", name: input.name } as const;
+    if (projection.runtimeRequests.some((request) => request.status === "pending")) {
+      return yield* new SecretRequestPendingError({ threadId });
+    }
     const requestId = RuntimeRequestId.make(`secret-request:${yield* uuid}`);
     const deferred = yield* Deferred.make<SecretRequestOutcome>();
     const entry: PendingSecretRequest = {
@@ -173,13 +167,25 @@ const make = Effect.gen(function* () {
       releaseWith: null,
     };
     pending.set(requestId, entry);
-    const base = {
-      provider: instance,
-      providerInstanceId: input.scope.providerInstanceId,
-      threadId,
-      requestId,
-      ...(turnId ? { turnId } : {}),
+    const at = yield* DateTime.now;
+    const runtimeRequest: OrchestrationV2RuntimeRequest = {
+      id: requestId, nodeId: run.rootNodeId, providerTurnId: null, nativeRequestRef: null,
+      kind: "user_input", status: "pending", responseCapability: { type: "not_resumable", reason: "Respond through the secret request broker." }, createdAt: at, resolvedAt: null,
     };
+    const turnItem: Extract<OrchestrationV2TurnItem, { type: "user_input_request" }> = {
+      id: TurnItemId.make(`secret-prompt:${requestId}`), threadId, runId: run.id, nodeId: run.rootNodeId,
+      providerThreadId: run.providerThreadId, providerTurnId: null, nativeItemRef: null, parentItemId: null,
+      ordinal: yield* projections.getNextTurnItemOrdinal(threadId).pipe(Effect.orDie),
+      type: "user_input_request", requestId, questions: [questionFor(input)],
+      status: "pending", title: "API key needed", startedAt: at, completedAt: null, updatedAt: at,
+    };
+    const publish = (request: OrchestrationV2RuntimeRequest, item: typeof turnItem) => Effect.gen(function* () {
+      const occurredAt = yield* DateTime.now;
+      yield* events.write({ events: [
+        { id: EventId.make(`secret-runtime:${yield* uuid}`), type: "runtime-request.updated", threadId, runId: run.id, nodeId: runtimeRequest.nodeId, occurredAt, payload: request },
+        { id: EventId.make(`secret-item:${yield* uuid}`), type: "turn-item.updated", threadId, runId: run.id, nodeId: runtimeRequest.nodeId, occurredAt, payload: item },
+      ] }).pipe(Effect.orDie);
+    });
 
     // A claimed entry is mid-write: hand the outcome to the reply path instead.
     const settle = (outcome: SecretRequestOutcome) =>
@@ -195,13 +201,10 @@ const make = Effect.gen(function* () {
 
     const finish = Effect.gen(function* () {
       pending.delete(requestId);
-      yield* providerService.publishRuntimeEvent({
-        ...base,
-        type: "user-input.resolved",
-        eventId: EventId.make(`secret-request-resolved:${yield* uuid}`),
-        createdAt: now(),
-        payload: { answers: {} },
-      });
+      const resolvedAt = yield* DateTime.now;
+      // The stored transcript contains prompt metadata and status only. Secret
+      // responses never travel through runtime-request.respond or answers.
+      yield* publish({ ...runtimeRequest, status: "resolved", resolvedAt }, { ...turnItem, status: "completed", completedAt: resolvedAt, updatedAt: resolvedAt });
     });
 
     return yield* Effect.scoped(
@@ -209,18 +212,12 @@ const make = Effect.gen(function* () {
         // Subscribe before publishing so a turn that ends immediately cannot
         // slip past; starting immediately attaches the subscription right away.
         yield* Effect.forkScoped(
-          Stream.runForEach(providerService.streamEvents, (event) =>
-            isTerminalForThread(event, threadId) ? settle(cancelled) : Effect.void,
+          Stream.runForEach(threads.streamDomainEvents, (event) =>
+            event.threadId === threadId && ((event.type === "run.updated" && event.payload.id === run.id && !["running", "starting", "queued"].includes(event.payload.status)) || event.type === "thread.deleted" || event.type === "thread.archived") ? settle(cancelled) : Effect.void,
           ),
           { startImmediately: true },
         );
-        yield* providerService.publishRuntimeEvent({
-          ...base,
-          type: "user-input.requested",
-          eventId: EventId.make(`secret-request:${yield* uuid}`),
-          createdAt: now(),
-          payload: { questions: [questionFor(input)] },
-        });
+        yield* publish(runtimeRequest, turnItem);
         const outcome = yield* Deferred.await(deferred).pipe(
           Effect.timeoutOption(input.timeoutMs ?? SECRET_REQUEST_DEFAULT_TIMEOUT_MS),
         );
@@ -230,6 +227,14 @@ const make = Effect.gen(function* () {
         return yield* Deferred.await(deferred);
       }),
     ).pipe(Effect.ensuring(finish));
+  });
+
+  const reservedThreads = new Set<ThreadId>();
+  const request: SecretRequestBroker["Service"]["request"] = (input) => Effect.suspend(() => {
+    const threadId = input.scope.threadId;
+    if (reservedThreads.has(threadId)) return Effect.fail(new SecretRequestPendingError({ threadId }));
+    reservedThreads.add(threadId);
+    return requestUnchecked(input).pipe(Effect.ensuring(Effect.sync(() => reservedThreads.delete(threadId))));
   });
 
   const respond: SecretRequestBroker["Service"]["respond"] = Effect.fn(

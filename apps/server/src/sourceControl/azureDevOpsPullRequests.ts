@@ -16,7 +16,7 @@ export interface NormalizedAzureDevOpsPullRequestRecord {
   readonly state: "open" | "closed" | "merged";
   readonly isDraft?: boolean;
   readonly closedAt?: string | null;
-  readonly mergedAt?: string | null;
+  readonly mergedAt: Option.Option<DateTime.Utc>;
   readonly updatedAt: Option.Option<DateTime.Utc>;
 }
 
@@ -179,7 +179,7 @@ function normalizeAzureDevOpsPullRequestRecord(
     state,
     ...(raw.isDraft === true ? { isDraft: true } : {}),
     closedAt: state === "closed" ? terminalAt : null,
-    mergedAt: state === "merged" ? terminalAt : null,
+    mergedAt: state === "merged" && terminalAt !== null ? Option.some(DateTime.makeUnsafe(terminalAt)) : Option.none(),
     updatedAt: (raw.closedDate ?? Option.none()).pipe(
       Option.orElse(() => raw.creationDate ?? Option.none()),
     ),

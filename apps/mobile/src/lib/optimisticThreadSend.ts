@@ -1,10 +1,8 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { presentThreadShell, type EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
   EnvironmentId,
   MessageId,
   ModelSelection,
-  OrchestrationMessage,
-  OrchestrationSessionStatus,
   ProjectId,
   ProviderInteractionMode,
   RuntimeMode,
@@ -13,8 +11,19 @@ import type {
 } from "@t3tools/contracts";
 import { parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 
+import * as DateTime from "effect/DateTime";
 import { scopedThreadKey } from "./scopedEntities";
 import type { QueuedThreadMessage } from "../state/thread-outbox-model";
+
+export interface OptimisticFeedMessage {
+  readonly id: MessageId;
+  readonly role: "user" | "assistant" | "system";
+  readonly text: string;
+  readonly turnId: null;
+  readonly streaming: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
 
 export interface OptimisticStartingThread {
   readonly environmentId: EnvironmentId;
@@ -45,11 +54,12 @@ export function optimisticStartingThreadKey(
 export function optimisticStartingThreadToShell(
   thread: OptimisticStartingThread,
 ): EnvironmentThreadShell {
-  return {
-    environmentId: thread.environmentId,
+  const timestamp = DateTime.makeUnsafe(thread.createdAt);
+  return presentThreadShell(thread.environmentId, {
     id: thread.threadId,
     projectId: thread.projectId,
     title: thread.title,
+    providerInstanceId: thread.modelSelection.instanceId,
     modelSelection: thread.modelSelection,
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
@@ -57,33 +67,31 @@ export function optimisticStartingThreadToShell(
     pullRequests: [],
     branch: thread.branch,
     worktreePath: thread.worktreePath,
-    latestTurn: null,
-    createdAt: thread.createdAt,
-    updatedAt: thread.createdAt,
+    activeProviderThreadId: null,
+    lineage: { rootThreadId: thread.threadId, parentThreadId: null, relationshipToParent: null },
+    forkedFrom: null,
+    createdBy: "user",
+    creationSource: "mobile",
+    latestRunId: null,
+    activeRunId: null,
+    status: "starting",
+    pendingRuntimeRequest: null,
+    latestVisibleMessage: null,
+    latestUserMessageAt: DateTime.makeUnsafe(thread.message.createdAt),
+    hasActionableProposedPlan: false,
+    itemCount: 0,
+    visibleItemCount: 0,
+    createdAt: timestamp,
+    updatedAt: DateTime.makeUnsafe(thread.sendStartedAt),
     archivedAt: null,
     settledOverride: null,
     settledAt: null,
-    snoozedUntil: null,
-    snoozedAt: null,
     storedAt: null,
-    session: {
-      threadId: thread.threadId,
-      status: "starting",
-      providerName: null,
-      providerInstanceId: thread.modelSelection.instanceId,
-      runtimeMode: thread.runtimeMode,
-      activeTurnId: null,
-      lastError: null,
-      updatedAt: thread.sendStartedAt,
-    },
-    latestUserMessageAt: thread.message.createdAt,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
-  };
+    deletedAt: null,
+  });
 }
 
-export function optimisticStartingMessage(thread: OptimisticStartingThread): OrchestrationMessage {
+export function optimisticStartingMessage(thread: OptimisticStartingThread): OptimisticFeedMessage {
   return {
     id: thread.message.messageId,
     role: "user",
@@ -97,7 +105,7 @@ export function optimisticStartingMessage(thread: OptimisticStartingThread): Orc
 
 export function isOptimisticStartingThreadPending(
   thread: OptimisticStartingThread | null,
-  sessionStatus: OrchestrationSessionStatus | null | undefined,
+  sessionStatus: string | null | undefined,
 ): boolean {
   return !(
     thread === null ||
@@ -108,7 +116,7 @@ export function isOptimisticStartingThreadPending(
 
 export function queuedThreadMessageToFeedMessage(
   message: QueuedThreadMessage,
-): OrchestrationMessage {
+): OptimisticFeedMessage {
   return {
     id: message.messageId,
     role: "user",
@@ -125,14 +133,14 @@ export function queuedThreadMessageToFeedMessage(
  * until the projection has the same row.
  */
 export function mergeOptimisticThreadMessages(
-  serverMessages: ReadonlyArray<OrchestrationMessage> | null,
+  serverMessages: ReadonlyArray<OptimisticFeedMessage> | null,
   queuedMessages: ReadonlyArray<QueuedThreadMessage>,
   startingThread: OptimisticStartingThread | null,
-): ReadonlyArray<OrchestrationMessage> {
-  const merged: OrchestrationMessage[] = serverMessages === null ? [] : [...serverMessages];
+): ReadonlyArray<OptimisticFeedMessage> {
+  const merged: OptimisticFeedMessage[] = serverMessages === null ? [] : [...serverMessages];
   const seen = new Set(merged.map((message) => String(message.id)));
 
-  const append = (message: OrchestrationMessage) => {
+  const append = (message: OptimisticFeedMessage) => {
     const id = String(message.id);
     if (seen.has(id)) {
       return;

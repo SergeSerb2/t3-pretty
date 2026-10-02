@@ -29,7 +29,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { ServerConfig } from "../../config.ts";
+import * as ServerConfig from "../../config.ts";
 import * as ResourceAttribution from "../../resourceTelemetry/ResourceAttribution.ts";
 import * as EventNdjsonLogger from "./EventNdjsonLogger.ts";
 
@@ -72,7 +72,7 @@ const verboseConfig = Config.Boolean("T3CODE_LOG_PROVIDER_EVENTS_VERBOSE").pipe(
 );
 
 export const make = Effect.gen(function* () {
-  const { providerEventLogPath } = yield* ServerConfig;
+  const { providerEventLogPath } = yield* ServerConfig.ServerConfig;
   const attribution = yield* ResourceAttribution.ResourceAttribution;
   const verbose = yield* verboseConfig;
   const store = yield* EventNdjsonLogger.makeEventNdjsonLogStore(providerEventLogPath, {

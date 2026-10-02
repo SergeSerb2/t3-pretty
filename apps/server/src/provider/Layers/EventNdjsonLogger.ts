@@ -241,10 +241,10 @@ export function isTransientNativeEvent(event: unknown): boolean {
   }
 }
 
-function shouldPersistProviderEvent(
+export function shouldPersistProviderEvent(
   stream: EventNdjsonStream,
   event: unknown,
-  verbose: boolean,
+  verbose = false,
 ): boolean {
   if (typeof event !== "object" || event === null) {
     return true;
@@ -398,8 +398,8 @@ function summarizeProviderEvent(event: unknown): unknown {
   }
 }
 
-/** Bounds traversal before the logger encodes payloads. */
-function boundProviderEventForLogging(event: unknown): unknown {
+/** Bounds traversal before adapters copy payloads or the logger encodes them. */
+export function boundProviderEventForLogging(event: unknown): unknown {
   let remainingCharacters = MAX_RECORD_CHARACTERS;
   let remainingFields = MAX_RECORD_FIELDS;
   const ancestors = new WeakSet<object>();
@@ -808,7 +808,7 @@ export const makeEventNdjsonLogStore = Effect.fnUntraced(function* (
     if (existing) return existing;
 
     const write = Effect.fnUntraced(function* (event: unknown, threadId: ThreadId | null) {
-      if (!resolved.verbose && !shouldPersistProviderEvent(stream, event)) return;
+      if (!shouldPersistProviderEvent(stream, event, resolved.verbose)) return;
       let payload = yield* serializeEvent(boundProviderEventForLogging(event));
       if (payload === undefined) return;
       // Escaping can expand strings beyond their input size. Keep that bounded

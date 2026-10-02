@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off -- Changelog date labels use local calendar and Intl presentation.
 /**
  * Turns raw changelog releases into the copy and grouping the What's New UI
  * actually shows. Nightly builds overlap heavily and titles often arrive as

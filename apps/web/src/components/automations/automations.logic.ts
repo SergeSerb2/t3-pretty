@@ -1,3 +1,4 @@
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 /**
  * Pure presentation logic for the web automation surfaces (sidebar shelf,
  * page, editor, banners). Grouping/condensing/status helpers live in
@@ -15,7 +16,6 @@ import type {
   AutomationRunStatus,
   AutomationRunTrigger,
   AutomationTrigger,
-  OrchestrationThreadShell,
 } from "@t3tools/contracts";
 import {
   AUTOMATION_EVENT_LABELS,
@@ -116,7 +116,7 @@ export function isLoopbackUrl(url: string): boolean {
   }
 }
 
-type RunThreadShell = Pick<OrchestrationThreadShell, "hasPendingApprovals" | "hasPendingUserInput">;
+type RunThreadShell = Pick<EnvironmentThreadShell, "hasPendingApprovals" | "hasPendingUserInput">;
 
 /**
  * Automations that add one to the inbox/dock badge. Run threads never reach

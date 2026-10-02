@@ -3,7 +3,7 @@
  * Shared by the event-driven tracker and the 30 s tick sweep so a completion
  * the tracker missed (server restart mid-turn) is picked up identically.
  */
-import type { AutomationRunFinishedStatus, OrchestrationThreadShell } from "@t3tools/contracts";
+import type { AutomationRunFinishedStatus } from "@t3tools/contracts";
 
 export interface AutomationRunCompletion {
   readonly status: AutomationRunFinishedStatus;
@@ -15,26 +15,22 @@ export interface AutomationRunCompletion {
  * outcome; a session that errored before any turn started is a failure.
  */
 export function resolveAutomationRunCompletion(
-  thread: Pick<OrchestrationThreadShell, "latestTurn" | "session">,
+  thread: Pick<
+    import("@t3tools/contracts").OrchestrationV2ThreadShell,
+    "status" | "lastError" | "latestRunId" | "activeRunId"
+  >,
 ): AutomationRunCompletion | null {
-  const turn = thread.latestTurn;
-  if (turn !== null) {
-    switch (turn.state) {
-      case "running":
-        return null;
-      case "completed":
-        return { status: "completed", error: null };
-      case "error":
-        return { status: "failed", error: thread.session?.lastError ?? "Turn failed" };
-      case "interrupted":
-        return { status: "interrupted", error: null };
-    }
+  if (thread.activeRunId !== null || thread.latestRunId === null) return null;
+  switch (thread.status) {
+    case "completed":
+      return { status: "completed", error: null };
+    case "failed":
+      return { status: "failed", error: thread.lastError ?? "Run failed" };
+    case "interrupted":
+    case "cancelled":
+    case "rolled_back":
+      return { status: "interrupted", error: null };
+    default:
+      return null;
   }
-  if (thread.session?.status === "error") {
-    return {
-      status: "failed",
-      error: thread.session.lastError ?? "Provider session failed before the turn started",
-    };
-  }
-  return null;
 }

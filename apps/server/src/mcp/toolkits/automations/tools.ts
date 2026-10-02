@@ -19,14 +19,14 @@ import {
 import * as Crypto from "effect/Crypto";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
-import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { AutomationStore } from "../../../automations/AutomationStore.ts";
+import { ThreadManagementService } from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
-  OrchestrationEngineService,
-  ProjectionSnapshotQuery,
+  AutomationStore,
+  ThreadManagementService,
   Crypto.Crypto,
 ];
 

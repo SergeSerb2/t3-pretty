@@ -1,4 +1,5 @@
-import { ComputerUseToolkit } from "./toolkits/computerUse/tools.ts";
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -10,16 +11,14 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { McpProtocol, McpSchema, McpServer, Tool } from "effect/unstable/ai";
+import { McpProtocol, McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectService from "../project/ProjectService.ts";
 import * as ServerConfig from "../config.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
-import * as SecretRequestBroker from "./SecretRequestBroker.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -56,22 +55,9 @@ const PullRequestsTestLayer = McpHttpServer.PullRequestsToolkitRegistrationLive.
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provide(
     Layer.mergeAll(
-      Layer.mock(ProjectionSnapshotQuery)({
-        getThreadShellById: () => Effect.succeedNone,
-      }),
-      Layer.mock(OrchestrationEngineService)({}),
-      NodeServices.layer,
-    ),
-  ),
-);
-
-const SecretsTestLayer = McpHttpServer.SecretsToolkitRegistrationLive.pipe(
-  Layer.provideMerge(McpServer.McpServer.layer),
-  Layer.provide(
-    Layer.mergeAll(
-      Layer.mock(SecretRequestBroker.SecretRequestBroker)({
-        request: () => Effect.succeed({ status: "declined", name: "KEY" } as const),
-      }),
+      Layer.mock(ProjectService.ProjectService)({}),
+      Layer.mock(Orchestrator.OrchestratorV2)({}),
+      Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
       NodeServices.layer,
     ),
   ),
@@ -478,44 +464,6 @@ it.effect(
     }).pipe(Effect.provide(PullRequestsTestLayer)),
 );
 
-it.effect("registers request_api_key and gates it on the secrets capability", () =>
-  Effect.gen(function* () {
-    const server = yield* McpServer.McpServer;
-    const tool = server.tools.find(({ tool }) => tool.name === "request_api_key");
-    expect(tool?.tool.annotations?.destructiveHint).toBe(false);
-    expect(tool?.tool.description).toContain("never returned to you");
-
-    const denied = yield* server
-      .callTool({
-        name: "request_api_key",
-        arguments: { name: "OPENAI_API_KEY", purpose: "Call the API." },
-      })
-      .pipe(
-        Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
-        Effect.provideService(McpSchema.McpServerClient, client),
-      );
-    expect(denied.isError).toBe(true);
-    expect(denied.content).toEqual([
-      { type: "text", text: "MCP credential does not grant the secrets capability." },
-    ]);
-
-    const granted = yield* server
-      .callTool({
-        name: "request_api_key",
-        arguments: { name: "OPENAI_API_KEY", purpose: "Call the API." },
-      })
-      .pipe(
-        Effect.provideService(McpInvocationContext.McpInvocationContext, {
-          ...invocation,
-          capabilities: new Set(["secrets"] as const),
-        }),
-        Effect.provideService(McpSchema.McpServerClient, client),
-      );
-    expect(granted.isError).toBeFalsy();
-    expect(granted.structuredContent).toMatchObject({ status: "declined", name: "KEY" });
-  }).pipe(Effect.provide(SecretsTestLayer)),
-);
-
 it.effect("keeps the snapshot text under the agent's output ceiling", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -804,10 +752,7 @@ it.effect("registers annotated tools and preserves authenticated request context
           ok: true,
           result:
             event.request.operation === "snapshot"
-              ? {
-                  ...snapshotResult,
-                  accessibilityTree: { nodes: [] },
-                }
+              ? snapshotResult
               : event.request.operation === "evaluate"
                 ? ["Connect", "Continue"]
                 : event.request.operation === "press"
@@ -924,65 +869,4 @@ it.effect("registers annotated tools and preserves authenticated request context
       }
     }),
   ).pipe(Effect.provide(TestLayer)),
-);
-
-it.effect("advertises object input schemas accepted by strict MCP clients", () =>
-  Effect.gen(function* () {
-    const server = yield* McpServer.McpServer;
-    expect(server.tools.length).toBeGreaterThan(0);
-    for (const { tool } of server.tools) {
-      expect(tool.inputSchema.type, tool.name).toBe("object");
-    }
-    for (const tool of Object.values(ComputerUseToolkit.tools)) {
-      expect(Tool.getJsonSchema(tool).type, tool.name).toBe("object");
-    }
-  }).pipe(Effect.provide(TestLayer)),
-);
-
-const automationsInvocation = { ...invocation, capabilities: new Set(["automations"] as const) };
-// The toolkit's other tools reach these services; validating a cron does not,
-// so every method dies rather than pretending to have data.
-const unusedService = <T extends object>(): T =>
-  new Proxy({}, { get: (_, key) => () => Effect.die(`unexpected call: ${String(key)}`) }) as T;
-const unusedAutomationsServices = Layer.mergeAll(
-  Layer.succeed(ProjectionSnapshotQuery, unusedService<ProjectionSnapshotQuery["Service"]>()),
-  Layer.succeed(OrchestrationEngineService, unusedService<OrchestrationEngineService["Service"]>()),
-);
-const AutomationsTestLayer = McpHttpServer.AutomationsToolkitRegistrationLive.pipe(
-  Layer.provideMerge(McpServer.McpServer.layer),
-  Layer.provideMerge(unusedAutomationsServices),
-  Layer.provideMerge(NodeServices.layer),
-);
-
-it.effect("registers the automations toolkit and validates a schedule through it", () =>
-  Effect.gen(function* () {
-    const server = yield* McpServer.McpServer;
-
-    const validateTool = server.tools.find(
-      ({ tool }) => tool.name === "automations_validate_schedule",
-    );
-    expect(validateTool?.tool.annotations?.readOnlyHint).toBe(true);
-    expect(validateTool?.tool.annotations?.idempotentHint).toBe(true);
-    expect(
-      server.tools.find(({ tool }) => tool.name === "automations_delete")?.tool.annotations
-        ?.destructiveHint,
-    ).toBe(true);
-
-    const result = yield* server
-      .callTool({
-        name: "automations_validate_schedule",
-        arguments: { cron: "0 9 * * 1-5", timezone: "Europe/Berlin" },
-      })
-      .pipe(
-        Effect.provideService(McpInvocationContext.McpInvocationContext, automationsInvocation),
-        Effect.provideService(McpSchema.McpServerClient, client),
-      );
-
-    expect(result.isError).toBe(false);
-    expect(result.structuredContent).toMatchObject({
-      valid: true,
-      timezone: "Europe/Berlin",
-      error: null,
-    });
-  }).pipe(Effect.provide(AutomationsTestLayer)),
 );

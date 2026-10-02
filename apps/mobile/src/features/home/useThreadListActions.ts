@@ -39,6 +39,7 @@ import {
   threadDropLifecycle,
 } from "../threads/threadOrder";
 import { getThreadListV2OrderedSection } from "../threads/threadListV2";
+import { threadCanArchive } from "./threadArchive";
 import { resolveThreadTitleRename } from "../threads/thread-title-rename";
 
 /** Version skew: never send settle/unsettle to a server that predates them
@@ -214,11 +215,7 @@ function useThreadActionExecutor(
         }
         // Archive keeps its original, narrower guard: never interrupt a
         // thread mid-turn.
-        if (
-          action === "archive" &&
-          thread.session?.status === "running" &&
-          thread.session.activeTurnId != null
-        ) {
+        if (action === "archive" && !threadCanArchive(thread.runtime)) {
           Alert.alert(
             actionFailureTitle(action),
             "This thread is working. Interrupt it first, then try again.",
@@ -231,7 +228,7 @@ function useThreadActionExecutor(
         // treats them the same way. Shared by Home, the iPad sidebar, and
         // archive via this executor.
         if (action === "delete") {
-          if (thread.session && thread.session.status !== "stopped") {
+          if (thread.runtime && ["preparing", "queued", "starting", "running", "waiting"].includes(thread.runtime.status)) {
             await stopSessionMutation({
               environmentId: thread.environmentId,
               input: { threadId: thread.id },

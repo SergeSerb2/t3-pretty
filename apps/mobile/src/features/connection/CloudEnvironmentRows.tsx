@@ -17,8 +17,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  type NativeSyntheticEvent,
-  type TextLayoutEventData,
+  type TextLayoutEvent,
   View,
 } from "react-native";
 
@@ -396,7 +395,7 @@ function CloudEnvironmentRowShell(props: {
   const isErrorExpanded = errorCanExpand && props.errorExpanded;
   const StatusContainer = errorCanExpand ? Pressable : View;
   const onMeasuredErrorTextLayout = useCallback(
-    (event: NativeSyntheticEvent<TextLayoutEventData>) => {
+    (event: TextLayoutEvent) => {
       if (!props.connectionError) {
         return;
       }

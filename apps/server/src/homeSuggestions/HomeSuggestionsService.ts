@@ -63,7 +63,8 @@ import { writeFileStringAtomically } from "../atomicWrite.ts";
 import { BackgroundPolicy } from "../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../config.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
+import { ProjectService } from "../project/ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { TextGeneration } from "../textGeneration/TextGeneration.ts";
@@ -170,7 +171,8 @@ export const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const settingsService = yield* ServerSettingsService;
-  const projection = yield* ProjectionSnapshotQuery;
+  const projection = yield* ProjectionStoreV2;
+  const projectService = yield* ProjectService;
   const textGeneration = yield* TextGeneration;
   const backgroundPolicy = yield* BackgroundPolicy;
   const crypto = yield* Crypto.Crypto;
@@ -266,25 +268,21 @@ export const make = Effect.gen(function* () {
 
   const readDigestThreads = Effect.fn("HomeSuggestionsService.readDigestThreads")(function* () {
     const shell = yield* projection.getShellSnapshot();
-    const shells = selectDigestThreads(shell.threads, shell.projects);
+    const projects = yield* projectService.listShells();
+    const shells = selectDigestThreads(shell.threads, projects);
     const threads = yield* Effect.forEach(
       shells,
       (thread) =>
-        projection.getThreadDetailById(thread.id, { activityKinds: [] }).pipe(
-          Effect.map(
-            Option.match({
-              onNone: () => null,
-              onSome: (detail): DigestThread => ({
-                shell: thread,
-                messages: detail.messages.map(({ role, text }) => ({ role, text })),
-              }),
-            }),
-          ),
+        projection.getThreadRecords(thread.id, ["messages"]).pipe(
+          Effect.map((detail): DigestThread => ({
+            shell: thread,
+            messages: detail.messages.map(({ role, text }) => ({ role, text })),
+          })),
           Effect.catchCause(() => Effect.succeed(null)),
         ),
       { concurrency: 4 },
     );
-    return { projects: shell.projects, threads: threads.filter((thread) => thread !== null) };
+    return { projects, threads: threads.filter((thread) => thread !== null) };
   });
 
   const readOwnDigest = Effect.fn("HomeSuggestionsService.readOwnDigest")(function* () {
@@ -583,12 +581,10 @@ export const make = Effect.gen(function* () {
       Duration.toMillis(HOME_SUGGESTIONS_MESH_POLL_INTERVAL);
     if (!due && !(pollDue && (yield* mesh.linked))) return;
     if (yield* hostSuspended) return;
-    const shell = yield* projection
-      .getShellSnapshot()
-      .pipe(Effect.orElseSucceed(() => ({ projects: [] as const })));
+    const projects = yield* projectService.listShells().pipe(Effect.orElseSucceed(() => []));
     // Only an environment with projects claims the day's lease; one with
     // none still follows the shared batch.
-    const claim = due && shell.projects.length > 0 ? "scheduled" : null;
+    const claim = due && projects.length > 0 ? "scheduled" : null;
     const shared = yield* meshSync(claim);
     if (claim === null) return;
     if (Option.isSome(shared)) {

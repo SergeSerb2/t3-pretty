@@ -417,19 +417,16 @@ const installFromForkCliTarball = Effect.fn("cloud.pinned_runtime.install_cli_ta
             new PinnedRuntimeInstallError({ step: "reading fff-node for a CJS export", cause }),
         ),
       );
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (cause) {
-      return yield* new PinnedRuntimeInstallError({
-        step: "reading fff-node for a CJS export",
-        cause,
-      });
-    }
+    const parsed = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(raw).pipe(
+      Effect.mapError((cause) => new PinnedRuntimeInstallError({step: "reading fff-node for a CJS export", cause})),
+    );
     const patched = fffNodeRequireExportPatch(parsed);
     if (patched !== undefined) {
+      const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(patched).pipe(
+        Effect.mapError((cause) => new PinnedRuntimeInstallError({step: "patching fff-node for CJS require", cause})),
+      );
       yield* fs
-        .writeFileString(fffNodePackageJson, `${JSON.stringify(patched, null, 2)}\n`)
+        .writeFileString(fffNodePackageJson, `${encoded}\n`)
         .pipe(
           Effect.mapError(
             (cause) =>

@@ -1,4 +1,5 @@
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as DateTime from "effect/DateTime";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -20,8 +21,8 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
-import { ProjectionProjectRepository } from "../persistence/Services/ProjectionProjects.ts";
-import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
+import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { directoryOnDiskBytes } from "./directorySize.ts";
 import {
@@ -92,8 +93,8 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
-  const projects = yield* ProjectionProjectRepository;
-  const threads = yield* ProjectionThreadRepository;
+  const projects = yield* ProjectStoreV2;
+  const threads = yield* ProjectionStoreV2;
   const vcsProcess = yield* VcsProcess.VcsProcess;
   const platform = yield* HostProcessPlatform;
 
@@ -142,7 +143,7 @@ export const make = Effect.gen(function* () {
 
   const loadSnapshots: () => Effect.Effect<LoadedStorageSnapshots, StorageInventoryError> =
     Effect.fn("StorageInventoryService.loadSnapshots")(function* () {
-      const projectRows = yield* projects.listAll().pipe(
+      const projectRows = yield* projects.list().pipe(
         Effect.mapError(
           (cause) =>
             new StorageInventoryError({
@@ -157,21 +158,20 @@ export const make = Effect.gen(function* () {
           .filter((project) => project.deletedAt === null)
           .map((project) => [project.projectId, project] as const),
       );
-      const threadRows = yield* Effect.forEach(
-        projectsById.values(),
-        (project) =>
-          threads.listByProjectId({ projectId: project.projectId }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new StorageInventoryError({
-                  operation: "StorageInventoryService.getInventory",
-                  detail: "Failed to list threads.",
-                  cause,
-                }),
-            ),
-          ),
-        { concurrency: "unbounded" },
-      ).pipe(Effect.map((groups) => groups.flat()));
+      const [activeShells, archivedShells] = yield* Effect.all([
+        threads.getShellSnapshot({ location: "active" }),
+        threads.getShellSnapshot({ location: "archive" }),
+      ]).pipe(
+        Effect.mapError(
+          (cause) =>
+            new StorageInventoryError({
+              operation: "StorageInventoryService.getInventory",
+              detail: "Failed to list threads.",
+              cause,
+            }),
+        ),
+      );
+      const threadRows = [...activeShells.threads, ...archivedShells.archivedThreads];
       const snapshots: StorageThreadSnapshot[] = [];
       let activeThreadsWithoutWorktree = 0;
       let archivedThreadsWithoutWorktree = 0;
@@ -197,7 +197,7 @@ export const make = Effect.gen(function* () {
           continue;
         }
         snapshots.push({
-          threadId: thread.threadId,
+          threadId: thread.id,
           threadTitle: thread.title,
           projectId: project.projectId,
           projectName: project.title,
@@ -206,10 +206,14 @@ export const make = Effect.gen(function* () {
           worktreePath: managedPath,
           isArchived,
           canRemoveWorktree: canRemoveStorageThread({
-            archivedAt: thread.archivedAt,
+            archivedAt: thread.archivedAt === null ? null : DateTime.formatIso(thread.archivedAt),
             settledOverride: thread.settledOverride,
-            pendingApprovalCount: thread.pendingApprovalCount,
-            pendingUserInputCount: thread.pendingUserInputCount,
+            pendingApprovalCount:
+              thread.pendingRuntimeRequest !== null &&
+              thread.pendingRuntimeRequest?.kind !== "user_input"
+                ? 1
+                : 0,
+            pendingUserInputCount: thread.pendingRuntimeRequest?.kind === "user_input" ? 1 : 0,
           }),
         });
       }

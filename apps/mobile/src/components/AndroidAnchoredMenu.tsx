@@ -4,7 +4,7 @@ import { GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { StyleProp, ViewStyle } from "react-native";
+import type { StyleProp, ViewInstance, ViewStyle } from "react-native";
 import {
   BackHandler,
   Platform,
@@ -163,8 +163,8 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
     overlay === null
       ? desiredMenuWidth
       : Math.min(desiredMenuWidth, Math.max(0, overlay.width - 2 * SCREEN_MARGIN));
-  const anchorRef = useRef<View>(null);
-  const overlayRef = useRef<View>(null);
+  const anchorRef = useRef<ViewInstance>(null);
+  const overlayRef = useRef<ViewInstance>(null);
   const insets = useSafeAreaInsets();
 
   const isDarkMode = useColorScheme() === "dark";

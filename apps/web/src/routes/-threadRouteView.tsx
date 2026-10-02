@@ -3,10 +3,6 @@ import { useEffect, useRef } from "react";
 
 import ChatView from "../components/ChatView";
 import {
-  resolveDraftPromotionNavigationTarget,
-  threadHasStarted,
-} from "../components/ChatView.logic";
-import {
   DraftId,
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
@@ -23,10 +19,9 @@ import {
   resolveThreadRouteRenderState,
   shouldRedirectMissingThreadRoute,
 } from "../threadRoutes";
-import { resolveThreadSyncPhase } from "../threadSync";
 import {
   useEnvironmentThreadRefs,
-  useThreadDetail,
+  useThreadProjection,
   useThreadRefs,
   useThreadShell,
   useThreadStatus,
@@ -79,21 +74,33 @@ export function ThreadRouteView() {
   const draftServerThreadRef = draftSession?.promotedTo ?? inferredThreadRef;
 
   const serverThreadShell = useThreadShell(routeThreadRef ?? draftServerThreadRef);
-  const promotionThreadDetail = useThreadDetail(draftServerThreadRef);
+  const promotionThreadDetail = useThreadProjection(draftServerThreadRef);
   const backgroundSubmissionPending = useBackgroundDraftSubmissionPending(draftServerThreadRef);
-  const canonicalThreadRef = draftId
-    ? resolveDraftPromotionNavigationTarget({
-        serverThreadRef: draftServerThreadRef,
-        serverThread: promotionThreadDetail ?? serverThreadShell,
-        backgroundSubmissionPending,
-      })
-    : null;
+  const promotionProjection = promotionThreadDetail?.projection;
+  const promotionRun = promotionProjection?.runs.at(-1);
+  const promotionStarted =
+    promotionRun?.startedAt != null || serverThreadShell?.latestRun?.startedAt != null;
+  const promotionStopped =
+    promotionRun?.status === "failed" ||
+    promotionRun?.status === "interrupted" ||
+    promotionRun?.status === "cancelled" ||
+    serverThreadShell?.latestRun?.status === "failed" ||
+    serverThreadShell?.latestRun?.status === "interrupted";
+  const promotionMessagePersisted =
+    serverThreadShell?.latestUserMessageAt != null ||
+    promotionProjection?.messages.some((message) => message.role === "user") === true;
+  const canonicalThreadRef =
+    draftId &&
+    !backgroundSubmissionPending &&
+    (promotionStarted || promotionStopped || promotionMessagePersisted)
+      ? draftServerThreadRef
+      : null;
 
   // Server flavor: sync/render state for the canonical thread route.
   const shell = useEnvironmentQuery(
     routeThreadRef === null ? null : environmentShell.stateAtom(routeThreadRef.environmentId),
   );
-  const serverThreadDetail = useThreadDetail(routeThreadRef);
+  const serverThreadDetail = useThreadProjection(routeThreadRef);
   const serverThreadStatus = useThreadStatus(routeThreadRef);
   const environmentThreadRefs = useEnvironmentThreadRefs(routeThreadRef?.environmentId ?? null);
   const bootstrapComplete = shell.data?.snapshot._tag === "Some";
@@ -108,17 +115,15 @@ export function ThreadRouteView() {
   });
   const renderState = resolveThreadRouteRenderState({
     bootstrapComplete,
-    serverThreadShellExists: serverThreadShell !== null,
-    serverThreadDetailExists: serverThreadDetail !== null,
-    serverThreadDetailDeleted: serverThreadStatus === "deleted",
+    serverThreadExists: serverThreadShell !== null || serverThreadDetail !== null,
+    serverThreadDeleted: serverThreadStatus === "deleted",
     draftThreadExists: draftThread !== null,
   });
-  const threadSyncPhase = resolveThreadSyncPhase({
-    detailExists: serverThreadDetail !== null,
-    shellExists: serverThreadShell !== null,
-    status: serverThreadStatus,
-  });
-  const serverThreadStarted = threadHasStarted(serverThreadDetail);
+  const serverThreadStarted =
+    serverThreadDetail !== null &&
+    (serverThreadDetail.projection.runs.length > 0 ||
+      serverThreadDetail.projection.visibleTurnItems.length > 0 ||
+      serverThreadDetail.projection.providerThreads.length > 0);
   const environmentHasAnyThreads = environmentThreadRefs.length > 0 || environmentHasDraftThreads;
   const transferInProgress = useProjectTransferStore((state) => state.inProgress);
   const missingSinceMsRef = useRef<number | null>(null);
@@ -227,7 +232,6 @@ export function ThreadRouteView() {
         environmentId={routeThreadRef.environmentId}
         threadId={routeThreadRef.threadId}
         routeKind="server"
-        threadSyncPhase={threadSyncPhase}
       />
     ) : null;
 

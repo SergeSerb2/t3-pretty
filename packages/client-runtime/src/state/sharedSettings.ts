@@ -29,6 +29,8 @@ const SHARED_SERVER_SETTING_KEYS = [
   "sidebarProjectFolders",
   "sidebarProjectFolderAssignments",
   "sceneryPhotoSet",
+  "autoResumeLimitedThreads",
+  "snoozeLimitedThreads",
   "newWorktreesStartFromOrigin",
   "sourceControlWritingStyle",
   "textGenerationModelSelection",

@@ -1,27 +1,36 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
-  ApprovalRequestId,
+  RuntimeRequestId,
   EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
-  type ProviderRuntimeEvent,
+  MessageId,
+  NodeId,
+  RunId,
+  OrchestrationV2DomainEvent,
+  type OrchestrationV2Run,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
+import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import * as ProviderService from "../provider/Services/ProviderService.ts";
+import { fixtureProjection } from "../testUtils/V2ProjectionFixture.ts";
+import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
+import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
+import { EventSinkV2 } from "../orchestration-v2/EventSink.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as SecretRequestBroker from "./SecretRequestBroker.ts";
@@ -38,41 +47,35 @@ const scope: McpInvocationContext.McpInvocationScope = {
   issuedAt: 1,
 };
 
-/** Provider service fake: a real pub/sub so the broker's own events and the test's are observable. */
-const makeProviderServiceLayer = Effect.gen(function* () {
-  const pubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
-  const service = {
-    startSession: () => Effect.die("unused"),
-    sendTurn: () => Effect.die("unused"),
-    compactThread: () => Effect.die("unused"),
-    interruptTurn: () => Effect.die("unused"),
-    respondToRequest: () => Effect.die("unused"),
-    respondToUserInput: () => Effect.die("unused"),
-    stopSession: () => Effect.die("unused"),
-    listSessions: () => Effect.succeed([]),
-    getCapabilities: () => Effect.die("unused"),
-    getInstanceInfo: () =>
-      Effect.succeed({
-        instanceId: INSTANCE_ID,
-        driverKind: ProviderDriverKind.make("codex"),
-        displayName: undefined,
-        enabled: true,
-        continuationIdentity: { driverKind: ProviderDriverKind.make("codex") } as never,
-      }),
-    assertConversationRollbackSupported: () => Effect.die("unused"),
-    rollbackConversation: () => Effect.die("unused"),
-    uploadFeedback: () => Effect.die("unused"),
-    get streamEvents() {
-      return Stream.fromPubSub(pubSub);
-    },
-    publishRuntimeEvent: (event: ProviderRuntimeEvent) =>
-      PubSub.publish(pubSub, event).pipe(Effect.asVoid),
-  } satisfies ProviderService.ProviderService["Service"];
-  return Layer.succeed(ProviderService.ProviderService, service);
-});
+const run: OrchestrationV2Run = {
+  id: RunId.make("secret-run"), threadId: THREAD_ID, ordinal: 1,
+  providerInstanceId: INSTANCE_ID, modelSelection: { instanceId: INSTANCE_ID, model: "gpt-5" },
+  providerThreadId: null, userMessageId: MessageId.make("secret-message"),
+  rootNodeId: NodeId.make("secret-node"), activeAttemptId: null, status: "running",
+  requestedAt: DateTime.makeUnsafe("2026-10-02T00:00:00Z"), startedAt: null, completedAt: null,
+  checkpointId: null, contextHandoffId: null,
+};
+class TestEvents extends Context.Service<TestEvents, {
+  readonly stream: Stream.Stream<OrchestrationV2DomainEvent>;
+  readonly publish: (event: OrchestrationV2DomainEvent) => Effect.Effect<void>;
+}>()("t3/mcp/SecretRequestBroker.test/TestEvents") {}
+const runtimeLayer = Layer.unwrap(Effect.gen(function* () {
+  const pubSub = yield* PubSub.unbounded<OrchestrationV2DomainEvent>();
+  const stream = Stream.fromPubSub(pubSub);
+  const publish = (event: OrchestrationV2DomainEvent) => PubSub.publish(pubSub, event).pipe(Effect.asVoid);
+  return Layer.mergeAll(
+    Layer.succeed(TestEvents, { stream, publish }),
+    Layer.mock(ThreadManagementService)({
+      getThreadRecords: () => Effect.succeed({ ...fixtureProjection(), runs: [run], runtimeRequests: [] }),
+      streamDomainEvents: stream,
+    }),
+    Layer.mock(ProjectionStoreV2)({ getNextTurnItemOrdinal: () => Effect.succeed(1) }),
+    Layer.mock(EventSinkV2)({ write: ({ events }) => Effect.forEach(events, publish).pipe(Effect.as([])) }),
+  );
+}));
 
 const TestLayer = SecretRequestBroker.layer.pipe(
-  Layer.provideMerge(Layer.unwrap(makeProviderServiceLayer)),
+  Layer.provideMerge(runtimeLayer),
   // The real settings layer, so redacted neighbours are restored from the secret store.
   Layer.provideMerge(
     ServerSettings.layer.pipe(
@@ -80,31 +83,31 @@ const TestLayer = SecretRequestBroker.layer.pipe(
       Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
     ),
   ),
-  Layer.provideMerge(
-    Layer.mock(ProjectionSnapshotQuery)({
-      getThreadShellById: () => Effect.succeed(Option.none()),
-    }),
-  ),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-secret-request-test-" })),
   Layer.provideMerge(NodeServices.layer),
 );
 
 /** Records every runtime event and settles `requested` once the prompt opens. */
 const collectEvents = Effect.gen(function* () {
-  const providerService = yield* ProviderService.ProviderService;
-  const events: ProviderRuntimeEvent[] = [];
-  const requested = yield* Deferred.make<ProviderRuntimeEvent>();
+  const testEvents = yield* TestEvents;
+  const events: OrchestrationV2DomainEvent[] = [];
+  const requested = yield* Deferred.make<OrchestrationV2DomainEvent>();
   yield* Effect.forkScoped(
-    Stream.runForEach(providerService.streamEvents, (event) =>
+    Stream.runForEach(testEvents.stream, (event) =>
       Effect.gen(function* () {
         events.push(event);
-        if (event.type === "user-input.requested") yield* Deferred.succeed(requested, event);
+        if (event.type === "turn-item.updated" && event.payload.type === "user_input_request" && event.payload.status === "pending") yield* Deferred.succeed(requested, event);
       }),
     ),
     { startImmediately: true },
   );
   return { events, awaitRequested: Deferred.await(requested) };
 });
+
+function requestIdOf(event: OrchestrationV2DomainEvent): RuntimeRequestId {
+  if (event.type !== "turn-item.updated" || event.payload.type !== "user_input_request") throw new Error("Expected secret prompt");
+  return event.payload.requestId;
+}
 
 describe("SecretRequestBroker", () => {
   it.effect("opens a masked question, stores the value, and resolves the prompt", () =>
@@ -118,8 +121,8 @@ describe("SecretRequestBroker", () => {
           broker.request({ scope, name: "OPENAI_API_KEY", purpose: "Call the OpenAI API." }),
         );
         const requested = yield* awaitRequested;
-        expect(requested.type).toBe("user-input.requested");
-        if (requested.type !== "user-input.requested") return;
+        expect(requested.type).toBe("turn-item.updated");
+        if (requested.type !== "turn-item.updated" || requested.payload.type !== "user_input_request") return;
         expect(requested.payload.questions).toEqual([
           {
             id: "OPENAI_API_KEY",
@@ -134,7 +137,7 @@ describe("SecretRequestBroker", () => {
 
         const reply = yield* broker.respond({
           threadId: THREAD_ID,
-          requestId: ApprovalRequestId.make(requested.requestId!),
+          requestId: requestIdOf(requested),
           response: { kind: "provided", value: "sk-test" },
         });
         expect(reply).toEqual({ name: "OPENAI_API_KEY" });
@@ -149,9 +152,11 @@ describe("SecretRequestBroker", () => {
           { name: "OPENAI_API_KEY", value: "sk-test", sensitive: true, valueRedacted: true },
         ]);
         // The reply itself never becomes an event; only the closing marker does.
-        const resolved = events.find((event) => event.type === "user-input.resolved");
-        expect(resolved?.requestId).toBe(requested.requestId);
-        expect(JSON.stringify(events)).not.toContain("sk-test");
+        const resolved = events.find((event) => event.type === "runtime-request.updated" && event.payload.status === "resolved");
+        expect(resolved?.type === "runtime-request.updated" ? resolved.payload.id : null).toBe(requestIdOf(requested));
+        const eventJson = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Array(Schema.toCodecJson(OrchestrationV2DomainEvent))))(events);
+        expect(eventJson).not.toContain("sk-test");
+        expect(events.some(event => event.type === "turn-item.updated" && event.payload.type === "user_input_request" && event.payload.status === "completed")).toBe(true);
       }),
     ).pipe(Effect.provide(TestLayer)),
   );
@@ -175,7 +180,7 @@ describe("SecretRequestBroker", () => {
         const requested = yield* awaitRequested;
         yield* broker.respond({
           threadId: THREAD_ID,
-          requestId: ApprovalRequestId.make(requested.requestId!),
+          requestId: requestIdOf(requested),
           response: { kind: "provided", value: "sk-new" },
         });
         yield* Fiber.join(request);
@@ -201,7 +206,7 @@ describe("SecretRequestBroker", () => {
         const requested = yield* awaitRequested;
         yield* broker.respond({
           threadId: THREAD_ID,
-          requestId: ApprovalRequestId.make(requested.requestId!),
+          requestId: requestIdOf(requested),
           response: { kind: "declined" },
         });
         expect(yield* Fiber.join(request)).toEqual({ status: "declined", name: "STRIPE_KEY" });
@@ -214,19 +219,15 @@ describe("SecretRequestBroker", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const broker = yield* SecretRequestBroker.SecretRequestBroker;
-        const providerService = yield* ProviderService.ProviderService;
+        const testEvents = yield* TestEvents;
         const { awaitRequested } = yield* collectEvents;
         const request = yield* Effect.forkChild(
           broker.request({ scope, name: "STRIPE_KEY", purpose: "Charge cards." }),
         );
         const requested = yield* awaitRequested;
-        yield* providerService.publishRuntimeEvent({
-          type: "turn.aborted",
-          eventId: EventId.make("turn-aborted-1"),
-          provider: ProviderDriverKind.make("codex"),
-          threadId: THREAD_ID,
-          createdAt: new Date().toISOString(),
-          payload: { reason: "interrupted" },
+        yield* testEvents.publish({
+          type: "run.updated", id: EventId.make("secret-run-aborted"), threadId: THREAD_ID,
+          occurredAt: yield* DateTime.now, runId: run.id, payload: { ...run, status: "interrupted" },
         });
         expect(yield* Fiber.join(request)).toEqual({ status: "cancelled", name: "STRIPE_KEY" });
 
@@ -234,7 +235,7 @@ describe("SecretRequestBroker", () => {
         const late = yield* broker
           .respond({
             threadId: THREAD_ID,
-            requestId: ApprovalRequestId.make(requested.requestId!),
+            requestId: requestIdOf(requested),
             response: { kind: "provided", value: "sk-late" },
           })
           .pipe(Effect.flip);

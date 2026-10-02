@@ -19,10 +19,8 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
-import { CodexDriver } from "../Drivers/CodexDriver.ts";
 import { BUILT_IN_DRIVERS } from "../builtInDrivers.ts";
 import * as ModelManifest from "../ModelManifest.ts";
-import * as CodexResetCredit from "./codexResetCredit.ts";
 import { NoOpProviderEventLoggers, ProviderEventLoggers } from "./ProviderEventLoggers.ts";
 import { makeProviderInstanceRegistry } from "./ProviderInstanceRegistryLive.ts";
 
@@ -73,7 +71,6 @@ const leftoverKimiLayer = ServerConfig.layerTest(process.cwd(), {
   Layer.provideMerge(TestHttpClientLive),
   Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
   Layer.provideMerge(ModelManifest.layerTest),
-  Layer.provideMerge(CodexResetCredit.layerTest),
 );
 
 describe("ProviderInstanceRegistryLive — Kimi removal", () => {
@@ -91,8 +88,8 @@ describe("ProviderInstanceRegistryLive — Kimi removal", () => {
         },
       };
 
-      const { registry } = yield* makeProviderInstanceRegistry({
-        drivers: [CodexDriver],
+      const { registry } = yield* makeProviderInstanceRegistry<never>({
+        drivers: [],
         configMap,
       });
 

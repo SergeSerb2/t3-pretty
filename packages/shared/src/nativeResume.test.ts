@@ -41,7 +41,7 @@ describe("isNativeResumeSessionReady", () => {
   it("only settles the optimistic command after a successful resume", () => {
     expect(isNativeResumeSessionReady("ready")).toBe(true);
     expect(isNativeResumeSessionReady("starting")).toBe(false);
-    expect(isNativeResumeSessionReady("error")).toBe(false);
+    expect(isNativeResumeSessionReady("failed")).toBe(false);
     expect(isNativeResumeSessionReady(null)).toBe(false);
   });
 });

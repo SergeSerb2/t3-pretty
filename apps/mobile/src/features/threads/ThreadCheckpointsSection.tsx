@@ -1,3 +1,4 @@
+import { deriveThreadCheckpointSummaries } from "@t3tools/client-runtime/state/thread-checkpoints";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { memo, useMemo } from "react";
@@ -23,10 +24,10 @@ export const ThreadCheckpointsSection = memo(function ThreadCheckpointsSection(p
     environmentId: props.threadRef.environmentId,
     threadId: props.threadRef.threadId,
   });
-  const checkpoints = Option.getOrNull(detailState.data)?.checkpoints;
+  const projection = Option.getOrNull(detailState.data);
   const readyCheckpoints = useMemo(
-    () => getReadyReviewCheckpoints(checkpoints ?? []),
-    [checkpoints],
+    () => getReadyReviewCheckpoints(projection ? deriveThreadCheckpointSummaries(projection) : []),
+    [projection],
   );
   const { confirmRevertToCheckpoint, revertingTurnCount } = useThreadCheckpointRevert(
     props.threadRef,

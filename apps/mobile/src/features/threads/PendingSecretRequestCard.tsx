@@ -1,4 +1,4 @@
-import type { ApprovalRequestId, ThreadSecretRequestResponse } from "@t3tools/contracts";
+import type { RuntimeRequestId, ThreadSecretRequestResponse } from "@t3tools/contracts";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 
@@ -7,9 +7,9 @@ import type { PendingSecretRequest } from "../../lib/threadActivity";
 
 export interface PendingSecretRequestCardProps {
   readonly request: PendingSecretRequest;
-  readonly respondingRequestId: ApprovalRequestId | null;
+  readonly respondingRequestId: RuntimeRequestId | null;
   readonly onRespond: (
-    requestId: ApprovalRequestId,
+    requestId: RuntimeRequestId,
     response: ThreadSecretRequestResponse,
   ) => Promise<unknown>;
 }

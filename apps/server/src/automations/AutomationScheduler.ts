@@ -28,14 +28,13 @@ import {
   type AutomationShell,
   type IsoDateTime,
   type ModelSelection,
-  type OrchestrationCommand,
-  type OrchestrationEvent,
+  type AutomationCommand,
   type OrchestrationProjectShell,
-  type OrchestrationSession,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ThreadShell,
+  type OrchestrationV2Run,
   type ProjectId,
   type ServerSettings,
-  type TurnId,
+  type RunId,
 } from "@t3tools/contracts";
 import { applyAutomationRunSuffix } from "@t3tools/shared/automationRunPrompt";
 import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
@@ -55,10 +54,10 @@ import * as Stream from "effect/Stream";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
-import { isOrchestrationCommandRejection } from "../orchestration/Errors.ts";
-import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as AutomationStore from "./AutomationStore.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
+import * as ProjectService from "../project/ProjectService.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -77,11 +76,11 @@ export class AutomationScheduler extends Context.Service<
   }
 >()("t3/automations/AutomationScheduler") {}
 
-export const AUTOMATION_TICK_INTERVAL = Duration.seconds(30);
+const AUTOMATION_TICK_INTERVAL = Duration.seconds(30);
 /** A schedule instant older than this counts as missed (catch-up or `run.missed`). */
-export const AUTOMATION_LATE_THRESHOLD_MILLIS = 90_000;
+const AUTOMATION_LATE_THRESHOLD_MILLIS = 90_000;
 /** A requested run without a thread after this long failed to start. */
-export const AUTOMATION_STALE_REQUEST_MILLIS = 2 * 60_000;
+const AUTOMATION_STALE_REQUEST_MILLIS = 2 * 60_000;
 const GIT_TIMEOUT = Duration.seconds(30);
 const ORIGIN = "origin";
 
@@ -91,19 +90,15 @@ type Job =
   | {
       readonly kind: "thread";
       readonly threadId: ThreadId;
-      readonly session: OrchestrationSession | null;
-      /** Set by `provider.turn.start.failed`: fail the run with this reason. */
-      readonly failure: string | null;
+      readonly runId: RunId;
+      readonly status: OrchestrationV2Run["status"];
     }
   | { readonly kind: "finished"; readonly automationId: AutomationId }
   | { readonly kind: "deleted"; readonly automationId: AutomationId }
   | { readonly kind: "merged"; readonly merge: PullRequestService.PullRequestMergeEvent }
   | { readonly kind: "git-poll" };
 
-type RunRequestTrigger = Extract<
-  OrchestrationCommand,
-  { type: "automation.run.request" }
->["trigger"];
+type RunRequestTrigger = Extract<AutomationCommand, { type: "automation.run.request" }>["trigger"];
 
 function fallbackModelSelection(settings: ServerSettings): ModelSelection {
   const enabled = Object.entries(settings.providers).find(([, provider]) => provider.enabled);
@@ -147,13 +142,14 @@ const readyPendingTrigger = (
     ? automation.pendingTrigger
     : null;
 
-export const make = Effect.gen(function* () {
-  const engine = yield* OrchestrationEngine.OrchestrationEngineService;
-  const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+const make = Effect.gen(function* () {
+  const store = yield* AutomationStore.AutomationStore;
+  const threadService = yield* ThreadManagement.ThreadManagementService;
+  const launch = yield* ThreadLaunch.ThreadLaunchService;
+  const projects = yield* ProjectService.ProjectService;
   const settingsService = yield* ServerSettingsService;
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
   const git = yield* GitWorkflowService.GitWorkflowService;
-  const setupScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const pullRequests = yield* PullRequestService.PullRequestService;
   const crypto = yield* Crypto.Crypto;
 
@@ -166,24 +162,22 @@ export const make = Effect.gen(function* () {
     Effect.map((snapshot) => snapshot.hostPower.suspended),
   );
 
-  // Non-run threads whose turn is running, so a later session-set that leaves
-  // `running` is recognised as that turn settling. Lost on restart, which only
-  // means turns already running at boot never fire an in-app event.
-  const runningTurnByThread = new Map<ThreadId, TurnId>();
+  // Remember non-automation runs observed in progress so only their transition
+  // to a terminal state triggers other automations. Lost on restart.
+  const runningTurnByThread = new Map<ThreadId, RunId>();
   // Last remote commit per `${workspaceRoot} ${branch}`. First observation
   // baselines silently; pushes during downtime are not observed.
   const lastSeenCommit = new Map<string, string>();
 
   /** Rejections are the decider saying "already handled"; they are expected and only logged. */
-  const dispatchQuietly = (command: OrchestrationCommand) =>
-    engine.dispatch(command).pipe(
+  const dispatchQuietly = (command: AutomationCommand) =>
+    store.dispatch(command).pipe(
       Effect.asVoid,
       Effect.catch((error) =>
-        isOrchestrationCommandRejection(error) ||
-        error._tag === "OrchestrationCommandPreviouslyRejectedError"
+        error.cause === undefined
           ? Effect.logDebug("automation command rejected", {
               commandType: command.type,
-              detail: error.message,
+              detail: error.detail,
             })
           : Effect.logWarning("automation command failed", {
               commandType: command.type,
@@ -228,16 +222,16 @@ export const make = Effect.gen(function* () {
 
   /** Final assistant message of the settled turn, trimmed for the run row. */
   const readRunSummary = Effect.fn("AutomationScheduler.readRunSummary")(function* (
-    thread: OrchestrationThreadShell,
+    thread: OrchestrationV2ThreadShell,
   ) {
-    const turnId = thread.latestTurn?.turnId;
-    if (turnId === undefined) return null;
-    const detail = yield* snapshots
-      .getThreadDetailById(thread.id, { activityKinds: [] })
-      .pipe(Effect.orElseSucceed(() => Option.none()));
-    if (Option.isNone(detail)) return null;
-    const text = detail.value.messages.findLast(
-      (message) => message.role === "assistant" && message.turnId === turnId,
+    const turnId = thread.latestRunId;
+    if (turnId === null) return null;
+    const detail = yield* threadService
+      .getThreadProjection(thread.id)
+      .pipe(Effect.orElseSucceed(() => null));
+    if (detail === null) return null;
+    const text = detail.messages.findLast(
+      (message) => message.role === "assistant" && message.runId === turnId,
     )?.text;
     const trimmed = text?.trim() ?? "";
     return trimmed.length === 0 ? null : trimmed.slice(0, AUTOMATION_RUN_SUMMARY_MAX_CHARS);
@@ -246,7 +240,7 @@ export const make = Effect.gen(function* () {
   /** Applies the completion rule to an active run's thread and reports the outcome. */
   const completeFromThread = Effect.fn("AutomationScheduler.completeFromThread")(function* (
     automation: AutomationShell,
-    thread: OrchestrationThreadShell,
+    thread: OrchestrationV2ThreadShell,
   ) {
     const active = automation.activeRun;
     if (active === null || active.threadId !== thread.id) return;
@@ -264,12 +258,18 @@ export const make = Effect.gen(function* () {
   const listRunThreads = Effect.fn("AutomationScheduler.listRunThreads")(function* (
     automationId: AutomationId,
   ) {
-    const snapshot = yield* snapshots.getShellSnapshot();
-    const threads = snapshot.threads
+    const active = yield* threadService.getShellSnapshot({ location: "active" });
+    const archive = yield* threadService.getShellSnapshot({ location: "archive" });
+    const threads = [...active.threads, ...archive.threads]
       .filter((thread) => thread.automationRun?.automationId === automationId)
-      .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt));
-    const projects = new Map(snapshot.projects.map((project) => [project.id, project]));
-    return { threads, projects };
+      .toSorted(
+        (left, right) =>
+          DateTime.toEpochMillis(right.createdAt) - DateTime.toEpochMillis(left.createdAt),
+      );
+    const projectMap = new Map(
+      (yield* projects.listShells()).map((project) => [project.id, project]),
+    );
+    return { threads, projects: projectMap };
   });
 
   const removeWorktree = (workspaceRoot: string, worktreePath: string | null) =>
@@ -285,26 +285,37 @@ export const make = Effect.gen(function* () {
         );
 
   const deleteRunThread = Effect.fn("AutomationScheduler.deleteRunThread")(function* (
-    thread: Pick<OrchestrationThreadShell, "id" | "worktreePath">,
+    thread: Pick<OrchestrationV2ThreadShell, "id" | "worktreePath">,
     workspaceRoot: string | undefined,
   ) {
     if (workspaceRoot !== undefined) yield* removeWorktree(workspaceRoot, thread.worktreePath);
-    yield* dispatchQuietly({
-      type: "thread.delete",
-      commandId: CommandId.make(`server:automation-thread-delete:${yield* uuid}`),
-      threadId: thread.id,
-    });
+    yield* threadService
+      .dispatch({
+        type: "thread.delete",
+        commandId: CommandId.make(`server:automation-thread-delete:${yield* uuid}`),
+        threadId: thread.id,
+      })
+      .pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("automation run thread deletion failed", { cause }),
+        ),
+      );
   });
 
   const interruptThread = Effect.fn("AutomationScheduler.interruptThread")(function* (
     threadId: ThreadId,
   ) {
-    yield* dispatchQuietly({
-      type: "thread.turn.interrupt",
-      commandId: CommandId.make(`server:automation-turn-interrupt:${yield* uuid}`),
-      threadId,
-      createdAt: yield* nowIso,
-    });
+    const thread = yield* threadService.getThreadShell(threadId);
+    if (thread === null) return;
+    yield* threadService
+      .interruptThread({
+        projectId: thread.projectId,
+        commandId: CommandId.make(`server:automation-interrupt:${yield* uuid}`),
+        threadId,
+      })
+      .pipe(
+        Effect.catch((cause) => Effect.logWarning("automation run interruption failed", { cause })),
+      );
   });
 
   // ---------------------------------------------------------------------
@@ -383,17 +394,32 @@ export const make = Effect.gen(function* () {
       yield* interruptThread(active.threadId);
       return;
     }
-    const thread = yield* snapshots.getThreadShellById(active.threadId);
-    if (Option.isSome(thread)) {
-      yield* completeFromThread(automation, thread.value);
+    const thread = yield* threadService.getThreadShell(active.threadId);
+    if (thread !== null) {
+      yield* completeFromThread(automation, thread);
+    } else if (Date.parse(active.requestedAt) + AUTOMATION_STALE_REQUEST_MILLIS < nowMs) {
+      yield* finishRun({
+        automationId: automation.id,
+        runId: active.runId,
+        status: "failed",
+        error: "Run thread disappeared or failed to launch",
+      });
     }
   });
 
   const tick = Effect.fn("AutomationScheduler.tick")(function* () {
     if (yield* hostSuspended) return;
     const schedulesEnabled = (yield* settings).automations.enabled;
-    const automations = yield* snapshots.listAutomationShells();
+    const automations = yield* store.listAutomationShells();
     for (const automation of automations) {
+      if (Option.isNone(yield* projects.getShell(automation.projectId))) {
+        yield* dispatchQuietly({
+          type: "automation.delete",
+          commandId: CommandId.make(`server:automation-project-deleted:${automation.id}`),
+          automationId: automation.id,
+        });
+        continue;
+      }
       yield* tickAutomation(automation, schedulesEnabled).pipe(
         Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause)
@@ -411,103 +437,6 @@ export const make = Effect.gen(function* () {
   // Executor
   // ---------------------------------------------------------------------
 
-  // ponytail: duplicates the thread.create → worktree → setup script →
-  // thread.turn.start sequence of ws.ts dispatchBootstrapTurnStart. That
-  // closure is bound to a client connection (origin, fences, activities) and
-  // extracting it costs more than these 40 lines; fold both together if a
-  // third caller appears.
-  const prepareAndStartTurn = Effect.fn("AutomationScheduler.prepareAndStartTurn")(function* (
-    automation: AutomationShell,
-    project: OrchestrationProjectShell,
-    run: AutomationRun,
-    threadId: ThreadId,
-    modelSelection: ModelSelection,
-    startedAt: IsoDateTime,
-  ) {
-    let worktreePath: string | null = null;
-    if (automation.workspace === "worktree") {
-      const cwd = project.workspaceRoot;
-      const baseBranch = yield* resolveDefaultBranch(cwd);
-      let baseRef = baseBranch;
-      const hasOrigin = yield* git
-        .remoteExists({ cwd, remoteName: ORIGIN })
-        .pipe(Effect.orElseSucceed(() => false));
-      if (hasOrigin) {
-        yield* git.fetchRemote({ cwd, remoteName: ORIGIN }).pipe(
-          Effect.timeout(GIT_TIMEOUT),
-          Effect.catch((error) =>
-            Effect.logWarning("automation run fetch failed; starting from local base", {
-              cwd,
-              cause: error,
-            }),
-          ),
-        );
-        const remoteBase = yield* git
-          .resolveRemoteTrackingCommit({ cwd, refName: baseBranch, fallbackRemoteName: ORIGIN })
-          .pipe(Effect.orElseSucceed(() => null));
-        if (remoteBase !== null) baseRef = remoteBase.commitSha;
-      }
-      const worktree = yield* git.createWorktree({
-        cwd,
-        refName: baseRef,
-        newRefName: automationRunBranchName(automation.name, DateTime.makeUnsafe(startedAt)),
-        baseRefName: baseBranch,
-        path: null,
-      });
-      worktreePath = worktree.worktree.path;
-      yield* engine.dispatch({
-        type: "thread.meta.update",
-        commandId: CommandId.make(`server:automation-thread-meta:${run.id}`),
-        threadId,
-        branch: worktree.worktree.refName,
-        worktreePath,
-      });
-      yield* setupScripts
-        .runForThread({ threadId, projectId: project.id, projectCwd: cwd, worktreePath })
-        .pipe(
-          Effect.catch((error) =>
-            Effect.logWarning("automation run setup script failed", { threadId, cause: error }),
-          ),
-        );
-    }
-
-    const previous = automation.lastRun;
-    const text = applyAutomationRunSuffix(
-      applyCreatePullRequestSuffix({
-        text: automation.prompt,
-        autoCreatePullRequest: automation.createPullRequest,
-        threadHasStarted: false,
-        model: modelSelection.model,
-      }),
-      {
-        automationName: automation.name,
-        projectTitle: project.title,
-        runId: run.id,
-        trigger: run.trigger,
-        startedAt,
-        previousRunSummary:
-          automation.includeLastRunSummary && previous?.summary
-            ? { finishedAt: previous.finishedAt ?? previous.requestedAt, summary: previous.summary }
-            : null,
-      },
-    );
-    yield* engine.dispatch({
-      type: "thread.turn.start",
-      commandId: CommandId.make(`server:automation-turn-start:${run.id}`),
-      threadId,
-      message: {
-        messageId: MessageId.make(yield* uuid),
-        role: "user",
-        text,
-        attachments: [],
-      },
-      runtimeMode: automation.runtimeMode,
-      interactionMode: "default",
-      createdAt: yield* nowIso,
-    });
-    return worktreePath;
-  });
-
   /** Local default branch (`isDefault` ref), else the checked-out branch, else `main`. */
   const resolveDefaultBranch = Effect.fn("AutomationScheduler.resolveDefaultBranch")(function* (
     cwd: string,
@@ -522,7 +451,7 @@ export const make = Effect.gen(function* () {
   });
 
   const execute = Effect.fn("AutomationScheduler.execute")(function* (run: AutomationRun) {
-    const automation = Option.getOrNull(yield* snapshots.getAutomationShellById(run.automationId));
+    const automation = Option.getOrNull(yield* store.getAutomationShellById(run.automationId));
     if (
       automation === null ||
       automation.activeRun?.runId !== run.id ||
@@ -531,7 +460,7 @@ export const make = Effect.gen(function* () {
       yield* Effect.logDebug("automation run no longer executable", { runId: run.id });
       return;
     }
-    const project = Option.getOrNull(yield* snapshots.getProjectShellById(automation.projectId));
+    const project = Option.getOrNull(yield* projects.getShell(automation.projectId));
     if (project === null) {
       yield* finishRun({
         automationId: automation.id,
@@ -548,10 +477,41 @@ export const make = Effect.gen(function* () {
     const startedAt = yield* nowIso;
     const threadId = ThreadId.make(yield* uuid);
 
-    const created = yield* engine
-      .dispatch({
-        type: "thread.create",
-        commandId: CommandId.make(`server:automation-thread-create:${run.id}`),
+    const text = applyAutomationRunSuffix(
+      applyCreatePullRequestSuffix({
+        text: automation.prompt,
+        autoCreatePullRequest: automation.createPullRequest,
+        threadHasStarted: false,
+        model: modelSelection.model,
+      }),
+      {
+        automationName: automation.name,
+        projectTitle: project.title,
+        runId: run.id,
+        trigger: run.trigger,
+        startedAt,
+        previousRunSummary:
+          automation.includeLastRunSummary && automation.lastRun?.summary
+            ? {
+                finishedAt: automation.lastRun.finishedAt ?? automation.lastRun.requestedAt,
+                summary: automation.lastRun.summary,
+              }
+            : null,
+      },
+    );
+    // Record ownership before launch. A crash during workspace/provider preparation
+    // is then recovered by the timeout/stale-thread sweep instead of duplicating it.
+    yield* store.dispatch({
+      type: "automation.run.started",
+      commandId: CommandId.make(`server:automation-run-started:${run.id}`),
+      automationId: automation.id,
+      runId: run.id,
+      threadId,
+      startedAt,
+    });
+    const launched = yield* launch
+      .launch({
+        commandId: CommandId.make(`server:automation-thread-launch:${run.id}`),
         threadId,
         projectId: project.id,
         title: automationRunTitle(
@@ -562,50 +522,31 @@ export const make = Effect.gen(function* () {
         modelSelection,
         runtimeMode: automation.runtimeMode,
         interactionMode: "default",
-        branch: null,
-        worktreePath: null,
-        enabledSkillIds: [],
         automationRun: { automationId: automation.id, runId: run.id },
-        createdAt: startedAt,
+        workspaceStrategy:
+          automation.workspace === "worktree"
+            ? {
+                type: "worktree",
+                baseRef: yield* resolveDefaultBranch(project.workspaceRoot),
+                branch: automationRunBranchName(automation.name, DateTime.makeUnsafe(startedAt)),
+                startFromOrigin: true,
+              }
+            : { type: "root" },
+        initialMessage: { messageId: MessageId.make(yield* uuid), text, attachments: [] },
+        createdBy: "system",
+        creationSource: "server",
       })
-      .pipe(Effect.result);
-    if (created._tag === "Failure") {
+      .pipe(Effect.exit);
+    if (Exit.isFailure(launched)) {
+      if (Cause.hasInterruptsOnly(launched.cause)) return yield* Effect.failCause(launched.cause);
       yield* finishRun({
         automationId: automation.id,
         runId: run.id,
         status: "failed",
-        error: `Thread creation failed: ${created.failure.message}`,
+        error: describeCause(launched.cause),
       });
-      return;
-    }
-    // Attribute every later failure to a run that already owns its thread.
-    const prepared = yield* engine
-      .dispatch({
-        type: "automation.run.started",
-        commandId: CommandId.make(`server:automation-run-started:${run.id}`),
-        automationId: automation.id,
-        runId: run.id,
-        threadId,
-        startedAt,
-      })
-      .pipe(
-        Effect.andThen(
-          prepareAndStartTurn(automation, project, run, threadId, modelSelection, startedAt),
-        ),
-        Effect.exit,
-      );
-    if (Exit.isFailure(prepared)) {
-      if (Cause.hasInterruptsOnly(prepared.cause)) {
-        return yield* Effect.failCause(prepared.cause);
-      }
-      const error = describeCause(prepared.cause);
-      yield* Effect.logWarning("automation run failed to start", { runId: run.id, error });
-      yield* finishRun({ automationId: automation.id, runId: run.id, status: "failed", error });
-      const thread = Option.getOrNull(yield* snapshots.getThreadShellById(threadId));
-      yield* deleteRunThread(
-        { id: threadId, worktreePath: thread?.worktreePath ?? null },
-        project.workspaceRoot,
-      );
+      const thread = yield* threadService.getThreadShell(threadId);
+      if (thread !== null) yield* deleteRunThread(thread, project.workspaceRoot);
     }
   });
 
@@ -619,7 +560,7 @@ export const make = Effect.gen(function* () {
     threadId: ThreadId,
   ) {
     if (!(yield* settings).automations.enabled) return;
-    const automations = yield* snapshots.listAutomationShells();
+    const automations = yield* store.listAutomationShells();
     for (const automation of automations) {
       if (
         automation.projectId !== projectId ||
@@ -635,47 +576,36 @@ export const make = Effect.gen(function* () {
   const onThread = Effect.fn("AutomationScheduler.onThread")(function* (
     job: Extract<Job, { kind: "thread" }>,
   ) {
-    const shell = Option.getOrNull(yield* snapshots.getThreadShellById(job.threadId));
+    const shell = yield* threadService.getThreadShell(job.threadId);
     if (shell === null) return;
     const marker = shell.automationRun ?? null;
     if (marker !== null) {
-      const automation = Option.getOrNull(
-        yield* snapshots.getAutomationShellById(marker.automationId),
+      const automation = Option.getOrNull(yield* store.getAutomationShellById(marker.automationId));
+      if (automation !== null && automation.activeRun?.threadId === shell.id)
+        yield* completeFromThread(automation, shell);
+      return;
+    }
+    // Use the event's run state: the projection may already have advanced to
+    // completed by the time this worker reads a very short running turn.
+    if (["preparing", "starting", "running", "waiting"].includes(job.status)) {
+      runningTurnByThread.set(shell.id, job.runId);
+      return;
+    }
+    if (runningTurnByThread.get(shell.id) !== job.runId) return;
+    runningTurnByThread.delete(shell.id);
+    if (job.status === "failed" || job.status === "completed") {
+      yield* fireEvent(
+        shell.projectId,
+        job.status === "failed" ? "turn.failed" : "turn.completed",
+        shell.id,
       );
-      if (automation === null || automation.activeRun?.threadId !== shell.id) return;
-      if (job.failure !== null) {
-        yield* finishRun({
-          automationId: automation.id,
-          runId: automation.activeRun.runId,
-          status: "failed",
-          error: job.failure,
-        });
-        return;
-      }
-      yield* completeFromThread(automation, shell);
-      return;
     }
-    const session = job.session;
-    if (session === null) return;
-    if (session.status === "running" && session.activeTurnId !== null) {
-      runningTurnByThread.set(shell.id, session.activeTurnId);
-      return;
-    }
-    if (session.status === "running" || session.status === "starting") return;
-    if (!runningTurnByThread.delete(shell.id)) return;
-    const event: AutomationEventName | null =
-      session.status === "error"
-        ? "turn.failed"
-        : session.status === "ready" || session.status === "idle"
-          ? "turn.completed"
-          : null;
-    if (event !== null) yield* fireEvent(shell.projectId, event, shell.id);
   });
 
   const onMerged = Effect.fn("AutomationScheduler.onMerged")(function* (
     merge: PullRequestService.PullRequestMergeEvent,
   ) {
-    const snapshot = yield* snapshots.getShellSnapshot();
+    const snapshot = yield* threadService.getShellSnapshot();
     const repository = merge.repository.toLowerCase();
     const thread = snapshot.threads.find(
       (candidate) =>
@@ -696,7 +626,7 @@ export const make = Effect.gen(function* () {
   const afterFinished = Effect.fn("AutomationScheduler.afterFinished")(function* (
     automationId: AutomationId,
   ) {
-    const automation = Option.getOrNull(yield* snapshots.getAutomationShellById(automationId));
+    const automation = Option.getOrNull(yield* store.getAutomationShellById(automationId));
     if (automation === null) return;
     const schedulesEnabled = (yield* settings).automations.enabled;
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
@@ -720,7 +650,7 @@ export const make = Effect.gen(function* () {
     // the whole cascade.
     const { threads, projects } = yield* listRunThreads(automationId);
     for (const thread of threads) {
-      if (thread.latestTurn?.state === "running" || thread.session?.status === "running") {
+      if (thread.activeRunId !== null) {
         yield* interruptThread(thread.id);
       }
       yield* deleteRunThread(thread, projects.get(thread.projectId)?.workspaceRoot);
@@ -734,7 +664,7 @@ export const make = Effect.gen(function* () {
   const pollGit = Effect.fn("AutomationScheduler.pollGit")(function* () {
     if (yield* hostSuspended) return;
     if (!(yield* settings).automations.enabled) return;
-    const automations = (yield* snapshots.listAutomationShells()).filter(
+    const automations = (yield* store.listAutomationShells()).filter(
       (automation) => automation.enabled && gitRunTriggerBranch(automation).length > 0,
     );
     if (automations.length === 0) return;
@@ -744,7 +674,7 @@ export const make = Effect.gen(function* () {
       { readonly cwd: string; readonly branch: string; readonly automations: Array<AutomationId> }
     >();
     for (const automation of automations) {
-      const project = Option.getOrNull(yield* snapshots.getProjectShellById(automation.projectId));
+      const project = Option.getOrNull(yield* projects.getShell(automation.projectId));
       if (project === null) continue;
       const cwd = project.workspaceRoot;
       for (const configured of gitRunTriggerBranch(automation)) {
@@ -825,30 +755,14 @@ export const make = Effect.gen(function* () {
   };
   const worker = yield* makeDrainableWorker(process);
 
-  const onDomainEvent = (event: OrchestrationEvent): Effect.Effect<void> => {
+  const onStoreEvent = (event: AutomationStore.AutomationStoreEvent): Effect.Effect<void> => {
     switch (event.type) {
       case "automation.run-requested":
-        return worker.enqueue({ kind: "execute", run: event.payload.run });
+        return worker.enqueue({ kind: "execute", run: event.run });
       case "automation.run-finished":
-        return worker.enqueue({ kind: "finished", automationId: event.payload.automationId });
-      case "automation.deleted":
-        return worker.enqueue({ kind: "deleted", automationId: event.payload.automationId });
-      case "thread.session-set":
-        return worker.enqueue({
-          kind: "thread",
-          threadId: event.payload.threadId,
-          session: event.payload.session,
-          failure: null,
-        });
-      case "thread.activity-appended":
-        return event.payload.activity.kind === "provider.turn.start.failed"
-          ? worker.enqueue({
-              kind: "thread",
-              threadId: event.payload.threadId,
-              session: null,
-              failure: event.payload.activity.summary,
-            })
-          : Effect.void;
+        return worker.enqueue({ kind: "finished", automationId: event.automationId });
+      case "automation.removed":
+        return worker.enqueue({ kind: "deleted", automationId: event.automationId });
       default:
         return Effect.void;
     }
@@ -858,9 +772,24 @@ export const make = Effect.gen(function* () {
 
   const start: AutomationScheduler["Service"]["start"] = Effect.fn("AutomationScheduler.start")(
     function* () {
-      const domainEvents = yield* engine.subscribeDomainEvents;
       const merges = yield* pullRequests.subscribeMerges;
-      yield* forkParked(Stream.runForEach(domainEvents, onDomainEvent));
+      yield* forkParked(Stream.runForEach(store.subscribeChanges, onStoreEvent));
+      yield* forkParked(
+        Stream.runForEach(threadService.streamDomainEvents, (event) =>
+          event.type === "run.created" || event.type === "run.updated"
+            ? worker.enqueue({
+                kind: "thread",
+                threadId: event.payload.threadId,
+                runId: event.payload.id,
+                status: event.payload.status,
+              })
+            : Effect.void,
+        ).pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("automation thread event subscription failed", { cause }),
+          ),
+        ),
+      );
       yield* forkParked(
         Stream.runForEach(merges, (merge) => worker.enqueue({ kind: "merged", merge })),
       );

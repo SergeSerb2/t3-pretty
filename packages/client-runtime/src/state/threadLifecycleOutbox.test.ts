@@ -1,14 +1,16 @@
+import type { EnvironmentThreadShell as OrchestrationThreadShell } from "./models.ts";
+import { presentThreadShell } from "./models.ts";
+import { v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
+type OrchestrationShellSnapshot = { readonly snapshotSequence: number; readonly projects: readonly []; readonly threads: ReadonlyArray<OrchestrationThreadShell>; readonly automations?: readonly []; readonly updatedAt: string };
 import {
   CommandId,
   EnvironmentId,
-  ORCHESTRATION_WS_METHODS,
-  OrchestrationDispatchCommandError,
+  ORCHESTRATION_V2_WS_METHODS,
+  OrchestrationV2DispatchCommandError,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  type ClientOrchestrationCommand,
-  type OrchestrationShellSnapshot,
-  type OrchestrationThreadShell,
+  type OrchestrationV2Command,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -84,6 +86,7 @@ function entry(
 
 function makeShell(overrides: Partial<OrchestrationThreadShell> = {}): OrchestrationThreadShell {
   return {
+    ...presentThreadShell(ENVIRONMENT_ID, v2ThreadShell),
     id: THREAD_ID,
     projectId: ProjectId.make("project-1"),
     title: "Thread",
@@ -96,7 +99,6 @@ function makeShell(overrides: Partial<OrchestrationThreadShell> = {}): Orchestra
     branch: "main",
     worktreePath: null,
     pullRequests: [],
-    latestTurn: null,
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-01T00:00:00.000Z",
     archivedAt: null,
@@ -107,7 +109,6 @@ function makeShell(overrides: Partial<OrchestrationThreadShell> = {}): Orchestra
     pinnedAt: null,
     pinOrderKey: null,
     enabledSkillIds: [],
-    session: null,
     latestUserMessageAt: null,
     hasPendingApprovals: false,
     hasPendingUserInput: false,
@@ -765,7 +766,7 @@ describe("ThreadLifecycleOutbox", () => {
       const fastDispatchFinished = yield* Deferred.make<void>();
       const sessionFor = (dispatch: Effect.Effect<void>): RpcSession => ({
         client: {
-          [ORCHESTRATION_WS_METHODS.dispatchCommand]: () =>
+          [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: () =>
             dispatch.pipe(Effect.as({ sequence: 1 })),
         } as unknown as WsRpcProtocolClient,
         initialConfig: Effect.never,
@@ -838,10 +839,10 @@ describe("ThreadLifecycleOutbox", () => {
 
   it.effect("dispatches parked commands once the environment session is back", () =>
     Effect.gen(function* () {
-      const dispatched: ClientOrchestrationCommand[] = [];
+      const dispatched: OrchestrationV2Command[] = [];
       const delivered = yield* Deferred.make<void>();
       const client = {
-        [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command: ClientOrchestrationCommand) =>
+        [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command: OrchestrationV2Command) =>
           Effect.gen(function* () {
             dispatched.push(command);
             yield* Deferred.succeed(delivered, undefined);
@@ -892,14 +893,16 @@ describe("ThreadLifecycleOutbox", () => {
 
   it.effect("drops a parked command the server rejects and keeps going", () =>
     Effect.gen(function* () {
-      const dispatched: ClientOrchestrationCommand[] = [];
+      const dispatched: OrchestrationV2Command[] = [];
       const finished = yield* Deferred.make<void>();
       const client = {
-        [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command: ClientOrchestrationCommand) =>
+        [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command: OrchestrationV2Command) =>
           Effect.gen(function* () {
             dispatched.push(command);
             if (command.type === "thread.snooze") {
-              return yield* new OrchestrationDispatchCommandError({
+              return yield* new OrchestrationV2DispatchCommandError({
+                commandId: command.commandId,
+                commandType: command.type,
                 message: "wake time is not in the future",
               });
             }

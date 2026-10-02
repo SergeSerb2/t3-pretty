@@ -547,7 +547,7 @@ export function makeStaticProviderMaintenanceResolver(
   capabilities: ProviderMaintenanceCapabilities,
 ): ProviderMaintenanceCapabilitiesResolver {
   return {
-    resolve: () => capabilities,
+    resolve: () => Effect.succeed(capabilities),
   };
 }
 

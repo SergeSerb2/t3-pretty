@@ -33,6 +33,14 @@ a thread does not raise the on-screen keyboard; tap the message field when you w
 Use **Settings → Appearance → Car display** or **Car display** in the command palette to force it
 on or off. Add `?tesla-touch=1` to the page URL to preview it in any browser.
 
+## Composer context
+
+Git-backed projects show branch and worktree controls below the composer while you create a thread.
+The controls retreat as the composer docks after you send the first message.
+
+Turn on **Composer context** to keep those controls visible after the thread starts. This preference
+applies to the web and desktop clients.
+
 ## Motion
 
 The main sidebar, right panel, and terminal drawer open and close immediately by default. Move the

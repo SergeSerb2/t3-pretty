@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Existing synchronous native filesystem search boundary.
 import * as NodeFs from "node:fs";
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";

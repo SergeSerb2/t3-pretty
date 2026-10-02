@@ -1,5 +1,5 @@
 import type { StatusTone } from "../../components/StatusPill";
-import type { OrchestrationLatestTurn, OrchestrationSession } from "@t3tools/contracts";
+
 import { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 
 export type ThreadStatusKind =
@@ -14,16 +14,6 @@ export interface ThreadStatusPresentation extends StatusTone {
   readonly kind: ThreadStatusKind;
   /** Whether the indicator represents in-flight activity. */
   readonly pulse: boolean;
-}
-
-function isLatestTurnSettled(
-  latestTurn: OrchestrationLatestTurn | null,
-  session: OrchestrationSession | null,
-): boolean {
-  if (!latestTurn?.startedAt) return false;
-  if (!latestTurn.completedAt) return false;
-  if (!session) return true;
-  return session.status !== "running";
 }
 
 /**
@@ -54,7 +44,7 @@ export function resolveThreadStatus(
     };
   }
 
-  if (thread.session?.status === "running") {
+  if (thread.runtime?.status === "running" || thread.backgroundLiveness === "working") {
     return {
       kind: "working",
       label: "Working",
@@ -64,7 +54,7 @@ export function resolveThreadStatus(
     };
   }
 
-  if (thread.session?.status === "starting") {
+  if (thread.runtime?.status === "preparing" || thread.runtime?.status === "starting") {
     return {
       kind: "connecting",
       label: "Connecting",
@@ -74,7 +64,7 @@ export function resolveThreadStatus(
     };
   }
 
-  if (thread.session?.status === "error" || thread.latestTurn?.state === "error") {
+  if (thread.runtime?.status === "failed" || thread.latestRun?.status === "failed") {
     return {
       kind: "error",
       label: "Error",
@@ -86,7 +76,7 @@ export function resolveThreadStatus(
 
   const hasPlanReadyPrompt =
     thread.interactionMode === "plan" &&
-    isLatestTurnSettled(thread.latestTurn, thread.session) &&
+    thread.latestRun?.status === "completed" &&
     thread.hasActionableProposedPlan;
   if (hasPlanReadyPrompt) {
     return {

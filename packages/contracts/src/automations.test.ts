@@ -12,20 +12,19 @@ import {
   validateAutomationCron,
 } from "./automations.ts";
 import {
-  ClientOrchestrationCommand,
-  OrchestrationCommand,
-  OrchestrationShellSnapshot,
-  OrchestrationThreadShell,
-} from "./orchestration.ts";
+  OrchestrationV2ShellSnapshot,
+  OrchestrationV2ThreadShell,
+} from "./orchestrationV2.ts";
+import { AutomationClientCommand, AutomationCommand } from "./automations.ts";
 
 const decodeSchedule = Schema.decodeUnknownSync(AutomationScheduleTrigger);
 const decodeEditable = Schema.decodeUnknownSync(AutomationEditableFields);
 const decodeRunTrigger = Schema.decodeUnknownSync(AutomationRunTrigger);
 const decodeAutomation = Schema.decodeUnknownSync(Automation);
-const decodeSnapshot = Schema.decodeUnknownSync(OrchestrationShellSnapshot);
+const decodeSnapshot = Schema.decodeUnknownSync(OrchestrationV2ShellSnapshot);
 const decodeListRunsInput = Schema.decodeUnknownSync(AutomationsListRunsInput);
-const isClientCommand = Schema.is(ClientOrchestrationCommand);
-const isCommand = Schema.is(OrchestrationCommand);
+const isClientCommand = Schema.is(AutomationClientCommand);
+const isCommand = Schema.is(AutomationCommand);
 
 describe("AutomationScheduleTrigger", () => {
   it("accepts a five-field cron with an IANA zone", () => {
@@ -139,6 +138,8 @@ describe("orchestration wiring", () => {
       ...base,
       type: "automation.run.finished",
       status: "completed",
+      error: null,
+      summary: null,
       finishedAt: "2026-01-01T00:00:00.000Z",
     };
     expect(isClientCommand(finished)).toBe(false);
@@ -147,13 +148,15 @@ describe("orchestration wiring", () => {
 
   it("defaults snapshot automations to none and thread automationRun to absent", () => {
     const snapshot = decodeSnapshot({
+      schemaVersion: 2,
+      archivedThreads: [],
       snapshotSequence: 0,
       projects: [],
       threads: [],
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
-    expect(snapshot.automations).toEqual([]);
-    expect(OrchestrationThreadShell.fields.automationRun).toBeDefined();
+    expect(snapshot.automations ?? []).toEqual([]);
+    expect(OrchestrationV2ThreadShell.fields.automationRun).toBeDefined();
   });
 
   it("defaults the listRuns page size", () => {

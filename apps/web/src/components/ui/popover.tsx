@@ -38,21 +38,25 @@ function PopoverPopup({
   children,
   className,
   padding = "default",
+  variant = "default",
   width = "auto",
   side = "bottom",
   align = "center",
   sideOffset = 4,
   alignOffset = 0,
+  collisionAvoidance,
   tooltipStyle = false,
   keepMounted = false,
   anchor,
   ...props
 }: PopoverPrimitive.Popup.Props & {
   padding?: keyof typeof popoverViewportPaddingClassName;
+  variant?: "default" | "panel";
   side?: PopoverPrimitive.Positioner.Props["side"];
   align?: PopoverPrimitive.Positioner.Props["align"];
   sideOffset?: PopoverPrimitive.Positioner.Props["sideOffset"];
   alignOffset?: PopoverPrimitive.Positioner.Props["alignOffset"];
+  collisionAvoidance?: PopoverPrimitive.Positioner.Props["collisionAvoidance"];
   tooltipStyle?: boolean;
   keepMounted?: PopoverPrimitive.Portal.Props["keepMounted"];
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
@@ -67,7 +71,12 @@ function PopoverPopup({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-[130] h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-transform data-instant:transition-none"
+        collisionAvoidance={collisionAvoidance}
+        className={cn(
+          "z-[130] h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-transform data-instant:transition-none",
+          variant === "panel" &&
+            "w-[min(var(--thread-details-panel-width),var(--anchor-width))] transition-none",
+        )}
         data-slot="popover-positioner"
         side={side}
         sideOffset={sideOffset}
@@ -80,6 +89,8 @@ function PopoverPopup({
             !tooltipStyle &&
               "shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
             width !== "auto" && ["max-w-[calc(100vw-2rem)]", popoverPopupWidthClassName[width]],
+            variant === "panel" &&
+              "w-full overflow-visible rounded-none border-0 bg-transparent shadow-none before:hidden [backdrop-filter:none] [-webkit-backdrop-filter:none]",
             className,
           )}
           data-slot="popover-popup"
@@ -92,6 +103,8 @@ function PopoverPopup({
                 ? "py-1 [--viewport-inline-padding:--spacing(2)]"
                 : popoverViewportPaddingClassName[padding],
               !tooltipStyle && "not-data-transitioning:overflow-y-auto",
+              variant === "panel" &&
+                "overflow-visible py-2 [--viewport-inline-padding:--spacing(2)]",
             )}
             data-slot="popover-viewport"
           >
