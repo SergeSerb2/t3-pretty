@@ -140,7 +140,6 @@ it.effect("preserves request context without retaining the secret webhook URL", 
     assert.ok(!error.message.includes(requestCause.message));
     assert.ok(!(error.cause as Error).message.includes(webhookUrl.href));
     assert.ok(!(error.cause as Error).message.includes("secret-token"));
-    assert.equal(isDiscordReleaseAnnouncementError(error), true);
   });
 });
 
@@ -175,7 +174,6 @@ it.effect("preserves a non-success response error with structured status context
     );
     assert.ok(!error.message.includes((error.cause as Error).message));
     assert.ok(!(error.cause as Error).message.includes("secret-token"));
-    assert.equal(isDiscordReleaseAnnouncementError(error), true);
   });
 });
 

@@ -276,6 +276,34 @@ describe("third-party license generation", () => {
     ).rejects.toThrow("does not include a license or notice file");
   });
 
+  it("preserves an explicit README licensing notice when no notice file is published", async () => {
+    const fixture = await createFixture();
+    await NodeFSP.rm(NodePath.join(fixture.dependencyRoot, "LICENSE"));
+    await NodeFSP.writeFile(
+      NodePath.join(fixture.dependencyRoot, "README.md"),
+      "# Prebuilt library\n\n## Licensing\n\nThird-party libraries:\n| libvips | LGPLv3 |\n\nUse is via the any later version clause.\n\n## Installation\nDo not include this.\n",
+    );
+    const manifest = await generateThirdPartyLicenseManifest({
+      configFile: fixture.configFile,
+      packageManifests: [{ bundle: "web", path: fixture.appManifest }],
+    });
+    expect(manifest.entries.find((entry) => entry.name === "demo-dependency")?.noticeText).toBe(
+      "## Licensing\n\nThird-party libraries:\n| libvips | LGPLv3 |\n\nUse is via the any later version clause.",
+    );
+  });
+
+  it("rejects a README without an explicit licensing notice", async () => {
+    const fixture = await createFixture();
+    await NodeFSP.rm(NodePath.join(fixture.dependencyRoot, "LICENSE"));
+    await NodeFSP.writeFile(NodePath.join(fixture.dependencyRoot, "README.md"), "# Install\nDemo.");
+    await expect(
+      generateThirdPartyLicenseManifest({
+        configFile: fixture.configFile,
+        packageManifests: [{ bundle: "web", path: fixture.appManifest }],
+      }),
+    ).rejects.toThrow("does not include a license or notice file");
+  });
+
   it("collects nested notices even when a package also has a root license", async () => {
     const fixture = await createFixture();
     await NodeFSP.mkdir(NodePath.join(fixture.dependencyRoot, "dist", "third-party"), {

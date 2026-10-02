@@ -343,7 +343,7 @@ steps:
     concurrency: 1
     concurrency_group: "t3-pretty/android-signing"
     priority: 20
-    if: 'build.env("T3CODE_IOS_ONLY") != "1" && (build.branch == "main" && build.source != "schedule")'
+    if: 'build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_SKIP_ANDROID") != "1" && (build.branch == "main" && build.source != "schedule")'
     timeout_in_minutes: 120
     # Temporarily on macos-release + os=macos. Hosted macos-medium
     # auto-cancels in ~100ms (BK #1944/#1948).
@@ -367,7 +367,7 @@ steps:
     concurrency_group: "t3-pretty/android-signing"
     priority: 25
     if: >-
-      build.env("T3CODE_IOS_ONLY") != "1" && (
+      build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_SKIP_ANDROID") != "1" && (
       build.branch == "main" && build.source == "ui" &&
       build.env("T3CODE_PUBLIC_ANDROID_RELEASE") == "1"
       )
@@ -391,7 +391,7 @@ steps:
     # cluster secret store and file-store fallbacks. Hosted macos-medium
     # cannot resolve them (BK 1878/1880: "Missing relay secret:
     # PLANETSCALE_API_TOKEN_ID"). Keep production deploys on macos-release.
-    if: 'build.env("T3CODE_IOS_ONLY") != "1" && (build.branch == "main" && build.source != "schedule")'
+    if: 'build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_SKIP_RELAY") != "1" && (build.branch == "main" && build.source != "schedule")'
     timeout_in_minutes: 20
     agents:
       queue: macos-release

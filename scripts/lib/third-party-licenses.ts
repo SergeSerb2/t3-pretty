@@ -692,7 +692,19 @@ async function readPackageNoticeText(packageRoot: string): Promise<string | null
       .map((entry) => collectNestedNoticeFiles(entry.name, 2)),
   );
   noticeFiles.sort((left, right) => left.localeCompare(right));
-  if (noticeFiles.length === 0) return null;
+  if (noticeFiles.length === 0) {
+    // sharp-libvips publishes its third-party license notice in README.md.
+    // Accept the explicit licensing section, never an arbitrary README.
+    for (const entry of rootEntries) {
+      if (!entry.isFile() || !/^readme\.md$/i.test(entry.name)) continue;
+      const readme = await NodeFSP.readFile(NodePath.join(packageRoot, entry.name), "utf8");
+      const section = readme.match(
+        /^#{1,6}\s+(?:licensing|licenses?)\s*\r?\n([\s\S]*?)(?=^#{1,6}\s|$(?![\s\S]))/im,
+      );
+      if (section?.[1]?.trim()) return section[0].trim();
+    }
+    return null;
+  }
 
   const sections: string[] = [];
   for (const fileName of noticeFiles) {

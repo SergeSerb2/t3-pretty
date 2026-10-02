@@ -551,7 +551,6 @@ const config: ExpoConfig = {
     // would delete the asset catalog) and its xcodeproj mod creates the widget
     // target (which must exist before the compile phase can be attached).
     ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
-    "./plugins/withIosSceneLifecycle.cjs",
     // Tip TestFlight 159/162/163 abort in Expo Updates ErrorRecovery.crash()
     // after a captured launch fatal and no newer OTA. Soft-fail so the
     // process stays open; Diagnostics still records the original exception.
