@@ -2461,7 +2461,8 @@ function buildAssistantArtifacts(input: {
   readonly text: string;
   readonly ordinal: number;
   readonly startedAt: DateTime.Utc;
-  readonly completedAt: DateTime.Utc;
+  readonly completedAt: DateTime.Utc | null;
+  readonly updatedAt?: DateTime.Utc;
 }): {
   readonly node: OrchestrationV2ExecutionNode;
   readonly message: OrchestrationV2ConversationMessage;
@@ -2493,7 +2494,7 @@ function buildAssistantArtifacts(input: {
       parentNodeId: input.turnInput.rootNodeId,
       rootNodeId: input.turnInput.rootNodeId,
       kind: "assistant_message",
-      status: "completed",
+      status: input.completedAt === null ? "running" : "completed",
       countsForRun: false,
       providerThreadId: input.turnInput.providerThread.id,
       providerTurnId: input.providerTurnId,
@@ -2513,9 +2514,9 @@ function buildAssistantArtifacts(input: {
       role: "assistant",
       text: input.text,
       attachments: [],
-      streaming: false,
-      createdAt: input.completedAt,
-      updatedAt: input.completedAt,
+      streaming: input.completedAt === null,
+      createdAt: input.completedAt ?? input.startedAt,
+      updatedAt: input.updatedAt ?? input.completedAt ?? input.startedAt,
     },
     turnItem: {
       id: turnItemId,
@@ -2527,15 +2528,15 @@ function buildAssistantArtifacts(input: {
       nativeItemRef,
       parentItemId: null,
       ordinal: input.ordinal,
-      status: "completed",
+      status: input.completedAt === null ? "running" : "completed",
       title: null,
       startedAt: input.startedAt,
       completedAt: input.completedAt,
-      updatedAt: input.completedAt,
+      updatedAt: input.updatedAt ?? input.completedAt ?? input.startedAt,
       type: "assistant_message",
       messageId,
       text: input.text,
-      streaming: false,
+      streaming: input.completedAt === null,
     },
   };
 }
@@ -2604,6 +2605,11 @@ interface ActiveClaudeTurnContext {
     fallbackText: string;
     fallbackNativeItemId: string;
     emittedNativeItemIds: Set<string>;
+    readonly streamBlocks: Map<number, string>;
+    readonly messageBlocks: Map<string, Array<string>>;
+    readonly snapshotBlockIndex: Map<string, number>;
+    readonly snapshots: Set<string>;
+    readonly startedAtByItem: Map<string, DateTime.Utc>;
   };
   readonly reasoning: {
     messageId: string | null;
@@ -2992,6 +2998,7 @@ export function makeClaudeAdapterV2(
         const steeredTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
         const queryContext = yield* Ref.make<ClaudeLiveQueryContext | null>(null);
         const openedNativeThreads = yield* Ref.make(new Set<string>());
+        const allocatedNativeThreads = yield* Ref.make(new Set<string>());
         const latestPlanByKind = yield* Ref.make(new Map<string, OrchestrationV2PlanArtifact>());
         const planIdsByNativeItem = yield* Ref.make(
           new Map<string, OrchestrationV2PlanArtifact["id"]>(),
@@ -4787,6 +4794,48 @@ export function makeClaudeAdapterV2(
             }),
         });
 
+        const assistantDeltas = yield* makeProviderTextDeltaCoalescer({
+          flushIntervalMs: 50,
+          emit: (update) =>
+            Effect.gen(function* () {
+              const context = yield* Ref.get(activeTurn);
+              if (
+                context === null ||
+                context.nativeTurnId !== update.turnId ||
+                update.text.length === 0
+              )
+                return;
+              context.assistant.emittedNativeItemIds.add(update.itemId);
+              const now = yield* DateTime.now;
+              const artifacts = buildAssistantArtifacts({
+                idAllocator,
+                turnInput: context.input,
+                providerTurnId: context.providerTurnId,
+                nativeItemId: update.itemId,
+                text: update.text,
+                ordinal: yield* resolveItemOrdinal(context, update.itemId),
+                startedAt: context.assistant.startedAtByItem.get(update.itemId) ?? now,
+                completedAt: update.completed ? now : null,
+                updatedAt: now,
+              });
+              yield* emitProviderEvent({
+                type: "node.updated",
+                driver: CLAUDE_PROVIDER,
+                node: artifacts.node,
+              });
+              yield* emitProviderEvent({
+                type: "message.updated",
+                driver: CLAUDE_PROVIDER,
+                message: artifacts.message,
+              });
+              yield* emitProviderEvent({
+                type: "turn_item.updated",
+                driver: CLAUDE_PROVIDER,
+                turnItem: artifacts.turnItem,
+              });
+            }),
+        });
+
         const finalizeActiveTurn = Effect.fnUntraced(function* (input: {
           readonly context: ActiveClaudeTurnContext;
           readonly status: Extract<
@@ -4799,6 +4848,7 @@ export function makeClaudeAdapterV2(
           readonly result?: SDKResultMessage;
         }) {
           yield* reasoningDeltas.flushTurn(input.context.nativeTurnId);
+          yield* assistantDeltas.flushTurn(input.context.nativeTurnId);
           for (const toolCall of input.context.toolCalls.values()) {
             const artifacts = buildToolCallArtifacts({
               context: input.context,
@@ -4974,8 +5024,13 @@ export function makeClaudeAdapterV2(
                 const clearConversationHead =
                   input.status === "completed" &&
                   input.context.input.providerThread.nativeConversationHeadRef !== null;
+                const latestProviderThread =
+                  nativeThreadId === null
+                    ? input.context.input.providerThread
+                    : ((yield* Ref.get(lastProviderThreadByNativeThread)).get(nativeThreadId) ??
+                      input.context.input.providerThread);
                 const providerThread: OrchestrationV2ProviderThread = {
-                  ...input.context.input.providerThread,
+                  ...latestProviderThread,
                   providerSessionId: session.id,
                   ...(clearConversationHead ? { nativeConversationHeadRef: null } : {}),
                   firstRunOrdinal:
@@ -5380,8 +5435,8 @@ export function makeClaudeAdapterV2(
           }
 
           const baseThread =
-            input.activeContext?.input.providerThread ??
-            (yield* Ref.get(lastProviderThreadByNativeThread)).get(input.nativeThreadId);
+            (yield* Ref.get(lastProviderThreadByNativeThread)).get(input.nativeThreadId) ??
+            input.activeContext?.input.providerThread;
           if (baseThread === undefined) {
             return true;
           }
@@ -5554,6 +5609,32 @@ export function makeClaudeAdapterV2(
             if (event.type === "message_start") {
               reasoning.messageId = event.message.id;
               reasoning.streamBlocks.clear();
+              context.assistant.streamBlocks.clear();
+            } else if (
+              event.type === "content_block_start" &&
+              event.content_block.type === "text" &&
+              reasoning.messageId !== null
+            ) {
+              const blocks = context.assistant.messageBlocks.get(reasoning.messageId) ?? [];
+              const itemId = `${reasoning.messageId}:text:${blocks.length}`;
+              blocks.push(itemId);
+              context.assistant.messageBlocks.set(reasoning.messageId, blocks);
+              context.assistant.streamBlocks.set(event.index, itemId);
+              context.assistant.startedAtByItem.set(itemId, yield* DateTime.now);
+              yield* assistantDeltas.append({
+                turnId: context.nativeTurnId,
+                itemId,
+                delta: event.content_block.text,
+              });
+            } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+              const itemId = context.assistant.streamBlocks.get(event.index);
+              if (itemId !== undefined) {
+                yield* assistantDeltas.append({
+                  turnId: context.nativeTurnId,
+                  itemId,
+                  delta: event.delta.text,
+                });
+              }
             } else if (
               event.type === "content_block_start" &&
               event.content_block.type === "thinking" &&
@@ -5582,6 +5663,15 @@ export function makeClaudeAdapterV2(
                 });
               }
             } else if (event.type === "content_block_stop") {
+              const textItemId = context.assistant.streamBlocks.get(event.index);
+              if (textItemId !== undefined) {
+                yield* assistantDeltas.complete({
+                  turnId: context.nativeTurnId,
+                  itemId: textItemId,
+                  emitEmpty: false,
+                });
+                context.assistant.streamBlocks.delete(event.index);
+              }
               const itemId = reasoning.streamBlocks.get(event.index);
               if (itemId !== undefined) {
                 yield* reasoningDeltas.complete({
@@ -5900,6 +5990,7 @@ export function makeClaudeAdapterV2(
               // With no model of its own, a nested subagent runs on its
               // owner's (the SDK's default for a subagent's Agent call).
               const model = launch?.model ?? owner?.task.model ?? undefined;
+              const role = launch?.role ?? message.subagent_type;
               // A nested subagent's end goes to its owner, so it never wakes the root.
               if (
                 message.is_backgrounded === true &&
@@ -5922,7 +6013,7 @@ export function makeClaudeAdapterV2(
                 ...(message.tool_use_id === undefined ? {} : { toolUseId: message.tool_use_id }),
                 ...(message.prompt === undefined ? {} : { prompt: message.prompt }),
                 ...(model === undefined ? {} : { model }),
-                ...(launch?.role === undefined ? {} : { role: launch.role }),
+                ...(role === undefined ? {} : { role }),
                 ...(launch?.effort === undefined ? {} : { effort: launch.effort }),
                 ...(owner === undefined ? {} : { owner }),
                 title: message.description,
@@ -5966,7 +6057,7 @@ export function makeClaudeAdapterV2(
 
           if (message.type === "system" && message.subtype === "task_progress") {
             const taskUsage = normalizeTaskUsage(message.usage);
-            const progress = message.description.trim();
+            const progress = message.summary?.trim() || message.description.trim();
             const isBackgroundTask = yield* hasPendingBackgroundTaskOnNativeThread(
               liveQuery.nativeThreadId,
               message.task_id,
@@ -6264,6 +6355,34 @@ export function makeClaudeAdapterV2(
             return;
           }
           if (assistantText !== null && assistantText.text.length > 0) {
+            if (message.type === "assistant") {
+              const blocks = context.assistant.messageBlocks.get(message.message.id);
+              if (blocks !== undefined) {
+                if (context.assistant.snapshots.has(message.uuid)) return;
+                context.assistant.snapshots.add(message.uuid);
+                for (const block of message.message.content) {
+                  if (block.type !== "text") continue;
+                  const index = context.assistant.snapshotBlockIndex.get(message.message.id) ?? 0;
+                  context.assistant.snapshotBlockIndex.set(message.message.id, index + 1);
+                  const itemId = blocks[index];
+                  if (itemId !== undefined) {
+                    yield* assistantDeltas.complete({
+                      turnId: context.nativeTurnId,
+                      itemId,
+                      finalText: block.text,
+                      emitEmpty: false,
+                    });
+                  } else if (block.text.length > 0) {
+                    yield* emitAssistantTextArtifacts({
+                      context,
+                      nativeItemId: `${assistantText.nativeItemId}:text:${index}`,
+                      text: block.text,
+                    });
+                  }
+                }
+                return;
+              }
+            }
             yield* emitAssistantTextArtifacts({
               context,
               nativeItemId: assistantText.nativeItemId,
@@ -7131,6 +7250,11 @@ export function makeClaudeAdapterV2(
                 fallbackText: "",
                 fallbackNativeItemId: `assistant:${turnInput.runId}`,
                 emittedNativeItemIds: new Set(),
+                streamBlocks: new Map(),
+                messageBlocks: new Map(),
+                snapshotBlockIndex: new Map(),
+                snapshots: new Set(),
+                startedAtByItem: new Map(),
               },
               reasoning: {
                 messageId: null,
@@ -7496,6 +7620,9 @@ export function makeClaudeAdapterV2(
             function* (threadInput: ProviderAdapter.ProviderAdapterV2EnsureThreadInput) {
               const createdAt = yield* DateTime.now;
               const nativeThreadId = yield* queryRunner.allocateSessionId;
+              yield* Ref.update(allocatedNativeThreads, (current) =>
+                new Set(current).add(nativeThreadId),
+              );
               return makeProviderThread({
                 idAllocator,
                 providerInstanceId: adapterOptions.instanceId,
@@ -7519,6 +7646,16 @@ export function makeClaudeAdapterV2(
           ),
           resumeThread: Effect.fn("ClaudeAdapterV2.resumeThread")(
             function* (threadInput: { readonly providerThread: OrchestrationV2ProviderThread }) {
+              const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
+              // Native imports can have no V2 turns or conversation-head cursor.
+              // Rebinding them still resumes an existing CLI conversation.
+              // A failed first open can be rebound before retry. A locally
+              // allocated id alone does not prove the native conversation exists.
+              if (!(yield* Ref.get(allocatedNativeThreads)).has(nativeThreadId)) {
+                yield* Ref.update(openedNativeThreads, (current) =>
+                  new Set(current).add(nativeThreadId),
+                );
+              }
               const updatedAt = yield* DateTime.now;
               return {
                 ...threadInput.providerThread,

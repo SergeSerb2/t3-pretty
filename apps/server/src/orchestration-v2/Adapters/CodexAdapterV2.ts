@@ -653,11 +653,12 @@ export function normalizeCodexUserInputQuestions(
         option.label,
         PROVIDER_RUNTIME_USER_INPUT_OPTION_LABEL_MAX_LENGTH,
       );
-      const description = boundedCodexUserInputText(
-        option.description,
-        PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH,
-      );
-      if (!label || !description) {
+      // Native async questions provide labels without explanatory copy.
+      const description =
+        option.description.length <= PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH
+          ? option.description.trim()
+          : undefined;
+      if (!label || description === undefined) {
         return undefined;
       }
       totalChars += label.length + description.length;

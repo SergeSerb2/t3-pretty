@@ -260,7 +260,7 @@ const make = Effect.gen(function* () {
   ) {
     const active = yield* threadService.getShellSnapshot({ location: "active" });
     const archive = yield* threadService.getShellSnapshot({ location: "archive" });
-    const threads = [...active.threads, ...archive.threads]
+    const threads = [...active.threads, ...archive.archivedThreads]
       .filter((thread) => thread.automationRun?.automationId === automationId)
       .toSorted(
         (left, right) =>

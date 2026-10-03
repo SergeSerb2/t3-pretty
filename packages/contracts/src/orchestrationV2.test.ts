@@ -90,16 +90,69 @@ const decodeOrchestrationV2SubscribeThreadInput = Schema.decodeUnknownSync(
 );
 
 describe("orchestration V2 contracts", () => {
+  it("round-trips provider questions whose options omit descriptions", () => {
+    const base = {
+      id: "question-item",
+      type: "user_input_request",
+      threadId: "thread-1",
+      runId: null,
+      nodeId: null,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 1,
+      status: "waiting",
+      title: null,
+      startedAt: null,
+      completedAt: null,
+      requestId: "request-1",
+      questions: [
+        {
+          id: "0",
+          header: "Question",
+          question: "Which environment?",
+          options: [
+            { label: "Local", description: "" },
+            { label: "Remote", description: "Details" },
+          ],
+        },
+      ],
+    };
+    const runtime = decodeOrchestrationV2TurnItem({ ...base, updatedAt: now });
+    const json = decodeOrchestrationV2TurnItemJson({ ...base, updatedAt: DateTime.formatIso(now) });
+    expect(runtime).toMatchObject({ questions: base.questions });
+    expect(encodeOrchestrationV2TurnItemJson(json)).toMatchObject({ questions: base.questions });
+  });
+
   it("round-trips generated image output paths through runtime and JSON projections", () => {
     const path = "/Users/test/.grok/sessions/%2Frepo/session/images/1.jpg";
-    const base = { id: "generated-image", type: "image_generation", threadId: "thread-1", runId: null,
-      nodeId: null, providerThreadId: null, providerTurnId: null, nativeItemRef: null, parentItemId: null,
-      ordinal: 1, status: "completed", title: "Generated image", prompt: "A mountain", savedPath: path,
-      paths: [path], startedAt: null, completedAt: null };
+    const base = {
+      id: "generated-image",
+      type: "image_generation",
+      threadId: "thread-1",
+      runId: null,
+      nodeId: null,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 1,
+      status: "completed",
+      title: "Generated image",
+      prompt: "A mountain",
+      savedPath: path,
+      paths: [path],
+      startedAt: null,
+      completedAt: null,
+    };
     const runtime = decodeOrchestrationV2TurnItem({ ...base, updatedAt: now });
     const json = decodeOrchestrationV2TurnItemJson({ ...base, updatedAt: DateTime.formatIso(now) });
     expect(runtime).toMatchObject({ type: "image_generation", savedPath: path, paths: [path] });
-    expect(encodeOrchestrationV2TurnItemJson(json)).toMatchObject({ savedPath: path, paths: [path] });
+    expect(encodeOrchestrationV2TurnItemJson(json)).toMatchObject({
+      savedPath: path,
+      paths: [path],
+    });
   });
 
   it("carries command failure metadata through runtime and JSON schemas without output text", () => {

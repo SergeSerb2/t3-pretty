@@ -1371,6 +1371,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           <LegendList<MessagesTimelineRow>
             ref={setTimelineList}
             data={rows}
+            // A different thread needs fresh virtualization bounds, even when
+            // both timelines are nonempty. dataVersion only refreshes content.
+            dataKey={listIdentityKey}
             extraData={`${listIdentityKey}:${rows.length}`}
             keyExtractor={keyExtractor}
             getItemType={getItemType}
@@ -1403,10 +1406,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             maintainScrollAtEndThreshold={1}
             onScroll={handleScroll}
             onItemSizeChanged={reportContentOverflow}
-            className={cn(
-              "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
-              topFadeEnabled && "topbar-scroll-fade",
-            )}
+            className="messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]"
             ListHeaderComponent={listHeader}
             ListFooterComponent={timelineListFooter}
           />
@@ -2642,6 +2642,7 @@ function AssistantMetaTimelineRow({
         message={row.message}
         showCopyButton={row.showAssistantCopyButton}
         copyStreaming={row.assistantCopyStreaming}
+        alwaysVisible
       />
     </div>
   );
@@ -2672,11 +2673,13 @@ function AssistantMessageMeta({
 
   return (
     <div
+      data-assistant-meta={alwaysVisible ? "visible" : "overlay"}
+      data-assistant-meta-gap={!alwaysVisible || undefined}
       className={cn(
-        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
+        assistantMetaActionsClassName,
         alwaysVisible
           ? "opacity-100"
-          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
+          : "h-8 overflow-hidden opacity-0 pointer-events-none pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 tesla-touch:pointer-events-auto tesla-touch:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
         className,
       )}
     >
@@ -3693,24 +3696,24 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
                   {getQuestionAnswerPreview(row.entry.questionAnswer)}
                 </span>
               </span>
-          ) : row.entry.itemType === "reasoning" ? (
-            <ReactMarkdown
-              remarkPlugins={[
-                remarkGfm,
-                [remarkThoughtPreview, row.active ? "Thinking" : "Thought"],
-              ]}
-            >
-              {row.entry.detail ?? label}
-            </ReactMarkdown>
-          ) : (
-            label
-          )
-        }
-        iconName={workEntryIconName(row.entry)}
-        toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
-        failed={failed}
-        active={row.active}
-      />
+            ) : row.entry.itemType === "reasoning" ? (
+              <ReactMarkdown
+                remarkPlugins={[
+                  remarkGfm,
+                  [remarkThoughtPreview, row.active ? "Thinking" : "Thought"],
+                ]}
+              >
+                {row.entry.detail ?? label}
+              </ReactMarkdown>
+            ) : (
+              label
+            )
+          }
+          iconName={workEntryIconName(row.entry)}
+          toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
+          failed={failed}
+          active={row.active}
+        />
       </SlidingActivity>
     </button>
   );

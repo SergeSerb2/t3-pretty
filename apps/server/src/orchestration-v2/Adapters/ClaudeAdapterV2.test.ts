@@ -43,6 +43,7 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { Tool } from "effect/unstable/ai";
 import { formatClaudeResumeCompactionQuestion } from "@t3tools/shared/claudeCompaction";
 
@@ -1760,7 +1761,11 @@ describe("ClaudeAdapterV2 native fork", () => {
 });
 
 describe("ClaudeAdapterV2 native session identity", () => {
-  const openTurnWithOrdinal = (providerTurnOrdinal: number) =>
+  const openTurnWithOrdinal = (
+    providerTurnOrdinal: number,
+    retainedNativeSession = false,
+    rebindFreshAllocation = false,
+  ) =>
     Effect.scoped(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
@@ -1808,11 +1813,29 @@ describe("ClaudeAdapterV2 native session identity", () => {
           modelSelection: CLAUDE_TEST_MODEL_SELECTION,
           runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
         });
+        const reboundThread =
+          retainedNativeSession || rebindFreshAllocation
+            ? yield* runtime.resumeThread({
+                providerThread: retainedNativeSession
+                  ? {
+                      ...providerThread,
+                      nativeThreadRef: {
+                        driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+                        nativeId: "retained-native-identity",
+                        strength: "strong",
+                      },
+                    }
+                  : providerThread,
+                threadId,
+                modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+                runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+              })
+            : providerThread;
         const now = yield* DateTime.now;
         yield* runtime.startTurn(
           makeClaudeTestTurnInput({
             threadId,
-            providerThread,
+            providerThread: reboundThread,
             now,
             attemptId: RunAttemptId.make("run-attempt-claude-session-identity"),
             text: "Respond with identity ok",
@@ -1828,6 +1851,23 @@ describe("ClaudeAdapterV2 native session identity", () => {
     Effect.gen(function* () {
       const openedQueries = yield* openTurnWithOrdinal(1);
       assert.equal(openedQueries.length, 1);
+      assert.equal(openedQueries[0]?.options.sessionId, "native-session-identity");
+      assert.equal(openedQueries[0]?.options.resume, undefined);
+    }),
+  );
+
+  it.effect("resumes a retained native conversation on its first V2 provider turn", () =>
+    Effect.gen(function* () {
+      const openedQueries = yield* openTurnWithOrdinal(1, true);
+      assert.equal(openedQueries.length, 1);
+      assert.equal(openedQueries[0]?.options.resume, "retained-native-identity");
+      assert.equal(openedQueries[0]?.options.sessionId, undefined);
+    }),
+  );
+
+  it.effect("does not treat a rebound fresh allocation as an existing native conversation", () =>
+    Effect.gen(function* () {
+      const openedQueries = yield* openTurnWithOrdinal(1, false, true);
       assert.equal(openedQueries[0]?.options.sessionId, "native-session-identity");
       assert.equal(openedQueries[0]?.options.resume, undefined);
     }),
@@ -2041,6 +2081,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* Queue.unbounded<Extract<ProviderAdapterV2Event, { type: "subagent.updated" }>>();
       const systemNoticeReceipts =
         yield* Queue.unbounded<Extract<ProviderAdapterV2Event, { type: "turn_item.updated" }>>();
+      const assistantReceipts =
+        yield* Queue.unbounded<Extract<ProviderAdapterV2Event, { type: "message.updated" }>>();
       let openedOptions: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined;
       const adapter = ClaudeAdapterV2.makeClaudeAdapterV2({
         instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
@@ -2117,6 +2159,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             if (event.type === "turn_item.updated" && event.turnItem.type === "system_notice") {
               yield* Queue.offer(systemNoticeReceipts, event);
             }
+            if (event.type === "message.updated" && event.message.role === "assistant") {
+              yield* Queue.offer(assistantReceipts, event);
+            }
           }),
         ),
         Effect.forkScoped,
@@ -2141,6 +2186,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         events,
         terminalReceipts,
         systemNoticeReceipts,
+        assistantReceipts,
         subagentReceipts,
         getOpenedOptions: () => openedOptions,
         terminalEvents,
@@ -2148,6 +2194,160 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       };
     });
   const makeWakeHarness = makeWakeHarnessWithOptions();
+
+  it.effect.each(["completed", "interrupted"] as const)(
+    "streams Claude text before the final snapshot when %s",
+    (status) =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("text-stream-attempt"),
+            text: "Stream a reply",
+            attachments: [],
+          }),
+        );
+        const stream = (event: unknown, parent: string | null = null) =>
+          claudeSdkFrame({
+            type: "stream_event",
+            event,
+            parent_tool_use_id: parent,
+            session_id: WAKE_NATIVE_SESSION,
+            uuid: "text-stream-frame",
+          });
+        yield* harness.offerAndWait(
+          stream({ type: "message_start", message: { id: "streamed-message" } }),
+        );
+        yield* harness.offerAndWait(
+          stream({
+            type: "content_block_start",
+            index: 1,
+            content_block: { type: "text", text: "" },
+          }),
+        );
+        yield* harness.offerAndWait(
+          stream({
+            type: "content_block_delta",
+            index: 1,
+            delta: { type: "text_delta", text: "First " },
+          }),
+        );
+        yield* TestClock.adjust("50 millis");
+        const first = (yield* Queue.take(harness.assistantReceipts)).message;
+        assert.equal(first.text, "First ");
+        assert.isTrue(first.streaming);
+        yield* harness.offerAndWait(
+          stream({
+            type: "content_block_delta",
+            index: 1,
+            delta: { type: "text_delta", text: "second" },
+          }),
+        );
+        yield* TestClock.adjust("50 millis");
+        const second = (yield* Queue.take(harness.assistantReceipts)).message;
+        assert.equal(second.id, first.id);
+        assert.equal(second.text, "First second");
+        assert.isTrue(second.streaming);
+        // Child narration must never enter the parent's transcript.
+        yield* harness.offerAndWait(
+          stream({ type: "message_start", message: { id: "child-message" } }, "child-tool"),
+        );
+        yield* harness.offerAndWait(
+          stream(
+            {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "text", text: "Child text" },
+            },
+            "child-tool",
+          ),
+        );
+        if (status === "completed") {
+          yield* harness.offerAndWait(stream({ type: "content_block_stop", index: 1 }));
+          const snapshot = claudeSdkFrame({
+            type: "assistant",
+            uuid: "text-snapshot",
+            session_id: WAKE_NATIVE_SESSION,
+            parent_tool_use_id: null,
+            message: {
+              id: "streamed-message",
+              model: "claude-sonnet-4-6",
+              content: [{ type: "text", text: "Authoritative reply" }],
+            },
+          });
+          yield* harness.offerAndWait(snapshot);
+          yield* harness.offerAndWait(snapshot);
+        }
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({
+            uuid: "text-result",
+            result: status === "completed" ? "Authoritative reply" : "",
+            ...(status === "interrupted" ? { terminalReason: "aborted_streaming" as const } : {}),
+          }),
+        );
+        assert.equal((yield* Queue.take(harness.terminalReceipts)).status, status);
+        const messages = harness.events.flatMap((event) =>
+          event.type === "message.updated" && event.message.role === "assistant"
+            ? [event.message]
+            : [],
+        );
+        assert.equal(new Set(messages.map((message) => message.id)).size, 1);
+        assert.equal(
+          messages.at(-1)?.text,
+          status === "completed" ? "Authoritative reply" : "First second",
+        );
+        assert.isFalse(messages.at(-1)?.streaming);
+        const items = harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "assistant_message"
+            ? [event.turnItem]
+            : [],
+        );
+        assert.equal(new Set(items.map((item) => item.id)).size, 1);
+        assert.isFalse(items.at(-1)?.streaming);
+        assert.equal(items.at(-1)?.status, "completed");
+      }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+  );
+
+  it.effect(
+    "preserves transcript profile provenance through active roster and terminal updates",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const configDir = "/isolated/claude-retained-profile";
+          const harness = yield* makeWakeHarnessWithOptions({
+            environment: { CLAUDE_CONFIG_DIR: configDir },
+          });
+          const now = yield* DateTime.now;
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now,
+              attemptId: RunAttemptId.make("attempt-profile-provenance"),
+              text: "Start background work",
+              attachments: [],
+            }),
+          );
+          yield* harness.offerAndWait(wakeTaskStarted);
+          yield* harness.offerAndWait(turnOneResult);
+          yield* Queue.take(harness.terminalReceipts);
+          const updates = harness.events.flatMap((event) =>
+            event.type === "provider_thread.updated" ? [event.providerThread] : [],
+          );
+          const firstProfile = updates.findIndex(
+            (thread) => thread.nativeMetadata?.configDir === configDir,
+          );
+          assert.isAtLeast(firstProfile, 0);
+          for (const thread of updates.slice(firstProfile))
+            assert.equal(thread.nativeMetadata?.configDir, configDir);
+          assert.equal(updates.at(-1)?.pendingBackgroundTasks?.[0]?.taskId, WAKE_TASK_ID);
+        }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+      ),
+  );
 
   it.effect.each(["completed", "interrupted"] as const)(
     "projects Claude thinking blocks when %s",
@@ -6231,6 +6431,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             subtype: "task_started",
             task_type: "local_workflow",
             workflow_name: "review",
+            subagent_type: "reviewer",
             description: "Review workflow",
             prompt: "Review changes",
           }),
@@ -6238,6 +6439,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         const started = (yield* Queue.take(harness.subagentReceipts)).subagent;
         assert.equal(started.kind, "workflow");
         assert.equal(started.workflowName, "review");
+        assert.equal(started.role, "reviewer");
         assert.equal(started.activationCount, 1);
         yield* harness.offerAndWait(
           frame({ subtype: "task_updated", patch: { status: "paused" } }),
@@ -6250,7 +6452,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* harness.offerAndWait(
           frame({
             subtype: "task_progress",
-            description: "Checking tests",
+            description: "Review workflow",
+            summary: "Checking tests",
             subagent_type: "reviewer",
             last_tool_name: "Read",
             usage: { total_tokens: 12, tool_uses: 2, duration_ms: 30 },
@@ -6258,6 +6461,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
         const progress = (yield* Queue.take(harness.subagentReceipts)).subagent;
         assert.equal(progress.role, "reviewer");
+        assert.equal(progress.progress, "Checking tests");
+        assert.equal(progress.recentActivity?.at(-1)?.summary, "Checking tests");
         assert.equal(progress.lastToolName, "Read");
         assert.equal(progress.usage?.totalTokens, 12);
         yield* harness.offerAndWait(

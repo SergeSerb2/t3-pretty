@@ -97,6 +97,8 @@ env:
 
 # T3CODE_IOS_ONLY=1 selects only the existing iOS delivery step for a
 # one-run retry. Unset leaves normal CI/release behavior unchanged.
+# T3CODE_DESKTOP_ONLY=1 releases desktop installers without CLI, mobile,
+# relay, or an extra upstream sync. Scheduled sync ignores this selector.
 steps:
   - label: ":github: Mirror Origin main and release tags"
     key: github-mirror
@@ -118,7 +120,7 @@ steps:
       bash scripts/fork/mirror-github.sh
   - label: ":github: T3 Pretty Origin workflows"
     key: origin-workflows
-    if: 'build.env("T3CODE_IOS_ONLY") != "1"'
+    if: 'build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_DESKTOP_ONLY") != "1"'
     # github-actions#v0.13.0 uploads child steps that do not inherit
     # this step's soft_fail. Hosted linux-small auto-cancels those
     # children (gha-concurrency-start/finish, Resolve, WSL) in ~100ms
@@ -174,7 +176,7 @@ steps:
     # The four-hour schedule is this job. Do not import
     # fork-upstream-sync.yml: macos GHA steps need GITHUB_OUTPUT
     # for discover, and the importer often leaves that file unset.
-    if: 'build.env("T3CODE_IOS_ONLY") != "1" && (build.branch == "main" && (build.source == "schedule" || build.source == "ui" || build.source == "api"))'
+    if: 'build.env("T3CODE_IOS_ONLY") != "1" && (build.branch == "main" && (build.source == "schedule" || (build.env("T3CODE_DESKTOP_ONLY") != "1" && (build.source == "ui" || build.source == "api"))))'
     # Build 1241 finished with 26 seconds of margin at 120; a backlog merge
     # that times out re-pays its conflicts next run, so keep headroom.
     timeout_in_minutes: 180
@@ -239,7 +241,7 @@ steps:
     # Hosted linux-small auto-cancels (BK #1944/#1948), so this packs on
     # the same macos-release Mac that just published the DMG. The tarball
     # is JS; it does not need linux-small or linux-arm64.
-    if: 'build.env("T3CODE_IOS_ONLY") != "1" && (build.branch == "main" && build.source != "schedule")'
+    if: 'build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_DESKTOP_ONLY") != "1" && (build.branch == "main" && build.source != "schedule")'
     timeout_in_minutes: 40
     agents:
       queue: macos-release
@@ -310,7 +312,7 @@ steps:
     # in front of TestFlight. Do not share the Apple signing slot with
     # macos-dmg: a Linux Expo job must not block the Mac DMG.
     priority: 20
-    if: build.branch == "main" && build.source != "schedule"
+    if: build.branch == "main" && build.source != "schedule" && build.env("T3CODE_DESKTOP_ONLY") != "1"
     timeout_in_minutes: 90
     # Windows fails before checkout (Access denied / exit 5). Use the
     # working self-hosted Mac; os=macos excludes the mixed pool's Linux
@@ -343,7 +345,7 @@ steps:
     concurrency: 1
     concurrency_group: "t3-pretty/android-signing"
     priority: 20
-    if: 'build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_SKIP_ANDROID") != "1" && (build.branch == "main" && build.source != "schedule")'
+    if: 'build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_DESKTOP_ONLY") != "1" && build.env("T3CODE_SKIP_ANDROID") != "1" && (build.branch == "main" && build.source != "schedule")'
     timeout_in_minutes: 120
     # Temporarily on macos-release + os=macos. Hosted macos-medium
     # auto-cancels in ~100ms (BK #1944/#1948).
@@ -367,7 +369,7 @@ steps:
     concurrency_group: "t3-pretty/android-signing"
     priority: 25
     if: >-
-      build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_SKIP_ANDROID") != "1" && (
+      build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_DESKTOP_ONLY") != "1" && build.env("T3CODE_SKIP_ANDROID") != "1" && (
       build.branch == "main" && build.source == "ui" &&
       build.env("T3CODE_PUBLIC_ANDROID_RELEASE") == "1"
       )
@@ -391,7 +393,7 @@ steps:
     # cluster secret store and file-store fallbacks. Hosted macos-medium
     # cannot resolve them (BK 1878/1880: "Missing relay secret:
     # PLANETSCALE_API_TOKEN_ID"). Keep production deploys on macos-release.
-    if: 'build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_SKIP_RELAY") != "1" && (build.branch == "main" && build.source != "schedule")'
+    if: 'build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_DESKTOP_ONLY") != "1" && build.env("T3CODE_SKIP_RELAY") != "1" && (build.branch == "main" && build.source != "schedule")'
     timeout_in_minutes: 20
     agents:
       queue: macos-release

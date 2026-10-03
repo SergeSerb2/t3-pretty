@@ -3,6 +3,8 @@ import {
   EventId,
   MessageId,
   ORCHESTRATION_V2_WS_METHODS,
+  ProviderInstanceId,
+  ProviderDriverKind,
   ThreadId,
   TurnItemId,
   type OrchestrationV2ThreadDetailSnapshot,
@@ -118,6 +120,7 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   const latest = yield* Ref.make<EnvironmentThreadState>(EMPTY_ENVIRONMENT_THREAD_STATE);
   const retryCount = yield* Ref.make(0);
   const subscriptionCount = yield* Ref.make(0);
+  const subscriptions = yield* Queue.unbounded<number | undefined>();
   const loaderCalls = yield* Ref.make(0);
   const lastSubscribeAfterSequence = yield* Ref.make<number | undefined>(undefined);
   const lastRequestCompletionMarker = yield* Ref.make(false);
@@ -147,6 +150,7 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
             Ref.set(lastRequestCompletionMarker, input.requestCompletionMarker === true),
           ),
           Effect.andThen(Ref.set(lastAcceptBoundedSnapshot, input.acceptBoundedSnapshot)),
+          Effect.andThen(Queue.offer(subscriptions, input.afterSequence)),
           Effect.as(streamFrom(inputs)),
         ),
       ),
@@ -257,6 +261,7 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
     latest,
     retryCount,
     subscriptionCount,
+    subscriptions,
     loaderCalls,
     lastSubscribeAfterSequence,
     lastRequestCompletionMarker,
@@ -315,6 +320,103 @@ const deleted = (sequence = 3): OrchestrationV2ThreadStreamItem => {
 };
 
 describe("EnvironmentThreads", () => {
+  for (const bounded of [false, true]) {
+    it.effect(
+      `retains streamed Claude transcript rows across ${bounded ? "bounded" : "full"} cursor resume`,
+      () =>
+        Effect.gen(function* () {
+          const claude = ProviderInstanceId.make("claudeAgent");
+          const projection = {
+            ...BASE_PROJECTION,
+            thread: {
+              ...BASE_PROJECTION.thread,
+              providerInstanceId: claude,
+              modelSelection: { instanceId: claude, model: "claude-sonnet-4-6" },
+            },
+          };
+          const h = yield* makeHarness({
+            cached: projection,
+            completionMarker: true,
+            ...(bounded
+              ? {
+                  cachedHistory: {
+                    historyCursor: "older-claude",
+                    hasMoreHistory: true,
+                    latestLocalTurnOrdinal: 1,
+                  },
+                }
+              : {}),
+          });
+          expect(yield* Queue.take(h.subscriptions)).toBe(CACHED_SNAPSHOT_SEQUENCE);
+          const now = DateTime.makeUnsafe("2026-10-03T00:00:00.000Z");
+          const item: Extract<OrchestrationV2TurnItem, { type: "assistant_message" }> = {
+            id: TurnItemId.make("claude-assistant"),
+            threadId: THREAD_ID,
+            runId: null,
+            nodeId: null,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              nativeId: "claude-native-message",
+              strength: "strong",
+            },
+            parentItemId: null,
+            ordinal: 2,
+            status: "running",
+            title: null,
+            startedAt: now,
+            completedAt: null,
+            updatedAt: now,
+            type: "assistant_message",
+            messageId: MessageId.make("claude-assistant"),
+            text: "Working",
+            streaming: true,
+          };
+          const updated = (
+            payload: typeof item,
+            sequence: number,
+          ): OrchestrationV2ThreadStreamItem => ({
+            kind: "event",
+            sequence,
+            event: {
+              id: EventId.make(`claude-item-${sequence}`),
+              type: "turn-item.updated",
+              threadId: THREAD_ID,
+              occurredAt: now,
+              payload,
+            },
+          });
+          yield* Queue.offer(h.inputs, updated(item, CACHED_SNAPSHOT_SEQUENCE + 1));
+          const streaming = yield* awaitThreadState(
+            h.observed,
+            (state) => Option.isSome(state.data) && state.data.value.visibleTurnItems.length === 1,
+          );
+          expect(Option.getOrThrow(streaming.data).visibleTurnItems[0]?.item).toEqual(item);
+          expect(streaming.status).toBe("synchronizing");
+
+          yield* h.replaceSession;
+          expect(yield* Queue.take(h.subscriptions)).toBe(CACHED_SNAPSHOT_SEQUENCE + 1);
+          yield* Queue.offerAll(h.inputs, [
+            updated({ ...item, text: "Stale replay" }, CACHED_SNAPSHOT_SEQUENCE + 1),
+            updated(
+              { ...item, text: "Done", streaming: false, status: "completed", completedAt: now },
+              CACHED_SNAPSHOT_SEQUENCE + 2,
+            ),
+            synchronized(),
+          ]);
+          const settled = yield* awaitThreadState(
+            h.observed,
+            (state) => state.status === "live" && Option.isSome(state.data),
+          );
+          const rows = Option.getOrThrow(settled.data).visibleTurnItems;
+          expect(rows).toHaveLength(1);
+          expect(rows[0]?.item).toMatchObject({ text: "Done", streaming: false });
+          expect(settled.history.hasMoreHistory).toBe(bounded);
+        }),
+    );
+  }
+
   for (const source of ["disk", "HTTP"] as const) {
     it.effect(`does not rewrite an unchanged ${source} snapshot on navigation or warm return`, () =>
       Effect.gen(function* () {
@@ -1875,16 +1977,19 @@ describe("EnvironmentThreads", () => {
           value.data.value.thread.title === "Latest title",
       );
 
-      yield* Queue.offer(harness.wakeups, "application-active");
+      // Foreground focus/probes keep the existing stream. Only an explicit
+      // reconnect (or changed credentials) requests a cursor resubscription.
+      yield* Queue.offerAll(harness.wakeups, [
+        "application-active",
+        "application-active-probe",
+        "application-active-reconnect",
+      ]);
+      expect(yield* Queue.take(harness.subscriptions)).toBe(CACHED_SNAPSHOT_SEQUENCE);
+      expect(yield* Queue.take(harness.subscriptions)).toBe(CACHED_SNAPSHOT_SEQUENCE + 1);
       const synchronizing = yield* awaitThreadState(
         harness.observed,
         (value) => value.status === "synchronizing" && Option.isSome(value.data),
       );
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        if ((yield* Ref.get(harness.subscriptionCount)) >= 2) break;
-        yield* Effect.yieldNow;
-      }
-
       expect(synchronizing.status).toBe("synchronizing");
       expect(yield* Ref.get(harness.subscriptionCount)).toBe(2);
       expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBe(CACHED_SNAPSHOT_SEQUENCE + 1);
@@ -1898,17 +2003,12 @@ describe("EnvironmentThreads", () => {
       );
       expect(Option.getOrThrow(live.data).thread.title).toBe("Latest title");
 
-      yield* Queue.offer(harness.wakeups, "application-active-probe");
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        if ((yield* Ref.get(harness.subscriptionCount)) >= 3) break;
-        yield* Effect.yieldNow;
-      }
-      expect(yield* Ref.get(harness.subscriptionCount)).toBe(3);
-
-      yield* Queue.offer(harness.wakeups, "application-active-reconnect");
-      for (let attempt = 0; attempt < 10; attempt += 1) {
-        yield* Effect.yieldNow;
-      }
+      yield* Queue.offerAll(harness.wakeups, [
+        "application-active",
+        "application-active-probe",
+        "credentials-changed",
+      ]);
+      expect(yield* Queue.take(harness.subscriptions)).toBe(CACHED_SNAPSHOT_SEQUENCE + 1);
       expect(yield* Ref.get(harness.subscriptionCount)).toBe(3);
     }),
   );
