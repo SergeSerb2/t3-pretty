@@ -43,6 +43,7 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { Tool } from "effect/unstable/ai";
 import { formatClaudeResumeCompactionQuestion } from "@t3tools/shared/claudeCompaction";
 
@@ -2080,6 +2081,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* Queue.unbounded<Extract<ProviderAdapterV2Event, { type: "subagent.updated" }>>();
       const systemNoticeReceipts =
         yield* Queue.unbounded<Extract<ProviderAdapterV2Event, { type: "turn_item.updated" }>>();
+      const assistantReceipts =
+        yield* Queue.unbounded<Extract<ProviderAdapterV2Event, { type: "message.updated" }>>();
       let openedOptions: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined;
       const adapter = ClaudeAdapterV2.makeClaudeAdapterV2({
         instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
@@ -2156,6 +2159,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             if (event.type === "turn_item.updated" && event.turnItem.type === "system_notice") {
               yield* Queue.offer(systemNoticeReceipts, event);
             }
+            if (event.type === "message.updated" && event.message.role === "assistant") {
+              yield* Queue.offer(assistantReceipts, event);
+            }
           }),
         ),
         Effect.forkScoped,
@@ -2180,6 +2186,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         events,
         terminalReceipts,
         systemNoticeReceipts,
+        assistantReceipts,
         subagentReceipts,
         getOpenedOptions: () => openedOptions,
         terminalEvents,
@@ -2187,6 +2194,123 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       };
     });
   const makeWakeHarness = makeWakeHarnessWithOptions();
+
+  it.effect.each(["completed", "interrupted"] as const)(
+    "streams Claude text before the final snapshot when %s",
+    (status) =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("text-stream-attempt"),
+            text: "Stream a reply",
+            attachments: [],
+          }),
+        );
+        const stream = (event: unknown, parent: string | null = null) =>
+          claudeSdkFrame({
+            type: "stream_event",
+            event,
+            parent_tool_use_id: parent,
+            session_id: WAKE_NATIVE_SESSION,
+            uuid: "text-stream-frame",
+          });
+        yield* harness.offerAndWait(
+          stream({ type: "message_start", message: { id: "streamed-message" } }),
+        );
+        yield* harness.offerAndWait(
+          stream({
+            type: "content_block_start",
+            index: 1,
+            content_block: { type: "text", text: "" },
+          }),
+        );
+        yield* harness.offerAndWait(
+          stream({
+            type: "content_block_delta",
+            index: 1,
+            delta: { type: "text_delta", text: "First " },
+          }),
+        );
+        yield* TestClock.adjust("50 millis");
+        const first = (yield* Queue.take(harness.assistantReceipts)).message;
+        assert.equal(first.text, "First ");
+        assert.isTrue(first.streaming);
+        yield* harness.offerAndWait(
+          stream({
+            type: "content_block_delta",
+            index: 1,
+            delta: { type: "text_delta", text: "second" },
+          }),
+        );
+        yield* TestClock.adjust("50 millis");
+        const second = (yield* Queue.take(harness.assistantReceipts)).message;
+        assert.equal(second.id, first.id);
+        assert.equal(second.text, "First second");
+        assert.isTrue(second.streaming);
+        // Child narration must never enter the parent's transcript.
+        yield* harness.offerAndWait(
+          stream({ type: "message_start", message: { id: "child-message" } }, "child-tool"),
+        );
+        yield* harness.offerAndWait(
+          stream(
+            {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "text", text: "Child text" },
+            },
+            "child-tool",
+          ),
+        );
+        if (status === "completed") {
+          yield* harness.offerAndWait(stream({ type: "content_block_stop", index: 1 }));
+          const snapshot = claudeSdkFrame({
+            type: "assistant",
+            uuid: "text-snapshot",
+            session_id: WAKE_NATIVE_SESSION,
+            parent_tool_use_id: null,
+            message: {
+              id: "streamed-message",
+              model: "claude-sonnet-4-6",
+              content: [{ type: "text", text: "Authoritative reply" }],
+            },
+          });
+          yield* harness.offerAndWait(snapshot);
+          yield* harness.offerAndWait(snapshot);
+        }
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({
+            uuid: "text-result",
+            result: status === "completed" ? "Authoritative reply" : "",
+            ...(status === "interrupted" ? { terminalReason: "aborted_streaming" as const } : {}),
+          }),
+        );
+        assert.equal((yield* Queue.take(harness.terminalReceipts)).status, status);
+        const messages = harness.events.flatMap((event) =>
+          event.type === "message.updated" && event.message.role === "assistant"
+            ? [event.message]
+            : [],
+        );
+        assert.equal(new Set(messages.map((message) => message.id)).size, 1);
+        assert.equal(
+          messages.at(-1)?.text,
+          status === "completed" ? "Authoritative reply" : "First second",
+        );
+        assert.isFalse(messages.at(-1)?.streaming);
+        const items = harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "assistant_message"
+            ? [event.turnItem]
+            : [],
+        );
+        assert.equal(new Set(items.map((item) => item.id)).size, 1);
+        assert.isFalse(items.at(-1)?.streaming);
+        assert.equal(items.at(-1)?.status, "completed");
+      }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+  );
 
   it.effect(
     "preserves transcript profile provenance through active roster and terminal updates",
