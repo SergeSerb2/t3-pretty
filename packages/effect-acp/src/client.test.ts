@@ -1149,6 +1149,75 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
     }),
   );
 
+  it.effect(
+    "preserves V2 command approval details and routes selected and cancelled responses",
+    () =>
+      Effect.gen(function* () {
+        const { stdio, input, output } = yield* makeInMemoryStdio();
+        const scope = yield* Scope.make();
+        const acp = yield* AcpClient.make(stdio).pipe(Effect.provideService(Scope.Scope, scope));
+        const requests = yield* Ref.make<Array<AcpCompat.RequestPermissionRequest>>([]);
+        yield* acp.handleRequestPermission((request, context) =>
+          Ref.update(requests, (current) => [...current, request]).pipe(
+            Effect.as(
+              context.requestId === "permission-allow"
+                ? ({ outcome: { outcome: "selected", optionId: "allow" } } as const)
+                : ({ outcome: { outcome: "cancelled" } } as const),
+            ),
+          ),
+        );
+        const decodeResponse = Schema.decodeEffect(Schema.fromJsonString(PermissionResponse));
+        for (const id of ["permission-allow", "permission-cancel"]) {
+          yield* Queue.offer(
+            input,
+            yield* encodeJsonl(PermissionRequest, {
+              jsonrpc: "2.0",
+              id,
+              method: "session/request_permission",
+              params: {
+                sessionId: "session-1",
+                title: "Run command",
+                subject: {
+                  type: "command",
+                  command: "npm test -- --run",
+                  cwd: "/workspace/project",
+                  ...(id === "permission-allow" ? { toolCallId: "native-command" } : {}),
+                },
+                options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
+              },
+              headers: [],
+            }),
+          );
+          const response = yield* Queue.take(output).pipe(Effect.flatMap(decodeResponse));
+          assert.deepEqual(response.id, id);
+          assert.deepEqual(
+            response.result,
+            id === "permission-allow"
+              ? { outcome: { outcome: "selected", optionId: "allow" } }
+              : { outcome: { outcome: "cancelled" } },
+          );
+        }
+        assert.deepEqual(
+          (yield* Ref.get(requests)).map((request) => request.toolCall),
+          [
+            {
+              toolCallId: "native-command",
+              title: "Run command",
+              kind: "execute",
+              rawInput: { command: "npm test -- --run", cwd: "/workspace/project" },
+            },
+            {
+              toolCallId: "permission-cancel",
+              title: "Run command",
+              kind: "execute",
+              rawInput: { command: "npm test -- --run", cwd: "/workspace/project" },
+            },
+          ],
+        );
+        yield* Scope.close(scope, Exit.void);
+      }),
+  );
+
   it.effect("preserves exact ids for parallel requests with identical payloads", () =>
     Effect.gen(function* () {
       const { stdio, input, output } = yield* makeInMemoryStdio();

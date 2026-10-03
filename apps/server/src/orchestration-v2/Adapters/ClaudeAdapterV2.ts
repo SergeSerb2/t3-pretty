@@ -2992,6 +2992,7 @@ export function makeClaudeAdapterV2(
         const steeredTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
         const queryContext = yield* Ref.make<ClaudeLiveQueryContext | null>(null);
         const openedNativeThreads = yield* Ref.make(new Set<string>());
+        const allocatedNativeThreads = yield* Ref.make(new Set<string>());
         const latestPlanByKind = yield* Ref.make(new Map<string, OrchestrationV2PlanArtifact>());
         const planIdsByNativeItem = yield* Ref.make(
           new Map<string, OrchestrationV2PlanArtifact["id"]>(),
@@ -4974,8 +4975,13 @@ export function makeClaudeAdapterV2(
                 const clearConversationHead =
                   input.status === "completed" &&
                   input.context.input.providerThread.nativeConversationHeadRef !== null;
+                const latestProviderThread =
+                  nativeThreadId === null
+                    ? input.context.input.providerThread
+                    : ((yield* Ref.get(lastProviderThreadByNativeThread)).get(nativeThreadId) ??
+                      input.context.input.providerThread);
                 const providerThread: OrchestrationV2ProviderThread = {
-                  ...input.context.input.providerThread,
+                  ...latestProviderThread,
                   providerSessionId: session.id,
                   ...(clearConversationHead ? { nativeConversationHeadRef: null } : {}),
                   firstRunOrdinal:
@@ -5380,8 +5386,8 @@ export function makeClaudeAdapterV2(
           }
 
           const baseThread =
-            input.activeContext?.input.providerThread ??
-            (yield* Ref.get(lastProviderThreadByNativeThread)).get(input.nativeThreadId);
+            (yield* Ref.get(lastProviderThreadByNativeThread)).get(input.nativeThreadId) ??
+            input.activeContext?.input.providerThread;
           if (baseThread === undefined) {
             return true;
           }
@@ -5900,6 +5906,7 @@ export function makeClaudeAdapterV2(
               // With no model of its own, a nested subagent runs on its
               // owner's (the SDK's default for a subagent's Agent call).
               const model = launch?.model ?? owner?.task.model ?? undefined;
+              const role = launch?.role ?? message.subagent_type;
               // A nested subagent's end goes to its owner, so it never wakes the root.
               if (
                 message.is_backgrounded === true &&
@@ -5922,7 +5929,7 @@ export function makeClaudeAdapterV2(
                 ...(message.tool_use_id === undefined ? {} : { toolUseId: message.tool_use_id }),
                 ...(message.prompt === undefined ? {} : { prompt: message.prompt }),
                 ...(model === undefined ? {} : { model }),
-                ...(launch?.role === undefined ? {} : { role: launch.role }),
+                ...(role === undefined ? {} : { role }),
                 ...(launch?.effort === undefined ? {} : { effort: launch.effort }),
                 ...(owner === undefined ? {} : { owner }),
                 title: message.description,
@@ -5966,7 +5973,7 @@ export function makeClaudeAdapterV2(
 
           if (message.type === "system" && message.subtype === "task_progress") {
             const taskUsage = normalizeTaskUsage(message.usage);
-            const progress = message.description.trim();
+            const progress = message.summary?.trim() || message.description.trim();
             const isBackgroundTask = yield* hasPendingBackgroundTaskOnNativeThread(
               liveQuery.nativeThreadId,
               message.task_id,
@@ -7496,6 +7503,9 @@ export function makeClaudeAdapterV2(
             function* (threadInput: ProviderAdapter.ProviderAdapterV2EnsureThreadInput) {
               const createdAt = yield* DateTime.now;
               const nativeThreadId = yield* queryRunner.allocateSessionId;
+              yield* Ref.update(allocatedNativeThreads, (current) =>
+                new Set(current).add(nativeThreadId),
+              );
               return makeProviderThread({
                 idAllocator,
                 providerInstanceId: adapterOptions.instanceId,
@@ -7519,6 +7529,16 @@ export function makeClaudeAdapterV2(
           ),
           resumeThread: Effect.fn("ClaudeAdapterV2.resumeThread")(
             function* (threadInput: { readonly providerThread: OrchestrationV2ProviderThread }) {
+              const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
+              // Native imports can have no V2 turns or conversation-head cursor.
+              // Rebinding them still resumes an existing CLI conversation.
+              // A failed first open can be rebound before retry. A locally
+              // allocated id alone does not prove the native conversation exists.
+              if (!(yield* Ref.get(allocatedNativeThreads)).has(nativeThreadId)) {
+                yield* Ref.update(openedNativeThreads, (current) =>
+                  new Set(current).add(nativeThreadId),
+                );
+              }
               const updatedAt = yield* DateTime.now;
               return {
                 ...threadInput.providerThread,

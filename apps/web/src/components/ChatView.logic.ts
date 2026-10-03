@@ -1347,6 +1347,22 @@ export function deriveCommittedServerUserMessageIds(
   );
 }
 
+/** Queue controls render message echoes; the transcript needs a visible turn item. */
+export function deriveAcknowledgedServerUserMessageIds(input: {
+  visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>;
+  optimisticMessages: ReadonlyArray<Pick<ChatMessage, "id" | "inputIntent">>;
+  serverMessages: ReadonlyArray<Pick<ChatMessage, "id" | "role">>;
+}): ReadonlySet<ChatMessage["id"]> {
+  const ids = new Set(deriveCommittedServerUserMessageIds(input.visibleTurnItems));
+  const echoedUserIds = new Set(
+    input.serverMessages.flatMap((message) => (message.role === "user" ? [message.id] : [])),
+  );
+  for (const message of input.optimisticMessages) {
+    if (message.inputIntent === "queued_turn" && echoedUserIds.has(message.id)) ids.add(message.id);
+  }
+  return ids;
+}
+
 export function hasServerAcknowledgedLocalDispatch(input: {
   localDispatch: LocalDispatchSnapshot | null;
   phase: SessionPhase;

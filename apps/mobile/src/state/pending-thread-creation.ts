@@ -3,7 +3,11 @@ import {
   type EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import type { LocalThreadMessage } from "../lib/threadActivity";
-import { DEFAULT_PROVIDER_INTERACTION_MODE, DEFAULT_RUNTIME_MODE } from "@t3tools/contracts";
+import {
+  DEFAULT_PROVIDER_INTERACTION_MODE,
+  DEFAULT_RUNTIME_MODE,
+  type OrchestrationV2ProjectedTurnItem,
+} from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import * as DateTime from "effect/DateTime";
 
@@ -11,6 +15,7 @@ import { deriveThreadTitleFromPrompt } from "../lib/projectThreadStartTurn";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { appAtomRegistry } from "./atom-registry";
 import type { QueuedThreadMessage } from "./thread-outbox-model";
+import { visibleUserMessageIds } from "./acknowledged-thread-messages.logic";
 
 /**
  * A new task navigates to its thread screen the moment it is queued, before the
@@ -36,6 +41,7 @@ export function resolvePendingThreadCreation(input: {
   readonly previous: PendingThreadCreation | null;
   readonly detail: {
     readonly messages: ReadonlyArray<{ readonly id: string }>;
+    readonly visibleTurnItems?: ReadonlyArray<OrchestrationV2ProjectedTurnItem>;
     readonly runs?: ReadonlyArray<{ readonly status: string }>;
     readonly latestTurn?: { readonly turnId: string } | null;
     readonly session?: { readonly status: string } | null;
@@ -68,7 +74,10 @@ export function resolvePendingThreadCreation(input: {
     (latestRun !== undefined || detail.latestTurn != null) &&
     !isPendingThreadCreationVisible({
       creationMessageId: creation.message.messageId,
-      loadedMessageIds: detail.messages.map((message) => message.id),
+      loadedMessageIds:
+        detail.visibleTurnItems === undefined
+          ? detail.messages.map((message) => message.id)
+          : [...visibleUserMessageIds(detail.visibleTurnItems)],
     })
   ) {
     return null;

@@ -1,5 +1,8 @@
 import { AgentsPanel } from "./AgentsPanel";
-import { deriveAgentPanelModel, projectedSubagentsToRuntime } from "@t3tools/client-runtime/state/subagentRuntime";
+import {
+  deriveAgentPanelModel,
+  projectedSubagentsToRuntime,
+} from "@t3tools/client-runtime/state/subagentRuntime";
 import { resolveLiveThreadHeadline } from "../session-logic";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
@@ -53,9 +56,7 @@ import {
 } from "@t3tools/shared/usageLimits";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
-import {
-  splitPendingUserInputs,
-} from "@t3tools/client-runtime/pending-requests";
+import { splitPendingUserInputs } from "@t3tools/client-runtime/pending-requests";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as Schema from "effect/Schema";
 import { Minimize2Icon } from "lucide-react";
@@ -520,6 +521,7 @@ import {
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveCommittedServerUserMessageIds,
+  deriveAcknowledgedServerUserMessageIds,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
   hasEnvironmentReconnectWarningGraceElapsed,
@@ -1788,18 +1790,6 @@ export default function ChatView(props: ChatViewProps) {
     () => deriveCommittedServerUserMessageIds(serverVisibleTurnItems),
     [serverVisibleTurnItems],
   );
-  // Queued messages have no turn item until their run starts, so the
-  // turn-item-derived set alone can never retire their optimistic rows —
-  // cancelling such a run would leave a phantom "pending" queue row behind.
-  // Union in the projection's user messages: once the server holds the
-  // message, the optimistic copy is redundant everywhere it could render.
-  const serverAcknowledgedUserMessageIds = useMemo(() => {
-    const ids = new Set(committedServerMessageIds);
-    for (const message of serverProjection?.messages ?? []) {
-      if (message.role === "user") ids.add(message.id);
-    }
-    return ids;
-  }, [committedServerMessageIds, serverProjection]);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
   const activeThreadLocalLastVisitedAt = useUiStateStore(
     (store) => store.threadLastVisitedAtById[routeThreadKey],
@@ -1913,6 +1903,15 @@ export default function ChatView(props: ChatViewProps) {
     return () => revokeBlobPreviewUrl(src);
   }, [expandedImage]);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
+  const serverAcknowledgedUserMessageIds = useMemo(
+    () =>
+      deriveAcknowledgedServerUserMessageIds({
+        visibleTurnItems: serverVisibleTurnItems,
+        optimisticMessages: optimisticUserMessages,
+        serverMessages: serverProjection?.messages ?? [],
+      }),
+    [serverVisibleTurnItems, optimisticUserMessages, serverProjection?.messages],
+  );
   // The bootstrap worktree setup this composer last dispatched. Set when a
   // worktree send starts and cleared once the turn starts or the next send
   // begins, so a failed or cancelled card stays until the user acts.
@@ -3269,9 +3268,18 @@ export default function ChatView(props: ChatViewProps) {
   const supportsConversationRollback =
     conversationProviderStatus !== null &&
     conversationProviderStatus.supportsConversationRollback !== false;
-  const agentPanelModel = useMemo(() => deriveAgentPanelModel({agents: projectedSubagentsToRuntime(serverProjection?.subagents ?? [])}), [serverProjection?.subagents]);
+  const agentPanelModel = useMemo(
+    () =>
+      deriveAgentPanelModel({
+        agents: projectedSubagentsToRuntime(serverProjection?.subagents ?? []),
+      }),
+    [serverProjection?.subagents],
+  );
   const phase = derivePhase(activeRuntime);
-  const liveTurnHeadline = resolveLiveThreadHeadline(activeThreadShell, settings.generateActivityHeadlines);
+  const liveTurnHeadline = resolveLiveThreadHeadline(
+    activeThreadShell,
+    settings.generateActivityHeadlines,
+  );
   const pendingRequests = useMemo(
     () =>
       serverProjection === null
@@ -4993,7 +5001,11 @@ export default function ChatView(props: ChatViewProps) {
     ) => {
       if (!activeThreadId || !activeProject || !activeThread) return;
       if (options?.rememberAsLastInvoked !== false) {
-        setLastInvokedScriptByProjectId((current) => current[activeProject.id] === script.id ? current : {...current, [activeProject.id]: script.id});
+        setLastInvokedScriptByProjectId((current) =>
+          current[activeProject.id] === script.id
+            ? current
+            : { ...current, [activeProject.id]: script.id },
+        );
       }
       const targetCwd = options?.cwd ?? gitCwd ?? activeProject.workspaceRoot;
       const baseTerminalId =
@@ -6835,8 +6847,7 @@ export default function ChatView(props: ChatViewProps) {
   // Count optimistic rows too: a local draft keeps messages: [] until
   // promotion, and `!isServerThread` would otherwise leave the chip up
   // after the first send.
-  const autoPrThreadHasStarted =
-    activeMessageCount > 0 || optimisticUserMessages.length > 0;
+  const autoPrThreadHasStarted = activeMessageCount > 0 || optimisticUserMessages.length > 0;
   const offerAutoCreatePullRequestToggle = isGitRepo && !autoPrThreadHasStarted;
   const localCheckoutBranchMismatch = useMemo(
     () =>
@@ -10723,7 +10734,11 @@ export default function ChatView(props: ChatViewProps) {
         />
       </Suspense>
     ) : renderedRightPanelSurface?.kind === "agents" ? (
-      <AgentsPanel model={agentPanelModel} environmentId={environmentId} threadId={activeThread.id} />
+      <AgentsPanel
+        model={agentPanelModel}
+        environmentId={environmentId}
+        threadId={activeThread.id}
+      />
     ) : renderedRightPanelSurface?.kind === "terminal" ? (
       <PersistentThreadTerminalPanel
         visible={rightPanelOpen}
@@ -11139,7 +11154,11 @@ export default function ChatView(props: ChatViewProps) {
                 isPreparingWorktree={!paintOnlyDisplayedTimeline && isPreparingWorktree}
                 listRef={legendListRef}
                 timelineEntries={displayedTimeline.entries}
-                providerStatuses={environmentById.get(displayedThreadRef?.environmentId ?? activeThread.environmentId)?.serverConfig?.providers ?? EMPTY_PROVIDERS}
+                providerStatuses={
+                  environmentById.get(
+                    displayedThreadRef?.environmentId ?? activeThread.environmentId,
+                  )?.serverConfig?.providers ?? EMPTY_PROVIDERS
+                }
                 runs={paintOnlyDisplayedTimeline ? [] : (serverProjection?.runs ?? [])}
                 latestRun={paintOnlyDisplayedTimeline ? null : activeLatestRun}
                 runningRunId={paintOnlyDisplayedTimeline ? null : activeRunningTurnId}
@@ -11791,8 +11810,8 @@ export default function ChatView(props: ChatViewProps) {
             onAddBrowserInProfile={createBrowserSurface}
             onAddTerminal={addTerminalSurface}
             onAddAgents={() => useRightPanelStore.getState().open(activeThreadRef, "agents")}
-          agentsAvailable={isServerThread}
-          onAddDiff={addDiffSurface}
+            agentsAvailable={isServerThread}
+            onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddPullRequests={addPullRequestsSurface}

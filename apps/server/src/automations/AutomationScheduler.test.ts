@@ -1,5 +1,6 @@
 import {
   AutomationId,
+  EventId,
   AutomationRunId,
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
@@ -22,6 +23,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import { transferProjection } from "../project/ProjectTransfer.testkit.ts";
 import { BackgroundPolicy } from "../background/BackgroundPolicy.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
@@ -89,6 +92,7 @@ const harness = (
     readonly git?: Partial<GitWorkflowService["Service"]>;
     readonly domainEvents?: Stream.Stream<OrchestrationV2DomainEvent>;
     readonly onCommand?: (command: AutomationCommand) => Effect.Effect<void>;
+    readonly threadManagement?: Partial<ThreadManagementService["Service"]>;
   } = {},
 ) => {
   const commands: Array<AutomationCommand> = [];
@@ -124,9 +128,22 @@ const harness = (
         }),
       getThreadProjection: () => Effect.die("summary read must not be needed"),
       streamDomainEvents: options.domainEvents ?? Stream.empty,
+      ...options.threadManagement,
     }),
     Layer.mock(ThreadLaunchService)(options.launch === undefined ? {} : { launch: options.launch }),
     Layer.mock(ProjectService)({
+      listShells: () =>
+        Effect.succeed([
+          {
+            id: PROJECT_ID,
+            title: "Project",
+            workspaceRoot: "/workspace/project",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: NOW,
+            updatedAt: NOW,
+          },
+        ]),
       getShell: () =>
         Effect.succeed(
           Option.some({
@@ -396,4 +413,92 @@ it.effect(
         threadId: THREAD_ID,
       });
     }),
+);
+
+it.effect(
+  "deleting an automation removes active and archived V2 run threads and their worktrees",
+  () =>
+    Effect.gen(function* () {
+      const projection = yield* ProjectionStore.ProjectionStoreV2;
+      const queued = yield* Deferred.make<void>();
+      const deleted: ThreadId[] = [];
+      const removedWorktrees: string[] = [];
+      const ids = [
+        ThreadId.make("active-automation-run"),
+        ThreadId.make("archived-automation-run"),
+      ];
+      const now = DateTime.makeUnsafe(NOW);
+      for (const [index, id] of ids.entries()) {
+        yield* projection.apply({
+          id: EventId.make(`create:${id}`),
+          type: "thread.created",
+          threadId: id,
+          occurredAt: now,
+          payload: {
+            ...transferProjection(id).thread,
+            projectId: PROJECT_ID,
+            automationRun: { automationId: AUTOMATION_ID, runId: RUN_ID },
+            worktreePath: `/workspace/worktrees/${id}`,
+            archivedAt: index === 1 ? now : null,
+          },
+        });
+      }
+      assert.equal((yield* projection.getShellSnapshot({ location: "archive" })).threads.length, 0);
+      assert.equal(
+        (yield* projection.getShellSnapshot({ location: "archive" })).archivedThreads.length,
+        1,
+      );
+      const test = harness(makeAutomation(), {
+        events: Stream.concat(
+          Stream.make({
+            type: "automation.removed" as const,
+            automationId: AUTOMATION_ID,
+            revision: 1,
+          }),
+          Stream.fromEffect(Deferred.succeed(queued, undefined)).pipe(Stream.drain),
+        ),
+        threadManagement: {
+          getShellSnapshot: (options) => projection.getShellSnapshot(options).pipe(Effect.orDie),
+          dispatch: (command) =>
+            Effect.gen(function* () {
+              if (command.type !== "thread.delete") {
+                return yield* Effect.die(new Error(`Unexpected command: ${command.type}`));
+              }
+              const thread = yield* projection.getThread(command.threadId);
+              yield* projection.apply({
+                id: EventId.make(`delete:${command.threadId}`),
+                type: "thread.deleted",
+                threadId: command.threadId,
+                occurredAt: now,
+                payload: { ...thread, deletedAt: now },
+              });
+              deleted.push(command.threadId);
+              return {
+                sequence: 1,
+                storedEvents: [],
+              };
+            }).pipe(Effect.orDie),
+        },
+        git: {
+          removeWorktree: (input) =>
+            Effect.sync(() => {
+              removedWorktrees.push(input.path);
+            }),
+        },
+      });
+      yield* Effect.gen(function* () {
+        const scheduler = yield* AutomationScheduler.AutomationScheduler;
+        yield* scheduler.start();
+        yield* Deferred.await(queued);
+        yield* scheduler.drain;
+      }).pipe(Effect.provide(test.layer), Effect.scoped);
+      assert.deepEqual(deleted.toSorted(), ids.toSorted());
+      assert.deepEqual(
+        removedWorktrees.toSorted(),
+        ids.map((id) => `/workspace/worktrees/${id}`).toSorted(),
+      );
+      const remaining = yield* projection.getShellSnapshot();
+      assert.deepEqual(remaining.threads, []);
+      assert.deepEqual(remaining.archivedThreads, []);
+    }).pipe(Effect.provide(ProjectionStore.layerMemory)),
 );

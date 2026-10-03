@@ -111,6 +111,32 @@ describe("resolvePendingThreadCreation", () => {
     ).toBe(pending);
   });
 
+  it("keeps a V2 creation prompt when persistence arrives before its timeline row", () => {
+    const detail = { messages: [prompt], visibleTurnItems: [], runs: [{ status: "running" }] };
+    const delivered: PendingThreadCreation = {
+      message: creation,
+      outcome: { kind: "delivered", message: creation },
+    };
+    expect(
+      resolvePendingThreadCreation({
+        threadKey,
+        pending: delivered,
+        previous: null,
+        detail,
+      }),
+    ).toBe(delivered);
+    // Global delivery state can be collected as soon as the shell arrives.
+    // The selected screen still retains the prompt until a row can replace it.
+    expect(
+      resolvePendingThreadCreation({
+        threadKey,
+        pending: null,
+        previous: delivered,
+        detail,
+      }),
+    ).toBe(delivered);
+  });
+
   it.each(["error", "stopped", "interrupted"])("ends setup when startup is %s", (status) => {
     expect(
       resolvePendingThreadCreation({

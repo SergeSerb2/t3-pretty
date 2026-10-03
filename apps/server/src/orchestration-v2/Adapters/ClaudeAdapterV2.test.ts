@@ -1760,7 +1760,11 @@ describe("ClaudeAdapterV2 native fork", () => {
 });
 
 describe("ClaudeAdapterV2 native session identity", () => {
-  const openTurnWithOrdinal = (providerTurnOrdinal: number) =>
+  const openTurnWithOrdinal = (
+    providerTurnOrdinal: number,
+    retainedNativeSession = false,
+    rebindFreshAllocation = false,
+  ) =>
     Effect.scoped(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
@@ -1808,11 +1812,29 @@ describe("ClaudeAdapterV2 native session identity", () => {
           modelSelection: CLAUDE_TEST_MODEL_SELECTION,
           runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
         });
+        const reboundThread =
+          retainedNativeSession || rebindFreshAllocation
+            ? yield* runtime.resumeThread({
+                providerThread: retainedNativeSession
+                  ? {
+                      ...providerThread,
+                      nativeThreadRef: {
+                        driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+                        nativeId: "retained-native-identity",
+                        strength: "strong",
+                      },
+                    }
+                  : providerThread,
+                threadId,
+                modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+                runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+              })
+            : providerThread;
         const now = yield* DateTime.now;
         yield* runtime.startTurn(
           makeClaudeTestTurnInput({
             threadId,
-            providerThread,
+            providerThread: reboundThread,
             now,
             attemptId: RunAttemptId.make("run-attempt-claude-session-identity"),
             text: "Respond with identity ok",
@@ -1828,6 +1850,23 @@ describe("ClaudeAdapterV2 native session identity", () => {
     Effect.gen(function* () {
       const openedQueries = yield* openTurnWithOrdinal(1);
       assert.equal(openedQueries.length, 1);
+      assert.equal(openedQueries[0]?.options.sessionId, "native-session-identity");
+      assert.equal(openedQueries[0]?.options.resume, undefined);
+    }),
+  );
+
+  it.effect("resumes a retained native conversation on its first V2 provider turn", () =>
+    Effect.gen(function* () {
+      const openedQueries = yield* openTurnWithOrdinal(1, true);
+      assert.equal(openedQueries.length, 1);
+      assert.equal(openedQueries[0]?.options.resume, "retained-native-identity");
+      assert.equal(openedQueries[0]?.options.sessionId, undefined);
+    }),
+  );
+
+  it.effect("does not treat a rebound fresh allocation as an existing native conversation", () =>
+    Effect.gen(function* () {
+      const openedQueries = yield* openTurnWithOrdinal(1, false, true);
       assert.equal(openedQueries[0]?.options.sessionId, "native-session-identity");
       assert.equal(openedQueries[0]?.options.resume, undefined);
     }),
@@ -2148,6 +2187,43 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       };
     });
   const makeWakeHarness = makeWakeHarnessWithOptions();
+
+  it.effect(
+    "preserves transcript profile provenance through active roster and terminal updates",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const configDir = "/isolated/claude-retained-profile";
+          const harness = yield* makeWakeHarnessWithOptions({
+            environment: { CLAUDE_CONFIG_DIR: configDir },
+          });
+          const now = yield* DateTime.now;
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now,
+              attemptId: RunAttemptId.make("attempt-profile-provenance"),
+              text: "Start background work",
+              attachments: [],
+            }),
+          );
+          yield* harness.offerAndWait(wakeTaskStarted);
+          yield* harness.offerAndWait(turnOneResult);
+          yield* Queue.take(harness.terminalReceipts);
+          const updates = harness.events.flatMap((event) =>
+            event.type === "provider_thread.updated" ? [event.providerThread] : [],
+          );
+          const firstProfile = updates.findIndex(
+            (thread) => thread.nativeMetadata?.configDir === configDir,
+          );
+          assert.isAtLeast(firstProfile, 0);
+          for (const thread of updates.slice(firstProfile))
+            assert.equal(thread.nativeMetadata?.configDir, configDir);
+          assert.equal(updates.at(-1)?.pendingBackgroundTasks?.[0]?.taskId, WAKE_TASK_ID);
+        }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+      ),
+  );
 
   it.effect.each(["completed", "interrupted"] as const)(
     "projects Claude thinking blocks when %s",
@@ -6231,6 +6307,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             subtype: "task_started",
             task_type: "local_workflow",
             workflow_name: "review",
+            subagent_type: "reviewer",
             description: "Review workflow",
             prompt: "Review changes",
           }),
@@ -6238,6 +6315,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         const started = (yield* Queue.take(harness.subagentReceipts)).subagent;
         assert.equal(started.kind, "workflow");
         assert.equal(started.workflowName, "review");
+        assert.equal(started.role, "reviewer");
         assert.equal(started.activationCount, 1);
         yield* harness.offerAndWait(
           frame({ subtype: "task_updated", patch: { status: "paused" } }),
@@ -6250,7 +6328,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* harness.offerAndWait(
           frame({
             subtype: "task_progress",
-            description: "Checking tests",
+            description: "Review workflow",
+            summary: "Checking tests",
             subagent_type: "reviewer",
             last_tool_name: "Read",
             usage: { total_tokens: 12, tool_uses: 2, duration_ms: 30 },
@@ -6258,6 +6337,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
         const progress = (yield* Queue.take(harness.subagentReceipts)).subagent;
         assert.equal(progress.role, "reviewer");
+        assert.equal(progress.progress, "Checking tests");
+        assert.equal(progress.recentActivity?.at(-1)?.summary, "Checking tests");
         assert.equal(progress.lastToolName, "Read");
         assert.equal(progress.usage?.totalTokens, 12);
         yield* harness.offerAndWait(

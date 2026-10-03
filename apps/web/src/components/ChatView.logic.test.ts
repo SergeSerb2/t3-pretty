@@ -41,8 +41,13 @@ import { Atom, AsyncResult } from "effect/unstable/reactivity";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadDetails } from "../state/threads";
 
-import type { Thread, TurnDiffSummary } from "../types";
-import { makeThreadFixture, makeThreadProjectionFixture } from "../test-fixtures";
+import type { ChatMessage, Thread, TurnDiffSummary } from "../types";
+import {
+  makeStreamingTimelineFixture,
+  makeThreadFixture,
+  makeThreadProjectionFixture,
+} from "../test-fixtures";
+import { deriveTimelineEntriesFromVisibleTurnItemsWithState } from "../session-logic";
 import {
   agentControlledBrowserCloseConfirmation,
   ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
@@ -76,6 +81,7 @@ import {
   buildExpiredTerminalContextToastCopy,
   createLocalDispatchSnapshot,
   deriveCommittedServerUserMessageIds,
+  deriveAcknowledgedServerUserMessageIds,
   deriveComposerSendState,
   deriveLockedProvider,
   dismissBranchMismatchForSession,
@@ -731,6 +737,79 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
 });
 
 describe("deriveCommittedServerUserMessageIds", () => {
+  it("keeps the sent prompt visible across message echo, turn-item commit, and assistant streaming", () => {
+    const fixture = makeStreamingTimelineFixture("Claude is responding");
+    const userRow = fixture.visibleTurnItems.find((row) => row.item.type === "user_message");
+    const assistantRow = fixture.visibleTurnItems.find(
+      (row) => row.item.type === "assistant_message" && row.item.streaming,
+    );
+    if (userRow?.item.type !== "user_message" || assistantRow?.item.type !== "assistant_message") {
+      throw new Error("Expected user and streaming assistant fixture");
+    }
+    const optimistic: ChatMessage = {
+      id: userRow.item.messageId,
+      role: "user",
+      text: userRow.item.text,
+      inputIntent: userRow.item.inputIntent,
+      runId: null,
+      streaming: false,
+      createdAt: DateTime.formatIso(userRow.item.updatedAt),
+      updatedAt: DateTime.formatIso(userRow.item.updatedAt),
+    };
+    const echo = [{ id: optimistic.id, role: "user" as const }];
+    const echoedIds = deriveAcknowledgedServerUserMessageIds({
+      visibleTurnItems: [],
+      optimisticMessages: [optimistic],
+      serverMessages: echo,
+    });
+    const pending = [optimistic].filter((message) => !echoedIds.has(message.id));
+    const beforeCommit = deriveTimelineEntriesFromVisibleTurnItemsWithState({
+      visibleTurnItems: [],
+      optimisticMessages: pending,
+    });
+    expect(beforeCommit.entries.map((entry) => entry.id)).toEqual([optimistic.id]);
+
+    const committedIds = deriveAcknowledgedServerUserMessageIds({
+      visibleTurnItems: [userRow],
+      optimisticMessages: pending,
+      serverMessages: echo,
+    });
+    const afterCommit = deriveTimelineEntriesFromVisibleTurnItemsWithState(
+      {
+        visibleTurnItems: [userRow, assistantRow],
+        optimisticMessages: pending.filter((message) => !committedIds.has(message.id)),
+      },
+      beforeCommit,
+    );
+    expect(afterCommit.entries.map((entry) => entry.id)).toEqual([
+      optimistic.id,
+      assistantRow.item.messageId,
+    ]);
+    expect(
+      afterCommit.entries
+        .filter((entry) => entry.kind === "message")
+        .map((entry) => entry.message.text),
+    ).toEqual([optimistic.text, "Claude is responding"]);
+  });
+
+  it("retires queued optimism on its message echo even without a transcript item", () => {
+    const queuedId = MessageId.make("queued-prompt");
+    const activeId = MessageId.make("active-prompt");
+    expect(
+      deriveAcknowledgedServerUserMessageIds({
+        visibleTurnItems: [],
+        optimisticMessages: [
+          { id: queuedId, inputIntent: "queued_turn" },
+          { id: activeId, inputIntent: "turn_start" },
+        ],
+        serverMessages: [
+          { id: queuedId, role: "user" },
+          { id: activeId, role: "user" },
+        ],
+      }),
+    ).toEqual(new Set([queuedId]));
+  });
+
   it("tracks only committed user turn items, not assistant rows or projection-only messages", () => {
     const turnStartId = MessageId.make("message-turn-start");
     const steerId = MessageId.make("message-steer");

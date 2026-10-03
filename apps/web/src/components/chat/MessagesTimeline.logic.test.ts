@@ -4501,7 +4501,7 @@ it.each([true, false])(
   },
 );
 
-it("keeps the working header in place across worktree setup handoff", () => {
+it("keeps the setup card until the provider run starts, then releases the live rows", () => {
   const snapshot: WorktreeSetupSnapshot = {
     threadId: ThreadId.make("thread-setup"),
     phase: "running",
@@ -4529,20 +4529,6 @@ it("keeps the working header in place across worktree setup handoff", () => {
       streaming: false,
     },
   } as const;
-  const assistantEntry = {
-    id: "assistant-entry",
-    kind: "message",
-    createdAt: "2026-01-01T00:00:30Z",
-    message: {
-      id: "assistant-1" as never,
-      role: "assistant",
-      text: "On it",
-      runId: "turn-1" as never,
-      createdAt: "2026-01-01T00:00:30Z",
-      updatedAt: "2026-01-01T00:00:30Z",
-      streaming: true,
-    },
-  } as const;
   const withoutMessages = deriveMessagesTimelineRows({
     timelineEntries: [],
     isWorking: true,
@@ -4552,7 +4538,6 @@ it("keeps the working header in place across worktree setup handoff", () => {
     worktreeSetup: snapshot,
   });
   expect(withoutMessages).toEqual([
-    { kind: "working", id: "working-indicator-row", createdAt: snapshot.startedAt },
     {
       kind: "worktree-setup",
       id: "worktree-setup-row",
@@ -4564,20 +4549,14 @@ it("keeps the working header in place across worktree setup handoff", () => {
 
   // A failed setup never handed off, so the card stays under the send.
   const withMessages = deriveMessagesTimelineRows({
-    timelineEntries: [userEntry, assistantEntry],
-    isWorking: true,
+    timelineEntries: [userEntry],
+    isWorking: false,
     activeTurnStartedAt: "2026-01-01T00:00:00Z",
     turnDiffSummaries: [],
     supportsConversationRollback: false,
     worktreeSetup: { ...snapshot, phase: "failed" },
   });
-  expect(withMessages.map((row) => row.kind)).toEqual([
-    "message",
-    "worktree-setup",
-    "working",
-    "message",
-    "thinking",
-  ]);
+  expect(withMessages.map((row) => row.kind)).toEqual(["message", "worktree-setup"]);
 
   // Once the agent stage is done the setup script may still be running in
   // the background: the header owns its progress chip, so no setup row remains.
@@ -4622,8 +4601,8 @@ it("keeps the working header in place across worktree setup handoff", () => {
     supportsConversationRollback: false,
     worktreeSetup: asyncSnapshot,
   });
-  expect(handoffRows.map((row) => row.kind)).toEqual(["message", "working", "worktree-setup"]);
-  expect(handoffRows[2]).toMatchObject({ kind: "worktree-setup", embedded: false });
+  expect(handoffRows.map((row) => row.kind)).toEqual(["message", "worktree-setup"]);
+  expect(handoffRows[1]).toMatchObject({ kind: "worktree-setup", embedded: false });
 
   // A script that already finished has nothing left to show once the turn is live.
   const finishedRows = deriveMessagesTimelineRows({

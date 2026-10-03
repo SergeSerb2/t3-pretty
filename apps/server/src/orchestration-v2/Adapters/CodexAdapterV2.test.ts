@@ -529,6 +529,7 @@ describe("CodexAdapterV2 runtime policy", () => {
           model: "gpt-5.4",
         },
         hasT3Mcp: true,
+        browserToolsAvailable: true,
       });
 
       assert.equal(params.collaborationMode?.mode, "plan");
@@ -2392,6 +2393,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
           modelSelection: CODEX_TEST_MODEL_SELECTION,
           hasT3Mcp: true,
+          browserToolsAvailable: true,
         });
         assert.include(
           params.additionalContext?.t3_code_orchestration?.value ?? "",

@@ -52,6 +52,10 @@ import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { buildThreadFeed } from "../lib/threadActivity";
 import { acknowledgedThreadMessagesAtom } from "./acknowledged-thread-messages";
+import {
+  pruneTimelineAcknowledgments,
+  visibleUserMessageIds,
+} from "./acknowledged-thread-messages.logic";
 import { appendPendingThreadMessages } from "../features/threads/pending-thread-feed";
 import { threadAllowsProviderSwitch } from "./thread-provider-switching";
 import { appAtomRegistry } from "../state/atom-registry";
@@ -248,9 +252,12 @@ export function useThreadComposerState() {
     },
     [selectedThreadKey],
   );
-  const selectedThreadMessages = selectedThreadProjection?.projection.messages;
   const selectedThreadAttempts = selectedThreadProjection?.projection.attempts;
   const selectedThreadNodes = selectedThreadProjection?.projection.nodes;
+  const selectedThreadEchoedMessageIds = useMemo(
+    () => visibleUserMessageIds(selectedThreadVisibleTurnItems),
+    [selectedThreadVisibleTurnItems],
+  );
   // A thread whose creation has not delivered its turn yet: the prompt only
   // exists in the outbox, so it is appended to whatever the server has. The
   // detail is usually present but empty during a worktree checkout, so this
@@ -259,7 +266,7 @@ export function useThreadComposerState() {
   const selectedThreadFeed = useMemo(() => {
     const pendingCreation =
       pendingCreationMessage !== null &&
-      !selectedThreadMessages?.some((message) => message.id === pendingCreationMessage.messageId)
+      !selectedThreadEchoedMessageIds.has(pendingCreationMessage.messageId)
         ? [pendingThreadCreationMessage(pendingCreationMessage)]
         : [];
     const feed = buildThreadFeed(selectedThreadVisibleTurnItems, {
@@ -277,7 +284,7 @@ export function useThreadComposerState() {
       entry.pendingMessage ? { ...entry, acknowledged: true } : entry,
     );
   }, [
-    selectedThreadMessages,
+    selectedThreadEchoedMessageIds,
     selectedThreadAttempts,
     selectedThreadNodes,
     selectedThreadVisibleTurnItems,
@@ -287,16 +294,21 @@ export function useThreadComposerState() {
     acknowledgedMessages,
   ]);
   useEffect(() => {
-    const echoedIds = new Set(selectedThreadMessages?.map((message) => message.id));
-    if (acknowledgedMessages.some((message) => echoedIds.has(message.messageId))) {
-      appAtomRegistry.set(
-        acknowledgedThreadMessagesAtom,
-        appAtomRegistry
-          .get(acknowledgedThreadMessagesAtom)
-          .filter((message) => !echoedIds.has(message.messageId)),
-      );
+    const current = appAtomRegistry.get(acknowledgedThreadMessagesAtom);
+    const retained = pruneTimelineAcknowledgments(
+      current,
+      selectedThreadShell === null
+        ? null
+        : {
+            environmentId: selectedThreadShell.environmentId,
+            threadId: selectedThreadShell.id,
+          },
+      selectedThreadEchoedMessageIds,
+    );
+    if (retained !== current) {
+      appAtomRegistry.set(acknowledgedThreadMessagesAtom, retained);
     }
-  }, [acknowledgedMessages, selectedThreadMessages]);
+  }, [acknowledgedMessages, selectedThreadShell, selectedThreadEchoedMessageIds]);
 
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const followUpBehavior = AsyncResult.isSuccess(preferencesResult)
@@ -367,8 +379,11 @@ export function useThreadComposerState() {
 
   const liveTurnHeadline =
     (selectedEnvironmentRuntime?.serverConfig?.settings.generateActivityHeadlines ??
-      DEFAULT_SERVER_SETTINGS.generateActivityHeadlines) && threadRuntimeIsActive(selectedThreadRuntime)
-      ? selectedThreadProjection?.projection.thread.liveHeadline ?? selectedThreadShell?.liveHeadline ?? null
+      DEFAULT_SERVER_SETTINGS.generateActivityHeadlines) &&
+    threadRuntimeIsActive(selectedThreadRuntime)
+      ? (selectedThreadProjection?.projection.thread.liveHeadline ??
+        selectedThreadShell?.liveHeadline ??
+        null)
       : null;
 
   const isCompacting = useMemo(() => {

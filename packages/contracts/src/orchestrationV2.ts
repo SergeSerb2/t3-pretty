@@ -28,6 +28,7 @@ import {
   RuntimeRequestId,
   ScheduledTaskId,
   ThreadId,
+  TrimmedString,
   TrimmedNonEmptyString,
   TurnItemId,
 } from "./baseSchemas.ts";
@@ -408,7 +409,15 @@ export const OrchestrationV2AppThread = Schema.Struct({
   subagentPolicy: Schema.optional(Schema.NullOr(ThreadSubagentPolicy)),
   automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
   liveHeadline: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  planProgress: Schema.optional(Schema.NullOr(Schema.Struct({ step: Schema.String, completedSteps: NonNegativeInt, totalSteps: NonNegativeInt }))),
+  planProgress: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        step: Schema.String,
+        completedSteps: NonNegativeInt,
+        totalSteps: NonNegativeInt,
+      }),
+    ),
+  ),
 
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -626,16 +635,25 @@ export const OrchestrationV2ExecutionNode = Schema.Struct({
 export type OrchestrationV2ExecutionNode = typeof OrchestrationV2ExecutionNode.Type;
 
 export const OrchestrationV2Subagent = Schema.Struct({
-  kind: Schema.optional(Schema.Literals(["subagent", "subagent_batch", "workflow", "workflow_agent"])),
+  kind: Schema.optional(
+    Schema.Literals(["subagent", "subagent_batch", "workflow", "workflow_agent"]),
+  ),
   role: Schema.optional(Schema.NullOr(Schema.String)),
   effort: Schema.optional(Schema.NullOr(Schema.String)),
   activationCount: Schema.optional(NonNegativeInt),
-  usage: Schema.optional(Schema.NullOr(Schema.Struct({
-    totalTokens: NonNegativeInt,
-    inputTokens: Schema.optional(NonNegativeInt), cachedInputTokens: Schema.optional(NonNegativeInt),
-    outputTokens: Schema.optional(NonNegativeInt), reasoningOutputTokens: Schema.optional(NonNegativeInt),
-    toolUses: Schema.optional(NonNegativeInt), durationMs: Schema.optional(NonNegativeInt),
-  }))),
+  usage: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        totalTokens: NonNegativeInt,
+        inputTokens: Schema.optional(NonNegativeInt),
+        cachedInputTokens: Schema.optional(NonNegativeInt),
+        outputTokens: Schema.optional(NonNegativeInt),
+        reasoningOutputTokens: Schema.optional(NonNegativeInt),
+        toolUses: Schema.optional(NonNegativeInt),
+        durationMs: Schema.optional(NonNegativeInt),
+      }),
+    ),
+  ),
   lastToolName: Schema.optional(Schema.NullOr(Schema.String)),
   error: Schema.optional(Schema.NullOr(Schema.String)),
   outputFile: Schema.optional(Schema.NullOr(Schema.String)),
@@ -645,12 +663,22 @@ export const OrchestrationV2Subagent = Schema.Struct({
   phaseTitle: Schema.optional(Schema.NullOr(Schema.String)),
   attempt: Schema.optional(Schema.NullOr(NonNegativeInt)),
   workflowName: Schema.optional(Schema.NullOr(Schema.String)),
-  phases: Schema.optional(Schema.Array(Schema.Struct({ index: NonNegativeInt, title: Schema.String }))),
-  runHandles: Schema.optional(Schema.NullOr(Schema.Struct({
-    runId: Schema.optional(Schema.String), scriptPath: Schema.optional(Schema.String),
-    transcriptDir: Schema.optional(Schema.String), sessionUrl: Schema.optional(Schema.String),
-  }))),
-  recentActivity: Schema.optional(Schema.Array(Schema.Struct({ at: IsoDateTime, summary: Schema.String }))),
+  phases: Schema.optional(
+    Schema.Array(Schema.Struct({ index: NonNegativeInt, title: Schema.String })),
+  ),
+  runHandles: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        runId: Schema.optional(Schema.String),
+        scriptPath: Schema.optional(Schema.String),
+        transcriptDir: Schema.optional(Schema.String),
+        sessionUrl: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
+  recentActivity: Schema.optional(
+    Schema.Array(Schema.Struct({ at: IsoDateTime, summary: Schema.String })),
+  ),
 
   id: NodeId,
   threadId: ThreadId,
@@ -1093,7 +1121,7 @@ export const OrchestrationV2UserInputQuestion = Schema.Struct({
   options: Schema.Array(
     Schema.Struct({
       label: TrimmedNonEmptyString,
-      description: TrimmedNonEmptyString,
+      description: TrimmedString,
       value: Schema.optional(Schema.String),
     }),
   ),
@@ -1780,7 +1808,15 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   subagentPolicy: Schema.optional(Schema.NullOr(ThreadSubagentPolicy)),
   automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
   liveHeadline: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  planProgress: Schema.optional(Schema.NullOr(Schema.Struct({ step: Schema.String, completedSteps: NonNegativeInt, totalSteps: NonNegativeInt }))),
+  planProgress: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        step: Schema.String,
+        completedSteps: NonNegativeInt,
+        totalSteps: NonNegativeInt,
+      }),
+    ),
+  ),
 
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
   /** Omitted by servers that predate thread pinning. */
@@ -2486,10 +2522,32 @@ export type OrchestrationV2StoredEventJson = typeof OrchestrationV2StoredEventJs
 
 export const OrchestrationV2Command = Schema.Union([
   Schema.Struct({ type: Schema.Literal("thread.store"), commandId: CommandId, threadId: ThreadId }),
-  Schema.Struct({ type: Schema.Literal("thread.unstore"), commandId: CommandId, threadId: ThreadId }),
-  Schema.Struct({ type: Schema.Literal("thread.scenery.assign"), commandId: CommandId, threadId: ThreadId, scenery: Schema.NullOr(ThreadSceneryAssignRequest), createdAt: IsoDateTime }),
-  Schema.Struct({ type: Schema.Literal("thread.skills.set"), commandId: CommandId, threadId: ThreadId, enabledSkillIds: EnabledSkillIds, createdAt: IsoDateTime }),
-  Schema.Struct({ type: Schema.Literal("thread.subagent-policy.set"), commandId: CommandId, threadId: ThreadId, subagentPolicy: ThreadSubagentPolicy, createdAt: IsoDateTime }),
+  Schema.Struct({
+    type: Schema.Literal("thread.unstore"),
+    commandId: CommandId,
+    threadId: ThreadId,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.scenery.assign"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    scenery: Schema.NullOr(ThreadSceneryAssignRequest),
+    createdAt: IsoDateTime,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.skills.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    enabledSkillIds: EnabledSkillIds,
+    createdAt: IsoDateTime,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.subagent-policy.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    subagentPolicy: ThreadSubagentPolicy,
+    createdAt: IsoDateTime,
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.create"),
     enabledSkillIds: Schema.optional(EnabledSkillIds),
@@ -2627,7 +2685,15 @@ export const OrchestrationV2Command = Schema.Union([
     expectedRunId: Schema.optional(RunId),
     automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
     liveHeadline: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-    planProgress: Schema.optional(Schema.NullOr(Schema.Struct({ step: Schema.String, completedSteps: NonNegativeInt, totalSteps: NonNegativeInt }))),
+    planProgress: Schema.optional(
+      Schema.NullOr(
+        Schema.Struct({
+          step: Schema.String,
+          completedSteps: NonNegativeInt,
+          totalSteps: NonNegativeInt,
+        }),
+      ),
+    ),
     storedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
     scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
     enabledSkillIds: Schema.optional(EnabledSkillIds),
