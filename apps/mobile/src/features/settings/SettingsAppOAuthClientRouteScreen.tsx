@@ -90,11 +90,11 @@ export function SettingsAppOAuthClientRouteScreen({
     return (
       <SheetSurface>
         <NativeStackScreenOptions options={{ title: "OAuth client" }} />
-        <View className="px-5 pt-6">
-          <Text className="text-base text-foreground-muted">
+        <ScrollView contentInsetAdjustmentBehavior="automatic">
+          <Text className="px-5 pt-6 text-base text-foreground-muted">
             This app store does not know that OAuth client family.
           </Text>
-        </View>
+        </ScrollView>
       </SheetSurface>
     );
   }

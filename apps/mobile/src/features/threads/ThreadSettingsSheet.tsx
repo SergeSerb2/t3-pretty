@@ -195,7 +195,8 @@ const FAVORITES_PROVIDER_FILTER = "@favorites";
 function DisclosureChevron(props: { readonly expanded: boolean; readonly identity: string }) {
   const rotation = useSharedValue(props.expanded ? 180 : 0);
   const identity = useRef(props.identity);
-  useEffect(() => {
+  // Before paint, so a recycled header never shows its old angle for a frame.
+  useLayoutEffect(() => {
     const target = props.expanded ? 180 : 0;
     rotation.set(
       identity.current === props.identity ? withTiming(target, DISCLOSURE_CHEVRON_TIMING) : target,

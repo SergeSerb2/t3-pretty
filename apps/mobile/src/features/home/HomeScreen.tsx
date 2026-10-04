@@ -28,7 +28,7 @@ import {
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
-import { useGlassChromeActive } from "../scenery/SceneryProvider";
+import { useGlassChromeActive, useSceneryChromeActive } from "../scenery/SceneryProvider";
 
 import { cn } from "../../lib/cn";
 import { layoutSettle } from "../../lib/motion";
@@ -238,6 +238,7 @@ function HomeTopContentSpacer() {
 export function HomeScreen(props: HomeScreenProps) {
   const [collapsedPrNests, setCollapsedPrNests] = useState<ReadonlySet<string>>(() => new Set());
   const isFocused = useIsFocused();
+  const sceneryChrome = useSceneryChromeActive();
   const glassRows = useGlassChromeActive();
   const queuedThreadKeys = useQueuedThreadKeys();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
@@ -1028,7 +1029,7 @@ export function HomeScreen(props: HomeScreenProps) {
             : "flex-1 bg-screen"
         }
       >
-        <SceneryBackdrop threadKey={null} />
+        <SceneryBackdrop threadKey={null} surface={glassRows ? "cards" : "text"} />
         {/* Shared with the iPad sidebar: cells are reused across data
             rebuilds and `itemsAreEqual` keeps a minute tick (or an unrelated
             shell update) from re-rendering untouched rows. */}
@@ -1067,6 +1068,16 @@ export function HomeScreen(props: HomeScreenProps) {
                         borderWidth: StyleSheet.hairlineWidth,
                         opacity: pressed ? 0.6 : 1,
                       })}
+                    >
+                      <Text className="text-xs font-t3-medium text-foreground-muted">
+                        Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
+                      </Text>
+                    </Pressable>
+                  ) : sceneryChrome ? (
+                    <Pressable
+                      onPress={showMoreSettled}
+                      className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
+                      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
                     >
                       <Text className="text-xs font-t3-medium text-foreground-muted">
                         Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)

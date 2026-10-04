@@ -23,7 +23,7 @@ export function SheetSurface({
       {...props}
       className={cn("flex-1", glass ? "bg-screen" : "bg-sheet", className)}
     >
-      {glass ? <SceneryBackdrop threadKey={threadKey} /> : null}
+      {glass ? <SceneryBackdrop threadKey={threadKey} surface="cards" /> : null}
       {children}
     </View>
   );

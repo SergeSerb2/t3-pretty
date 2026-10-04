@@ -26,7 +26,7 @@ import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { SheetSurface } from "../../components/SheetSurface";
 import { cn } from "../../lib/cn";
-import { enterFade, exitFade } from "../../lib/motion";
+import { enterFade } from "../../lib/motion";
 import { useFontFamily } from "../../lib/useFontFamily";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useEnvironmentQuery } from "../../state/query";
@@ -141,9 +141,8 @@ function SkillPickerRow(props: {
         </View>
         {props.checked ? (
           glass ? (
-            <Animated.View entering={enterFade} exiting={exitFade}>
-              {checkmark}
-            </Animated.View>
+            // No exit: a fading mark would outlive its row as the list reflows.
+            <Animated.View entering={enterFade}>{checkmark}</Animated.View>
           ) : (
             checkmark
           )

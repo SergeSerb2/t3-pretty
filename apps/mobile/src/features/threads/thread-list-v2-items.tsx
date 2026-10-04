@@ -1600,10 +1600,14 @@ function RowArrival(props: {
   }, [identity, landed]);
   const progress = useSharedValue(departure.arriving ? 0 : 1);
   useLayoutEffect(() => {
-    if (!departure.arriving) return;
+    // A cell recycled mid-fade must not hand its opacity to the next thread.
+    if (!departure.arriving) {
+      progress.set(1);
+      return;
+    }
     progress.set(0);
     progress.set(withTiming(1, MOTION_TIMING));
-  }, [departure.arriving, progress]);
+  }, [departure.arriving, identity, progress]);
   const style = useAnimatedStyle(() => ({
     opacity: progress.value,
     transform: [{ translateY: (1 - progress.value) * 6 }],

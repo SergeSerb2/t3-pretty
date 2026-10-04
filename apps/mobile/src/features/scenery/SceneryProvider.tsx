@@ -95,6 +95,10 @@ interface SceneryContextValue extends ResolvedScenery {
 }
 
 const SceneryContext = createContext<SceneryContextValue | null>(null);
+/** Whether translucent chrome may float over the photo. Its own context so
+    list rows reading it skip the photo-assignment and preference churn of
+    the full scenery value. */
+const SceneryChromeContext = createContext(false);
 
 const EMPTY_SEEDS: ReadonlyArray<SceneryPhoto> = [];
 let liftedSceneryPhotoSet: string | null = null;
@@ -354,7 +358,13 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     ],
   );
 
-  return <SceneryContext.Provider value={value}>{props.children}</SceneryContext.Provider>;
+  return (
+    <SceneryContext.Provider value={value}>
+      <SceneryChromeContext value={scenery.enabled && !reduceTransparency}>
+        {props.children}
+      </SceneryChromeContext>
+    </SceneryContext.Provider>
+  );
 }
 
 export function useScenery(): SceneryContextValue {
@@ -375,9 +385,9 @@ function useSceneryPhotosAllowed(): boolean {
  * Reduce Transparency, Boring mode, and a disabled engine keep the opaque plates.
  */
 export function useSceneryChromeActive(): boolean {
-  const context = use(SceneryContext);
+  const chrome = use(SceneryChromeContext);
   const photosAllowed = useSceneryPhotosAllowed();
-  return context !== null && context.enabled && photosAllowed && !context.reduceTransparency;
+  return chrome && photosAllowed;
 }
 
 /**

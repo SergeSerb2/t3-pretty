@@ -29,6 +29,7 @@ import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { ControlPillMenu } from "../../components/ControlPill";
 import { EmptyState } from "../../components/EmptyState";
+import { GlassBackdrop } from "../../components/GlassBackdrop";
 import { RowPressable } from "../../components/RowPressable";
 import { SheetSurface } from "../../components/SheetSurface";
 import { cn } from "../../lib/cn";
@@ -111,6 +112,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
   const glass = useGlassChromeActive();
   const nativeTheme = useUniwindTheme();
   const iconColor = String(nativeTheme["--color-icon"]);
+  const chromeGlassColor = nativeTheme["--color-chrome-glass"];
   const environmentId = EnvironmentId.make(props.route.params.environmentId);
   const number = parseRoutePositiveInt(props.route.params.number);
   const reference = useResolvedPullRequestReference(props.route.params);
@@ -796,11 +798,14 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                 className={cn(
                   "absolute inset-x-0 bottom-0 px-4 pt-3",
                   glass
-                    ? "border-t-[0.5px] border-chrome-glass-border bg-chrome-glass"
+                    ? "overflow-hidden border-t-[0.5px] border-chrome-glass-border"
                     : "border-t border-border bg-sheet",
                 )}
                 style={{ paddingBottom: Math.max(insets.bottom, 12) }}
               >
+                {/* The description scrolls under the bar, so it blurs rather
+                    than showing through a bare tint. */}
+                {glass ? <GlassBackdrop fallbackColor={chromeGlassColor} /> : null}
                 {conflicting ? (
                   <PullRequestPrimaryButton
                     disabled={busy}

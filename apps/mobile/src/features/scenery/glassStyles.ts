@@ -12,8 +12,7 @@ export const GLASS_INPUT_CLASS_NAME =
 /**
  * Shape of a glass card, or of one row when list cells assemble the card and
  * cannot share a GroupedCard parent: only the outer corners round and the
- * hairline edge continues across rows. Inline because cn() would drop
- * `border-continuous` beside a border color.
+ * hairline edge continues across rows.
  */
 export function glassCardStyle(isFirst = true, isLast = true): ViewStyle {
   const top = isFirst ? GLASS_CARD_RADIUS : 0;

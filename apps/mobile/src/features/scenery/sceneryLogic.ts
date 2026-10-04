@@ -138,12 +138,23 @@ export function clampTranslucency(value: number): number {
 }
 
 /**
- * Flat wash over the wallpaper. Dark mode pulls toward black, light mode
- * toward white. Lighter than the mac values (0.62/0.70): phone text sits on
- * frosted cards that carry their own contrast, so the photo can read through.
+ * What sits on the photo: text drawn straight onto it (the thread feed), or
+ * frosted cards that carry their own contrast (iOS glass lists and sheets).
  */
-export function chatWashBase(colorScheme: "light" | "dark"): number {
-  return colorScheme === "dark" ? 0.5 : 0.42;
+export type ScenerySurface = "text" | "cards";
+
+/**
+ * Flat wash over the wallpaper. Dark mode pulls toward black, light mode
+ * toward white — enough to keep text legible over a bright sky. Text keeps
+ * the mac values (0.62/0.70); under frosted cards the wash lifts so the photo
+ * reads through.
+ */
+export function chatWashBase(
+  colorScheme: "light" | "dark",
+  surface: ScenerySurface = "text",
+): number {
+  if (surface === "cards") return colorScheme === "dark" ? 0.5 : 0.42;
+  return colorScheme === "dark" ? 0.62 : 0.7;
 }
 
 /** Edge-tint gradient multipliers for the wallpaper (top / bottom). */
@@ -186,9 +197,13 @@ export interface SceneryLayerStack {
   readonly coverage: number;
 }
 
-export function layerStack(translucency: number, colorScheme: "light" | "dark"): SceneryLayerStack {
+export function layerStack(
+  translucency: number,
+  colorScheme: "light" | "dark",
+  surface: ScenerySurface = "text",
+): SceneryLayerStack {
   const t = clampTranslucency(translucency);
-  const wash = washAlpha(chatWashBase(colorScheme), t);
+  const wash = washAlpha(chatWashBase(colorScheme, surface), t);
   const photo = photoOpacity(t, wash);
   return {
     washAlpha: wash,

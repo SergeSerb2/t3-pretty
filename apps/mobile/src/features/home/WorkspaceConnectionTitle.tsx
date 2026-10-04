@@ -58,6 +58,9 @@ function StatusFadeIn(props: {
   readonly maxWidth?: number;
   /** Centers the status on a slot this wide (phone titles are centered). */
   readonly centeredOnWidth?: number;
+  /** Room from the bar's leading margin to the trailing actions, used when
+      centering would leave less than the slot itself. */
+  readonly leadingRoomWidth?: number;
 }) {
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -88,20 +91,34 @@ function StatusFadeIn(props: {
               right: props.grow === true ? 0 : undefined,
               top: 0,
             }
-          : {
-              alignItems: "center",
-              bottom: 0,
-              flexDirection: "row",
-              justifyContent: "center",
-              // Never narrower than the slot UIKit already fit between the
-              // header actions, never wider than the room either side allows.
-              left:
-                (props.centeredOnWidth - Math.max(props.centeredOnWidth, props.maxWidth ?? 0)) / 2,
-              opacity,
-              position: "absolute",
-              top: 0,
-              width: Math.max(props.centeredOnWidth, props.maxWidth ?? 0),
-            }
+          : (props.maxWidth ?? 0) >= props.centeredOnWidth
+            ? {
+                alignItems: "center",
+                bottom: 0,
+                flexDirection: "row",
+                justifyContent: "center",
+                // As wide as the room either side of the centered title allows.
+                left: (props.centeredOnWidth - (props.maxWidth ?? 0)) / 2,
+                opacity,
+                position: "absolute",
+                top: 0,
+                width: props.maxWidth,
+              }
+            : {
+                alignItems: "center",
+                bottom: 0,
+                flexDirection: "row",
+                // Crowded bars shift the title left, so the status ends where
+                // the slot ends and grows toward the empty leading side.
+                justifyContent: "flex-end",
+                left:
+                  props.centeredOnWidth -
+                  Math.max(props.centeredOnWidth, props.leadingRoomWidth ?? 0),
+                opacity,
+                position: "absolute",
+                top: 0,
+                width: Math.max(props.centeredOnWidth, props.leadingRoomWidth ?? 0),
+              }
       }
     >
       {props.children}
@@ -135,6 +152,8 @@ export function WorkspaceConnectionTitle(props: {
   /** The slot is a centered navigation-bar title: the status centers on the
       brand and uses the short label. */
   readonly centered?: boolean;
+  /** Room from the bar's leading margin to the trailing actions. */
+  readonly leadingRoomWidth?: number;
 }) {
   const status = useDelayedConnectionStatus();
   const size = props.size ?? "navbar";
@@ -170,6 +189,7 @@ export function WorkspaceConnectionTitle(props: {
       {status !== null ? (
         <StatusFadeIn
           centeredOnWidth={props.centered === true ? slotWidth : undefined}
+          leadingRoomWidth={props.leadingRoomWidth}
           grow={props.grow}
           maxWidth={props.maxWidth}
         >
@@ -244,6 +264,7 @@ export function getConnectionAwareBrandHeaderOptions(opts: {
       <WorkspaceConnectionTitle
         brand={<CompactBrandTitle />}
         centered={centered}
+        leadingRoomWidth={Math.max(0, opts.headerWidth - trailingWidth - 24)}
         maxWidth={maxWidth}
         onPress={opts.onOpenEnvironments}
         statusOffset={brandTitleOffset()}

@@ -368,11 +368,9 @@ function FieldInput(props: AppTextInputProps) {
       {...props}
       className={
         glass
-          ? "h-12 min-h-12 rounded-[14px] border-[0.5px] border-chrome-glass-border bg-foreground/5 px-4 py-0 text-base leading-snug"
+          ? "h-12 min-h-12 rounded-[14px] border-continuous border-[0.5px] border-chrome-glass-border bg-foreground/5 px-4 py-0 text-base leading-snug"
           : "h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
       }
-      // Not the border-continuous class: tailwind-merge drops it next to a border color.
-      style={glass ? { borderCurve: "continuous" } : undefined}
     />
   );
 }

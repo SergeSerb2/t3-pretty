@@ -266,7 +266,7 @@ function ThreadUnavailableScreen(props: {
   // The glass empty state needs the photo under it, not a bare screen plate.
   return glass ? (
     <View className="flex-1 bg-screen">
-      <SceneryBackdrop threadKey={null} />
+      <SceneryBackdrop threadKey={null} surface="cards" />
       {content}
     </View>
   ) : (

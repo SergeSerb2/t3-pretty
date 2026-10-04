@@ -199,7 +199,12 @@ function NewTaskDraftFrame(props: {
   );
 }
 
-function NewTaskGlassChip(props: { readonly active: boolean; readonly children: ReactNode }) {
+function NewTaskGlassChip(props: {
+  readonly active: boolean;
+  /** iOS glass: the backdrop paints the tint itself, so no fill class. */
+  readonly frosted: boolean;
+  readonly children: ReactNode;
+}) {
   const theme = useUniwindTheme();
   if (!props.active) {
     return props.children;
@@ -208,10 +213,12 @@ function NewTaskGlassChip(props: { readonly active: boolean; readonly children: 
   return (
     <GlassSurface
       chrome="none"
-      // The backdrop paints this tint itself; a fill class on top would stack
-      // a second translucent layer and read nearly opaque.
-      fallbackColor={theme["--color-chrome-glass"]}
-      fallbackClassName="border-chrome-glass-border"
+      // A fill class on top of the frosted backdrop would stack a second
+      // translucent layer and read nearly opaque.
+      fallbackColor={props.frosted ? theme["--color-chrome-glass"] : undefined}
+      fallbackClassName={
+        props.frosted ? "border-chrome-glass-border" : "bg-chrome-glass border-chrome-glass-border"
+      }
       style={[NEW_TASK_GLASS_CHIP_STYLE, { borderWidth: StyleSheet.hairlineWidth }]}
     >
       {props.children}
@@ -1733,7 +1740,9 @@ export function NewTaskDraftScreen(props: {
       ) : null}
       {flow.canChooseWorkspace ? (
         <View className="pb-1">
-          <NewTaskGlassChip active={glass}>{workspaceControls}</NewTaskGlassChip>
+          <NewTaskGlassChip active={sceneryChrome} frosted={glass}>
+            {workspaceControls}
+          </NewTaskGlassChip>
         </View>
       ) : null}
 

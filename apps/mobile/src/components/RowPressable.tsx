@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from "react";
-import { Pressable } from "react-native";
+import { Platform, Pressable } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
@@ -14,12 +14,14 @@ import { useHoverGesture } from "../lib/useHoverGesture";
 
 // A touch may be the start of a scroll: UIKit waits this long before it
 // highlights a cell, so a flick never flashes the row under the finger.
-const PRESS_HIGHLIGHT_DELAY_MS = 90;
+// Android rows keep their own press treatment.
+const PRESS_HIGHLIGHT_DELAY_MS = Platform.OS === "ios" ? 90 : undefined;
+const TOUCH_HIGHLIGHT = Platform.OS === "ios";
 
 /**
- * Row press target. Pointer hover and touch both raise the interaction fill;
- * a touch lands after a short delay and fades out on release, like a table
- * cell. `pressScale` also sinks standalone cards slightly while held.
+ * Row press target. Pointer hover raises the interaction fill; on iOS a
+ * touch does too, landing after a short delay and fading out on release like
+ * a table cell. `pressScale` also sinks standalone cards slightly while held.
  */
 export function RowPressable({
   children,
@@ -51,12 +53,12 @@ export function RowPressable({
         {...props}
         className={cn("relative overflow-hidden", className)}
         onPressIn={(event) => {
-          pressed.set(withTiming(1, { duration: 80 }));
+          if (TOUCH_HIGHLIGHT) pressed.set(withTiming(1, { duration: 80 }));
           if (pressScale !== undefined) scale.set(withSpring(pressScale, MOTION_PRESS_SPRING));
           onPressIn?.(event);
         }}
         onPressOut={(event) => {
-          pressed.set(withTiming(0, MOTION_RELEASE_TIMING));
+          if (TOUCH_HIGHLIGHT) pressed.set(withTiming(0, MOTION_RELEASE_TIMING));
           if (pressScale !== undefined) scale.set(withSpring(1, MOTION_PRESS_SPRING));
           onPressOut?.(event);
         }}
