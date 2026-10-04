@@ -11,6 +11,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
@@ -559,7 +560,7 @@ describe("ApnsClient", () => {
 
   for (const requestKind of ["live-activity", "push-notification"] as const) {
     for (const stage of ["send", "read-response"] as const) {
-      it.effect(`aborts a stalled ${requestKind} ${stage} after ten seconds`, () =>
+      it.effect(`aborts a stalled ${requestKind} ${stage} at the request deadline`, () =>
         Effect.gen(function* () {
           const started = yield* Deferred.make<void>();
           const signals: AbortSignal[] = [];
@@ -568,7 +569,7 @@ describe("ApnsClient", () => {
             const stall = Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never));
             if (stage === "send") return stall;
             const response = HttpClientResponse.fromWeb(request, new Response("", { status: 200 }));
-            Object.defineProperty(response, "text", { value: stall });
+            Object.defineProperty(response, "stream", { value: Stream.fromEffect(stall) });
             return Effect.succeed(response);
           });
           const layer = ApnsClient.layer.pipe(
@@ -616,18 +617,22 @@ describe("ApnsClient", () => {
                 });
           const fiber = yield* send.pipe(Effect.flip, Effect.forkChild);
           yield* Deferred.await(started);
-          yield* TestClock.adjust("10 seconds");
+          yield* TestClock.adjust(Duration.millis(ApnsClient.APNS_REQUEST_TIMEOUT_MS - 1));
+          expect(signals[0]?.aborted).toBe(false);
+          yield* TestClock.adjust(Duration.millis(1));
           expect(signals[0]?.aborted).toBe(true);
           const error = yield* Fiber.join(fiber);
           expect(error).toMatchObject({
             _tag: "ApnsHttpRequestError",
             requestKind,
             event: requestKind === "live-activity" ? "update" : null,
-            stage,
-            status: stage === "read-response" ? 200 : null,
+            stage: "deadline",
+            status: null,
             tokenSuffix: "sh-token",
-            cause: { _tag: "TimeoutError" },
           });
+          expect(String(error.cause)).toContain(
+            `APNs request exceeded ${ApnsClient.APNS_REQUEST_TIMEOUT_MS}ms.`,
+          );
         }),
       );
     }
