@@ -407,10 +407,11 @@ function EffortMeter(props: {
     },
     [onPreview],
   );
+  // A commit leaves its preview up; the card drops it once the applied level arrives.
   const finish = useCallback(
     (index: number) => {
-      onPreview(null);
       if (index >= 0) onSelect(index);
+      else onPreview(null);
     },
     [onPreview, onSelect],
   );
@@ -460,8 +461,10 @@ function EffortMeter(props: {
     };
   });
 
+  // Levels the meter hides (Ultracode, Ultrathink) sit above its top, so
+  // "less" steps down to the top level and "more" has nowhere to go.
   const handleAccessibilityAction = (event: AccessibilityActionEvent) => {
-    const current = props.shownIndex;
+    const current = props.shownIndex < 0 ? count : props.shownIndex;
     if (event.nativeEvent.actionName === "increment" && current < count - 1) {
       onSelect(current + 1);
     } else if (event.nativeEvent.actionName === "decrement" && current > 0) {
@@ -514,6 +517,13 @@ function ReasoningCard(props: {
 }) {
   const { control, onOptionChange } = props;
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  // Existing threads receive the applied level a render after the commit, so
+  // a scrubbed level stays up until the applied one actually changes.
+  const [appliedIndex, setAppliedIndex] = useState(control.selectedIndex);
+  if (appliedIndex !== control.selectedIndex) {
+    setAppliedIndex(control.selectedIndex);
+    setPreviewIndex(null);
+  }
   const shownIndex = previewIndex ?? control.selectedIndex;
   const shown = control.levels[shownIndex];
   const value = shown?.label ?? control.valueLabel;
@@ -521,6 +531,7 @@ function ReasoningCard(props: {
     (index: number) => {
       const next = control.levels[index];
       if (next && index !== control.selectedIndex) onOptionChange(control.id, next.id);
+      else setPreviewIndex(null);
     },
     [control, onOptionChange],
   );
