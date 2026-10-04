@@ -425,14 +425,17 @@ function EffortMeter(props: {
     const scrub = Gesture.Pan()
       .activeOffsetX([-6, 6])
       .failOffsetY([-12, 12])
+      // Only a measured meter yields a level, so a scrub that lands before
+      // layout never previews "no level" and leaves nothing to clear.
       .onStart((event) => {
         const index = indexAt(event.x);
+        if (index < 0) return;
         scrubIndex.set(index);
         runOnJS(preview)(index);
       })
       .onUpdate((event) => {
         const index = indexAt(event.x);
-        if (index === scrubIndex.get()) return;
+        if (index < 0 || index === scrubIndex.get()) return;
         scrubIndex.set(index);
         runOnJS(preview)(index);
       })
@@ -820,6 +823,10 @@ export function ThreadSettingsControlStack(props: {
           model={props.model}
           onPress={props.onPressModel}
         />
+      ) : props.modelFooter ? (
+        <Animated.View entering={cardEntering(0)} layout={layoutSettle} className="mx-4">
+          <GroupedCard>{props.modelFooter}</GroupedCard>
+        </Animated.View>
       ) : null}
       {layout.reasoning ? (
         <ReasoningCard
