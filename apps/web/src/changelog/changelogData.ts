@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261003.2610003106",
+    date: "2026-10-04",
+    items: [
+      {
+        kind: "new",
+        title: "Rebuild the model picker around reasoning, speed, and access cards",
+      },
+      {
+        kind: "fixed",
+        title: "Frost the iPad sidebar header over the scenery",
+      },
+      {
+        kind: "fixed",
+        title: "Repair upstream sync compatibility (#776) [skip ci]",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock nightly sync test lint",
+      },
+      {
+        kind: "new",
+        title: "Unify iOS on frosted glass over the scenery with fluid motion",
+      },
+      {
+        kind: "new",
+        title: "One-screen model picker with instant-apply options",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261003.2610003100",
     date: "2026-10-04",
     items: [
