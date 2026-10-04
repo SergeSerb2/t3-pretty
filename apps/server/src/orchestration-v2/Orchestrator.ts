@@ -602,7 +602,10 @@ export function shouldPrepareLegacyImportHandoff(input: {
   readonly hasNativeContinuation?: boolean;
 }): boolean {
   return (
-    input.historyOrigin === "v1_import" && !input.hasNativeContinuation && !input.hasCompletedRun && input.legacyImportItemCount > 0
+    input.historyOrigin === "v1_import" &&
+    !input.hasNativeContinuation &&
+    !input.hasCompletedRun &&
+    input.legacyImportItemCount > 0
   );
 }
 
@@ -2212,7 +2215,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const projection = yield* loadProjectionForCommand(command, ["runs"]);
       const currentRun = projection.runs.findLast((run) => run.status === "running");
       if (currentRun?.id !== command.expectedRunId) {
-        return yield* new OrchestratorDispatchError({ commandId: command.commandId, commandType: command.type, cause: "The run changed before its metadata update completed." });
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: "The run changed before its metadata update completed.",
+        });
       }
     }
     if (thread.deletedAt !== null) {
@@ -2481,13 +2488,27 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
     }
     if (command.type === "thread.store") {
-      const projection = yield* loadProjectionForCommand(command, ["runs", "runtimeRequests"], { turnItemTypes: [] });
-      if (thread.archivedAt !== null || projection.runtimeRequests.some((request) => request.status === "pending") || projection.runs.some((run) => run.status === "queued")) {
-        return yield* new OrchestratorDispatchError({ commandId: command.commandId, commandType: command.type, cause: "A thread with pending input or queued work cannot be stored." });
+      const projection = yield* loadProjectionForCommand(command, ["runs", "runtimeRequests"], {
+        turnItemTypes: [],
+      });
+      if (
+        thread.archivedAt !== null ||
+        projection.runtimeRequests.some((request) => request.status === "pending") ||
+        projection.runs.some((run) => run.status === "queued")
+      ) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: "A thread with pending input or queued work cannot be stored.",
+        });
       }
     }
     if (command.type === "thread.scenery.assign" && command.scenery === null) {
-      return yield* new OrchestratorDispatchError({ commandId: command.commandId, commandType: command.type, cause: "A scenery assignment is required." });
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "A scenery assignment is required.",
+      });
     }
     let snoozedUntil: DateTime.Utc | null = null;
     if (command.type === "thread.snooze") {
@@ -2605,7 +2626,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           // silently outranking them — an explicit settle is un-settled and a
           // snooze's return ticket is spent (the thread is on top NOW).
           const alreadyPinned = thread.pinnedAt != null;
-          const promotes = thread.settledOverride === "settled" || thread.snoozedUntil != null || thread.storedAt != null;
+          const promotes =
+            thread.settledOverride === "settled" ||
+            thread.snoozedUntil != null ||
+            thread.storedAt != null;
           return {
             ...thread,
             storedAt: null,
@@ -2657,17 +2681,49 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         case "thread.mark-unread":
           return { ...thread, lastVisitedAt: markUnreadVisitedAt };
         case "thread.store":
-          return { ...thread, storedAt: thread.storedAt ?? now, settledOverride: thread.settledOverride === "settled" ? "active" : thread.settledOverride, settledAt: null, snoozedUntil: null, snoozedAt: null, pinnedAt: null, pinOrderKey: null, updatedAt: thread.storedAt == null ? now : thread.updatedAt };
+          return {
+            ...thread,
+            storedAt: thread.storedAt ?? now,
+            settledOverride:
+              thread.settledOverride === "settled" ? "active" : thread.settledOverride,
+            settledAt: null,
+            snoozedUntil: null,
+            snoozedAt: null,
+            pinnedAt: null,
+            pinOrderKey: null,
+            updatedAt: thread.storedAt == null ? now : thread.updatedAt,
+          };
         case "thread.unstore":
-          return thread.storedAt == null ? thread : { ...thread, storedAt: null, settledOverride: "active", settledAt: null, unsettledAt: now, updatedAt: now };
+          return thread.storedAt == null
+            ? thread
+            : {
+                ...thread,
+                storedAt: null,
+                settledOverride: "active",
+                settledAt: null,
+                unsettledAt: now,
+                updatedAt: now,
+              };
         case "thread.scenery.assign": {
           const scenery = command.scenery;
           if (scenery === null) return thread;
-          if (thread.scenery != null && (thread.scenery.photoSetId ?? null) === (scenery.photoSetId ?? null)) return thread;
-          return { ...thread, scenery: { ...scenery, assignedAt: DateTime.formatIso(now) }, updatedAt: now };
+          if (
+            thread.scenery != null &&
+            (thread.scenery.photoSetId ?? null) === (scenery.photoSetId ?? null)
+          )
+            return thread;
+          return {
+            ...thread,
+            scenery: { ...scenery, assignedAt: DateTime.formatIso(now) },
+            updatedAt: now,
+          };
         }
         case "thread.skills.set":
-          return { ...thread, enabledSkillIds: [...new Set(command.enabledSkillIds)], updatedAt: now };
+          return {
+            ...thread,
+            enabledSkillIds: [...new Set(command.enabledSkillIds)],
+            updatedAt: now,
+          };
         case "thread.subagent-policy.set":
           return { ...thread, subagentPolicy: command.subagentPolicy, updatedAt: now };
         case "thread.metadata.update": {
@@ -2693,11 +2749,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...(command.title === undefined ? {} : { title: command.title }),
             ...(command.liveHeadline === undefined ? {} : { liveHeadline: command.liveHeadline }),
             ...(command.planProgress === undefined ? {} : { planProgress: command.planProgress }),
-            ...(command.storedAt === undefined ? {} : { storedAt: command.storedAt === null ? null : DateTime.makeUnsafe(command.storedAt) }),
+            ...(command.storedAt === undefined
+              ? {}
+              : {
+                  storedAt:
+                    command.storedAt === null ? null : DateTime.makeUnsafe(command.storedAt),
+                }),
             ...(command.scenery === undefined ? {} : { scenery: command.scenery }),
-            ...(command.enabledSkillIds === undefined ? {} : { enabledSkillIds: [...new Set(command.enabledSkillIds)] }),
-            ...(command.subagentPolicy === undefined ? {} : { subagentPolicy: command.subagentPolicy }),
-            ...(command.automationRun === undefined ? {} : { automationRun: command.automationRun }),
+            ...(command.enabledSkillIds === undefined
+              ? {}
+              : { enabledSkillIds: [...new Set(command.enabledSkillIds)] }),
+            ...(command.subagentPolicy === undefined
+              ? {}
+              : { subagentPolicy: command.subagentPolicy }),
+            ...(command.automationRun === undefined
+              ? {}
+              : { automationRun: command.automationRun }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
             ...(command.limitRecovery !== undefined &&
             limitRecovery?.snooze === true &&
@@ -3694,17 +3761,25 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
 
       if (steeringPolicy === "active_steering") {
+        // The steer's selection becomes the saved next-turn choice, even when it
+        // matches the running run again. A delegated completion carries the
+        // run's selection, not a user choice, so it never replaces the saved one.
+        // The saved choice may name another instance, so it moves with the steer.
+        const instanceChanged =
+          input.projection.thread.providerInstanceId !== input.modelSelection.instanceId;
         if (
-          selectionChanged &&
-          !modelSelectionsEqual(input.projection.thread.modelSelection, input.modelSelection)
+          input.delegatedCompletion === undefined &&
+          (instanceChanged ||
+            !modelSelectionsEqual(input.projection.thread.modelSelection, input.modelSelection))
         ) {
           yield* emitEvent({
-            type: "thread.model-selection-updated",
+            type: instanceChanged ? "thread.provider-switched" : "thread.model-selection-updated",
             threadId: input.command.threadId,
             providerInstanceId: input.modelSelection.instanceId,
             occurredAt: now,
             payload: {
               ...input.projection.thread,
+              providerInstanceId: input.modelSelection.instanceId,
               modelSelection: input.modelSelection,
               updatedAt: now,
             },

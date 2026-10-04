@@ -417,8 +417,9 @@ describe("EnvironmentThreads", () => {
     );
   }
 
-  for (const source of ["disk", "HTTP"] as const) {
-    it.effect(`does not rewrite an unchanged ${source} snapshot on navigation or warm return`, () =>
+  it.effect.each(["disk", "HTTP"] as const)(
+    "does not rewrite an unchanged %s snapshot on navigation or warm return",
+    (source) =>
       Effect.gen(function* () {
         const resumeCache: NonNullable<Parameters<typeof makeEnvironmentThreadState>[1]> = {
           snapshot: undefined,
@@ -452,8 +453,7 @@ describe("EnvironmentThreads", () => {
         );
         expect(yield* Ref.get(nextSaved)).toEqual([]);
       }),
-    );
-  }
+  );
 
   it.effect("persists a complete bounded HTTP window only once", () =>
     Effect.gen(function* () {
@@ -1114,8 +1114,9 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
-  for (const cacheKind of ["disk", "retained"] as const) {
-    it.effect(`retains paging support through a complete bounded ${cacheKind} cache`, () =>
+  it.effect.each(["disk", "retained"] as const)(
+    "retains paging support through a complete bounded %s cache",
+    (cacheKind) =>
       Effect.gen(function* () {
         const resumeCache: NonNullable<Parameters<typeof makeEnvironmentThreadState>[1]> = {
           snapshot: undefined,
@@ -1173,11 +1174,11 @@ describe("EnvironmentThreads", () => {
         expect(yield* Ref.get(warm.lastSubscribeAfterSequence)).toBe(5);
         expect(yield* Ref.get(warm.lastAcceptBoundedSnapshot)).toBe(true);
       }),
-    );
-  }
+  );
 
-  for (const historyPaging of ["no-http", "no-controller"] as const) {
-    it.effect(`does not negotiate bounded fallbacks with ${historyPaging}`, () =>
+  it.effect.each(["no-http", "no-controller"] as const)(
+    "does not negotiate bounded fallbacks with %s",
+    (historyPaging) =>
       Effect.gen(function* () {
         for (const source of ["cache", "http"] as const) {
           const history = {
@@ -1207,8 +1208,7 @@ describe("EnvironmentThreads", () => {
           expect(yield* Ref.get(harness.lastAcceptBoundedSnapshot)).toBeUndefined();
         }
       }),
-    );
-  }
+  );
 
   it.effect("socket snapshot clears progressive history meta left from a bounded window", () =>
     Effect.gen(function* () {

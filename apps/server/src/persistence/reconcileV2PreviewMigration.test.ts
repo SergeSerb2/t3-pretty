@@ -14,25 +14,40 @@ describe("T3 Pretty migration history", () => {
       yield* runMigrations({ toMigrationInclusive: 66 });
       const retained = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
       yield* runMigrations();
-      assert.deepStrictEqual(yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 66 ORDER BY migration_id`, retained);
-      const history = yield* sql<{ migration_id: number; name: string }>`SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id`;
-      assert.deepStrictEqual(history.map(row => [row.migration_id, row.name] as const), migrationManifest);
+      assert.deepStrictEqual(
+        yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 66 ORDER BY migration_id`,
+        retained,
+      );
+      const history = yield* sql<{
+        migration_id: number;
+        name: string;
+      }>`SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id`;
+      assert.deepStrictEqual(
+        history.map((row) => [row.migration_id, row.name] as const),
+        migrationManifest,
+      );
       assert.deepStrictEqual(yield* runMigrations(), []);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
-  for (const previewId of [53, 54]) {
-    it.effect(`rejects conflicting upstream preview ${previewId} without modifying its ledger or import progress`, () =>
+
+  it.effect.each([53, 54])(
+    "rejects conflicting upstream preview %s without modifying its ledger or import progress",
+    (previewId) =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         yield* runMigrations({ toMigrationInclusive: 52 });
-        yield* Migrator.make({})({ loader: Migrator.fromRecord({ [`${previewId}_OrchestrationV2`]: OrchestrationV2 }) });
+        yield* Migrator.make({})({
+          loader: Migrator.fromRecord({ [`${previewId}_OrchestrationV2`]: OrchestrationV2 }),
+        });
         yield* sql`INSERT INTO orchestration_v2_legacy_imports (thread_id, source_updated_at, shell_imported_at, transcript_imported_at, imported_message_count) VALUES ('preview-thread', '2026-09-15', '2026-09-15', '2026-09-16', 42)`;
         const history = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
         const progress = yield* sql`SELECT * FROM orchestration_v2_legacy_imports`;
         assert.ok(Exit.isFailure(yield* Effect.exit(runMigrations())));
-        assert.deepStrictEqual(yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`, history);
+        assert.deepStrictEqual(
+          yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`,
+          history,
+        );
         assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, progress);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
-    );
-  }
+  );
 });

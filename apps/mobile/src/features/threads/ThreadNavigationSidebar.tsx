@@ -24,7 +24,7 @@ import { AppText as Text } from "../../components/AppText";
 import { CompactBrandTitle } from "../../components/CompactBrandTitle";
 import { ControlPillMenu } from "../../components/ControlPill";
 import { SymbolView } from "../../components/AppSymbol";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import { TRANSPARENT_NATIVE_HEADERS } from "../../native/native-glass";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useProjects, useNavigationThreadShells } from "../../state/entities";
@@ -991,10 +991,8 @@ function ThreadNavigationSidebarPane(
                 itemsAreEqual={sidebarItemsAreEqual}
                 keyExtractor={(item) => item.key}
                 renderItem={renderListItem}
-                automaticallyAdjustsScrollIndicatorInsets={NATIVE_LIQUID_GLASS_SUPPORTED}
-                contentInsetAdjustmentBehavior={
-                  NATIVE_LIQUID_GLASS_SUPPORTED ? "automatic" : "never"
-                }
+                automaticallyAdjustsScrollIndicatorInsets={TRANSPARENT_NATIVE_HEADERS}
+                contentInsetAdjustmentBehavior={TRANSPARENT_NATIVE_HEADERS ? "automatic" : "never"}
                 contentContainerStyle={[
                   styles.threadListContent,
                   Platform.OS === "android" ? { paddingHorizontal: 0 } : null,
