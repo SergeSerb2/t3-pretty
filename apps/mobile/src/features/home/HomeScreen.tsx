@@ -28,7 +28,12 @@ import {
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
-import { useGlassChromeActive, useSceneryChromeActive } from "../scenery/SceneryProvider";
+import {
+  useDailySceneryPhoto,
+  useGlassChromeActive,
+  useScenery,
+  useSceneryChromeActive,
+} from "../scenery/SceneryProvider";
 
 import { cn } from "../../lib/cn";
 import { layoutSettle } from "../../lib/motion";
@@ -70,6 +75,9 @@ import {
 import { useThreadListV2ShelfPreferences } from "../threads/use-thread-list-v2-shelf-preferences";
 import { ThreadListGlassContext } from "../threads/thread-list-glass-context";
 import { ANDROID_HOME_FAB_EDGE_GAP } from "./AndroidHomeFab";
+import { HomeGlance } from "./HomeGlance";
+import { resolveHomeCardSceneryThumb } from "./home-card-scenery";
+import { summarizeHomeGlance } from "./home-glance";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeProjectScopes,
@@ -649,6 +657,20 @@ export function HomeScreen(props: HomeScreenProps) {
       ),
     [props.pendingTasks, props.selectedEnvironmentId, v2ScopedProjectKeys, v2SearchQuery],
   );
+  // Only Home reads the full scenery value; rows get their photo on the item.
+  const { assignments: sceneryAssignments, photoSetId, photoForThreadKey } = useScenery();
+  const resolveSceneryThumb = useMemo(
+    () =>
+      glassRows
+        ? (thread: EnvironmentThreadShell) =>
+            resolveHomeCardSceneryThumb(thread, {
+              assignments: sceneryAssignments,
+              photoForThreadKey,
+              photoSetId,
+            })
+        : undefined,
+    [glassRows, photoForThreadKey, photoSetId, sceneryAssignments],
+  );
   const threadListV2Items = useMemo(
     () =>
       buildThreadListV2ListItems({
@@ -668,9 +690,11 @@ export function HomeScreen(props: HomeScreenProps) {
         queuedThreadKeys,
         moveAvailability: threadMoveAvailability,
         shelfPreferencesLoading: !shelfPreferencesLoaded,
+        resolveSceneryThumb,
       }),
     [
       nowMinute,
+      resolveSceneryThumb,
       queuedThreadKeys,
       threadMoveAvailability,
       settledShelfExpanded,
@@ -681,6 +705,16 @@ export function HomeScreen(props: HomeScreenProps) {
       threadListV2Layout,
       v2PendingTasks,
     ],
+  );
+
+  const dailyPhoto = useDailySceneryPhoto();
+  const glanceDate = useMemo(() => new Date(`${nowMinute}:00.000Z`), [nowMinute]);
+  const glanceSummary = useMemo(
+    () =>
+      summarizeHomeGlance(
+        threadListV2Layout.items.flatMap((item) => (item.variant === "card" ? [item.thread] : [])),
+      ),
+    [threadListV2Layout],
   );
 
   useThreadJumpShortcuts(threadListV2Items, props.onSelectThread);
@@ -759,6 +793,7 @@ export function HomeScreen(props: HomeScreenProps) {
           timeLabel={item.timeLabel}
           showTrailingDivider={item.showTrailingDivider}
           continuesGroup={item.continuesGroup}
+          sceneryThumbURL={item.sceneryThumbURL}
           project={
             projectByKey.get(scopedProjectKey(thread.environmentId, thread.projectId)) ?? null
           }
@@ -967,8 +1002,14 @@ export function HomeScreen(props: HomeScreenProps) {
   const listHeader = Platform.OS === "ios" ? undefined : <HomeTopContentSpacer />;
 
   // Project scoping lives in the header filter menu (no inline chip row on
-  // mobile — the menu is the one filter surface).
-  const v2ListHeader = listHeader;
+  // mobile — the menu is the one filter surface). Glass Home opens on the
+  // glance; search results start at the top instead.
+  const v2ListHeader =
+    glassRows && !hasSearchQuery && threadListV2Items.length > 0 ? (
+      <HomeGlance date={glanceDate} photo={dailyPhoto} summary={glanceSummary} />
+    ) : (
+      listHeader
+    );
 
   // Use the v2 project scope for its empty state. Snoozed threads need no
   // special empty state: their shelf header is a list row even while collapsed.
