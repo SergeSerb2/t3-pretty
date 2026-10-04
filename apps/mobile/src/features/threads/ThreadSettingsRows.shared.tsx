@@ -5,7 +5,8 @@ import { SymbolView } from "../../components/AppSymbol";
 import { cn } from "../../lib/cn";
 import type { ModelOption } from "../../lib/modelOptions";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
-import { GLASS_CARD_CLASS_NAME, GlassRowPressable, glassCardStyle } from "../scenery/GroupedCard";
+import { GlassRowPressable } from "../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
 
 export type ModelRowProps = {
   readonly option: ModelOption;

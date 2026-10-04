@@ -34,7 +34,8 @@ import { skillsEnvironment } from "../../state/skills";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
-import { GLASS_CARD_CLASS_NAME, GlassRowPressable, glassCardStyle } from "../scenery/GroupedCard";
+import { GlassRowPressable } from "../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
 
 const MANAGEMENT_ACTIONS: ReadonlyArray<MenuAction> = [
   { id: "uninstall", title: "Uninstall…", attributes: { destructive: true } },

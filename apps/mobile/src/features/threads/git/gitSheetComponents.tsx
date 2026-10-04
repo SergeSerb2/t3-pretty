@@ -4,11 +4,8 @@ import { Platform, Pressable, View } from "react-native";
 import { AppText as Text } from "../../../components/AppText";
 import { MaterialButton } from "../../../components/MaterialButton";
 import { cn } from "../../../lib/cn";
-import {
-  GLASS_CARD_CLASS_NAME,
-  GlassRowPressable,
-  glassCardStyle,
-} from "../../scenery/GroupedCard";
+import { GlassRowPressable } from "../../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../../scenery/glassStyles";
 import { useGlassChromeActive } from "../../scenery/SceneryProvider";
 
 /* ─── Shared sheet components ──────────────────────────────────────── */

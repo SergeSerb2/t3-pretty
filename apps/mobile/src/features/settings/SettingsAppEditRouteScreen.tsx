@@ -33,7 +33,7 @@ import {
   uniqueAppSlug,
 } from "./apps/appsSettings.logic";
 import { SheetSurface } from "../../components/SheetSurface";
-import { GLASS_INPUT_CLASS_NAME } from "../scenery/GroupedCard";
+import { GLASS_INPUT_CLASS_NAME } from "../scenery/glassStyles";
 
 type SettingsAppEditParams = {
   readonly environmentId: string;

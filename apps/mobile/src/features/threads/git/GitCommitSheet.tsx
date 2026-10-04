@@ -22,7 +22,7 @@ import {
   GLASS_CARD_CLASS_NAME,
   GLASS_INPUT_CLASS_NAME,
   glassCardStyle,
-} from "../../scenery/GroupedCard";
+} from "../../scenery/glassStyles";
 
 type GitCommitSheetProps = StaticScreenProps<{
   readonly environmentId: string;

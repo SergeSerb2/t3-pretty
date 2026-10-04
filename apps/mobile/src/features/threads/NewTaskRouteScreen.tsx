@@ -34,8 +34,8 @@ import { filterProjectScopes, getProjectScopeSelectionTarget } from "./new-task-
 import { RowPressable } from "../../components/RowPressable";
 import { SheetSurface } from "../../components/SheetSurface";
 import { GroupedCard } from "../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
-import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/GroupedCard";
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];

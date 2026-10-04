@@ -20,12 +20,12 @@ import { useSelectedThreadWorktree } from "../../../state/use-selected-thread-wo
 import { vcsEnvironment } from "../../../state/vcs";
 import { useGlassChromeActive } from "../../scenery/SceneryProvider";
 import { SheetActionButton } from "./gitSheetComponents";
+import { GlassRowPressable } from "../../scenery/GroupedCard";
 import {
   GLASS_CARD_CLASS_NAME,
   GLASS_INPUT_CLASS_NAME,
-  GlassRowPressable,
   glassCardStyle,
-} from "../../scenery/GroupedCard";
+} from "../../scenery/glassStyles";
 
 type GitBranchesSheetProps = StaticScreenProps<{
   readonly environmentId: string;

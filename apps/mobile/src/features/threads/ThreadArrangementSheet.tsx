@@ -30,7 +30,7 @@ import {
 } from "./threadOrder";
 import { getThreadListV2OrderedSection } from "./threadListV2";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
-import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
 
 const ROW_HEIGHT = 56;
 const HEADER_HEIGHT = 48;

@@ -83,7 +83,8 @@ import {
   NATIVE_LIQUID_GLASS_SUPPORTED,
   TRANSPARENT_NATIVE_HEADERS,
 } from "../../native/native-glass";
-import { GroupedCard } from "../scenery/GroupedCard";
+import { GlassRowPressable, GroupedCard } from "../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { ChatGptSharingStatus } from "./ChatGptSharingStatus";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
@@ -126,7 +127,6 @@ import {
   visibleSheetOptionDescriptors,
   type ThreadSettingsSheetPage,
 } from "./thread-settings-sheet-state";
-import { GLASS_CARD_CLASS_NAME, GlassRowPressable, glassCardStyle } from "../scenery/GroupedCard";
 
 export type { ThreadSettingsSheetPage };
 

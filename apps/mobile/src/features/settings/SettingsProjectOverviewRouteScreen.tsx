@@ -18,7 +18,7 @@ import {
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
-import { GLASS_INPUT_CLASS_NAME } from "../scenery/GroupedCard";
+import { GLASS_INPUT_CLASS_NAME } from "../scenery/glassStyles";
 
 export function SettingsProjectOverviewRouteScreen() {
   const insets = useSafeAreaInsets();

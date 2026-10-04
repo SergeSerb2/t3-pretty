@@ -49,7 +49,7 @@ import { resolveGitOverviewReviewNavigationAction } from "./git-overview-navigat
 import { MetaCard, SheetListRow, menuItemIconName, statusSummary } from "./gitSheetComponents";
 import { useThreadInspectorVisibility } from "../thread-inspector-content-stack";
 import { useGlassChromeActive } from "../../scenery/SceneryProvider";
-import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../../scenery/glassStyles";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 

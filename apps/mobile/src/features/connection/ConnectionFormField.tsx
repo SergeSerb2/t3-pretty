@@ -2,7 +2,7 @@ import { View } from "react-native";
 
 import { AppText, AppTextInput, type AppTextInputProps } from "../../components/AppText";
 import { cn } from "../../lib/cn";
-import { GLASS_INPUT_CLASS_NAME } from "../scenery/GroupedCard";
+import { GLASS_INPUT_CLASS_NAME } from "../scenery/glassStyles";
 
 type ConnectionFormFieldProps = Omit<AppTextInputProps, "accessibilityLabel" | "className"> & {
   readonly label: string;

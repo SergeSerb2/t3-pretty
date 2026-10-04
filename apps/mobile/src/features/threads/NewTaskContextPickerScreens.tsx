@@ -45,7 +45,8 @@ import {
 import { branchBadgeLabel, useNewTaskFlow } from "./new-task-flow-provider";
 import { checkoutNewTaskBranch } from "./checkout-new-task-branch";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
-import { GLASS_CARD_CLASS_NAME, GlassRowPressable, glassCardStyle } from "../scenery/GroupedCard";
+import { GlassRowPressable } from "../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
 
 function SelectionRow(props: {
   readonly icon?: "arrow.triangle.branch" | ReactNode;
