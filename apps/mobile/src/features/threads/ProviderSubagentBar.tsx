@@ -8,6 +8,7 @@ import { View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
+import { ComposerStackCard } from "./composer-stack-card";
 import { RequestActionButton } from "./RequestActionButton";
 
 /**
@@ -37,7 +38,10 @@ export function ProviderSubagentBar(props: {
     props.effortLabel === null ? props.modelLabel : `${props.modelLabel}, ${props.effortLabel}`;
 
   return (
-    <View className="flex-row items-center gap-3 rounded-[20px] border border-border-subtle bg-card-alt py-2 pe-2 ps-4">
+    <ComposerStackCard
+      className="flex-row items-center gap-3 rounded-[20px] border border-border-subtle bg-card-alt py-2 pe-2 ps-4"
+      glassClassName="flex-row items-center gap-3 py-2 pe-2 ps-4"
+    >
       {/* Only the text is one element, so "Open parent" stays reachable. */}
       <View
         accessible
@@ -75,6 +79,6 @@ export function ProviderSubagentBar(props: {
       {props.onOpenParent ? (
         <RequestActionButton label="Open parent" tone="secondary" onPress={props.onOpenParent} />
       ) : null}
-    </View>
+    </ComposerStackCard>
   );
 }

@@ -5,8 +5,10 @@ import * as DateTime from "effect/DateTime";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/AppText";
+import { enterFadeDown, exitFade } from "../../lib/motion";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { ComposerStackCard } from "./composer-stack-card";
 
 export function UsageLimitRecoveryCard({
   thread,
@@ -67,7 +69,12 @@ export function UsageLimitRecoveryCard({
     }
   }
   return (
-    <View className="mx-3 mb-2 gap-2 rounded-xl border border-warning-foreground/25 bg-background p-3">
+    <ComposerStackCard
+      entering={enterFadeDown}
+      exiting={exitFade}
+      className="mx-3 mb-2 gap-2 rounded-xl border border-warning-foreground/25 bg-background p-3"
+      glassClassName="mx-3 mb-2 gap-2 p-3"
+    >
       <Text className="text-sm text-warning-foreground">
         {resetAt
           ? `Usage limit resets ${DateTime.toDateUtc(DateTime.makeUnsafe(resetAt)).toLocaleString()}.`
@@ -102,6 +109,6 @@ export function UsageLimitRecoveryCard({
           {error}
         </Text>
       ) : null}
-    </View>
+    </ComposerStackCard>
   );
 }

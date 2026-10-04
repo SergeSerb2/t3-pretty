@@ -6,6 +6,7 @@ import Animated, {
   ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withRepeat,
   withSequence,
   withTiming,
@@ -54,23 +55,34 @@ function statusDotTone(
   }
 }
 
+// A few pulses announce the state; a loop would repaint for as long as it lasts.
+const PULSE_MS = 1100;
+const PULSE_COUNT = 3;
+
 function usePulseAnimation(pulse: boolean) {
   const pulseProgress = useSharedValue(0);
   const pulseActive = useSharedValue(pulse ? 1 : 0);
 
   useEffect(() => {
     if (pulse) {
-      pulseActive.value = withTiming(1, {
-        duration: 180,
-        easing: Easing.out(Easing.quad),
-      });
+      pulseActive.value = withSequence(
+        withTiming(1, {
+          duration: 180,
+          easing: Easing.out(Easing.quad),
+        }),
+        // Fade the halo out as the last pulse ends instead of parking it.
+        withDelay(
+          PULSE_MS * PULSE_COUNT - 360,
+          withTiming(0, { duration: 180, easing: Easing.out(Easing.quad) }),
+        ),
+      );
       pulseProgress.value = withRepeat(
         withTiming(1, {
-          duration: 1100,
+          duration: PULSE_MS,
           easing: Easing.out(Easing.cubic),
           reduceMotion: ReduceMotion.System,
         }),
-        -1,
+        PULSE_COUNT,
         false,
       );
       return () => {

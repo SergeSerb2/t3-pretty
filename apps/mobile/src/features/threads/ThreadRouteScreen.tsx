@@ -63,6 +63,7 @@ import {
 } from "../terminal/terminalLaunchContext";
 import { terminalDebugLog } from "../terminal/terminalDebugLog";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -216,7 +217,15 @@ function firstRouteParam(value: string | string[] | undefined): string | null {
 }
 
 function OpeningThreadLoadingScreen() {
-  return <LoadingScreen message="Opening thread…" messagePlacement="above-spinner" />;
+  // Keeps a photo on screen between Home's scenery and the thread's.
+  const glass = useGlassChromeActive();
+  return (
+    <LoadingScreen
+      message="Opening thread…"
+      messagePlacement="above-spinner"
+      backdrop={glass ? <SceneryBackdrop threadKey={null} /> : null}
+    />
+  );
 }
 
 type ThreadRouteScreenRouteProps = StaticScreenProps<{
@@ -234,7 +243,8 @@ function ThreadUnavailableScreen(props: {
   readonly actionLabel: string;
   readonly onAction: () => void;
 }) {
-  return (
+  const glass = useGlassChromeActive();
+  const content = (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{
@@ -243,7 +253,7 @@ function ThreadUnavailableScreen(props: {
         paddingHorizontal: 24,
         paddingVertical: 32,
       }}
-      className="bg-screen flex-1"
+      className={glass ? "flex-1" : "bg-screen flex-1"}
     >
       <EmptyState
         title="Thread unavailable"
@@ -252,6 +262,15 @@ function ThreadUnavailableScreen(props: {
         onAction={props.onAction}
       />
     </ScrollView>
+  );
+  // The glass empty state needs the photo under it, not a bare screen plate.
+  return glass ? (
+    <View className="flex-1 bg-screen">
+      <SceneryBackdrop threadKey={null} />
+      {content}
+    </View>
+  ) : (
+    content
   );
 }
 

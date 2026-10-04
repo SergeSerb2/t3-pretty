@@ -1,5 +1,6 @@
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useAtomValue } from "@effect/atom-react";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
@@ -90,7 +91,10 @@ import {
 } from "../../lib/modelOptions";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import type { RemoteClientConnectionState } from "../../lib/connection";
-import { applyProviderOptionSelection, resolveProviderOptionDescriptors } from "../../lib/providerOptions";
+import {
+  applyProviderOptionSelection,
+  resolveProviderOptionDescriptors,
+} from "../../lib/providerOptions";
 import { ControlPillMenu } from "../../components/ControlPill";
 import type { ActiveTurnComposerAction } from "@t3tools/client-runtime/state/composer-dispatch";
 import type { FollowUpBehavior } from "../../lib/followUpBehavior";
@@ -315,6 +319,9 @@ export function ComposerSurface(props: {
   readonly animateLayout?: boolean;
 }) {
   const colors = useUniwindTheme();
+  // Over scenery the blur carries a light frost instead of a near-opaque
+  // plate, so the composer reads as glass like the cards around it.
+  const glass = useGlassChromeActive();
   const targetBorderRadius =
     typeof props.style.borderRadius === "number" ? props.style.borderRadius : 0;
   const animatedBorderRadius = useSharedValue(targetBorderRadius);
@@ -349,7 +356,7 @@ export function ComposerSurface(props: {
     >
       <AnimatedGlassSurface
         chrome="none"
-        fallbackColor={colors["--color-composer-surface"]}
+        fallbackColor={colors[glass ? "--color-chrome-glass" : "--color-composer-surface"]}
         fallbackClassName="border border-composer-border"
         glassEffectStyle="regular"
         // The composer is a passive material containing interactive controls.
@@ -376,6 +383,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const project = useProject(scopeProjectRef(props.environmentId, props.selectedThread.projectId));
   const { themeVariables: materialTheme } = useAppearancePreferences();
   const composerPanel = materialTheme["--color-composer-panel"];
+  const glass = useGlassChromeActive();
   const navigation = useNavigation();
   const foregroundColor = useUniwindTheme()["--color-foreground"];
   const bodyText = useScaledTextRole("body");
@@ -794,15 +802,18 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     >
       {/* The backdrop gradient lives on a plain View: Reanimated's Animated.View
           silently drops experimental_backgroundImage on Android, which left this
-          strip fully transparent and the feed text legible through the composer. */}
-      <View
-        className={
-          Platform.OS === "android"
-            ? "hidden"
-            : "absolute inset-0 bg-linear-to-b from-screen/0 via-screen/60 to-screen/90"
-        }
-        pointerEvents="none"
-      />
+          strip fully transparent and the feed text legible through the composer.
+          Over scenery a screen-colored wash would band the photo, so it is skipped. */}
+      {glass ? null : (
+        <View
+          className={
+            Platform.OS === "android"
+              ? "hidden"
+              : "absolute inset-0 bg-linear-to-b from-screen/0 via-screen/60 to-screen/90"
+          }
+          pointerEvents="none"
+        />
+      )}
       <Animated.View
         className="relative w-full self-center"
         style={{ maxWidth: props.contentMaxWidth }}
