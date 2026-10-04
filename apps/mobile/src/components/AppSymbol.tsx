@@ -73,6 +73,7 @@ import IconKey from "@tabler/icons-react-native/IconKey";
 import IconKeyboard from "@tabler/icons-react-native/IconKeyboard";
 import IconKeyboardHide from "@tabler/icons-react-native/IconKeyboardHide";
 import IconLock from "@tabler/icons-react-native/IconLock";
+import IconLockOpen from "@tabler/icons-react-native/IconLockOpen";
 import IconLayoutColumns from "@tabler/icons-react-native/IconLayoutColumns";
 import IconLayoutSidebar from "@tabler/icons-react-native/IconLayoutSidebar";
 import IconLayoutSidebarRight from "@tabler/icons-react-native/IconLayoutSidebarRight";
@@ -99,6 +100,7 @@ import IconRefresh from "@tabler/icons-react-native/IconRefresh";
 import IconSearch from "@tabler/icons-react-native/IconSearch";
 import IconServer from "@tabler/icons-react-native/IconServer";
 import IconSettings from "@tabler/icons-react-native/IconSettings";
+import IconShieldCheck from "@tabler/icons-react-native/IconShieldCheck";
 import IconSparkles from "@tabler/icons-react-native/IconSparkles";
 import IconStack2 from "@tabler/icons-react-native/IconStack2";
 import IconStar from "@tabler/icons-react-native/IconStar";
@@ -153,6 +155,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "chart.bar.xaxis": IconChartBar,
   checkmark: IconCheck,
   "checkmark.circle": IconCircleCheck,
+  "checkmark.shield": IconShieldCheck,
   circle: IconCircle,
   "circle.fill": IconCircleFilled,
   "circle.lefthalf.filled": IconCircleHalf2,
@@ -189,6 +192,8 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   keyboard: IconKeyboard,
   laptopcomputer: IconDeviceLaptop,
   link: IconLink,
+  lock: IconLock,
+  "lock.open": IconLockOpen,
   "list.number": IconListNumbers,
   "line.3.horizontal": IconMenu2,
   "line.3.horizontal.decrease": IconFilter,
@@ -221,6 +226,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "sidebar.left": IconLayoutSidebar,
   "sidebar.right": IconLayoutSidebarRight,
   "slider.horizontal.3": IconAdjustmentsHorizontal,
+  sparkles: IconSparkles,
   "square.and.pencil": IconEdit,
   "square.on.square": IconCopy,
   "square.grid.2x2": IconApps,

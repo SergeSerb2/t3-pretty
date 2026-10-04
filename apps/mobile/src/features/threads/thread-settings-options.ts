@@ -43,6 +43,8 @@ export const RUNTIME_MODE_CHOICES: ReadonlyArray<{
   },
 ];
 
+export type RuntimeModeChoice = (typeof RUNTIME_MODE_CHOICES)[number];
+
 export function runtimeModeChoicesForSupportedModes(
   supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
 ) {
