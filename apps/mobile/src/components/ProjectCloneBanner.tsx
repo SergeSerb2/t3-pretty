@@ -51,7 +51,10 @@ export function ProjectCloneBanner(props: {
       className={cn(
         "rounded-2xl border px-3.5 py-3",
         cancelled ? "border-warning-border bg-warning" : "border-danger-border bg-danger",
+        // Keeps its warning/danger tint, in the running card's glass shape.
+        props.glass && "rounded-[20px]",
       )}
+      style={props.glass ? { borderCurve: "continuous" } : undefined}
     >
       <Text
         className={cn(

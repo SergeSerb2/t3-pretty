@@ -211,7 +211,7 @@ export function HomeRouteScreen() {
             shallow-merged. The brand slot also doubles as the connection
             status surface while an environment reconnects. */}
         <NativeStackScreenOptions
-          optionsVersion={[windowWidth, automationsSupported]}
+          optionsVersion={`${windowWidth}:${automationsSupported}`}
           options={{
             ...getConnectionAwareBrandHeaderOptions({
               headerWidth: windowWidth,

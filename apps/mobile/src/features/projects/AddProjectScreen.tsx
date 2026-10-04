@@ -241,9 +241,13 @@ function FolderListCell(props: {
     <View
       className={cn(
         "overflow-hidden",
-        glass && "border-chrome-glass-border bg-chrome-glass",
-        !glass && props.first && "rounded-t-[24px]",
-        !glass && props.last && "rounded-b-[24px]",
+        glass ? "border-chrome-glass-border bg-chrome-glass" : "bg-grouped-card",
+        !glass &&
+          props.first &&
+          (Platform.OS === "android" ? "rounded-t-[28px]" : "rounded-t-[24px]"),
+        !glass &&
+          props.last &&
+          (Platform.OS === "android" ? "rounded-b-[28px]" : "rounded-b-[24px]"),
         props.className,
       )}
       style={
