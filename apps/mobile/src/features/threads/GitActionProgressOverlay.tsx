@@ -13,6 +13,7 @@ import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import type { GitActionProgress } from "../../state/use-vcs-action-state";
+import { ComposerStackCard } from "./composer-stack-card";
 
 const OVERLAY_LAYOUT_TRANSITION = LinearTransition.duration(220);
 const OVERLAY_TOP_GAP = 8;
@@ -158,13 +159,15 @@ function OverlayContent(props: { readonly progress: GitActionProgress }) {
   const bgClass =
     progress.phase === "error" ? "border-danger-border bg-danger" : "bg-card border-border";
 
+  // Over scenery every phase wears the frosted card; the icon carries the error.
   return (
-    <Animated.View
+    <ComposerStackCard
       layout={OVERLAY_LAYOUT_TRANSITION}
       className={`flex-row items-center gap-2.5 rounded-[26px] border border-continuous px-3.5 py-3 shadow-lg shadow-black/10 ${bgClass}`}
+      glassClassName="flex-row items-center gap-2.5 px-3.5 py-3"
     >
       {content}
-    </Animated.View>
+    </ComposerStackCard>
   );
 }
 

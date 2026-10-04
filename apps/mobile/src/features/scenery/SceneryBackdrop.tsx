@@ -25,6 +25,7 @@ import {
   gradientPair,
   layerStack,
   rgbaColor,
+  type ScenerySurface,
   wallpaperPixelWidth,
   wallpaperURL,
   type SceneryPhoto,
@@ -73,6 +74,8 @@ export function SceneryBackdrop(props: {
   /** Thread key ("<environmentId>:<threadId>"), or null for the home screen's
    *  photo-of-the-day rotation. */
   readonly threadKey: string | null;
+  /** Frosted cards carry the text contrast, so the wash can lift. */
+  readonly surface?: ScenerySurface;
 }) {
   const {
     enabled,
@@ -108,7 +111,7 @@ export function SceneryBackdrop(props: {
     return null;
   }
 
-  const stack = layerStack(translucency, colorScheme);
+  const stack = layerStack(translucency, colorScheme, props.surface);
   const washColor = colorScheme === "dark" ? "#000000" : "#ffffff";
   // The gradient seeds off the photo id when one exists so the fallback wash
   // always matches the photo it stands in for.

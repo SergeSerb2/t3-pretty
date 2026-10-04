@@ -1,9 +1,12 @@
 import type { RuntimeRequestId, ThreadSecretRequestResponse } from "@t3tools/contracts";
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { enterFade, exitFade } from "../../lib/motion";
 import type { PendingSecretRequest } from "../../lib/threadActivity";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
+import { ComposerStackCard } from "./composer-stack-card";
 
 export interface PendingSecretRequestCardProps {
   readonly request: PendingSecretRequest;
@@ -19,6 +22,7 @@ export interface PendingSecretRequestCardProps {
  * store, never through the composer or the event log.
  */
 export function PendingSecretRequestCard(props: PendingSecretRequestCardProps) {
+  const glass = useGlassChromeActive();
   const [value, setValue] = useState("");
   const trimmed = value.trim();
   const isResponding = props.respondingRequestId === props.request.requestId;
@@ -27,10 +31,15 @@ export function PendingSecretRequestCard(props: PendingSecretRequestCardProps) {
     if (!canSubmit) return;
     void props.onRespond(props.request.requestId, { kind: "provided", value: trimmed });
   };
-  // Opaque for the same reason as PendingUserInputCard: nothing blurs the feed
-  // behind this card, so a translucent surface bleeds messages through it.
+  // Opaque (or frosted over scenery) for the same reason as PendingUserInputCard:
+  // a plain translucent surface bleeds the feed's messages through it.
   return (
-    <View className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4">
+    <ComposerStackCard
+      entering={enterFade}
+      exiting={exitFade}
+      className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4"
+      glassClassName="gap-2.5 p-4"
+    >
       <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
         API key needed
       </Text>
@@ -42,6 +51,8 @@ export function PendingSecretRequestCard(props: PendingSecretRequestCardProps) {
         Saved as {props.request.name} on the server, never in the chat or thread history.
       </Text>
       <TextInput
+        className={glass ? "border-chrome-glass-border bg-foreground/5" : undefined}
+        style={glass ? { borderWidth: StyleSheet.hairlineWidth } : undefined}
         autoCapitalize="none"
         autoCorrect={false}
         editable={!isResponding}
@@ -72,6 +83,6 @@ export function PendingSecretRequestCard(props: PendingSecretRequestCardProps) {
           <Text className="font-t3-bold text-sm text-foreground">Decline</Text>
         </Pressable>
       </View>
-    </View>
+    </ComposerStackCard>
   );
 }

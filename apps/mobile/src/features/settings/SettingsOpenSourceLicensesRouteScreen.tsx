@@ -14,6 +14,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { GroupedCard } from "../scenery/GroupedCard";
+import { RowPressable } from "../../components/RowPressable";
+import { cn } from "../../lib/cn";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import {
@@ -38,6 +42,41 @@ function LicenseRow(props: {
   readonly entry: ThirdPartyLicenseEntry;
   readonly onPress: () => void;
 }) {
+  const glass = useGlassChromeActive();
+  const content = (
+    <View className="flex-row items-start gap-3">
+      <View className="min-w-0 flex-1 gap-1">
+        <Text className="text-base font-t3-medium text-foreground" numberOfLines={2}>
+          {props.entry.name}
+        </Text>
+        <Text className="text-sm text-foreground-muted" numberOfLines={2}>
+          {props.entry.version ? `${props.entry.version} · ` : ""}
+          {props.entry.license}
+        </Text>
+      </View>
+      <SymbolView
+        name="chevron.right"
+        size={16}
+        tintColorClassName={"accent-chevron"}
+        type="monochrome"
+        weight="semibold"
+      />
+    </View>
+  );
+  if (glass) {
+    return (
+      <RowPressable
+        accessibilityHint="Opens the complete license notice"
+        accessibilityLabel={`${props.entry.name}, ${props.entry.license}`}
+        accessibilityRole="button"
+        onPress={props.onPress}
+        className="border-b border-chrome-glass-border bg-chrome-glass px-5 py-4"
+        interactionClassName="bg-foreground/[0.06]"
+      >
+        {content}
+      </RowPressable>
+    );
+  }
   return (
     <Pressable
       accessibilityHint="Opens the complete license notice"
@@ -46,24 +85,7 @@ function LicenseRow(props: {
       onPress={props.onPress}
       className="border-b border-border bg-grouped-card px-5 py-4 active:bg-card-alt"
     >
-      <View className="flex-row items-start gap-3">
-        <View className="min-w-0 flex-1 gap-1">
-          <Text className="text-base font-t3-medium text-foreground" numberOfLines={2}>
-            {props.entry.name}
-          </Text>
-          <Text className="text-sm text-foreground-muted" numberOfLines={2}>
-            {props.entry.version ? `${props.entry.version} · ` : ""}
-            {props.entry.license}
-          </Text>
-        </View>
-        <SymbolView
-          name="chevron.right"
-          size={16}
-          tintColorClassName={"accent-chevron"}
-          type="monochrome"
-          weight="semibold"
-        />
-      </View>
+      {content}
     </Pressable>
   );
 }
@@ -247,11 +269,11 @@ export function SettingsOpenSourceLicenseRouteScreen({ route }: LicenseDetailPro
           ) : null}
         </View>
 
-        <View className="overflow-hidden rounded-[24px] border-continuous bg-grouped-card p-4">
+        <GroupedCard className={cn(Platform.OS === "android" && "rounded-[24px]", "p-4")}>
           <Text selectable className="font-mono text-base leading-normal text-foreground">
             {entry.noticeText}
           </Text>
-        </View>
+        </GroupedCard>
       </ScrollView>
     </SettingsScreen>
   );

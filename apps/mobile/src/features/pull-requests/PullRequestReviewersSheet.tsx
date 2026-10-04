@@ -4,17 +4,29 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+} from "react-native";
 
 import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
+import { RowPressable } from "../../components/RowPressable";
+import { SheetSurface } from "../../components/SheetSurface";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
+import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
 import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../../lib/searchQuery";
 import { PullRequestActorAvatar } from "./PullRequestActorAvatar";
 import { useEnvironmentQuery } from "../../state/query";
 import { pullRequestEnvironment } from "../../state/pullRequests";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { readableFailure } from "./pullRequestDetail.logic";
 import {
@@ -27,6 +39,7 @@ type PullRequestReviewersSheetProps = StaticScreenProps<PullRequestDetailRoutePa
 
 export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps) {
   const navigation = useNavigation();
+  const glass = useGlassChromeActive();
   const environmentId = resolvePullRequestRouteEnvironmentId(props.route.params.environmentId);
   const reference = useResolvedPullRequestReference(props.route.params);
   const [query, setQueryState] = useState("");
@@ -106,52 +119,89 @@ export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps)
     [candidatesQuery, environmentId, invalidate, navigation, reference, requestReviewers],
   );
   const renderCandidate = useCallback(
-    ({ item: candidate, index }: { item: PullRequestReviewerCandidate; index: number }) => (
-      <Pressable
-        accessibilityLabel={`${candidate.name ?? candidate.login}, ${
+    ({ item: candidate, index }: { item: PullRequestReviewerCandidate; index: number }) => {
+      const isFirst = index === 0;
+      const isLast = index === candidates.length - 1;
+      const rowProps = {
+        accessibilityLabel: `${candidate.name ?? candidate.login}, ${
           candidate.isRequested ? "review requested" : "request review"
-        }`}
-        accessibilityRole="button"
-        accessibilityState={{
+        }`,
+        accessibilityRole: "button",
+        accessibilityState: {
           busy: pendingId === candidate.id,
           disabled: pendingId !== null || reference === null,
-        }}
-        disabled={pendingId !== null || reference === null}
-        onPress={() => void toggleReviewer(candidate)}
-        className={cn(
-          "flex-row items-center gap-3 bg-card px-4 py-3",
-          index === 0 && "rounded-t-2xl",
-          index === candidates.length - 1 && "rounded-b-2xl",
-          index > 0 && "border-t border-border-subtle",
-        )}
-        style={({ pressed }) => ({
-          opacity: pendingId !== null && pendingId !== candidate.id ? 0.45 : pressed ? 0.72 : 1,
-        })}
-      >
-        <PullRequestActorAvatar actor={candidate} size={32} />
-        <View className="min-w-0 flex-1">
-          <Text className="text-base font-t3-bold text-foreground" numberOfLines={1}>
-            {candidate.name ?? candidate.login}
-          </Text>
-          {candidate.name ? (
-            <Text className="text-xs text-foreground-muted">{candidate.login}</Text>
-          ) : null}
-        </View>
-        {pendingId === candidate.id ? (
-          <ActivityIndicator colorClassName="accent-icon" size="small" />
-        ) : (
-          <Text
-            className={cn(
-              "text-xs font-t3-bold",
-              candidate.isRequested ? "text-primary" : "text-foreground-muted",
-            )}
+        },
+        disabled: pendingId !== null || reference === null,
+        onPress: () => void toggleReviewer(candidate),
+      } as const;
+      const dimmed = pendingId !== null && pendingId !== candidate.id;
+      const content = (
+        <>
+          <PullRequestActorAvatar actor={candidate} size={32} />
+          <View className="min-w-0 flex-1">
+            <Text className="text-base font-t3-bold text-foreground" numberOfLines={1}>
+              {candidate.name ?? candidate.login}
+            </Text>
+            {candidate.name ? (
+              <Text className="text-xs text-foreground-muted">{candidate.login}</Text>
+            ) : null}
+          </View>
+          {pendingId === candidate.id ? (
+            <ActivityIndicator colorClassName="accent-icon" size="small" />
+          ) : (
+            <Text
+              className={cn(
+                "text-xs font-t3-bold",
+                candidate.isRequested ? "text-primary" : "text-foreground-muted",
+              )}
+            >
+              {candidate.isRequested ? "Requested" : "Ask"}
+            </Text>
+          )}
+        </>
+      );
+      if (glass) {
+        // Consecutive rows join into one frosted card with hairline separators.
+        return (
+          <RowPressable
+            {...rowProps}
+            interactionClassName="bg-foreground/[0.06]"
+            className="flex-row items-center gap-3 border-chrome-glass-border bg-chrome-glass px-4 py-3"
+            style={{
+              opacity: dimmed ? 0.45 : 1,
+              borderCurve: "continuous",
+              borderTopLeftRadius: isFirst ? GLASS_CARD_RADIUS : 0,
+              borderTopRightRadius: isFirst ? GLASS_CARD_RADIUS : 0,
+              borderBottomLeftRadius: isLast ? GLASS_CARD_RADIUS : 0,
+              borderBottomRightRadius: isLast ? GLASS_CARD_RADIUS : 0,
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderLeftWidth: StyleSheet.hairlineWidth,
+              borderRightWidth: StyleSheet.hairlineWidth,
+              borderBottomWidth: isLast ? StyleSheet.hairlineWidth : 0,
+            }}
           >
-            {candidate.isRequested ? "Requested" : "Ask"}
-          </Text>
-        )}
-      </Pressable>
-    ),
-    [candidates.length, pendingId, reference, toggleReviewer],
+            {content}
+          </RowPressable>
+        );
+      }
+      return (
+        <Pressable
+          {...rowProps}
+          className={cn(
+            "flex-row items-center gap-3 bg-card px-4 py-3",
+            isFirst && "rounded-t-2xl",
+            isLast && "rounded-b-2xl",
+            index > 0 && "border-t border-border-subtle",
+          )}
+          style={({ pressed }) => ({
+            opacity: dimmed ? 0.45 : pressed ? 0.72 : 1,
+          })}
+        >
+          {content}
+        </Pressable>
+      );
+    },
+    [candidates.length, glass, pendingId, reference, toggleReviewer],
   );
   const rowState = useMemo(
     () => ({ pendingId, referenceAvailable: reference !== null }),
@@ -159,7 +209,7 @@ export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps)
   );
 
   return (
-    <View className="flex-1 bg-sheet">
+    <SheetSurface>
       {Platform.OS === "android" ? (
         <AndroidSheetHeader title="Reviewers" onBack={() => navigation.goBack()} />
       ) : (
@@ -172,7 +222,12 @@ export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps)
           onChangeText={setQuery}
           placeholder="Search people"
           placeholderTextColorClassName="accent-placeholder"
-          className="min-h-11 rounded-2xl bg-input px-3.5 py-2 text-base font-sans text-foreground"
+          className={cn(
+            "min-h-11 px-3.5 py-2 text-base font-sans text-foreground",
+            glass
+              ? "rounded-[14px] border-continuous border-[0.5px] border-chrome-glass-border bg-foreground/5"
+              : "rounded-2xl bg-input",
+          )}
           value={query}
         />
       </View>
@@ -212,6 +267,6 @@ export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps)
           showsVerticalScrollIndicator={false}
         />
       )}
-    </View>
+    </SheetSurface>
   );
 }

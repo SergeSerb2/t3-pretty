@@ -1,7 +1,8 @@
 import { useAndroidControlSizing } from "../../components/useAndroidControlSizing";
 import type { ThreadMoveDestination } from "../threads/threadOrder";
 import { computeThreadMoveAvailability } from "../threads/threadOrder";
-import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
+import { type LegendListRef } from "@legendapp/list/react-native";
+import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import {
   type EnvironmentProject,
   type EnvironmentThreadShell,
@@ -18,6 +19,7 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
+  StyleSheet,
   View,
   type GestureResponderEvent,
   type NativeScrollEvent,
@@ -29,13 +31,18 @@ import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
 import { useGlassChromeActive, useSceneryChromeActive } from "../scenery/SceneryProvider";
 
 import { cn } from "../../lib/cn";
+import { layoutSettle } from "../../lib/motion";
+import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { MaterialFloatingActionButton } from "../../components/MaterialFloatingActionButton";
 import type { WorkspaceEnvironment, WorkspaceState } from "../../state/workspaceModel";
 import type { SavedRemoteConnection } from "../../lib/connection";
 import { scopedProjectKey } from "../../lib/scopedEntities";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import {
+  NATIVE_LIQUID_GLASS_SUPPORTED,
+  TRANSPARENT_NATIVE_HEADERS,
+} from "../../native/native-glass";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { usePendingThreadOrder } from "../../state/thread-order";
@@ -751,6 +758,7 @@ export function HomeScreen(props: HomeScreenProps) {
           snoozeWakeLabelText={item.snoozeWakeLabelText}
           timeLabel={item.timeLabel}
           showTrailingDivider={item.showTrailingDivider}
+          continuesGroup={item.continuesGroup}
           project={
             projectByKey.get(scopedProjectKey(thread.environmentId, thread.projectId)) ?? null
           }
@@ -922,7 +930,7 @@ export function HomeScreen(props: HomeScreenProps) {
           )}
           style={{
             paddingBottom: Math.max(insets.bottom, 24) + iosBottomToolbarClearance,
-            paddingTop: NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top + 72 : 0,
+            paddingTop: TRANSPARENT_NATIVE_HEADERS ? insets.top + 72 : 0,
           }}
         >
           <SceneryBackdrop threadKey={null} />
@@ -964,7 +972,7 @@ export function HomeScreen(props: HomeScreenProps) {
 
   // Use the v2 project scope for its empty state. Snoozed threads need no
   // special empty state: their shelf header is a list row even while collapsed.
-  const v2ListEmpty =
+  const v2ListEmptyState =
     hasSearchQuery && threadSearch.isPending ? undefined : hasSearchQuery ? (
       <EmptyState
         title="No results"
@@ -991,6 +999,14 @@ export function HomeScreen(props: HomeScreenProps) {
       />
     );
 
+  // Glass empty cards inset like the rows they stand in for.
+  const v2ListEmpty =
+    glassRows && v2ListEmptyState !== undefined ? (
+      <View className="mx-3 mt-2">{v2ListEmptyState}</View>
+    ) : (
+      v2ListEmptyState
+    );
+
   if (Platform.OS === "android" && threadListV2Items.length === 0) {
     return (
       <View className="flex-1 bg-header">
@@ -1013,13 +1029,13 @@ export function HomeScreen(props: HomeScreenProps) {
             : "flex-1 bg-screen"
         }
       >
-        <SceneryBackdrop threadKey={null} />
+        <SceneryBackdrop threadKey={null} surface={glassRows ? "cards" : "text"} />
         {/* Shared with the iPad sidebar: cells are reused across data
             rebuilds and `itemsAreEqual` keeps a minute tick (or an unrelated
             shell update) from re-rendering untouched rows. */}
         <ThreadListGlassContext value={glassRows}>
           <SwipeableScrollGateProvider enabled={swipeEnabled} activation={swipeRowActivation}>
-            <LegendList
+            <AnimatedLegendList
               ref={listRef}
               onLoad={() => activateVisibleRows(threadListV2Items)}
               onTouchStart={(event) => trackListTouches(event, true)}
@@ -1033,11 +1049,31 @@ export function HomeScreen(props: HomeScreenProps) {
               estimatedItemSize={ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT}
               drawDistance={THREAD_LIST_V2_DRAW_DISTANCE}
               recycleItems
+              // Settle, wake, reorder and shelf toggles reflow rows into
+              // place; the patched list skips this for recycled cells and
+              // while scrolling.
+              itemLayoutAnimation={layoutSettle}
               extraData={v2ExtraData}
               ListHeaderComponent={v2ListHeader}
               ListFooterComponent={
                 settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
-                  sceneryChrome ? (
+                  glassRows ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={showMoreSettled}
+                      className="mx-3 mt-2 items-center border-chrome-glass-border bg-chrome-glass py-3"
+                      style={({ pressed }) => ({
+                        borderCurve: "continuous",
+                        borderRadius: GLASS_CARD_RADIUS,
+                        borderWidth: StyleSheet.hairlineWidth,
+                        opacity: pressed ? 0.6 : 1,
+                      })}
+                    >
+                      <Text className="text-xs font-t3-medium text-foreground-muted">
+                        Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
+                      </Text>
+                    </Pressable>
+                  ) : sceneryChrome ? (
                     <Pressable
                       onPress={showMoreSettled}
                       className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"

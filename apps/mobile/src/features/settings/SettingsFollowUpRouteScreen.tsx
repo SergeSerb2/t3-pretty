@@ -1,11 +1,12 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { Platform, ScrollView, View } from "react-native";
+import { Platform, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
+import { SheetSurface } from "../../components/SheetSurface";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { DEFAULT_FOLLOW_UP_BEHAVIOR, type FollowUpBehavior } from "../../lib/followUpBehavior";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
@@ -40,7 +41,7 @@ export function SettingsFollowUpRouteScreen() {
     : null;
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       {Platform.OS === "android" ? (
         <>
           <NativeStackScreenOptions options={{ headerShown: false }} />
@@ -72,6 +73,6 @@ export function SettingsFollowUpRouteScreen() {
           keyboard, hold Command while sending.
         </Text>
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }

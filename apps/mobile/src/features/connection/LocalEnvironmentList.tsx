@@ -1,9 +1,11 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { ComponentProps } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
+import { cn } from "../../lib/cn";
+import { GroupedCard } from "../scenery/GroupedCard";
 import { ConnectionEnvironmentRow } from "./ConnectionEnvironmentRow";
 
 type EnvironmentRowProps = ComponentProps<typeof ConnectionEnvironmentRow>;
@@ -24,9 +26,12 @@ export function LocalEnvironmentList({
 }) {
   if (environments.length === 0) {
     return (
-      <View
+      <GroupedCard
         collapsable={false}
-        className="items-center gap-3 rounded-[24px] bg-grouped-card px-6 py-8"
+        className={cn(
+          Platform.OS === "android" && "rounded-[24px]",
+          "items-center gap-3 px-6 py-8",
+        )}
       >
         <View className="h-12 w-12 items-center justify-center rounded-[16px] bg-subtle">
           <SymbolView
@@ -40,12 +45,12 @@ export function LocalEnvironmentList({
           No environments connected yet.{"\n"}Tap{" "}
           <Text className="font-t3-bold text-foreground">+</Text> to add one.
         </Text>
-      </View>
+      </GroupedCard>
     );
   }
 
   return (
-    <View collapsable={false} className="overflow-hidden rounded-[24px] bg-grouped-card">
+    <GroupedCard collapsable={false} className={cn(Platform.OS === "android" && "rounded-[24px]")}>
       {environments.map((environment) => (
         <View key={environment.environmentId} collapsable={false}>
           <ConnectionEnvironmentRow
@@ -56,6 +61,6 @@ export function LocalEnvironmentList({
           />
         </View>
       ))}
-    </View>
+    </GroupedCard>
   );
 }

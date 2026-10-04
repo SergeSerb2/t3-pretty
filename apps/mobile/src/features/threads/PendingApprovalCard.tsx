@@ -7,7 +7,9 @@ import type {
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
+import { enterFade, exitFade } from "../../lib/motion";
 import type { PendingApproval } from "../../lib/threadActivity";
+import { ComposerStackCard } from "./composer-stack-card";
 
 export interface PendingApprovalCardProps {
   readonly approval: PendingApproval;
@@ -28,12 +30,18 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
   const options: ReadonlyArray<ProviderApprovalOption> =
     props.approval.options ?? DEFAULT_APPROVAL_OPTIONS;
   const warning = options.find((option) => option.warning)?.warning;
-  // Opaque for the same reason as PendingUserInputCard: nothing blurs the feed
-  // behind this card, so a translucent surface bleeds messages through it.
+  // Opaque (or frosted over scenery) for the same reason as PendingUserInputCard:
+  // a plain translucent surface bleeds the feed's messages through it.
   const canRespond = props.approval.responseCapability === "live";
   const disabled = !canRespond || props.respondingApprovalId === props.approval.requestId;
   return (
-    <View className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4">
+    // Hosts key this card by request, so a follow-up request cross-fades in.
+    <ComposerStackCard
+      entering={enterFade}
+      exiting={exitFade}
+      className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4"
+      glassClassName="gap-2.5 p-4"
+    >
       <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
         Approval needed
       </Text>
@@ -71,6 +79,6 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
           />
         ))}
       </View>
-    </View>
+    </ComposerStackCard>
   );
 }

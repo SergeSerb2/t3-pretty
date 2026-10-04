@@ -80,7 +80,13 @@ export type ThreadListV2Status =
   | "monitoring"
   | "done"
   | "ready";
-export type ThreadListV2SwipeAction = "archive" | "settle" | "unsettle" | "snooze" | "unsnooze" | "unstore";
+export type ThreadListV2SwipeAction =
+  | "archive"
+  | "settle"
+  | "unsettle"
+  | "snooze"
+  | "unsnooze"
+  | "unstore";
 
 export function resolveThreadListV2SnoozeMenuSelection(input: {
   readonly event: string;
@@ -185,7 +191,14 @@ export function threadHasUnseenCompletion(
 }
 
 export function resolveThreadListV2Status(
-  thread: Pick<EnvironmentThreadShell, "hasPendingApprovals" | "hasPendingUserInput" | "runtime" | "backgroundLiveness" | "pullRequests">,
+  thread: Pick<
+    EnvironmentThreadShell,
+    | "hasPendingApprovals"
+    | "hasPendingUserInput"
+    | "runtime"
+    | "backgroundLiveness"
+    | "pullRequests"
+  >,
 ): ThreadListV2Status {
   if (thread.hasPendingApprovals) {
     return "approval";
@@ -391,6 +404,10 @@ export interface ThreadListV2ThreadListItem {
       a neighbour change (e.g. the queued block appearing) updates the row
       through recycled-list equality instead of leaving a stale divider. */
   readonly showTrailingDivider: boolean;
+  /** Slim shelf row directly below another slim row. Glass rows join such
+      runs into one grouped card, so the edge rides on the item for the same
+      recycled-equality reason as the divider. */
+  readonly continuesGroup: boolean;
   /** A message for this thread is waiting in the outbox. Carried on the item
       so an outbox write (which never touches the thread shell) reaches the
       row through recycled-list equality instead of leaving a stale icon. */
@@ -488,6 +505,7 @@ export function threadListV2ListItemsAreEqual(
         previous.timeLabel === item.timeLabel &&
         previous.snoozePresetMinute === item.snoozePresetMinute &&
         previous.showTrailingDivider === item.showTrailingDivider &&
+        previous.continuesGroup === item.continuesGroup &&
         previous.hasQueuedMessages === item.hasQueuedMessages &&
         previous.canMoveUp === item.canMoveUp &&
         previous.canMoveDown === item.canMoveDown
@@ -615,6 +633,7 @@ export function buildThreadListV2ListItems(input: {
       timeLabel: resolveThreadListV2ItemTimeLabel(item, snoozeWakeLabelText !== undefined),
       snoozePresetMinute,
       showTrailingDivider: false,
+      continuesGroup: false,
       hasQueuedMessages:
         input.queuedThreadKeys?.has(`${item.thread.environmentId}:${item.thread.id}`) === true,
       canMoveUp: move?.canMoveUp === true,
@@ -673,16 +692,26 @@ export function buildThreadListV2ListItems(input: {
     });
     result.push(...threadItems.slice(settledShelfHeaderIndex));
   }
-  // Hairlines depend on the final neighbour, so they are stamped after the
-  // splice: a recycled cell only re-renders when its divider actually flips.
+  // Hairlines and group edges depend on the final neighbours, so they are
+  // stamped after the splice: a recycled cell only re-renders when one
+  // actually flips.
+  const isSlimRow = (entry: ThreadListV2ListItem | undefined) =>
+    entry?.type === "v2-thread" && entry.item.variant === "slim";
   return result.map((entry, index) => {
     if (entry.type !== "v2-thread" && entry.type !== "v2-pending") return entry;
     const next = result[index + 1];
     const showTrailingDivider =
       next?.type === "v2-thread" || (next?.type === "v2-pending" && !next.showPendingDivider);
-    return showTrailingDivider === entry.showTrailingDivider
+    if (entry.type === "v2-pending") {
+      return showTrailingDivider === entry.showTrailingDivider
+        ? entry
+        : { ...entry, showTrailingDivider };
+    }
+    const continuesGroup = isSlimRow(entry) && isSlimRow(result[index - 1]);
+    return showTrailingDivider === entry.showTrailingDivider &&
+      continuesGroup === entry.continuesGroup
       ? entry
-      : { ...entry, showTrailingDivider };
+      : { ...entry, showTrailingDivider, continuesGroup };
   });
 }
 

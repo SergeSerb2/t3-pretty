@@ -17,7 +17,10 @@ import {
   REMOTE_PAIRING_TOKEN_MAX_LENGTH,
   REMOTE_PAIRING_URL_MAX_LENGTH,
 } from "@t3tools/shared/remote";
+import { cn } from "../../lib/cn";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { GroupedCard } from "../scenery/GroupedCard";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text } from "../../components/AppText";
 import { ErrorBanner } from "../../components/ErrorBanner";
@@ -72,6 +75,7 @@ export function ConnectionsNewRouteScreen({
   const activeConnectPairingUrlRef = useRef<string | null>(null);
 
   const headerIconColor = useUniwindTheme()["--color-icon"];
+  const glass = useGlassChromeActive();
 
   const connectDisabled = isSubmitting || hostInput.trim().length === 0;
 
@@ -343,7 +347,12 @@ export function ConnectionsNewRouteScreen({
                 />
               </View>
             ) : (
-              <View className="items-center gap-3 rounded-[24px] border-continuous bg-grouped-card px-5 py-8">
+              <GroupedCard
+                className={cn(
+                  Platform.OS === "android" && "rounded-[24px]",
+                  "items-center gap-3 px-5 py-8",
+                )}
+              >
                 <Text className="text-center text-sm leading-normal text-foreground-muted">
                   Camera permission is required to scan a QR code.
                 </Text>
@@ -356,12 +365,16 @@ export function ConnectionsNewRouteScreen({
                     void openScanner();
                   }}
                 />
-              </View>
+              </GroupedCard>
             )
           ) : (
-            <View collapsable={false} className="gap-4 rounded-[24px] bg-grouped-card p-4">
+            <GroupedCard
+              collapsable={false}
+              className={cn(Platform.OS === "android" && "rounded-[24px]", "gap-4 p-4")}
+            >
               <ConnectionFormField
                 label="Host"
+                glass={glass}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
@@ -373,6 +386,7 @@ export function ConnectionsNewRouteScreen({
 
               <ConnectionFormField
                 label="Pairing code"
+                glass={glass}
                 autoCapitalize="none"
                 autoCorrect={false}
                 maxLength={REMOTE_PAIRING_TOKEN_MAX_LENGTH}
@@ -394,7 +408,7 @@ export function ConnectionsNewRouteScreen({
                   }}
                 />
               </View>
-            </View>
+            </GroupedCard>
           )}
         </View>
       </ScrollView>

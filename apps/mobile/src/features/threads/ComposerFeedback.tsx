@@ -3,10 +3,13 @@ import {
   type CodexFeedbackSubmission,
 } from "@t3tools/client-runtime/state/threads";
 import { Pressable, View } from "react-native";
+import Animated from "react-native-reanimated";
 
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
+import { enterFadeDown, exitFade } from "../../lib/motion";
+import { ComposerStackCard } from "./composer-stack-card";
 
 export function ComposerFeedback({
   submission,
@@ -18,8 +21,11 @@ export function ComposerFeedback({
   const notice = codexFeedbackNotice(submission);
   if (!notice) return null;
   return (
-    <View className="px-4 pb-3">
-      <View className="gap-2 rounded-[20px] border-continuous bg-card p-4">
+    <Animated.View className="px-4 pb-3" entering={enterFadeDown} exiting={exitFade}>
+      <ComposerStackCard
+        className="gap-2 rounded-[20px] border-continuous bg-card p-4"
+        glassClassName="gap-2 p-4"
+      >
         <View className="flex-row items-center gap-3">
           <Text accessibilityLiveRegion="polite" className="min-w-0 flex-1 text-sm text-foreground">
             {notice.title}
@@ -57,7 +63,7 @@ export function ComposerFeedback({
             <Text className="text-sm text-foreground">Copy ID</Text>
           </Pressable>
         ) : null}
-      </View>
-    </View>
+      </ComposerStackCard>
+    </Animated.View>
   );
 }

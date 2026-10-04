@@ -1,8 +1,10 @@
 import { useState, type ReactElement } from "react";
-import { Modal, View } from "react-native";
+import { Modal } from "react-native";
 import { Screen, ScreenStack, ScreenStackHeaderConfig } from "react-native-screens";
 import { withUniwind } from "uniwind";
 import { ContextSheetSize } from "../../components/ContextSheetSize";
+import { SheetSurface } from "../../components/SheetSurface";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
 const NativeScreen = withUniwind(Screen);
 const NativeHeader = withUniwind(ScreenStackHeaderConfig, {
@@ -19,6 +21,9 @@ export interface WorktreeSetupSheetProps {
 
 export function WorktreeSetupSheet({ children, height, onClose }: WorktreeSetupSheetProps) {
   const [headerHeight, setHeaderHeight] = useState(44);
+  // Over glass the bar stays opaque in layout but paints clear, so the photo
+  // continues behind the title without the body sliding underneath it.
+  const glass = useGlassChromeActive();
   return (
     <Modal
       animationType="slide"
@@ -26,7 +31,7 @@ export function WorktreeSetupSheet({ children, height, onClose }: WorktreeSetupS
       allowSwipeDismissal
       onRequestClose={onClose}
     >
-      <View collapsable={false} className="flex-1 bg-sheet-solid">
+      <SheetSurface className="bg-sheet-solid">
         <ContextSheetSize height={height + headerHeight} />
         {/* The nested stack supplies UIKit's navigation bar inside the sheet. */}
         <ScreenStack style={{ flex: 1 }}>
@@ -36,14 +41,14 @@ export function WorktreeSetupSheet({ children, height, onClose }: WorktreeSetupS
             isNativeStack
             screenId="worktree-setup-details"
             onHeaderHeightChange={(event) => setHeaderHeight(event.nativeEvent.headerHeight)}
-            className="flex-1 bg-sheet-solid"
+            className={glass ? "flex-1" : "flex-1 bg-sheet-solid"}
           >
             {children}
             <NativeHeader
               title="Worktree setup"
               titleColorClassName="accent-foreground"
               tintColorClassName="accent-foreground"
-              backgroundColorClassName="bg-sheet-solid"
+              backgroundColorClassName={glass ? "bg-transparent" : "bg-sheet-solid"}
               hideBackButton
               hideShadow
               translucent={false}
@@ -60,7 +65,7 @@ export function WorktreeSetupSheet({ children, height, onClose }: WorktreeSetupS
             />
           </NativeScreen>
         </ScreenStack>
-      </View>
+      </SheetSurface>
     </Modal>
   );
 }

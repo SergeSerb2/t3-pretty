@@ -4,13 +4,14 @@ import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { AccountLimits, ResetCredits } from "../usage/UsageLimitsSection";
+import { ComposerStackCard } from "./composer-stack-card";
 
 const DRIVER_LABEL: Partial<Record<string, string>> = { codex: "Codex", claudeAgent: "Claude" };
 
 /**
  * The /usage-limits result, docked above the composer. It is the Usage → Limits
  * card one size down, so the two read as the same thing. The surface is opaque
- * because nothing blurs the feed behind it.
+ * (frosted over scenery) so the feed behind it never bleeds through.
  */
 export function ComposerUsageLimits({
   report,
@@ -35,7 +36,7 @@ export function ComposerUsageLimits({
     </Pressable>
   );
   return (
-    <View className="overflow-hidden rounded-[20px] border-continuous bg-card">
+    <ComposerStackCard className="overflow-hidden rounded-[20px] border-continuous bg-card">
       <ScrollView
         bounces={false}
         showsVerticalScrollIndicator={false}
@@ -101,6 +102,6 @@ export function ComposerUsageLimits({
           </Text>
         ))}
       </ScrollView>
-    </View>
+    </ComposerStackCard>
   );
 }

@@ -27,12 +27,14 @@ import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { ControlPillMenu } from "../../components/ControlPill";
 import { EmptyState } from "../../components/EmptyState";
+import { SheetSurface } from "../../components/SheetSurface";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
 import {
   createNativeMailSearchToolbarItem,
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { scorePullRequestMatch, shouldShowPullRequestHostFilter } from "./pullRequestList.logic";
 import { PullRequestActionChip } from "./PullRequestActionChip";
 import { PullRequestRow } from "./PullRequestRow";
@@ -575,6 +577,7 @@ export function PullRequestsScreen(props: {
   readonly onSelect: (entry: PullRequestListEntry) => void;
   readonly onAddProject: () => void;
 }) {
+  const glass = useGlassChromeActive();
   const hasCustomFilter =
     props.involvement !== "all" ||
     props.state !== "open" ||
@@ -747,7 +750,7 @@ export function PullRequestsScreen(props: {
   ]);
 
   return (
-    <View className="flex-1 bg-sheet">
+    <SheetSurface>
       <PullRequestsHeader
         environments={props.environments}
         hasCustomFilter={hasCustomFilter}
@@ -788,7 +791,12 @@ export function PullRequestsScreen(props: {
                 accessibilityRole="button"
                 onPress={props.onRefresh}
                 style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
-                className="mb-2 rounded-2xl bg-subtle px-3 py-2.5"
+                className={cn(
+                  "mb-2 rounded-2xl px-3 py-2.5",
+                  glass
+                    ? "border-continuous border-[0.5px] border-chrome-glass-border bg-chrome-glass"
+                    : "bg-subtle",
+                )}
               >
                 <Text className="text-xs text-foreground">
                   {describeProjectErrors(props.projectErrors)}
@@ -807,6 +815,6 @@ export function PullRequestsScreen(props: {
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
       />
-    </View>
+    </SheetSurface>
   );
 }

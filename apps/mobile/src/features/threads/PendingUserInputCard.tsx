@@ -4,7 +4,7 @@ import type { RuntimeRequestId } from "@t3tools/contracts";
 import type { ThreadUserInputQuestion } from "@t3tools/client-runtime/state/thread-requests";
 import { useCallback, useRef } from "react";
 import { Platform, Pressable, ScrollView, View, type LayoutChangeEvent } from "react-native";
-import Animated, {
+import {
   Easing,
   FadeInUp,
   FadeOutDown,
@@ -16,6 +16,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { USER_INPUT_TOGGLE_DURATION_MS } from "./pendingUserInputLayout";
+import { ComposerStackCard } from "./composer-stack-card";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
@@ -26,6 +27,7 @@ import {
   type PendingUserInput,
   type PendingUserInputDraftAnswer,
 } from "../../lib/threadActivity";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
 export interface PendingUserInputCardProps {
   readonly pendingUserInput: PendingUserInput;
@@ -89,8 +91,10 @@ export interface PendingUserInputCardProps {
 const EXPANDED_CARD_IS_OVERLAY = Platform.OS === "ios";
 
 const CARD_LAYOUT_TRANSITION = LinearTransition.duration(200);
+const GLASS_PILL_STYLE = { borderRadius: 999 } as const;
 
 export function PendingUserInputCard(props: PendingUserInputCardProps) {
+  const glass = useGlassChromeActive();
   const questionCount = props.pendingUserInput.questions.length;
   // Message responses start a new run and remain available after the provider exits.
   const canRespond = props.pendingUserInput.responseCapability !== "not_resumable";
@@ -165,12 +169,14 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
   // card's top edge wipes past and reveals it — no opacity handoff, so no
   // crossfade frames.
   const bar = showBar ? (
-    <View
+    <ComposerStackCard
       onLayout={handleBarLayout}
       pointerEvents={props.collapsed ? "auto" : "none"}
       accessibilityElementsHidden={!props.collapsed}
       importantForAccessibility={props.collapsed ? "auto" : "no-hide-descendants"}
       className="flex-row items-center gap-2 rounded-full border border-border bg-card-alt py-1.5 pl-4 pr-1.5"
+      glassClassName="flex-row items-center gap-2 py-1.5 pl-4 pr-1.5"
+      style={glass ? GLASS_PILL_STYLE : undefined}
     >
       <Pressable
         accessibilityRole="button"
@@ -203,13 +209,13 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
           onPress={props.onStopThread}
         />
       ) : null}
-    </View>
+    </ComposerStackCard>
   ) : null;
   const card = renderCard ? (
-    // The surface is opaque on purpose: the card floats over the thread
-    // feed with no blur behind it, so a translucent background renders
+    // The surface is opaque (frosted over scenery) on purpose: the card
+    // floats over the thread feed, so a plain translucent background renders
     // the questions on top of whatever message happens to sit underneath.
-    <Animated.View
+    <ComposerStackCard
       onLayout={handleCardLayout}
       pointerEvents={props.collapsed ? "none" : "auto"}
       accessibilityElementsHidden={props.collapsed}
@@ -226,6 +232,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       }
       layout={CARD_LAYOUT_TRANSITION}
       className="overflow-hidden gap-2.5 rounded-[20px] border border-border bg-card-alt p-4"
+      glassClassName="gap-2.5 p-4"
       style={
         EXPANDED_CARD_IS_OVERLAY
           ? [{ maxHeight: props.maxHeight }, cardAnimatedStyle]
@@ -292,7 +299,11 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                       disabled={responseDisabled}
                       className={cn(
                         "min-h-12 w-full rounded-2xl border px-3.5 py-3",
-                        selected ? "border-primary bg-primary/10" : "border-border bg-input",
+                        selected
+                          ? "border-primary bg-primary/10"
+                          : glass
+                            ? "border-chrome-glass-border bg-foreground/5"
+                            : "border-border bg-input",
                       )}
                       onPress={() =>
                         props.onSelectOption(
@@ -357,7 +368,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
           </Text>
         </Pressable>
       ) : null}
-    </Animated.View>
+    </ComposerStackCard>
   ) : null;
   return (
     <View className="relative">

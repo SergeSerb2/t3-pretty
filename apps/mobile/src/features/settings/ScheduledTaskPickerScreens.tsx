@@ -1,6 +1,7 @@
 import { useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { useMemo, useState } from "react";
+import { ScrollView } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
@@ -15,7 +16,12 @@ import { useScheduledTaskEditor } from "./scheduled-task-editor";
 function MissingTaskDraft() {
   return (
     <SettingsScreen title="Scheduled task">
-      <Text className="p-5 text-base text-foreground-muted">Open a scheduled task form first.</Text>
+      {/* Scrolls so the note clears the transparent header. */}
+      <ScrollView contentInsetAdjustmentBehavior="automatic">
+        <Text className="p-5 text-base text-foreground-muted">
+          Open a scheduled task form first.
+        </Text>
+      </ScrollView>
     </SettingsScreen>
   );
 }

@@ -131,7 +131,12 @@ import { serverEnvironment } from "../../state/server";
 import { fileRoutePathSegments } from "../files/filePath";
 import { GlassSurface } from "../../components/GlassSurface";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
-import { useDailySceneryPhoto, useSceneryChromeActive } from "../scenery/SceneryProvider";
+import {
+  useDailySceneryPhoto,
+  useGlassChromeActive,
+  useSceneryChromeActive,
+} from "../scenery/SceneryProvider";
+import { enterFadeDown, exitFade } from "../../lib/motion";
 import { UNSPLASH_UTM, type SceneryPhoto } from "../scenery/sceneryLogic";
 
 function NewTaskWorkspaceIcon(props: {
@@ -194,7 +199,13 @@ function NewTaskDraftFrame(props: {
   );
 }
 
-function NewTaskGlassChip(props: { readonly active: boolean; readonly children: ReactNode }) {
+function NewTaskGlassChip(props: {
+  readonly active: boolean;
+  /** iOS glass: the backdrop paints the tint itself, so no fill class. */
+  readonly frosted: boolean;
+  readonly children: ReactNode;
+}) {
+  const theme = useUniwindTheme();
   if (!props.active) {
     return props.children;
   }
@@ -202,7 +213,12 @@ function NewTaskGlassChip(props: { readonly active: boolean; readonly children: 
   return (
     <GlassSurface
       chrome="none"
-      fallbackClassName="bg-chrome-glass border-chrome-glass-border"
+      // A fill class on top of the frosted backdrop would stack a second
+      // translucent layer and read nearly opaque.
+      fallbackColor={props.frosted ? theme["--color-chrome-glass"] : undefined}
+      fallbackClassName={
+        props.frosted ? "border-chrome-glass-border" : "bg-chrome-glass border-chrome-glass-border"
+      }
       style={[NEW_TASK_GLASS_CHIP_STYLE, { borderWidth: StyleSheet.hairlineWidth }]}
     >
       {props.children}
@@ -274,7 +290,9 @@ export function NewTaskDraftScreen(props: {
   const projects = useProjects();
   const flow = useNewTaskFlow();
   const navigation = useNavigation();
+  // The photo follows scenery on every platform; glass materials are iOS only.
   const sceneryChrome = useSceneryChromeActive();
+  const glass = useGlassChromeActive();
   const dailyPhoto = useDailySceneryPhoto();
   const {
     consumeShare,
@@ -1693,8 +1711,9 @@ export function NewTaskDraftScreen(props: {
       {/* Above the workspace controls so they keep their place relative to
           the composer when the banner goes away once the clone lands. */}
       {projectClone && projectClone.phase !== "done" && selectedProject ? (
-        <View className="px-1 pb-2">
+        <Animated.View className="px-1 pb-2" entering={enterFadeDown} exiting={exitFade}>
           <ProjectCloneBanner
+            glass={glass}
             clone={projectClone}
             onCancel={() =>
               void runCloneAction("Failed to cancel clone", () =>
@@ -1714,14 +1733,16 @@ export function NewTaskDraftScreen(props: {
             }
             onRemove={() => void removeClonedProject()}
           />
-        </View>
+        </Animated.View>
       ) : null}
       {sceneryChrome && dailyPhoto !== null && !isKeyboardVisible ? (
         <NewTaskSceneryPlace photo={dailyPhoto} />
       ) : null}
       {flow.canChooseWorkspace ? (
         <View className="pb-1">
-          <NewTaskGlassChip active={sceneryChrome}>{workspaceControls}</NewTaskGlassChip>
+          <NewTaskGlassChip active={sceneryChrome} frosted={glass}>
+            {workspaceControls}
+          </NewTaskGlassChip>
         </View>
       ) : null}
 

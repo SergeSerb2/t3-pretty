@@ -1,11 +1,16 @@
-import { Pressable, StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import type { ReactNode } from "react";
 import Animated from "react-native-reanimated";
 
 import { AppText as Text } from "./AppText";
+import { RowPressable } from "./RowPressable";
 import { cn } from "../lib/cn";
+import { GLASS_CARD_RADIUS } from "../lib/layoutMetrics";
 import { enterFade } from "../lib/motion";
 import { useGlassChromeActive } from "../features/scenery/SceneryProvider";
+
+// The action sinks slightly while held on iOS; Android keeps its opacity dim.
+const BUTTON_PRESS_SCALE = Platform.OS === "ios" ? 0.97 : undefined;
 
 export function EmptyState(props: {
   readonly title: string;
@@ -26,15 +31,17 @@ export function EmptyState(props: {
         {props.action ? (
           <View className="mt-5">{props.action}</View>
         ) : props.actionLabel && props.onAction ? (
-          <Pressable
+          <RowPressable
             accessibilityRole="button"
             className="mt-5 rounded-full bg-primary px-5 py-3 active:opacity-70"
+            interactionOpacity={0}
+            pressScale={BUTTON_PRESS_SCALE}
             onPress={props.onAction}
           >
             <Text className="text-sm font-t3-bold text-primary-foreground">
               {props.actionLabel}
             </Text>
-          </Pressable>
+          </RowPressable>
         ) : null}
       </Animated.View>
     );
@@ -48,7 +55,13 @@ export function EmptyState(props: {
         glass ? "border-chrome-glass-border bg-chrome-glass" : "border border-border bg-card",
       )}
       style={
-        glass ? { borderCurve: "continuous", borderWidth: StyleSheet.hairlineWidth } : undefined
+        glass
+          ? {
+              borderCurve: "continuous",
+              borderRadius: GLASS_CARD_RADIUS,
+              borderWidth: StyleSheet.hairlineWidth,
+            }
+          : undefined
       }
     >
       <Text className="font-t3-bold text-lg text-foreground">{props.title}</Text>
@@ -58,13 +71,19 @@ export function EmptyState(props: {
       {props.action ? (
         <View className="mt-4 self-start">{props.action}</View>
       ) : props.actionLabel && props.onAction ? (
-        <Pressable
-          accessibilityRole="button"
-          className="mt-4 self-start rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-          onPress={props.onAction}
-        >
-          <Text className="text-sm font-t3-bold text-primary-foreground">{props.actionLabel}</Text>
-        </Pressable>
+        <View className="mt-4 self-start">
+          <RowPressable
+            accessibilityRole="button"
+            className="rounded-full bg-primary px-4 py-2.5 active:opacity-70"
+            interactionOpacity={0}
+            pressScale={BUTTON_PRESS_SCALE}
+            onPress={props.onAction}
+          >
+            <Text className="text-sm font-t3-bold text-primary-foreground">
+              {props.actionLabel}
+            </Text>
+          </RowPressable>
+        </View>
       ) : null}
     </Animated.View>
   );

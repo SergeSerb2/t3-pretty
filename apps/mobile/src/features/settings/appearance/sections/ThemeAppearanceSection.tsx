@@ -12,7 +12,7 @@ import {
 import { getMobileUniwindThemeName } from "../../../../lib/mobileThemeRuntime";
 import { cn } from "../../../../lib/cn";
 import { PHOTO_SETS, type PhotoSetId } from "../../../scenery/photoSets";
-import { useScenery } from "../../../scenery/SceneryProvider";
+import { useGlassChromeActive, useScenery } from "../../../scenery/SceneryProvider";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
 
 const APPEARANCE_MODES: ReadonlyArray<{
@@ -97,6 +97,7 @@ function ModeCard(props: {
   readonly selected: boolean;
   readonly themeIds: MobileThemeIds;
 }) {
+  const glass = useGlassChromeActive();
   return (
     <Pressable
       accessibilityLabel={`${props.label} appearance`}
@@ -107,7 +108,12 @@ function ModeCard(props: {
         props.selected
           ? "border-2 border-primary bg-subtle"
           : "border border-border bg-grouped-card",
+        glass &&
+          (props.selected
+            ? "rounded-[22px]"
+            : "rounded-[22px] border-[0.5px] border-chrome-glass-border bg-chrome-glass"),
       )}
+      style={glass ? { borderCurve: "continuous" } : undefined}
       disabled={props.disabled}
       onPress={props.onPress}
     >

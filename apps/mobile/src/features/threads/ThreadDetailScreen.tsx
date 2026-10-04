@@ -71,6 +71,7 @@ import Animated, {
   Easing,
   FadeInDown,
   FadeOut,
+  LayoutAnimationConfig,
   ReduceMotion,
   useAnimatedReaction,
   useAnimatedStyle,
@@ -1095,7 +1096,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               contentInsetEndAdjustment={combinedContentInsetEndAdjustment}
               contentTopInset={0}
               contentBottomInset={
-                estimatedOverlayHeight + (showFloatingStatus ? FLOATING_WORKING_CONTROL_COVERAGE : 0)
+                estimatedOverlayHeight +
+                (showFloatingStatus ? FLOATING_WORKING_CONTROL_COVERAGE : 0)
               }
               contentMaxWidth={contentMaxWidth}
               historyControls={props.historyControls}
@@ -1229,21 +1231,26 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                     entering={FadeInDown.duration(220)}
                     exiting={FadeOut.duration(140)}
                   >
-                    {props.activePendingApproval ? (
-                      <PendingApprovalCard
-                        approval={props.activePendingApproval}
-                        respondingApprovalId={props.respondingApprovalId}
-                        onRespond={props.onRespondToApproval}
-                      />
-                    ) : null}
-                    {props.activePendingSecretRequest ? (
-                      <PendingSecretRequestCard
-                        key={props.activePendingSecretRequest.requestId}
-                        request={props.activePendingSecretRequest}
-                        respondingRequestId={props.respondingSecretRequestId}
-                        onRespond={props.onRespondToSecretRequest}
-                      />
-                    ) : null}
+                    {/* The stack fades in as one; the cards' own fades only
+                        run when a follow-up request replaces one. */}
+                    <LayoutAnimationConfig skipEntering>
+                      {props.activePendingApproval ? (
+                        <PendingApprovalCard
+                          key={props.activePendingApproval.requestId}
+                          approval={props.activePendingApproval}
+                          respondingApprovalId={props.respondingApprovalId}
+                          onRespond={props.onRespondToApproval}
+                        />
+                      ) : null}
+                      {props.activePendingSecretRequest ? (
+                        <PendingSecretRequestCard
+                          key={props.activePendingSecretRequest.requestId}
+                          request={props.activePendingSecretRequest}
+                          respondingRequestId={props.respondingSecretRequestId}
+                          onRespond={props.onRespondToSecretRequest}
+                        />
+                      ) : null}
+                    </LayoutAnimationConfig>
                     {props.activePendingUserInput ? (
                       <PendingUserInputCard
                         pendingUserInput={props.activePendingUserInput}

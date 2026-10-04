@@ -14,6 +14,7 @@ import {
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 
 import { MaterialScreenContent } from "../../components/MaterialScreenContent";
+import { SheetSurface } from "../../components/SheetSurface";
 import { AudioFilePreview } from "../../components/AudioFilePreview";
 import { EmptyState } from "../../components/EmptyState";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
@@ -36,6 +37,7 @@ import {
   useAdaptiveWorkspacePaneRole,
   useRegisterWorkspaceInspector,
 } from "../layout/AdaptiveWorkspaceLayout";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { ThreadRouteScreen } from "../threads/ThreadRouteScreen";
 import { FilePreviewLoading, FilePreviewNotice } from "./FilePreviewFeedback";
@@ -219,6 +221,7 @@ function FileContent(props: {
 }) {
   // Reopening a mutable host file must not reuse a poster from an earlier visit.
   const thumbnailInstanceId = useId();
+  const glass = useGlassChromeActive();
   const isMarkdown = isMarkdownPreviewFile(props.relativePath);
   const isBrowserFile = isWorkspaceBrowserPreviewPath(props.relativePath);
   const isImageFile = isWorkspaceImagePreviewPath(props.relativePath);
@@ -280,7 +283,11 @@ function FileContent(props: {
   if (props.fileError && props.fileContents === null) {
     return (
       <View className="flex-1 items-center justify-center bg-sheet px-6">
-        <EmptyState title="File unavailable" detail={props.fileError} />
+        <EmptyState
+          title="File unavailable"
+          detail={props.fileError}
+          variant={glass ? "plain" : undefined}
+        />
       </View>
     );
   }
@@ -366,12 +373,14 @@ function useThreadFilesWorkspace(params: {
 }
 
 function FilesUnavailable() {
+  const glass = useGlassChromeActive();
   return (
     <View className="flex-1 items-center justify-center bg-sheet px-6">
       <NativeStackScreenOptions options={{ title: "Files" }} />
       <EmptyState
         title="Files unavailable"
         detail="This thread does not have an active workspace path."
+        variant={glass ? "plain" : undefined}
       />
     </View>
   );
@@ -414,6 +423,7 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
     setSearchQueryState(limitMobileSearchQuery(query, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH));
   }, []);
   const { themeAppearance: highlightTheme } = useAppearancePreferences();
+  const glass = useGlassChromeActive();
   const { cwd, environmentId, projectName, selectedThread, threadId } = useThreadFilesWorkspace(
     props.route.params,
   );
@@ -545,12 +555,18 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
           onRefresh={entriesQuery.refresh}
           onSelectFile={handleSelectFile}
         />
-        <FilesToolbarBottomFade />
+        {/* An opaque fade would band over the photo. */}
+        {glass ? null : <FilesToolbarBottomFade />}
       </MaterialScreenContent>
     </>
   );
 
-  return Platform.OS === "android" ? <View className="flex-1 bg-header">{content}</View> : content;
+  if (Platform.OS === "android") return <View className="flex-1 bg-header">{content}</View>;
+  return glass ? (
+    <SheetSurface threadKey={`${environmentId}:${threadId}`}>{content}</SheetSurface>
+  ) : (
+    content
+  );
 }
 
 export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
@@ -558,6 +574,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   const navigation = useNavigation();
   const { fileInspector } = useAdaptiveWorkspaceLayout();
   const { appearance, setCodeWordBreak } = useAppearancePreferences();
+  const glass = useGlassChromeActive();
   const iconColor = useUniwindTheme()["--color-icon"];
   const params = props.route.params;
   const relativePath = normalizeMobileFileRoutePath(params.path);
@@ -867,7 +884,11 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     return (
       <View className="flex-1 items-center justify-center bg-sheet px-6">
         <NativeStackScreenOptions options={{ title: "Files" }} />
-        <EmptyState title="File unavailable" detail="This file path is invalid." />
+        <EmptyState
+          title="File unavailable"
+          detail="This file path is invalid."
+          variant={glass ? "plain" : undefined}
+        />
       </View>
     );
   }

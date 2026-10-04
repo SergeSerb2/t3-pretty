@@ -22,6 +22,7 @@ import { Alert, Platform, Pressable, RefreshControl, ScrollView, View } from "re
 
 import { Screen, ScreenStack, ScreenStackHeaderConfig } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { cn } from "../../../lib/cn";
 import { useUniwindTheme } from "../../../lib/useUniwindTheme";
 import {
   AndroidHeaderIconButton,
@@ -29,6 +30,7 @@ import {
 } from "../../../components/AndroidScreenHeader";
 import { AndroidAnchoredMenu } from "../../../components/AndroidAnchoredMenu";
 import { MaterialScreenContent } from "../../../components/MaterialScreenContent";
+import { SheetSurface } from "../../../components/SheetSurface";
 import { useAdaptiveWorkspaceLayout } from "../../layout/AdaptiveWorkspaceLayout";
 import { AppText as Text } from "../../../components/AppText";
 import {
@@ -46,6 +48,8 @@ import { vcsEnvironment } from "../../../state/vcs";
 import { resolveGitOverviewReviewNavigationAction } from "./git-overview-navigation";
 import { MetaCard, SheetListRow, menuItemIconName, statusSummary } from "./gitSheetComponents";
 import { useThreadInspectorVisibility } from "../thread-inspector-content-stack";
+import { useGlassChromeActive } from "../../scenery/SceneryProvider";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../../scenery/glassStyles";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
@@ -93,6 +97,9 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
   const theme = useUniwindTheme();
   const foregroundColor = theme["--color-foreground"];
   const sheetColor = theme["--color-sheet"];
+  const glass = useGlassChromeActive();
+  // Rows sit flush in glass cards, so separators start at the row title.
+  const dividerClassName = glass ? "ml-16 h-px bg-border" : "ml-12 h-px bg-border";
 
   const gitStatus = useEnvironmentQuery(
     loadInitialState && selectedThread !== null && selectedThreadCwd !== null
@@ -255,7 +262,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
   const content = (
     <ScrollView
       alwaysBounceVertical
-      className="flex-1 android:bg-sheet-solid ios:bg-screen"
+      className={glass ? "flex-1" : "flex-1 android:bg-sheet-solid ios:bg-screen"}
       contentInsetAdjustmentBehavior={Platform.OS === "ios" ? "automatic" : "never"}
       showsVerticalScrollIndicator={false}
       contentInset={{ bottom: Math.max(insets.bottom, 18) + 18 }}
@@ -269,15 +276,20 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
       }
     >
       <View
-        className={`overflow-hidden bg-card android:rounded-[20px] ios:border ios:border-border ${
-          isInspector ? "ios:rounded-2xl ios:px-3 ios:py-1" : "ios:rounded-[22px] ios:px-4 ios:py-1"
-        }`}
+        className={
+          glass
+            ? GLASS_CARD_CLASS_NAME
+            : `overflow-hidden bg-card android:rounded-[20px] ios:border ios:border-border ${
+                isInspector
+                  ? "ios:rounded-2xl ios:px-3 ios:py-1"
+                  : "ios:rounded-[22px] ios:px-4 ios:py-1"
+              }`
+        }
+        style={glass ? glassCardStyle() : undefined}
       >
         {sheetMenuItems.map(({ item, disabledReason }, index) => (
           <View key={`${item.id}-${item.label}`}>
-            {index > 0 && Platform.OS !== "android" ? (
-              <View className="ml-12 h-px bg-border" />
-            ) : null}
+            {index > 0 && Platform.OS !== "android" ? <View className={dividerClassName} /> : null}
             <SheetListRow
               icon={menuItemIconName(item.icon)}
               title={item.label}
@@ -289,7 +301,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
         ))}
         {behindCount > 0 ? (
           <>
-            {Platform.OS !== "android" ? <View className="ml-12 h-px bg-border" /> : null}
+            {Platform.OS !== "android" ? <View className={dividerClassName} /> : null}
             <SheetListRow
               icon="arrow.down.circle"
               title="Pull latest"
@@ -299,7 +311,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
             />
           </>
         ) : null}
-        {Platform.OS !== "android" ? <View className="ml-12 h-px bg-border" /> : null}
+        {Platform.OS !== "android" ? <View className={dividerClassName} /> : null}
         <SheetListRow
           icon="text.bubble"
           title="Review changes"
@@ -314,7 +326,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
             );
           }}
         />
-        {Platform.OS !== "android" ? <View className="ml-12 h-px bg-border" /> : null}
+        {Platform.OS !== "android" ? <View className={dividerClassName} /> : null}
         <SheetListRow
           icon="point.topleft.down.curvedto.point.bottomright.up"
           title="Branches & worktrees"
@@ -337,10 +349,17 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
           {linkedPrChains.map((chain) => (
             <View
               key={threadPullRequestKeyOf(chain.layers[0]!)}
-              className="overflow-hidden bg-card android:rounded-[20px] ios:rounded-2xl ios:border ios:border-border ios:px-3 ios:py-1"
+              className={
+                glass
+                  ? GLASS_CARD_CLASS_NAME
+                  : "overflow-hidden bg-card android:rounded-[20px] ios:rounded-2xl ios:border ios:border-border ios:px-3 ios:py-1"
+              }
+              style={glass ? glassCardStyle() : undefined}
             >
               {chain.layers.length > 1 ? (
-                <View className="flex-row items-center gap-2 px-1 pt-2 pb-1">
+                <View
+                  className={cn("flex-row items-center gap-2 pt-2 pb-1", glass ? "px-4" : "px-1")}
+                >
                   <SymbolView
                     name="square.3.layers.3d"
                     size={14}
@@ -355,7 +374,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
               {chain.layers.map((link, index) => (
                 <View key={threadPullRequestKeyOf(link)}>
                   {index > 0 && Platform.OS !== "android" ? (
-                    <View className="ml-12 h-px bg-border" />
+                    <View className={dividerClassName} />
                   ) : null}
                   <SheetListRow
                     icon="arrow.triangle.pull"
@@ -417,7 +436,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
     // inspector branch below: branch as the title, status summary as the native
     // subtitle, and content that owns pull-to-refresh.
     return (
-      <View collapsable={false} className="flex-1 bg-sheet">
+      <SheetSurface threadKey={`${environmentId}:${threadId}`}>
         <ScreenStack style={{ flex: 1 }}>
           <Screen
             activityState={2}
@@ -425,7 +444,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
             isNativeStack
             screenId="thread-git-sheet-native"
             scrollEdgeEffects={HEADER_SCROLL_EDGE_EFFECTS}
-            style={{ backgroundColor: sheetColor, flex: 1 }}
+            style={{ backgroundColor: glass ? "transparent" : sheetColor, flex: 1 }}
           >
             {content}
             <ScreenStackHeaderConfig
@@ -442,7 +461,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
             />
           </Screen>
         </ScreenStack>
-      </View>
+      </SheetSurface>
     );
   }
 

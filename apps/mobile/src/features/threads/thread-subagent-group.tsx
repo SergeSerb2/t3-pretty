@@ -12,7 +12,8 @@ import type {
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
-import { AppState, Pressable, View, type ColorValue } from "react-native";
+import { AppState, Pressable, StyleSheet, View, type ColorValue } from "react-native";
+import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
@@ -21,12 +22,15 @@ import { cn } from "../../lib/cn";
 import type { ThreadFeedActivity } from "../../lib/threadActivity";
 import { serverEnvironment } from "../../state/server";
 import { environmentThreadDetails } from "../../state/threads";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { SubagentStatusDot } from "./SubagentStatusDot";
 import { subagentCardDetail, subagentCardElapsed } from "./subagent-card-presentation";
 import { resolveSubagentRowPresentation } from "./threadAgentsPresentation";
+import { ThreadDisclosureChevron } from "./thread-disclosure-chevron";
 import { WorkLogBlock } from "./work-log-layout";
 
 type SubagentItem = Extract<OrchestrationV2TurnItem, { type: "subagent" }>;
+const MEMBERS_ENTERING = FadeIn.duration(140).reduceMotion(ReduceMotion.System);
 type AgentTiming = Pick<OrchestrationV2Subagent, "status" | "startedAt" | "completedAt">;
 
 function SubagentElapsed({ agents }: { readonly agents: ReadonlyArray<AgentTiming> }) {
@@ -82,6 +86,10 @@ export function ThreadSubagentGroup(props: {
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
   const navigation = useNavigation();
+  const glass = useGlassChromeActive();
+  // The feed remounts rows that scroll back into view; only a tap here fades
+  // the members in, never a remount of an already-expanded group.
+  const [userToggled, setUserToggled] = useState(false);
   const members = props.activities.flatMap(({ projectedItem }) =>
     projectedItem.item.type === "subagent" ? [projectedItem.item] : [],
   );
@@ -114,7 +122,10 @@ export function ThreadSubagentGroup(props: {
           accessibilityRole="button"
           accessibilityLabel={`${label}, ${summary}`}
           accessibilityState={{ expanded }}
-          onPress={() => props.onToggleRow(props.anchorKey, props.anchorKey)}
+          onPress={() => {
+            setUserToggled(true);
+            props.onToggleRow(props.anchorKey, props.anchorKey);
+          }}
           className="min-h-14 flex-row items-center gap-3 rounded-lg py-2 active:bg-subtle"
         >
           <View className="flex-row items-center">
@@ -147,15 +158,24 @@ export function ThreadSubagentGroup(props: {
             </Text>
           </View>
           <SubagentElapsed agents={agents} />
-          <SymbolView
-            name={expanded ? "chevron.up" : "chevron.down"}
+          <ThreadDisclosureChevron
+            expanded={expanded}
+            collapsedDirection="down"
             size={11}
             tintColor={props.iconSubtleColor}
           />
         </Pressable>
       ) : null}
       {!grouped || expanded ? (
-        <View className="mb-1 gap-px rounded-xl border border-border bg-card/30 p-1">
+        <Animated.View
+          entering={userToggled ? MEMBERS_ENTERING : undefined}
+          className={
+            glass
+              ? "mb-1 gap-px rounded-[20px] border-continuous border-chrome-glass-border bg-chrome-glass p-1"
+              : "mb-1 gap-px rounded-xl border border-border bg-card/30 p-1"
+          }
+          style={glass ? { borderWidth: StyleSheet.hairlineWidth } : undefined}
+        >
           {agents.map((agent) => {
             const presentation = resolveSubagentRowPresentation(agent);
             const detail = subagentCardDetail(
@@ -228,7 +248,7 @@ export function ThreadSubagentGroup(props: {
               </Pressable>
             );
           })}
-        </View>
+        </Animated.View>
       ) : null}
     </WorkLogBlock>
   );

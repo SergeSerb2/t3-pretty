@@ -4,6 +4,9 @@ import { Platform, Pressable, View } from "react-native";
 import { AppText as Text } from "../../../components/AppText";
 import { MaterialButton } from "../../../components/MaterialButton";
 import { cn } from "../../../lib/cn";
+import { GlassRowPressable } from "../../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../../scenery/glassStyles";
+import { useGlassChromeActive } from "../../scenery/SceneryProvider";
 
 /* ─── Shared sheet components ──────────────────────────────────────── */
 
@@ -14,6 +17,7 @@ export function SheetActionButton(props: {
   readonly tone?: "primary" | "secondary" | "danger";
   readonly onPress: () => void;
 }) {
+  const glass = useGlassChromeActive();
   if (Platform.OS === "android")
     return (
       <View className="flex-1">
@@ -42,6 +46,7 @@ export function SheetActionButton(props: {
         tone === "primary" ? "bg-primary" : tone === "danger" ? "bg-danger" : "bg-secondary",
         tone !== "primary" &&
           (tone === "danger" ? "border border-danger-border" : "border border-secondary-border"),
+        glass && tone === "secondary" && "border-chrome-glass-border bg-foreground/5",
       )}
       accessibilityRole="button"
       disabled={props.disabled}
@@ -70,8 +75,16 @@ export function SheetActionButton(props: {
 }
 
 export function MetaCard(props: { readonly label: string; readonly value: string }) {
+  const glass = useGlassChromeActive();
   return (
-    <View className="bg-card px-4 py-3 android:rounded-[20px] ios:rounded-[18px] ios:border ios:border-border">
+    <View
+      className={
+        glass
+          ? cn(GLASS_CARD_CLASS_NAME, "px-4 py-3")
+          : "bg-card px-4 py-3 android:rounded-[20px] ios:rounded-[18px] ios:border ios:border-border"
+      }
+      style={glass ? glassCardStyle() : undefined}
+    >
       <Text className="text-foreground-muted text-2xs font-t3-bold tracking-[0.9px] uppercase">
         {props.label}
       </Text>
@@ -89,9 +102,14 @@ export function SheetListRow(props: {
   readonly disabled?: boolean;
   readonly onPress: () => void;
 }) {
+  const glass = useGlassChromeActive();
   return (
-    <Pressable
-      className="flex-row items-center py-3 disabled:opacity-[0.45] android:min-h-16 android:gap-4 android:px-4 android:active:bg-subtle ios:gap-3 ios:px-1"
+    <GlassRowPressable
+      className={
+        glass
+          ? "flex-row items-center gap-3 px-4 py-3 disabled:opacity-[0.45]"
+          : "flex-row items-center py-3 disabled:opacity-[0.45] android:min-h-16 android:gap-4 android:px-4 android:active:bg-subtle ios:gap-3 ios:px-1"
+      }
       disabled={props.disabled}
       onPress={props.onPress}
     >
@@ -119,7 +137,7 @@ export function SheetListRow(props: {
           type="monochrome"
         />
       ) : null}
-    </Pressable>
+    </GlassRowPressable>
   );
 }
 
