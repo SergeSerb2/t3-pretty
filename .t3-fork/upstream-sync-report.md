@@ -429,3 +429,5 @@ Validation is scoped and serialized to avoid contention with unrelated workers. 
 - `infra/relay/src/agentActivity/ApnsClient.test.ts` — The parent's stage-specific status and nested TimeoutError expectations for timed-out requests.. Reason: T3 Pretty's current request-level deadline contract intentionally normalizes both send and response-read timeouts to stage "deadline" with null status and a descriptive configured-deadline cause.
 - `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `.github/workflows/mobile-eas-production.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `web-scenery-unit` failed after merging `v0.0.46-nightly.20261003.2610`; repaired with `gpt-5.6-sol`: Adapt the scenery composer contract to the parent's context-sensitive labels and dispatch-aware primary action without dropping the fork's accessibility, placement, or send-arrow checks.
+  - edited `apps/web/src/scenery/sceneryMotionContract.test.ts`
