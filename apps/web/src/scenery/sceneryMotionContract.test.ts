@@ -185,7 +185,11 @@ describe("chat view contract", () => {
 });
 
 describe("composer contract", () => {
-  it("send and stop buttons still carry the aria-labels the press feedback keys on", () => {
+  it("primary actions and stop retain their label-independent motion hooks", () => {
+    expect(primaryActionsSource).toContain('data-chat-composer-primary-action="true"');
+    expect(primaryActionsSource).toContain('data-chat-composer-stop="true"');
+    expect(motionStylesSource).toContain("[data-chat-composer-primary-action]");
+    expect(motionStylesSource).toContain("[data-chat-composer-stop]");
     expect(primaryActionsSource).toContain("aria-label={submitStatus ?? submitLabel}");
     expect(primaryActionsSource).toContain('"Submit message"');
     expect(primaryActionsSource).toContain('aria-label="Stop generation"');
@@ -212,8 +216,29 @@ describe("composer contract", () => {
     expect(primaryActionsSource).toContain('type={showResume ? "button" : "submit"}');
     expect(primaryActionsSource).toContain("resolveComposerDispatchMode({");
     expect(primaryActionsSource).toContain(
+      'data-chat-composer-send-while-running={isRunning && !isEditingQueuedMessage ? "" : undefined}',
+    );
+    expect(motionStylesSource).toContain("[data-chat-composer-send-while-running]");
+    expect(motionStylesSource).not.toContain(
+      '[data-chat-composer-actions="right"] > button[type="submit"]',
+    );
+    expect(primaryActionsSource).toContain(
       '<ArrowUpIcon className="size-3.5" aria-hidden="true" />',
     );
+  });
+
+  it("reduced motion covers dispatch and stop regardless of their accessible labels", () => {
+    const reducedMotionStyles = motionStylesSource.slice(
+      motionStylesSource.indexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    for (const hook of ["data-chat-composer-primary-action", "data-chat-composer-stop"]) {
+      expect(reducedMotionStyles).toContain(`[${hook}]`);
+      expect(reducedMotionStyles).toContain(`[${hook}]:`);
+    }
+    expect(reducedMotionStyles).not.toContain('aria-label="Send message"');
+    expect(reducedMotionStyles).toContain("transition-property: opacity;");
+    expect(reducedMotionStyles).toContain("scale: none;");
+    expect(reducedMotionStyles).toContain("translate: none;");
   });
 
   it("composer menus and the stash drawer are glass surfaces inside the drawer layer", () => {

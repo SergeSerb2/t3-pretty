@@ -135,6 +135,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         render={
           <button
             type="button"
+            data-chat-composer-stop="true"
             className={cn(
               "flex cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-all duration-150 hover:bg-destructive hover:scale-105 active:inset-shadow-control-pressed active:shadow-none [&_svg]:pointer-events-none",
               insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
@@ -142,14 +143,19 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             {...pointerFocusProps}
             onClick={onInterrupt}
             aria-label="Stop generation"
+            aria-busy={isInterrupting || undefined}
           />
         }
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-          <rect x="2" y="2" width="8" height="8" rx="1.5" />
-        </svg>
+        {isInterrupting ? (
+          <Spinner size="sm" aria-hidden="true" />
+        ) : (
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+            <rect x="2" y="2" width="8" height="8" rx="1.5" />
+          </svg>
+        )}
       </TooltipTrigger>
-      <TooltipPopup>Interrupt</TooltipPopup>
+      <TooltipPopup>{isInterrupting ? "Interrupting..." : "Interrupt"}</TooltipPopup>
     </Tooltip>
   );
 
@@ -183,6 +189,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         ) : null}
         <button
           type="submit"
+          data-chat-composer-primary-action="true"
           className={cn(messageActionPillClassName, "h-8 sm:h-7", compact ? "px-3" : "px-4")}
           {...pointerFocusProps}
           disabled={
@@ -207,6 +214,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       return (
         <button
           type="submit"
+          data-chat-composer-primary-action="true"
           className={cn(messageActionPillClassName, "h-9 sm:h-8", compact ? "px-3" : "px-4")}
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
@@ -220,6 +228,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <div data-chat-composer-implement-actions="true" className="flex items-center justify-end">
         <button
           type="submit"
+          data-chat-composer-primary-action="true"
           className={cn(messageActionPillClassName, "h-9 rounded-r-none px-4 sm:h-8")}
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
@@ -291,6 +300,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const sendButton = (
     <button
       type={showResume ? "button" : "submit"}
+      data-chat-composer-primary-action="true"
+      data-chat-composer-send-while-running={isRunning && !isEditingQueuedMessage ? "" : undefined}
       className={cn(
         "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
         stageBackdropVariant
