@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+import * as NodeModule from "node:module";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 // The default unit environment is Node. Install a DOM locally so the shared
 // Node setup stays intact and this test exercises the real web virtualizer.
-const { JSDOM } = createRequire(import.meta.url)("jsdom") as {
+const { JSDOM } = NodeModule.createRequire(import.meta.url)("jsdom") as {
   JSDOM: new (
     html: string,
     options: { pretendToBeVisual: boolean },

@@ -101,67 +101,72 @@ const APPEARANCES = [
   { appearance: "light" as const, colors: WORLD_SCENERY_THEME.variants!.light! },
 ];
 
+const CONTRAST_CASES = APPEARANCES.flatMap(({ appearance, colors }) =>
+  TRANSLUCENCIES.map((translucency) => ({
+    appearance,
+    colors,
+    backdrops: worstBackdrops(colors.canvas, appearance, translucency),
+    label: `${appearance} t=${translucency}`,
+  })),
+);
+
 describe("world scenery contrast contract", () => {
-  for (const { appearance, colors } of APPEARANCES) {
-    for (const translucency of TRANSLUCENCIES) {
-      const backdrops = worstBackdrops(colors.canvas, appearance, translucency);
-      const label = `${appearance} t=${translucency}`;
-
-      it(`${label}: bare text clears AA (4.5:1)`, () => {
-        for (const role of [
-          "text",
-          "textMuted",
-          "errorForeground",
-          "warningForeground",
-          "updateForeground",
-        ] as const) {
-          expect
-            .soft(worstContrast(colors[role], backdrops), `${role} ${colors[role]}`)
-            .toBeGreaterThanOrEqual(4.5);
-        }
-      });
-
-      it(`${label}: icons and hints clear 3:1`, () => {
-        for (const role of [
-          "iconMuted",
-          "placeholder",
-          "secondaryLabel",
-          "mutedForeground",
-          "accent",
-        ] as const) {
-          expect
-            .soft(worstContrast(colors[role], backdrops), `${role} ${colors[role]}`)
-            .toBeGreaterThanOrEqual(3);
-        }
-      });
-
-      it(`${label}: plate content clears AA on its plate`, () => {
-        const plates = PLATES[appearance];
-        const messageBackdrops = backdrops.map((backdrop) =>
-          blend(plates.message.color, plates.message.alpha, backdrop),
-        );
-        const codeBackdrops = backdrops.map((backdrop) =>
-          blend(plates.code.color, plates.code.alpha, backdrop),
-        );
-        expect
-          .soft(worstContrast(colors.messageForeground, messageBackdrops), "messageForeground")
-          .toBeGreaterThanOrEqual(4.5);
-        expect
-          .soft(worstContrast(colors.codeForeground, codeBackdrops), "codeForeground")
-          .toBeGreaterThanOrEqual(4.5);
-      });
+  it.each(CONTRAST_CASES)("$label: bare text clears AA (4.5:1)", ({ colors, backdrops }) => {
+    for (const role of [
+      "text",
+      "textMuted",
+      "errorForeground",
+      "warningForeground",
+      "updateForeground",
+    ] as const) {
+      expect
+        .soft(worstContrast(colors[role], backdrops), `${role} ${colors[role]}`)
+        .toBeGreaterThanOrEqual(4.5);
     }
+  });
 
-    it(`${appearance}: selected chrome chips stay readable`, () => {
-      // Plan / PR toggles paint with --accent, which maps to accentSurface.
-      expect(
-        contrastRatio(hexToRgb(colors.accentSurfaceForeground), hexToRgb(colors.accentSurface)),
-      ).toBeGreaterThanOrEqual(4.5);
-      expect(
-        contrastRatio(hexToRgb(colors.messageActionForeground), hexToRgb(colors.messageAction)),
-      ).toBeGreaterThanOrEqual(4.5);
-    });
-  }
+  it.each(CONTRAST_CASES)("$label: icons and hints clear 3:1", ({ colors, backdrops }) => {
+    for (const role of [
+      "iconMuted",
+      "placeholder",
+      "secondaryLabel",
+      "mutedForeground",
+      "accent",
+    ] as const) {
+      expect
+        .soft(worstContrast(colors[role], backdrops), `${role} ${colors[role]}`)
+        .toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it.each(CONTRAST_CASES)(
+    "$label: plate content clears AA on its plate",
+    ({ appearance, colors, backdrops }) => {
+      const plates = PLATES[appearance];
+      const messageBackdrops = backdrops.map((backdrop) =>
+        blend(plates.message.color, plates.message.alpha, backdrop),
+      );
+      const codeBackdrops = backdrops.map((backdrop) =>
+        blend(plates.code.color, plates.code.alpha, backdrop),
+      );
+      expect
+        .soft(worstContrast(colors.messageForeground, messageBackdrops), "messageForeground")
+        .toBeGreaterThanOrEqual(4.5);
+      expect
+        .soft(worstContrast(colors.codeForeground, codeBackdrops), "codeForeground")
+        .toBeGreaterThanOrEqual(4.5);
+    },
+  );
+
+  it.each(APPEARANCES)("$appearance: selected chrome chips stay readable", ({ colors }) => {
+    // Plan / PR toggles paint with --accent, which maps to accentSurface.
+    expect(
+      contrastRatio(hexToRgb(colors.accentSurfaceForeground), hexToRgb(colors.accentSurface)),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrastRatio(hexToRgb(colors.messageActionForeground), hexToRgb(colors.messageAction)),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
 });
 
 describe("world scenery dark highlight lift", () => {
