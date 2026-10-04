@@ -426,7 +426,7 @@ describe("AgentActivityPublisher", () => {
                     }),
                 }),
               ),
-              Layer.succeed(FcmDeliveries, {
+              Layer.succeed(FcmDeliveries.FcmDeliveries, {
                 enqueue: () => Effect.succeed(null),
                 process: () => Effect.void,
               }),

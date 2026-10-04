@@ -236,7 +236,6 @@ function liveActivityAlertPayload(alert: ApnsLiveActivityAlert) {
       title: alert.title,
       body: alert.body,
       sound: "default",
-      "thread-id": notificationThreadId(notification),
     },
   };
 }

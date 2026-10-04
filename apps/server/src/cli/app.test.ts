@@ -266,8 +266,9 @@ describe("t3 app", () => {
     ),
   );
 
-  for (const responseKind of ["failure", "invalid"] as const) {
-    it.effect(`never falls back after the default desktop sends a ${responseKind} response`, () =>
+  it.effect.each(["failure", "invalid"] as const)(
+    "never falls back after the default desktop sends a %s response",
+    (responseKind) =>
       withTempDirectory("t3-app-response-test-", (root) =>
         Effect.gen(function* () {
           vi.mocked(NodeOS.homedir).mockReturnValue(root);
@@ -315,6 +316,5 @@ describe("t3 app", () => {
           }
         }).pipe(Effect.scoped),
       ),
-    );
-  }
+  );
 });
