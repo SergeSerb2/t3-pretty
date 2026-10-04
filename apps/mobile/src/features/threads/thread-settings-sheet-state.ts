@@ -14,33 +14,6 @@ import { selectableChoices } from "./thread-settings-options";
 const providerNeedsSetup = (provider: ServerProvider) =>
   !provider.installed || provider.auth.status === "unauthenticated";
 
-export type ThreadSettingsSheetPage = "home" | "catalog";
-
-/** Map the inner picker route to the page we re-present after a live session update. */
-export function threadSettingsSheetPageForRoute(routeName: string): ThreadSettingsSheetPage | null {
-  if (routeName === "ThreadSettingsCatalog") {
-    return "catalog";
-  }
-  if (routeName === "ThreadSettingsHome") {
-    return "home";
-  }
-  return null;
-}
-
-/** Keep the in-sheet page only for a live re-present of the same open owner. */
-export function presentedSettingsSheetPage(input: {
-  readonly preservePage: boolean;
-  readonly currentOwnerId: string | undefined;
-  readonly nextOwnerId: string;
-  readonly currentPage: ThreadSettingsSheetPage | undefined;
-  readonly requestedPage: ThreadSettingsSheetPage | undefined;
-}): ThreadSettingsSheetPage | undefined {
-  if (input.preservePage && input.currentOwnerId === input.nextOwnerId) {
-    return input.currentPage;
-  }
-  return input.requestedPage;
-}
-
 /** Read setup choices from this environment, not the selectable model list. */
 export function providerSetupCandidates(input: {
   readonly providers: ReadonlyArray<ServerProvider>;
@@ -113,17 +86,6 @@ export function modelMatchesCatalogQuery(input: {
   ].some((value) => value.toLocaleLowerCase().includes(query));
 }
 
-/** Preserve staged provider options when the highlighted model is tapped again. */
-export function pendingModelAfterPress(input: {
-  readonly current: ModelOption | null;
-  readonly pressed: ModelOption;
-  readonly pressedIsApplied: boolean;
-}): ModelOption | null {
-  if (input.pressedIsApplied) {
-    return null;
-  }
-  return input.current?.key === input.pressed.key ? input.current : input.pressed;
-}
 /**
  * Settings the displayed model actually advertises. Unsupported rows stay
  * out of the sheet instead of rendering disabled — switching models should
@@ -138,16 +100,6 @@ export function visibleSheetOptionDescriptors(
     }
     return selectableChoices(descriptor).length > 0;
   });
-}
-
-/** A model can disappear while the picker is open. */
-export function canCommitPendingModel(
-  pending: ModelOption,
-  groups: ReadonlyArray<ProviderGroup>,
-): boolean {
-  return groups.some((group) =>
-    group.models.some((model) => model.key === pending.key && !model.isUnavailable),
-  );
 }
 
 /**

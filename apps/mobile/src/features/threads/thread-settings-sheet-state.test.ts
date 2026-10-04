@@ -13,16 +13,12 @@ import * as Schema from "effect/Schema";
 import type { ModelOption } from "../../lib/modelOptions";
 import {
   buildNewTaskThreadSettingsSession,
-  canCommitPendingModel,
   effectiveProviderFilter,
   favoritesFirst,
   initialProviderFilter,
   modelFavoriteKey,
   modelMatchesCatalogQuery,
-  pendingModelAfterPress,
-  presentedSettingsSheetPage,
   providerSetupCandidates,
-  threadSettingsSheetPageForRoute,
   toggleModelFavorite,
   visibleSheetOptionDescriptors,
 } from "./thread-settings-sheet-state";
@@ -123,56 +119,6 @@ describe("thread settings sheet state", () => {
     expect(modelMatchesCatalogQuery({ model, providerLabel: "OpenCode", query: "copilot" })).toBe(
       false,
     );
-  });
-
-  it("clears staging when the applied model is pressed", () => {
-    expect(
-      pendingModelAfterPress({
-        current: modelOption("gpt-next"),
-        pressed: modelOption("gpt-current"),
-        pressedIsApplied: true,
-      }),
-    ).toBeNull();
-  });
-
-  it("preserves staged options when the highlighted model is pressed again", () => {
-    const pending = modelOption("gpt-next", [{ id: "effort", value: "high" }]);
-
-    expect(
-      pendingModelAfterPress({
-        current: pending,
-        pressed: modelOption("gpt-next"),
-        pressedIsApplied: false,
-      }),
-    ).toBe(pending);
-  });
-
-  it("stages a different model", () => {
-    const pressed = modelOption("gpt-other");
-
-    expect(
-      pendingModelAfterPress({
-        current: modelOption("gpt-next"),
-        pressed,
-        pressedIsApplied: false,
-      }),
-    ).toBe(pressed);
-  });
-
-  it("cannot save a staged model after sign-out removes it from the catalog", () => {
-    const pending = modelOption("gemini-native");
-    const group = { providerKey: "codex", providerLabel: "Codex", models: [pending] };
-
-    expect(canCommitPendingModel(pending, [group])).toBe(true);
-    expect(canCommitPendingModel(pending, [])).toBe(false);
-    expect(
-      canCommitPendingModel(pending, [
-        {
-          ...group,
-          models: [{ ...pending, isUnavailable: true }],
-        },
-      ]),
-    ).toBe(false);
   });
 });
 
@@ -337,14 +283,6 @@ describe("provider catalog scoping", () => {
   });
 });
 
-describe("threadSettingsSheetPageForRoute", () => {
-  it("maps the inner picker routes and ignores choice pages", () => {
-    expect(threadSettingsSheetPageForRoute("ThreadSettingsHome")).toBe("home");
-    expect(threadSettingsSheetPageForRoute("ThreadSettingsCatalog")).toBe("catalog");
-    expect(threadSettingsSheetPageForRoute("ThreadSettingsChoice")).toBeNull();
-  });
-});
-
 describe("buildNewTaskThreadSettingsSession", () => {
   it("builds a picker session without a thread or selected model", () => {
     const session = buildNewTaskThreadSettingsSession({
@@ -397,37 +335,5 @@ describe("buildNewTaskThreadSettingsSession", () => {
     ]);
     expect(session.optionDescriptors[0]).toMatchObject({ currentValue: "high" });
     expect(session).not.toHaveProperty("checkpointsThreadRef");
-  });
-});
-
-describe("presentedSettingsSheetPage", () => {
-  it("keeps catalog only on a live re-present of the same owner", () => {
-    expect(
-      presentedSettingsSheetPage({
-        preservePage: true,
-        currentOwnerId: "thread-1",
-        nextOwnerId: "thread-1",
-        currentPage: "catalog",
-        requestedPage: "home",
-      }),
-    ).toBe("catalog");
-    expect(
-      presentedSettingsSheetPage({
-        preservePage: false,
-        currentOwnerId: "thread-1",
-        nextOwnerId: "thread-1",
-        currentPage: "catalog",
-        requestedPage: "home",
-      }),
-    ).toBe("home");
-    expect(
-      presentedSettingsSheetPage({
-        preservePage: true,
-        currentOwnerId: "thread-1",
-        nextOwnerId: "thread-2",
-        currentPage: "catalog",
-        requestedPage: "home",
-      }),
-    ).toBe("home");
   });
 });
