@@ -518,10 +518,11 @@ function ReasoningCard(props: {
   const { control, onOptionChange } = props;
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   // Existing threads receive the applied level a render after the commit, so
-  // a scrubbed level stays up until the applied one actually changes.
-  const [appliedIndex, setAppliedIndex] = useState(control.selectedIndex);
-  if (appliedIndex !== control.selectedIndex) {
-    setAppliedIndex(control.selectedIndex);
+  // a scrubbed level stays up until the applied one (or the control) changes.
+  const appliedKey = `${control.id}:${control.selectedIndex}`;
+  const [previewFor, setPreviewFor] = useState(appliedKey);
+  if (previewFor !== appliedKey) {
+    setPreviewFor(appliedKey);
     setPreviewIndex(null);
   }
   const shownIndex = previewIndex ?? control.selectedIndex;
