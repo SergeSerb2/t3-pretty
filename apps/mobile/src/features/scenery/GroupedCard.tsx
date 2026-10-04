@@ -1,8 +1,8 @@
 import { Platform, StyleSheet, View, type ViewProps } from "react-native";
 
-import { cn } from "../lib/cn";
-import { GLASS_CARD_RADIUS } from "../lib/layoutMetrics";
-import { useGlassChromeActive } from "../features/scenery/SceneryProvider";
+import { cn } from "../../lib/cn";
+import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
+import { useGlassChromeActive } from "./SceneryProvider";
 
 /**
  * Container for a group of rows. Over scenery on iOS it is a frosted glass

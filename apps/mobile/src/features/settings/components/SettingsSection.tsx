@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Platform, View } from "react-native";
 
 import { AppText as Text } from "../../../components/AppText";
-import { GroupedCard } from "../../../components/GroupedCard";
+import { GroupedCard } from "../../scenery/GroupedCard";
 
 export function SettingsSection(props: {
   readonly title?: string;

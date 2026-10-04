@@ -2295,6 +2295,34 @@ describe("threadListV2ListItemsAreEqual", () => {
     expect(secondA.type === "v2-thread" && secondA.showTrailingDivider).toBe(false);
     expect(threadListV2ListItemsAreEqual(firstA, secondA)).toBe(false);
   });
+
+  it("joins consecutive shelf rows into one group, never across a shelf header", () => {
+    const settled = (id: string) =>
+      makeThread({
+        id: ThreadId.make(id),
+        title: id,
+        settledOverride: "settled",
+        settledAt: NOW,
+      });
+    const active = makeThread({ id: ThreadId.make("group-active"), title: "active" });
+    const items = buildThreadListV2ListItems({
+      items: buildThreadListV2Items({
+        threads: [active, settled("group-a"), settled("group-b"), settled("group-c")],
+        environmentId: null,
+        searchQuery: "",
+        now: NOW,
+      }).items,
+      pendingTasks: [],
+      settledCount: 3,
+      settledShelfHeaderIndex: 1,
+      snoozeLabelNow: NOW,
+    });
+    expect(
+      items.map((item) =>
+        item.type === "v2-thread" ? `${item.item.variant}:${item.continuesGroup}` : item.type,
+      ),
+    ).toEqual(["card:false", "v2-settled-shelf", "slim:false", "slim:true", "slim:true"]);
+  });
 });
 
 describe("isThreadListV2ListItem", () => {

@@ -1,7 +1,8 @@
 import { useAndroidControlSizing } from "../../components/useAndroidControlSizing";
 import type { ThreadMoveDestination } from "../threads/threadOrder";
 import { computeThreadMoveAvailability } from "../threads/threadOrder";
-import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
+import { type LegendListRef } from "@legendapp/list/react-native";
+import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import {
   type EnvironmentProject,
   type EnvironmentThreadShell,
@@ -18,6 +19,7 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
+  StyleSheet,
   View,
   type GestureResponderEvent,
   type NativeScrollEvent,
@@ -26,9 +28,11 @@ import {
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
-import { useGlassChromeActive, useSceneryChromeActive } from "../scenery/SceneryProvider";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
 import { cn } from "../../lib/cn";
+import { layoutSettle } from "../../lib/motion";
+import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { MaterialFloatingActionButton } from "../../components/MaterialFloatingActionButton";
@@ -234,7 +238,6 @@ function HomeTopContentSpacer() {
 export function HomeScreen(props: HomeScreenProps) {
   const [collapsedPrNests, setCollapsedPrNests] = useState<ReadonlySet<string>>(() => new Set());
   const isFocused = useIsFocused();
-  const sceneryChrome = useSceneryChromeActive();
   const glassRows = useGlassChromeActive();
   const queuedThreadKeys = useQueuedThreadKeys();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
@@ -754,6 +757,7 @@ export function HomeScreen(props: HomeScreenProps) {
           snoozeWakeLabelText={item.snoozeWakeLabelText}
           timeLabel={item.timeLabel}
           showTrailingDivider={item.showTrailingDivider}
+          continuesGroup={item.continuesGroup}
           project={
             projectByKey.get(scopedProjectKey(thread.environmentId, thread.projectId)) ?? null
           }
@@ -967,7 +971,7 @@ export function HomeScreen(props: HomeScreenProps) {
 
   // Use the v2 project scope for its empty state. Snoozed threads need no
   // special empty state: their shelf header is a list row even while collapsed.
-  const v2ListEmpty =
+  const v2ListEmptyState =
     hasSearchQuery && threadSearch.isPending ? undefined : hasSearchQuery ? (
       <EmptyState
         title="No results"
@@ -992,6 +996,14 @@ export function HomeScreen(props: HomeScreenProps) {
         detail="Create a task to start a new coding session."
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
+    );
+
+  // Glass empty cards inset like the rows they stand in for.
+  const v2ListEmpty =
+    glassRows && v2ListEmptyState !== undefined ? (
+      <View className="mx-3 mt-2">{v2ListEmptyState}</View>
+    ) : (
+      v2ListEmptyState
     );
 
   if (Platform.OS === "android" && threadListV2Items.length === 0) {
@@ -1022,7 +1034,7 @@ export function HomeScreen(props: HomeScreenProps) {
             shell update) from re-rendering untouched rows. */}
         <ThreadListGlassContext value={glassRows}>
           <SwipeableScrollGateProvider enabled={swipeEnabled} activation={swipeRowActivation}>
-            <LegendList
+            <AnimatedLegendList
               ref={listRef}
               onLoad={() => activateVisibleRows(threadListV2Items)}
               onTouchStart={(event) => trackListTouches(event, true)}
@@ -1036,15 +1048,25 @@ export function HomeScreen(props: HomeScreenProps) {
               estimatedItemSize={ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT}
               drawDistance={THREAD_LIST_V2_DRAW_DISTANCE}
               recycleItems
+              // Settle, wake, reorder and shelf toggles reflow rows into
+              // place; the patched list skips this for recycled cells and
+              // while scrolling.
+              itemLayoutAnimation={layoutSettle}
               extraData={v2ExtraData}
               ListHeaderComponent={v2ListHeader}
               ListFooterComponent={
                 settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
-                  sceneryChrome ? (
+                  glassRows ? (
                     <Pressable
+                      accessibilityRole="button"
                       onPress={showMoreSettled}
-                      className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
-                      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                      className="mx-3 mt-2 items-center border-chrome-glass-border bg-chrome-glass py-3"
+                      style={({ pressed }) => ({
+                        borderCurve: "continuous",
+                        borderRadius: GLASS_CARD_RADIUS,
+                        borderWidth: StyleSheet.hairlineWidth,
+                        opacity: pressed ? 0.6 : 1,
+                      })}
                     >
                       <Text className="text-xs font-t3-medium text-foreground-muted">
                         Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)

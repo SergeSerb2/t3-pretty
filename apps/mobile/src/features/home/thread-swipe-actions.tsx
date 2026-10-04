@@ -241,6 +241,9 @@ interface ThreadSwipeableProps {
    * still spans the row's full height and width. */
   readonly compactActions?: boolean;
   readonly containerStyle?: StyleProp<ViewStyle>;
+  /** Static overlay above the row (e.g. a glass outline) that stays put while
+      the content swipes. Positioned against the row's full frame. */
+  readonly outlineStyle?: StyleProp<ViewStyle>;
   /** Disables NEW swipe activations (e.g. while the list scrolls). */
   readonly enabled?: boolean;
   readonly enableTrackpadSwipe?: boolean;
@@ -280,15 +283,18 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
   if (props.dormant) {
     // Mirrors ReanimatedSwipeable's container and children views.
     return (
-      <View
-        style={[
-          { overflow: "hidden", backgroundColor: props.backgroundColor },
-          props.containerStyle,
-        ]}
-      >
-        <View style={{ backgroundColor: props.backgroundColor }}>
-          {props.children(closeDormant)}
+      <View>
+        <View
+          style={[
+            { overflow: "hidden", backgroundColor: props.backgroundColor },
+            props.containerStyle,
+          ]}
+        >
+          <View style={{ backgroundColor: props.backgroundColor }}>
+            {props.children(closeDormant)}
+          </View>
         </View>
+        {props.outlineStyle ? <View pointerEvents="none" style={props.outlineStyle} /> : null}
       </View>
     );
   }
@@ -503,6 +509,7 @@ function ThreadSwipeableRow(props: ThreadSwipeableProps) {
         >
           {props.children(close)}
         </ReanimatedSwipeable>
+        {props.outlineStyle ? <View pointerEvents="none" style={props.outlineStyle} /> : null}
       </View>
     </Animated.View>
   );
