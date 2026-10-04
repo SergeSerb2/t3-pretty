@@ -3,13 +3,26 @@ import { View } from "react-native";
 import { AppText, AppTextInput, type AppTextInputProps } from "../../components/AppText";
 import { cn } from "../../lib/cn";
 
+/**
+ * AppTextInput override for inputs on scenery glass: a faint tint and hairline
+ * edge instead of the solid input plate. Pass as `className` when glass is on.
+ */
+export const GLASS_INPUT_CLASS_NAME =
+  "rounded-[14px] border-[0.5px] border-chrome-glass-border bg-foreground/5";
+
 type ConnectionFormFieldProps = Omit<AppTextInputProps, "accessibilityLabel" | "className"> & {
   readonly label: string;
   readonly className?: string;
+  readonly glass?: boolean;
 };
 
 /** Labeled connection input with a native wrapper retained inside form sheets. */
-export function ConnectionFormField({ label, className, ...inputProps }: ConnectionFormFieldProps) {
+export function ConnectionFormField({
+  label,
+  className,
+  glass = false,
+  ...inputProps
+}: ConnectionFormFieldProps) {
   return (
     <View collapsable={false} className={cn("gap-1.5", className)}>
       <AppText
@@ -22,7 +35,7 @@ export function ConnectionFormField({ label, className, ...inputProps }: Connect
       <AppTextInput
         {...inputProps}
         accessibilityLabel={label}
-        className="rounded-[14px] px-4 py-3.5"
+        className={glass ? cn(GLASS_INPUT_CLASS_NAME, "px-4 py-3.5") : "rounded-[14px] px-4 py-3.5"}
       />
     </View>
   );

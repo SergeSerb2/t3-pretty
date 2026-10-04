@@ -16,7 +16,9 @@ import { useEnvironmentServerConfig } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import { GLASS_INPUT_CLASS_NAME } from "../connection/ConnectionFormField";
 import { ConnectionSheetButton } from "../connection/ConnectionSheetButton";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { SettingsSection } from "./components/SettingsSection";
 import { appsCallbackOrigin, appsOAuthRedirectUri } from "./apps/appsSettings.logic";
 import { SheetSurface } from "../../components/SheetSurface";
@@ -35,6 +37,7 @@ export function SettingsAppOAuthClientRouteScreen({
   route,
 }: StaticScreenProps<SettingsAppOAuthClientParams>) {
   const insets = useSafeAreaInsets();
+  const glass = useGlassChromeActive();
   const navigation = useNavigation();
   const environmentId = route.params.environmentId as EnvironmentId;
   const family = findAppOAuthClientFamily(route.params.family);
@@ -149,6 +152,7 @@ export function SettingsAppOAuthClientRouteScreen({
                 Client ID
               </Text>
               <TextInput
+                className={glass ? GLASS_INPUT_CLASS_NAME : undefined}
                 autoCapitalize="none"
                 autoCorrect={false}
                 onChangeText={setClientId}
@@ -161,6 +165,7 @@ export function SettingsAppOAuthClientRouteScreen({
                 Client secret
               </Text>
               <TextInput
+                className={glass ? GLASS_INPUT_CLASS_NAME : undefined}
                 autoCapitalize="none"
                 autoCorrect={false}
                 onChangeText={setClientSecret}

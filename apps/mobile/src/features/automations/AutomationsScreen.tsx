@@ -11,8 +11,12 @@ import { AndroidHeaderIconButton, AndroidScreenHeader } from "../../components/A
 import { AppText as Text } from "../../components/AppText";
 import { ControlPillMenu } from "../../components/ControlPill";
 import { EmptyState } from "../../components/EmptyState";
+import { RowPressable } from "../../components/RowPressable";
+import { SheetSurface } from "../../components/SheetSurface";
 import { StatusPill } from "../../components/StatusPill";
+import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { automationNextRunLabel, automationStatusTone } from "./automations.logic";
 
 export interface AutomationListEnvironment {
@@ -183,11 +187,58 @@ function AutomationRow(props: {
   const { automation } = props.entry;
   const tone = automationStatusTone(automationStatus(automation, props.entry.activeRunThread));
   const nextRun = automationNextRunLabel(automation, props.nowMs);
+  const glass = useGlassChromeActive();
+  const accessibilityLabel = `Automation ${automation.name}`;
+  const content = (
+    <View className="flex-row items-start gap-3">
+      <View className="min-w-0 flex-1">
+        <Text className="text-base font-t3-bold leading-snug text-foreground" numberOfLines={1}>
+          {automation.name}
+        </Text>
+        <Text className="mt-1 text-xs leading-4 text-foreground-muted" numberOfLines={1}>
+          {props.entry.projectTitle}
+        </Text>
+      </View>
+      <View className="shrink-0 items-end gap-1">
+        {tone ? <StatusPill {...tone} size="compact" /> : null}
+        {nextRun ? (
+          <Text className="text-2xs tabular-nums text-foreground-tertiary">{nextRun}</Text>
+        ) : null}
+      </View>
+    </View>
+  );
+
+  if (glass) {
+    // Consecutive rows join into one frosted card: outer edges round and
+    // outline, inner edges share a hairline separator.
+    return (
+      <RowPressable
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        onPress={() => props.onPress(props.entry)}
+        interactionClassName="bg-foreground/[0.06]"
+        style={{
+          borderCurve: "continuous",
+          borderTopLeftRadius: props.isFirst ? GLASS_CARD_RADIUS : 0,
+          borderTopRightRadius: props.isFirst ? GLASS_CARD_RADIUS : 0,
+          borderBottomLeftRadius: props.isLast ? GLASS_CARD_RADIUS : 0,
+          borderBottomRightRadius: props.isLast ? GLASS_CARD_RADIUS : 0,
+          borderTopWidth: props.isFirst ? StyleSheet.hairlineWidth : 0,
+          borderLeftWidth: StyleSheet.hairlineWidth,
+          borderRightWidth: StyleSheet.hairlineWidth,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+        }}
+        className="border-chrome-glass-border bg-chrome-glass px-4 py-3.5"
+      >
+        {content}
+      </RowPressable>
+    );
+  }
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Automation ${automation.name}`}
+      accessibilityLabel={accessibilityLabel}
       onPress={() => props.onPress(props.entry)}
       style={({ pressed }) => ({
         opacity: pressed ? 0.72 : 1,
@@ -199,22 +250,7 @@ function AutomationRow(props: {
       })}
       className="border-b-separator bg-card px-4 py-3.5"
     >
-      <View className="flex-row items-start gap-3">
-        <View className="min-w-0 flex-1">
-          <Text className="text-base font-t3-bold leading-snug text-foreground" numberOfLines={1}>
-            {automation.name}
-          </Text>
-          <Text className="mt-1 text-xs leading-4 text-foreground-muted" numberOfLines={1}>
-            {props.entry.projectTitle}
-          </Text>
-        </View>
-        <View className="shrink-0 items-end gap-1">
-          {tone ? <StatusPill {...tone} size="compact" /> : null}
-          {nextRun ? (
-            <Text className="text-2xs tabular-nums text-foreground-tertiary">{nextRun}</Text>
-          ) : null}
-        </View>
-      </View>
+      {content}
     </Pressable>
   );
 }
@@ -285,7 +321,7 @@ export function AutomationsScreen(props: {
   );
 
   return (
-    <View className="flex-1 bg-sheet">
+    <SheetSurface>
       <AutomationsHeader
         environments={props.environments}
         hasCustomFilter={props.hasCustomFilter}
@@ -308,6 +344,6 @@ export function AutomationsScreen(props: {
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
       />
-    </View>
+    </SheetSurface>
   );
 }

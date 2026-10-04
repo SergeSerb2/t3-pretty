@@ -18,13 +18,18 @@ export function GroupedCard({ className, style, ...props }: ViewProps) {
         Platform.OS === "android"
           ? "overflow-hidden rounded-[28px] bg-grouped-card"
           : glass
-            ? "overflow-hidden border-continuous border-chrome-glass-border bg-chrome-glass"
+            ? "overflow-hidden border-chrome-glass-border bg-chrome-glass"
             : "overflow-hidden rounded-[24px] border-continuous bg-grouped-card",
         className,
       )}
       style={[
         glass
-          ? { borderRadius: GLASS_CARD_RADIUS, borderWidth: StyleSheet.hairlineWidth }
+          ? {
+              // Inline because cn() drops `border-continuous` beside a border color.
+              borderCurve: "continuous",
+              borderRadius: GLASS_CARD_RADIUS,
+              borderWidth: StyleSheet.hairlineWidth,
+            }
           : undefined,
         style,
       ]}

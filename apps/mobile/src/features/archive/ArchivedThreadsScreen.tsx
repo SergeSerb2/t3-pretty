@@ -17,6 +17,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  StyleSheet,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -27,10 +28,12 @@ import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
+import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
 import { relativeTime } from "../../lib/time";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useServerConfigs } from "../../state/entities";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import type { ArchivedThreadGroup, ArchivedThreadSortOrder } from "./archivedThreadList";
 import { SettingsScreenContent } from "../settings/components/SettingsScreen";
 import { SheetSurface } from "../../components/SheetSurface";
@@ -191,7 +194,16 @@ function ArchivedThreadRow(props: {
   readonly thread: EnvironmentThreadShell;
 }) {
   const { width: windowWidth } = useWindowDimensions();
-  const cardColor = useUniwindTheme()["--color-grouped-card"];
+  const theme = useUniwindTheme();
+  const glass = useGlassChromeActive();
+  const cardColor = theme["--color-grouped-card"];
+  const radius = glass ? GLASS_CARD_RADIUS : 20;
+  const corners = {
+    borderTopLeftRadius: props.isFirst ? radius : 0,
+    borderTopRightRadius: props.isFirst ? radius : 0,
+    borderBottomLeftRadius: props.isLast ? radius : 0,
+    borderBottomRightRadius: props.isLast ? radius : 0,
+  };
   const timestamp = relativeTime(props.thread.archivedAt ?? props.thread.updatedAt);
   const subtitle = [props.environmentLabel, props.thread.branch].filter((part): part is string =>
     Boolean(part),
@@ -200,14 +212,15 @@ function ArchivedThreadRow(props: {
     <ThreadSwipeable
       resetKey={`${props.thread.environmentId}:${props.thread.id}`}
       threadKey={`${props.thread.environmentId}:${props.thread.id}`}
-      backgroundColor={cardColor}
+      // On glass the card fill rides on the row and the tray fill trails its
+      // edge: a translucent container under a translucent row doubles the glass.
+      backgroundColor={glass ? "transparent" : cardColor}
+      actionsBackgroundColor={glass ? theme["--color-chrome-glass"] : undefined}
       // Round + clip the swipeable container so the group's corners stay
-      // rounded while rows swipe; the row itself stays square inside.
+      // rounded while rows swipe.
       containerStyle={{
-        borderTopLeftRadius: props.isFirst ? 20 : 0,
-        borderTopRightRadius: props.isFirst ? 20 : 0,
-        borderBottomLeftRadius: props.isLast ? 20 : 0,
-        borderBottomRightRadius: props.isLast ? 20 : 0,
+        ...corners,
+        borderCurve: glass ? "continuous" : undefined,
         overflow: "hidden",
       }}
       fullSwipeWidth={windowWidth - 32}
@@ -225,7 +238,25 @@ function ArchivedThreadRow(props: {
     >
       {() => (
         <View
-          className={`flex-row items-center gap-3 bg-grouped-card px-4 py-3 ${props.isLast ? "" : "border-b border-separator"}`}
+          className={
+            glass
+              ? "flex-row items-center gap-3 border-chrome-glass-border bg-chrome-glass px-4 py-3"
+              : `flex-row items-center gap-3 bg-grouped-card px-4 py-3 ${props.isLast ? "" : "border-b border-separator"}`
+          }
+          // The row carries the group outline so it moves with the swipe; its
+          // bottom edge doubles as the separator between rows.
+          style={
+            glass
+              ? {
+                  ...corners,
+                  borderCurve: "continuous",
+                  borderBottomWidth: StyleSheet.hairlineWidth,
+                  borderLeftWidth: StyleSheet.hairlineWidth,
+                  borderRightWidth: StyleSheet.hairlineWidth,
+                  borderTopWidth: props.isFirst ? StyleSheet.hairlineWidth : 0,
+                }
+              : undefined
+          }
         >
           <View className="h-[34px] w-[34px] items-center justify-center rounded-[11px] bg-subtle">
             <SymbolView

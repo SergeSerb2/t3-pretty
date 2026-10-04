@@ -13,16 +13,12 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
-import { useCallback, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  type TextLayoutEvent,
-  View,
-} from "react-native";
+import { type ComponentProps, useCallback, useRef, useState } from "react";
+import { ActivityIndicator, Platform, Pressable, type TextLayoutEvent, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
+import { RowPressable } from "../../components/RowPressable";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
@@ -30,6 +26,8 @@ import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-typ
 import { serverEnvironment } from "../../state/server";
 import { availableCloudEnvironmentPresentation } from "../cloud/cloudEnvironmentPresentation";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { GroupedCard } from "../scenery/GroupedCard";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 import { type RelayEnvironmentView, useConnectionController } from "./useConnectionController";
 
@@ -188,7 +186,10 @@ function CloudEnvironmentRowsContent(
       ) : null}
 
       {hasCloudRows ? (
-        <View collapsable={false} className="overflow-hidden rounded-[24px] bg-grouped-card">
+        <GroupedCard
+          collapsable={false}
+          className={cn(Platform.OS === "android" && "rounded-[24px]")}
+        >
           {props.connectedCloudEnvironments.map((environment) => (
             <ConnectedCloudEnvironmentRow
               key={environment.environmentId}
@@ -217,20 +218,26 @@ function CloudEnvironmentRowsContent(
               onToggleError={() => handleToggleCloudError(environment.environment.environmentId)}
             />
           ))}
-        </View>
+        </GroupedCard>
       ) : controller.relayDiscovery.isRefreshing ? (
-        <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-grouped-card p-6">
+        <GroupedCard
+          collapsable={false}
+          className={cn(Platform.OS === "android" && "rounded-[24px]", "items-center gap-3 p-6")}
+        >
           <ActivityIndicator colorClassName={"accent-icon"} />
           <Text className="text-center text-sm leading-normal text-foreground-muted">
             Loading linked cloud environments.
           </Text>
-        </View>
+        </GroupedCard>
       ) : controller.relayDiscovery.error ? null : (
-        <View collapsable={false} className="rounded-[24px] bg-grouped-card p-5">
+        <GroupedCard
+          collapsable={false}
+          className={cn(Platform.OS === "android" && "rounded-[24px]", "p-5")}
+        >
           <Text className="text-sm leading-normal text-foreground-muted">
             No additional linked cloud environments.
           </Text>
-        </View>
+        </GroupedCard>
       )}
 
       {/* Rendered alongside any connected rows — a failed discovery must not
@@ -238,7 +245,10 @@ function CloudEnvironmentRowsContent(
       {discoveryAvailable &&
       controller.relayDiscovery.error &&
       !controller.relayDiscovery.isRefreshing ? (
-        <View collapsable={false} className="gap-3 rounded-[24px] bg-grouped-card p-5">
+        <GroupedCard
+          collapsable={false}
+          className={cn(Platform.OS === "android" && "rounded-[24px]", "gap-3 p-5")}
+        >
           <Text className="text-base font-t3-bold text-foreground">
             Could not load {SURGE_CONNECT_NAME} environments
           </Text>
@@ -253,7 +263,7 @@ function CloudEnvironmentRowsContent(
           >
             <Text className="text-xs font-t3-bold text-foreground">Try again</Text>
           </Pressable>
-        </View>
+        </GroupedCard>
       ) : null}
     </View>
   );
@@ -285,8 +295,11 @@ function ConnectedCloudEnvironmentRow(props: {
   if (props.descriptor !== undefined && props.descriptor !== lastDescriptor) {
     setLastDescriptor(props.descriptor);
   }
+  // Glass rows paint no fill, so the touch highlight shows through them.
+  const glass = useGlassChromeActive();
+  const RowTarget = glass ? GlassRowPressable : Pressable;
   return (
-    <Pressable
+    <RowTarget
       accessibilityHint="Long press to remove from this device"
       accessibilityRole={props.onOpen ? "button" : undefined}
       accessibilityLabel={props.onOpen ? `Manage ${props.environment.environmentLabel}` : undefined}
@@ -309,8 +322,12 @@ function ConnectedCloudEnvironmentRow(props: {
         {...(enabled || unsupported ? {} : { statusText: "Off" })}
         value={enabled}
       />
-    </Pressable>
+    </RowTarget>
   );
+}
+
+function GlassRowPressable(props: ComponentProps<typeof RowPressable>) {
+  return <RowPressable {...props} interactionClassName="bg-foreground/[0.06]" />;
 }
 
 function CloudEnvironmentRow(props: {
@@ -368,6 +385,7 @@ function CloudEnvironmentRowShell(props: {
   readonly statusText?: string;
   readonly value: boolean;
 }) {
+  const glass = useGlassChromeActive();
   const isRetrying =
     props.connectionState === "connecting" || props.connectionState === "reconnecting";
   const shouldPulse = isRetrying;
@@ -410,7 +428,14 @@ function CloudEnvironmentRowShell(props: {
     [measuredErrorText, props.connectionError],
   );
   return (
-    <View collapsable={false} className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5">
+    <View
+      collapsable={false}
+      className={
+        glass
+          ? "flex-row items-center gap-3 px-4 py-3.5"
+          : "flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
+      }
+    >
       <View className="min-w-0 flex-1 gap-0.5">
         <View className="min-w-0 flex-row items-center gap-2">
           <ConnectionStatusDot state={props.connectionState} pulse={shouldPulse} size={7} />

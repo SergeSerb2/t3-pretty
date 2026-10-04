@@ -28,6 +28,7 @@ import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { serverEnvironment } from "../../state/server";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { ConnectionFormField } from "./ConnectionFormField";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 
@@ -55,6 +56,7 @@ export function ConnectionEnvironmentRow(props: {
     updates: { readonly label: string; readonly displayUrl: string },
   ) => Promise<AtomCommandResult<unknown, unknown>>;
 }) {
+  const glass = useGlassChromeActive();
   const [label, setLabel] = useState(props.environment.environmentLabel);
   const [url, setUrl] = useState(props.environment.displayUrl);
   const serverConfig = useAtomValue(
@@ -101,7 +103,10 @@ export function ConnectionEnvironmentRow(props: {
   }));
 
   return (
-    <Animated.View layout={LinearTransition.duration(250)} className="bg-grouped-card">
+    <Animated.View
+      layout={LinearTransition.duration(250)}
+      className={glass ? undefined : "bg-grouped-card"}
+    >
       <Pressable
         className="flex-row items-center gap-3 px-4 py-3.5 active:opacity-70"
         accessibilityRole="button"
@@ -194,6 +199,7 @@ export function ConnectionEnvironmentRow(props: {
             <>
               <ConnectionFormField
                 label="Label"
+                glass={glass}
                 autoCapitalize="words"
                 autoCorrect={false}
                 placeholder="My MacBook"
@@ -203,6 +209,7 @@ export function ConnectionEnvironmentRow(props: {
 
               <ConnectionFormField
                 label="URL"
+                glass={glass}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
@@ -261,7 +268,10 @@ export function ConnectionEnvironmentRow(props: {
               )}
 
               <Pressable
-                className="h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-input-border bg-input active:opacity-70 disabled:opacity-40"
+                className={cn(
+                  "h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-input-border bg-input active:opacity-70 disabled:opacity-40",
+                  glass && "border-[0.5px] border-chrome-glass-border bg-foreground/5",
+                )}
                 disabled={!enabled}
                 onPress={() => props.onReconnect(props.environment.environmentId)}
               >

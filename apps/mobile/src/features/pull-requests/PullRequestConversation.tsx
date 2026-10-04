@@ -1,13 +1,15 @@
 import type { PullRequestComment, PullRequestReviewThread } from "@t3tools/contracts";
 import { formatGrokReviewLocation, parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 import { useEffect, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, View, type ViewProps } from "react-native";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
+import { GroupedCard } from "../scenery/GroupedCard";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { PullRequestActionChip, PullRequestChipRow } from "./PullRequestActionChip";
 import { PullRequestActorAvatar } from "./PullRequestActorAvatar";
 import {
@@ -22,6 +24,16 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { formatReviewState } from "./pullRequestPresentation";
 
 type Detail = NonNullable<ReturnType<typeof composePullRequestDetailView>>;
+
+/** Pull-request detail card: frosted glass over scenery, else the opaque card. */
+export function PullRequestCard({ className, ...props }: ViewProps) {
+  const glass = useGlassChromeActive();
+  return glass ? (
+    <GroupedCard {...props} className={className} />
+  ) : (
+    <View {...props} className={cn("rounded-2xl bg-card", className)} />
+  );
+}
 
 export function PullRequestConversation(props: {
   readonly detail: Detail;
@@ -237,14 +249,14 @@ function IssueCommentCard(props: { readonly comment: PullRequestComment }) {
     ? formatReviewState(props.comment.reviewState)
     : null;
   return (
-    <View className="rounded-2xl bg-card px-4 py-3.5">
+    <PullRequestCard className="px-4 py-3.5">
       <CommentHeader
         actor={props.comment.author}
         createdAt={props.comment.createdAt}
         reviewState={reviewState}
       />
       <GrokFindingBody body={props.comment.body} fallbackPath={props.comment.path} />
-    </View>
+    </PullRequestCard>
   );
 }
 
@@ -260,6 +272,7 @@ function ReviewThreadCard(props: {
   readonly onFix: () => void;
   readonly onToggleResolved: () => void;
 }) {
+  const glass = useGlassChromeActive();
   const [expanded, setExpanded] = useState(!props.resolved);
   const commentCount = props.thread.commentCount ?? props.thread.comments.length;
 
@@ -273,7 +286,7 @@ function ReviewThreadCard(props: {
       : `${props.thread.path}${props.thread.line === null ? "" : `:${props.thread.line}`}`;
 
   return (
-    <View className="rounded-2xl bg-card px-4 py-3.5">
+    <PullRequestCard className="px-4 py-3.5">
       <View className="flex-row items-start gap-2">
         <Pressable
           accessibilityRole="button"
@@ -320,7 +333,13 @@ function ReviewThreadCard(props: {
       {expanded ? (
         <View className="mt-3 gap-3">
           {props.thread.comments.map((comment, index) => (
-            <View key={comment.id} className={cn(index > 0 && "border-t border-border pt-3")}>
+            <View
+              key={comment.id}
+              className={cn(
+                index > 0 && "border-t pt-3",
+                index > 0 && (glass ? "border-chrome-glass-border" : "border-border"),
+              )}
+            >
               <CommentHeader actor={comment.author} createdAt={comment.createdAt} />
               <GrokFindingBody
                 body={comment.body}
@@ -361,7 +380,7 @@ function ReviewThreadCard(props: {
           </PullRequestChipRow>
         </View>
       ) : null}
-    </View>
+    </PullRequestCard>
   );
 }
 

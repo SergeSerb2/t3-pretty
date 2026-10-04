@@ -15,24 +15,39 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { automationRunTriggerLabel } from "@t3tools/shared/automationSchedule";
+import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, View } from "react-native";
+import { useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  ScrollView,
+  View,
+  type ViewProps,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorBanner } from "../../components/ErrorBanner";
+import { RowPressable } from "../../components/RowPressable";
+import { SheetSurface } from "../../components/SheetSurface";
 import { StatusPill } from "../../components/StatusPill";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
+import { nativeGlassHeaderOverlapInset } from "../../lib/layoutMetrics";
 import { relativeTime } from "../../lib/time";
+import { TRANSPARENT_NATIVE_HEADERS } from "../../native/native-glass";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { automationEnvironment } from "../../state/automations";
 import { useAllThreadShells, useAutomationShell, useProject } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { GroupedCard } from "../scenery/GroupedCard";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { RUNTIME_MODE_CHOICES } from "../threads/thread-settings-options";
 import {
   automationCommandErrorMessage,
@@ -51,6 +66,40 @@ type AutomationDetailScreenProps = StaticScreenProps<AutomationDetailRouteParams
 // Day headings and local times follow the device zone; it cannot change while
 // the screen is mounted, so resolve it once.
 const VIEWER_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/** Detail card: frosted glass over scenery, else the opaque card. */
+function AutomationCard({ className, ...props }: ViewProps) {
+  const glass = useGlassChromeActive();
+  return glass ? (
+    <GroupedCard {...props} className={className} />
+  ) : (
+    <View {...props} className={cn("rounded-2xl bg-card", className)} />
+  );
+}
+
+/** Tappable row inside a card: a soft highlight on glass, the dimming press elsewhere. */
+function CardRowPressable(props: {
+  readonly accessibilityLabel?: string;
+  readonly accessibilityState?: { readonly expanded: boolean };
+  readonly className?: string;
+  readonly onPress: () => void;
+  readonly children: ReactNode;
+}) {
+  const glass = useGlassChromeActive();
+  return glass ? (
+    <RowPressable
+      accessibilityRole="button"
+      interactionClassName="bg-foreground/[0.06]"
+      {...props}
+    />
+  ) : (
+    <Pressable
+      accessibilityRole="button"
+      style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
+      {...props}
+    />
+  );
+}
 
 function SummaryRow(props: { readonly label: string; readonly value: string }) {
   return (
@@ -109,19 +158,27 @@ function RunRow(props: {
     );
   }
   return (
-    <Pressable
-      accessibilityRole="button"
+    <CardRowPressable
       accessibilityLabel={`Open the thread of this ${tone.label.toLowerCase()} run`}
       onPress={() => props.onOpenThread(threadId)}
-      style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
     >
       {body}
-    </Pressable>
+    </CardRowPressable>
   );
 }
 
 export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const navigationHeaderHeight = useContext(HeaderHeightContext);
+  // Transparent glass headers overlay the screen; states outside the scroll
+  // view pad themselves below the bar.
+  const glassHeaderInset = nativeGlassHeaderOverlapInset({
+    glassSupported: TRANSPARENT_NATIVE_HEADERS,
+    headerHeight: navigationHeaderHeight,
+    safeAreaTop: insets.top,
+  });
+  const headerInsetStyle = glassHeaderInset > 0 ? { paddingTop: glassHeaderInset } : undefined;
   const routeParams = props.route.params;
   const reference = useMemo(() => parseAutomationDetailRoute(routeParams), [routeParams]);
   const automation = useAutomationShell(reference);
@@ -243,7 +300,7 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
 
   if (reference === null || (automation === null && !runsQuery.isPending)) {
     return (
-      <View className="flex-1 bg-sheet">
+      <SheetSurface style={headerInsetStyle}>
         {header}
         <View className="flex-1 items-center justify-center px-8">
           <EmptyState
@@ -251,16 +308,16 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
             detail="It was deleted, or this link names an environment that is not connected."
           />
         </View>
-      </View>
+      </SheetSurface>
     );
   }
 
   if (automation === null) {
     return (
-      <View className="flex-1 items-center justify-center bg-sheet">
+      <SheetSurface className="items-center justify-center" style={headerInsetStyle}>
         {header}
         <ActivityIndicator colorClassName="accent-icon" />
-      </View>
+      </SheetSurface>
     );
   }
 
@@ -282,7 +339,7 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
     automation.runtimeMode;
 
   return (
-    <View className="flex-1 bg-sheet">
+    <SheetSurface>
       {header}
       <ScrollView
         className="flex-1"
@@ -291,7 +348,7 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
       >
         {actionError === null ? null : <ErrorBanner message={actionError} />}
 
-        <View className="rounded-2xl bg-card px-4 py-3">
+        <AutomationCard className="px-4 py-3">
           <View className="flex-row items-center justify-between gap-3 py-1">
             <View className="min-w-0 flex-1">
               <Text className="text-base font-t3-bold text-foreground">
@@ -324,9 +381,9 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
               {automation.activeRun === null ? "Run now" : "A run is in progress"}
             </Text>
           </Pressable>
-        </View>
+        </AutomationCard>
 
-        <View className="rounded-2xl bg-card px-4 py-3">
+        <AutomationCard className="px-4 py-3">
           <View className="flex-row items-center justify-between gap-3 pb-1">
             <Text className="text-xs font-t3-medium tracking-[0.5px] uppercase text-foreground-muted">
               Summary
@@ -366,17 +423,17 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
                 : "Project checkout"
             }
           />
-        </View>
+        </AutomationCard>
 
         {automation.lastRun?.summary ? (
-          <View className="rounded-2xl bg-card px-4 py-3">
+          <AutomationCard className="px-4 py-3">
             <Text className="text-xs font-t3-medium tracking-[0.5px] uppercase text-foreground-muted">
               Last run summary
             </Text>
             <Text className="mt-2 text-sm leading-relaxed text-foreground">
               {automation.lastRun.summary}
             </Text>
-          </View>
+          </AutomationCard>
         ) : null}
 
         <View className="gap-2">
@@ -400,7 +457,7 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
             groups.map((group) => (
               <View key={group.key} className="gap-1">
                 <Text className="px-1 pt-2 text-xs text-foreground-tertiary">{group.label}</Text>
-                <View className="overflow-hidden rounded-2xl bg-card">
+                <AutomationCard className="overflow-hidden">
                   {group.rows.map((row: AutomationRunRow, index: number) => {
                     const key = `${group.key}:${index}`;
                     if (row.kind === "run") {
@@ -420,8 +477,7 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
                     const isExpanded = expanded.includes(key);
                     return (
                       <View key={key}>
-                        <Pressable
-                          accessibilityRole="button"
+                        <CardRowPressable
                           accessibilityState={{ expanded: isExpanded }}
                           onPress={() =>
                             setExpanded((current) =>
@@ -430,13 +486,12 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
                                 : [...current, key],
                             )
                           }
-                          style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
                           className="px-4 py-3"
                         >
                           <Text className="text-xs text-foreground-muted">
                             {collapsedRunsLabel(row)}
                           </Text>
-                        </Pressable>
+                        </CardRowPressable>
                         {isExpanded
                           ? row.runs.map((run) => (
                               <RunRow
@@ -453,7 +508,7 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
                       </View>
                     );
                   })}
-                </View>
+                </AutomationCard>
               </View>
             ))
           )}
@@ -480,6 +535,6 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
           ) : null}
         </View>
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }

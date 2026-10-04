@@ -9,6 +9,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { cn } from "../../lib/cn";
+import { GLASS_INPUT_CLASS_NAME } from "../connection/ConnectionFormField";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import {
@@ -62,6 +65,7 @@ function ProjectOverviewContent(props: {
 }) {
   const representative = props.members[0]!;
   const displayName = deriveProjectGroupLabel({ representative, members: props.members });
+  const glass = useGlassChromeActive();
   const [draftName, setDraftName] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const updateProject = useAtomCommand(projectEnvironment.update, {
@@ -118,7 +122,10 @@ function ProjectOverviewContent(props: {
           <View className="flex-row items-center gap-3">
             <AppTextInput
               accessibilityLabel="Project name"
-              className="min-h-11 min-w-0 flex-1 rounded-xl border-continuous bg-card px-3 text-base text-foreground"
+              className={cn(
+                "min-h-11 min-w-0 flex-1 rounded-xl border-continuous bg-card px-3 text-base text-foreground",
+                glass && GLASS_INPUT_CLASS_NAME,
+              )}
               value={draftName ?? displayName}
               onChangeText={setDraftName}
               onSubmitEditing={saveName}

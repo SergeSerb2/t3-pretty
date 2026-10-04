@@ -58,21 +58,35 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Platform, ActivityIndicator, Alert, Pressable, View } from "react-native";
+import {
+  Platform,
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  View,
+  type ViewProps,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Order from "effect/Order";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { cn } from "../../lib/cn";
+import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
 import { useProjects, useServerConfigs, waitForProject } from "../../state/entities";
 import { filesystemEnvironment } from "../../state/filesystem";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import {
+  AppText as Text,
+  AppTextInput as TextInput,
+  type AppTextInputProps,
+} from "../../components/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ErrorBanner } from "../../components/ErrorBanner";
+import { RowPressable } from "../../components/RowPressable";
 import { SourceControlIcon } from "../../components/SourceControlIcon";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { uuidv4 } from "../../lib/uuid";
@@ -85,6 +99,8 @@ import {
 } from "../../state/use-remote-environment-registry";
 import { resolveAddProjectEnvironment } from "./AddProjectScreen.logic";
 import { SheetSurface } from "../../components/SheetSurface";
+import { GroupedCard } from "../scenery/GroupedCard";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
 interface EnvironmentOption {
   readonly environmentId: EnvironmentId;
@@ -193,13 +209,57 @@ function AddProjectShell(props: { readonly children: ReactNode; readonly title: 
   );
 }
 
-function ListSection(props: { readonly children: ReactNode }) {
+/** Standalone card: frosted glass over scenery, otherwise `opaqueClassName`. */
+function Card({
+  opaqueClassName = "rounded-[24px] bg-card",
+  className,
+  ...props
+}: ViewProps & { readonly opaqueClassName?: string }) {
+  const glass = useGlassChromeActive();
+  return glass ? (
+    <GroupedCard {...props} className={className} />
+  ) : (
+    <View {...props} className={cn(opaqueClassName, className)} />
+  );
+}
+
+/**
+ * One slice of the folder list's card. LegendList recycles rows, so the card
+ * is drawn per cell: rounded, and edged on glass, only at its ends.
+ */
+function FolderListCell(props: {
+  readonly first: boolean;
+  readonly last: boolean;
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
+  const glass = useGlassChromeActive();
+  const edge = StyleSheet.hairlineWidth;
+  const top = props.first ? GLASS_CARD_RADIUS : 0;
+  const bottom = props.last ? GLASS_CARD_RADIUS : 0;
   return (
     <View
-      className={
-        Platform.OS === "android"
-          ? "overflow-hidden rounded-[28px] bg-grouped-card"
-          : "overflow-hidden rounded-[24px] bg-grouped-card"
+      className={cn(
+        "overflow-hidden",
+        glass && "border-chrome-glass-border bg-chrome-glass",
+        !glass && props.first && "rounded-t-[24px]",
+        !glass && props.last && "rounded-b-[24px]",
+        props.className,
+      )}
+      style={
+        glass
+          ? {
+              borderCurve: "continuous",
+              borderTopLeftRadius: top,
+              borderTopRightRadius: top,
+              borderBottomLeftRadius: bottom,
+              borderBottomRightRadius: bottom,
+              borderLeftWidth: edge,
+              borderRightWidth: edge,
+              borderTopWidth: props.first ? edge : 0,
+              borderBottomWidth: props.last ? edge : 0,
+            }
+          : undefined
       }
     >
       {props.children}
@@ -217,6 +277,7 @@ function ListRow(props: {
   readonly right?: ReactNode;
   readonly onPress?: () => void;
 }) {
+  const glass = useGlassChromeActive();
   if (Platform.OS === "android") {
     return (
       <MaterialListRow
@@ -233,15 +294,17 @@ function ListRow(props: {
     );
   }
   return (
-    <Pressable
+    <RowPressable
       accessibilityRole={props.onPress ? "button" : undefined}
       disabled={props.disabled}
       onPress={props.onPress}
       className={cn(
-        "bg-grouped-card px-3.5 py-2.5 active:opacity-70",
+        !glass && "bg-grouped-card",
+        "px-3.5 py-2.5",
         !props.isFirst && "border-t border-border-subtle",
         props.disabled && "opacity-[0.45]",
       )}
+      interactionClassName={glass ? "bg-foreground/[0.06]" : "bg-subtle"}
     >
       <View className="flex-row items-center gap-3">
         <View
@@ -272,7 +335,7 @@ function ListRow(props: {
           />
         ) : null}
       </View>
-    </Pressable>
+    </RowPressable>
   );
 }
 
@@ -298,14 +361,29 @@ function PrimaryActionButton(props: {
   );
 }
 
+function FieldInput(props: AppTextInputProps) {
+  const glass = useGlassChromeActive();
+  return (
+    <TextInput
+      {...props}
+      className={
+        glass
+          ? "h-12 min-h-12 rounded-[14px] border-[0.5px] border-chrome-glass-border bg-foreground/5 px-4 py-0 text-base leading-snug"
+          : "h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
+      }
+      // Not the border-continuous class: tailwind-merge drops it next to a border color.
+      style={glass ? { borderCurve: "continuous" } : undefined}
+    />
+  );
+}
+
 function ProjectPathInput(props: {
   readonly value: string;
   readonly onChangeText: (value: string) => void;
   readonly onSubmit: () => void;
 }) {
   return (
-    <TextInput
-      className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
+    <FieldInput
       value={props.value}
       onChangeText={props.onChangeText}
       autoCapitalize="none"
@@ -473,7 +551,7 @@ function EmptyEnvironmentState() {
   const navigation = useNavigation();
 
   return (
-    <View className="items-center gap-3 rounded-2xl bg-grouped-card px-5 py-8">
+    <Card opaqueClassName="rounded-2xl bg-grouped-card" className="items-center gap-3 px-5 py-8">
       <Text className="text-center text-lg font-t3-bold">Environment unavailable</Text>
       <Text className="text-center text-sm leading-normal text-foreground-muted">
         Start or reconnect an environment before adding a project.
@@ -484,7 +562,7 @@ function EmptyEnvironmentState() {
       >
         <Text className="text-sm font-t3-bold text-primary-foreground">Add environment</Text>
       </Pressable>
-    </View>
+    </Card>
   );
 }
 
@@ -566,7 +644,7 @@ export function AddProjectSourceScreen() {
       {environmentOptions.length > 1 ? (
         <>
           <SectionTitle>Environments</SectionTitle>
-          <ListSection>
+          <GroupedCard>
             {environmentOptions.map((environment, index) => (
               <ListRow
                 key={environment.environmentId}
@@ -603,13 +681,13 @@ export function AddProjectSourceScreen() {
                 onPress={() => setSelectedEnvironmentId(environment.environmentId)}
               />
             ))}
-          </ListSection>
+          </GroupedCard>
         </>
       ) : null}
 
       {selectedEnvironment ? (
         <>
-          <ListSection>
+          <GroupedCard>
             {selectedEnvironment.newProjectsRoot !== null ? (
               <ListRow
                 title="New project"
@@ -668,7 +746,7 @@ export function AddProjectSourceScreen() {
                 />
               ),
             )}
-          </ListSection>
+          </GroupedCard>
           {discoveryState.isPending ? (
             <ActivityIndicator colorClassName="accent-icon-muted" />
           ) : null}
@@ -848,8 +926,7 @@ export function AddProjectRepositoryScreen(props: {
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>
-          <TextInput
-            className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
+          <FieldInput
             value={repositoryInput}
             onChangeText={setRepositoryInput}
             editable={!isSubmitting}
@@ -918,12 +995,9 @@ function FolderBrowser(props: {
   );
   const renderBrowseEntry = useCallback(
     ({ item: entry, index }: { item: FilesystemBrowseEntry; index: number }) => (
-      <View
-        className={cn(
-          "overflow-hidden",
-          index === 0 && !browsePath.canBrowseUp && "rounded-t-[24px]",
-          index === visibleBrowseEntries.length - 1 && "rounded-b-[24px]",
-        )}
+      <FolderListCell
+        first={index === 0 && !browsePath.canBrowseUp}
+        last={index === visibleBrowseEntries.length - 1}
       >
         <ListRow
           title={entry.name}
@@ -944,7 +1018,7 @@ function FolderBrowser(props: {
             });
           }}
         />
-      </View>
+      </FolderListCell>
     ),
     [
       browsePath.canBrowseUp,
@@ -973,9 +1047,9 @@ function FolderBrowser(props: {
         keyExtractor={(entry) => entry.fullPath}
         ListEmptyComponent={
           !browsePath.canBrowseUp && !browseState.isPending && browseState.error === null ? (
-            <View className="rounded-[24px] bg-card px-4 py-5">
+            <Card className="px-4 py-5">
               <Text className="text-sm text-foreground-muted">No matching folders.</Text>
-            </View>
+            </Card>
           ) : null
         }
         ListHeaderComponent={
@@ -985,18 +1059,13 @@ function FolderBrowser(props: {
               <SectionTitle>Browse folders</SectionTitle>
               {browseState.error ? <ErrorBanner message={browseState.error} /> : null}
               {browseState.isPending && browseState.data === null ? (
-                <View className="items-center rounded-[24px] bg-card py-5">
+                <Card className="items-center py-5">
                   <ActivityIndicator colorClassName="accent-icon-muted" />
-                </View>
+                </Card>
               ) : null}
             </View>
             {browsePath.canBrowseUp ? (
-              <View
-                className={cn(
-                  "mt-2.5 overflow-hidden rounded-t-[24px]",
-                  visibleBrowseEntries.length === 0 && "rounded-b-[24px]",
-                )}
-              >
+              <FolderListCell first last={visibleBrowseEntries.length === 0} className="mt-2.5">
                 <ListRow
                   title=".."
                   icon={
@@ -1017,7 +1086,7 @@ function FolderBrowser(props: {
                     }
                   }}
                 />
-              </View>
+              </FolderListCell>
             ) : null}
           </View>
         }
@@ -1071,7 +1140,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
   const showMachines =
     environmentOptions.length > 1 || (environment === null && environmentOptions.length > 0);
   const machineRows = showMachines ? (
-    <ListSection>
+    <GroupedCard>
       {environmentOptions.map((option, index) => {
         const selected = option.environmentId === environment?.environmentId;
         return (
@@ -1103,7 +1172,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
           />
         );
       })}
-    </ListSection>
+    </GroupedCard>
   ) : null;
 
   // State lags a render behind, so a double tap could start a second create.
@@ -1174,8 +1243,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>
-          <TextInput
-            className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
+          <FieldInput
             value={name}
             onChangeText={setName}
             autoCorrect={false}
@@ -1194,7 +1262,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
           ) : null}
           {machineRows}
           {githubTarget !== null ? (
-            <ListSection>
+            <GroupedCard>
               <ListRow
                 title="Create private repository on GitHub"
                 subtitle={
@@ -1219,7 +1287,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
                 }
                 onPress={() => setPublishesToGitHub((publishes) => !publishes)}
               />
-            </ListSection>
+            </GroupedCard>
           ) : null}
           <PrimaryActionButton
             label="Create project"
@@ -1227,7 +1295,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
             onPress={() => void submit()}
             loading={isSubmitting}
           />
-          <ListSection>
+          <GroupedCard>
             <ListRow
               title="Add existing project"
               subtitle="Open a folder or clone a repository"
@@ -1248,7 +1316,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
                   : navigation.dispatch(StackActions.replace("AddProject"))
               }
             />
-          </ListSection>
+          </GroupedCard>
         </>
       ) : environmentOptions.length > 0 ? (
         machineRows
@@ -1461,12 +1529,12 @@ export function AddProjectDestinationScreen(props: {
       <AddProjectShell title={repositoryTitle ?? "Clone repository"}>
         {error ? <ErrorBanner message={error} /> : null}
         {repositoryTitle ? (
-          <View className="rounded-[24px] bg-card px-4 py-3">
+          <Card className="px-4 py-3">
             <Text className="text-base font-t3-bold">{repositoryTitle}</Text>
             <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={2}>
               {remoteUrl}
             </Text>
-          </View>
+          </Card>
         ) : null}
         <EmptyEnvironmentState />
       </AddProjectShell>
@@ -1481,12 +1549,12 @@ export function AddProjectDestinationScreen(props: {
           <Text className="text-base font-t3-bold">Clone destination</Text>
           {error ? <ErrorBanner message={error} /> : null}
           {repositoryTitle ? (
-            <View className="rounded-[24px] bg-card px-4 py-3">
+            <Card className="px-4 py-3">
               <Text className="text-base font-t3-bold">{repositoryTitle}</Text>
               <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={2}>
                 {remoteUrl}
               </Text>
-            </View>
+            </Card>
           ) : null}
           <ProjectPathInput
             value={pathInput}

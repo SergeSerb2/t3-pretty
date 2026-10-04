@@ -23,7 +23,9 @@ import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { GLASS_INPUT_CLASS_NAME } from "../connection/ConnectionFormField";
 import { ConnectionSheetButton } from "../connection/ConnectionSheetButton";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { SettingsSection } from "./components/SettingsSection";
 import {
   isValidAppSlug,
@@ -66,11 +68,14 @@ export function SettingsAppEditRouteScreen({ route }: StaticScreenProps<Settings
     return (
       <SheetSurface>
         <NativeStackScreenOptions options={{ title: "App" }} />
-        <View className="px-5 pt-6">
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          contentContainerClassName="px-5 pt-6"
+        >
           <Text className="text-base text-foreground-muted">
             {apps === null ? "Waiting for this environment…" : "This app is no longer available."}
           </Text>
-        </View>
+        </ScrollView>
       </SheetSurface>
     );
   }
@@ -92,6 +97,8 @@ function AppEditor(props: {
   const { apps, environmentId, existing } = props;
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const glass = useGlassChromeActive();
+  const inputClassName = glass ? GLASS_INPUT_CLASS_NAME : undefined;
   const catalogEntry = findAppCatalogEntry(existing?.catalogId);
   const tokenHelpUrl = catalogEntry?.tokenHelpUrl;
 
@@ -196,6 +203,7 @@ function AppEditor(props: {
           <View className="gap-4 p-4">
             <Field label="Name">
               <TextInput
+                className={inputClassName}
                 autoCapitalize="words"
                 autoCorrect={false}
                 onChangeText={setName}
@@ -213,6 +221,7 @@ function AppEditor(props: {
               invalid={!slugValid && effectiveSlug !== ""}
             >
               <TextInput
+                className={inputClassName}
                 autoCapitalize="none"
                 autoCorrect={false}
                 onChangeText={(value) => {
@@ -225,6 +234,7 @@ function AppEditor(props: {
             </Field>
             <Field label="URL" hint="Streamable HTTP MCP endpoint.">
               <TextInput
+                className={inputClassName}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
@@ -243,7 +253,11 @@ function AppEditor(props: {
                     onPress={() => setAuth(option.kind)}
                     className={cn(
                       "flex-1 items-center rounded-[14px] py-3",
-                      option.kind === auth ? "bg-primary" : "border border-border bg-secondary",
+                      option.kind === auth
+                        ? "bg-primary"
+                        : glass
+                          ? "border-[0.5px] border-chrome-glass-border bg-foreground/5"
+                          : "border border-border bg-secondary",
                     )}
                   >
                     <Text
@@ -263,6 +277,7 @@ function AppEditor(props: {
             {auth === "token" ? (
               <Field label="API token" hint="Stored on the environment, never on this device.">
                 <TextInput
+                  className={inputClassName}
                   autoCapitalize="none"
                   autoCorrect={false}
                   onChangeText={setToken}

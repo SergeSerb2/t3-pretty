@@ -6,12 +6,14 @@ import {
   type GitHubRoutingPermission,
 } from "@t3tools/client-runtime/connection";
 import { useState } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { Alert, Platform, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
+import { RowPressable } from "../../components/RowPressable";
 import { environmentCatalog } from "../../connection/catalog";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { SettingsSection } from "../settings/components/SettingsSection";
 
 const options: ReadonlyArray<{
@@ -38,6 +40,12 @@ export function GitHubRoutingSettings() {
   const update = useAtomCommand(environmentCatalog.setGitHubRoutingPermission);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const glass = useGlassChromeActive();
+  // Android keeps its unhighlighted rows; iOS gets the table-cell touch highlight.
+  const highlight = {
+    interactionClassName: glass ? "bg-foreground/[0.06]" : "bg-subtle",
+    interactionOpacity: Platform.OS === "ios" ? 1 : 0,
+  };
   if (catalog.entries.size === 0) return null;
 
   return (
@@ -49,7 +57,8 @@ export function GitHubRoutingSettings() {
           const disabled = !catalog.isReady || saving || gitHubRoutingConnectionKey(entry) === null;
           return (
             <View key={environmentId}>
-              <Pressable
+              <RowPressable
+                {...highlight}
                 accessibilityRole="button"
                 accessibilityLabel={`${entry.target.label} GitHub routing`}
                 accessibilityState={{ expanded: expanded === environmentId }}
@@ -72,10 +81,11 @@ export function GitHubRoutingSettings() {
                   size={12}
                   tintColorClassName="accent-icon-muted"
                 />
-              </Pressable>
+              </RowPressable>
               {expanded === environmentId
                 ? options.map((option) => (
-                    <Pressable
+                    <RowPressable
+                      {...highlight}
                       key={option.value}
                       accessibilityRole="radio"
                       accessibilityState={{ checked: selected === option.value, disabled }}
@@ -107,7 +117,7 @@ export function GitHubRoutingSettings() {
                           weight="semibold"
                         />
                       ) : null}
-                    </Pressable>
+                    </RowPressable>
                   ))
                 : null}
             </View>

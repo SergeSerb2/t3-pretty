@@ -4,6 +4,7 @@ import { Platform, Pressable } from "react-native";
 import { AppText as Text } from "../../components/AppText";
 import { cn } from "../../lib/cn";
 import { MaterialButton } from "../../components/MaterialButton";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
 const CARD_SHADOW = Platform.select({
   ios: {
@@ -36,6 +37,7 @@ export function ConnectionSheetButton(props: {
   readonly fullWidth?: boolean;
   readonly onPress: () => void;
 }) {
+  const glass = useGlassChromeActive();
   if (Platform.OS === "android")
     return (
       <MaterialButton
@@ -77,12 +79,14 @@ export function ConnectionSheetButton(props: {
         props.compact
           ? "min-h-[42px] flex-row items-center justify-center gap-1.5 rounded-[14px] px-3.5 py-2.5"
           : "min-h-[48px] flex-row items-center justify-center gap-2 rounded-[16px] px-4 py-3",
-        "disabled:opacity-50",
+        "active:opacity-70 disabled:opacity-50",
         tone === "primary"
           ? "bg-primary"
           : tone === "danger"
             ? "border border-danger-border bg-danger"
-            : "border border-border bg-secondary",
+            : glass
+              ? "border-[0.5px] border-chrome-glass-border bg-foreground/5"
+              : "border border-border bg-secondary",
       )}
       disabled={props.disabled}
       onPress={props.onPress}
