@@ -188,7 +188,7 @@ export function WorkspaceConnectionTitle(props: {
       </View>
       {status !== null ? (
         <StatusFadeIn
-          centeredOnWidth={props.centered === true ? slotWidth : undefined}
+          centeredOnWidth={props.centered === true && slotWidth > 0 ? slotWidth : undefined}
           leadingRoomWidth={props.leadingRoomWidth}
           grow={props.grow}
           maxWidth={props.maxWidth}
