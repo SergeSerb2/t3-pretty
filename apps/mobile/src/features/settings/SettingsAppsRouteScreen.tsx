@@ -48,8 +48,8 @@ import {
   type AppStatus,
 } from "./apps/appsSettings.logic";
 import { SheetSurface } from "../../components/SheetSurface";
-import { GLASS_INPUT_CLASS_NAME } from "../connection/ConnectionFormField";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
+import { GLASS_INPUT_CLASS_NAME } from "../scenery/GroupedCard";
 
 const EMPTY_APPS: AppsSettings = { connections: {}, oauthClients: {} };
 

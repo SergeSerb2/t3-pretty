@@ -10,9 +10,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidSheetHeader } from "../../../components/AndroidScreenHeader";
 import { MaterialScreenContent } from "../../../components/MaterialScreenContent";
+import { SheetSurface } from "../../../components/SheetSurface";
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
 import { AppText as Text } from "../../../components/AppText";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
+import { useGlassChromeActive } from "../../scenery/SceneryProvider";
 import { SheetActionButton } from "./gitSheetComponents";
 
 type GitConfirmSheetProps = StaticScreenProps<{
@@ -31,6 +33,7 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   const { height: windowHeight } = useWindowDimensions();
   const gitActions = useSelectedThreadGitActions();
   const actionPendingRef = useRef(false);
+  const glass = useGlassChromeActive();
 
   const params = props.route.params;
 
@@ -105,9 +108,12 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   return (
     <View
       collapsable={false}
-      className="bg-sheet ios:flex-1"
+      className={glass ? "flex-1" : "bg-sheet ios:flex-1"}
       style={Platform.OS === "android" ? { maxHeight: windowHeight * 0.92 } : undefined}
     >
+      {glass ? (
+        <SheetSurface className="absolute inset-0" threadKey={`${environmentId}:${threadId}`} />
+      ) : null}
       {Platform.OS === "android" ? (
         <NativeStackScreenOptions
           options={{

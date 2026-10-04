@@ -8,10 +8,18 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { SheetSurface } from "../../components/SheetSurface";
+import { cn } from "../../lib/cn";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { SheetActionButton } from "./git/gitSheetComponents";
 import { normalizeThreadTitleInput } from "./thread-rename";
+import {
+  GLASS_CARD_CLASS_NAME,
+  GLASS_INPUT_CLASS_NAME,
+  glassCardStyle,
+} from "../scenery/GroupedCard";
 
 type ThreadRenameSheetProps = StaticScreenProps<{
   readonly environmentId: string;
@@ -28,6 +36,7 @@ export function ThreadRenameSheet(props: ThreadRenameSheetProps) {
   });
   const [title, setTitle] = useState(currentTitle);
   const [busy, setBusy] = useState(false);
+  const glass = useGlassChromeActive();
 
   useLayoutEffect(() => {
     setTitle(currentTitle);
@@ -59,7 +68,7 @@ export function ThreadRenameSheet(props: ThreadRenameSheetProps) {
   }, [busy, environmentId, navigation, normalizedTitle, threadId, updateThreadMetadata]);
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface threadKey={`${environmentId}:${threadId}`}>
       {Platform.OS === "android" ? (
         <AndroidSheetHeader title="Rename thread" onBack={() => navigation.goBack()} />
       ) : null}
@@ -71,7 +80,14 @@ export function ThreadRenameSheet(props: ThreadRenameSheetProps) {
         contentInset={{ bottom: Math.max(insets.bottom, 18) + 18 }}
         contentContainerClassName="gap-4 px-5 pt-2"
       >
-        <View className="gap-2 rounded-[18px] border border-border bg-card px-4 py-4">
+        <View
+          className={
+            glass
+              ? cn(GLASS_CARD_CLASS_NAME, "gap-2 px-4 py-4")
+              : "gap-2 rounded-[18px] border border-border bg-card px-4 py-4"
+          }
+          style={glass ? glassCardStyle() : undefined}
+        >
           <Text className="text-foreground-secondary text-2xs font-t3-bold tracking-[1px] uppercase">
             Thread title
           </Text>
@@ -80,7 +96,7 @@ export function ThreadRenameSheet(props: ThreadRenameSheetProps) {
             value={title}
             onChangeText={setTitle}
             placeholder="Thread title"
-            className="rounded-[18px]"
+            className={glass ? GLASS_INPUT_CLASS_NAME : "rounded-[18px]"}
             onSubmitEditing={submit}
             returnKeyType="done"
           />
@@ -93,6 +109,6 @@ export function ThreadRenameSheet(props: ThreadRenameSheetProps) {
           />
         </View>
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }

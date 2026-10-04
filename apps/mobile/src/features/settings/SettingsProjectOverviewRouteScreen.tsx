@@ -10,7 +10,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { cn } from "../../lib/cn";
-import { GLASS_INPUT_CLASS_NAME } from "../connection/ConnectionFormField";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
@@ -19,6 +18,7 @@ import {
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
+import { GLASS_INPUT_CLASS_NAME } from "../scenery/GroupedCard";
 
 export function SettingsProjectOverviewRouteScreen() {
   const insets = useSafeAreaInsets();

@@ -11,6 +11,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
+import { SheetSurface } from "../../components/SheetSurface";
+import { cn } from "../../lib/cn";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { environmentThreadShells } from "../../state/threads";
@@ -27,6 +29,8 @@ import {
   type ThreadMoveDestination,
 } from "./threadOrder";
 import { getThreadListV2OrderedSection } from "./threadListV2";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/GroupedCard";
 
 const ROW_HEIGHT = 56;
 const HEADER_HEIGHT = 48;
@@ -54,6 +58,8 @@ function ArrangementRow(props: {
   offset: number;
   lifted: boolean;
   dragging: boolean;
+  /** Over glass: header rows float bare, thread rows form one card per section. */
+  glass: { isFirst: boolean; isLast: boolean } | "header" | null;
   children: ReactNode;
 }) {
   const { dragging, offset, lifted } = props;
@@ -67,12 +73,26 @@ function ArrangementRow(props: {
     ],
     opacity: lifted ? 0 : 1,
   }));
+  const segment = props.glass !== null && props.glass !== "header" ? props.glass : null;
   return (
     <Reanimated.View
-      style={[{ height: props.height }, style]}
-      className="flex-row items-center border-b border-border-subtle px-5"
+      style={[
+        { height: props.height },
+        segment ? glassCardStyle(segment.isFirst, segment.isLast) : null,
+        style,
+      ]}
+      className={
+        segment
+          ? cn(GLASS_CARD_CLASS_NAME, "mx-4 flex-row items-center px-4")
+          : props.glass === "header"
+            ? "flex-row items-center px-5"
+            : "flex-row items-center border-b border-border-subtle px-5"
+      }
     >
       {props.children}
+      {segment && !segment.isLast ? (
+        <View className="absolute bottom-0 left-4 right-0 h-px bg-border-subtle" />
+      ) : null}
     </Reanimated.View>
   );
 }
@@ -148,6 +168,7 @@ function DragHandle(props: {
 
 export function ThreadArrangementSheet(props: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
+  const glass = useGlassChromeActive();
   const threads = useAtomValue(environmentThreadShells.navigationThreadShellsAtom);
   const configs = useAtomValue(environmentServerConfigsAtom);
   const queuedThreadKeys = useAtomValue(queuedThreadKeysAtom);
@@ -387,8 +408,8 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
       onRequestClose={props.onClose}
     >
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <View
-          className="flex-1 bg-screen"
+        <SheetSurface
+          className="bg-screen"
           style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
         >
           <View className="flex-row items-center justify-between gap-3 px-5 py-3">
@@ -426,7 +447,7 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
                 offset: rows[index]!.offset,
                 index,
               })}
-              renderItem={({ item }) => {
+              renderItem={({ item, index }) => {
                 const thread = item.thread;
                 const planner =
                   item.section === "pinned" || item.section === "active"
@@ -469,6 +490,16 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
                   : [];
                 return (
                   <ArrangementRow
+                    glass={
+                      !glass
+                        ? null
+                        : thread
+                          ? {
+                              isFirst: rows[index - 1]?.thread === undefined,
+                              isLast: rows[index + 1]?.thread === undefined,
+                            }
+                          : "header"
+                    }
                     height={item.height}
                     dragging={visiblePreview !== null}
                     lifted={item.key === sourceRow?.key}
@@ -556,7 +587,11 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
             {visiblePreview ? (
               <Animated.View
                 pointerEvents="none"
-                className="absolute left-5 right-5 justify-center rounded-xl border border-border bg-screen px-4"
+                className={
+                  glass
+                    ? "absolute left-4 right-4 justify-center rounded-2xl border border-chrome-glass-border bg-card px-4"
+                    : "absolute left-5 right-5 justify-center rounded-xl border border-border bg-screen px-4"
+                }
                 style={{ top: 0, height: ROW_HEIGHT, transform: [{ translateY }] }}
               >
                 <Text
@@ -576,7 +611,7 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
               </Animated.View>
             ) : null}
           </View>
-        </View>
+        </SheetSurface>
       </GestureHandlerRootView>
     </Modal>
   );

@@ -47,7 +47,14 @@ import {
   TextInput,
   View,
 } from "react-native";
-import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
@@ -57,8 +64,11 @@ import { AndroidAnchoredMenu } from "../../components/AndroidAnchoredMenu";
 import { MaterialButton } from "../../components/MaterialButton";
 import { MaterialIconButton } from "../../components/MaterialIconButton";
 import { ProviderIcon } from "../../components/ProviderIcon";
+import { RowPressable } from "../../components/RowPressable";
+import { SheetSurface } from "../../components/SheetSurface";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
+import { MOTION_TIMING } from "../../lib/motion";
 import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../../lib/searchQuery";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { applyProviderOptionSelection } from "../../lib/providerOptions";
@@ -69,7 +79,12 @@ import {
   NativeStackScreenOptions,
   nativeHeaderScrollEdgeEffects,
 } from "../../native/StackHeader";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import {
+  NATIVE_LIQUID_GLASS_SUPPORTED,
+  TRANSPARENT_NATIVE_HEADERS,
+} from "../../native/native-glass";
+import { GroupedCard } from "../scenery/GroupedCard";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { ChatGptSharingStatus } from "./ChatGptSharingStatus";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
@@ -111,6 +126,7 @@ import {
   visibleSheetOptionDescriptors,
   type ThreadSettingsSheetPage,
 } from "./thread-settings-sheet-state";
+import { GLASS_CARD_CLASS_NAME, GlassRowPressable, glassCardStyle } from "../scenery/GroupedCard";
 
 export type { ThreadSettingsSheetPage };
 
@@ -142,6 +158,7 @@ const THREAD_SETTINGS_HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects
   Platform.OS,
   Platform.Version,
 );
+const DISCLOSURE_CHEVRON_TIMING = { ...MOTION_TIMING, duration: 180 };
 
 export function threadSettingsSummaryLabel(input: {
   readonly modelLabel: string;
@@ -171,8 +188,36 @@ const EMPTY_MODEL_FAVORITES: ReadonlyArray<{
   readonly model: string;
 }> = [];
 const FAVORITES_PROVIDER_FILTER = "@favorites";
+/**
+ * Chevron that turns between collapsed and expanded instead of swapping
+ * glyphs. A recycled header rebinding to another `identity` snaps.
+ */
+function DisclosureChevron(props: { readonly expanded: boolean; readonly identity: string }) {
+  const rotation = useSharedValue(props.expanded ? 180 : 0);
+  const identity = useRef(props.identity);
+  useEffect(() => {
+    const target = props.expanded ? 180 : 0;
+    rotation.set(
+      identity.current === props.identity ? withTiming(target, DISCLOSURE_CHEVRON_TIMING) : target,
+    );
+    identity.current = props.identity;
+  }, [props.expanded, props.identity, rotation]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.get()}deg` }] }));
+  return (
+    <Animated.View style={style}>
+      <SymbolView
+        name="chevron.down"
+        size={12}
+        tintColorClassName="accent-icon-subtle"
+        type="monochrome"
+      />
+    </Animated.View>
+  );
+}
+
 /** Provider catalog header with its harness logo and disclosure state. */
 function ProviderHeader(props: {
+  readonly providerKey: string;
   readonly driver: string | undefined;
   readonly iconUrl: string | undefined;
   readonly label: string;
@@ -181,6 +226,7 @@ function ProviderHeader(props: {
   readonly modelCount: number;
   readonly onToggle: () => void;
 }) {
+  const glass = useGlassChromeActive();
   const content = (
     <>
       <ProviderIcon iconUrl={props.iconUrl} provider={props.driver} size={15} />
@@ -193,12 +239,16 @@ function ProviderHeader(props: {
               {props.modelCount}
             </Text>
           ) : null}
-          <SymbolView
-            name={props.collapsed ? "chevron.down" : "chevron.up"}
-            size={12}
-            tintColorClassName="accent-icon-subtle"
-            type="monochrome"
-          />
+          {glass ? (
+            <DisclosureChevron expanded={!props.collapsed} identity={props.providerKey} />
+          ) : (
+            <SymbolView
+              name={props.collapsed ? "chevron.down" : "chevron.up"}
+              size={12}
+              tintColorClassName="accent-icon-subtle"
+              type="monochrome"
+            />
+          )}
         </>
       ) : null}
     </>
@@ -234,15 +284,16 @@ function DisclosureRow(props: {
   readonly disabled?: boolean;
 }) {
   return (
-    <Pressable
+    <GlassRowPressable
       accessibilityRole="button"
       accessibilityState={{ disabled: props.disabled === true }}
       disabled={props.disabled}
       onPress={props.onPress}
       className={cn(
-        "min-h-11 flex-row items-center gap-2 px-5 py-2.5 active:opacity-70",
+        "min-h-11 flex-row items-center gap-2 px-5 py-2.5",
         props.disabled && "opacity-55",
       )}
+      fallbackClassName="active:opacity-70"
     >
       <Text className="text-sm font-t3-medium text-foreground">{props.label}</Text>
       <View className="flex-1" />
@@ -257,7 +308,7 @@ function DisclosureRow(props: {
         tintColorClassName="accent-icon-subtle"
         type="monochrome"
       />
-    </Pressable>
+    </GlassRowPressable>
   );
 }
 
@@ -284,13 +335,18 @@ function FilterChip(props: {
   readonly selected: boolean;
   readonly onPress: () => void;
 }) {
+  const glass = useGlassChromeActive();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected: props.selected }}
       className={cn(
         "h-8 justify-center rounded-full px-3",
-        props.selected ? "bg-primary" : "bg-card",
+        props.selected
+          ? "bg-primary"
+          : glass
+            ? "border border-chrome-glass-border bg-chrome-glass"
+            : "bg-card",
       )}
       style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.97 : 1 }] })}
       onPress={props.onPress}
@@ -522,7 +578,10 @@ function ThreadSettingsSessionProvider(
     runtimeModeChoices,
   );
 
-  const visibleDescriptors = useMemo(() => visibleSheetOptionDescriptors(displayedDescriptors), [displayedDescriptors]);
+  const visibleDescriptors = useMemo(
+    () => visibleSheetOptionDescriptors(displayedDescriptors),
+    [displayedDescriptors],
+  );
 
   const hasLegacyModels = useMemo(
     () => props.providerGroups.some((group) => group.models.some((model) => model.isLegacy)),
@@ -661,6 +720,12 @@ function useThreadSettingsSession() {
   return value;
 }
 
+/** Scenery key of the thread being configured; new tasks have none. */
+function useThreadSettingsSceneryKey(): string | null {
+  const threadRef = useThreadSettingsSession().checkpointsThreadRef;
+  return threadRef === null ? null : `${threadRef.environmentId}:${threadRef.threadId}`;
+}
+
 type ThreadSettingsProviderCatalog = {
   readonly key: string;
   readonly driver: string | undefined;
@@ -726,6 +791,7 @@ function ThreadSettingsProviderListHeader(props: {
 
   return (
     <ProviderHeader
+      providerKey={props.provider.key}
       collapsible={props.provider.collapsible}
       collapsed={props.provider.collapsed}
       driver={props.provider.driver}
@@ -826,6 +892,7 @@ function ThreadSettingsOptionsCard(props: {
   readonly onOpenSubmenu: (submenu: ThreadSettingsSubmenuPage) => void;
 }) {
   const session = useThreadSettingsSession();
+  const glass = useGlassChromeActive();
   const configs = useAtomValue(environmentServerConfigsAtom);
   const selectedProvider = session.environmentId
     ? (configs
@@ -835,7 +902,10 @@ function ThreadSettingsOptionsCard(props: {
 
   return (
     <Animated.View
-      className="mx-4 overflow-hidden rounded-2xl bg-card"
+      className={
+        glass ? cn(GLASS_CARD_CLASS_NAME, "mx-4") : "mx-4 overflow-hidden rounded-2xl bg-card"
+      }
+      style={glass ? glassCardStyle() : undefined}
       layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}
     >
       <ChatGptSharingStatus provider={selectedProvider} />
@@ -896,42 +966,64 @@ function ThreadSettingsHomeContent(props: {
 }) {
   const insets = useSafeAreaInsets();
   const session = useThreadSettingsSession();
+  const glass = useGlassChromeActive();
+  const sceneryKey = useThreadSettingsSceneryKey();
   const model = session.displayedModel;
+  const modelButtonProps = {
+    accessibilityHint: "Opens the model catalog",
+    accessibilityLabel: model ? `Change model, ${model.label}` : "Choose model",
+    accessibilityRole: "button",
+    onPress: props.onOpenCatalog,
+  } as const;
+  const modelButtonContent = (
+    <>
+      <ProviderIcon provider={model?.providerDriver} size={18} />
+      <View className="min-w-0 flex-1">
+        <Text className="text-base font-t3-medium text-foreground" numberOfLines={1}>
+          {model?.label ?? "Choose model"}
+        </Text>
+        {model?.providerLabel ? (
+          <Text className="text-sm text-foreground-muted" numberOfLines={1}>
+            {model.providerLabel}
+          </Text>
+        ) : null}
+      </View>
+      <Text className="text-sm font-t3-medium text-foreground-muted">Change</Text>
+      <SymbolView
+        name="chevron.right"
+        size={12}
+        tintColorClassName="accent-icon-subtle"
+        type="monochrome"
+      />
+    </>
+  );
 
-  return (
+  const content = (
     <ScrollView
-      className="flex-1 bg-sheet"
+      className={glass ? "flex-1" : "flex-1 bg-sheet"}
       contentContainerStyle={{ paddingBottom: insets.bottom + 24, paddingTop: 8 }}
       contentInsetAdjustmentBehavior="automatic"
       showsVerticalScrollIndicator={false}
     >
       <Text className="px-5 pb-2 pt-2 text-sm font-t3-medium text-foreground-muted">Model</Text>
-      <Pressable
-        accessibilityHint="Opens the model catalog"
-        accessibilityLabel={model ? `Change model, ${model.label}` : "Choose model"}
-        accessibilityRole="button"
-        className="mx-4 min-h-14 flex-row items-center gap-3 rounded-2xl bg-card px-4 py-3 active:opacity-70"
-        onPress={props.onOpenCatalog}
-      >
-        <ProviderIcon provider={model?.providerDriver} size={18} />
-        <View className="min-w-0 flex-1">
-          <Text className="text-base font-t3-medium text-foreground" numberOfLines={1}>
-            {model?.label ?? "Choose model"}
-          </Text>
-          {model?.providerLabel ? (
-            <Text className="text-sm text-foreground-muted" numberOfLines={1}>
-              {model.providerLabel}
-            </Text>
-          ) : null}
-        </View>
-        <Text className="text-sm font-t3-medium text-foreground-muted">Change</Text>
-        <SymbolView
-          name="chevron.right"
-          size={12}
-          tintColorClassName="accent-icon-subtle"
-          type="monochrome"
-        />
-      </Pressable>
+      {glass ? (
+        <GroupedCard className="mx-4">
+          <RowPressable
+            {...modelButtonProps}
+            className="min-h-14 flex-row items-center gap-3 px-4 py-3"
+            interactionClassName="bg-foreground/[0.06]"
+          >
+            {modelButtonContent}
+          </RowPressable>
+        </GroupedCard>
+      ) : (
+        <Pressable
+          {...modelButtonProps}
+          className="mx-4 min-h-14 flex-row items-center gap-3 rounded-2xl bg-card px-4 py-3 active:opacity-70"
+        >
+          {modelButtonContent}
+        </Pressable>
+      )}
 
       <Text className="px-5 pb-2 pt-7 text-sm font-t3-medium text-foreground-muted">Options</Text>
       <ThreadSettingsOptionsCard onOpenSubmenu={props.onOpenSubmenu} />
@@ -941,7 +1033,12 @@ function ThreadSettingsHomeContent(props: {
           <Text className="px-5 pb-2 pt-7 text-sm font-t3-medium text-foreground-muted">
             Project
           </Text>
-          <View className="mx-4 overflow-hidden rounded-2xl bg-card">
+          <View
+            className={
+              glass ? cn(GLASS_CARD_CLASS_NAME, "mx-4") : "mx-4 overflow-hidden rounded-2xl bg-card"
+            }
+            style={glass ? glassCardStyle() : undefined}
+          >
             <DisclosureRow
               disabled={props.projectTransfer.isPending}
               label={
@@ -965,11 +1062,14 @@ function ThreadSettingsHomeContent(props: {
       ) : null}
     </ScrollView>
   );
+  return glass ? <SheetSurface threadKey={sceneryKey}>{content}</SheetSurface> : content;
 }
 
 /** One native scroll owner for the model catalog. */
 function ThreadSettingsCatalogContent() {
   const session = useThreadSettingsSession();
+  const glass = useGlassChromeActive();
+  const sceneryKey = useThreadSettingsSceneryKey();
   const refreshProvidersCommand = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -1045,11 +1145,11 @@ function ThreadSettingsCatalogContent() {
     [animationsReady, hasActiveCatalogFilter, session.providerFilter, session.searchQuery],
   );
 
-  return (
+  const list = (
     <AnimatedLegendList
       alwaysBounceVertical
       automaticallyAdjustsScrollIndicatorInsets
-      className="flex-1 bg-sheet"
+      className={glass ? "flex-1" : "flex-1 bg-sheet"}
       style={
         Platform.OS === "android"
           ? { width: "100%", maxWidth: 720, alignSelf: "center" }
@@ -1062,7 +1162,7 @@ function ThreadSettingsCatalogContent() {
       contentInsetAdjustmentBehavior={usesTransparentNativeHeader ? "never" : "automatic"}
       data={listItems}
       estimatedItemSize={Platform.OS === "android" ? 56 : 48}
-      extraData={animationsReady}
+      extraData={`${animationsReady}:${glass}`}
       getItemType={(item) => item.kind}
       itemLayoutAnimation={THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION}
       keyExtractor={(item) => item.key}
@@ -1162,6 +1262,7 @@ function ThreadSettingsCatalogContent() {
       showsVerticalScrollIndicator={false}
     />
   );
+  return glass ? <SheetSurface threadKey={sceneryKey}>{list}</SheetSurface> : list;
 }
 
 /** Compact choice page pushed by the picker navigator. */
@@ -1171,6 +1272,8 @@ function ThreadSettingsChoiceContent(props: {
 }) {
   const insets = useSafeAreaInsets();
   const session = useThreadSettingsSession();
+  const glass = useGlassChromeActive();
+  const sceneryKey = useThreadSettingsSceneryKey();
   const descriptorId = props.submenu.kind === "descriptor" ? props.submenu.id : null;
 
   const activeDescriptor =
@@ -1212,12 +1315,12 @@ function ThreadSettingsChoiceContent(props: {
         : null;
 
   if (!submenuContent) {
-    return <View className="flex-1 bg-sheet" />;
+    return <SheetSurface threadKey={sceneryKey} />;
   }
 
-  return (
+  const content = (
     <ScrollView
-      className="flex-1 bg-sheet"
+      className={glass ? "flex-1" : "flex-1 bg-sheet"}
       style={
         Platform.OS === "android"
           ? { width: "100%", maxWidth: 720, alignSelf: "center" }
@@ -1231,7 +1334,10 @@ function ThreadSettingsChoiceContent(props: {
       contentInsetAdjustmentBehavior="automatic"
       showsVerticalScrollIndicator={false}
     >
-      <View className="overflow-hidden rounded-2xl bg-grouped-card">
+      <View
+        className={glass ? GLASS_CARD_CLASS_NAME : "overflow-hidden rounded-2xl bg-grouped-card"}
+        style={glass ? glassCardStyle() : undefined}
+      >
         {submenuContent.rows.map((row, index) => (
           <ChoiceRow
             key={row.id}
@@ -1245,6 +1351,7 @@ function ThreadSettingsChoiceContent(props: {
       </View>
     </ScrollView>
   );
+  return glass ? <SheetSurface threadKey={sceneryKey}>{content}</SheetSurface> : content;
 }
 
 type ThreadSettingsPickerStackParams = {
@@ -1581,6 +1688,10 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerNavigatorProps
   const theme = useUniwindTheme();
   const solidSheetBackground = theme["--color-sheet-solid"];
   const foreground = theme["--color-foreground"];
+  // Over glass each page plates its own photo, so the stack and its bar stay
+  // clear; iOS before 26 keeps the opaque bar like the main stack.
+  const glass = useGlassChromeActive();
+  const transparentHeader = glass && TRANSPARENT_NATIVE_HEADERS;
   const presentation = useMemo(
     () => ({
       onClose: props.onClose,
@@ -1619,21 +1730,25 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerNavigatorProps
         }}
         screenOptions={{
           animation: Platform.OS === "android" ? "default" : "slide_from_right",
-          contentStyle: { backgroundColor: solidSheetBackground },
+          contentStyle: { backgroundColor: glass ? "transparent" : solidSheetBackground },
           gestureEnabled: true,
           headerBackButtonDisplayMode: "minimal",
           headerBackTitle: "",
           headerShown: Platform.OS !== "android",
           headerShadowVisible: false,
           headerStyle: {
-            backgroundColor: NATIVE_LIQUID_GLASS_SUPPORTED ? "transparent" : solidSheetBackground,
+            backgroundColor:
+              NATIVE_LIQUID_GLASS_SUPPORTED || transparentHeader
+                ? "transparent"
+                : solidSheetBackground,
           },
-          headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
+          headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED || transparentHeader,
           headerTintColor: foreground,
           headerTitleStyle: { fontSize: 17, fontWeight: "700" },
-          scrollEdgeEffects: NATIVE_LIQUID_GLASS_SUPPORTED
-            ? THREAD_SETTINGS_HEADER_SCROLL_EDGE_EFFECTS
-            : undefined,
+          scrollEdgeEffects:
+            NATIVE_LIQUID_GLASS_SUPPORTED || transparentHeader
+              ? THREAD_SETTINGS_HEADER_SCROLL_EDGE_EFFECTS
+              : undefined,
         }}
       >
         <ThreadSettingsPickerStack.Screen
@@ -1682,7 +1797,7 @@ export function ExistingThreadSettingsRouteScreen() {
   }, [navigation, session]);
 
   if (!session) {
-    return <View className="flex-1 bg-sheet" />;
+    return <SheetSurface />;
   }
 
   const { ownerId: _ownerId, ...settings } = session;

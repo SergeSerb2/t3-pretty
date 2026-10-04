@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AndroidSheetHeader } from "../../../components/AndroidScreenHeader";
 import { SymbolView } from "../../../components/AppSymbol";
 import { MaterialScreenContent } from "../../../components/MaterialScreenContent";
+import { SheetSurface } from "../../../components/SheetSurface";
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
 import { AppText as Text, AppTextInput as TextInput } from "../../../components/AppText";
 import { cn } from "../../../lib/cn";
@@ -15,15 +16,26 @@ import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
 import { useSelectedThreadWorktree } from "../../../state/use-selected-thread-worktree";
 import { vcsEnvironment } from "../../../state/vcs";
+import { useGlassChromeActive } from "../../scenery/SceneryProvider";
 import { SheetActionButton } from "./gitSheetComponents";
+import {
+  GLASS_CARD_CLASS_NAME,
+  GLASS_INPUT_CLASS_NAME,
+  glassCardStyle,
+} from "../../scenery/GroupedCard";
 
 type GitCommitSheetProps = StaticScreenProps<{
   readonly environmentId: string;
   readonly threadId: string;
 }>;
 
-export function GitCommitSheet(_props: GitCommitSheetProps) {
+export function GitCommitSheet(props: GitCommitSheetProps) {
   const navigation = useNavigation();
+  const glass = useGlassChromeActive();
+  const cardClassName = glass
+    ? cn(GLASS_CARD_CLASS_NAME, "gap-3 p-4")
+    : "gap-3 bg-card p-4 android:rounded-[20px] ios:rounded-[22px] ios:border ios:border-border";
+  const cardStyle = glass ? glassCardStyle() : undefined;
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { selectedThread } = useThreadSelection();
@@ -72,9 +84,15 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
   return (
     <View
       collapsable={false}
-      className="bg-sheet ios:flex-1"
+      className={glass ? "flex-1" : "bg-sheet ios:flex-1"}
       style={Platform.OS === "android" ? { maxHeight: windowHeight * 0.92 } : undefined}
     >
+      {glass ? (
+        <SheetSurface
+          className="absolute inset-0"
+          threadKey={`${props.route.params.environmentId}:${props.route.params.threadId}`}
+        />
+      ) : null}
       {Platform.OS === "android" ? (
         <NativeStackScreenOptions
           options={{
@@ -104,7 +122,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
               : undefined
           }
         >
-          <View className="gap-3 bg-card p-4 android:rounded-[20px] ios:rounded-[22px] ios:border ios:border-border">
+          <View className={cardClassName} style={cardStyle}>
             <View className="android:gap-1 ios:flex-row ios:items-center ios:justify-between ios:gap-3">
               <Text className="text-foreground-muted text-sm font-medium">Branch</Text>
               <Text className="text-foreground text-base android:font-t3-medium ios:font-t3-bold">
@@ -118,7 +136,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
             ) : null}
           </View>
 
-          <View className="gap-3 bg-card p-4 android:rounded-[20px] ios:rounded-[22px] ios:border ios:border-border">
+          <View className={cardClassName} style={cardStyle}>
             <View className="flex-row items-center justify-between gap-3">
               <View className="gap-1">
                 <Text className="text-foreground text-base android:font-t3-medium ios:font-t3-bold">
@@ -186,12 +204,19 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
                   return (
                     <Pressable
                       key={file.path}
-                      className={cn(
-                        "px-4 py-3 android:rounded-xl ios:rounded-[18px] ios:border",
-                        included
-                          ? "android:bg-subtle ios:border-border"
-                          : "ios:border-border-subtle",
-                      )}
+                      className={
+                        glass
+                          ? cn(
+                              "rounded-[14px] border px-4 py-3",
+                              included ? "border-chrome-glass-border" : "border-border-subtle",
+                            )
+                          : cn(
+                              "px-4 py-3 android:rounded-xl ios:rounded-[18px] ios:border",
+                              included
+                                ? "android:bg-subtle ios:border-border"
+                                : "ios:border-border-subtle",
+                            )
+                      }
                       accessibilityRole="checkbox"
                       accessibilityLabel={file.path}
                       accessibilityState={{ checked: included }}
@@ -209,7 +234,11 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
                     >
                       {Platform.OS !== "android" ? (
                         <View
-                          className={`absolute inset-0 rounded-[18px] ${included ? "bg-card" : "bg-subtle"}`}
+                          className={
+                            glass
+                              ? `absolute inset-0 rounded-[14px] ${included ? "bg-foreground/5" : ""}`
+                              : `absolute inset-0 rounded-[18px] ${included ? "bg-card" : "bg-subtle"}`
+                          }
                         />
                       ) : null}
                       <View className="flex-row items-start justify-between gap-3">
@@ -270,7 +299,11 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
               onChangeText={setDialogCommitMessage}
               placeholder="Leave empty to auto-generate"
               textAlignVertical="top"
-              className="min-h-[128px] px-4 py-3.5 android:rounded-xl android:bg-sheet-solid ios:rounded-[20px]"
+              className={
+                glass
+                  ? cn("min-h-[128px] px-4 py-3.5", GLASS_INPUT_CLASS_NAME)
+                  : "min-h-[128px] px-4 py-3.5 android:rounded-xl android:bg-sheet-solid ios:rounded-[20px]"
+              }
             />
           </View>
 

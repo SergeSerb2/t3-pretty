@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
 import { WorktreeSetupSheet } from "./worktree-setup-sheet";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { ShimmeringWorkContent } from "./thread-work-log";
 
 export interface WorktreeSetupCardProps {
@@ -361,13 +362,16 @@ const OUTPUT_TAIL_SLOTS = [0, 1, 2, 3] as const;
 
 /** Fixed four-line output window, shown only in Details. */
 function OutputTail({ lines, failed }: { lines: ReadonlyArray<string>; failed: boolean }) {
+  const glass = useGlassChromeActive();
   return (
     <View
       accessibilityLabel="Setup script output"
       className={
         failed
           ? "mb-2 ml-8 rounded-md border border-danger-border bg-danger px-3 py-2"
-          : "mb-2 ml-8 rounded-md border border-border bg-card-alt px-3 py-2"
+          : glass
+            ? "mb-2 ml-8 rounded-md border border-chrome-glass-border bg-foreground/5 px-3 py-2"
+            : "mb-2 ml-8 rounded-md border border-border bg-card-alt px-3 py-2"
       }
     >
       {OUTPUT_TAIL_SLOTS.map((slot) => (

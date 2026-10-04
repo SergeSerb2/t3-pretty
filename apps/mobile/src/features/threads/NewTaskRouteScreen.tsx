@@ -31,8 +31,11 @@ import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { filterProjectScopes, getProjectScopeSelectionTarget } from "./new-task-project-selection";
+import { RowPressable } from "../../components/RowPressable";
 import { SheetSurface } from "../../components/SheetSurface";
+import { GroupedCard } from "../scenery/GroupedCard";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/GroupedCard";
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
@@ -245,50 +248,75 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       const subtitle = hasMultipleProjects
         ? `${scope.projects.length} workspaces`
         : selectionTarget.workspaceRoot;
+      const pressProps = {
+        accessibilityLabel: `${scope.title}, ${subtitle}`,
+        accessibilityRole: "button",
+        accessibilityState: { disabled: reservedDestinationProject !== null },
+        disabled: reservedDestinationProject !== null,
+        onPress: () => void selectProject(selectionTarget),
+      } as const;
+      const content = (
+        <>
+          <View className="h-7 w-7 items-center justify-center">
+            <ProjectFavicon
+              environmentId={scope.representative.environmentId}
+              faviconPath={scope.representative.faviconPath}
+              projectIcon={scope.representative.projectIcon}
+              size={20}
+              projectTitle={scope.title}
+              workspaceRoot={scope.representative.workspaceRoot}
+            />
+          </View>
+          <View className="min-w-0 flex-1">
+            <Text className="text-base leading-snug font-t3-bold">{scope.title}</Text>
+            <Text
+              className="text-xs leading-snug text-foreground-muted"
+              ellipsizeMode="middle"
+              numberOfLines={1}
+            >
+              {subtitle}
+            </Text>
+          </View>
+          <SymbolView
+            name="chevron.right"
+            size={14}
+            tintColorClassName="accent-icon-subtle"
+            type="monochrome"
+          />
+        </>
+      );
+      if (glass) {
+        // One translucent layer per row: the row is its slice of the card and
+        // its press highlight stays transparent until touched.
+        return (
+          <View
+            className={GLASS_CARD_CLASS_NAME}
+            style={glassCardStyle(index === 0, index === visibleScopes.length - 1)}
+          >
+            {index > 0 ? (
+              <View className="absolute left-0 right-0 top-0 h-px bg-border-subtle" />
+            ) : null}
+            <RowPressable
+              {...pressProps}
+              className="flex-row items-center gap-3 px-4 py-3.5"
+              interactionClassName="bg-foreground/[0.06]"
+            >
+              {content}
+            </RowPressable>
+          </View>
+        );
+      }
       return (
         <View
           className={cn(
-            "overflow-hidden",
-            glass ? "bg-chrome-glass" : "bg-card",
+            "overflow-hidden bg-card",
             index === 0 && "rounded-t-[24px]",
             index === visibleScopes.length - 1 && "rounded-b-[24px]",
             index > 0 && "border-t border-border-subtle",
           )}
         >
-          <Pressable
-            accessibilityLabel={`${scope.title}, ${subtitle}`}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: reservedDestinationProject !== null }}
-            disabled={reservedDestinationProject !== null}
-            onPress={() => void selectProject(selectionTarget)}
-            className={cn("flex-row items-center gap-3 px-4 py-3.5", !glass && "bg-card")}
-          >
-            <View className="h-7 w-7 items-center justify-center">
-              <ProjectFavicon
-                environmentId={scope.representative.environmentId}
-                faviconPath={scope.representative.faviconPath}
-                projectIcon={scope.representative.projectIcon}
-                size={20}
-                projectTitle={scope.title}
-                workspaceRoot={scope.representative.workspaceRoot}
-              />
-            </View>
-            <View className="min-w-0 flex-1">
-              <Text className="text-base leading-snug font-t3-bold">{scope.title}</Text>
-              <Text
-                className="text-xs leading-snug text-foreground-muted"
-                ellipsizeMode="middle"
-                numberOfLines={1}
-              >
-                {subtitle}
-              </Text>
-            </View>
-            <SymbolView
-              name="chevron.right"
-              size={14}
-              tintColorClassName="accent-icon-subtle"
-              type="monochrome"
-            />
+          <Pressable {...pressProps} className="flex-row items-center gap-3 px-4 py-3.5 bg-card">
+            {content}
           </Pressable>
         </View>
       );
@@ -356,6 +384,31 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     );
   }, [incomingShare, isFocused, navigation, reservedDestinationProject]);
 
+  const noProjectRowContent = (
+    <>
+      <View className="h-7 w-7 items-center justify-center">
+        <SymbolView
+          name="text.bubble"
+          size={18}
+          tintColorClassName="accent-icon-muted"
+          type="monochrome"
+        />
+      </View>
+      <View className="min-w-0 flex-1">
+        <Text className="text-base font-t3-bold leading-snug">No project</Text>
+        <Text className="text-xs leading-snug text-foreground-muted" numberOfLines={1}>
+          Start a task without a project
+        </Text>
+      </View>
+      <SymbolView
+        name="chevron.right"
+        size={14}
+        tintColorClassName="accent-chevron"
+        type="monochrome"
+      />
+    </>
+  );
+
   return (
     <SheetSurface>
       <NewTaskHeader
@@ -385,165 +438,181 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
           estimatedItemSize={56}
           extraData={`${selectedEnvironmentId ?? ""}:${reservedDestinationProject?.environmentId ?? ""}:${reservedDestinationProject?.id ?? ""}:${glass}`}
           keyExtractor={(scope) => scope.key}
-          ListHeaderComponent={<>{canStartScratch && listScopes.length > 0 ? (
-            Platform.OS === "android" ? (
-              <View collapsable={false} className="overflow-hidden rounded-[28px] bg-grouped-card">
-                <MaterialListRow
-                  className="bg-grouped-card"
-                  title="No project"
-                  subtitle="Start a task without a project"
-                  onPress={() => void startScratch()}
-                  leading={
-                    <SymbolView
-                      name="text.bubble"
-                      size={22}
-                      tintColorClassName="accent-icon-muted"
-                      type="monochrome"
-                    />
-                  }
-                />
-              </View>
-            ) : (
-              <View collapsable={false} className="overflow-hidden rounded-[24px] bg-grouped-card">
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="No project"
-                  onPress={() => void startScratch()}
-                  className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
-                >
-                  <View className="h-7 w-7 items-center justify-center">
-                    <SymbolView
-                      name="text.bubble"
-                      size={18}
-                      tintColorClassName="accent-icon-muted"
-                      type="monochrome"
-                    />
-                  </View>
-                  <View className="min-w-0 flex-1">
-                    <Text className="text-base font-t3-bold leading-snug">No project</Text>
-                    <Text className="text-xs leading-snug text-foreground-muted" numberOfLines={1}>
-                      Start a task without a project
-                    </Text>
-                  </View>
-                  <SymbolView
-                    name="chevron.right"
-                    size={14}
-                    tintColorClassName="accent-chevron"
-                    type="monochrome"
-                  />
-                </Pressable>
-              </View>
-            )
-          ) : null}</>}
-          ListEmptyComponent={listScopes.length === 0 ? (
-            <View
-              collapsable={false}
-              className={cn(
-                "items-center gap-3 px-6 py-8",
-                Platform.OS !== "android" && "rounded-[24px] bg-grouped-card",
-              )}
-            >
-              {projectEmptyState.loading ? (
-                <ActivityIndicator colorClassName="accent-icon-muted" />
-              ) : null}
-              <Text className="text-center text-lg font-t3-bold text-foreground">
-                {projectEmptyState.title}
-              </Text>
-              <Text className="text-center text-sm leading-normal text-foreground-muted">
-                {projectEmptyState.detail}
-              </Text>
-              {Platform.OS === "android" ? (
-                <>
-                  <MaterialButton
-                    label={catalogState.hasReadyEnvironment ? "Add new project" : "Add environment"}
-                    tone="primary"
-                    onPress={() =>
-                      catalogState.hasReadyEnvironment
-                        ? navigation.dispatch(StackActions.push("AddProject"))
-                        : navigation.navigate("ConnectionsNew")
-                    }
-                  />
-                  {canStartScratch ? (
-                    <MaterialButton
-                      label="Start without a project"
-                      tone="secondary"
-                      onPress={() => void startScratch()}
-                    />
-                  ) : null}
-                </>
-              ) : !catalogState.hasReadyEnvironment ? (
-                <Pressable
-                  className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-                  onPress={() => navigation.navigate("ConnectionsNew")}
-                >
-                  <Text className="text-sm font-t3-bold text-primary-foreground">
-                    Add environment
-                  </Text>
-                </Pressable>
-              ) : (
-                <>
-                  <Pressable
-                    className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-                    onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
+          ListHeaderComponent={
+            <>
+              {canStartScratch && listScopes.length > 0 ? (
+                Platform.OS === "android" ? (
+                  <View
+                    collapsable={false}
+                    className="overflow-hidden rounded-[28px] bg-grouped-card"
                   >
-                    <Text className="text-sm font-t3-bold text-primary-foreground">
-                      Add new project
-                    </Text>
-                  </Pressable>
-                  {canStartScratch ? (
-                    <Pressable
-                      className="rounded-full bg-subtle px-4 py-2.5 active:opacity-70"
-                      onPress={() => void startScratch()}
-                    >
-                      <Text className="text-sm font-t3-bold text-foreground">
-                        Start without a project
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </>
-              )}
-            </View>
-          ) : visibleScopes.length === 0 ? (
-            <View className="items-center gap-2 px-6 py-8">
-              <Text className="text-center text-lg font-t3-bold text-foreground">
-                No matching projects
-              </Text>
-              <Text className="text-center text-sm leading-normal text-foreground-muted">
-                Try a different project name or workspace path.
-              </Text>
-            </View>          ) : null}
-          recycleItems
-          renderItem={({ item: scope, index }: { item: (typeof visibleScopes)[number]; index: number }) => {
-                const hasMultipleProjects = scope.projects.length > 1;
-                const selectionTarget = getProjectScopeSelectionTarget(scope, selectedEnvironmentId);
-                if (Platform.OS === "android") {
-                  return (
                     <MaterialListRow
                       className="bg-grouped-card"
-                      key={scope.key}
-                      title={scope.title}
-                      subtitle={
-                        hasMultipleProjects
-                          ? `${scope.projects.length} workspaces`
-                          : selectionTarget.workspaceRoot
-                      }
-                      disabled={reservedDestinationProject !== null}
-                      onPress={() => void selectProject(selectionTarget)}
+                      title="No project"
+                      subtitle="Start a task without a project"
+                      onPress={() => void startScratch()}
                       leading={
-                        <ProjectFavicon
-                          environmentId={scope.representative.environmentId}
-                          faviconPath={scope.representative.faviconPath}
-                          projectIcon={scope.representative.projectIcon}
-                          size={24}
-                          projectTitle={scope.title}
-                          workspaceRoot={scope.representative.workspaceRoot}
+                        <SymbolView
+                          name="text.bubble"
+                          size={22}
+                          tintColorClassName="accent-icon-muted"
+                          type="monochrome"
                         />
                       }
                     />
-                  );
-                }
-                return renderProjectScope({ item: scope, index });
-              }}
+                  </View>
+                ) : glass ? (
+                  <GroupedCard collapsable={false} className="mb-3">
+                    <RowPressable
+                      accessibilityRole="button"
+                      accessibilityLabel="No project"
+                      onPress={() => void startScratch()}
+                      className="flex-row items-center gap-3 px-4 py-3.5"
+                      interactionClassName="bg-foreground/[0.06]"
+                    >
+                      {noProjectRowContent}
+                    </RowPressable>
+                  </GroupedCard>
+                ) : (
+                  <View
+                    collapsable={false}
+                    className="overflow-hidden rounded-[24px] bg-grouped-card"
+                  >
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="No project"
+                      onPress={() => void startScratch()}
+                      className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
+                    >
+                      {noProjectRowContent}
+                    </Pressable>
+                  </View>
+                )
+              ) : null}
+            </>
+          }
+          ListEmptyComponent={
+            listScopes.length === 0 ? (
+              <View
+                collapsable={false}
+                className={cn(
+                  "items-center gap-3 px-6 py-8",
+                  Platform.OS !== "android" &&
+                    (glass ? GLASS_CARD_CLASS_NAME : "rounded-[24px] bg-grouped-card"),
+                )}
+                style={glass ? glassCardStyle() : undefined}
+              >
+                {projectEmptyState.loading ? (
+                  <ActivityIndicator colorClassName="accent-icon-muted" />
+                ) : null}
+                <Text className="text-center text-lg font-t3-bold text-foreground">
+                  {projectEmptyState.title}
+                </Text>
+                <Text className="text-center text-sm leading-normal text-foreground-muted">
+                  {projectEmptyState.detail}
+                </Text>
+                {Platform.OS === "android" ? (
+                  <>
+                    <MaterialButton
+                      label={
+                        catalogState.hasReadyEnvironment ? "Add new project" : "Add environment"
+                      }
+                      tone="primary"
+                      onPress={() =>
+                        catalogState.hasReadyEnvironment
+                          ? navigation.dispatch(StackActions.push("AddProject"))
+                          : navigation.navigate("ConnectionsNew")
+                      }
+                    />
+                    {canStartScratch ? (
+                      <MaterialButton
+                        label="Start without a project"
+                        tone="secondary"
+                        onPress={() => void startScratch()}
+                      />
+                    ) : null}
+                  </>
+                ) : !catalogState.hasReadyEnvironment ? (
+                  <Pressable
+                    className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
+                    onPress={() => navigation.navigate("ConnectionsNew")}
+                  >
+                    <Text className="text-sm font-t3-bold text-primary-foreground">
+                      Add environment
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <>
+                    <Pressable
+                      className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
+                      onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
+                    >
+                      <Text className="text-sm font-t3-bold text-primary-foreground">
+                        Add new project
+                      </Text>
+                    </Pressable>
+                    {canStartScratch ? (
+                      <Pressable
+                        className="rounded-full bg-subtle px-4 py-2.5 active:opacity-70"
+                        onPress={() => void startScratch()}
+                      >
+                        <Text className="text-sm font-t3-bold text-foreground">
+                          Start without a project
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </>
+                )}
+              </View>
+            ) : visibleScopes.length === 0 ? (
+              <View className="items-center gap-2 px-6 py-8">
+                <Text className="text-center text-lg font-t3-bold text-foreground">
+                  No matching projects
+                </Text>
+                <Text className="text-center text-sm leading-normal text-foreground-muted">
+                  Try a different project name or workspace path.
+                </Text>
+              </View>
+            ) : null
+          }
+          recycleItems
+          renderItem={({
+            item: scope,
+            index,
+          }: {
+            item: (typeof visibleScopes)[number];
+            index: number;
+          }) => {
+            const hasMultipleProjects = scope.projects.length > 1;
+            const selectionTarget = getProjectScopeSelectionTarget(scope, selectedEnvironmentId);
+            if (Platform.OS === "android") {
+              return (
+                <MaterialListRow
+                  className="bg-grouped-card"
+                  key={scope.key}
+                  title={scope.title}
+                  subtitle={
+                    hasMultipleProjects
+                      ? `${scope.projects.length} workspaces`
+                      : selectionTarget.workspaceRoot
+                  }
+                  disabled={reservedDestinationProject !== null}
+                  onPress={() => void selectProject(selectionTarget)}
+                  leading={
+                    <ProjectFavicon
+                      environmentId={scope.representative.environmentId}
+                      faviconPath={scope.representative.faviconPath}
+                      projectIcon={scope.representative.projectIcon}
+                      size={24}
+                      projectTitle={scope.title}
+                      workspaceRoot={scope.representative.workspaceRoot}
+                    />
+                  }
+                />
+              );
+            }
+            return renderProjectScope({ item: scope, index });
+          }}
         />
       </MaterialScreenContent>
     </SheetSurface>

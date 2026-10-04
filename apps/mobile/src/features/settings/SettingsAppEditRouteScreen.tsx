@@ -23,7 +23,6 @@ import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { GLASS_INPUT_CLASS_NAME } from "../connection/ConnectionFormField";
 import { ConnectionSheetButton } from "../connection/ConnectionSheetButton";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { SettingsSection } from "./components/SettingsSection";
@@ -34,6 +33,7 @@ import {
   uniqueAppSlug,
 } from "./apps/appsSettings.logic";
 import { SheetSurface } from "../../components/SheetSurface";
+import { GLASS_INPUT_CLASS_NAME } from "../scenery/GroupedCard";
 
 type SettingsAppEditParams = {
   readonly environmentId: string;

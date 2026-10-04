@@ -103,8 +103,8 @@ export function FloatingWorkingControl(props: {
   const arrowScale = useSharedValue(props.showScrollToEnd ? 1 : 0.9);
 
   useEffect(() => {
-    separationProgress.value = withTiming(props.showScrollToEnd ? 1 : 0, CONTROL_TIMING);
-    arrowScale.value = withSpring(props.showScrollToEnd ? 1 : 0.9, MOTION_SETTLE_SPRING);
+    separationProgress.set(withTiming(props.showScrollToEnd ? 1 : 0, CONTROL_TIMING));
+    arrowScale.set(withSpring(props.showScrollToEnd ? 1 : 0.9, MOTION_SETTLE_SPRING));
   }, [arrowScale, props.showScrollToEnd, separationProgress]);
 
   const lift = props.lift;

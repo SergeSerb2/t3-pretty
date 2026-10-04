@@ -2,13 +2,7 @@ import { View } from "react-native";
 
 import { AppText, AppTextInput, type AppTextInputProps } from "../../components/AppText";
 import { cn } from "../../lib/cn";
-
-/**
- * AppTextInput override for inputs on scenery glass: a faint tint and hairline
- * edge instead of the solid input plate. Pass as `className` when glass is on.
- */
-export const GLASS_INPUT_CLASS_NAME =
-  "rounded-[14px] border-[0.5px] border-chrome-glass-border bg-foreground/5";
+import { GLASS_INPUT_CLASS_NAME } from "../scenery/GroupedCard";
 
 type ConnectionFormFieldProps = Omit<AppTextInputProps, "accessibilityLabel" | "className"> & {
   readonly label: string;

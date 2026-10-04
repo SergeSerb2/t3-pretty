@@ -4,6 +4,8 @@ import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { cn } from "../../lib/cn";
 import type { ModelOption } from "../../lib/modelOptions";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
+import { GLASS_CARD_CLASS_NAME, GlassRowPressable, glassCardStyle } from "../scenery/GroupedCard";
 
 export type ModelRowProps = {
   readonly option: ModelOption;
@@ -37,24 +39,35 @@ export function ModelRowContent(
       readonly selectedClassName?: string;
     },
 ) {
-  return (
+  const glass = useGlassChromeActive();
+  const row = (
     <View
       style={props.minimumHeight === undefined ? undefined : { minHeight: props.minimumHeight }}
-      className={cn(
-        "mx-4 min-h-11 flex-row items-center gap-2 bg-grouped-card px-4",
-        props.selectedClassName,
-        props.isFirst && "rounded-t-2xl",
-        props.isLast ? "rounded-b-2xl" : "border-b border-border-subtle",
-      )}
+      className={
+        // List cells cannot share a GroupedCard, so on glass each row carries
+        // its slice of the card (see the wrapper below) and paints no fill.
+        glass
+          ? cn(
+              "min-h-11 flex-row items-center gap-2 pr-4",
+              !props.isLast && "border-b border-border-subtle",
+            )
+          : cn(
+              "mx-4 min-h-11 flex-row items-center gap-2 bg-grouped-card px-4",
+              props.selectedClassName,
+              props.isFirst && "rounded-t-2xl",
+              props.isLast ? "rounded-b-2xl" : "border-b border-border-subtle",
+            )
+      }
     >
-      <Pressable
+      <GlassRowPressable
         accessibilityLabel={[props.option.label, props.option.subtitle].filter(Boolean).join(", ")}
         accessibilityRole="radio"
         accessibilityState={{
           checked: props.selected,
           disabled: props.option.isUnavailable === true,
         }}
-        className="min-h-11 min-w-0 flex-1 flex-row items-center gap-2 active:opacity-70"
+        className={cn("min-h-11 min-w-0 flex-1 flex-row items-center gap-2", glass && "pl-4")}
+        fallbackClassName="active:opacity-70"
         disabled={props.option.isUnavailable}
         onPress={props.onPress}
       >
@@ -91,7 +104,7 @@ export function ModelRowContent(
           ) : null}
         </View>
         {props.trailingSelection}
-      </Pressable>
+      </GlassRowPressable>
       <Pressable
         accessibilityLabel={`${props.isFavorite ? "Remove from" : "Add to"} favorites: ${
           props.option.providerLabel
@@ -111,21 +124,34 @@ export function ModelRowContent(
       </Pressable>
     </View>
   );
+  return glass ? (
+    <View
+      className={cn(GLASS_CARD_CLASS_NAME, "mx-4")}
+      style={glassCardStyle(props.isFirst, props.isLast)}
+    >
+      {row}
+    </View>
+  ) : (
+    row
+  );
 }
 
 /** Single option inside a submenu panel. */
 export function ChoiceRowContent(props: ChoiceRowProps & RowSelectionProps) {
+  const glass = useGlassChromeActive();
   return (
-    <Pressable
+    <GlassRowPressable
       accessibilityLabel={props.description ? `${props.label}. ${props.description}` : props.label}
       accessibilityRole="radio"
       accessibilityState={{ checked: props.selected }}
       onPress={props.onPress}
       style={props.minimumHeight === undefined ? undefined : { minHeight: props.minimumHeight }}
       className={cn(
-        "min-h-14 flex-row items-center gap-3 bg-grouped-card px-4 py-3 active:bg-subtle",
+        "min-h-14 flex-row items-center gap-3 px-4 py-3",
+        !glass && "bg-grouped-card",
         !props.isLast && "border-b border-border-subtle",
       )}
+      fallbackClassName="active:bg-subtle"
     >
       {props.leadingSelection}
       <View className="min-w-0 flex-1 gap-0.5">
@@ -135,6 +161,6 @@ export function ChoiceRowContent(props: ChoiceRowProps & RowSelectionProps) {
         ) : null}
       </View>
       {props.trailingSelection}
-    </Pressable>
+    </GlassRowPressable>
   );
 }

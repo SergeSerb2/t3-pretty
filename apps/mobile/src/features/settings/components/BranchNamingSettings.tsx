@@ -4,10 +4,10 @@ import { View } from "react-native";
 
 import { AppText as Text, AppTextInput } from "../../../components/AppText";
 import { cn } from "../../../lib/cn";
-import { GLASS_INPUT_CLASS_NAME } from "../../connection/ConnectionFormField";
 import { useGlassChromeActive } from "../../scenery/SceneryProvider";
 import { SettingsChoiceRow } from "./SettingsChoiceRow";
 import { SettingsSection } from "./SettingsSection";
+import { GLASS_INPUT_CLASS_NAME } from "../../scenery/GroupedCard";
 
 const MODES = {
   static: { label: "Static prefix", description: "Add your prefix to the generated branch name." },
