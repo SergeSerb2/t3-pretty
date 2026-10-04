@@ -359,7 +359,6 @@
 - `desktop-typecheck` failed after merging `v0.0.45-nightly.20261001.2539`; repaired with `gpt-5.6-sol`: Adapted the new download test to T3 Pretty’s preview-WebContents mock architecture while preserving the parent test behavior, eliminating both `never` property-access errors.
   - edited `apps/desktop/src/preview/Manager.test.ts`
 
-
 ---
 
 # Orchestrator V2 integration, 2026-10-02
@@ -375,3 +374,58 @@ Selective builds may opt out of the physical Windows job with per-run `T3CODE_SK
 Preserved baseline limitation: selected skills and subagent policy are persisted and exposed through V2 metadata/RPC/UI. The original shipped fork `d50b36971c` had no live `renderSkillsPrelude` or `resolveSubagentPolicy` consumer in provider command/runtime adapters; this integration does not claim new turn-time injection or fleet policy enforcement. Provider-native skill invocation remains supported independently. Existing pure helper tests and new V2 metadata/control tests cover the behavior that was implemented.
 
 Validation is scoped and serialized to avoid contention with unrelated workers. Server/web/mobile/desktop typechecks pass. Focused validation covers V2 event/SQL controls, MCP and secret privacy, native/history imports and replay, transfer/search/home/storage, web shelves and generated images, mobile outboxes/activity, desktop profiles/branding, provider routing, quota cooldowns and release guards. The server bundle builds successfully and its `--help` entry point runs. Release artifacts still require an authenticated selective Buildkite run; a local server bundle is not an installer or a mobile submission.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.46-nightly.20261003.2610`
+- Previously integrated parent nightly: `v0.0.45-nightly.20261002.2595`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/desktop/src/app/DesktopLifecycle.test.ts` — Retained the test ensuring Electron child-process exits are mapped into stable crash-log annotation fields, including process type, reason, exit code, service name, and process name.
+- `apps/desktop/src/app/DesktopLifecycle.test.ts` — Retained the concurrent development relaunch test that enforces a single shutdown request, one main-window bounds flush, and one direct Electron exit while rejecting use of Electron relaunch.
+- `apps/desktop/src/app/DesktopLifecycle.test.ts` — Preserved the T3 Pretty application identity in the Electron app test service via the "T3 Pretty" app name.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Regression coverage for an explicitly present but empty Linux password-store switch, including the safeguard against appending a replacement switch.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Regression coverage ensuring Electron's getSwitchValue is not called when the password-store switch is absent.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — T3 Pretty's Linux desktop-entry identity and branding: com.t3tools.T3Pretty.desktop and Name=T3 Pretty.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Compatibility behavior for the t3code URL scheme and existing com.t3tools.T3Code.desktop.png icon path.
+- `apps/server/src/persistence/reconcileV2PreviewMigration.test.ts` — The migration compatibility test continues to reject conflicting upstream preview migration IDs 53 and 54.
+- `apps/server/src/persistence/reconcileV2PreviewMigration.test.ts` — The test continues to verify that a rejected preview migration leaves both the migration ledger and orchestration legacy-import progress unchanged.
+- `apps/server/src/persistence/reconcileV2PreviewMigration.test.ts` — Preserved T3 Pretty's immutable shipped migration ledger and its explicit rejection of conflicting upstream OrchestrationV2 preview IDs 53 and 54 without changing migration history or import progress.
+- `apps/server/src/persistence/reconcileV2PreviewMigration.test.ts` — Preserved the fork's remapped OrchestrationV2 migration identity and migration-manifest validation instead of restoring tests that assume the parent's ID 53 preview ledger can be upgraded in place.
+- `apps/server/src/telemetry/Identify.ts` — Preserved the 1 MiB maximum for provider telemetry identity reads.
+- `apps/server/src/telemetry/Identify.ts` — Preserved the 1 KiB maximum for anonymous telemetry identity reads.
+- `apps/server/src/vcs/GitVcsDriverCore.test.ts` — Preserved the T3 Pretty regression test for fastForwardBranch, including safeguards for dirty checked-out branches, clean working-tree fast-forwards, idempotent updates, non-checked-out branch ref updates, and refusal to move diverged branches.
+- `infra/relay/src/agentActivity/ApnsClient.test.ts` — APNs timeout coverage continues to exercise both Live Activity and ordinary push-notification delivery, including send and response-read stalls.
+- `infra/relay/src/agentActivity/ApnsClient.test.ts` — The response-read case stalls the Effect HTTP response stream, matching the fork's current response-consumption implementation rather than overriding the legacy text accessor.
+- `infra/relay/src/agentActivity/ApnsClient.test.ts` — The test derives timing from APNS_REQUEST_TIMEOUT_MS and verifies that cancellation occurs exactly at the configured deadline, not one millisecond early.
+- `infra/relay/src/agentActivity/ApnsClient.test.ts` — Deadline failures remain normalized as ApnsHttpRequestError with stage "deadline", null status, the expected token suffix, and the configured deadline message.
+- `packages/client-runtime/src/state/threads-sync.test.ts` — Preserved T3 Pretty's regression coverage ensuring streamed Claude assistant transcript rows survive both full and bounded cursor resumes.
+- `packages/client-runtime/src/state/threads-sync.test.ts` — Preserved validation that reconnecting resumes after the cached sequence, ignores a stale replay, applies the newer completed row, avoids duplicate visible rows, and retains bounded-history state.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/desktop/src/app/DesktopLifecycle.test.ts` — Adopted the parent's `it.effect.each` parameterized form for the updater quit-event test while continuing to cover macOS, Windows, and Linux.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Refactored the duplicate stale/missing Linux desktop-entry cases to upstream's it.effect.each table-driven test.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Integrated upstream's simplified callback structure and explicit missing/stale labels without changing test coverage or cleanup behavior.
+- `apps/server/src/persistence/reconcileV2PreviewMigration.test.ts` — Adopted the parent refactor from a manual loop to `it.effect.each` parameterization.
+- `apps/server/src/persistence/reconcileV2PreviewMigration.test.ts` — Used the parent's syntactically correct closure for the parameterized test, removing the malformed extra brace from the OURS conflict side.
+- `apps/server/src/telemetry/Identify.ts` — Integrated upstream's explanation that Codex legitimately omits `tokens` for API-key, agent-identity, and personal-access-token authentication, documenting why the schema keeps that key optional.
+- `apps/server/src/vcs/GitVcsDriverCore.test.ts` — Adopted the parent test refactor from a manual for-loop to it.effect.each for offline, authentication, and timeout scoped-fetch failure cases, including the parameterized test title.
+- `infra/relay/src/agentActivity/ApnsClient.test.ts` — Replaced the nested request-kind and stage loops with the parent's it.effect.each table-driven test over all four combinations.
+- `infra/relay/src/agentActivity/ApnsClient.test.ts` — Retained the parent's shared setup and parameterized test naming while adapting it to the fork's current timeout behavior.
+- `packages/client-runtime/src/state/threads-sync.test.ts` — Adopted the parent nightly's `it.effect.each` parameterization for the disk/HTTP unchanged-snapshot test, including its `%s` test title and inferred `source` argument.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/persistence/reconcileV2PreviewMigration.test.ts` — The parent test parameters and expectation for successfully upgrading preview migration 54 with index cleanup both disabled and enabled.. Reason: T3 Pretty's shipped migration ledger treats upstream preview IDs 53 and 54 as conflicts that must be rejected without mutation; expecting preview 54 to upgrade would directly regress that fork migration-safety behavior.
+- `apps/server/src/persistence/reconcileV2PreviewMigration.test.ts` — The rollback-and-retry test that seeds the parent's ID 53 OrchestrationV2 preview and expects IDs 53, 54, and 56 to be replaced or populated with parent migrations.. Reason: That scenario conflicts with T3 Pretty's authoritative shipped migration IDs and its intentional policy of rejecting conflicting parent preview ledgers. It also depends on `seedPreview`, which is not defined in the resolved fork test file.
+- `apps/server/src/persistence/reconcileV2PreviewMigration.test.ts` — The unexpected-later-migration test based on the parent's `seedPreview` ledger and an `UnknownFork` migration at ID 54.. Reason: ID 54 belongs to the fork's protected migration history, and the parent fixture is incompatible with the fork's explicit rejection model. Keeping this test would assert the obsolete parent ledger layout and reference the absent `seedPreview` fixture.
+- `infra/relay/src/agentActivity/ApnsClient.test.ts` — The parent test's fixed ten-second clock adjustment and assertion only after the timeout.. Reason: T3 Pretty's APNs client exposes APNS_REQUEST_TIMEOUT_MS and its regression test deliberately verifies both sides of the exact deadline boundary; reverting to a hard-coded duration would weaken that protection.
+- `infra/relay/src/agentActivity/ApnsClient.test.ts` — The parent read-response stall implemented by overriding response.text.. Reason: The fork's current Effect HTTP integration consumes response.stream, so the legacy text override would no longer exercise a stalled response body.
+- `infra/relay/src/agentActivity/ApnsClient.test.ts` — The parent's stage-specific status and nested TimeoutError expectations for timed-out requests.. Reason: T3 Pretty's current request-level deadline contract intentionally normalizes both send and response-read timeouts to stage "deadline" with null status and a descriptive configured-deadline cause.
+- `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/mobile-eas-production.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned

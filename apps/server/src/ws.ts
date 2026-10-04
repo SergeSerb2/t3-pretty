@@ -958,16 +958,35 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     const enrichmentRefreshes = Stream.fromSubscription(enrichmentChanges).pipe(
       Stream.filter((change) => change.repositoryIdentityResolved),
       Stream.groupedWithin(64, Duration.millis(25)),
+      // Build the refresh from the identities the changes carry. Re-enriching
+      // every project here re-requested each expired root, whose resolution
+      // published again, so one expiry kept every subscriber reloading every
+      // project's metadata once a minute.
       Stream.mapEffect((changes) =>
-        applicationEvents.latestApplicationSequence.pipe(
-          Effect.flatMap(loadProjectMetadataSnapshot),
-          Effect.map(({ snapshot }) =>
-            shellStreamItemFromEnrichmentRefresh({
-              snapshot,
-              changes: Array.from(changes),
-            }),
-          ),
-        ),
+        Effect.gen(function* () {
+          const identities = new Map(
+            Array.from(changes, (change) => [
+              change.workspaceRoot,
+              change.enrichment.repositoryIdentity,
+            ]),
+          );
+          const snapshotSequence = yield* applicationEvents.latestApplicationSequence;
+          const changedProjects = (yield* projects.listShells()).flatMap((project) =>
+            identities.has(project.workspaceRoot)
+              ? [{ ...project, repositoryIdentity: identities.get(project.workspaceRoot) ?? null }]
+              : [],
+          );
+          return shellStreamItemFromEnrichmentRefresh({
+            snapshot: {
+              schemaVersion: ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION,
+              snapshotSequence,
+              projects: changedProjects,
+              threads: [],
+              archivedThreads: [],
+            } as OrchestrationV2ShellSnapshot,
+            changes: Array.from(changes),
+          });
+        }),
       ),
     );
 
@@ -1133,7 +1152,6 @@ const makeWsRpcLayer = (
               ),
               Effect.orElseSucceed(() => null),
             );
-
 
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
@@ -1751,41 +1769,146 @@ const makeWsRpcLayer = (
         return result;
       });
 
-      const automationError = (operation: "create" | "list-runs" | "get-run", cause: unknown) => new AutomationsError({ operation, message: "Could not complete the automation operation.", cause });
-      const transferError = (cause: unknown) => Schema.is(ProjectTransferError)(cause)
-        ? cause : new ProjectTransferError({ reason: "destination_unavailable", detail: "Could not complete the project transfer." });
+      const automationError = (operation: "create" | "list-runs" | "get-run", cause: unknown) =>
+        new AutomationsError({
+          operation,
+          message: "Could not complete the automation operation.",
+          cause,
+        });
+      const transferError = (cause: unknown) =>
+        Schema.is(ProjectTransferError)(cause)
+          ? cause
+          : new ProjectTransferError({
+              reason: "destination_unavailable",
+              detail: "Could not complete the project transfer.",
+            });
       const handlers = ServerWsRpcGroup.of({
-        [WS_METHODS.projectsImportFavicon]: (input) => observeRpcEffect(WS_METHODS.projectsImportFavicon,
-          importProjectFavicon(input), { "rpc.aggregate": "project" }),
-        [WS_METHODS.projectTransfersInspect]: (input) => observeRpcEffect(WS_METHODS.projectTransfersInspect,
-          ProjectTransfer.inspectProjectTransfer(input).pipe(Effect.mapError(transferError)), { "rpc.aggregate": "project" }),
-        [WS_METHODS.projectTransfersPrepare]: (input) => observeRpcEffect(WS_METHODS.projectTransfersPrepare,
-          ProjectTransfer.prepareProjectTransfer(input).pipe(Effect.mapError(transferError)), { "rpc.aggregate": "project" }),
-        [WS_METHODS.projectTransfersSend]: (input) => observeRpcEffect(WS_METHODS.projectTransfersSend,
-          ProjectTransfer.sendProjectTransfer(input).pipe(Effect.mapError(transferError)), { "rpc.aggregate": "project" }),
-        [WS_METHODS.projectTransfersCancel]: (input) => observeRpcEffect(WS_METHODS.projectTransfersCancel,
-          ProjectTransfer.cancelProjectTransfer(input).pipe(Effect.mapError(transferError)), { "rpc.aggregate": "project" }),
-        [WS_METHODS.agentInstructionsList]: (input) => observeRpcEffect(WS_METHODS.agentInstructionsList, instructions.list(input), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.agentInstructionsRead]: (input) => observeRpcEffect(WS_METHODS.agentInstructionsRead, instructions.read(input), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.agentInstructionsWrite]: (input) => observeRpcEffect(WS_METHODS.agentInstructionsWrite, instructions.write(input), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.skillsGetState]: (input) => observeRpcEffect(WS_METHODS.skillsGetState, skills.getState, { "rpc.aggregate": "settings" }),
-        [WS_METHODS.skillsInstall]: (input) => observeRpcEffect(WS_METHODS.skillsInstall, marketplace.install(input.skillId), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.skillsUninstall]: (input) => observeRpcEffect(WS_METHODS.skillsUninstall, skills.uninstall(input.skillId), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.skillsListMarketplace]: (input) => observeRpcEffect(WS_METHODS.skillsListMarketplace, marketplace.list(input), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.skillsRefreshMarketplace]: (input) => observeRpcEffect(WS_METHODS.skillsRefreshMarketplace, marketplace.refresh(input), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.skillsSetLocationEnabled]: (input) => observeRpcEffect(WS_METHODS.skillsSetLocationEnabled, skills.setLocationEnabled(input), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.appsUpsert]: (input) => observeRpcEffect(WS_METHODS.appsUpsert, apps.upsert(input.connection), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.appsRemove]: (input) => observeRpcEffect(WS_METHODS.appsRemove, apps.remove(input.connectionId), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.appsAuthorize]: (input) => observeRpcEffect(WS_METHODS.appsAuthorize, apps.authorize(input), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.appsSetToken]: (input) => observeRpcEffect(WS_METHODS.appsSetToken, apps.setToken(input), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.appsSetOAuthClient]: (input) => observeRpcEffect(WS_METHODS.appsSetOAuthClient, apps.setOAuthClient(input), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.appsDisconnect]: (input) => observeRpcEffect(WS_METHODS.appsDisconnect, apps.disconnect(input.connectionId), { "rpc.aggregate": "settings" }),
-        [WS_METHODS.appsTest]: (input) => observeRpcEffect(WS_METHODS.appsTest, apps.test(input.connectionId), { "rpc.aggregate": "settings" }),
+        [WS_METHODS.projectsImportFavicon]: (input) =>
+          observeRpcEffect(WS_METHODS.projectsImportFavicon, importProjectFavicon(input), {
+            "rpc.aggregate": "project",
+          }),
+        [WS_METHODS.projectTransfersInspect]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectTransfersInspect,
+            ProjectTransfer.inspectProjectTransfer(input).pipe(Effect.mapError(transferError)),
+            { "rpc.aggregate": "project" },
+          ),
+        [WS_METHODS.projectTransfersPrepare]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectTransfersPrepare,
+            ProjectTransfer.prepareProjectTransfer(input).pipe(Effect.mapError(transferError)),
+            { "rpc.aggregate": "project" },
+          ),
+        [WS_METHODS.projectTransfersSend]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectTransfersSend,
+            ProjectTransfer.sendProjectTransfer(input).pipe(Effect.mapError(transferError)),
+            { "rpc.aggregate": "project" },
+          ),
+        [WS_METHODS.projectTransfersCancel]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectTransfersCancel,
+            ProjectTransfer.cancelProjectTransfer(input).pipe(Effect.mapError(transferError)),
+            { "rpc.aggregate": "project" },
+          ),
+        [WS_METHODS.agentInstructionsList]: (input) =>
+          observeRpcEffect(WS_METHODS.agentInstructionsList, instructions.list(input), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.agentInstructionsRead]: (input) =>
+          observeRpcEffect(WS_METHODS.agentInstructionsRead, instructions.read(input), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.agentInstructionsWrite]: (input) =>
+          observeRpcEffect(WS_METHODS.agentInstructionsWrite, instructions.write(input), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.skillsGetState]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsGetState, skills.getState, {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.skillsInstall]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsInstall, marketplace.install(input.skillId), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.skillsUninstall]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsUninstall, skills.uninstall(input.skillId), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.skillsListMarketplace]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsListMarketplace, marketplace.list(input), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.skillsRefreshMarketplace]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsRefreshMarketplace, marketplace.refresh(input), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.skillsSetLocationEnabled]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsSetLocationEnabled, skills.setLocationEnabled(input), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.appsUpsert]: (input) =>
+          observeRpcEffect(WS_METHODS.appsUpsert, apps.upsert(input.connection), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.appsRemove]: (input) =>
+          observeRpcEffect(WS_METHODS.appsRemove, apps.remove(input.connectionId), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.appsAuthorize]: (input) =>
+          observeRpcEffect(WS_METHODS.appsAuthorize, apps.authorize(input), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.appsSetToken]: (input) =>
+          observeRpcEffect(WS_METHODS.appsSetToken, apps.setToken(input), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.appsSetOAuthClient]: (input) =>
+          observeRpcEffect(WS_METHODS.appsSetOAuthClient, apps.setOAuthClient(input), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.appsDisconnect]: (input) =>
+          observeRpcEffect(WS_METHODS.appsDisconnect, apps.disconnect(input.connectionId), {
+            "rpc.aggregate": "settings",
+          }),
+        [WS_METHODS.appsTest]: (input) =>
+          observeRpcEffect(WS_METHODS.appsTest, apps.test(input.connectionId), {
+            "rpc.aggregate": "settings",
+          }),
 
-        [WS_METHODS.automationsSubscribe]: (_input) => observeRpcStream(WS_METHODS.automationsSubscribe, automations.subscribeAutomationChanges().pipe(Stream.mapError((cause) => automationError("list-runs", cause))), { "rpc.aggregate": "automations" }),
-        [WS_METHODS.automationsDispatch]: (command) => observeRpcEffect(WS_METHODS.automationsDispatch, automations.dispatch(command).pipe(Effect.mapError((cause) => automationError("create", cause))), { "rpc.aggregate": "automations" }),
-        [WS_METHODS.automationsListRuns]: (input) => observeRpcEffect(WS_METHODS.automationsListRuns, automations.listAutomationRuns(input).pipe(Effect.mapError((cause) => automationError("list-runs", cause))), { "rpc.aggregate": "automations" }),
-        [WS_METHODS.automationsGetRun]: (input) => observeRpcEffect(WS_METHODS.automationsGetRun, automations.getAutomationRunById(input.runId).pipe(Effect.map(Option.getOrNull), Effect.mapError((cause) => automationError("get-run", cause))), { "rpc.aggregate": "automations" }),
+        [WS_METHODS.automationsSubscribe]: (_input) =>
+          observeRpcStream(
+            WS_METHODS.automationsSubscribe,
+            automations
+              .subscribeAutomationChanges()
+              .pipe(Stream.mapError((cause) => automationError("list-runs", cause))),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsDispatch]: (command) =>
+          observeRpcEffect(
+            WS_METHODS.automationsDispatch,
+            automations
+              .dispatch(command)
+              .pipe(Effect.mapError((cause) => automationError("create", cause))),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsListRuns]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsListRuns,
+            automations
+              .listAutomationRuns(input)
+              .pipe(Effect.mapError((cause) => automationError("list-runs", cause))),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsGetRun]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsGetRun,
+            automations.getAutomationRunById(input.runId).pipe(
+              Effect.map(Option.getOrNull),
+              Effect.mapError((cause) => automationError("get-run", cause)),
+            ),
+            { "rpc.aggregate": "automations" },
+          ),
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_V2_WS_METHODS.dispatchCommand,
@@ -1933,9 +2056,15 @@ const makeWsRpcLayer = (
                   ...(input.generateTitle === undefined
                     ? {}
                     : { generateTitle: input.generateTitle }),
-                  ...(input.enabledSkillIds === undefined ? {} : { enabledSkillIds: input.enabledSkillIds }),
-                  ...(input.subagentPolicy === undefined ? {} : { subagentPolicy: input.subagentPolicy }),
-                  ...(input.automationRun === undefined ? {} : { automationRun: input.automationRun }),
+                  ...(input.enabledSkillIds === undefined
+                    ? {}
+                    : { enabledSkillIds: input.enabledSkillIds }),
+                  ...(input.subagentPolicy === undefined
+                    ? {}
+                    : { subagentPolicy: input.subagentPolicy }),
+                  ...(input.automationRun === undefined
+                    ? {}
+                    : { automationRun: input.automationRun }),
                   modelSelection: input.modelSelection,
                   runtimeMode: input.runtimeMode,
                   interactionMode: input.interactionMode,
@@ -3215,7 +3344,10 @@ const makeWsRpcLayer = (
                 return yield* issueAssetUrl({
                   resource: input.resource,
                   ...(project.value.faviconPath
-                    ? { projectFaviconPath: project.value.faviconPath, projectId: project.value.projectId }
+                    ? {
+                        projectFaviconPath: project.value.faviconPath,
+                        projectId: project.value.projectId,
+                      }
                     : {}),
                   projectCheckoutPending:
                     clone !== null &&
@@ -3253,7 +3385,11 @@ const makeWsRpcLayer = (
                 workspaceRoot: thread.thread.worktreePath ?? project.value.workspaceRoot,
                 homeDir: NodeOS.homedir(),
                 ...(() => {
-                  const current = thread.providerThreads.find(provider => provider.id === thread.thread.activeProviderThreadId && provider.nativeThreadRef?.driver === "grok");
+                  const current = thread.providerThreads.find(
+                    (provider) =>
+                      provider.id === thread.thread.activeProviderThreadId &&
+                      provider.nativeThreadRef?.driver === "grok",
+                  );
                   const nativeId = current?.nativeThreadRef?.nativeId;
                   return nativeId == null ? {} : { grokSessionId: nativeId };
                 })(),
