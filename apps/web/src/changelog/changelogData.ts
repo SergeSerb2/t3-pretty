@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261003.2610003100",
+    date: "2026-10-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "Frost the iPad sidebar header over the scenery",
+      },
+      {
+        kind: "fixed",
+        title: "Repair upstream sync compatibility (#776) [skip ci]",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock nightly sync test lint",
+      },
+      {
+        kind: "new",
+        title: "Unify iOS on frosted glass over the scenery with fluid motion",
+      },
+      {
+        kind: "new",
+        title: "One-screen model picker with instant-apply options",
+      },
+      {
+        kind: "fixed",
+        title: "Visible threads and Claude streaming (#772) [skip ci]",
+      },
+    ],
+  },
+  {
     version: "0.0.45-nightly.20261002.2595003093",
     date: "2026-10-04",
     items: [
