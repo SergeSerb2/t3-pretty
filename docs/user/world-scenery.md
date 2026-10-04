@@ -49,8 +49,8 @@ chat box.
 With scenery on, the Home list lets the photo show through:
 
 - Active and queued threads sit on separate frosted cards.
-- Snoozed and Settled sit under quiet section labels, each thread on its own quieter card. Tap
-  the label to expand or collapse that section.
+- Snoozed, Stored and Settled threads each gather into one grouped card under a label with
+  the section's count. Tap the label to expand or collapse that section.
 
 The list uses solid rows instead when:
 
