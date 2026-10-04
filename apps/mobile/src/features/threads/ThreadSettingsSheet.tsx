@@ -10,11 +10,11 @@ import type {
 } from "@t3tools/contracts";
 import { displayRuntimeModeForProviderDriver } from "@t3tools/contracts";
 
-import type { LegendListRenderItemProps } from "@legendapp/list/react-native";
+import type { LegendListRef, LegendListRenderItemProps } from "@legendapp/list/react-native";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
-import { getProviderOptionCurrentValue } from "@t3tools/shared/model";
 import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
+import { usesChatGptSharing } from "@t3tools/shared/usageLimits";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import {
   createNativeStackNavigator,
@@ -91,11 +91,11 @@ import {
   NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET,
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
+import { ThreadSettingsControlStack } from "./ThreadSettingsControls";
 import { ModelRow } from "./ThreadSettingsRows";
 import {
   compatibleRuntimeModeForChoices,
   runtimeModeChoicesForSupportedModes,
-  selectableChoices,
 } from "./thread-settings-options";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { buildThreadModelIdentity } from "./threadModelIdentity";
@@ -341,55 +341,6 @@ function FilterChip(props: {
         {props.label}
       </Text>
     </Pressable>
-  );
-}
-
-/** One-tap choice for an option or runtime row; applies immediately. */
-function OptionChip(props: {
-  readonly label: string;
-  readonly accessibilityHint?: string;
-  readonly selected: boolean;
-  readonly onPress: () => void;
-}) {
-  const glass = useGlassChromeActive();
-  return (
-    <Pressable
-      accessibilityHint={props.accessibilityHint}
-      accessibilityRole="radio"
-      accessibilityState={{ selected: props.selected }}
-      className={cn(
-        "h-8 justify-center rounded-full px-3 android:h-9",
-        props.selected
-          ? "bg-primary"
-          : glass
-            ? "border border-chrome-glass-border bg-chrome-glass"
-            : "bg-subtle",
-      )}
-      style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.97 : 1 }] })}
-      onPress={props.onPress}
-    >
-      <Text
-        className={cn(
-          "text-xs font-t3-medium",
-          props.selected ? "text-primary-foreground" : "text-foreground",
-        )}
-      >
-        {props.label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function OptionChipRow(props: { readonly label: string; readonly children: ReactNode }) {
-  return (
-    <View
-      accessibilityLabel={props.label}
-      accessibilityRole="radiogroup"
-      className="gap-2 px-4 py-3"
-    >
-      <Text className="text-sm font-t3-medium text-foreground">{props.label}</Text>
-      <View className="flex-row flex-wrap gap-1.5">{props.children}</View>
-    </View>
   );
 }
 
@@ -828,10 +779,9 @@ function useThreadSettingsCatalogItems(
   );
 }
 
-/** Effort, tier, toggles, and runtime as one-tap rows that apply immediately. */
-function ThreadSettingsOptionsCard() {
+/** Current model plus its reasoning, speed, and access cards, above the catalog. */
+function ThreadSettingsOptions(props: { readonly onPressModel: () => void }) {
   const session = useThreadSettingsSession();
-  const glass = useGlassChromeActive();
   const configs = useAtomValue(environmentServerConfigsAtom);
   const selectedProvider = session.environmentId
     ? (configs
@@ -840,54 +790,20 @@ function ThreadSettingsOptionsCard() {
     : null;
 
   return (
-    <View
-      className={
-        glass ? cn(GLASS_CARD_CLASS_NAME, "mx-4") : "mx-4 overflow-hidden rounded-2xl bg-card"
+    <ThreadSettingsControlStack
+      descriptors={session.displayedDescriptors}
+      model={session.displayedModel}
+      modelFooter={
+        usesChatGptSharing(selectedProvider) ? (
+          <ChatGptSharingStatus provider={selectedProvider} />
+        ) : undefined
       }
-      style={glass ? glassCardStyle() : undefined}
-    >
-      <ChatGptSharingStatus provider={selectedProvider} />
-      {session.displayedDescriptors.map((descriptor) => {
-        if (descriptor.type === "select") {
-          const currentValue = getProviderOptionCurrentValue(descriptor);
-          return (
-            <OptionChipRow key={descriptor.id} label={descriptor.label}>
-              {selectableChoices(descriptor).map((choice) => (
-                <OptionChip
-                  key={choice.id}
-                  label={choice.label}
-                  selected={choice.id === currentValue}
-                  onPress={() => session.applyOptionChange(descriptor.id, choice.id)}
-                />
-              ))}
-            </OptionChipRow>
-          );
-        }
-        return (
-          <SwitchRow
-            key={descriptor.id}
-            label={descriptor.label}
-            value={descriptor.currentValue ?? false}
-            onValueChange={(value) => session.applyOptionChange(descriptor.id, value)}
-          />
-        );
-      })}
-      <OptionChipRow label="Runtime">
-        {session.runtimeModeChoices.map((choice) => (
-          <OptionChip
-            key={choice.mode}
-            accessibilityHint={choice.description}
-            label={choice.label}
-            selected={choice.mode === session.runtimeMode}
-            onPress={() => {
-              if (choice.mode === session.runtimeMode) return;
-              void Haptics.selectionAsync();
-              session.onUpdateRuntimeMode(choice.mode);
-            }}
-          />
-        ))}
-      </OptionChipRow>
-    </View>
+      runtimeMode={session.runtimeMode}
+      runtimeModeChoices={session.runtimeModeChoices}
+      onOptionChange={session.applyOptionChange}
+      onPressModel={props.onPressModel}
+      onRuntimeModeChange={session.onUpdateRuntimeMode}
+    />
   );
 }
 
@@ -985,6 +901,17 @@ function ThreadSettingsContent(props: {
     () => (catalogItems.length === 0 ? [{ kind: "empty", key: "empty" }] : catalogItems),
     [catalogItems],
   );
+  const listRef = useRef<LegendListRef>(null);
+  const isApplied = session.isApplied;
+  // The current-model card jumps to its row in the catalog, or to the top of it.
+  const scrollToCatalog = useCallback(() => {
+    const index = listItems.findIndex((item) => item.kind === "model" && isApplied(item.option));
+    void listRef.current?.scrollToIndex({
+      animated: true,
+      index: Math.max(0, index),
+      viewPosition: 0.2,
+    });
+  }, [isApplied, listItems]);
   const renderCatalogItem = useCallback(
     (itemProps: LegendListRenderItemProps<ThreadSettingsCatalogItem>) => {
       const item = itemProps.item;
@@ -1029,6 +956,7 @@ function ThreadSettingsContent(props: {
 
   const list = (
     <AnimatedLegendList
+      ref={listRef}
       alwaysBounceVertical
       automaticallyAdjustsScrollIndicatorInsets
       className={glass ? "flex-1" : "flex-1 bg-sheet"}
@@ -1055,7 +983,7 @@ function ThreadSettingsContent(props: {
         <>
           {isSearching ? null : (
             <View className="pt-2">
-              <ThreadSettingsOptionsCard />
+              <ThreadSettingsOptions onPressModel={scrollToCatalog} />
             </View>
           )}
           {Platform.OS === "android" ? (
@@ -1096,7 +1024,7 @@ function ThreadSettingsContent(props: {
             </View>
           ) : (
             <Text className="px-5 pb-1 pt-6 text-sm font-t3-medium text-foreground-muted">
-              Model
+              Models
             </Text>
           )}
           {session.providerGroups.length > 1 || showsFavoritesChip ? (
