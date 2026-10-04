@@ -300,9 +300,10 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
 
   if (reference === null || (automation === null && !runsQuery.isPending)) {
     return (
-      <SheetSurface style={headerInsetStyle}>
+      <SheetSurface>
         {header}
-        <View className="flex-1 items-center justify-center px-8">
+        {/* Inset the content, not the surface: the photo runs under the header. */}
+        <View className="flex-1 items-center justify-center px-8" style={headerInsetStyle}>
           <EmptyState
             title="Automation not found"
             detail="It was deleted, or this link names an environment that is not connected."
@@ -314,9 +315,11 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
 
   if (automation === null) {
     return (
-      <SheetSurface className="items-center justify-center" style={headerInsetStyle}>
+      <SheetSurface>
         {header}
-        <ActivityIndicator colorClassName="accent-icon" />
+        <View className="flex-1 items-center justify-center" style={headerInsetStyle}>
+          <ActivityIndicator colorClassName="accent-icon" />
+        </View>
       </SheetSurface>
     );
   }
