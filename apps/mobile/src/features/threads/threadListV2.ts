@@ -230,6 +230,22 @@ export function resolveThreadListV2Status(
   return "ready";
 }
 
+/** A status a card labels. Ready and waiting cards carry no label. */
+export type ThreadListV2Badge = Exclude<ThreadListV2Status, "ready" | "waiting">;
+
+/**
+ * The label a card shows in its status slot: its list status, or "done" for a
+ * completion the user has not opened yet. Null while the slot shows a time.
+ */
+export function resolveThreadListV2Badge(
+  thread: Parameters<typeof resolveThreadListV2Status>[0] &
+    Parameters<typeof threadHasUnseenCompletion>[0],
+): ThreadListV2Badge | null {
+  const status = resolveThreadListV2Status(thread);
+  if (status === "ready") return threadHasUnseenCompletion(thread) ? "done" : null;
+  return status === "waiting" ? null : status;
+}
+
 /** NaN-safe Date.parse for sort comparators: a malformed timestamp must not
     poison the whole ordering, so it sinks to the epoch instead. */
 function parseTimestampMs(isoDate: string): number {
@@ -417,6 +433,9 @@ export interface ThreadListV2ThreadListItem {
       availability without changing any shell. */
   readonly canMoveUp: boolean;
   readonly canMoveDown: boolean;
+  /** Scenery thumbnail for a glass Home card, carried on the item so a photo
+      landing on the thread reaches the recycled row. Null elsewhere. */
+  readonly sceneryThumbURL: string | null;
 }
 
 export interface ThreadListV2PendingListItem {
@@ -508,7 +527,8 @@ export function threadListV2ListItemsAreEqual(
         previous.continuesGroup === item.continuesGroup &&
         previous.hasQueuedMessages === item.hasQueuedMessages &&
         previous.canMoveUp === item.canMoveUp &&
-        previous.canMoveDown === item.canMoveDown
+        previous.canMoveDown === item.canMoveDown &&
+        previous.sceneryThumbURL === item.sceneryThumbURL
       );
     case "v2-pending":
       return (
@@ -603,6 +623,8 @@ export function buildThreadListV2ListItems(input: {
   /** True while the shelf expansion preferences are still loading; stamped
       onto both shelf headers so the disabled state reaches recycled cells. */
   readonly shelfPreferencesLoading?: boolean;
+  /** Thumbnail for each card row (glass Home only). Absent = no thumbnails. */
+  readonly resolveSceneryThumb?: (thread: EnvironmentThreadShell) => string | null;
 }): ThreadListV2ListItem[] {
   const threadItems = input.items.map((item): ThreadListV2ListItem => {
     const snoozeWakeLabelText =
@@ -638,6 +660,8 @@ export function buildThreadListV2ListItems(input: {
         input.queuedThreadKeys?.has(`${item.thread.environmentId}:${item.thread.id}`) === true,
       canMoveUp: move?.canMoveUp === true,
       canMoveDown: move?.canMoveDown === true,
+      sceneryThumbURL:
+        item.variant === "card" ? (input.resolveSceneryThumb?.(item.thread) ?? null) : null,
     };
   });
   const pendingItems = input.pendingTasks.map((pendingTask, index): ThreadListV2ListItem => ({

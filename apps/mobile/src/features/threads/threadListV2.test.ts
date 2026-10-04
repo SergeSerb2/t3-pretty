@@ -1505,6 +1505,40 @@ describe("buildThreadListV2ListItems", () => {
     ).toHaveLength(1);
   });
 
+  it("carries scenery thumbnails on card rows only, and re-renders a row when its photo lands", () => {
+    const withSettled = buildThreadListV2Items({
+      threads: [
+        makeThread({ id: ThreadId.make("card"), title: "card" }),
+        makeThread({
+          id: ThreadId.make("slim"),
+          title: "slim",
+          settledOverride: "settled",
+          settledAt: NOW,
+        }),
+      ],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+    });
+    const build = (thumb: string | null) =>
+      buildThreadListV2ListItems({
+        items: withSettled.items,
+        pendingTasks: [],
+        settledCount: withSettled.settledCount,
+        settledShelfHeaderIndex: withSettled.settledShelfHeaderIndex,
+        resolveSceneryThumb: () => thumb,
+      }).filter((item) => item.type === "v2-thread");
+    const before = build(null);
+    const after = build("https://images.example/thumb");
+
+    expect(after.map((item) => item.type === "v2-thread" && item.sceneryThumbURL)).toEqual([
+      "https://images.example/thumb",
+      null,
+    ]);
+    expect(threadListV2ListItemsAreEqual(before[0]!, after[0]!)).toBe(false);
+    expect(threadListV2ListItemsAreEqual(before[1]!, after[1]!)).toBe(true);
+  });
+
   it("ends the list with queued tasks when nothing has settled yet", () => {
     const activeOnly = buildThreadListV2Items({
       threads: [makeThread({ id: ThreadId.make("active"), title: "active" })],
