@@ -51,6 +51,8 @@ const COMPACT_ACTION_CIRCLE_SIZE = 28;
 const COMPACT_ACTION_ICON_SIZE = 13;
 
 export const THREAD_SWIPE_ACTIONS_WIDTH = ACTION_ITEM_WIDTH * 2;
+// Wider than any full swipe; the row container clips the overhang.
+const SWIPE_FILL_WIDTH = 2_000;
 export const THREAD_SWIPE_SPRING = {
   damping: 26,
   mass: 0.7,
@@ -722,16 +724,28 @@ export function ThreadSwipeActions(props: {
     },
     [fullSwipeThreshold, onFullSwipeArmedChange, translation],
   );
+  // The fill trails the row's edge instead of spanning the tray: under a
+  // translucent row a resting tray doubles the glass into a visible band.
+  const fillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: actionsWidth + Math.min(translation.value, 0) }],
+  }));
 
   return (
-    <View
-      style={{
-        backgroundColor: props.backgroundColor,
-        flexDirection: "row",
-        height: "100%",
-        width: actionsWidth,
-      }}
-    >
+    <View style={{ flexDirection: "row", height: "100%", width: actionsWidth }}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          {
+            backgroundColor: props.backgroundColor,
+            bottom: 0,
+            left: 0,
+            position: "absolute",
+            top: 0,
+            width: SWIPE_FILL_WIDTH,
+          },
+          fillStyle,
+        ]}
+      />
       <SwipeActionButton
         accessibilityLabel={props.primaryAction.accessibilityLabel}
         actionsWidth={actionsWidth}

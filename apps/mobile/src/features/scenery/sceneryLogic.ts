@@ -139,11 +139,11 @@ export function clampTranslucency(value: number): number {
 
 /**
  * Flat wash over the wallpaper. Dark mode pulls toward black, light mode
- * toward white — enough to keep primary/secondary text legible over a bright
- * sky. These are the current mac values (0.62/0.70).
+ * toward white. Lighter than the mac values (0.62/0.70): phone text sits on
+ * frosted cards that carry their own contrast, so the photo can read through.
  */
 export function chatWashBase(colorScheme: "light" | "dark"): number {
-  return colorScheme === "dark" ? 0.62 : 0.7;
+  return colorScheme === "dark" ? 0.5 : 0.42;
 }
 
 /** Edge-tint gradient multipliers for the wallpaper (top / bottom). */

@@ -34,7 +34,7 @@ import { nativeGlassHeaderOverlapInset } from "../../lib/layoutMetrics";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { relativeTime } from "../../lib/time";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import { TRANSPARENT_NATIVE_HEADERS } from "../../native/native-glass";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { useEnvironmentQuery } from "../../state/query";
@@ -101,7 +101,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
   const insets = useSafeAreaInsets();
   const navigationHeaderHeight = useContext(HeaderHeightContext);
   const glassHeaderInset = nativeGlassHeaderOverlapInset({
-    glassSupported: NATIVE_LIQUID_GLASS_SUPPORTED,
+    glassSupported: TRANSPARENT_NATIVE_HEADERS,
     headerHeight: navigationHeaderHeight,
     safeAreaTop: insets.top,
   });
