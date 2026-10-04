@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import type { SubagentObservedActivity } from "./subagentActivityLog.ts";
 import type { RuntimeSubagent } from "./subagentRuntime.ts";
 import {
   advanceSubagentActivityLog,
@@ -44,7 +44,7 @@ function activity(
   kind: string,
   payload: Record<string, unknown>,
   at = "2026-08-01T10:00:02.000Z",
-): OrchestrationThreadActivity {
+): SubagentObservedActivity {
   activitySequence += 1;
   return {
     id: `activity-${activitySequence}`,
@@ -54,7 +54,7 @@ function activity(
     payload,
     turnId: null,
     createdAt: at,
-  } as unknown as OrchestrationThreadActivity;
+  } as unknown as SubagentObservedActivity;
 }
 
 describe("advanceSubagentActivityLog", () => {

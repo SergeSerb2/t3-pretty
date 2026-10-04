@@ -121,6 +121,15 @@ describe("layerStack", () => {
     expect(layerStack(0.85, "light").washAlpha).toBeCloseTo(washAlpha(chatWashBase("light"), 0.85));
     expect(photoOpacity(1, 1)).toBe(0);
   });
+
+  it("lets more photo through under frosted cards than under bare text", () => {
+    for (const scheme of ["light", "dark"] as const) {
+      const text = layerStack(0.85, scheme);
+      const cards = layerStack(0.85, scheme, "cards");
+      expect(cards.washAlpha).toBeLessThan(text.washAlpha);
+      expect(cards.coverage).toBeCloseTo(text.coverage, 10);
+    }
+  });
 });
 
 describe("pickScenery", () => {

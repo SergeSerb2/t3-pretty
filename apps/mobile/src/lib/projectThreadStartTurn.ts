@@ -2,21 +2,29 @@ import {
   CommandId,
   MessageId,
   ThreadId,
+  type ChatAttachment,
   type ModelSelection,
+  type OrchestrationMessageContext,
   type ProjectId,
   type ProviderInteractionMode,
   type RuntimeMode,
   type SkillId,
 } from "@t3tools/contracts";
+import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
+import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 
-import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
+import { NATIVE_RESUME_THREAD_TITLE, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 
-import { toUploadChatImageAttachments, type DraftComposerImageAttachment } from "./composerImages";
+import type { UploadedMobileAttachment } from "./attachmentUpload";
 
 export function deriveThreadTitleFromPrompt(value: string): string {
-  // The auto-PR instruction block is agent-facing; a title derived from the
-  // prompt should reflect only what the user typed.
-  const trimmed = stripCreatePullRequestSuffix(value).trim();
+  if (parseNativeResumeCommand(value)?._tag === "Resume") {
+    return NATIVE_RESUME_THREAD_TITLE;
+  }
+  // Agent-facing instructions and citation markup should not leak into a
+  // title intended to reflect what the user typed.
+  const trimmed = assistantCitationsToPlainText(stripHiddenInstructionSuffixes(value)).trim();
   if (trimmed.length === 0) {
     return "New thread";
   }
@@ -33,7 +41,9 @@ export interface ProjectThreadStartTurnSpec {
   readonly messageId: string;
   readonly createdAt: string;
   readonly text: string;
-  readonly attachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly context?: OrchestrationMessageContext;
+  /** New uploads or server-owned attachments from a cancelled setup. */
+  readonly uploadedAttachments: ReadonlyArray<UploadedMobileAttachment | ChatAttachment>;
   readonly modelSelection: ModelSelection;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
@@ -52,16 +62,23 @@ export interface ProjectThreadStartTurnSpec {
  * offline outbox drain so both deliver identical commands.
  */
 export function buildProjectThreadStartTurnInput(spec: ProjectThreadStartTurnSpec) {
-  const title = deriveThreadTitleFromPrompt(spec.text);
+  const title = deriveThreadTitleSeed({
+    text: parseNativeResumeCommand(spec.text)?._tag === "Resume"
+      ? NATIVE_RESUME_THREAD_TITLE
+      : assistantCitationsToPlainText(stripHiddenInstructionSuffixes(spec.text)),
+    attachments: spec.uploadedAttachments,
+  });
   const isWorktree = spec.workspaceMode === "worktree";
   return {
     commandId: CommandId.make(spec.commandId),
+    creationSource: "mobile" as const,
     threadId: ThreadId.make(spec.threadId),
     message: {
       messageId: MessageId.make(spec.messageId),
       role: "user" as const,
       text: spec.text,
-      attachments: toUploadChatImageAttachments(spec.attachments),
+      ...(spec.context ? { context: spec.context } : {}),
+      attachments: spec.uploadedAttachments,
     },
     modelSelection: spec.modelSelection,
     titleSeed: title,

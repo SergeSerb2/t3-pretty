@@ -35,16 +35,38 @@ export function resolveThreadHeaderSettlePresentation(input: {
 export type ThreadHeaderSnoozePresentation = {
   readonly accessibilityLabel: string;
   readonly label: string;
-  readonly icon: "clock";
+  readonly icon: "clock" | "tray.and.arrow.up";
   readonly disabled: boolean;
-  readonly action: "snooze-menu" | "wake";
+  readonly action: "snooze-menu" | "wake" | "unstore";
+  /** The snooze menu ends with Store: the no-wake-time way to park a thread. */
+  readonly offersStore: boolean;
 };
 
+/**
+ * The header's parking slot. Snoozed threads wake from it and stored threads
+ * leave the Stored shelf from it; otherwise it opens the snooze presets,
+ * followed by Store when the server supports it, so the header keeps three
+ * buttons.
+ */
 export function resolveThreadHeaderSnoozePresentation(input: {
   readonly supported: boolean;
   readonly snoozed: boolean;
   readonly canSnooze: boolean;
+  readonly storageSupported?: boolean;
+  readonly stored?: boolean;
 }): ThreadHeaderSnoozePresentation {
+  const storageSupported = input.storageSupported === true;
+  if (input.stored === true && storageSupported) {
+    return {
+      accessibilityLabel: "Unstore thread",
+      label: "Unstore",
+      icon: "tray.and.arrow.up",
+      disabled: false,
+      action: "unstore",
+      offersStore: false,
+    };
+  }
+
   if (input.snoozed) {
     return {
       accessibilityLabel: "Wake thread",
@@ -52,6 +74,7 @@ export function resolveThreadHeaderSnoozePresentation(input: {
       icon: "clock",
       disabled: !input.supported,
       action: "wake",
+      offersStore: false,
     };
   }
 
@@ -61,6 +84,7 @@ export function resolveThreadHeaderSnoozePresentation(input: {
     icon: "clock",
     disabled: !input.supported || !input.canSnooze,
     action: "snooze-menu",
+    offersStore: storageSupported,
   };
 }
 

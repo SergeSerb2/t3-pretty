@@ -86,25 +86,37 @@ export function shouldRefreshOnInterval(input: {
  * When each view last read, kept outside React because a mount is exactly what it has to outlive:
  * a reader who navigates away and straight back mounts a fresh hook, and a timestamp that started
  * at zero would call that first read due. Keyed by whatever the caller calls the view, because two
- * views on screen at once each owe their own reader an answer. Entries are one number and never
- * pruned; there is one per view the session ever read.
+ * views on screen at once each owe their own reader an answer.
  */
 const lastRefreshedAtByView = new Map<string, number>();
+const MAX_LIVE_REFRESH_VIEW_ENTRIES = 256;
+
+function recordViewRefresh(viewId: string, refreshedAt: number): void {
+  lastRefreshedAtByView.delete(viewId);
+  lastRefreshedAtByView.set(viewId, refreshedAt);
+  while (lastRefreshedAtByView.size > MAX_LIVE_REFRESH_VIEW_ENTRIES) {
+    const oldest = lastRefreshedAtByView.keys().next().value as string | undefined;
+    if (oldest === undefined) return;
+    lastRefreshedAtByView.delete(oldest);
+  }
+}
 
 /**
  * When the reader last did anything. Shared rather than per view: a person is present in the
- * window, not in one component of it. Only tracked while a live view is mounted, and the handler
- * writes a number and nothing else, so a mousemove costs what a mousemove costs.
+ * window, not in one component of it. Only tracked while a live view is mounted.
  */
 let lastInteractedAt = 0;
-let interactionWatchers = 0;
+const interactionWatchers = new Set<() => void>();
 const INTERACTION_EVENTS = ["pointerdown", "pointermove", "keydown", "wheel"] as const;
 const noteInteraction = () => {
-  lastInteractedAt = Date.now();
+  const now = Date.now();
+  const wasIdle = now - lastInteractedAt >= LIVE_REFRESH_IDLE_AFTER_MS;
+  lastInteractedAt = now;
+  if (wasIdle) for (const resume of interactionWatchers) resume();
 };
 
-function watchInteraction(): () => void {
-  if (interactionWatchers === 0) {
+function watchInteraction(resume: () => void): () => void {
+  if (interactionWatchers.size === 0) {
     // Arriving is itself the reader doing something, and it is what makes the first interval tick
     // after a mount count.
     lastInteractedAt = Date.now();
@@ -112,10 +124,10 @@ function watchInteraction(): () => void {
       document.addEventListener(event, noteInteraction, { passive: true });
     }
   }
-  interactionWatchers += 1;
+  interactionWatchers.add(resume);
   return () => {
-    interactionWatchers -= 1;
-    if (interactionWatchers > 0) return;
+    interactionWatchers.delete(resume);
+    if (interactionWatchers.size > 0) return;
     for (const event of INTERACTION_EVENTS) {
       document.removeEventListener(event, noteInteraction);
     }
@@ -127,18 +139,10 @@ export function useLiveRefresh(
   options: {
     readonly enabled?: boolean;
     readonly key?: string;
-    /** How often to re-read while the view stays open. Defaults to one minute. */
     readonly intervalMs?: number;
-    /** Fastest two reads may follow each other, including on focus. Defaults to ten seconds. */
-    readonly minIntervalMs?: number;
   } = {},
 ): void {
-  const {
-    enabled = true,
-    key,
-    intervalMs = LIVE_REFRESH_INTERVAL_MS,
-    minIntervalMs = LIVE_REFRESH_MIN_INTERVAL_MS,
-  } = options;
+  const { enabled = true, key, intervalMs = LIVE_REFRESH_INTERVAL_MS } = options;
   // Held in a ref so a caller can pass a fresh closure every render without re-arming the
   // listeners, which would otherwise refresh on every render that changed anything at all.
   const latest = useRef(refresh);
@@ -152,19 +156,21 @@ export function useLiveRefresh(
   useEffect(() => {
     if (!enabled) return;
     const read = (now: number) => {
+      if (latest.current === null) return;
       lastRefreshedAtByView.set(viewId, now);
-      latest.current?.();
+      latest.current();
     };
     const visible = () => document.visibilityState === "visible";
     const onArrival = () => {
       const now = Date.now();
+      if (now - lastInteractedAt >= LIVE_REFRESH_IDLE_AFTER_MS) return;
       const lastRefreshedAt = lastRefreshedAtByView.get(viewId);
       if (lastRefreshedAt === undefined) {
         // Nothing read yet, so nothing to refresh: the mount's own read is what fills this in.
-        lastRefreshedAtByView.set(viewId, now);
+        recordViewRefresh(viewId, now);
         return;
       }
-      if (shouldRefreshOnArrival({ visible: visible(), now, lastRefreshedAt, minIntervalMs })) {
+      if (shouldRefreshOnArrival({ visible: visible(), now, lastRefreshedAt, minIntervalMs: intervalMs })) {
         read(now);
       }
     };
@@ -177,7 +183,7 @@ export function useLiveRefresh(
           now,
           lastRefreshedAt,
           lastInteractedAt,
-          minIntervalMs,
+          minIntervalMs: intervalMs,
         })
       ) {
         read(now);
@@ -197,12 +203,11 @@ export function useLiveRefresh(
       syncTimer();
     };
 
-    const stopWatchingInteraction = watchInteraction();
-    // Mount (and remount) already start the view's own read. Calling onArrival here
-    // interrupted that fiber and left the panel on "All fibers interrupted without error".
-    if (lastRefreshedAtByView.get(viewId) === undefined) {
-      lastRefreshedAtByView.set(viewId, Date.now());
-    }
+    const stopWatchingInteraction = watchInteraction(() => {
+      onArrival();
+      syncTimer();
+    });
+    onArrival();
     syncTimer();
     window.addEventListener("focus", onArrival);
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -212,5 +217,5 @@ export function useLiveRefresh(
       document.removeEventListener("visibilitychange", onVisibilityChange);
       stopWatchingInteraction();
     };
-  }, [enabled, intervalMs, minIntervalMs, viewId]);
+  }, [enabled, viewId, intervalMs]);
 }

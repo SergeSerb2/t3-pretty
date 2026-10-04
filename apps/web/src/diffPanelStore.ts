@@ -1,19 +1,20 @@
+import { resolveStorage } from "./lib/storage";
+import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef, TurnId } from "@t3tools/contracts";
+import { RunId, type ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { resolveStorage } from "./lib/storage";
+import { resolveLocalStorage } from "./lib/storage";
 
 export type DiffPanelSelection =
   | { kind: "branch"; baseRef: string | null }
   | { kind: "unstaged" }
-  | { kind: "turn"; turnId: TurnId; filePath: string | null; revealRequestId: number };
+  | { kind: "turn"; turnId: RunId; filePath: string | null; revealRequestId: number };
 
 export type DiffRenderMode = "stacked" | "split";
 
-const DEFAULT_SELECTION: DiffPanelSelection = { kind: "branch", baseRef: null };
-const DEFAULT_WORKING_TREE_SELECTION: DiffPanelSelection = { kind: "unstaged" };
+const DEFAULT_SELECTION: DiffPanelSelection = { kind: "unstaged" };
 
 interface DiffPanelStoreState {
   byThreadKey: Record<string, DiffPanelSelection>;
@@ -22,14 +23,84 @@ interface DiffPanelStoreState {
   setDiffRenderMode: (mode: DiffRenderMode) => void;
   selectGitScope: (ref: ScopedThreadRef, scope: "branch" | "unstaged") => void;
   selectBranchBaseRef: (ref: ScopedThreadRef, baseRef: string | null) => void;
-  selectTurn: (ref: ScopedThreadRef, turnId: TurnId, filePath?: string) => void;
-  reconcileTurnSelection: (ref: ScopedThreadRef, availableTurnIds: ReadonlyArray<TurnId>) => void;
+  selectTurn: (ref: ScopedThreadRef, turnId: RunId, filePath?: string) => void;
+  reconcileTurnSelection: (ref: ScopedThreadRef, availableTurnIds: ReadonlyArray<RunId>) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
 
 function normalizeBaseRef(baseRef: string | null): string | null {
   const normalized = baseRef?.trim();
   return normalized ? normalized : null;
+}
+
+function sanitizePersistedDiffSelection(value: unknown): DiffPanelSelection | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const selection = value as Record<string, unknown>;
+  switch (selection.kind) {
+    case "branch":
+      return {
+        kind: "branch",
+        baseRef: typeof selection.baseRef === "string" ? normalizeBaseRef(selection.baseRef) : null,
+      };
+    case "unstaged":
+      return { kind: "unstaged" };
+    case "turn":
+      if (typeof selection.turnId !== "string" || selection.turnId.length === 0) return null;
+      return {
+        kind: "turn",
+        turnId: RunId.make(selection.turnId),
+        filePath: typeof selection.filePath === "string" ? selection.filePath.trim() || null : null,
+        revealRequestId:
+          typeof selection.revealRequestId === "number" &&
+          Number.isSafeInteger(selection.revealRequestId) &&
+          selection.revealRequestId >= 0
+            ? selection.revealRequestId
+            : 0,
+      };
+    default:
+      return null;
+  }
+}
+
+export function migratePersistedDiffPanelState(
+  persistedState: unknown,
+): Pick<DiffPanelStoreState, "byThreadKey" | "branchBaseRefByThreadKey" | "diffRenderMode"> {
+  if (!persistedState || typeof persistedState !== "object" || Array.isArray(persistedState)) {
+    return { byThreadKey: {}, branchBaseRefByThreadKey: {}, diffRenderMode: "stacked" };
+  }
+  const candidate = persistedState as Record<string, unknown>;
+  const rawSelections =
+    candidate.byThreadKey &&
+    typeof candidate.byThreadKey === "object" &&
+    !Array.isArray(candidate.byThreadKey)
+      ? (candidate.byThreadKey as Record<string, unknown>)
+      : {};
+  const byThreadKey = Object.fromEntries(
+    Object.entries(rawSelections).flatMap(([threadKey, value]) => {
+      if (!parseScopedThreadKey(threadKey)) return [];
+      const selection = sanitizePersistedDiffSelection(value);
+      return selection ? [[threadKey, selection] as const] : [];
+    }),
+  );
+  const rawBaseRefs =
+    candidate.branchBaseRefByThreadKey &&
+    typeof candidate.branchBaseRefByThreadKey === "object" &&
+    !Array.isArray(candidate.branchBaseRefByThreadKey)
+      ? (candidate.branchBaseRefByThreadKey as Record<string, unknown>)
+      : {};
+  const branchBaseRefByThreadKey = Object.fromEntries(
+    Object.entries(rawBaseRefs).flatMap(([threadKey, value]) => {
+      if (!parseScopedThreadKey(threadKey)) return [];
+      if (value === null) return [[threadKey, null] as const];
+      if (typeof value !== "string") return [];
+      return [[threadKey, normalizeBaseRef(value)] as const];
+    }),
+  );
+  return {
+    byThreadKey,
+    branchBaseRefByThreadKey,
+    diffRenderMode: candidate.diffRenderMode === "split" ? "split" : "stacked",
+  };
 }
 
 export const useDiffPanelStore = create<DiffPanelStoreState>()(
@@ -125,7 +196,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
     }),
     {
       name: "t3code:diff-panel-state:v1",
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
@@ -134,6 +205,10 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
         branchBaseRefByThreadKey: state.branchBaseRefByThreadKey,
         diffRenderMode: state.diffRenderMode,
       }),
+      merge: (persistedState, currentState) => ({
+        ...currentState,
+        ...migratePersistedDiffPanelState(persistedState),
+      }),
     },
   ),
 );
@@ -141,11 +216,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
 export function selectThreadDiffPanelSelection(
   byThreadKey: Record<string, DiffPanelSelection>,
   ref: ScopedThreadRef | null | undefined,
-  hasWorkingTreeChanges = false,
 ): DiffPanelSelection {
   if (!ref) return DEFAULT_SELECTION;
-  return (
-    byThreadKey[scopedThreadKey(ref)] ??
-    (hasWorkingTreeChanges ? DEFAULT_WORKING_TREE_SELECTION : DEFAULT_SELECTION)
-  );
+  return byThreadKey[scopedThreadKey(ref)] ?? DEFAULT_SELECTION;
 }

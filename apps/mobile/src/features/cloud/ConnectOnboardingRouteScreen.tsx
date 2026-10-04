@@ -1,16 +1,20 @@
+import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useAuth } from "@clerk/expo";
 import { StackActions, useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useState } from "react";
-import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform, Pressable, RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { reportAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
+import { SheetSurface } from "../../components/SheetSurface";
+import { cn } from "../../lib/cn";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { CloudEnvironmentRows } from "../connection/CloudEnvironmentRows";
+import { GroupedCard } from "../scenery/GroupedCard";
 import { splitEnvironmentSections } from "../connection/environmentSections";
 import { useConnectionController } from "../connection/useConnectionController";
 import { optOutOfConnectOnboarding } from "./connectOnboardingOptOut";
@@ -46,22 +50,39 @@ function ConfiguredConnectOnboardingRouteScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
-  const { connectedEnvironments, onReconnectEnvironment } = useRemoteConnections();
+  const { connectedEnvironments, onSetEnvironmentEnabled, onRemoveEnvironmentPress } =
+    useRemoteConnections();
   const { refreshRelayEnvironments } = useConnectionController();
   const { connectedCloudEnvironments } = splitEnvironmentSections({
     connectedEnvironments,
     cloudEnvironments: null,
   });
+  const mountedRef = useRef(true);
+  const pullRefreshPendingRef = useRef(false);
+  const optOutPendingRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Pull-to-refresh tracks its own spinner instead of discovery's refreshing
   // flag, so background refreshes (e.g. the sign-in one) don't yank the
   // content down.
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const handlePullRefresh = useCallback(() => {
+    if (pullRefreshPendingRef.current) return;
+    pullRefreshPendingRef.current = true;
+    setIsPullRefreshing(true);
     void (async () => {
-      setIsPullRefreshing(true);
-      await refreshRelayEnvironments();
-      setIsPullRefreshing(false);
+      try {
+        await refreshRelayEnvironments();
+      } finally {
+        pullRefreshPendingRef.current = false;
+        if (mountedRef.current) setIsPullRefreshing(false);
+      }
     })();
   }, [refreshRelayEnvironments]);
 
@@ -72,17 +93,23 @@ function ConfiguredConnectOnboardingRouteScreen() {
   // Persist before dismissing so a quick sign-out/sign-in cannot race ahead
   // of the preference write; the write is a local secure-store update.
   const handleDontShowAgain = useCallback(() => {
+    if (optOutPendingRef.current) return;
+    optOutPendingRef.current = true;
     void (async () => {
-      if (userId) {
-        const result = await settlePromise(() => optOutOfConnectOnboarding(userId));
-        reportAtomCommandResult(result, { label: "connect onboarding opt-out" });
+      try {
+        if (userId) {
+          const result = await settlePromise(() => optOutOfConnectOnboarding(userId));
+          reportAtomCommandResult(result, { label: "connect onboarding opt-out" });
+        }
+        if (mountedRef.current && navigation.isFocused()) navigation.goBack();
+      } finally {
+        optOutPendingRef.current = false;
       }
-      navigation.goBack();
     })();
   }, [navigation, userId]);
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       {Platform.OS === "android" ? (
         <AndroidSheetHeader
           title={`Set up ${SURGE_CONNECT_NAME}`}
@@ -90,7 +117,12 @@ function ConfiguredConnectOnboardingRouteScreen() {
         />
       ) : (
         <NativeHeaderToolbar placement="right">
-          <NativeHeaderToolbar.Button icon="xmark" onPress={handleClose} separateBackground />
+          <NativeHeaderToolbar.Button
+            accessibilityLabel="Close Connect setup"
+            icon="xmark"
+            onPress={handleClose}
+            separateBackground
+          />
         </NativeHeaderToolbar>
       )}
       <ScrollView
@@ -111,15 +143,19 @@ function ConfiguredConnectOnboardingRouteScreen() {
         {isSignedIn ? (
           <CloudEnvironmentRows
             connectedCloudEnvironments={connectedCloudEnvironments}
-            onReconnectEnvironment={onReconnectEnvironment}
+            onSetEnvironmentEnabled={onSetEnvironmentEnabled}
+            onRemoveEnvironment={onRemoveEnvironmentPress}
             showHeader={false}
           />
         ) : (
-          <View collapsable={false} className="rounded-[24px] bg-card p-5">
+          <GroupedCard
+            collapsable={false}
+            className={cn(Platform.OS === "android" && "rounded-[24px]", "p-5")}
+          >
             <Text className="text-sm leading-normal text-foreground-muted">
               Sign in to your {SURGE_CODE_ACCOUNT_NAME} account to set up {SURGE_CONNECT_NAME}.
             </Text>
-          </View>
+          </GroupedCard>
         )}
 
         {userId ? (
@@ -133,6 +169,6 @@ function ConfiguredConnectOnboardingRouteScreen() {
           </Pressable>
         ) : null}
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }

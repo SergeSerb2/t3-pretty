@@ -2,13 +2,14 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import { projectThreadAwareness } from "@t3tools/shared/agentAwareness";
+import { projectThreadAwarenessV2 } from "@t3tools/shared/agentAwareness";
 
 import type {
   AgentActivityPhase,
   AgentActivityProps,
   AgentActivityRowProps,
 } from "../../widgets/AgentActivity";
+import { compareTimestamps } from "../../lib/time";
 
 // Mirrors the relay aggregate windows (AgentActivityPublisher /
 // agentActivityPayloads) so a phone that's connected to the environment can
@@ -103,21 +104,20 @@ export function buildLocalLiveActivityProps(input: {
     if (!project) {
       continue;
     }
-    const state = projectThreadAwareness({
+    const state = projectThreadAwarenessV2({
       environmentId: thread.environmentId,
       project,
-      thread,
+      thread: thread.source,
     });
     if (!state) {
       continue;
     }
-    // Ready/idle shells with no materialized turn project as completed in
-    // the shared helper so the relay can tombstone them. Locally that would
-    // arm a Done lock-screen card for every recently touched idle thread.
+    // A terminal shell needs a materialized completed run before it can arm
+    // a local Done card; metadata-only shells must not create lock-screen rows.
     if (
       state.phase === "completed" &&
-      thread.latestTurn?.state !== "completed" &&
-      thread.latestTurn?.completedAt == null
+      thread.latestRun?.status !== "completed" &&
+      thread.latestRun?.completedAt == null
     ) {
       continue;
     }
@@ -130,6 +130,12 @@ export function buildLocalLiveActivityProps(input: {
     ) {
       continue;
     }
+    const plan = thread.planProgress;
+    const progress = plan && plan.totalSteps > 0
+      ? Math.max(0, Math.min(1, plan.completedSteps / plan.totalSteps))
+      : undefined;
+    const startedAt = state.startedAt ?? thread.latestRun?.startedAt ?? undefined;
+    const runningDetail = thread.liveHeadline ?? plan?.step ?? state.detail;
     rows.push({
       environmentId: state.environmentId,
       threadId: state.threadId,
@@ -138,18 +144,18 @@ export function buildLocalLiveActivityProps(input: {
       modelTitle: state.modelTitle,
       phase: state.phase,
       status:
-        state.phase === "running" && state.detail ? state.detail : statusForPhase(state.phase),
+        state.phase === "running" && runningDetail ? runningDetail : statusForPhase(state.phase),
       updatedAt: state.updatedAt,
       deepLink: state.deepLink,
-      ...(state.progress === undefined ? {} : { progress: state.progress }),
-      ...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
+      ...(progress === undefined ? {} : { progress }),
+      ...(startedAt === undefined ? {} : { startedAt }),
     });
   }
 
   const activeRows = rows.filter((row) => isActivePhase(row.phase));
   const terminalRows = rows
     .filter((row) => isRecentTerminal(row.phase, row.updatedAt, input.nowMs))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => compareTimestamps(b.updatedAt, a.updatedAt));
 
   if (activeRows.length === 0) {
     const newest = terminalRows[0];
@@ -168,7 +174,7 @@ export function buildLocalLiveActivityProps(input: {
 
   const displayed = [...activeRows, ...terminalRows].slice(0, MAX_ACTIVITY_ROWS);
   const updatedAt = displayed.reduce(
-    (latest, row) => (row.updatedAt.localeCompare(latest) > 0 ? row.updatedAt : latest),
+    (latest, row) => (compareTimestamps(row.updatedAt, latest) > 0 ? row.updatedAt : latest),
     displayed[0]?.updatedAt ?? "",
   );
   return {

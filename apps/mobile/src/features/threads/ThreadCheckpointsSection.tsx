@@ -1,12 +1,15 @@
+import { deriveThreadCheckpointSummaries } from "@t3tools/client-runtime/state/thread-checkpoints";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { memo, useMemo } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { cn } from "../../lib/cn";
 import { useThreadDetail } from "../../state/use-thread-detail";
 import { getReadyReviewCheckpoints } from "../review/reviewModel";
+import { GroupedCard } from "../scenery/GroupedCard";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { useThreadCheckpointRevert } from "./use-thread-checkpoint-revert";
 
 /**
@@ -23,10 +26,10 @@ export const ThreadCheckpointsSection = memo(function ThreadCheckpointsSection(p
     environmentId: props.threadRef.environmentId,
     threadId: props.threadRef.threadId,
   });
-  const checkpoints = Option.getOrNull(detailState.data)?.checkpoints;
+  const projection = Option.getOrNull(detailState.data);
   const readyCheckpoints = useMemo(
-    () => getReadyReviewCheckpoints(checkpoints ?? []),
-    [checkpoints],
+    () => getReadyReviewCheckpoints(projection ? deriveThreadCheckpointSummaries(projection) : []),
+    [projection],
   );
   const { confirmRevertToCheckpoint, revertingTurnCount } = useThreadCheckpointRevert(
     props.threadRef,
@@ -41,7 +44,7 @@ export const ThreadCheckpointsSection = memo(function ThreadCheckpointsSection(p
       <Text className="px-5 pb-2 pt-7 text-sm font-t3-medium text-foreground-muted">
         Checkpoints
       </Text>
-      <View className="mx-4 overflow-hidden rounded-2xl bg-card">
+      <CheckpointsCard>
         {readyCheckpoints.map((checkpoint, index) => {
           const revertingThis = revertingTurnCount === checkpoint.checkpointTurnCount;
           const fileCount = checkpoint.files.length;
@@ -68,7 +71,7 @@ export const ThreadCheckpointsSection = memo(function ThreadCheckpointsSection(p
               <Text
                 className={cn(
                   "text-sm font-t3-medium",
-                  revertingThis ? "text-foreground-muted" : "text-red-600 dark:text-red-400",
+                  revertingThis ? "text-foreground-muted" : "text-adaptive-red-600-400",
                 )}
               >
                 {revertingThis ? "Reverting…" : "Revert"}
@@ -76,7 +79,16 @@ export const ThreadCheckpointsSection = memo(function ThreadCheckpointsSection(p
             </Pressable>
           );
         })}
-      </View>
+      </CheckpointsCard>
     </>
   );
 });
+
+/** Over scenery the list is a grouped glass card; otherwise the opaque card. */
+function CheckpointsCard(props: { readonly children: ReactNode }) {
+  return useGlassChromeActive() ? (
+    <GroupedCard className="mx-4">{props.children}</GroupedCard>
+  ) : (
+    <View className="mx-4 overflow-hidden rounded-2xl bg-card">{props.children}</View>
+  );
+}

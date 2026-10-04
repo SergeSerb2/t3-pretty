@@ -1,4 +1,4 @@
-import type { OrchestrationSessionStatus } from "@t3tools/contracts";
+
 
 /**
  * Stop the provider session only when both worktree paths are known and
@@ -7,7 +7,7 @@ import type { OrchestrationSessionStatus } from "@t3tools/contracts";
  * that stayed put.
  */
 export function shouldStopSessionOnWorktreeMove(input: {
-  readonly sessionStatus: OrchestrationSessionStatus | undefined;
+  readonly sessionStatus: string | undefined;
   readonly currentWorktreePath: string | null;
   readonly nextWorktreePath: string;
 }): boolean {

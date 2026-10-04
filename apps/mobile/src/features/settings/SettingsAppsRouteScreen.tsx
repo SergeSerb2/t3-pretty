@@ -25,7 +25,6 @@ import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { uuidv4 } from "../../lib/uuid";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
@@ -48,6 +47,9 @@ import {
   sortedAppConnections,
   type AppStatus,
 } from "./apps/appsSettings.logic";
+import { SheetSurface } from "../../components/SheetSurface";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
+import { GLASS_INPUT_CLASS_NAME } from "../scenery/glassStyles";
 
 const EMPTY_APPS: AppsSettings = { connections: {}, oauthClients: {} };
 
@@ -60,6 +62,7 @@ interface AppTarget {
 }
 
 export function SettingsAppsRouteScreen() {
+  const glass = useGlassChromeActive();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { savedConnectionsById } = useSavedRemoteConnections();
@@ -355,7 +358,7 @@ export function SettingsAppsRouteScreen() {
   );
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentInset={{ bottom: Math.max(insets.bottom, 18) }}
@@ -378,7 +381,9 @@ export function SettingsAppsRouteScreen() {
                   "rounded-full px-3 py-1.5",
                   environment.environmentId === environmentId
                     ? "bg-primary"
-                    : "border border-border bg-card",
+                    : glass
+                      ? "border-[0.5px] border-chrome-glass-border bg-chrome-glass"
+                      : "border border-border bg-card",
                 )}
               >
                 <Text
@@ -433,6 +438,7 @@ export function SettingsAppsRouteScreen() {
             <SettingsSection title="Add an app">
               <View className="p-4">
                 <TextInput
+                  className={glass ? GLASS_INPUT_CLASS_NAME : undefined}
                   autoCapitalize="none"
                   autoCorrect={false}
                   clearButtonMode="while-editing"
@@ -485,7 +491,7 @@ export function SettingsAppsRouteScreen() {
           </>
         )}
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -607,7 +613,6 @@ function CatalogActionRow(props: {
   readonly value?: string;
   readonly onPress: () => void;
 }) {
-  const iconColor = useThemeColor("--color-icon");
   return (
     <Pressable
       accessibilityRole="button"
@@ -620,7 +625,7 @@ function CatalogActionRow(props: {
       <SymbolView
         name={props.icon}
         size={22}
-        tintColor={iconColor}
+        tintColorClassName="accent-icon"
         type="monochrome"
         weight="regular"
       />

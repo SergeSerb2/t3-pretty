@@ -188,7 +188,9 @@ function makeAllocations(
     tunnelName: "tunnel-name",
     dnsRecordId: "dns-record-id",
     readyAt: "2026-05-25T00:00:00.000Z",
+    origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
     updatedAt: "2026-05-25T00:00:00.000Z",
+    generation: 1,
   },
 ): ManagedEndpointAllocations.ManagedEndpointAllocations["Service"] {
   return {
@@ -197,7 +199,10 @@ function makeAllocations(
     recordTunnel: () => Effect.die("unused"),
     recordDns: () => Effect.die("unused"),
     markReady: () => Effect.die("unused"),
+    enableRecovery: () => Effect.die("unused"),
+    listByTunnelNames: () => Effect.die("unused"),
     claimRelease: () => Effect.die("unused"),
+    withClaimedTunnel: () => Effect.die("unused"),
     claimDeprovision: () => Effect.die("unused"),
     remove: () => Effect.die("unused"),
     removeClaimed: () => Effect.die("unused"),
@@ -209,9 +214,7 @@ function makeLinks(
 ): EnvironmentLinks.EnvironmentLinks["Service"] {
   return {
     upsert: () => Effect.void,
-    listUsersForEnvironment: () => Effect.succeed([]),
     listDeliveryUsersForEnvironment: () => Effect.succeed([]),
-    listPublicKeysForEnvironment: () => Effect.succeed([environmentKeyPair.publicKey]),
     listForUser: () => Effect.succeed([]),
     getForUser: () =>
       Effect.succeed({
@@ -471,7 +474,9 @@ describe("EnvironmentConnector", () => {
             tunnelName: "tunnel-name",
             dnsRecordId: "dns-record-id",
             readyAt: null,
+            origin: null,
             updatedAt: "2026-05-25T00:00:00.000Z",
+            generation: 1,
           }),
         }),
       ),
@@ -688,6 +693,57 @@ describe("EnvironmentConnector", () => {
           wsBaseUrl: "wss://env.example.test/ws",
         },
       });
+    }).pipe(Effect.provide(connectorTestLayer(execute)));
+  });
+
+  it.effect("cancels and rejects chunked mint responses above the byte limit", () => {
+    let cancelled = false;
+    const execute = (request: HttpClientRequest.HttpClientRequest) =>
+      Effect.sync(() => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new Uint8Array(EnvironmentConnector.ENVIRONMENT_RESPONSE_MAX_BYTES + 1),
+            );
+          },
+          cancel() {
+            cancelled = true;
+          },
+        });
+        return HttpClientResponse.fromWeb(
+          request,
+          new Response(stream, {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      });
+
+    return Effect.gen(function* () {
+      const connector = yield* EnvironmentConnector.EnvironmentConnector;
+      const result = yield* Effect.result(
+        connector.connect({
+          userId: "user_123",
+          environmentId: "env-connector-test",
+          clientProofKeyThumbprint: "client-proof-key-thumbprint",
+        }),
+      );
+
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) {
+        expect(result.failure).toMatchObject({
+          _tag: "EnvironmentMintRequestFailed",
+          operation: "connect",
+          cause: {
+            _tag: "HttpClientError",
+            reason: {
+              _tag: "DecodeError",
+              description: `response exceeded ${EnvironmentConnector.ENVIRONMENT_RESPONSE_MAX_BYTES} bytes`,
+            },
+          },
+        });
+      }
+      expect(cancelled).toBe(true);
     }).pipe(Effect.provide(connectorTestLayer(execute)));
   });
 

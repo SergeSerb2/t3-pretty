@@ -1,28 +1,26 @@
 import {
-  CheckpointRef,
   CommandId,
   EventId,
   MessageId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  TurnId,
+  RunId,
+  TurnItemId,
+  type OrchestrationV2AppThread,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-import { OrchestrationEventStoreLive } from "../persistence/Layers/OrchestrationEventStore.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
-import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
 import { ServerConfig } from "../config.ts";
-import {
-  ORCHESTRATION_PROJECTOR_NAMES,
-  OrchestrationProjectionPipelineLive,
-} from "../orchestration/Layers/ProjectionPipeline.ts";
-import { OrchestrationProjectionPipeline } from "../orchestration/Services/ProjectionPipeline.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import { SearchIndex, SearchIndexLive } from "./SearchIndex.ts";
 import {
   PER_TERM_POSTINGS_LIMIT,
   PREFIX_EXPANSION_LIMIT,
@@ -33,8 +31,9 @@ import { rankedSearchTerms } from "./tokenizer.ts";
 
 const makeTestLayer = (prefix: string) =>
   ThreadSearchLive.pipe(
-    Layer.provideMerge(OrchestrationProjectionPipelineLive),
-    Layer.provideMerge(OrchestrationEventStoreLive),
+    Layer.provideMerge(SearchIndexLive),
+    Layer.provideMerge(ProjectionStore.layer),
+    Layer.provideMerge(ProjectStore.layer),
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix })),
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(NodeServices.layer),
@@ -43,209 +42,111 @@ const makeTestLayer = (prefix: string) =>
 const NOW = "2026-01-01T00:00:00.000Z";
 const LATER = "2026-01-01T00:00:01.000Z";
 
-const appendProject = (projectId: string) =>
-  Effect.gen(function* () {
-    const eventStore = yield* OrchestrationEventStore;
-    yield* eventStore.append({
-      type: "project.created",
-      eventId: EventId.make(`evt-project-${projectId}`),
-      aggregateKind: "project",
-      aggregateId: ProjectId.make(projectId),
-      occurredAt: NOW,
-      commandId: CommandId.make(`cmd-project-${projectId}`),
-      causationEventId: null,
-      correlationId: CommandId.make(`cmd-project-${projectId}`),
-      metadata: {},
-      payload: {
-        projectId: ProjectId.make(projectId),
-        title: `Project ${projectId}`,
-        workspaceRoot: `/tmp/${projectId}`,
-        defaultModelSelection: null,
-        scripts: [],
-        createdAt: NOW,
-        updatedAt: NOW,
-      },
-    });
+// Typed V2 projection events exercise the production tables used by the index.
+// Index refresh is explicit: this suite covers indexing/query semantics independently
+// of the runtime subscriber and never restores the retired V1 projector.
+const appendProject = (projectId: string) => Effect.gen(function* () {
+  const store = yield* ProjectStore.ProjectStoreV2;
+  yield* store.apply({
+    sequence: 0, type: "project.created", eventId: EventId.make(`evt-project-${projectId}`),
+    aggregateKind: "project", aggregateId: ProjectId.make(projectId), occurredAt: NOW,
+    commandId: CommandId.make(`cmd-project-${projectId}`), causationEventId: null,
+    correlationId: null, metadata: {},
+    payload: { projectId: ProjectId.make(projectId), title: `Project ${projectId}`,
+      workspaceRoot: `/tmp/${projectId}`, defaultModelSelection: null, scripts: [],
+      createdAt: NOW, updatedAt: NOW },
   });
+});
 
 const appendThread = (threadId: string, projectId: string, at: string = NOW) =>
   Effect.gen(function* () {
-    const eventStore = yield* OrchestrationEventStore;
-    yield* eventStore.append({
-      type: "thread.created",
-      eventId: EventId.make(`evt-thread-${threadId}`),
-      aggregateKind: "thread",
-      aggregateId: ThreadId.make(threadId),
-      occurredAt: at,
-      commandId: CommandId.make(`cmd-thread-${threadId}`),
-      causationEventId: null,
-      correlationId: CommandId.make(`cmd-thread-${threadId}`),
-      metadata: {},
-      payload: {
-        threadId: ThreadId.make(threadId),
-        projectId: ProjectId.make(projectId),
-        title: `Thread ${threadId}`,
-        modelSelection: {
-          instanceId: ProviderInstanceId.make("codex"),
-          model: "gpt-5-codex",
-        },
-        runtimeMode: "full-access",
-        branch: null,
-        worktreePath: null,
-        createdAt: at,
-        updatedAt: at,
-      },
-    });
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const id = ThreadId.make(threadId);
+    const now = DateTime.makeUnsafe(at);
+    const thread: OrchestrationV2AppThread = {
+      id, projectId: ProjectId.make(projectId), title: `Thread ${threadId}`,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+      runtimeMode: "full-access", interactionMode: "default", branch: null, worktreePath: null,
+      activeProviderThreadId: null, lineage: { rootThreadId: id, parentThreadId: null, relationshipToParent: null },
+      forkedFrom: null, createdBy: "user", creationSource: "web", createdAt: now, updatedAt: now,
+      archivedAt: null, settledOverride: null, settledAt: null, lastVisitedAt: null, deletedAt: null,
+    };
+    yield* store.apply({ type: "thread.created", id: EventId.make(`evt-thread-${threadId}`),
+      threadId: id, occurredAt: now, payload: thread });
   });
 
 const appendMessage = (input: {
-  readonly eventId: string;
-  readonly threadId: string;
-  readonly messageId: string;
-  readonly role: "user" | "assistant";
-  readonly text: string;
-  readonly turnId?: string;
-  readonly streaming?: boolean;
-  readonly createdAt?: string;
-}) =>
-  Effect.gen(function* () {
-    const eventStore = yield* OrchestrationEventStore;
-    yield* eventStore.append({
-      type: "thread.message-sent",
-      eventId: EventId.make(input.eventId),
-      aggregateKind: "thread",
-      aggregateId: ThreadId.make(input.threadId),
-      occurredAt: input.createdAt ?? NOW,
-      commandId: CommandId.make(`cmd-${input.eventId}`),
-      causationEventId: null,
-      correlationId: CommandId.make(`cmd-${input.eventId}`),
-      metadata: {},
-      payload: {
-        threadId: ThreadId.make(input.threadId),
-        messageId: MessageId.make(input.messageId),
-        role: input.role,
-        text: input.text,
-        turnId: input.turnId !== undefined ? TurnId.make(input.turnId) : null,
-        streaming: input.streaming ?? false,
-        createdAt: input.createdAt ?? NOW,
-        updatedAt: input.createdAt ?? NOW,
-      },
-    });
-  });
+  readonly eventId: string; readonly threadId: string; readonly messageId: string;
+  readonly role: "user" | "assistant"; readonly text: string; readonly turnId?: string;
+  readonly streaming?: boolean; readonly createdAt?: string;
+}) => Effect.gen(function* () {
+  const store = yield* ProjectionStore.ProjectionStoreV2;
+  const threadId = ThreadId.make(input.threadId);
+  const now = DateTime.makeUnsafe(input.createdAt ?? NOW);
+  yield* store.apply({ type: "message.updated", id: EventId.make(input.eventId), threadId,
+    occurredAt: now, payload: {
+      id: MessageId.make(input.messageId), threadId, runId: input.turnId ? RunId.make(input.turnId) : null,
+      nodeId: null, role: input.role, text: input.text, attachments: [], streaming: input.streaming ?? false,
+      createdBy: "user", creationSource: "web", createdAt: now, updatedAt: now,
+    } });
+});
 
+// A V2 assistant_message turn item identifies canonical assistant output. Updating
+// the same item's messageId replaces the canonical output without deleting history.
 const appendTurnDiffCompleted = (input: {
-  readonly eventId: string;
-  readonly threadId: string;
-  readonly turnId: string;
-  readonly checkpointTurnCount: number;
-  readonly assistantMessageId?: string;
-}) =>
-  Effect.gen(function* () {
-    const eventStore = yield* OrchestrationEventStore;
-    yield* eventStore.append({
-      type: "thread.turn-diff-completed",
-      eventId: EventId.make(input.eventId),
-      aggregateKind: "thread",
-      aggregateId: ThreadId.make(input.threadId),
-      occurredAt: LATER,
-      commandId: CommandId.make(`cmd-${input.eventId}`),
-      causationEventId: null,
-      correlationId: CommandId.make(`cmd-${input.eventId}`),
-      metadata: {},
-      payload: {
-        threadId: ThreadId.make(input.threadId),
-        turnId: TurnId.make(input.turnId),
-        checkpointTurnCount: input.checkpointTurnCount,
-        checkpointRef: CheckpointRef.make(`checkpoint-${input.checkpointTurnCount}`),
-        status: "ready",
-        files: [],
-        assistantMessageId:
-          input.assistantMessageId !== undefined ? MessageId.make(input.assistantMessageId) : null,
-        completedAt: LATER,
-      },
-    });
-  });
+  readonly eventId: string; readonly threadId: string; readonly turnId: string;
+  readonly checkpointTurnCount: number; readonly assistantMessageId?: string;
+}) => Effect.gen(function* () {
+  const store = yield* ProjectionStore.ProjectionStoreV2;
+  const threadId = ThreadId.make(input.threadId);
+  const runId = RunId.make(input.turnId);
+  const now = DateTime.makeUnsafe(LATER);
+  yield* store.apply({ type: "run.created", id: EventId.make(`${input.eventId}-run`), threadId,
+    occurredAt: now, payload: {
+      id: runId, threadId, ordinal: input.checkpointTurnCount,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+      providerThreadId: null, userMessageId: MessageId.make(`user-${input.turnId}`),
+      rootNodeId: null, activeAttemptId: null, status: "completed", requestedAt: now,
+      startedAt: now, completedAt: now, checkpointId: null, contextHandoffId: null,
+    } });
+  if (input.assistantMessageId) {
+    yield* store.apply({ type: "turn-item.updated", id: EventId.make(input.eventId), threadId,
+      occurredAt: now, payload: {
+        id: TurnItemId.make(`canonical-${input.turnId}`), threadId, runId, nodeId: null,
+        providerThreadId: null, providerTurnId: null, nativeItemRef: null, parentItemId: null,
+        ordinal: input.checkpointTurnCount, type: "assistant_message", status: "completed",
+        title: null, startedAt: now, completedAt: now, updatedAt: now,
+        messageId: MessageId.make(input.assistantMessageId), text: "Canonical assistant", streaming: false,
+      } });
+  }
+});
 
-const appendThreadArchived = (threadId: string, at: string = LATER) =>
+const updateThreadLifecycle = (threadId: string, kind: "archive" | "unarchive" | "delete", at: string) =>
   Effect.gen(function* () {
-    const eventStore = yield* OrchestrationEventStore;
-    yield* eventStore.append({
-      type: "thread.archived",
-      eventId: EventId.make(`evt-archive-${threadId}`),
-      aggregateKind: "thread",
-      aggregateId: ThreadId.make(threadId),
-      occurredAt: at,
-      commandId: CommandId.make(`cmd-archive-${threadId}`),
-      causationEventId: null,
-      correlationId: CommandId.make(`cmd-archive-${threadId}`),
-      metadata: {},
-      payload: {
-        threadId: ThreadId.make(threadId),
-        archivedAt: at,
-        updatedAt: at,
-      },
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const id = ThreadId.make(threadId);
+    const thread = yield* store.getThread(id);
+    const now = DateTime.makeUnsafe(at);
+    yield* store.apply({ type: kind === "archive" ? "thread.archived" : kind === "unarchive" ? "thread.unarchived" : "thread.deleted",
+      id: EventId.make(`evt-${kind}-${threadId}`), threadId: id, occurredAt: now,
+      payload: { ...thread, updatedAt: now,
+        archivedAt: kind === "archive" ? now : kind === "unarchive" ? null : thread.archivedAt,
+        deletedAt: kind === "delete" ? now : thread.deletedAt },
     });
   });
-
-const appendThreadUnarchived = (threadId: string, at: string = LATER) =>
-  Effect.gen(function* () {
-    const eventStore = yield* OrchestrationEventStore;
-    yield* eventStore.append({
-      type: "thread.unarchived",
-      eventId: EventId.make(`evt-unarchive-${threadId}`),
-      aggregateKind: "thread",
-      aggregateId: ThreadId.make(threadId),
-      occurredAt: at,
-      commandId: CommandId.make(`cmd-unarchive-${threadId}`),
-      causationEventId: null,
-      correlationId: CommandId.make(`cmd-unarchive-${threadId}`),
-      metadata: {},
-      payload: {
-        threadId: ThreadId.make(threadId),
-        updatedAt: at,
-      },
-    });
+const appendThreadArchived = (id: string, at = LATER) => updateThreadLifecycle(id, "archive", at);
+const appendThreadUnarchived = (id: string, at = LATER) => updateThreadLifecycle(id, "unarchive", at);
+const appendThreadDeleted = (id: string, at = LATER) => updateThreadLifecycle(id, "delete", at);
+const appendProjectDeleted = (projectId: string, at: string = LATER) => Effect.gen(function* () {
+  const store = yield* ProjectStore.ProjectStoreV2;
+  yield* store.apply({ sequence: 0, type: "project.deleted", eventId: EventId.make(`delete-${projectId}`),
+    aggregateKind: "project", aggregateId: ProjectId.make(projectId), occurredAt: at,
+    commandId: null, causationEventId: null, correlationId: null, metadata: {},
+    payload: { projectId: ProjectId.make(projectId), deletedAt: at },
   });
-
-const appendThreadDeleted = (threadId: string, at: string = LATER) =>
-  Effect.gen(function* () {
-    const eventStore = yield* OrchestrationEventStore;
-    yield* eventStore.append({
-      type: "thread.deleted",
-      eventId: EventId.make(`evt-delete-${threadId}`),
-      aggregateKind: "thread",
-      aggregateId: ThreadId.make(threadId),
-      occurredAt: at,
-      commandId: CommandId.make(`cmd-delete-${threadId}`),
-      causationEventId: null,
-      correlationId: CommandId.make(`cmd-delete-${threadId}`),
-      metadata: {},
-      payload: {
-        threadId: ThreadId.make(threadId),
-        deletedAt: at,
-      },
-    });
-  });
-
-const appendProjectDeleted = (projectId: string, at: string = LATER) =>
-  Effect.gen(function* () {
-    const eventStore = yield* OrchestrationEventStore;
-    yield* eventStore.append({
-      type: "project.deleted",
-      eventId: EventId.make(`evt-delete-project-${projectId}`),
-      aggregateKind: "project",
-      aggregateId: ProjectId.make(projectId),
-      occurredAt: at,
-      commandId: CommandId.make(`cmd-delete-project-${projectId}`),
-      causationEventId: null,
-      correlationId: CommandId.make(`cmd-delete-project-${projectId}`),
-      metadata: {},
-      payload: {
-        projectId: ProjectId.make(projectId),
-        deletedAt: at,
-      },
-    });
-  });
+});
 
 const search = (query: string, limit?: number) =>
   Effect.gen(function* () {
@@ -263,7 +164,7 @@ const search = (query: string, limit?: number) =>
 it.layer(makeTestLayer("t3-thread-search-ranked-"))("ThreadSearch", (it) => {
   it.effect("ranks by BM25 and prefixes the final query token", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-1");
       yield* appendThread("thread-1", "project-1");
@@ -291,27 +192,9 @@ it.layer(makeTestLayer("t3-thread-search-ranked-"))("ThreadSearch", (it) => {
         text: "search search search search",
       });
       // Archived threads never match, however strong their message is.
-      yield* Effect.gen(function* () {
-        const eventStore = yield* OrchestrationEventStore;
-        yield* eventStore.append({
-          type: "thread.archived",
-          eventId: EventId.make("evt-archive-thread-3"),
-          aggregateKind: "thread",
-          aggregateId: ThreadId.make("thread-3"),
-          occurredAt: LATER,
-          commandId: CommandId.make("cmd-archive-thread-3"),
-          causationEventId: null,
-          correlationId: CommandId.make("cmd-archive-thread-3"),
-          metadata: {},
-          payload: {
-            threadId: ThreadId.make("thread-3"),
-            archivedAt: LATER,
-            updatedAt: LATER,
-          },
-        });
-      });
+      yield* appendThreadArchived("thread-3");
 
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       const result = yield* search("search");
       assert.equal(result.matches.length, 2);
@@ -332,7 +215,7 @@ it.layer(makeTestLayer("t3-thread-search-ranked-"))("ThreadSearch", (it) => {
 it.layer(makeTestLayer("t3-thread-search-canonical-"))("ThreadSearch", (it) => {
   it.effect("indexes only canonical assistant messages", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-1");
       yield* appendThread("thread-1", "project-1");
@@ -352,7 +235,7 @@ it.layer(makeTestLayer("t3-thread-search-canonical-"))("ThreadSearch", (it) => {
         text: "keywordzebra from assistant commentary",
       });
 
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       const before = yield* search("keywordzebra");
       assert.equal(before.matches.length, 1);
@@ -369,7 +252,7 @@ it.layer(makeTestLayer("t3-thread-search-canonical-"))("ThreadSearch", (it) => {
         turnId: "turn-1",
         createdAt: LATER,
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       const after = yield* search("keywordzebra");
       assert.equal(after.matches.length, 1);
@@ -381,7 +264,7 @@ it.layer(makeTestLayer("t3-thread-search-canonical-"))("ThreadSearch", (it) => {
 it.layer(makeTestLayer("t3-thread-search-revert-"))("ThreadSearch", (it) => {
   it.effect("drops reverted messages from the index", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-1");
       yield* appendThread("thread-1", "project-1");
@@ -415,28 +298,14 @@ it.layer(makeTestLayer("t3-thread-search-revert-"))("ThreadSearch", (it) => {
         checkpointTurnCount: 2,
       });
 
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("betazebra")).matches.length, 1);
 
-      yield* Effect.gen(function* () {
-        const eventStore = yield* OrchestrationEventStore;
-        yield* eventStore.append({
-          type: "thread.reverted",
-          eventId: EventId.make("evt-revert-1"),
-          aggregateKind: "thread",
-          aggregateId: ThreadId.make("thread-1"),
-          occurredAt: "2026-01-01T00:00:02.000Z",
-          commandId: CommandId.make("cmd-revert-1"),
-          causationEventId: null,
-          correlationId: CommandId.make("cmd-revert-1"),
-          metadata: {},
-          payload: {
-            threadId: ThreadId.make("thread-1"),
-            turnCount: 1,
-          },
-        });
-      });
-      yield* projectionPipeline.bootstrap;
+      // Rollback retains V2 history but excludes the rolled-back run from search.
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE orchestration_v2_projection_runs SET status = 'rolled_back',
+        payload_json = json_set(payload_json, '$.status', 'rolled_back') WHERE run_id = ${"turn-2"}`;
+      yield* searchIndex.backfillFromProjection();
 
       assert.equal((yield* search("betazebra")).matches.length, 0);
       assert.equal((yield* search("alphazebra")).matches.length, 1);
@@ -447,7 +316,7 @@ it.layer(makeTestLayer("t3-thread-search-revert-"))("ThreadSearch", (it) => {
 it.layer(makeTestLayer("t3-thread-search-edit-"))("ThreadSearch", (it) => {
   it.effect("replaces terms when a message is edited", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-1");
       yield* appendThread("thread-1", "project-1");
@@ -459,7 +328,7 @@ it.layer(makeTestLayer("t3-thread-search-edit-"))("ThreadSearch", (it) => {
         text: "originalterm here",
       });
 
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("originalterm")).matches.length, 1);
 
       yield* appendMessage({
@@ -470,7 +339,7 @@ it.layer(makeTestLayer("t3-thread-search-edit-"))("ThreadSearch", (it) => {
         text: "replacementterm here",
         createdAt: LATER,
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       assert.equal((yield* search("originalterm")).matches.length, 0);
       const result = yield* search("replacementterm");
@@ -483,7 +352,7 @@ it.layer(makeTestLayer("t3-thread-search-edit-"))("ThreadSearch", (it) => {
 it.layer(makeTestLayer("t3-thread-search-streaming-"))("ThreadSearch", (it) => {
   it.effect("indexes an assistant message only once its final event lands", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-1");
       yield* appendThread("thread-1", "project-1");
@@ -497,7 +366,7 @@ it.layer(makeTestLayer("t3-thread-search-streaming-"))("ThreadSearch", (it) => {
         streaming: true,
       });
 
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("diffzebra")).matches.length, 0);
 
       yield* appendMessage({
@@ -516,7 +385,7 @@ it.layer(makeTestLayer("t3-thread-search-streaming-"))("ThreadSearch", (it) => {
         checkpointTurnCount: 1,
         assistantMessageId: "message-1",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       const result = yield* search("diffzebra");
       assert.equal(result.matches.length, 1);
@@ -526,7 +395,7 @@ it.layer(makeTestLayer("t3-thread-search-streaming-"))("ThreadSearch", (it) => {
 
   it.effect("drops stale postings when a previously indexed message is streaming again", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-stale");
       yield* appendThread("thread-stale", "project-stale");
@@ -545,7 +414,7 @@ it.layer(makeTestLayer("t3-thread-search-streaming-"))("ThreadSearch", (it) => {
         checkpointTurnCount: 1,
         assistantMessageId: "message-stale",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("streamzebra")).matches.length, 1);
 
       yield* appendMessage({
@@ -558,7 +427,7 @@ it.layer(makeTestLayer("t3-thread-search-streaming-"))("ThreadSearch", (it) => {
         streaming: true,
         createdAt: LATER,
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("streamzebra")).matches.length, 0);
       assert.equal((yield* search("otherterm")).matches.length, 0);
 
@@ -569,7 +438,7 @@ it.layer(makeTestLayer("t3-thread-search-streaming-"))("ThreadSearch", (it) => {
         checkpointTurnCount: 1,
         assistantMessageId: "message-stale",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       assert.equal((yield* search("streamzebra")).matches.length, 0);
       assert.equal((yield* search("otherterm")).matches.length, 0);
@@ -580,7 +449,7 @@ it.layer(makeTestLayer("t3-thread-search-streaming-"))("ThreadSearch", (it) => {
 it.layer(makeTestLayer("t3-thread-search-stopwords-"))("ThreadSearch", (it) => {
   it.effect("does not require stopwords as AND filters", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-1");
       yield* appendThread("thread-1", "project-1");
@@ -592,7 +461,7 @@ it.layer(makeTestLayer("t3-thread-search-stopwords-"))("ThreadSearch", (it) => {
         text: "please fix the TypeError in login",
       });
 
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       const result = yield* search("fix the TypeError");
       assert.equal(result.matches.length, 1);
@@ -604,7 +473,7 @@ it.layer(makeTestLayer("t3-thread-search-stopwords-"))("ThreadSearch", (it) => {
 it.layer(makeTestLayer("t3-thread-search-truncated-"))("ThreadSearch", (it) => {
   it.effect("does not AND truncated posting lists", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
       const sql = yield* SqlClient.SqlClient;
 
       yield* appendProject("project-1");
@@ -617,7 +486,7 @@ it.layer(makeTestLayer("t3-thread-search-truncated-"))("ThreadSearch", (it) => {
         role: "user",
         text: "commonterm rarexyz",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       const dummyCount = PER_TERM_POSTINGS_LIMIT + 1;
       const dummyDocs = Array.from({ length: dummyCount }, (_, index) => ({
@@ -648,9 +517,9 @@ it.layer(makeTestLayer("t3-thread-search-truncated-"))("ThreadSearch", (it) => {
 });
 
 it.layer(makeTestLayer("t3-thread-search-backfill-"))("ThreadSearch", (it) => {
-  it.effect("backfills the search index when the projector cursor is already at the log head", () =>
+  it.effect("backfills persisted V2 projections without replaying event history", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
       const sql = yield* SqlClient.SqlClient;
 
       yield* appendProject("project-1");
@@ -662,31 +531,29 @@ it.layer(makeTestLayer("t3-thread-search-backfill-"))("ThreadSearch", (it) => {
         role: "user",
         text: "backfillzebra from history",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* sql`INSERT INTO projection_state (projector, last_applied_sequence, updated_at)
+        VALUES ('projection.search-index', 999, ${NOW})`;
+      yield* searchIndex.bootstrapIfNeeded;
       assert.equal((yield* search("backfillzebra")).matches.length, 1);
 
       yield* sql`DELETE FROM search_index_postings`;
       yield* sql`DELETE FROM search_index_terms`;
       yield* sql`DELETE FROM search_index_docs`;
+      yield* sql`DELETE FROM projection_state WHERE projector = 'projection.search-index-v2'`;
       assert.equal((yield* search("backfillzebra")).matches.length, 0);
 
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.bootstrapIfNeeded;
 
       const result = yield* search("backfillzebra");
       assert.equal(result.matches.length, 1);
       assert.strictEqual(result.matches[0]?.threadId, "thread-1");
 
-      const searchIndexState = yield* sql<{ readonly lastAppliedSequence: number }>`
-        SELECT last_applied_sequence AS "lastAppliedSequence"
-        FROM projection_state
-        WHERE projector = ${ORCHESTRATION_PROJECTOR_NAMES.searchIndex}
-      `;
-      const otherState = yield* sql<{ readonly lastAppliedSequence: number }>`
-        SELECT last_applied_sequence AS "lastAppliedSequence"
-        FROM projection_state
-        WHERE projector = ${ORCHESTRATION_PROJECTOR_NAMES.threadMessages}
-      `;
-      assert.equal(searchIndexState[0]?.lastAppliedSequence, otherState[0]?.lastAppliedSequence);
+      yield* searchIndex.bootstrapIfNeeded;
+      const indexed = yield* sql<{ readonly n: number }>`SELECT COUNT(*) AS n FROM search_index_docs`;
+      assert.equal(indexed[0]?.n, 1);
+      const marker = yield* sql<{ readonly n: number }>`SELECT last_applied_sequence AS n
+        FROM projection_state WHERE projector = 'projection.search-index-v2'`;
+      assert.equal(marker[0]?.n, 0);
     }),
   );
 });
@@ -694,7 +561,7 @@ it.layer(makeTestLayer("t3-thread-search-backfill-"))("ThreadSearch", (it) => {
 it.layer(makeTestLayer("t3-thread-search-supersede-"))("ThreadSearch", (it) => {
   it.effect("deindexes a superseded canonical assistant on turn completion", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-1");
       yield* appendThread("thread-1", "project-1");
@@ -713,7 +580,7 @@ it.layer(makeTestLayer("t3-thread-search-supersede-"))("ThreadSearch", (it) => {
         checkpointTurnCount: 1,
         assistantMessageId: "message-old",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("zebraold")).matches.length, 1);
 
       yield* appendMessage({
@@ -732,7 +599,9 @@ it.layer(makeTestLayer("t3-thread-search-supersede-"))("ThreadSearch", (it) => {
         checkpointTurnCount: 1,
         assistantMessageId: "message-new",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.reindexCanonicalAssistants({
+        threadId: ThreadId.make("thread-1"), assistantMessageId: MessageId.make("message-new"),
+      });
 
       assert.equal((yield* search("zebraold")).matches.length, 0);
       const result = yield* search("zebranew");
@@ -745,7 +614,7 @@ it.layer(makeTestLayer("t3-thread-search-supersede-"))("ThreadSearch", (it) => {
 it.layer(makeTestLayer("t3-thread-search-limit-recency-"))("ThreadSearch", (it) => {
   it.effect("keeps the most recently updated threads when BM25 scores tie at the limit", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-1");
       for (let index = 0; index < 5; index += 1) {
@@ -760,7 +629,7 @@ it.layer(makeTestLayer("t3-thread-search-limit-recency-"))("ThreadSearch", (it) 
           createdAt: at,
         });
       }
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       const result = yield* search("sharedterm", 2);
       assert.deepEqual(
@@ -774,7 +643,7 @@ it.layer(makeTestLayer("t3-thread-search-limit-recency-"))("ThreadSearch", (it) 
 it.layer(makeTestLayer("t3-thread-search-prefix-trunc-"))("ThreadSearch", (it) => {
   it.effect("typeahead still finds common completions when prefix expansions are truncated", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
       const sql = yield* SqlClient.SqlClient;
 
       yield* appendProject("project-1");
@@ -786,7 +655,7 @@ it.layer(makeTestLayer("t3-thread-search-prefix-trunc-"))("ThreadSearch", (it) =
         role: "user",
         text: "search bananas",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       // Surround `search` in df so both ASC and DESC LIMIT 25 miss it.
       const dummyTerms = [
@@ -812,7 +681,7 @@ it.layer(makeTestLayer("t3-thread-search-prefix-trunc-"))("ThreadSearch", (it) =
 it.layer(makeTestLayer("t3-thread-search-lifecycle-"))("ThreadSearch", (it) => {
   it.effect("drops index rows on archive and delete, and restores them on unarchive", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
       const sql = yield* SqlClient.SqlClient;
 
       yield* appendProject("project-1");
@@ -832,12 +701,12 @@ it.layer(makeTestLayer("t3-thread-search-lifecycle-"))("ThreadSearch", (it) => {
         role: "user",
         text: "deletezebra from thread two",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("archivezebra")).matches.length, 1);
       assert.equal((yield* search("deletezebra")).matches.length, 1);
 
       yield* appendThreadArchived("thread-1");
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("archivezebra")).matches.length, 0);
       const archivedDocs = yield* sql<{ readonly n: number }>`
         SELECT COUNT(*) AS "n" FROM search_index_docs WHERE thread_id = ${"thread-1"}
@@ -845,11 +714,11 @@ it.layer(makeTestLayer("t3-thread-search-lifecycle-"))("ThreadSearch", (it) => {
       assert.equal(archivedDocs[0]?.n, 0);
 
       yield* appendThreadUnarchived("thread-1", "2026-01-01T00:00:02.000Z");
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("archivezebra")).matches.length, 1);
 
       yield* appendThreadDeleted("thread-2", "2026-01-01T00:00:03.000Z");
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("deletezebra")).matches.length, 0);
       const deletedDocs = yield* sql<{ readonly n: number }>`
         SELECT COUNT(*) AS "n" FROM search_index_docs WHERE thread_id = ${"thread-2"}
@@ -862,7 +731,7 @@ it.layer(makeTestLayer("t3-thread-search-lifecycle-"))("ThreadSearch", (it) => {
 it.layer(makeTestLayer("t3-thread-search-project-del-"))("ThreadSearch", (it) => {
   it.effect("drops index rows when the project is deleted", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
       const sql = yield* SqlClient.SqlClient;
 
       yield* appendProject("project-1");
@@ -874,11 +743,11 @@ it.layer(makeTestLayer("t3-thread-search-project-del-"))("ThreadSearch", (it) =>
         role: "user",
         text: "projectzebra gone with the project",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("projectzebra")).matches.length, 1);
 
       yield* appendProjectDeleted("project-1");
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
       assert.equal((yield* search("projectzebra")).matches.length, 0);
       const docs = yield* sql<{ readonly n: number }>`
         SELECT COUNT(*) AS "n" FROM search_index_docs
@@ -891,7 +760,7 @@ it.layer(makeTestLayer("t3-thread-search-project-del-"))("ThreadSearch", (it) =>
 it.layer(makeTestLayer("t3-thread-search-orphan-"))("ThreadSearch", (it) => {
   it.effect("backfill drops leftover docs for threads that are no longer searchable", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
       const sql = yield* SqlClient.SqlClient;
 
       yield* appendProject("project-1");
@@ -903,7 +772,7 @@ it.layer(makeTestLayer("t3-thread-search-orphan-"))("ThreadSearch", (it) => {
         role: "user",
         text: "keepzebra stays searchable",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       yield* sql`
         INSERT INTO search_index_docs (message_id, thread_id, role, token_count, created_at)
@@ -916,12 +785,9 @@ it.layer(makeTestLayer("t3-thread-search-orphan-"))("ThreadSearch", (it) => {
         INSERT INTO search_index_postings (term, message_id, tf)
         VALUES (${"orphanzebra"}, ${"orphan-message"}, ${1})
       `;
-      yield* sql`
-        DELETE FROM projection_state
-        WHERE projector = ${ORCHESTRATION_PROJECTOR_NAMES.searchIndex}
-      `;
 
-      yield* projectionPipeline.bootstrap;
+
+      yield* searchIndex.backfillFromProjection();
 
       const orphanDocs = yield* sql<{ readonly n: number }>`
         SELECT COUNT(*) AS "n" FROM search_index_docs WHERE thread_id = ${"thread-gone"}
@@ -935,7 +801,7 @@ it.layer(makeTestLayer("t3-thread-search-orphan-"))("ThreadSearch", (it) => {
 it.layer(makeTestLayer("t3-thread-search-stopword-"))("ThreadSearch", (it) => {
   it.effect("a trailing stopword does not double-count the last exact term", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-1");
       yield* appendThread("thread-1", "project-1");
@@ -946,7 +812,7 @@ it.layer(makeTestLayer("t3-thread-search-stopword-"))("ThreadSearch", (it) => {
         role: "user",
         text: "fix projector latency",
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       // "fix the" classifies as exact ["fix"] with prefix falling back to
       // "fix". Scored once, it must equal the single-term query's score.
@@ -961,7 +827,7 @@ it.layer(makeTestLayer("t3-thread-search-stopword-"))("ThreadSearch", (it) => {
 it.layer(makeTestLayer("t3-thread-search-unicode-"))("ThreadSearch", (it) => {
   it.effect("centers the snippet on a Unicode term", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-1");
       yield* appendThread("thread-1", "project-1");
@@ -972,7 +838,7 @@ it.layer(makeTestLayer("t3-thread-search-unicode-"))("ThreadSearch", (it) => {
         role: "user",
         text: `${"lorem ipsum dolor sit amet ".repeat(12)}CÉDRIC ${"consectetur adipiscing elit ".repeat(12)}`,
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       const result = yield* search("cédric");
       assert.equal(result.matches.length, 1);
@@ -982,7 +848,7 @@ it.layer(makeTestLayer("t3-thread-search-unicode-"))("ThreadSearch", (it) => {
 
   it.effect("keeps the snippet window aligned when lowercasing changes length", () =>
     Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const searchIndex = yield* SearchIndex;
 
       yield* appendProject("project-2");
       yield* appendThread("thread-2", "project-2");
@@ -995,7 +861,7 @@ it.layer(makeTestLayer("t3-thread-search-unicode-"))("ThreadSearch", (it) => {
         // drift from the original. The window must still land on the term.
         text: `${"İ".repeat(200)} lorem ipsum dolor sit amet windowtargetzebra ${"consectetur adipiscing elit ".repeat(12)}`,
       });
-      yield* projectionPipeline.bootstrap;
+      yield* searchIndex.backfillFromProjection();
 
       const result = yield* search("windowtargetzebra");
       assert.equal(result.matches.length, 1);

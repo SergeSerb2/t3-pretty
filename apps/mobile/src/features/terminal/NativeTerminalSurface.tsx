@@ -6,6 +6,7 @@ import {
   View,
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
+  type TextInputInstance,
   type ViewProps,
 } from "react-native";
 
@@ -21,7 +22,11 @@ import {
   getMobileTerminalTheme,
   type TerminalTheme,
 } from "./terminalTheme";
-import { terminalDebugLog } from "./terminalDebugLog";
+import {
+  isTerminalDebugEnabled,
+  terminalDebugLog,
+  terminalInputDebugDetails,
+} from "./terminalDebugLog";
 
 interface TerminalInputEvent {
   readonly data: string;
@@ -39,6 +44,8 @@ interface TerminalSurfaceProps extends ViewProps {
   readonly isRunning: boolean;
   readonly autoFocus?: boolean;
   readonly keyboardFocusRequest?: number;
+  readonly captureRequest?: number;
+  readonly onCapture?: (text: string) => void;
   readonly theme?: TerminalTheme;
   readonly onInput: (data: string) => void;
   readonly onResize: (size: { readonly cols: number; readonly rows: number }) => void;
@@ -59,7 +66,7 @@ function estimateGridSize(input: {
 
 const FallbackTerminalSurface = memo(function FallbackTerminalSurface(props: TerminalSurfaceProps) {
   const fontSize = props.fontSize ?? MOBILE_TYPOGRAPHY.label.fontSize;
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const { themeAppearance, themeId } = useAppearancePreferences();
   const theme = props.theme ?? getMobileTerminalTheme(themeId, themeAppearance);
   const statusLabel = props.isRunning
@@ -193,9 +200,9 @@ export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurf
       if (!props.isRunning) {
         return;
       }
-      terminalDebugLog("native:onInput", {
-        codes: Array.from(event.nativeEvent.data, (char) => char.codePointAt(0)),
-      });
+      if (isTerminalDebugEnabled()) {
+        terminalDebugLog("native:onInput", terminalInputDebugDetails(event.nativeEvent.data));
+      }
       onInput(event.nativeEvent.data);
     },
     [onInput, props.isRunning],
@@ -232,6 +239,8 @@ export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurf
           themeConfig={buildGhosttyThemeConfig(theme)}
           onInput={handleNativeInput}
           onResize={handleNativeResize}
+          captureRequest={props.captureRequest}
+          onCapture={(event) => props.onCapture?.(event.nativeEvent.text)}
         />
       </View>
     );

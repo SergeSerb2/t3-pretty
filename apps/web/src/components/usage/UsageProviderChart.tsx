@@ -1,3 +1,4 @@
+import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import type { UsageProviderKind } from "@t3tools/contracts";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -19,6 +20,7 @@ const PLOT_TOP = 8;
 export type UsageChartMetric = "tokens" | "cost";
 
 interface UsageProviderChartProps {
+  readonly providers: readonly UsageProviderKind[];
   readonly days: readonly string[];
   readonly daily: readonly DailyTotals[];
   readonly hours: readonly string[];
@@ -53,7 +55,7 @@ function valueFor(
   return metric === "tokens" ? entry.totalTokens : entry.costUsd;
 }
 
-function buildPeriodColumns(
+export function buildPeriodColumns(
   periods: readonly string[],
   byPeriod: ReadonlyMap<string, DailyTotals | HourlyTotals>,
   metric: UsageChartMetric,
@@ -168,25 +170,8 @@ export function niceScale(peak: number, count: number): { max: number; ticks: re
   return { max, ticks };
 }
 
-/**
- * Turns the merged daily totals into one column per day.
- *
- * Values are absolute, not cumulative: each provider is drawn from the same
- * zero baseline so the chart never implies that one provider is always larger.
- *
- * The chart paths and the hover readout both consume this, so the number under
- * the cursor is by construction the number that was plotted rather than a
- * second derivation that can drift from it.
- */
-export function buildDayColumns(
-  days: readonly string[],
-  byDay: ReadonlyMap<string, DailyTotals>,
-  metric: UsageChartMetric,
-): readonly DayColumn[] {
-  return buildPeriodColumns(days, byDay, metric);
-}
-
 export function UsageProviderChart({
+  providers,
   days,
   daily,
   hours,
@@ -209,7 +194,7 @@ export function UsageProviderChart({
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const hoverPositionRef = useRef<{ x: number; y: number } | null>(null);
 
-  const { paths, series, stepX, ticks, toY } = useMemo(() => {
+  const { paths, ticks, stepX, toY, series } = useMemo(() => {
     if (periods.length === 0) {
       return {
         paths: [],
@@ -235,7 +220,8 @@ export function UsageProviderChart({
     const toY = (value: number) =>
       max === 0 ? VIEW_HEIGHT : VIEW_HEIGHT - (value / max) * (VIEW_HEIGHT - PLOT_TOP);
 
-    const built = PROVIDER_ORDER.map((provider, providerIndex) => {
+    const built = providers.map((provider) => {
+      const providerIndex = PROVIDER_ORDER.indexOf(provider);
       const line = curvePath(
         smoothCurve(
           columns.map((column, periodIndex) => ({
@@ -260,7 +246,7 @@ export function UsageProviderChart({
       ticks: tickValues,
       toY,
     };
-  }, [byPeriod, metric, periods]);
+  }, [byPeriod, metric, periods, providers]);
 
   const format = metric === "tokens" ? formatTokens : formatUsd;
 
@@ -337,7 +323,7 @@ export function UsageProviderChart({
           {ticks.map((tick) => (
             <span
               key={tick}
-              className="absolute right-0 -translate-y-1/2 text-[10px] text-muted-foreground tabular-nums"
+              className="absolute right-0 -translate-y-1/2 text-3xs text-muted-foreground tabular-nums"
               style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
             >
               {tick === 0 ? "0" : format(tick)}
@@ -422,12 +408,16 @@ export function UsageProviderChart({
               }}
             >
               <div className="mb-1 text-muted-foreground">{formatTooltipPeriod(hoveredPeriod)}</div>
-              {PROVIDER_ORDER.map((provider) => {
-                const { label, mark: Mark } = PROVIDER_PRESENTATION[provider];
+              {providers.map((provider) => {
+                const { label, driverKind } = PROVIDER_PRESENTATION[provider];
                 return (
                   <div key={provider} className="flex items-center justify-between gap-3">
                     <span className="flex items-center gap-1.5 text-muted-foreground">
-                      <Mark className="size-3 shrink-0" aria-hidden />
+                      <ProviderInstanceIcon
+                        driverKind={driverKind}
+                        displayName={label}
+                        iconClassName="size-3"
+                      />
                       {label}
                     </span>
                     <span className="text-foreground tabular-nums">
@@ -449,7 +439,7 @@ export function UsageProviderChart({
         </div>
       </div>
 
-      <div className="flex justify-between pl-16 text-[10px] text-muted-foreground uppercase">
+      <div className="flex justify-between pl-16 text-3xs text-muted-foreground uppercase">
         <span>{periods[0] === undefined ? "" : formatPeriod(periods[0])}</span>
         <span>
           {periods[Math.floor(periods.length / 2)] === undefined

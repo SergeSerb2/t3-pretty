@@ -25,12 +25,13 @@ import {
   gradientPair,
   layerStack,
   rgbaColor,
+  type ScenerySurface,
   wallpaperPixelWidth,
   wallpaperURL,
   type SceneryPhoto,
 } from "./sceneryLogic";
 import { useScenery } from "./SceneryProvider";
-import { useReduceTransparency } from "./useReduceTransparency";
+import { useSyncedThreadSceneryPhoto } from "./useSyncedThreadScenery";
 
 function SceneryGradient(props: { readonly seed: string; readonly opacity?: number }) {
   const pair = gradientPair(props.seed);
@@ -73,23 +74,33 @@ export function SceneryBackdrop(props: {
   /** Thread key ("<environmentId>:<threadId>"), or null for the home screen's
    *  photo-of-the-day rotation. */
   readonly threadKey: string | null;
+  /** Frosted cards carry the text contrast, so the wash can lift. */
+  readonly surface?: ScenerySurface;
 }) {
-  const { enabled, blur, translucency, dailyPhoto, photoForThreadKey, ensureThreadAssignment } =
-    useScenery();
+  const {
+    enabled,
+    blur,
+    translucency,
+    dailyPhoto,
+    photoForThreadKey,
+    ensureThreadAssignment,
+    reduceTransparency,
+  } = useScenery();
   const { themeId } = useAppearancePreferences();
   const colorScheme = useColorScheme() === "light" ? "light" : "dark";
-  const reduceTransparency = useReduceTransparency();
   const { width: windowWidth } = useWindowDimensions();
   const photosActive = enabled && !isBoringMobileTheme(themeId);
 
   const threadKey = props.threadKey;
+  const syncedPhoto = useSyncedThreadSceneryPhoto(photosActive ? threadKey : null);
   useEffect(() => {
-    if (photosActive && threadKey !== null) {
+    if (photosActive && threadKey !== null && syncedPhoto === null) {
       ensureThreadAssignment(threadKey);
     }
-  }, [photosActive, ensureThreadAssignment, threadKey]);
+  }, [photosActive, ensureThreadAssignment, syncedPhoto, threadKey]);
 
-  const photo: SceneryPhoto | null = threadKey !== null ? photoForThreadKey(threadKey) : dailyPhoto;
+  const photo: SceneryPhoto | null =
+    threadKey !== null ? (syncedPhoto ?? photoForThreadKey(threadKey)) : dailyPhoto;
   const renderWidth = wallpaperPixelWidth(windowWidth * PixelRatio.get());
   const imageSource = useMemo(
     () => (photo === null ? null : wallpaperURL(photo, blur, renderWidth)),
@@ -100,7 +111,7 @@ export function SceneryBackdrop(props: {
     return null;
   }
 
-  const stack = layerStack(translucency, colorScheme);
+  const stack = layerStack(translucency, colorScheme, props.surface);
   const washColor = colorScheme === "dark" ? "#000000" : "#ffffff";
   // The gradient seeds off the photo id when one exists so the fallback wash
   // always matches the photo it stands in for.

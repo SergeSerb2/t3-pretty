@@ -19,6 +19,7 @@ export interface PendingTerminalLaunch {
 }
 
 const pendingTerminalLaunches = new Map<string, PendingTerminalLaunch>();
+const MAX_PENDING_TERMINAL_LAUNCHES = 32;
 
 function pendingTerminalLaunchKey(input: PendingTerminalLaunchTarget): string {
   return `${input.environmentId}:${input.threadId}:${input.terminalId}`;
@@ -28,12 +29,19 @@ export function stagePendingTerminalLaunch(input: {
   readonly target: PendingTerminalLaunchTarget;
   readonly launch: PendingTerminalLaunch;
 }) {
-  pendingTerminalLaunches.set(pendingTerminalLaunchKey(input.target), {
+  const key = pendingTerminalLaunchKey(input.target);
+  pendingTerminalLaunches.delete(key);
+  pendingTerminalLaunches.set(key, {
     cwd: input.launch.cwd,
     worktreePath: input.launch.worktreePath,
     env: input.launch.env ? { ...input.launch.env } : undefined,
     initialInput: input.launch.initialInput,
   });
+  while (pendingTerminalLaunches.size > MAX_PENDING_TERMINAL_LAUNCHES) {
+    const oldestKey = pendingTerminalLaunches.keys().next().value;
+    if (oldestKey === undefined) break;
+    pendingTerminalLaunches.delete(oldestKey);
+  }
 }
 
 export function takePendingTerminalLaunch(

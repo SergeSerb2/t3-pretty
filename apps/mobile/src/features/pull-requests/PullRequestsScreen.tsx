@@ -27,13 +27,14 @@ import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { ControlPillMenu } from "../../components/ControlPill";
 import { EmptyState } from "../../components/EmptyState";
+import { SheetSurface } from "../../components/SheetSurface";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import {
   createNativeMailSearchToolbarItem,
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { scorePullRequestMatch, shouldShowPullRequestHostFilter } from "./pullRequestList.logic";
 import { PullRequestActionChip } from "./PullRequestActionChip";
 import { PullRequestRow } from "./PullRequestRow";
@@ -97,12 +98,11 @@ function PullRequestsHeader(props: {
   readonly onHostChange: (host: string | undefined) => void;
   readonly onInvolvementChange: (involvement: PullRequestInvolvement) => void;
   readonly onRefresh: () => void;
+  readonly onClearFilters: () => void;
 }) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const searchIconColor = useThemeColor("--color-icon");
-  const searchTextColor = useThemeColor("--color-foreground");
   const usesCompactMailToolbar =
     Platform.OS === "ios" && width < 700 && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
   const showHostFilter = shouldShowPullRequestHostFilter(props.hosts.length, props.selectedHost);
@@ -110,6 +110,15 @@ function PullRequestsHeader(props: {
   const filterMenu = {
     title: "Pull request options",
     items: [
+      ...(props.hasCustomFilter
+        ? [
+            {
+              type: "action" as const,
+              title: "Clear filters",
+              onPress: props.onClearFilters,
+            },
+          ]
+        : []),
       {
         type: "submenu" as const,
         title: "Involvement",
@@ -192,6 +201,7 @@ function PullRequestsHeader(props: {
 
   const androidFilterActions = useMemo<MenuAction[]>(
     () => [
+      ...(props.hasCustomFilter ? [{ id: "clear", title: "Clear filters" }] : []),
       {
         id: "involvement",
         title: "Involvement",
@@ -257,6 +267,7 @@ function PullRequestsHeader(props: {
     ],
     [
       props.environments,
+      props.hasCustomFilter,
       props.hosts,
       props.involvement,
       props.projects,
@@ -270,7 +281,8 @@ function PullRequestsHeader(props: {
   const handleAndroidFilterAction = useCallback(
     (event: { nativeEvent: { event: string } }) => {
       const action = event.nativeEvent.event;
-      if (action === "involvement:all") props.onInvolvementChange("all");
+      if (action === "clear") props.onClearFilters();
+      else if (action === "involvement:all") props.onInvolvementChange("all");
       else if (action === "involvement:reviewing") props.onInvolvementChange("reviewing");
       else if (action === "involvement:authored") props.onInvolvementChange("authored");
       else if (action === "project:all") props.onProjectChange(undefined);
@@ -304,7 +316,7 @@ function PullRequestsHeader(props: {
               <SymbolView
                 name="chevron.left"
                 size={24}
-                tintColor={searchTextColor}
+                tintColorClassName="accent-foreground"
                 type="monochrome"
               />
             </Pressable>
@@ -312,7 +324,7 @@ function PullRequestsHeader(props: {
               <SymbolView
                 name="magnifyingglass"
                 size={17}
-                tintColor={searchIconColor}
+                tintColorClassName="accent-icon"
                 type="monochrome"
               />
               <TextInput
@@ -342,7 +354,7 @@ function PullRequestsHeader(props: {
                       : "line.3.horizontal.decrease.circle"
                   }
                   size={16}
-                  tintColor={searchIconColor}
+                  tintColorClassName="accent-icon"
                   type="monochrome"
                 />
               </Pressable>
@@ -409,6 +421,11 @@ function PullRequestsHeader(props: {
             separateBackground
             title="Pull request options"
           >
+            {props.hasCustomFilter ? (
+              <NativeHeaderToolbar.MenuAction onPress={props.onClearFilters}>
+                <NativeHeaderToolbar.Label>Clear filters</NativeHeaderToolbar.Label>
+              </NativeHeaderToolbar.MenuAction>
+            ) : null}
             <NativeHeaderToolbar.Menu title="Involvement">
               <NativeHeaderToolbar.MenuAction
                 isOn={props.involvement === "all"}
@@ -533,6 +550,7 @@ export function PullRequestsScreen(props: {
   }>;
   readonly searchQuery: string;
   readonly selectedEnvironmentId: EnvironmentId | null;
+  readonly preferredEnvironmentId: EnvironmentId | null;
   readonly selectedProjectId: ProjectId | undefined;
   readonly selectedHost: string | undefined;
   readonly involvement: PullRequestInvolvement;
@@ -553,16 +571,19 @@ export function PullRequestsScreen(props: {
   readonly onHostChange: (host: string | undefined) => void;
   readonly onInvolvementChange: (involvement: PullRequestInvolvement) => void;
   readonly onStateChange: (state: PullRequestListState) => void;
+  readonly onClearFilters: () => void;
   readonly onRefresh: () => void;
   readonly onLoadMore: () => void;
   readonly onSelect: (entry: PullRequestListEntry) => void;
   readonly onAddProject: () => void;
 }) {
-  const refreshTint = useThemeColor("--color-icon");
+  const glass = useGlassChromeActive();
   const hasCustomFilter =
     props.involvement !== "all" ||
+    props.state !== "open" ||
     props.selectedProjectId !== undefined ||
-    props.selectedHost !== undefined;
+    props.selectedHost !== undefined ||
+    props.selectedEnvironmentId !== props.preferredEnvironmentId;
   const showProvider = props.hosts.length > 1;
   const typedQuery = props.searchQuery.trim();
   const listItems = useMemo<ReadonlyArray<ListItem>>(() => {
@@ -586,7 +607,7 @@ export function PullRequestsScreen(props: {
     if (!props.capabilityKnown) {
       return (
         <View className="items-center py-16">
-          <ActivityIndicator color={refreshTint} />
+          <ActivityIndicator colorClassName="accent-icon" />
           <Text className="mt-3 text-sm text-foreground-muted">Checking this environment…</Text>
         </View>
       );
@@ -612,7 +633,7 @@ export function PullRequestsScreen(props: {
     if (props.firstLoad) {
       return (
         <View className="items-center py-16">
-          <ActivityIndicator color={refreshTint} />
+          <ActivityIndicator colorClassName="accent-icon" />
           <Text className="mt-3 text-sm text-foreground-muted">Loading pull requests…</Text>
         </View>
       );
@@ -640,7 +661,7 @@ export function PullRequestsScreen(props: {
     if (typedQuery.length > 0 && !props.querySettled) {
       return (
         <View className="items-center py-16">
-          <ActivityIndicator color={refreshTint} />
+          <ActivityIndicator colorClassName="accent-icon" />
           <Text className="mt-3 text-sm text-foreground-muted">
             Searching every host for “{typedQuery}”
           </Text>
@@ -671,7 +692,7 @@ export function PullRequestsScreen(props: {
         onAction={props.onRefresh}
       />
     );
-  }, [hasCustomFilter, props, refreshTint, typedQuery]);
+  }, [hasCustomFilter, props, typedQuery]);
 
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) => {
@@ -713,7 +734,7 @@ export function PullRequestsScreen(props: {
     return (
       <View className="items-center py-4">
         {props.loadingMore ? (
-          <ActivityIndicator color={refreshTint} />
+          <ActivityIndicator colorClassName="accent-icon" />
         ) : (
           <PullRequestActionChip label="Load more" onPress={props.onLoadMore} />
         )}
@@ -726,16 +747,16 @@ export function PullRequestsScreen(props: {
     props.firstLoad,
     props.loadingMore,
     props.onLoadMore,
-    refreshTint,
   ]);
 
   return (
-    <View className="flex-1 bg-sheet">
+    <SheetSurface>
       <PullRequestsHeader
         environments={props.environments}
         hasCustomFilter={hasCustomFilter}
         hosts={props.hosts}
         involvement={props.involvement}
+        onClearFilters={props.onClearFilters}
         onEnvironmentChange={props.onEnvironmentChange}
         onHostChange={props.onHostChange}
         onInvolvementChange={props.onInvolvementChange}
@@ -755,6 +776,7 @@ export function PullRequestsScreen(props: {
         contentInsetAdjustmentBehavior="automatic"
         data={listItems}
         estimatedItemSize={96}
+        extraData={`${typedQuery}\u0000${showProvider ? "show-provider" : "hide-provider"}`}
         getItemType={(item) => item.kind}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
@@ -769,7 +791,12 @@ export function PullRequestsScreen(props: {
                 accessibilityRole="button"
                 onPress={props.onRefresh}
                 style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
-                className="mb-2 rounded-2xl bg-subtle px-3 py-2.5"
+                className={cn(
+                  "mb-2 rounded-2xl px-3 py-2.5",
+                  glass
+                    ? "border-continuous border-[0.5px] border-chrome-glass-border bg-chrome-glass"
+                    : "bg-subtle",
+                )}
               >
                 <Text className="text-xs text-foreground">
                   {describeProjectErrors(props.projectErrors)}
@@ -782,12 +809,12 @@ export function PullRequestsScreen(props: {
           <RefreshControl
             onRefresh={props.onRefresh}
             refreshing={props.refreshing && !props.firstLoad}
-            tintColor={String(refreshTint)}
+            tintColorClassName="accent-icon"
           />
         }
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
       />
-    </View>
+    </SheetSurface>
   );
 }

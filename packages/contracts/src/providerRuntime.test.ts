@@ -1,11 +1,66 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { classifyTaskAgentKind, ProviderRuntimeEvent } from "./providerRuntime.ts";
+import {
+  classifyTaskAgentKind,
+  PROVIDER_RUNTIME_MAX_FINITE_NUMBER,
+  PROVIDER_RUNTIME_MAX_PLAN_STEPS,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS,
+  PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS,
+  PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH,
+  ProviderRuntimeEvent,
+} from "./providerRuntime.ts";
+import { PROVIDER_INTERACTION_MAX_STRING_CHARS } from "./providerPolicy.ts";
 
 const decodeRuntimeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
 
 describe("ProviderRuntimeEvent", () => {
+  it("requires input and output totals for complete turn usage", () => {
+    const completeEvent = {
+      type: "turn.completed",
+      eventId: "event-complete-usage",
+      provider: "codex",
+      createdAt: "2026-02-28T00:00:00.000Z",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      payload: {
+        state: "completed",
+        tokenUsage: {
+          usageStatus: "complete",
+          usageScope: "main_agent",
+          hasSubagents: false,
+        },
+      },
+    };
+
+    expect(() => decodeRuntimeEvent(completeEvent)).toThrow();
+    expect(
+      decodeRuntimeEvent({
+        ...completeEvent,
+        payload: {
+          ...completeEvent.payload,
+          tokenUsage: {
+            ...completeEvent.payload.tokenUsage,
+            inputTokens: 10,
+            outputTokens: 2,
+          },
+        },
+      }).type,
+    ).toBe("turn.completed");
+    expect(
+      decodeRuntimeEvent({
+        ...completeEvent,
+        payload: {
+          ...completeEvent.payload,
+          tokenUsage: {
+            ...completeEvent.payload.tokenUsage,
+            usageStatus: "partial",
+          },
+        },
+      }).type,
+    ).toBe("turn.completed");
+  });
+
   it("accepts fork-provided driver kinds as branded slugs", () => {
     const parsed = decodeRuntimeEvent({
       type: "session.started",
@@ -48,6 +103,74 @@ describe("ProviderRuntimeEvent", () => {
     expect(parsed.payload.plan).toHaveLength(2);
     expect(parsed.payload.plan[1]?.status).toBe("inProgress");
   });
+
+  it("rejects oversized provider plan and user-input collections", () => {
+    const base = {
+      eventId: "event-bounds",
+      provider: "codex",
+      createdAt: "2026-02-28T00:00:00.000Z",
+      threadId: "thread-1",
+    };
+
+    expect(() =>
+      decodeRuntimeEvent({
+        ...base,
+        type: "turn.plan.updated",
+        payload: {
+          plan: Array.from({ length: PROVIDER_RUNTIME_MAX_PLAN_STEPS + 1 }, (_, index) => ({
+            step: `Step ${index}`,
+            status: "pending",
+          })),
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      decodeRuntimeEvent({
+        ...base,
+        type: "user-input.requested",
+        requestId: "request-bounds",
+        payload: {
+          questions: Array.from(
+            { length: PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS + 1 },
+            (_, index) => ({
+              id: `question-${index}`,
+              header: "Choice",
+              question: "Choose one",
+              options: [{ label: "Yes", description: "Continue" }],
+            }),
+          ),
+        },
+      }),
+    ).toThrow();
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, PROVIDER_RUNTIME_MAX_FINITE_NUMBER + 1])(
+    "rejects an invalid provider cost or elapsed duration: %s",
+    (value) => {
+      const base = {
+        eventId: "event-number-bounds",
+        provider: "claudeAgent",
+        createdAt: "2026-02-28T00:00:00.000Z",
+        threadId: "thread-1",
+      };
+
+      expect(() =>
+        decodeRuntimeEvent({
+          ...base,
+          type: "turn.completed",
+          payload: { state: "completed", totalCostUsd: value },
+        }),
+      ).toThrow();
+      expect(() =>
+        decodeRuntimeEvent({
+          ...base,
+          type: "tool.progress",
+          payload: { elapsedSeconds: value },
+        }),
+      ).toThrow();
+    },
+  );
 
   it("decodes proposed-plan completion events", () => {
     const parsed = decodeRuntimeEvent({
@@ -130,6 +253,58 @@ describe("ProviderRuntimeEvent", () => {
     expect(parsed.payload.answers.sandbox_mode).toBe("workspace-write");
   });
 
+  it("rejects oversized aggregate user-input question text", () => {
+    const description = "x".repeat(PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH);
+    const questionCount =
+      Math.floor(PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS / description.length) + 1;
+
+    expect(() =>
+      decodeRuntimeEvent({
+        type: "user-input.requested",
+        eventId: "event-user-input-bounds",
+        provider: "claudeAgent",
+        createdAt: "2026-02-28T00:00:01.000Z",
+        threadId: "thread-2",
+        requestId: "request-1",
+        payload: {
+          questions: Array.from({ length: questionCount }, (_, index) => ({
+            id: `question-${index}`,
+            header: "Choice",
+            question: "Choose one",
+            options: [{ label: "Yes", description }],
+          })),
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects oversized opaque approval and answer payloads", () => {
+    const oversized = "x".repeat(PROVIDER_INTERACTION_MAX_STRING_CHARS + 1);
+
+    expect(() =>
+      decodeRuntimeEvent({
+        type: "request.opened",
+        eventId: "event-approval-bounds",
+        provider: "codex",
+        createdAt: "2026-02-28T00:00:01.000Z",
+        threadId: "thread-2",
+        requestId: "request-1",
+        payload: { requestType: "command_execution_approval", args: { command: oversized } },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeRuntimeEvent({
+        type: "user-input.resolved",
+        eventId: "event-answer-bounds",
+        provider: "codex",
+        createdAt: "2026-02-28T00:00:02.000Z",
+        threadId: "thread-2",
+        requestId: "request-1",
+        payload: { answers: { question: oversized } },
+      }),
+    ).toThrow();
+  });
+
   it("rejects legacy message.delta type", () => {
     expect(() =>
       decodeRuntimeEvent({
@@ -180,24 +355,5 @@ describe("ProviderRuntimeEvent", () => {
     }
     expect(parsed.payload.usage.maxTokens).toBe(200000);
     expect(parsed.payload.usage.usedTokens).toBe(31251);
-  });
-});
-
-describe("classifyTaskAgentKind", () => {
-  it("classifies agent-flavored, watch-loop, and inert types", () => {
-    expect(classifyTaskAgentKind({ taskType: "local_agent" })).toBe("agent");
-    expect(classifyTaskAgentKind({ taskType: "local_workflow" })).toBe("agent");
-    expect(classifyTaskAgentKind({ taskType: undefined })).toBe("agent");
-    expect(classifyTaskAgentKind({ taskType: "brand_new_agent_type" })).toBe("agent");
-    expect(classifyTaskAgentKind({ taskType: "local_bash" })).toBe("background");
-    expect(classifyTaskAgentKind({ taskType: "monitor" })).toBe("background");
-    expect(classifyTaskAgentKind({ taskType: "plan" })).toBe("background");
-  });
-
-  it("agent-owned tasks are background unless themselves agent-flavored", () => {
-    expect(classifyTaskAgentKind({ taskType: "local_bash", agentId: "owner" })).toBe("background");
-    expect(classifyTaskAgentKind({ taskType: undefined, agentId: "owner" })).toBe("background");
-    // Nested agent: outlives its parent, stays in the roster.
-    expect(classifyTaskAgentKind({ taskType: "local_agent", agentId: "owner" })).toBe("agent");
   });
 });

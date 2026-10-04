@@ -5,16 +5,19 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import type { SidebarProjectGroupingMode } from "@t3tools/contracts";
+import type { ProviderInstanceId, SidebarProjectGroupingMode } from "@t3tools/contracts";
+import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
+import type { FollowUpBehavior } from "../lib/followUpBehavior";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
 import { parsePhotoSetId, type PhotoSetId } from "../features/scenery/photoSets";
-
 import * as MobileDatabase from "./mobile-database";
 import * as MobileSecureStorage from "./mobile-secure-storage";
 import { MobileStorageDecodeError, MobileStorageEncodeError } from "./mobile-storage";
 
 const PREFERENCES_KEY = "t3code.preferences";
 const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
+export const CONNECT_ONBOARDING_OPT_OUT_MAX_ACCOUNTS = 64;
+export const CONNECT_ONBOARDING_ACCOUNT_ID_MAX_LENGTH = 512;
 
 export interface Preferences {
   readonly liveActivitiesEnabled?: boolean;
@@ -22,6 +25,7 @@ export interface Preferences {
   readonly lightThemeId?: MobileThemeId;
   readonly darkThemeId?: MobileThemeId;
   readonly themeMode?: MobileThemeMode;
+  readonly materialYouStyleLayoutEnabled?: boolean;
   readonly baseFontSize?: number;
   readonly terminalFontSize?: number | null;
   readonly markdownFontSize?: number;
@@ -29,23 +33,26 @@ export interface Preferences {
   readonly codeWordBreak?: boolean;
   readonly connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
   readonly collapsedProjectGroups?: readonly string[];
+  /** What the Return key does in the composer on a hardware keyboard. iOS only. */
+  readonly composerEnterBehavior?: ComposerEnterBehavior;
+  /**
+   * Device-local mirror of the web `followUpBehavior` client setting: whether a
+   * message sent during a running turn queues behind it or steers it.
+   */
+  readonly followUpBehavior?: FollowUpBehavior;
   /** @deprecated Kept temporarily so older OTA bundles retain the selected mode. */
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
-  /**
-   * Device-local mirror of the web `legacySidebarEnabled` setting. Mobile has
-   * no client-settings sync, so the legacy grouped thread list is opted into
-   * per device. Deliberately a fresh key (was `threadListV2Enabled`, an
-   * opt-out): sanitizing drops the old key, so every device resets to the
-   * default flat list — see `resolveThreadListV2Enabled`.
-   */
-  readonly legacyThreadListEnabled?: boolean;
   /**
    * Auto-PR toggle state per workspace mode, mirroring the web client.
    * Absent keys fall back to `AUTO_CREATE_PULL_REQUEST_DEFAULTS` (worktree
    * on, local off) via `resolveAutoCreatePullRequest`.
    */
   readonly autoCreatePullRequestByEnvMode?: {
+    readonly local?: boolean;
+    readonly worktree?: boolean;
+  };
+  readonly autoBabysitPullRequestByEnvMode?: {
     readonly local?: boolean;
     readonly worktree?: boolean;
   };
@@ -56,6 +63,15 @@ export interface Preferences {
   readonly scenery?: MobileSceneryPreferences;
   /** Device-local counterpart of desktop's `planModeEnabled` legacy flag. */
   readonly planModeEnabled?: boolean;
+  /** Model favorites belong to this device, like the web client setting. */
+  readonly modelFavorites?: ReadonlyArray<{
+    readonly provider: ProviderInstanceId;
+    readonly model: string;
+  }>;
+  /** Fresh keys reset both shelves to collapsed when users update. */
+  readonly threadListSettledShelfExpanded?: boolean;
+  readonly threadListSnoozedShelfExpanded?: boolean;
+  readonly threadListStoredShelfExpanded?: boolean;
 }
 
 /** One thread → photo binding in the World Scenery theme. */
@@ -81,7 +97,7 @@ export interface MobileSceneryPreferences {
   readonly assignments?: Readonly<Record<string, MobileSceneryAssignment>>;
 }
 
-export class MobilePreferencesLoadError extends Schema.TaggedErrorClass<MobilePreferencesLoadError>()(
+export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
   "MobilePreferencesLoadError",
   { cause: Schema.Defect() },
 ) {
@@ -90,7 +106,7 @@ export class MobilePreferencesLoadError extends Schema.TaggedErrorClass<MobilePr
   }
 }
 
-export class MobilePreferencesSaveError extends Schema.TaggedErrorClass<MobilePreferencesSaveError>()(
+export class MobilePreferencesSaveError extends Schema.TaggedError<MobilePreferencesSaveError>()(
   "MobilePreferencesSaveError",
   { cause: Schema.Defect() },
 ) {
@@ -125,6 +141,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     lightThemeId?: MobileThemeId;
     darkThemeId?: MobileThemeId;
     themeMode?: MobileThemeMode;
+    materialYouStyleLayoutEnabled?: boolean;
     baseFontSize?: number;
     terminalFontSize?: number | null;
     markdownFontSize?: number;
@@ -132,16 +149,25 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     codeWordBreak?: boolean;
     connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
     collapsedProjectGroups?: readonly string[];
+    composerEnterBehavior?: ComposerEnterBehavior;
+    followUpBehavior?: FollowUpBehavior;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
-    legacyThreadListEnabled?: boolean;
     autoCreatePullRequestByEnvMode?: {
+      local?: boolean;
+      worktree?: boolean;
+    };
+    autoBabysitPullRequestByEnvMode?: {
       local?: boolean;
       worktree?: boolean;
     };
     lastSeenChangelogVersion?: string;
     scenery?: MobileSceneryPreferences;
     planModeEnabled?: boolean;
+    modelFavorites?: Preferences["modelFavorites"];
+    threadListSettledShelfExpanded?: boolean;
+    threadListSnoozedShelfExpanded?: boolean;
+    threadListStoredShelfExpanded?: boolean;
   } = {};
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
@@ -172,6 +198,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   ) {
     preferences.themeMode = parsed.themeMode;
   }
+  if (typeof parsed.materialYouStyleLayoutEnabled === "boolean") {
+    preferences.materialYouStyleLayoutEnabled = parsed.materialYouStyleLayoutEnabled;
+  }
   if (typeof parsed.baseFontSize === "number") preferences.baseFontSize = parsed.baseFontSize;
   if (typeof parsed.terminalFontSize === "number" || parsed.terminalFontSize === null) {
     preferences.terminalFontSize = parsed.terminalFontSize;
@@ -184,14 +213,34 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.codeWordBreak === "boolean") preferences.codeWordBreak = parsed.codeWordBreak;
   if (Array.isArray(parsed.connectOnboardingOptOutAccounts)) {
-    preferences.connectOnboardingOptOutAccounts = parsed.connectOnboardingOptOutAccounts.filter(
-      (account): account is string => typeof account === "string",
-    );
+    const accounts: string[] = [];
+    const seenAccounts = new Set<string>();
+    for (const account of parsed.connectOnboardingOptOutAccounts.slice(
+      -CONNECT_ONBOARDING_OPT_OUT_MAX_ACCOUNTS,
+    )) {
+      if (
+        typeof account !== "string" ||
+        account.length === 0 ||
+        account.length > CONNECT_ONBOARDING_ACCOUNT_ID_MAX_LENGTH ||
+        seenAccounts.has(account)
+      ) {
+        continue;
+      }
+      seenAccounts.add(account);
+      accounts.push(account);
+    }
+    preferences.connectOnboardingOptOutAccounts = accounts;
   }
   if (Array.isArray(parsed.collapsedProjectGroups)) {
     preferences.collapsedProjectGroups = parsed.collapsedProjectGroups.filter(
       (key): key is string => typeof key === "string",
     );
+  }
+  if (parsed.composerEnterBehavior === "send" || parsed.composerEnterBehavior === "newline") {
+    preferences.composerEnterBehavior = parsed.composerEnterBehavior;
+  }
+  if (parsed.followUpBehavior === "queue" || parsed.followUpBehavior === "steer") {
+    preferences.followUpBehavior = parsed.followUpBehavior;
   }
   if (typeof parsed.projectGroupingEnabled === "boolean") {
     preferences.projectGroupingEnabled = parsed.projectGroupingEnabled;
@@ -202,9 +251,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     parsed.projectGroupingMode === "separate"
   ) {
     preferences.projectGroupingMode = parsed.projectGroupingMode;
-  }
-  if (typeof parsed.legacyThreadListEnabled === "boolean") {
-    preferences.legacyThreadListEnabled = parsed.legacyThreadListEnabled;
   }
   if (
     typeof parsed.autoCreatePullRequestByEnvMode === "object" &&
@@ -219,6 +265,21 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     }
     if (Object.keys(byEnvMode).length > 0) {
       preferences.autoCreatePullRequestByEnvMode = byEnvMode;
+    }
+  }
+  if (
+    typeof parsed.autoBabysitPullRequestByEnvMode === "object" &&
+    parsed.autoBabysitPullRequestByEnvMode !== null
+  ) {
+    const byEnvMode: { local?: boolean; worktree?: boolean } = {};
+    if (typeof parsed.autoBabysitPullRequestByEnvMode.local === "boolean") {
+      byEnvMode.local = parsed.autoBabysitPullRequestByEnvMode.local;
+    }
+    if (typeof parsed.autoBabysitPullRequestByEnvMode.worktree === "boolean") {
+      byEnvMode.worktree = parsed.autoBabysitPullRequestByEnvMode.worktree;
+    }
+    if (Object.keys(byEnvMode).length > 0) {
+      preferences.autoBabysitPullRequestByEnvMode = byEnvMode;
     }
   }
   if (typeof parsed.lastSeenChangelogVersion === "string") {
@@ -270,6 +331,26 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.planModeEnabled === "boolean") {
     preferences.planModeEnabled = parsed.planModeEnabled;
+  }
+  if (Array.isArray(parsed.modelFavorites)) {
+    preferences.modelFavorites = parsed.modelFavorites.filter(
+      (favorite) =>
+        typeof favorite === "object" &&
+        favorite !== null &&
+        typeof favorite.provider === "string" &&
+        favorite.provider.length > 0 &&
+        typeof favorite.model === "string" &&
+        favorite.model.trim().length > 0,
+    );
+  }
+  if (typeof parsed.threadListSettledShelfExpanded === "boolean") {
+    preferences.threadListSettledShelfExpanded = parsed.threadListSettledShelfExpanded;
+  }
+  if (typeof parsed.threadListSnoozedShelfExpanded === "boolean") {
+    preferences.threadListSnoozedShelfExpanded = parsed.threadListSnoozedShelfExpanded;
+  }
+  if (typeof parsed.threadListStoredShelfExpanded === "boolean") {
+    preferences.threadListStoredShelfExpanded = parsed.threadListStoredShelfExpanded;
   }
   return preferences;
 }

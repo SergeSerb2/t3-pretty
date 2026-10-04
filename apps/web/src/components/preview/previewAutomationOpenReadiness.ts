@@ -1,5 +1,6 @@
 import {
   FILL_PREVIEW_VIEWPORT,
+  type PreviewAutomationOperation,
   type PreviewAutomationOpenInput,
   type PreviewSessionSnapshot,
   type PreviewViewportSetting,
@@ -27,6 +28,45 @@ export function shouldOpenPreviewMiniPlayer(
   autoShowFloatingPreview = true,
 ): boolean {
   return input.open ?? input.show ?? autoShowFloatingPreview;
+}
+
+export function shouldAutoShowPreviewForAutomationUse(input: {
+  readonly operation: PreviewAutomationOperation;
+  readonly autoShowFloatingPreview: boolean;
+  readonly presentationSuppressed: boolean;
+}): boolean {
+  return (
+    input.operation !== "open" && input.autoShowFloatingPreview && !input.presentationSuppressed
+  );
+}
+
+export function explicitlySuppressesPreviewMiniPlayer(input: PreviewAutomationOpenInput): boolean {
+  return (input.open ?? input.show) === false;
+}
+
+/**
+ * Adapter for T3 Pretty's per-tab presentation state. Upstream owns which
+ * automation operations auto-show; Pretty contributes whether this tab is
+ * already visible or its floating player has been dismissed.
+ */
+export function shouldPresentAutomationActivity(input: {
+  readonly operation: string;
+  readonly autoShowFloatingPreview: boolean;
+  readonly tabId: string;
+  readonly dismissedTabIds: readonly string[];
+  readonly miniPlayerTabId: string | null;
+  readonly panelPreviewTabId: string | null;
+}): boolean {
+  const presentationSuppressed =
+    input.dismissedTabIds.includes(input.tabId) ||
+    input.miniPlayerTabId === input.tabId ||
+    input.panelPreviewTabId === input.tabId;
+
+  return shouldAutoShowPreviewForAutomationUse({
+    operation: input.operation as PreviewAutomationOperation,
+    autoShowFloatingPreview: input.autoShowFloatingPreview,
+    presentationSuppressed,
+  });
 }
 
 export function previewAutomationOpenNeedsOverlay(

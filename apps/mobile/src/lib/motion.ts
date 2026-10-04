@@ -49,3 +49,26 @@ export const MOTION_TIMING = {
   easing: MOTION_EASING,
   reduceMotion: ReduceMotion.System,
 } as const;
+
+/** Press feedback: lands fast and settles without a visible bounce. */
+export const MOTION_PRESS_SPRING = {
+  damping: 26,
+  stiffness: 520,
+  mass: 0.6,
+  reduceMotion: ReduceMotion.System,
+} as const;
+
+/** Things moving into place (chevrons, lifts, reflows): quick with a soft landing. */
+export const MOTION_SETTLE_SPRING = {
+  damping: 24,
+  stiffness: 280,
+  mass: 0.8,
+  reduceMotion: ReduceMotion.System,
+} as const;
+
+/** Release half of a press highlight: a touch slower than it arrived, like UIKit. */
+export const MOTION_RELEASE_TIMING = {
+  duration: 240,
+  easing: MOTION_EASING,
+  reduceMotion: ReduceMotion.System,
+} as const;

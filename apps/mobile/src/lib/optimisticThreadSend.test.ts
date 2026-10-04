@@ -1,3 +1,5 @@
+import type { OptimisticFeedMessage } from "./optimisticThreadSend";
+import { makeThreadShellFixture } from "../test-fixtures";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -7,12 +9,12 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  type OrchestrationMessage,
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 
 import type { QueuedThreadMessage } from "../state/thread-outbox-model";
 import {
+  isOptimisticStartingThreadPending,
   mergeOptimisticThreadMessages,
   mergePresentedThreadShells,
   optimisticStartingThreadToShell,
@@ -63,8 +65,8 @@ function queuedMessage(overrides: Partial<QueuedThreadMessage> = {}): QueuedThre
 }
 
 function serverMessage(
-  overrides: Partial<OrchestrationMessage> & Pick<OrchestrationMessage, "id">,
-): OrchestrationMessage {
+  overrides: Partial<OptimisticFeedMessage> & Pick<OptimisticFeedMessage, "id">,
+): OptimisticFeedMessage {
   return {
     role: "user",
     text: "Build the composer",
@@ -77,30 +79,8 @@ function serverMessage(
 }
 
 function serverShell(overrides: Partial<EnvironmentThreadShell> = {}): EnvironmentThreadShell {
-  return {
-    environmentId,
-    id: threadId,
-    projectId,
-    title: "Server thread",
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    enabledSkillIds: [],
-    branch: "main",
-    worktreePath: null,
-    latestTurn: null,
-    createdAt: "2026-04-01T00:00:00.000Z",
-    updatedAt: "2026-04-01T00:00:00.000Z",
-    archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
-    session: null,
-    latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
-    ...overrides,
-  };
+  return makeThreadShellFixture({ environmentId, id: threadId, projectId,
+    title: "Server thread", branch: "main", ...overrides });
 }
 
 describe("optimisticStartingThreadToShell", () => {
@@ -111,9 +91,23 @@ describe("optimisticStartingThreadToShell", () => {
       environmentId,
       id: threadId,
       title: "Build the composer",
-      session: { status: "starting", activeTurnId: null },
+      runtime: { status: "starting", activeRunId: null },
       latestUserMessageAt: "2026-04-01T00:00:00.000Z",
     });
+  });
+});
+
+describe("isOptimisticStartingThreadPending", () => {
+  it("settles finished native resume starts", () => {
+    const resume = startingThread({
+      message: { ...startingThread().message, text: "/resume native-session" },
+    });
+
+    expect(isOptimisticStartingThreadPending(resume, "starting")).toBe(true);
+    expect(isOptimisticStartingThreadPending(resume, "ready")).toBe(false);
+    expect(isOptimisticStartingThreadPending(resume, "error")).toBe(false);
+    expect(isOptimisticStartingThreadPending(startingThread(), "error")).toBe(true);
+    expect(isOptimisticStartingThreadPending(null, "error")).toBe(false);
   });
 });
 
