@@ -888,6 +888,9 @@ function ThreadSettingsContent(props: {
   const [animationsReady, setAnimationsReady] = useState(false);
   const insets = useSafeAreaInsets();
   const isSearching = session.searchQuery.trim().length > 0;
+  // Unfavoriting the last model must not strand the list on an empty filter.
+  const showsFavoritesChip =
+    session.favoriteKeys.size > 0 || session.providerFilter === FAVORITES_PROVIDER_FILTER;
   const hasActiveCatalogFilter = session.providerFilter !== null || isSearching;
   const usesTransparentNativeHeader = Platform.OS === "ios" && NATIVE_LIQUID_GLASS_SUPPORTED;
   const bottomToolbarInset =
@@ -1012,7 +1015,7 @@ function ThreadSettingsContent(props: {
               Model
             </Text>
           )}
-          {session.providerGroups.length > 1 || session.favoriteKeys.size > 0 ? (
+          {session.providerGroups.length > 1 || showsFavoritesChip ? (
             <ScrollView
               horizontal
               keyboardShouldPersistTaps="handled"
@@ -1029,7 +1032,7 @@ function ThreadSettingsContent(props: {
                 selected={session.providerFilter === null}
                 onPress={() => session.setProviderFilter(null)}
               />
-              {session.favoriteKeys.size > 0 ? (
+              {showsFavoritesChip ? (
                 <FilterChip
                   label="Favorites"
                   selected={session.providerFilter === FAVORITES_PROVIDER_FILTER}
@@ -1051,22 +1054,22 @@ function ThreadSettingsContent(props: {
         </>
       }
       ListFooterComponent={
-        isSearching ? null : (
-          <>
-            {Platform.OS !== "ios" && session.hasLegacyModels ? (
-              <View className="mt-6">
-                <View className="mx-4 overflow-hidden rounded-2xl bg-card">
-                  <SwitchRow
-                    label="Legacy models"
-                    onValueChange={session.setShowLegacy}
-                    value={session.showLegacy}
-                  />
-                </View>
+        <>
+          {Platform.OS !== "ios" && session.hasLegacyModels ? (
+            <View className="mt-6">
+              <View className="mx-4 overflow-hidden rounded-2xl bg-card">
+                <SwitchRow
+                  label="Legacy models"
+                  onValueChange={session.setShowLegacy}
+                  value={session.showLegacy}
+                />
               </View>
-            ) : null}
+            </View>
+          ) : null}
+          {isSearching ? null : (
             <ThreadSettingsThreadSections projectTransfer={props.projectTransfer} />
-          </>
-        )
+          )}
+        </>
       }
       recycleItems
       refreshControl={
