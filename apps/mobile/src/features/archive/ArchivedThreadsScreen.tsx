@@ -223,6 +223,26 @@ function ArchivedThreadRow(props: {
         borderCurve: glass ? "continuous" : undefined,
         overflow: "hidden",
       }}
+      // On glass the group outline stays put while the row slides, as on
+      // Home; its bottom edge doubles as the separator between rows.
+      outlineStyle={
+        glass
+          ? {
+              bottom: 0,
+              left: 0,
+              position: "absolute",
+              right: 0,
+              top: 0,
+              ...corners,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderColor: theme["--color-chrome-glass-border"],
+              borderCurve: "continuous",
+              borderLeftWidth: StyleSheet.hairlineWidth,
+              borderRightWidth: StyleSheet.hairlineWidth,
+              borderTopWidth: props.isFirst ? StyleSheet.hairlineWidth : 0,
+            }
+          : undefined
+      }
       fullSwipeWidth={windowWidth - 32}
       onDelete={props.onDelete}
       onSwipeableClose={props.onSwipeableClose}
@@ -240,22 +260,8 @@ function ArchivedThreadRow(props: {
         <View
           className={
             glass
-              ? "flex-row items-center gap-3 border-chrome-glass-border bg-chrome-glass px-4 py-3"
+              ? "flex-row items-center gap-3 bg-chrome-glass px-4 py-3"
               : `flex-row items-center gap-3 bg-grouped-card px-4 py-3 ${props.isLast ? "" : "border-b border-separator"}`
-          }
-          // The row carries the group outline so it moves with the swipe; its
-          // bottom edge doubles as the separator between rows.
-          style={
-            glass
-              ? {
-                  ...corners,
-                  borderCurve: "continuous",
-                  borderBottomWidth: StyleSheet.hairlineWidth,
-                  borderLeftWidth: StyleSheet.hairlineWidth,
-                  borderRightWidth: StyleSheet.hairlineWidth,
-                  borderTopWidth: props.isFirst ? StyleSheet.hairlineWidth : 0,
-                }
-              : undefined
           }
         >
           <View className="h-[34px] w-[34px] items-center justify-center rounded-[11px] bg-subtle">
