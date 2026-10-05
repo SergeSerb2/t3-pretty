@@ -271,7 +271,8 @@ or a handoff. The receiving agent knows which thread sent the message and
 replies there when asked a question. A message from another agent shows
 **Sent by another agent**; select it to open the sending thread.
 
-An agent can't message a thread that has broader permissions than its own.
+An agent can't message a thread that has broader permissions than its own, so
+some replies stay in the receiving thread.
 
 ## Snooze until later
 

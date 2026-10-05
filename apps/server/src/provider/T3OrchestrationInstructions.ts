@@ -13,7 +13,7 @@ The \`t3-code\` MCP server provides app-owned orchestration. Treat these concept
 - A delegated task/subagent is child work owned by the current thread. Use \`orchestrator_capabilities\` to discover the current provider/model IDs from the same live catalog as the composer, including configured custom models. Do not treat a native tool's model list as the full list of available subagent models. Prefer native subagent tools for same-provider work only when they support the chosen model. Use \`delegate_task\` with that provider instance and model when native tools cannot, including for same-provider work. Also use \`delegate_task\` for cross-provider or explicitly T3-owned child tasks. Retain each returned \`taskId\`, and use \`task_status\` or \`task_cancel\` to manage it. The returned \`childThreadId\` is backing storage for the subagent, not the target for starting another delegated review round.
 - \`t3_thread_launch\` and \`create_threads\` create ordinary top-level T3 conversations. Use them only when the user explicitly asks for separate/new/top-level threads or conversations. Never use them merely because the user said "subagent" or requested parallel delegated work.
 - For every T3 delegated review round, call \`delegate_task\` again. Include the original brief, prior findings, responses, and unresolved objections in each new task prompt. Track each round by its own \`taskId\`. Use a distinct \`clientRequestId\` per round, stable across retries of that round. Do not use \`t3_thread_send\` on \`childThreadId\` to continue a delegated review.
-- Threads in the same project can message each other. Find a thread with \`t3_thread_list\` and \`t3_thread_read\`, then message it with \`t3_thread_send\`. Do this when the user asks, or on your own when another thread's work materially affects yours: overlapping edits, an answer only that thread has, or a handoff. After you ask another thread a question, end your turn; the reply arrives as a new message.
+- Threads in the same project can message each other. Find a thread with \`t3_thread_list\` and \`t3_thread_read\`, then message it with \`t3_thread_send\`. Do this when the user asks, or on your own when another thread's work materially affects yours: overlapping edits, an answer only that thread has, or a handoff. After you ask another thread a question, end your turn; the reply arrives as a new message. In a delegated task, finish the task instead and report open questions in its result, because a reply after the task completes does not reach the parent.
 - A message that starts with a \`<t3_thread_message from_thread_id="...">\` header was sent by the agent in that thread, not by the user. Reply with \`t3_thread_send\` to that thread only when the message asks for an answer or result. Never send acknowledgements or thanks, so threads do not message each other in a loop.
 - \`schedule_task\` creates persistent recurring work in the app scheduler. Pass \`schedule\` as a structured object, never as JSON text: \`{"type":"interval","everyMs":3600000}\` for an interval, or \`{"type":"fixed_time","timeOfDay":"09:00","weekdays":[1,2,3,4,5]}\` for a wall-clock schedule. By default runs return to the current thread; set \`bindToCurrentThread=false\` only when the user wants a fresh thread for every run. After scheduling, report the returned cadence and next run time.
 
@@ -109,18 +109,19 @@ export function t3OrchestrationPromptForFirstRun(input: {
 
 /**
  * Prefix a message another thread's agent sent so the receiving agent knows
- * who is talking and where to reply. A delegated task's parent is skipped
- * because the task result already returns automatically. Slash commands stay
+ * who is talking and where to reply. A thread's own queued follow-ups and a
+ * delegated task's parent are skipped; the parent already gets the result. Slash commands stay
  * unwrapped so providers still recognize them.
  */
 export function t3ThreadMessageForProvider(input: {
   readonly text: string;
   readonly message: Pick<OrchestrationV2ConversationMessage, "createdBy" | "senderThreadId">;
-  readonly thread: Pick<OrchestrationV2AppThread, "lineage">;
+  readonly thread: Pick<OrchestrationV2AppThread, "id" | "lineage">;
 }): string {
   const sender = input.message.senderThreadId;
   if (
     sender === undefined ||
+    sender === input.thread.id ||
     input.message.createdBy !== "agent" ||
     (input.thread.lineage.relationshipToParent === "subagent" &&
       input.thread.lineage.parentThreadId === sender) ||

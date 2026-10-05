@@ -25,6 +25,7 @@ describe("T3 orchestration provider instructions", () => {
   it("tells the receiving agent which thread sent a message", () => {
     const sender = ThreadId.make("thread-sender");
     const ordinary = {
+      id: ThreadId.make("thread-receiver"),
       lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: sender },
     };
     const wrap = (
@@ -40,6 +41,7 @@ describe("T3 orchestration provider instructions", () => {
 
     // A fork's source is a peer, not the owner of a delegated task.
     const fork = {
+      ...ordinary,
       lineage: {
         ...ordinary.lineage,
         parentThreadId: sender,
@@ -49,9 +51,13 @@ describe("T3 orchestration provider instructions", () => {
     assert.notEqual(wrap("Hi", { createdBy: "agent", senderThreadId: sender }, fork), "Hi");
 
     // The parent of a delegated task already receives the result automatically.
-    const child = { lineage: { ...fork.lineage, relationshipToParent: "subagent" as const } };
+    const child = {
+      ...fork,
+      lineage: { ...fork.lineage, relationshipToParent: "subagent" as const },
+    };
     assert.equal(wrap("Task", { createdBy: "agent", senderThreadId: sender }, child), "Task");
     assert.equal(wrap("Hi", { createdBy: "user" }), "Hi");
+    assert.equal(wrap("Check CI", { createdBy: "agent", senderThreadId: ordinary.id }), "Check CI");
     assert.equal(wrap("/compact", { createdBy: "agent", senderThreadId: sender }), "/compact");
   });
 
