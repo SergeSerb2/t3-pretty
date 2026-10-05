@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 
 import {
+  GITHUB_API_QUOTA_HOST_CAPACITY,
   createGitHubApiQuota,
   gitHubApiHostFromArgs,
   gitHubApiQuotaCooldown,
@@ -61,6 +62,13 @@ describe("createGitHubApiQuota", () => {
     expect(quota.blockedUntil("github.example.com", 1_000)).toBeNull();
   });
 
+  it("honors a server retry time longer than local backoff", () => {
+    const quota = createGitHubApiQuota();
+    quota.noteRateLimit("github.com", 1_000, 121_000);
+    expect(quota.blockedUntil("github.com", 31_000)).toBe(121_000);
+    expect(quota.blockedUntil("github.com", 121_000)).toBeNull();
+  });
+
   it("clears a host on the next success", () => {
     const quota = createGitHubApiQuota();
     quota.noteRateLimit("github.com", 1_000);
@@ -86,4 +94,16 @@ describe("createGitHubApiQuota", () => {
       quota.blockedUntil("github.com", 1_000 + Duration.toMillis(GITHUB_API_QUOTA_COOLDOWN_BASE)),
     ).toBeNull();
   });
+});
+
+it("bounds retained one-off host cooldowns and normalizes host keys", () => {
+  const quota = createGitHubApiQuota();
+  for (let index = 0; index <= GITHUB_API_QUOTA_HOST_CAPACITY; index += 1) {
+    quota.noteRateLimit(`GITHUB-${index}.EXAMPLE.COM`, 0);
+  }
+
+  expect(quota.blockedUntil("github-0.example.com", 1)).toBeNull();
+  expect(
+    quota.blockedUntil(`github-${GITHUB_API_QUOTA_HOST_CAPACITY}.example.com`, 1),
+  ).not.toBeNull();
 });

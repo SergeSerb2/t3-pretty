@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { EnvironmentProject, EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
+import { executeAtomQuery, type AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import {
   type GitActionRequestInput,
   type VcsActionOperation,
@@ -132,17 +132,20 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
   }, [loadInitialState, refreshSelectedThreadGitStatus, selectedThread, selectedThreadProject]);
 
   const turnCompleteRefreshRef = useRef<{
-    threadId: string | null;
+    threadId: EnvironmentThreadShell["id"] | null;
     completedAt: string | null;
   }>({ threadId: null, completedAt: null });
   useEffect(() => {
     const threadId = selectedThread?.id ?? null;
-    const completedAt = selectedThread?.latestTurn?.completedAt ?? null;
+    const completedAt = selectedThread?.latestRun?.completedAt ?? null;
     const previous = turnCompleteRefreshRef.current;
     turnCompleteRefreshRef.current = { threadId, completedAt };
+    if (threadId === null) {
+      return;
+    }
     if (
       !shouldRefreshGitStatusAfterTurnComplete({
-        previousThreadId: previous.threadId,
+        previousThreadId: previous.threadId ?? undefined,
         threadId,
         previousCompletedAt: previous.completedAt,
         completedAt,
@@ -151,7 +154,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
       return;
     }
     void refreshSelectedThreadGitStatus({ quiet: true });
-  }, [refreshSelectedThreadGitStatus, selectedThread?.id, selectedThread?.latestTurn?.completedAt]);
+  }, [refreshSelectedThreadGitStatus, selectedThread?.id, selectedThread?.latestRun?.completedAt]);
 
   const runSelectedThreadGitMutation = useCallback(
     async <T, E>(
@@ -196,11 +199,30 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
   );
 
   const refreshSelectedThreadBranches = useCallback(async (): Promise<ReadonlyArray<VcsRef>> => {
-    branchState.refresh();
-    return dedupeRemoteBranchesWithLocalMatches(branchState.data?.refs ?? []).filter(
+    const cachedBranches = dedupeRemoteBranchesWithLocalMatches(
+      branchState.data?.refs ?? [],
+    ).filter((branch) => !branch.isRemote);
+    if (!selectedThread || selectedThreadGitRootCwd === null) {
+      return cachedBranches;
+    }
+
+    const atom = vcsEnvironment.listRefs({
+      environmentId: selectedThread.environmentId,
+      input: { cwd: selectedThreadGitRootCwd, limit: 100 },
+    });
+    appAtomRegistry.refresh(atom);
+    const result = await executeAtomQuery(appAtomRegistry, atom, {
+      label: "refresh selected thread branches",
+      reportDefect: false,
+      reportFailure: false,
+    });
+    if (AsyncResult.isFailure(result)) {
+      return cachedBranches;
+    }
+    return dedupeRemoteBranchesWithLocalMatches(result.value.refs).filter(
       (branch) => !branch.isRemote,
     );
-  }, [branchState]);
+  }, [branchState.data?.refs, selectedThread, selectedThreadGitRootCwd]);
 
   const syncSelectedThreadBranchState = useCallback(
     async (input: {
@@ -226,7 +248,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
 
   const onCheckoutSelectedThreadBranch = useCallback(
     async (branch: string) => {
-      await runSelectedThreadGitMutation(
+      const result = await runSelectedThreadGitMutation(
         "switch_ref",
         "Switching branch",
         async ({ thread, cwd }) => {
@@ -248,6 +270,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
           return AsyncResult.isFailure(syncResult) ? AsyncResult.failure(syncResult.cause) : result;
         },
       );
+      return result !== null;
     },
     [
       runSelectedThreadGitMutation,
@@ -259,7 +282,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
 
   const onCreateSelectedThreadBranch = useCallback(
     async (branch: string) => {
-      await runSelectedThreadGitMutation(
+      const result = await runSelectedThreadGitMutation(
         "create_ref",
         "Creating branch",
         async ({ thread, cwd }) => {
@@ -281,6 +304,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
           return AsyncResult.isFailure(syncResult) ? AsyncResult.failure(syncResult.cause) : result;
         },
       );
+      return result !== null;
     },
     [
       runSelectedThreadGitMutation,
@@ -292,7 +316,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
 
   const onCreateSelectedThreadWorktree = useCallback(
     async (nextWorktree: { readonly baseBranch: string; readonly newBranch: string }) => {
-      await runSelectedThreadGitMutation(
+      const result = await runSelectedThreadGitMutation(
         "create_worktree",
         "Creating worktree",
         async ({ thread, project }) => {
@@ -317,7 +341,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
           // must be known: an unloaded current path is not a move.
           if (
             shouldStopSessionOnWorktreeMove({
-              sessionStatus: thread.session?.status,
+              sessionStatus: thread.runtime?.status,
               currentWorktreePath: selectedThreadWorktreePath,
               nextWorktreePath: result.value.worktree.path,
             })
@@ -338,6 +362,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
           return AsyncResult.isFailure(syncResult) ? AsyncResult.failure(syncResult.cause) : result;
         },
       );
+      return result !== null;
     },
     [
       createWorktree,
@@ -386,6 +411,8 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
             ...(input.commitMessage ? { commitMessage: input.commitMessage } : {}),
             ...(input.featureBranch ? { featureBranch: input.featureBranch } : {}),
             ...(input.filePaths?.length ? { filePaths: [...input.filePaths] } : {}),
+            // A pull request the action opens is linked to the thread it ran beside.
+            threadId: thread.id,
           });
           if (AsyncResult.isFailure(result)) {
             return result;
@@ -428,13 +455,24 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
     ],
   );
 
-  return {
-    refreshSelectedThreadGitStatus,
-    refreshSelectedThreadBranches,
-    onCheckoutSelectedThreadBranch,
-    onCreateSelectedThreadBranch,
-    onCreateSelectedThreadWorktree,
-    onPullSelectedThreadBranch,
-    onRunSelectedThreadGitAction,
-  };
+  return useMemo(
+    () => ({
+      refreshSelectedThreadGitStatus,
+      refreshSelectedThreadBranches,
+      onCheckoutSelectedThreadBranch,
+      onCreateSelectedThreadBranch,
+      onCreateSelectedThreadWorktree,
+      onPullSelectedThreadBranch,
+      onRunSelectedThreadGitAction,
+    }),
+    [
+      onCheckoutSelectedThreadBranch,
+      onCreateSelectedThreadBranch,
+      onCreateSelectedThreadWorktree,
+      onPullSelectedThreadBranch,
+      onRunSelectedThreadGitAction,
+      refreshSelectedThreadBranches,
+      refreshSelectedThreadGitStatus,
+    ],
+  );
 }

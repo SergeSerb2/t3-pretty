@@ -7,13 +7,23 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { resolveStorage } from "../lib/storage";
+import { resolveLocalStorage } from "../lib/storage";
 
 const MOTION_STORAGE_KEY = "t3code:scenery-motion:v1";
 
 interface MotionStoreState {
   enabled: boolean;
   setEnabled: (enabled: boolean) => void;
+}
+
+export function normalizePersistedMotionState(
+  persistedState: unknown,
+): Pick<MotionStoreState, "enabled"> {
+  if (!persistedState || typeof persistedState !== "object") {
+    return { enabled: true };
+  }
+  const enabled = (persistedState as { enabled?: unknown }).enabled;
+  return { enabled: typeof enabled === "boolean" ? enabled : true };
 }
 
 export const useMotionStore = create<MotionStoreState>()(
@@ -24,10 +34,12 @@ export const useMotionStore = create<MotionStoreState>()(
     }),
     {
       name: MOTION_STORAGE_KEY,
-      storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
-      ),
+      storage: createJSONStorage(resolveLocalStorage),
       partialize: (state) => ({ enabled: state.enabled }),
+      merge: (persistedState, currentState) => ({
+        ...currentState,
+        ...normalizePersistedMotionState(persistedState),
+      }),
     },
   ),
 );

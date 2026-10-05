@@ -14,7 +14,7 @@ import {
 } from "./origin-forge.mjs";
 
 export const REVIEW_MARKER = "t3-pretty-grok-review";
-export const DEFAULT_MODEL = "grok-4.6";
+export const DEFAULT_MODEL = "grok-4.7-build-fast";
 export const DEFAULT_CLI_PROXY_API_URL = "https://cli-proxy-api-production-1615.up.railway.app/v1";
 export const MAX_DIFF_CHARS = 120_000;
 export const MAX_ISSUES = 12;
@@ -165,7 +165,7 @@ export function parseReviewResponse(text) {
     summary:
       typeof parsed.summary === "string" && parsed.summary.trim()
         ? parsed.summary.trim()
-        : "Grok 4.6 reviewed this Origin pull request.",
+        : "Grok reviewed this Origin pull request.",
     issues,
   };
 }
@@ -193,7 +193,7 @@ export function formatReviewBody({ sha, model, summary, issues, truncated, url }
   const lines = [
     reviewMarker(sha),
     "",
-    `## Grok 4.6 review`,
+    `## Grok review`,
     "",
     summary,
     "",
@@ -265,7 +265,7 @@ export async function callGrokReview({
   model = grokModel(),
 }) {
   if (!apiKey) {
-    throw new Error("CLI_PROXY_API_KEY is required for Grok 4.6 Origin PR reviews.");
+    throw new Error("CLI_PROXY_API_KEY is required for Grok Origin PR reviews.");
   }
   const response = await fetch(`${apiUrl}/responses`, {
     method: "POST",
@@ -385,7 +385,7 @@ export function postComment(target, body, { repo } = {}) {
 
 export function isActionableGrokFinding(body) {
   if (typeof body !== "string" || !body.includes(`<!-- ${REVIEW_MARKER}`)) return false;
-  if (/^## Grok 4.6 review/mu.test(body)) return false;
+  if (/^## Grok(?: 4\.6)? review/mu.test(body)) return false;
   return /^### (?:bug|suggestion|nit) — /mu.test(body);
 }
 
@@ -491,7 +491,7 @@ export async function reviewOriginPullRequest({
     if (postedIssue) process.stdout.write(`${postedIssue}\n`);
   }
   const posted = postReview(number, body, { repo });
-  process.stdout.write(`Posted Grok 4.6 review on Origin PR #${number}.\n`);
+  process.stdout.write(`Posted Grok review on Origin PR #${number}.\n`);
   if (posted) process.stdout.write(`${posted}\n`);
   return { number, sha, issues: review.issues, url: pullRequest.url };
 }

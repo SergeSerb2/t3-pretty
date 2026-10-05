@@ -106,6 +106,15 @@ const { title, description, heading, lede, effectiveDate, lastUpdated, sections 
   updateActiveSection();
   window.addEventListener("scroll", scheduleUpdate, { passive: true });
   window.addEventListener("resize", scheduleUpdate);
+  window.addEventListener(
+    "pagehide",
+    () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+    },
+    { once: true },
+  );
 </script>
 
 <style is:global>

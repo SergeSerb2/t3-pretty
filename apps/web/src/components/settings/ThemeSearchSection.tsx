@@ -1,13 +1,9 @@
-import {
-  ExternalLinkIcon,
-  PackagePlusIcon,
-  PaletteIcon,
-  RefreshCwIcon,
-  SearchIcon,
-} from "lucide-react";
+import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { ExternalLinkIcon, PackagePlusIcon, PaletteIcon, SearchIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   importOpenVsxThemeExtension,
+  OPEN_VSX_SEARCH_QUERY_MAX_LENGTH,
   searchOpenVsxThemes,
   type OpenVsxThemeExtension,
   type OpenVsxThemeSort,
@@ -29,6 +25,7 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "../ui/alert-dialog";
+import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -95,7 +92,8 @@ export function ThemeSearchSection({
   const [isSearching, setIsSearching] = useState(false);
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [pendingUpdate, setPendingUpdate] = useState<OpenVsxThemeExtension | null>(null);
-  const requestRef = useRef<AbortController | null>(null);
+  const searchRequestRef = useRef<AbortController | null>(null);
+  const installRequestRef = useRef<AbortController | null>(null);
   // The (query, sort) pair the last search actually ran, so an install
   // finishing can tell a same-key rerun (which must not wipe an install
   // error) from a query that changed mid-install (which must be searched).
@@ -106,8 +104,10 @@ export function ThemeSearchSection({
   const prevSearchKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    requestRef.current?.abort();
-    requestRef.current = null;
+    searchRequestRef.current?.abort();
+    searchRequestRef.current = null;
+    installRequestRef.current?.abort();
+    installRequestRef.current = null;
     if (open) {
       lastSearchKeyRef.current = null;
       prevSearchKeyRef.current = null;
@@ -120,18 +120,20 @@ export function ThemeSearchSection({
       setPendingUpdate(null);
     }
     return () => {
-      requestRef.current?.abort();
-      requestRef.current = null;
+      searchRequestRef.current?.abort();
+      searchRequestRef.current = null;
+      installRequestRef.current?.abort();
+      installRequestRef.current = null;
     };
   }, [open]);
 
   const runSearch = useCallback(
     async (searchText: string, nextSort = sortBy) => {
       const trimmed = searchText.trim();
-      if (!trimmed) return;
-      requestRef.current?.abort();
+      if (!trimmed || installingId !== null) return;
+      searchRequestRef.current?.abort();
       const controller = new AbortController();
-      requestRef.current = controller;
+      searchRequestRef.current = controller;
       setError(null);
       setIsSearching(true);
       try {
@@ -150,20 +152,20 @@ export function ThemeSearchSection({
           setError(cause instanceof Error ? cause.message : "Open VSX search failed.");
         }
       }
-      if (requestRef.current === controller) {
-        requestRef.current = null;
+      if (searchRequestRef.current === controller) {
+        searchRequestRef.current = null;
         setIsSearching(false);
       }
     },
-    [sortBy],
+    [installingId, sortBy],
   );
 
   const debouncedQuery = useDebouncedValue(query.trim(), SEARCH_DEBOUNCE_MS);
 
   useEffect(() => {
     if (query.trim() || installingId !== null) return;
-    requestRef.current?.abort();
-    requestRef.current = null;
+    searchRequestRef.current?.abort();
+    searchRequestRef.current = null;
     lastSearchKeyRef.current = null;
     setResults(null);
     setError(null);
@@ -178,8 +180,8 @@ export function ThemeSearchSection({
     if (installingId !== null) return;
     if (!debouncedQuery) {
       lastSearchKeyRef.current = null;
-      requestRef.current?.abort();
-      requestRef.current = null;
+      searchRequestRef.current?.abort();
+      searchRequestRef.current = null;
       setResults(null);
       setError(null);
       setIsSearching(false);
@@ -197,20 +199,19 @@ export function ThemeSearchSection({
       // still be in flight (typed and then undone); abort it so it cannot
       // overwrite the results. Only a genuine key change makes a stale search
       // error irrelevant, so an install error on an unchanged query survives.
-      requestRef.current?.abort();
-      requestRef.current = null;
+      searchRequestRef.current?.abort();
+      searchRequestRef.current = null;
       setIsSearching(false);
       if (keyChanged) setError(null);
       return;
     }
     void runSearch(debouncedQuery);
-    // `installingId` and `sortBy` are deliberately not dependencies: the
-    // guards above read the current values from the fresh render closure. An
-    // install finishing reruns the search only when the query or sort changed
-    // while it was in flight (checked via lastSearchKeyRef, recorded only
-    // once a search succeeds), so the install error the user needs to see is
-    // preserved across that rerun.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `sortBy` is deliberately not a direct dependency: the guards above read
+    // the current value from the fresh render closure. An install finishing
+    // reruns the search only when the query or sort changed while it was in
+    // flight (checked via lastSearchKeyRef, recorded only once a search
+    // succeeds), so the install error the user needs to see is preserved
+    // across that rerun.
   }, [open, query, debouncedQuery, installingId, runSearch]);
 
   const handleSortChange = useCallback((value: OpenVsxThemeSort | null) => {
@@ -221,6 +222,7 @@ export function ThemeSearchSection({
 
   const handleInstall = useCallback(
     async (extension: OpenVsxThemeExtension, allowUpdate: boolean) => {
+      if (installingId !== null) return;
       setError(null);
       let installedCollection: ReadonlyArray<ThemeDefinition>;
       try {
@@ -235,10 +237,9 @@ export function ThemeSearchSection({
         return;
       }
 
-      requestRef.current?.abort();
+      installRequestRef.current?.abort();
       const controller = new AbortController();
-      requestRef.current = controller;
-      setIsSearching(false);
+      installRequestRef.current = controller;
       setInstallingId(extension.id);
       try {
         const themes = await importOpenVsxThemeExtension(extension, controller.signal);
@@ -253,12 +254,12 @@ export function ThemeSearchSection({
           setError(cause instanceof Error ? cause.message : "That theme could not be added.");
         }
       }
-      if (requestRef.current === controller) {
-        requestRef.current = null;
+      if (installRequestRef.current === controller) {
+        installRequestRef.current = null;
         setInstallingId(null);
       }
     },
-    [onInstalled],
+    [installingId, onInstalled],
   );
 
   return (
@@ -278,6 +279,7 @@ export function ThemeSearchSection({
         <InputGroupInput
           aria-label="Search Open VSX themes"
           autoFocus
+          maxLength={OPEN_VSX_SEARCH_QUERY_MAX_LENGTH}
           onChange={(event) => setQuery(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
@@ -348,12 +350,9 @@ export function ThemeSearchSection({
       </div>
 
       {error ? (
-        <div
-          aria-live="polite"
-          className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive text-sm"
-        >
-          {error}
-        </div>
+        <Alert variant="error" role="status" aria-live="polite">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       ) : null}
 
       {isSearching && results === null ? (
@@ -418,7 +417,7 @@ export function ThemeSearchSection({
                       {isInstalling ? (
                         <Spinner />
                       ) : isInstalled ? (
-                        <RefreshCwIcon />
+                        <RefreshIcon />
                       ) : (
                         <PackagePlusIcon />
                       )}

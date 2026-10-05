@@ -2,6 +2,11 @@ import {
   type AuthSessionId,
   type BackgroundPolicySnapshot,
   type BackgroundScope,
+  CLIENT_ACTIVITY_DEFAULT_LEASE_TTL_MS,
+  CLIENT_ACTIVITY_MAX_LEASES,
+  CLIENT_ACTIVITY_MAX_LEASES_PER_RPC_CLIENT,
+  CLIENT_ACTIVITY_MAX_LEASE_TTL_MS,
+  CLIENT_ACTIVITY_MIN_LEASE_TTL_MS,
   type ClientActivityLease,
   type ClientActivityReportInput,
   type HostPowerSnapshot,
@@ -22,7 +27,7 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
-import { ServerSettingsService } from "../serverSettings.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { subscribeBeforeSnapshot } from "../utils/subscribeBeforeSnapshot.ts";
 import * as HostPowerMonitor from "./HostPowerMonitor.ts";
 
@@ -55,9 +60,7 @@ export class BackgroundPolicy extends Context.Service<
   }
 >()("t3/background/BackgroundPolicy") {}
 
-const DEFAULT_LEASE_TTL_MS = 45_000;
-const MAX_LEASE_TTL_MS = 120_000;
-export const MAX_CLIENT_ACTIVITY_LEASES_PER_RPC_CLIENT = 16;
+export const MAX_CLIENT_ACTIVITY_LEASES_PER_RPC_CLIENT = CLIENT_ACTIVITY_MAX_LEASES_PER_RPC_CLIENT;
 
 function scopeKey(scope: BackgroundScope): string {
   switch (scope.type) {
@@ -82,7 +85,7 @@ function leaseKey(lease: Pick<ClientActivityLease, "sessionId" | "rpcClientId" |
   return JSON.stringify([lease.sessionId, lease.rpcClientId, lease.clientId]);
 }
 
-export function upsertClientActivityLease(
+function upsertClientActivityLease(
   leases: ReadonlyMap<string, ClientActivityLease>,
   lease: ClientActivityLease,
   now: DateTime.Utc,
@@ -122,6 +125,19 @@ export function upsertClientActivityLease(
   }
 
   next.set(key, lease);
+  while (next.size > CLIENT_ACTIVITY_MAX_LEASES) {
+    let oldestKey: string | undefined;
+    let oldestUpdatedAtMs = Number.POSITIVE_INFINITY;
+    for (const [currentKey, current] of next) {
+      const updatedAtMs = DateTime.toEpochMillis(current.updatedAt);
+      if (updatedAtMs < oldestUpdatedAtMs) {
+        oldestKey = currentKey;
+        oldestUpdatedAtMs = updatedAtMs;
+      }
+    }
+    if (oldestKey === undefined) break;
+    next.delete(oldestKey);
+  }
   return next;
 }
 
@@ -208,9 +224,10 @@ function computeSnapshot(input: {
   };
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("background.policy.make")(function* () {
   const hostPowerMonitor = yield* HostPowerMonitor.HostPowerMonitor;
-  const serverSettings = yield* ServerSettingsService;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
   const leasesRef = yield* Ref.make(new Map<string, ClientActivityLease>());
   const changes = yield* PubSub.sliding<BackgroundPolicySnapshot>(1);
   const publishMutex = yield* Semaphore.make(1);
@@ -243,8 +260,11 @@ export const make = Effect.fn("background.policy.make")(function* () {
     publishMutex.withPermits(1)(
       Effect.gen(function* () {
         const ttlMs = Math.min(
-          Math.max(input.ttlMs ?? DEFAULT_LEASE_TTL_MS, 1_000),
-          MAX_LEASE_TTL_MS,
+          Math.max(
+            input.ttlMs ?? CLIENT_ACTIVITY_DEFAULT_LEASE_TTL_MS,
+            CLIENT_ACTIVITY_MIN_LEASE_TTL_MS,
+          ),
+          CLIENT_ACTIVITY_MAX_LEASE_TTL_MS,
         );
         const now = yield* DateTime.now;
         const expiresAt = DateTime.add(now, { milliseconds: ttlMs });

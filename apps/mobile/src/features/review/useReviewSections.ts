@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo } from "react";
+import * as DateTime from "effect/DateTime";
 
-import type { EnvironmentId, OrchestrationCheckpointSummary, ThreadId } from "@t3tools/contracts";
+import {
+  deriveThreadCheckpointSummaries,
+  type ThreadCheckpointSummary,
+} from "@t3tools/client-runtime/state/thread-checkpoints";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import { useCheckpointDiff } from "../../state/queries";
 import { useEnvironmentQuery } from "../../state/query";
 import { reviewEnvironment } from "../../state/review";
-import { useSelectedThreadDetail } from "../../state/use-thread-detail";
+import { useSelectedThreadProjection } from "../../state/use-thread-detail";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import {
   buildReviewSectionItems,
@@ -30,7 +35,7 @@ export function useReviewSections(input: {
 }) {
   const { environmentId, reviewCache, threadId } = input;
   const enabled = input.enabled ?? true;
-  const selectedThread = useSelectedThreadDetail();
+  const selectedThread = useSelectedThreadProjection();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const diffPreview = useEnvironmentQuery(
     enabled && environmentId !== undefined && selectedThreadCwd !== null
@@ -49,8 +54,11 @@ export function useReviewSections(input: {
   }, [diffPreview.data, reviewCache.threadKey]);
 
   const readyCheckpoints = useMemo(
-    () => getReadyReviewCheckpoints(selectedThread?.checkpoints ?? []),
-    [selectedThread?.checkpoints],
+    () =>
+      getReadyReviewCheckpoints(
+        selectedThread === null ? [] : deriveThreadCheckpointSummaries(selectedThread.projection),
+      ),
+    [selectedThread],
   );
   const checkpointBySectionId = useMemo(
     () =>
@@ -59,20 +67,21 @@ export function useReviewSections(input: {
           getReviewSectionIdForCheckpoint(checkpoint),
           checkpoint,
         ]),
-      ) as Record<string, OrchestrationCheckpointSummary>,
+      ) as Record<string, ThreadCheckpointSummary>,
     [readyCheckpoints],
   );
   const reviewSections = useMemo(
     () =>
       buildReviewSectionItems({
         checkpoints: readyCheckpoints,
-        gitSections: reviewCache.gitSections,
+        gitSections: diffPreview.data?.sources ?? reviewCache.gitSections,
         turnDiffById: reviewCache.turnDiffById,
         loadingTurnIds,
         loadingGitSections: diffPreview.isPending,
       }),
     [
       diffPreview.isPending,
+      diffPreview.data?.sources,
       loadingTurnIds,
       readyCheckpoints,
       reviewCache.gitSections,
@@ -114,10 +123,8 @@ export function useReviewSections(input: {
     selectedSectionIdExists,
   ]);
 
-  let activeCheckpoint = readyCheckpoints[0] ?? null;
-  if (selectedSection?.kind === "turn") {
-    activeCheckpoint = checkpointBySectionId[selectedSection.id] ?? activeCheckpoint;
-  }
+  const activeCheckpoint =
+    selectedSection?.kind === "turn" ? (checkpointBySectionId[selectedSection.id] ?? null) : null;
   const activeSectionId = activeCheckpoint
     ? getReviewSectionIdForCheckpoint(activeCheckpoint)
     : null;
@@ -134,7 +141,11 @@ export function useReviewSections(input: {
     if (!reviewCache.threadKey || !activeSectionId) {
       return;
     }
-    setReviewTurnDiffLoading(reviewCache.threadKey, activeSectionId, activeTurnDiff.isPending);
+    const threadKey = reviewCache.threadKey;
+    setReviewTurnDiffLoading(threadKey, activeSectionId, activeTurnDiff.isPending);
+    return () => {
+      setReviewTurnDiffLoading(threadKey, activeSectionId, false);
+    };
   }, [activeSectionId, activeTurnDiff.isPending, reviewCache.threadKey]);
 
   useEffect(() => {
@@ -173,7 +184,12 @@ export function useReviewSections(input: {
 
   return {
     error: diffPreview.error ?? activeTurnDiff.error ?? reviewCache.asyncState.error,
+    isSelectedSectionPending:
+      selectedSection?.kind === "turn" ? activeTurnDiff.isPending : diffPreview.isPending,
     loadingGitDiffs: diffPreview.isPending,
+    diffPreviewRevision: diffPreview.data
+      ? DateTime.formatIso(diffPreview.data.generatedAt)
+      : undefined,
     loadingTurnIds,
     reviewSections,
     selectedSection,

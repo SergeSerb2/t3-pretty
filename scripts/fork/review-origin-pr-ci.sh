@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Grok 4.6 Origin PR review on macos-release.
+# Grok 4.7 Fast Origin PR review on self-hosted macos-release.
 #
-# Hosted linux-small cannot load CURSOR_API_KEY. Load secrets from
-# buildkite-agent or $HOME only — never a hardcoded machine path.
+# Hosted linux-small and hosted M4 cannot load CURSOR_API_KEY. Load secrets
+# from buildkite-agent or $HOME only — never a hardcoded machine path.
 # Prefer scripts copied from origin/main (see run-trusted-origin-pr-ci.sh).
 set -euo pipefail
 
@@ -45,7 +45,7 @@ ensure_node() {
   fi
   if command -v brew >/dev/null; then
     echo "Installing node with Homebrew"
-    brew install node
+    HOMEBREW_NO_ASK=1 HOMEBREW_NO_AUTO_UPDATE=1 brew install node
     return 0
   fi
   local ver="v24.13.1"
@@ -85,8 +85,8 @@ load_secret CLI_PROXY_API_KEY
 ensure_node
 
 export ORIGIN_REPO="${ORIGIN_REPO:-serbinenko/t3-pretty}"
-export CLI_PROXY_REVIEW_MODEL="${CLI_PROXY_REVIEW_MODEL:-grok-4.6}"
-# high effort regularly exceeds the request timeout on grok-4.6.
+export CLI_PROXY_REVIEW_MODEL="${CLI_PROXY_REVIEW_MODEL:-grok-4.7-build-fast}"
+# high effort regularly exceeds the request timeout on Grok review requests.
 export CLI_PROXY_REVIEW_EFFORT="${CLI_PROXY_REVIEW_EFFORT:-low}"
 export CLI_PROXY_API_URL="${CLI_PROXY_API_URL:-https://cli-proxy-api-production-1615.up.railway.app/v1}"
 

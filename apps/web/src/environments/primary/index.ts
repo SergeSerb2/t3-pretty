@@ -1,29 +1,22 @@
 export {
   getPrimaryKnownEnvironment,
-  readPrimaryEnvironmentDescriptor,
   resetPrimaryEnvironmentDescriptorForTests,
   resolveInitialPrimaryEnvironmentDescriptor,
   writePrimaryEnvironmentDescriptor,
-  __resetPrimaryEnvironmentBootstrapForTests,
-  __resetPrimaryEnvironmentDescriptorBootstrapForTests,
-} from "./context";
-
-export {
-  resolveInitialPrimaryEnvironmentDescriptor as ensurePrimaryEnvironmentReady,
-  writePrimaryEnvironmentDescriptor as updatePrimaryEnvironmentDescriptor,
 } from "./context";
 
 export {
   createServerPairingCredential,
-  fetchSessionState,
+  DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS,
+  DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS,
+  isPrimaryEnvironmentDesktopBearerTimeoutError,
+  isPrimaryEnvironmentDesktopBootstrapTimeoutError,
+  PrimaryEnvironmentDesktopBearerTimeoutError,
   isPrimaryEnvironmentPairingCredentialRejectedError,
-  isPrimaryEnvironmentRequestError,
-  listServerClientSessions,
-  listServerPairingLinks,
   peekPairingTokenFromUrl,
+  PrimaryEnvironmentDesktopBootstrapTimeoutError,
   PrimaryEnvironmentPairingCredentialRejectedError,
   PrimaryEnvironmentRequestError,
-  reauthenticatePrimaryEnvironment,
   resolveInitialServerAuthGateState,
   revokeOtherServerClientSessions,
   revokeServerClientSession,
@@ -36,9 +29,7 @@ export {
   __resetServerAuthBootstrapForTests,
 } from "./auth";
 
-export { refreshPrimarySessionState, usePrimarySessionState } from "./sessionState";
-
-export { PrimaryEnvironmentHttpClient } from "./httpClient";
+export { usePrimarySessionState } from "./sessionState";
 
 export {
   DesktopEnvironmentBootstrapIncompleteError,

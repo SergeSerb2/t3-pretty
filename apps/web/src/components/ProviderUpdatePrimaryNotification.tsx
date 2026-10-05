@@ -2,12 +2,12 @@ import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { DownloadIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { type ProviderDriverKind, type ProviderInstanceId } from "@t3tools/contracts";
+import { type ServerProvider, type ProviderInstanceId } from "@t3tools/contracts";
 
 import { primaryServerProvidersAtom, serverEnvironment } from "../state/server";
 import { usePrimaryEnvironment } from "../state/environments";
 import { useDismissedProviderUpdateNotificationKeys } from "../providerUpdateDismissal";
-import { PROVIDER_ICON_BY_PROVIDER } from "./chat/providerIconUtils";
+import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import {
   canOneClickUpdateProviderCandidate,
   collectProviderUpdateCandidates,
@@ -24,6 +24,16 @@ import { hiddenToastActionProps, stackedThreadToast, toastManager } from "./ui/t
 import { useAtomCommand } from "../state/use-atom-command";
 
 const seenProviderUpdateNotificationKeys = new Set<string>();
+const MAX_SEEN_PROVIDER_UPDATE_NOTIFICATION_KEYS = 128;
+
+function rememberSeenProviderUpdateNotificationKey(key: string): void {
+  seenProviderUpdateNotificationKeys.delete(key);
+  seenProviderUpdateNotificationKeys.add(key);
+  if (seenProviderUpdateNotificationKeys.size > MAX_SEEN_PROVIDER_UPDATE_NOTIFICATION_KEYS) {
+    const oldestKey = seenProviderUpdateNotificationKeys.values().next().value;
+    if (oldestKey !== undefined) seenProviderUpdateNotificationKeys.delete(oldestKey);
+  }
+}
 type ProviderUpdateToastId = ReturnType<typeof toastManager.add>;
 
 type ActiveProviderUpdateToast =
@@ -35,20 +45,15 @@ type ActiveProviderUpdateToast =
       readonly providerCount: number;
     };
 
-function ProviderUpdateToastIcon({ provider }: { provider: ProviderDriverKind }) {
-  const ProviderIcon = PROVIDER_ICON_BY_PROVIDER[provider];
-
-  if (!ProviderIcon) {
-    return (
-      <span className="relative inline-flex size-4 shrink-0 items-center justify-center">
-        <DownloadIcon aria-hidden="true" className="size-4 text-success" strokeWidth={2.5} />
-      </span>
-    );
-  }
-
+function ProviderUpdateToastIcon({ provider }: { provider: ServerProvider }) {
   return (
     <span className="relative inline-flex size-4 shrink-0 items-center justify-center">
-      <ProviderIcon aria-hidden="true" className="size-4" />
+      <ProviderInstanceIcon
+        driverKind={provider.driver}
+        displayName={provider.displayName ?? provider.driver}
+        acpRegistryIconUrl={provider.iconUrl}
+        iconClassName="size-4"
+      />
       <span className="absolute -right-1 -bottom-1 inline-flex size-3 items-center justify-center rounded-full bg-popover">
         <DownloadIcon aria-hidden="true" className="size-2.5 text-success" strokeWidth={2.5} />
       </span>
@@ -192,7 +197,7 @@ export function ProviderUpdatePrimaryNotification() {
       return;
     }
 
-    seenProviderUpdateNotificationKeys.add(notificationKey);
+    rememberSeenProviderUpdateNotificationKey(notificationKey);
 
     const initialView = getProviderUpdateInitialToastView({ updateProviders, oneClickProviders });
 
@@ -281,11 +286,11 @@ export function ProviderUpdatePrimaryNotification() {
                 children: "Settings",
                 onClick: openSettings,
               },
-        actionVariant: oneClickProviders.length > 0 ? "default" : "outline",
+        actionVariant: "outline",
         data: {
           leadingIcon:
             updateProviders.length === 1 ? (
-              <ProviderUpdateToastIcon provider={updateProviders[0]!.driver} />
+              <ProviderUpdateToastIcon provider={updateProviders[0]!} />
             ) : undefined,
           hideCopyButton: true,
           onClose: dismissPrompt,

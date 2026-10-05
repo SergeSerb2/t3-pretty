@@ -62,15 +62,15 @@ export function AgentActivity(
 ): LiveActivityLayout {
   "widget";
 
-  // Use SwiftUI's semantic label colors rather than fixed hex keyed off the
-  // device color scheme. A Live Activity banner always renders over a dark
-  // system material regardless of the device's light/dark setting, so
-  // scheme-derived dark text read as unreadable dark-on-dark on the lock
-  // screen. Semantic colors adapt to whatever material the OS places them on:
-  // the dark LA banner, iOS 26 liquid glass, and the (light or dark)
-  // home-screen widget alike.
-  const primaryForeground = "primary";
-  const secondaryForeground = "secondary";
+  // Use SwiftUI's hierarchical foreground styles rather than fixed hex values
+  // keyed off the device color scheme. They remain readable on the dark Live
+  // Activity banner, iOS 26 liquid glass, and light or dark home-screen
+  // widgets while inheriting tinted and vibrant system presentations.
+  type Foreground = Parameters<typeof foregroundStyle>[0];
+  const primaryForeground = { type: "hierarchical", style: "primary" } as const;
+  const secondaryForeground = { type: "hierarchical", style: "secondary" } as const;
+  const monochrome =
+    environment.widgetRenderingMode === "accented" || environment.widgetRenderingMode === "vibrant";
 
   // Status tints mirror the web sidebar's pills
   // (apps/web/src/components/Sidebar.logic.ts resolveThreadStatusPill): amber
@@ -79,9 +79,12 @@ export function AgentActivity(
   // Mac notification center) renders it on a light one — so pick the web
   // palette's light (-600) or dark (-300) variant off the color scheme.
   const isLightScheme = environment.colorScheme === "light";
-  const phaseTint = (phase: AgentActivityPhase | undefined): string => {
+  const phaseTint = (phase: AgentActivityPhase | undefined): Foreground => {
     if (environment.isLuminanceReduced) {
       return secondaryForeground;
+    }
+    if (monochrome) {
+      return primaryForeground;
     }
     switch (phase) {
       case "waiting_for_approval":
@@ -92,6 +95,8 @@ export function AgentActivity(
         return isLightScheme ? "#dc2626" : "#fca5a5"; // red-600 / red-300
       case "completed":
         return isLightScheme ? "#059669" : "#6ee7b7"; // emerald-600 / emerald-300
+      case "stale":
+        return secondaryForeground;
       case "starting":
       case "running":
       default:
@@ -107,20 +112,30 @@ export function AgentActivity(
     if (phase === "running" || phase === "starting") return 2;
     return 3;
   };
-  const ordered = [...props.activities].sort(
+  // Past the stale date the system stops vouching for the content, so every
+  // in-flight row degrades to "stale" rather than claiming an agent is still
+  // working. Terminal phases keep their own state.
+  const activities: ReadonlyArray<AgentActivityRowProps> = environment.isStale
+    ? props.activities.map((row) =>
+        row.phase === "completed" || row.phase === "failed"
+          ? row
+          : { ...row, phase: "stale", status: "Out of date" },
+      )
+    : props.activities;
+  const ordered = [...activities].sort(
     (a, b) => phasePriority(a.phase) - phasePriority(b.phase),
   );
   const heroRow = ordered[0];
 
-  const approvalRows = props.activities.filter((row) => row.phase === "waiting_for_approval");
-  const inputRows = props.activities.filter((row) => row.phase === "waiting_for_input");
-  const attentionRows = props.activities.filter(
+  const approvalRows = activities.filter((row) => row.phase === "waiting_for_approval");
+  const inputRows = activities.filter((row) => row.phase === "waiting_for_input");
+  const attentionRows = activities.filter(
     (row) => row.phase === "waiting_for_approval" || row.phase === "waiting_for_input",
   );
   const attentionRow = ordered.find(
     (row) => row.phase === "waiting_for_approval" || row.phase === "waiting_for_input",
   );
-  const failedRows = props.activities.filter((row) => row.phase === "failed");
+  const failedRows = activities.filter((row) => row.phase === "failed");
   const failedRow = failedRows[0];
   const tintColor = phaseTint(attentionRow?.phase ?? failedRow?.phase ?? heroRow?.phase);
   const headerTint = attentionRow
@@ -148,7 +163,7 @@ export function AgentActivity(
         : inputRows.length > 0 && approvalRows.length === 0
           ? `${inputRows.length} ${inputRows.length === 1 ? "input" : "inputs"}`
           : `${attentionRows.length} need you`;
-  const workingLabel = workingCount > 0 ? `${workingCount} working` : "";
+  const workingLabel = environment.isStale ? "Out of date" : workingCount > 0 ? `${workingCount} working` : "";
   const failedLabel = failedCount > 0 ? `${failedCount} failed` : "";
   // One summary line, attention first: "1 approval · 2 working · 1 failed".
   // Each count keeps its own phase tint so mixed states stay scannable —
@@ -218,7 +233,7 @@ export function AgentActivity(
 
   // SF Symbols, like the logo, ignore frame/foregroundStyle applied directly to
   // the image; size + tint them through a container the resizable symbol fills.
-  const renderGlyph = (systemName: SFName, size: number, color: string) => (
+  const renderGlyph = (systemName: SFName, size: number, color: Foreground) => (
     <HStack modifiers={[frame({ width: size, height: size }), foregroundStyle(color)]}>
       <Image systemName={systemName} modifiers={[resizable()]} />
     </HStack>
@@ -227,12 +242,12 @@ export function AgentActivity(
   // Live Activities cannot run JS timers. A circular ProgressView is the
   // system-native in-flight mark — the SF Symbol it replaced was a still
   // frame, which is why the island looked frozen.
-  const renderPhaseMark = (phase: AgentActivityPhase, size: number, color: string) =>
+  const renderPhaseMark = (phase: AgentActivityPhase, size: number, color: Foreground) =>
     inFlightPhase(phase) && allowMotion ? (
       <ProgressView
         modifiers={[
           progressViewStyle("circular"),
-          tint(color),
+          ...(typeof color === "string" ? [tint(color)] : [foregroundStyle(color)]),
           frame({ width: size, height: size }),
         ]}
       />
@@ -241,7 +256,7 @@ export function AgentActivity(
     );
 
   // Relative dates keep ticking on the lock screen without a push update.
-  const renderClock = (size: number, color: string) =>
+  const renderClock = (size: number, color: Foreground) =>
     clockDate ? (
       <Text
         date={clockDate}
@@ -258,7 +273,7 @@ export function AgentActivity(
   // Per-row live time: an elapsed timer for in-flight work (ticks every
   // second without a push — the card never looks frozen), a relative age for
   // everything else (how long an approval sat, how long ago work finished).
-  const renderRowTime = (row: AgentActivityRowProps, size: number, color: string) => {
+  const renderRowTime = (row: AgentActivityRowProps, size: number, color: Foreground) => {
     const timerDate = inFlightPhase(row.phase) ? parseDate(row.startedAt) : null;
     const relativeDate = timerDate ?? parseDate(row.updatedAt);
     return relativeDate ? (
@@ -275,11 +290,14 @@ export function AgentActivity(
     ) : null;
   };
 
-  const renderProgressBar = (row: AgentActivityRowProps | undefined, color: string) =>
+  const renderProgressBar = (row: AgentActivityRowProps | undefined, color: Foreground) =>
     typeof row?.progress === "number" ? (
       <ProgressView
         value={Math.max(0, Math.min(1, row.progress))}
-        modifiers={[progressViewStyle("linear"), tint(color)]}
+        modifiers={[
+          progressViewStyle("linear"),
+          ...(typeof color === "string" ? [tint(color)] : [foregroundStyle(color)]),
+        ]}
       />
     ) : null;
 
@@ -370,7 +388,7 @@ export function AgentActivity(
   // frame the resizable image fills and tint it through the container's
   // foreground style, which the template image inherits. The frame matches
   // the cut-out T3's aspect ratio so it never distorts.
-  const renderLogo = (height: number, color: string) => (
+  const renderLogo = (height: number, color: Foreground) => (
     <HStack modifiers={[frame({ width: height * (480 / 351), height }), foregroundStyle(color)]}>
       <Image assetName="T3Mark" modifiers={[resizable()]} />
     </HStack>
@@ -378,9 +396,8 @@ export function AgentActivity(
 
   const bannerModifiers = [
     padding({ all: 14 }),
-    // nil tint lets iOS 26 apply Liquid Glass instead of the old opaque
-    // Live Activity material. Pre-glass iOS keeps the system default.
-    activityBackgroundTint(null),
+    // A clear tint reveals iOS 26's glass material; older hosts keep the standard surface.
+    activityBackgroundTint(environment.isLiquidGlassAvailable ? "clear" : null),
     ...(deepLink ? [widgetURL(deepLink)] : []),
   ];
 
@@ -572,7 +589,7 @@ function createAgentActivityFactory() {
       getInstances() {
         return [];
       },
-    } as ReturnType<typeof createLiveActivity<AgentActivityProps>>;
+    } as unknown as ReturnType<typeof createLiveActivity<AgentActivityProps>>;
   }
 }
 

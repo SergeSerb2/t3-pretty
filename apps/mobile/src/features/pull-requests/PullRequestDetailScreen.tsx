@@ -29,14 +29,18 @@ import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { ControlPillMenu } from "../../components/ControlPill";
 import { EmptyState } from "../../components/EmptyState";
+import { GlassBackdrop } from "../../components/GlassBackdrop";
+import { RowPressable } from "../../components/RowPressable";
+import { SheetSurface } from "../../components/SheetSurface";
 import { cn } from "../../lib/cn";
 import { nativeGlassHeaderOverlapInset } from "../../lib/layoutMetrics";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { relativeTime } from "../../lib/time";
-import { useThemeColor } from "../../lib/useThemeColor";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { TRANSPARENT_NATIVE_HEADERS } from "../../native/native-glass";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { useEnvironmentQuery } from "../../state/query";
 import { pullRequestEnvironment } from "../../state/pullRequests";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -53,8 +57,8 @@ import {
   buildResolveConflictsPrompt,
   canRequestPullRequestReviewers,
   composePullRequestDetailView,
-  countFixableFindings,
   groupPullRequestConversation,
+  shouldOfferFixActions,
   pullRequestUrlHost,
   readableFailure,
 } from "./pullRequestDetail.logic";
@@ -72,7 +76,7 @@ import {
 import { parseRoutePositiveInt, type PullRequestDetailRouteParams } from "./pullRequestNavigation";
 import { PullRequestActionChip, PullRequestPrimaryButton } from "./PullRequestActionChip";
 import { PullRequestActorAvatar } from "./PullRequestActorAvatar";
-import { PullRequestConversation } from "./PullRequestConversation";
+import { PullRequestCard, PullRequestConversation } from "./PullRequestConversation";
 import { hasVisiblePullRequestBody } from "./pullRequestMarkdown.logic";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestStateBadge } from "./PullRequestStateBadge";
@@ -101,11 +105,14 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
   const insets = useSafeAreaInsets();
   const navigationHeaderHeight = useContext(HeaderHeightContext);
   const glassHeaderInset = nativeGlassHeaderOverlapInset({
-    glassSupported: NATIVE_LIQUID_GLASS_SUPPORTED,
+    glassSupported: TRANSPARENT_NATIVE_HEADERS,
     headerHeight: navigationHeaderHeight,
     safeAreaTop: insets.top,
   });
-  const iconColor = useThemeColor("--color-icon");
+  const glass = useGlassChromeActive();
+  const nativeTheme = useUniwindTheme();
+  const iconColor = String(nativeTheme["--color-icon"]);
+  const chromeGlassColor = nativeTheme["--color-chrome-glass"];
   const environmentId = EnvironmentId.make(props.route.params.environmentId);
   const number = parseRoutePositiveInt(props.route.params.number);
   const reference = useResolvedPullRequestReference(props.route.params);
@@ -277,34 +284,37 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     [detail, environmentId, startHandoff],
   );
 
-  const startFixFindings = useCallback(() => {
-    if (detail === null) return;
-    handoff(
-      buildFixFindingsPrompt({
-        provider: detail.provider,
-        host: pullRequestUrlHost(detail.url) ?? detail.repository,
-        number: detail.number,
-        title: detail.title,
-        url: detail.url,
-        headBranch: detail.headBranch,
-        baseBranch: detail.baseBranch,
-        reviewThreads: detail.reviewThreads,
-        comments: detail.comments,
-        checks: detail.checks,
-        commentsTruncated: detail.commentsTruncated,
-        canResolve: detail.viewerPermissions.resolve && detail.capabilities.review.resolve,
-      }),
-    );
-  }, [detail, handoff]);
-
-  const findingCount =
-    detail === null
-      ? 0
-      : countFixableFindings({
+  const startFixFindings = useCallback(
+    (continuous: boolean) => {
+      if (detail === null) return;
+      handoff(
+        buildFixFindingsPrompt({
+          provider: detail.provider,
+          host: pullRequestUrlHost(detail.url) ?? detail.repository,
+          number: detail.number,
+          title: detail.title,
+          url: detail.url,
+          headBranch: detail.headBranch,
+          baseBranch: detail.baseBranch,
           reviewThreads: detail.reviewThreads,
           comments: detail.comments,
           checks: detail.checks,
-        });
+          commentsTruncated: detail.commentsTruncated,
+          canResolve: detail.viewerPermissions.resolve && detail.capabilities.review.resolve,
+          continuous,
+        }),
+      );
+    },
+    [detail, handoff],
+  );
+
+  const showFixActions =
+    detail !== null &&
+    shouldOfferFixActions({
+      state: detail.state,
+      reviewThreads: detail.reviewThreads,
+      comments: detail.comments,
+    });
 
   const openOnHost = useCallback(() => {
     if (detail === null) return;
@@ -352,12 +362,19 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
       },
     ];
     if (activityQuery.data !== null) {
-      if (findingCount > 0) {
-        items.push({
-          type: "action",
-          title: "Fix all findings",
-          onPress: startFixFindings,
-        });
+      if (showFixActions) {
+        items.push(
+          {
+            type: "action",
+            title: "Fix all findings",
+            onPress: () => startFixFindings(false),
+          },
+          {
+            type: "action",
+            title: "Fix continuously",
+            onPress: () => startFixFindings(true),
+          },
+        );
       }
     } else if (activityQuery.error !== null) {
       items.push({
@@ -424,7 +441,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     can,
     detail,
     environmentId,
-    findingCount,
+    showFixActions,
     handoff,
     startFixFindings,
     navigation,
@@ -478,8 +495,8 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
 
   if (number === null || reference === null) {
     return (
-      <View
-        className="flex-1 items-center justify-center bg-sheet px-8"
+      <SheetSurface
+        className="items-center justify-center px-8"
         style={glassHeaderInset > 0 ? { paddingTop: glassHeaderInset } : undefined}
       >
         <EmptyState
@@ -490,12 +507,12 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
               : "This link does not name a repository. Open the pull request from the list, or from a project that has a repository identity."
           }
         />
-      </View>
+      </SheetSurface>
     );
   }
 
   return (
-    <View className="flex-1 bg-sheet">
+    <SheetSurface>
       {Platform.OS === "android" ? (
         <>
           <NativeStackScreenOptions options={{ headerShown: false }} />
@@ -554,7 +571,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
       >
         {detailQuery.isPending && detail === null ? (
           <View className="flex-1 items-center justify-center">
-            <ActivityIndicator color={iconColor} />
+            <ActivityIndicator colorClassName="accent-icon" />
           </View>
         ) : detailQuery.error && detail === null ? (
           <View className="flex-1 justify-center px-6">
@@ -618,7 +635,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                       style={({ pressed }) => ({ opacity: pressed && !selected ? 0.7 : 1 })}
                       className={cn(
                         "min-h-9 flex-1 flex-row items-center justify-center gap-1 rounded-full",
-                        selected ? "bg-card" : undefined,
+                        selected ? (glass ? "bg-chrome-glass" : "bg-card") : undefined,
                       )}
                     >
                       <Text
@@ -653,7 +670,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                 <RefreshControl
                   refreshing={detailQuery.isPending && detail !== null}
                   onRefresh={() => void refresh()}
-                  tintColor={String(iconColor)}
+                  tintColorClassName="accent-icon"
                 />
               }
             >
@@ -673,7 +690,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
               {tab === "conversation" ? (
                 activityQuery.isPending && activityQuery.data === null ? (
                   <View className="items-center py-16">
-                    <ActivityIndicator color={iconColor} />
+                    <ActivityIndicator colorClassName="accent-icon" />
                   </View>
                 ) : activityQuery.error && activityQuery.data === null ? (
                   <EmptyState
@@ -703,7 +720,8 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                         mode: "comment",
                       })
                     }
-                    onFixAll={findingCount > 0 ? startFixFindings : undefined}
+                    onFixAll={showFixActions ? () => startFixFindings(false) : undefined}
+                    onFixContinuously={showFixActions ? () => startFixFindings(true) : undefined}
                     onFixThread={(thread) =>
                       handoff(
                         buildFixFindingPrompt({
@@ -777,9 +795,17 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
 
             {detail.state === "open" ? (
               <View
-                className="absolute inset-x-0 bottom-0 border-t border-border bg-sheet px-4 pt-3"
+                className={cn(
+                  "absolute inset-x-0 bottom-0 px-4 pt-3",
+                  glass
+                    ? "overflow-hidden border-t-[0.5px] border-chrome-glass-border"
+                    : "border-t border-border bg-sheet",
+                )}
                 style={{ paddingBottom: Math.max(insets.bottom, 12) }}
               >
+                {/* The description scrolls under the bar, so it blurs rather
+                    than showing through a bare tint. */}
+                {glass ? <GlassBackdrop fallbackColor={chromeGlassColor} /> : null}
                 {conflicting ? (
                   <PullRequestPrimaryButton
                     disabled={busy}
@@ -827,7 +853,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
           </>
         )}
       </View>
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -836,11 +862,10 @@ function OverviewTab(props: {
   readonly onRequestReviewers: () => void;
 }) {
   const { detail } = props;
-  const muted = String(useThemeColor("--color-icon-subtle"));
   const diff = formatDiffStat(detail.additions, detail.deletions);
   return (
     <View className="gap-3.5 pt-1">
-      <View className="rounded-2xl bg-card px-4 py-3.5">
+      <PullRequestCard className="px-4 py-3.5">
         <View className="flex-row items-center gap-2.5">
           <PullRequestActorAvatar actor={detail.author} size={28} />
           <View className="min-w-0 flex-1">
@@ -853,11 +878,15 @@ function OverviewTab(props: {
           </View>
         </View>
         {diff ? (
-          <MetaLine icon="doc.text" tint={muted} label={`${diff} · ${detail.changedFiles} files`} />
+          <MetaLine
+            icon="doc.text"
+            tintClassName="accent-icon-subtle"
+            label={`${diff} · ${detail.changedFiles} files`}
+          />
         ) : null}
         <MetaLine
           icon="checkmark.circle"
-          tint={muted}
+          tintClassName="accent-icon-subtle"
           label={summarizePullRequestChecks(detail.checks)}
         />
         {detail.labels.length > 0 ? (
@@ -881,10 +910,10 @@ function OverviewTab(props: {
             })}
           </View>
         ) : null}
-      </View>
+      </PullRequestCard>
 
       {detail.reviewers.length > 0 || canRequestPullRequestReviewers(detail) ? (
-        <View className="rounded-2xl bg-card px-4 py-3.5">
+        <PullRequestCard className="px-4 py-3.5">
           <View className="flex-row items-center justify-between">
             <Text className="text-sm font-t3-bold text-foreground">Reviewers</Text>
             {canRequestPullRequestReviewers(detail) ? (
@@ -907,11 +936,11 @@ function OverviewTab(props: {
               </View>
             ))
           )}
-        </View>
+        </PullRequestCard>
       ) : null}
 
       {detail.checks.length > 0 ? (
-        <View className="rounded-2xl bg-card px-4 py-3.5">
+        <PullRequestCard className="px-4 py-3.5">
           <Text className="text-sm font-t3-bold text-foreground">Checks</Text>
           {detail.checks.map((check) => (
             <View
@@ -932,14 +961,14 @@ function OverviewTab(props: {
               </Text>
             </View>
           ))}
-        </View>
+        </PullRequestCard>
       ) : null}
 
       {hasVisiblePullRequestBody(detail.body) ? (
-        <View className="rounded-2xl bg-card px-4 py-3.5">
+        <PullRequestCard className="px-4 py-3.5">
           <Text className="mb-2.5 text-sm font-t3-bold text-foreground">Description</Text>
           <PullRequestMarkdown markdown={detail.body} />
-        </View>
+        </PullRequestCard>
       ) : null}
     </View>
   );
@@ -947,12 +976,17 @@ function OverviewTab(props: {
 
 function MetaLine(props: {
   readonly icon: Parameters<typeof SymbolView>[0]["name"];
-  readonly tint: string;
+  readonly tintClassName: string;
   readonly label: string;
 }) {
   return (
     <View className="flex-row items-center gap-2 py-1.5">
-      <SymbolView name={props.icon} size={14} tintColor={props.tint} type="monochrome" />
+      <SymbolView
+        name={props.icon}
+        size={14}
+        tintColorClassName={props.tintClassName}
+        type="monochrome"
+      />
       <Text className="flex-1 text-sm text-foreground" numberOfLines={2}>
         {props.label}
       </Text>
@@ -970,11 +1004,11 @@ function FilesTab(props: {
   readonly onLoadMore: () => void;
   readonly onOpenFile: (path: string) => void;
 }) {
-  const muted = String(useThemeColor("--color-icon-subtle"));
+  const glass = useGlassChromeActive();
   if (props.loading) {
     return (
       <View className="items-center py-16">
-        <ActivityIndicator color={muted} />
+        <ActivityIndicator colorClassName="accent-icon-subtle" />
       </View>
     );
   }
@@ -997,21 +1031,18 @@ function FilesTab(props: {
           This slice of the diff is truncated. Open a file to read it.
         </Text>
       ) : null}
-      <View className="overflow-hidden rounded-2xl bg-card">
+      <PullRequestCard className="overflow-hidden">
         {props.files.map((file, index) => {
           const diff = formatDiffStat(file.additions, file.deletions);
-          return (
-            <Pressable
-              key={file.key}
-              onPress={() => props.onOpenFile(file.displayPath)}
-              style={({ pressed }) => ({
-                opacity: pressed ? 0.72 : 1,
-                borderBottomWidth: index === props.files.length - 1 ? 0 : StyleSheet.hairlineWidth,
-                borderBottomColor: "rgba(127,127,127,0.18)",
-              })}
-              className="flex-row items-center gap-3 px-4 py-3.5"
-            >
-              <SymbolView name="doc.text" size={15} tintColor={muted} type="monochrome" />
+          const separatorWidth = index === props.files.length - 1 ? 0 : StyleSheet.hairlineWidth;
+          const content = (
+            <>
+              <SymbolView
+                name="doc.text"
+                size={15}
+                tintColorClassName="accent-icon-subtle"
+                type="monochrome"
+              />
               <Text className="flex-1 font-mono text-sm text-foreground" numberOfLines={1}>
                 {file.displayPath}
               </Text>
@@ -1022,10 +1053,34 @@ function FilesTab(props: {
               ) : file.withheld ? (
                 <Text className="text-2xs text-foreground-tertiary">Truncated</Text>
               ) : null}
+            </>
+          );
+          return glass ? (
+            <RowPressable
+              key={file.key}
+              onPress={() => props.onOpenFile(file.displayPath)}
+              interactionClassName="bg-foreground/[0.06]"
+              style={{ borderBottomWidth: separatorWidth }}
+              className="flex-row items-center gap-3 border-b-chrome-glass-border px-4 py-3.5"
+            >
+              {content}
+            </RowPressable>
+          ) : (
+            <Pressable
+              key={file.key}
+              onPress={() => props.onOpenFile(file.displayPath)}
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.72 : 1,
+                borderBottomWidth: separatorWidth,
+                borderBottomColor: "rgba(127,127,127,0.18)",
+              })}
+              className="flex-row items-center gap-3 px-4 py-3.5"
+            >
+              {content}
             </Pressable>
           );
         })}
-      </View>
+      </PullRequestCard>
       {props.nextCursor !== null ? (
         <PullRequestActionChip
           disabled={props.loadingMore}

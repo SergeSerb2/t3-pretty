@@ -1,9 +1,8 @@
 # World Scenery
 
-World Scenery puts a landscape photo behind T3 Code so chrome reads as frosted glass over a
-place, not a flat canvas. The left sidebar and the right sidebar share that glass plate, so
-the photo shows through both instead of a solid panel. Each thread keeps its own photo; the
-Home screen uses the photo of the day.
+World Scenery puts a landscape photo behind T3 Code. The sidebar, header, and conversation
+share one continuous background, with glass surfaces for the composer and right panel. Each
+thread keeps its own photo; the Home screen uses the photo of the day.
 
 ## Turn it on or off
 
@@ -20,16 +19,18 @@ World Scenery is T3 Pretty's default look. Open **Settings → Appearance** and 
 Each photo theme keeps the same frosted glass. Only the pictures change. A new thread picks a
 photo from the theme that's on. Switching themes draws from that theme's pool.
 
-Open **Settings → Appearance** to choose **System**, **Light**, or **Dark**. While a photo theme is
-on:
+**Color scheme** sits under the photo themes. Pick **Light** or **Dark** to keep every thread in
+that appearance, or **System** to follow your device. A thread's photo never changes the
+scheme on its own: bright and dark landscapes both sit behind the appearance you chose.
+
+While a photo theme is on:
 
 - A new thread opens in fog: a cloud bank gathers over the assigned place, the location
   name rises out of it, then the fog blows off to the side while the chat box comes up
   through it, the name settles near the bottom of the photo, and the photo credit fades in
   next to it. Scrolling up through a thread hides that credit; returning to the latest
   messages brings it back.
-- **Photo blur**, **Photo presence**, **Thread motion**, and **Scenery text color** live in
-  **Settings → Appearance**.
+- **Photo blur**, **Photo presence**, and **Thread motion** live in **Settings → Appearance**.
 - **Thread motion** governs the app's small entrance and press animations — arriving
   messages, approval and question panels, dialogs, attachments, status pills — and
   turning it off also parks photo fades on thread switch, holds the working and
@@ -47,9 +48,15 @@ chat box.
 
 With scenery on, the Home list lets the photo show through:
 
-- Active and queued threads sit on separate frosted cards.
-- Snoozed and Settled sit under quiet section labels, each thread on its own quieter card. Tap
-  the label to expand or collapse that section.
+- The top of the list shows today's date and what needs you, such as "2 threads need you",
+  with the other states counted underneath. Below that are the place and photographer of the
+  photo of the day; tap them to open the photographer's Unsplash page. This summary is hidden
+  while you search.
+- Active and queued threads sit on separate frosted cards. Each card leads with its thread's
+  own photo, badged with the project icon. A thread that has never been opened shows the
+  project icon instead. Statuses such as **Working** or **Approval** appear as colored pills.
+- Snoozed, Stored and Settled threads each gather into one grouped card under a label with
+  the section's count. Tap the label to expand or collapse that section.
 
 The list uses solid rows instead when:
 

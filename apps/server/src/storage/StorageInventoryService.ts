@@ -1,4 +1,5 @@
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as DateTime from "effect/DateTime";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -9,6 +10,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
 import {
+  STORAGE_INVENTORY_MAX_ENTRIES,
   type StorageInventory,
   type StorageInventoryScan,
   type StorageOrphanEntry,
@@ -19,31 +21,35 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
-import { ProjectionProjectRepository } from "../persistence/Services/ProjectionProjects.ts";
-import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
+import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { directoryOnDiskBytes } from "./directorySize.ts";
 import {
   assembleStorageInventory,
   canRemoveStorageThread,
   canonicalizeStoragePath,
-  displayNameForPath,
-  hasOwnedDescendant,
   isStrictDescendant,
   shouldPublishStorageProgress,
+  storagePathsOverlap,
   type StorageMeasuredWorktree,
   type StorageThreadSnapshot,
 } from "./storageInventory.ts";
+import {
+  discoverStorageOrphans,
+  type StorageOrphanDiscoveryResult,
+} from "./storageOrphanDiscovery.ts";
 
 const ORPHAN_SCAN_MAX_DEPTH = 3;
 const MEASURE_CONCURRENCY = 8;
 /** Cap full-inventory progress frames so large scans do not serialize O(N²) entry payloads. */
 const PROGRESS_MIN_INTERVAL_MS = 250;
 
-interface OrphanCandidate {
-  readonly path: string;
-  readonly displayName: string;
-  readonly looksLikeCheckout: boolean;
+interface LoadedStorageSnapshots {
+  readonly snapshots: readonly StorageThreadSnapshot[];
+  readonly activeThreadsWithoutWorktree: number;
+  readonly archivedThreadsWithoutWorktree: number;
+  readonly truncated: boolean;
 }
 
 const EMPTY_INVENTORY = (managedWorktreesRoot: string): StorageInventory => ({
@@ -87,8 +93,8 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
-  const projects = yield* ProjectionProjectRepository;
-  const threads = yield* ProjectionThreadRepository;
+  const projects = yield* ProjectStoreV2;
+  const threads = yield* ProjectionStoreV2;
   const vcsProcess = yield* VcsProcess.VcsProcess;
   const platform = yield* HostProcessPlatform;
 
@@ -102,31 +108,6 @@ export const make = Effect.gen(function* () {
       return yield* Effect.promise((signal) => directoryOnDiskBytes(target, platform, signal));
     },
   );
-
-  const listDirectories: (root: string, maxDepth: number) => Effect.Effect<ReadonlyArray<string>> =
-    Effect.fn("StorageInventoryService.listDirectories")(function* (root, maxDepth) {
-      const results: string[] = [];
-      const visit: (current: string, depth: number) => Effect.Effect<void> = Effect.fn(
-        "StorageInventoryService.listDirectories.visit",
-      )(function* (current, depth) {
-        if (depth >= maxDepth) {
-          return;
-        }
-        const names = yield* fileSystem
-          .readDirectory(current)
-          .pipe(Effect.orElseSucceed((): string[] => []));
-        for (const name of names) {
-          if (name.startsWith(".")) continue;
-          const child = path.join(current, name);
-          const info = yield* fileSystem.stat(child).pipe(Effect.orElseSucceed(() => null));
-          if (info === null || info.type !== "Directory") continue;
-          results.push(canonicalizeStoragePath(child));
-          yield* visit(child, depth + 1);
-        }
-      });
-      yield* visit(root, 0);
-      return results;
-    });
 
   const measureWorktree: (worktreePath: string) => Effect.Effect<StorageMeasuredWorktree> =
     Effect.fn("StorageInventoryService.measureWorktree")(function* (worktreePath) {
@@ -160,61 +141,27 @@ export const make = Effect.gen(function* () {
       return { path: worktreePath, diskUsageBytes, isDirty, setupStatus };
     });
 
-  const listOrphanCandidates: (
-    ownedPaths: ReadonlySet<string>,
-  ) => Effect.Effect<ReadonlyArray<OrphanCandidate>> = Effect.fn(
-    "StorageInventoryService.listOrphanCandidates",
-  )(function* (ownedPaths) {
-    const rootExists = yield* pathExists(managedRoot);
-    if (!rootExists) {
-      return [] as OrphanCandidate[];
-    }
-    const candidates = yield* listDirectories(managedRoot, ORPHAN_SCAN_MAX_DEPTH);
-    const orphans: OrphanCandidate[] = [];
-    for (const candidate of candidates) {
-      if (ownedPaths.has(candidate)) continue;
-      if (hasOwnedDescendant(candidate, ownedPaths)) continue;
-      const gitMarker = path.join(candidate, ".git");
-      const looksLikeCheckout = yield* pathExists(gitMarker);
-      const childNames = yield* fileSystem
-        .readDirectory(candidate)
-        .pipe(Effect.orElseSucceed((): string[] => []));
-      const childDirs = yield* Effect.forEach(
-        childNames.filter((name) => !name.startsWith(".")),
-        (name) =>
-          fileSystem.stat(path.join(candidate, name)).pipe(
-            Effect.map((info) => info.type === "Directory"),
-            Effect.orElseSucceed(() => false),
-          ),
+  const loadSnapshots: () => Effect.Effect<LoadedStorageSnapshots, StorageInventoryError> =
+    Effect.fn("StorageInventoryService.loadSnapshots")(function* () {
+      const projectRows = yield* projects.list().pipe(
+        Effect.mapError(
+          (cause) =>
+            new StorageInventoryError({
+              operation: "StorageInventoryService.getInventory",
+              detail: "Failed to list projects.",
+              cause,
+            }),
+        ),
       );
-      if (!looksLikeCheckout && childDirs.some(Boolean)) continue;
-      orphans.push({
-        path: candidate,
-        displayName: displayNameForPath(candidate),
-        looksLikeCheckout,
-      });
-    }
-    return orphans;
-  });
-
-  const loadSnapshots: () => Effect.Effect<
-    ReadonlyArray<StorageThreadSnapshot>,
-    StorageInventoryError
-  > = Effect.fn("StorageInventoryService.loadSnapshots")(function* () {
-    const projectRows = yield* projects.listAll().pipe(
-      Effect.mapError(
-        (cause) =>
-          new StorageInventoryError({
-            operation: "StorageInventoryService.getInventory",
-            detail: "Failed to list projects.",
-            cause,
-          }),
-      ),
-    );
-    const snapshots: StorageThreadSnapshot[] = [];
-    for (const project of projectRows) {
-      if (project.deletedAt !== null) continue;
-      const threadRows = yield* threads.listByProjectId({ projectId: project.projectId }).pipe(
+      const projectsById = new Map(
+        projectRows
+          .filter((project) => project.deletedAt === null)
+          .map((project) => [project.projectId, project] as const),
+      );
+      const [activeShells, archivedShells] = yield* Effect.all([
+        threads.getShellSnapshot({ location: "active" }),
+        threads.getShellSnapshot({ location: "archive" }),
+      ]).pipe(
         Effect.mapError(
           (cause) =>
             new StorageInventoryError({
@@ -224,39 +171,65 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
+      const threadRows = [...activeShells.threads, ...archivedShells.archivedThreads];
+      const snapshots: StorageThreadSnapshot[] = [];
+      let activeThreadsWithoutWorktree = 0;
+      let archivedThreadsWithoutWorktree = 0;
+      let truncated = false;
       for (const thread of threadRows) {
         if (thread.deletedAt !== null) continue;
+        const project = projectsById.get(thread.projectId);
+        if (project === undefined) continue;
         const rawPath = thread.worktreePath?.trim() ?? "";
         const canonicalPath = rawPath.length > 0 ? canonicalizeStoragePath(rawPath) : null;
         const managedPath =
           canonicalPath !== null && isStrictDescendant(canonicalPath, managedRoot)
             ? canonicalPath
             : null;
+        const isArchived = thread.archivedAt !== null;
+        if (managedPath === null) {
+          if (isArchived) archivedThreadsWithoutWorktree += 1;
+          else activeThreadsWithoutWorktree += 1;
+          continue;
+        }
+        if (snapshots.length >= STORAGE_INVENTORY_MAX_ENTRIES) {
+          truncated = true;
+          continue;
+        }
         snapshots.push({
-          threadId: thread.threadId,
+          threadId: thread.id,
           threadTitle: thread.title,
           projectId: project.projectId,
           projectName: project.title,
           projectWorkspaceRoot: project.workspaceRoot,
           branch: thread.branch,
           worktreePath: managedPath,
-          isArchived: thread.archivedAt !== null,
+          isArchived,
           canRemoveWorktree: canRemoveStorageThread({
-            archivedAt: thread.archivedAt,
+            archivedAt: thread.archivedAt === null ? null : DateTime.formatIso(thread.archivedAt),
             settledOverride: thread.settledOverride,
-            pendingApprovalCount: thread.pendingApprovalCount,
-            pendingUserInputCount: thread.pendingUserInputCount,
+            pendingApprovalCount:
+              thread.pendingRuntimeRequest !== null &&
+              thread.pendingRuntimeRequest?.kind !== "user_input"
+                ? 1
+                : 0,
+            pendingUserInputCount: thread.pendingRuntimeRequest?.kind === "user_input" ? 1 : 0,
           }),
         });
       }
-    }
-    return snapshots;
-  });
+      return {
+        snapshots,
+        activeThreadsWithoutWorktree,
+        archivedThreadsWithoutWorktree,
+        truncated,
+      };
+    });
 
   const scanInventory = Effect.fn("StorageInventoryService.scanInventory")(function* (
     onProgress: (inventory: StorageInventory) => Effect.Effect<void>,
   ) {
-    const snapshots = yield* loadSnapshots();
+    const loaded = yield* loadSnapshots();
+    const { snapshots } = loaded;
     const managedPaths = [
       ...new Set(
         snapshots.flatMap((snapshot) =>
@@ -266,16 +239,39 @@ export const make = Effect.gen(function* () {
     ];
     const measurements = new Map<string, StorageMeasuredWorktree>();
     const orphans: StorageOrphanEntry[] = [];
-    const orphanCandidates = yield* listOrphanCandidates(new Set(managedPaths));
+    const rootExists = yield* pathExists(managedRoot);
+    const orphanCapacity = loaded.truncated
+      ? 0
+      : Math.max(0, STORAGE_INVENTORY_MAX_ENTRIES - snapshots.length);
+    const orphanDiscovery: StorageOrphanDiscoveryResult = rootExists
+      ? yield* Effect.promise((signal) =>
+          discoverStorageOrphans({
+            root: managedRoot,
+            ownedPaths: new Set(managedPaths),
+            maxDepth: ORPHAN_SCAN_MAX_DEPTH,
+            maxCandidates: orphanCapacity,
+            signal,
+          }),
+        )
+      : { candidates: [], truncated: false, unreadableDirectories: 0 };
+    const orphanCandidates = orphanDiscovery.candidates;
     const totalCount = managedPaths.length + orphanCandidates.length;
+    const scanMetadata = {
+      ...(loaded.truncated || orphanDiscovery.truncated ? { truncated: true } : {}),
+      ...(orphanDiscovery.unreadableDirectories > 0
+        ? { unreadableDirectories: orphanDiscovery.unreadableDirectories }
+        : {}),
+    };
 
     const snapshot = (scan: StorageInventoryScan): StorageInventory =>
       assembleStorageInventory({
         snapshots,
         measurements: new Map(measurements),
         orphanWorktrees: [...orphans],
+        activeThreadsWithoutWorktree: loaded.activeThreadsWithoutWorktree,
+        archivedThreadsWithoutWorktree: loaded.archivedThreadsWithoutWorktree,
         managedWorktreesRoot: managedRoot,
-        scan,
+        scan: { ...scan, ...scanMetadata },
       });
 
     let lastProgressAt = Number.NEGATIVE_INFINITY;
@@ -370,6 +366,63 @@ export const make = Effect.gen(function* () {
     const exists = yield* pathExists(target);
     if (!exists) {
       return { removed: true };
+    }
+
+    const resolveDeletionPath = (candidate: string, label: string) =>
+      fileSystem.realPath(candidate).pipe(
+        Effect.map(canonicalizeStoragePath),
+        Effect.mapError(
+          (cause) =>
+            new StorageInventoryError({
+              operation: "StorageInventoryService.removeOrphan",
+              detail: `Failed to verify the ${label} path before removal.`,
+              cause,
+            }),
+        ),
+      );
+    const realManagedRoot = yield* resolveDeletionPath(managedRoot, "managed worktrees root");
+    const realTarget = yield* resolveDeletionPath(target, "requested orphan");
+    const expectedRealTarget = canonicalizeStoragePath(
+      path.resolve(realManagedRoot, path.relative(managedRoot, target)),
+    );
+    if (realTarget !== expectedRealTarget || !isStrictDescendant(realTarget, realManagedRoot)) {
+      return yield* new StoragePathNotManagedError({
+        path: input.path,
+        managedWorktreesRoot: managedRoot,
+      });
+    }
+
+    const loaded = yield* loadSnapshots();
+    if (loaded.truncated) {
+      return yield* new StorageInventoryError({
+        operation: "StorageInventoryService.removeOrphan",
+        detail: "Refused removal because the owned-worktree inventory was truncated.",
+      });
+    }
+    const ownedPaths = [
+      ...new Set(
+        loaded.snapshots.flatMap((snapshot) =>
+          snapshot.worktreePath === null ? [] : [snapshot.worktreePath],
+        ),
+      ),
+    ];
+    for (const ownedPath of ownedPaths) {
+      if (storagePathsOverlap(target, ownedPath)) {
+        return yield* new StorageInventoryError({
+          operation: "StorageInventoryService.removeOrphan",
+          detail: "Refused removal because the requested path overlaps an owned worktree.",
+        });
+      }
+      const realOwnedPath = yield* fileSystem.realPath(ownedPath).pipe(
+        Effect.map(canonicalizeStoragePath),
+        Effect.orElseSucceed(() => ownedPath),
+      );
+      if (storagePathsOverlap(realTarget, realOwnedPath)) {
+        return yield* new StorageInventoryError({
+          operation: "StorageInventoryService.removeOrphan",
+          detail: "Refused removal because the requested path resolves to an owned worktree.",
+        });
+      }
     }
     yield* fileSystem.remove(target, { recursive: true, force: true }).pipe(
       Effect.mapError(

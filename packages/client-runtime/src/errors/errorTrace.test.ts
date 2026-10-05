@@ -41,4 +41,56 @@ describe("findErrorTraceId", () => {
 
     expect(findErrorTraceId(error)).toBe("trace-aggregate");
   });
+
+  it("continues through hostile error accessors without throwing", () => {
+    const error = Object.create(null) as Record<string, unknown>;
+    Object.defineProperties(error, {
+      traceId: {
+        get: () => {
+          throw new Error("hostile trace getter");
+        },
+      },
+      errors: {
+        get: () => {
+          throw new Error("hostile aggregate getter");
+        },
+      },
+      cause: {
+        value: { traceId: "  trace-nested  " },
+      },
+    });
+
+    expect(findErrorTraceId(error)).toBe("trace-nested");
+  });
+
+  it("bounds aggregate traversal before materializing a hostile collection", () => {
+    let reads = 0;
+    const errors = new Proxy(Array<unknown>(10_000).fill(null), {
+      get: (target, property, receiver) => {
+        reads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expect(findErrorTraceId({ errors })).toBeNull();
+    expect(reads).toBeLessThanOrEqual(128);
+  });
+
+  it("reserves traversal capacity for the direct cause", () => {
+    expect(
+      findErrorTraceId({
+        errors: Array<unknown>(10_000).fill(null),
+        cause: { traceId: "trace-direct-cause" },
+      }),
+    ).toBe("trace-direct-cause");
+  });
+
+  it("ignores oversized trace identifiers and keeps searching", () => {
+    expect(
+      findErrorTraceId({
+        traceId: `trace-${"x".repeat(256)}`,
+        cause: { traceId: "trace-bounded" },
+      }),
+    ).toBe("trace-bounded");
+  });
 });

@@ -3,33 +3,16 @@ import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { runMigrations } from "../Migrations.ts";
 import { cleanupSupersededToolUpdates } from "../Migrations/047_DeleteSupersededToolUpdatedActivities.ts";
-import { ServerConfig } from "../../config.ts";
+import ensureProjectionThreadBranchPullRequest from "../Migrations/050_EnsureProjectionThreadBranchPullRequest.ts";
+import { initializeV2Database } from "../initializeV2Database.ts";
+import * as ServerConfig from "../../config.ts";
 
-type RuntimeSqliteLayerConfig = {
-  readonly filename: string;
-  readonly spanAttributes?: Record<string, unknown>;
-};
-
-type Loader = {
-  layer: (config: RuntimeSqliteLayerConfig) => Layer.Layer<SqlClient.SqlClient, SqlError>;
-};
-const defaultSqliteClientLoaders = {
-  bun: () => import("@effect/sql-sqlite-bun/SqliteClient"),
-  node: () => import("../NodeSqliteClient.ts"),
-} satisfies Record<string, () => Promise<Loader>>;
-
-const makeRuntimeSqliteLayer = Effect.fn("makeRuntimeSqliteLayer")(function* (
-  config: RuntimeSqliteLayerConfig,
-) {
-  const runtime = process.versions.bun !== undefined ? "bun" : "node";
-  const loader = defaultSqliteClientLoaders[runtime];
-  const clientModule = yield* Effect.promise<Loader>(loader);
-  return clientModule.layer(config);
-}, Layer.unwrap);
+// Size the -wal file is cut back to on the first commit after a WAL reset.
+export const WAL_SIZE_LIMIT_BYTES = 32 * 1024 * 1024;
 
 const setup = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -38,6 +21,9 @@ const setup = Layer.effectDiscard(
     yield* sql`PRAGMA busy_timeout = 5000;`;
     yield* sql`PRAGMA foreign_keys = ON;`;
     yield* sql`PRAGMA journal_mode = WAL;`;
+    // PASSIVE checkpoints never shrink the -wal file, so it otherwise keeps its
+    // largest size until the last connection closes.
+    yield* sql.unsafe(`PRAGMA journal_size_limit = ${WAL_SIZE_LIMIT_BYTES};`);
     // WAL stays consistent with NORMAL but only syncs at checkpoint time
     // instead of on every commit — the default FULL fsyncs each transaction,
     // which dominates the orchestration write path during streaming turns.
@@ -50,13 +36,16 @@ const setup = Layer.effectDiscard(
     // 2 MB cache re-reads hot projection pages on every snapshot query.
     yield* sql`PRAGMA cache_size = -65536;`;
     const ranMigrations = yield* runMigrations();
-    // Migration 47 marks the switch to live-only tool progress; the bulk
+    // Fork slot collisions skip 048 when id 48 was already recorded under
+    // another name. Re-run the idempotent ADD COLUMN so old ~/.t3 DBs boot.
+    yield* ensureProjectionThreadBranchPullRequest;
+    // The tool-progress migration marks the switch to live-only progress; the bulk
     // delete of the superseded per-tick rows runs here, best-effort and
     // batched, while this is the only connection (no client has served a
     // request yet), then VACUUM reclaims the pages (measured ~8 s + ~4 s for
     // a 3 GB file that shrank to 1 GB). A failure (e.g. disk full) only
     // means the rows / space stay; the read side already hides them.
-    if (ranMigrations.some(([id]) => id === 47)) {
+    if (ranMigrations.some(([, name]) => name === "DeleteSupersededToolUpdatedActivities")) {
       yield* cleanupSupersededToolUpdates().pipe(
         Effect.tap((deleted) =>
           Effect.log("deleted superseded tool progress rows").pipe(Effect.annotateLogs(deleted)),
@@ -82,11 +71,11 @@ export const makeSqlitePersistenceLive = Effect.fn("makeSqlitePersistenceLive")(
 
   return Layer.provideMerge(
     setup,
-    makeRuntimeSqliteLayer({
+    NodeSqliteClient.layer({
       filename: dbPath,
       spanAttributes: {
         "db.name": path.basename(dbPath),
-        "service.name": "t3-server",
+        "service.name": "t3code-server",
       },
     }),
   );
@@ -94,12 +83,13 @@ export const makeSqlitePersistenceLive = Effect.fn("makeSqlitePersistenceLive")(
 
 export const SqlitePersistenceMemory = Layer.provideMerge(
   setup,
-  makeRuntimeSqliteLayer({ filename: ":memory:" }),
+  NodeSqliteClient.layer({ filename: ":memory:" }),
 );
 
 export const layerConfig = Layer.unwrap(
   Effect.gen(function* () {
-    const { dbPath } = yield* ServerConfig;
+    const { dbPath } = yield* ServerConfig.ServerConfig;
+    yield* initializeV2Database(dbPath);
     return makeSqlitePersistenceLive(dbPath);
   }),
 );

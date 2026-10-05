@@ -78,7 +78,7 @@ export function useThreadCheckpointRevert(threadRef: ScopedThreadRef | null): {
         environmentAvailable,
         environmentLabel: connection?.environmentLabel ?? null,
         sessionRunning:
-          thread?.session?.status === "running" || thread?.session?.status === "starting",
+          thread?.runtime?.status === "running" || thread?.runtime?.status === "starting",
       });
       if (blockReason !== null) {
         Alert.alert("Could not revert checkpoint", blockReason);
@@ -112,7 +112,7 @@ export function useThreadCheckpointRevert(threadRef: ScopedThreadRef | null): {
       connection?.environmentLabel,
       environmentAvailable,
       revertToCheckpoint,
-      thread?.session?.status,
+      thread?.runtime?.status,
       threadRef,
     ],
   );

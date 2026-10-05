@@ -1,6 +1,14 @@
 import type { RuntimeMode } from "@t3tools/contracts";
 import * as Haptics from "expo-haptics";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+  type ReactNode,
+} from "react";
 import {
   Keyboard,
   Pressable,
@@ -10,7 +18,7 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
-import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
+import Animated, { FadeIn, LayoutAnimationConfig, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
@@ -20,9 +28,11 @@ import { OverlayPortal } from "../../components/OverlayPortal";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import type { ModelOption } from "../../lib/modelOptions";
+import { enterFade } from "../../lib/motion";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { filterPickerModelList, type ThreadSettingsPickerModel } from "./thread-settings-picker";
+import { GlassRowPressable } from "../scenery/GroupedCard";
 
 /**
  * Everyday composer picker: searchable model list plus one-tap
@@ -88,14 +98,11 @@ export function ThreadSettingsPickerPopover(props: {
 }) {
   const [anchor, setAnchor] = useState<AnchorSnapshot | null>(null);
   const [modelQuery, setModelQuery] = useState("");
-  const anchorRef = useRef<View | null>(null);
-  const searchInputRef = useRef<TextInput>(null);
+  const anchorRef = useRef<ComponentRef<typeof View> | null>(null);
+  const searchInputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const iconSubtle = useThemeColor("--color-icon-subtle");
-  const checkmarkColor = useThemeColor("--color-icon");
-  const glassTint = useThemeColor("--color-glass-surface");
-  const placeholderColor = useThemeColor("--color-placeholder");
+  const glass = useGlassChromeActive();
 
   const close = useCallback(() => {
     if (searchInputRef.current?.isFocused()) {
@@ -154,11 +161,11 @@ export function ThreadSettingsPickerPopover(props: {
   const bottom = anchor === null ? 0 : windowHeight - anchor.y + ANCHOR_GAP;
 
   const pickOption = (id: string, value: string | boolean) => {
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
     props.onSelectOption(id, value);
   };
   const pickRuntime = (mode: RuntimeMode) => {
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
     props.onSelectRuntime(mode);
   };
   const pickModel = (option: ModelOption, selected: boolean) => {
@@ -179,6 +186,16 @@ export function ThreadSettingsPickerPopover(props: {
     props.onOpenAdvanced?.();
   };
 
+  const selectedMark = (
+    <SymbolView
+      name="checkmark"
+      size={13}
+      tintColorClassName="accent-icon"
+      type="monochrome"
+      weight="semibold"
+    />
+  );
+
   const frameStyle: ViewStyle = {
     borderCurve: "continuous",
     borderRadius: 16,
@@ -197,9 +214,9 @@ export function ThreadSettingsPickerPopover(props: {
         accessibilityLabel={props.accessibilityLabel}
         accessibilityRole="button"
         collapsable={false}
-        onPress={(event) => {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          event.currentTarget.measureInWindow((x, y, width, height) => {
+        onPress={() => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+          anchorRef.current?.measureInWindow((x, y, width, height) => {
             setAnchor({ x, y, width, height });
           });
         }}
@@ -226,7 +243,7 @@ export function ThreadSettingsPickerPopover(props: {
                 chrome="default"
                 glassEffectStyle="regular"
                 style={{ borderRadius: 16, maxHeight, overflow: "hidden" }}
-                tintColor={glassTint}
+                tintColorClassName="accent-glass-surface"
               >
                 <ScrollView
                   bounces={false}
@@ -253,7 +270,7 @@ export function ThreadSettingsPickerPopover(props: {
                           <SymbolView
                             name="magnifyingglass"
                             size={13}
-                            tintColor={iconSubtle}
+                            tintColorClassName="accent-icon-subtle"
                             type="monochrome"
                           />
                           <TextInput
@@ -264,7 +281,7 @@ export function ThreadSettingsPickerPopover(props: {
                             className="min-w-0 flex-1 text-sm text-foreground"
                             onChangeText={setModelQuery}
                             placeholder="Find a model"
-                            placeholderTextColor={placeholderColor}
+                            placeholderTextColorClassName="accent-placeholder"
                             returnKeyType="search"
                             value={modelQuery}
                           />
@@ -277,39 +294,43 @@ export function ThreadSettingsPickerPopover(props: {
                             : "No models available."}
                         </Text>
                       ) : (
-                        modelListEntries?.map((entry) => (
-                          <View key={entry.option.key}>
-                            {entry.showProviderHeader ? (
-                              <Text className="px-3.5 pb-1 pt-1.5 text-xs font-t3-medium text-foreground-muted">
-                                {entry.providerLabel}
-                              </Text>
-                            ) : null}
-                            <Pressable
-                              accessibilityLabel={entry.option.label}
-                              accessibilityRole="radio"
-                              accessibilityState={{ selected: entry.selected }}
-                              className="min-h-10 flex-row items-center gap-2.5 px-3.5 py-2 active:opacity-70"
-                              onPress={() => pickListedModel(entry.option, entry.selected)}
-                            >
-                              <ProviderIcon provider={entry.option.providerDriver} size={16} />
-                              <Text
-                                className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
-                                numberOfLines={1}
-                              >
-                                {entry.option.label}
-                              </Text>
-                              {entry.selected ? (
-                                <SymbolView
-                                  name="checkmark"
-                                  size={13}
-                                  tintColor={checkmarkColor}
-                                  type="monochrome"
-                                  weight="semibold"
-                                />
+                        // Checkmarks fade in when the pick moves, not when the panel opens.
+                        <LayoutAnimationConfig skipEntering>
+                          {modelListEntries?.map((entry) => (
+                            <View key={entry.option.key}>
+                              {entry.showProviderHeader ? (
+                                <Text className="px-3.5 pb-1 pt-1.5 text-xs font-t3-medium text-foreground-muted">
+                                  {entry.providerLabel}
+                                </Text>
                               ) : null}
-                            </Pressable>
-                          </View>
-                        ))
+                              <GlassRowPressable
+                                accessibilityLabel={entry.option.label}
+                                accessibilityRole="radio"
+                                accessibilityState={{ selected: entry.selected }}
+                                className="min-h-10 flex-row items-center gap-2.5 px-3.5 py-2"
+                                fallbackClassName="active:opacity-70"
+                                onPress={() => pickListedModel(entry.option, entry.selected)}
+                              >
+                                <ProviderIcon provider={entry.option.providerDriver} size={16} />
+                                <Text
+                                  className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+                                  numberOfLines={1}
+                                >
+                                  {entry.option.label}
+                                </Text>
+                                {entry.selected ? (
+                                  glass ? (
+                                    <Animated.View entering={enterFade}>
+                                      {selectedMark}
+                                    </Animated.View>
+                                  ) : (
+                                    selectedMark
+                                  )
+                                ) : null}
+                              </GlassRowPressable>
+                            </View>
+                          ))}
+                        </LayoutAnimationConfig>
                       )}
                     </>
                   )}
@@ -359,21 +380,22 @@ export function ThreadSettingsPickerPopover(props: {
                   {props.onOpenAdvanced ? (
                     <>
                       <View className="mx-3.5 h-px bg-border-subtle" />
-                      <Pressable
+                      <GlassRowPressable
                         accessibilityHint="Opens checkpoints and advanced thread settings"
                         accessibilityLabel="Checkpoints"
                         accessibilityRole="button"
-                        className="min-h-11 flex-row items-center justify-between px-3.5 py-2.5 active:opacity-70"
+                        className="min-h-11 flex-row items-center justify-between px-3.5 py-2.5"
+                        fallbackClassName="active:opacity-70"
                         onPress={openAdvanced}
                       >
                         <Text className="text-sm font-t3-medium text-foreground">Checkpoints</Text>
                         <SymbolView
                           name="chevron.right"
                           size={12}
-                          tintColor={iconSubtle}
+                          tintColorClassName="accent-icon-subtle"
                           type="monochrome"
                         />
-                      </Pressable>
+                      </GlassRowPressable>
                     </>
                   ) : null}
                 </ScrollView>

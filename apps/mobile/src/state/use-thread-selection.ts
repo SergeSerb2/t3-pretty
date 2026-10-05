@@ -1,24 +1,32 @@
+import { useAtomValue } from "@effect/atom-react";
 import { useRoute, type RouteProp } from "@react-navigation/native";
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   EnvironmentId,
   ThreadId,
   type ScopedProjectRef,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
+import {
+  type EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
 import * as Option from "effect/Option";
 
+import { threadDetailToShell } from "./use-thread-selection.logic";
+import { scopedThreadKey } from "../lib/scopedEntities";
 import { useProject, useThreadShell } from "../state/entities";
 import { useEnvironmentThread } from "../state/threads";
+import {
+  resolvePendingThreadCreation,
+  pendingThreadCreationOutcomesAtom,
+  pendingThreadCreationShell,
+  type PendingThreadCreation,
+} from "./pending-thread-creation";
 import {
   useRemoteEnvironmentRuntime,
   useSavedRemoteConnection,
 } from "./use-remote-environment-registry";
-import { useOptimisticStartingThreadShell } from "./optimistic-thread-send";
-import {
-  resolveSelectedThreadShell,
-  resolveSelectionDetailFallbackRef,
-} from "./use-thread-selection.logic";
+import { useThreadOutboxMessages } from "./use-thread-outbox";
 type ThreadSelectionRouteParams = {
   readonly environmentId?: string | string[];
   readonly threadId?: string | string[];
@@ -52,35 +60,62 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
   }
   const selectedThreadRef = routeThreadRef ?? lastRouteThreadRef.current;
   const selectedThreadShell = useThreadShell(selectedThreadRef);
-  const localStartingShell = useOptimisticStartingThreadShell({
-    environmentId: selectedThreadRef?.environmentId ?? null,
-    threadId: selectedThreadRef?.threadId ?? null,
-  });
-  // The shell snapshot is authoritative for selection metadata. Only fall back
-  // to the hot per-thread detail stream while the shell cannot identify the
-  // thread, so consumers do not re-render at stream rate during active turns.
-  // A local starting overlay is enough to render the thread chrome, so skip
-  // the missing-thread subscribe until the server lists it.
-  const detailFallbackRef = resolveSelectionDetailFallbackRef(
-    selectedThreadRef,
-    selectedThreadShell,
-    localStartingShell !== null,
-  );
+  const selectedThreadKey =
+    selectedThreadRef === null
+      ? null
+      : scopedThreadKey(selectedThreadRef.environmentId, selectedThreadRef.threadId);
+  const queuedMessagesByThreadKey = useThreadOutboxMessages();
+  const creationOutcome = useAtomValue(pendingThreadCreationOutcomesAtom);
+  // A creation the outbox still holds or just delivered: the thread screen
+  // opened before the server made the thread, so present a stand-in shell.
+  const pendingCreation = useMemo<PendingThreadCreation | null>(() => {
+    if (selectedThreadKey === null) {
+      return null;
+    }
+    const queued = queuedMessagesByThreadKey[selectedThreadKey]?.find(
+      (message) => message.creation !== undefined,
+    );
+    const outcome = creationOutcome[selectedThreadKey] ?? null;
+    const message = queued ?? outcome?.message ?? null;
+    return message === null ? null : { message, outcome };
+  }, [creationOutcome, queuedMessagesByThreadKey, selectedThreadKey]);
+  // Until the creation is delivered the server has no thread to subscribe
+  // to; subscribing anyway would retry "not found" for the whole setup.
+  const selectedThreadDetailRef =
+    selectedThreadShell !== null ||
+    pendingCreation === null ||
+    pendingCreation.outcome?.kind === "delivered"
+      ? selectedThreadRef
+      : null;
+  const [previousCreation, setPreviousCreation] = useState<PendingThreadCreation | null>(null);
+  // Normal selection is shell-only. Detail readers subscribe separately; only
+  // optimistic creation needs the projection here until its prompt arrives.
+  const needsDetail =
+    selectedThreadShell === null || pendingCreation !== null || previousCreation !== null;
   const selectedThreadDetailState = useEnvironmentThread(
-    detailFallbackRef?.environmentId ?? null,
-    detailFallbackRef?.threadId ?? null,
+    needsDetail ? (selectedThreadDetailRef?.environmentId ?? null) : null,
+    needsDetail ? (selectedThreadDetailRef?.threadId ?? null) : null,
   );
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
   const selectedThread = useMemo(
     () =>
-      resolveSelectedThreadShell(
-        selectedThreadRef,
-        selectedThreadShell,
-        selectedThreadDetail,
-        localStartingShell,
-      ),
-    [localStartingShell, selectedThreadDetail, selectedThreadRef, selectedThreadShell],
+      selectedThreadShell ??
+      (selectedThreadRef !== null && selectedThreadDetail !== null
+        ? threadDetailToShell(selectedThreadRef.environmentId, selectedThreadDetail)
+        : pendingCreation !== null
+          ? pendingThreadCreationShell(pendingCreation.message)
+          : null),
+    [pendingCreation, selectedThreadDetail, selectedThreadRef, selectedThreadShell],
   );
+  const selectedThreadCreation = resolvePendingThreadCreation({
+    threadKey: selectedThreadKey,
+    pending: pendingCreation,
+    previous: previousCreation,
+    detail: selectedThreadDetail,
+  });
+  if (previousCreation !== selectedThreadCreation) {
+    setPreviousCreation(selectedThreadCreation);
+  }
   const selectedProjectRef = useMemo<ScopedProjectRef | null>(
     () =>
       selectedThread === null
@@ -100,6 +135,8 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
     () => ({
       selectedThreadRef,
       selectedThread,
+      selectedThreadCreation,
+      selectedThreadDetailRef,
       selectedThreadProject,
       selectedEnvironmentConnection,
       selectedEnvironmentRuntime,
@@ -108,6 +145,8 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
       selectedEnvironmentConnection,
       selectedEnvironmentRuntime,
       selectedThread,
+      selectedThreadCreation,
+      selectedThreadDetailRef,
       selectedThreadProject,
       selectedThreadRef,
     ],

@@ -1,19 +1,152 @@
 import {
+  ORCHESTRATION_CACHE_SCHEMA_VERSION,
+  StoredOrchestrationShellSnapshot,
+} from "@t3tools/client-runtime/platform";
+import {
+  CommandId,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  type OrchestrationThreadDetailSnapshot,
+  type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ThreadDetailSnapshot,
   type VcsListRefsResult,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Schema from "effect/Schema";
+import { vi } from "vite-plus/test";
+import * as Deferred from "effect/Deferred";
 import * as Option from "effect/Option";
 
-import { type ClientCacheKind, MobileDatabase } from "../persistence/mobile-database";
-import { make, THREAD_SNAPSHOT_CACHE_MAX_ENTRIES } from "./environment-cache-store";
+import * as MobileDatabase from "../persistence/mobile-database";
+import { make, THREAD_SNAPSHOT_CACHE_MAX_ENTRIES, VCS_REFS_CACHE_MAX_ENTRIES } from "./environment-cache-store";
+import { encodeStoredShellSnapshot } from "./shell-cache-encoding";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
+const PROJECT_ID = ProjectId.make("project-1");
+const THREAD_ID = ThreadId.make("thread-1");
+const PROVIDER_INSTANCE_ID = ProviderInstanceId.make("codex");
+const NOW = DateTime.makeUnsafe("2026-07-29T12:00:00.000Z");
+const SHELL_SNAPSHOT: OrchestrationV2ShellSnapshot = {
+  schemaVersion: 1,
+  snapshotSequence: 3,
+  projects: [
+    {
+      id: PROJECT_ID,
+      title: "Project",
+      workspaceRoot: "/repo",
+      repositoryIdentity: null,
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: "2026-07-29T12:00:00.000Z",
+      updatedAt: "2026-07-29T12:00:00.000Z",
+    },
+  ],
+  threads: [
+    {
+      id: THREAD_ID,
+      projectId: PROJECT_ID,
+      title: "Thread",
+      providerInstanceId: PROVIDER_INSTANCE_ID,
+      modelSelection: {
+        instanceId: PROVIDER_INSTANCE_ID,
+        model: "gpt-5.4",
+      },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      activeProviderThreadId: null,
+      lineage: {
+        rootThreadId: THREAD_ID,
+        parentThreadId: null,
+        relationshipToParent: null,
+      },
+      forkedFrom: null,
+      createdBy: "user",
+      creationSource: "mobile",
+      latestRunId: null,
+      activeRunId: null,
+      status: "idle",
+      pendingRuntimeRequest: null,
+      latestVisibleMessage: null,
+      latestUserMessageAt: NOW,
+      activityRunStartedAt: NOW,
+      activityRunStatus: "running",
+      hasActionableProposedPlan: false,
+      itemCount: 0,
+      visibleItemCount: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      archivedAt: null,
+      settledOverride: null,
+      settledAt: NOW,
+      unsettledAt: NOW,
+      lastVisitedAt: null,
+      titleRegeneration: {
+        requestId: CommandId.make("title-regeneration-1"),
+        startedAt: NOW,
+      },
+      deletedAt: null,
+    },
+  ],
+  archivedThreads: [],
+};
+const THREAD_SNAPSHOT: OrchestrationV2ThreadDetailSnapshot = {
+  snapshotSequence: 4,
+  projection: {
+    thread: {
+      id: THREAD_ID,
+      projectId: PROJECT_ID,
+      title: "Thread",
+      providerInstanceId: PROVIDER_INSTANCE_ID,
+      modelSelection: {
+        instanceId: PROVIDER_INSTANCE_ID,
+        model: "gpt-5.4",
+      },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      activeProviderThreadId: null,
+      lineage: {
+        rootThreadId: THREAD_ID,
+        parentThreadId: null,
+        relationshipToParent: null,
+      },
+      forkedFrom: null,
+      createdBy: "user",
+      creationSource: "mobile",
+      createdAt: NOW,
+      updatedAt: NOW,
+      archivedAt: null,
+      settledOverride: null,
+      settledAt: NOW,
+      lastVisitedAt: null,
+      deletedAt: null,
+    },
+    runs: [],
+    attempts: [],
+    nodes: [],
+    subagents: [],
+    providerSessions: [],
+    providerThreads: [],
+    providerTurns: [],
+    runtimeRequests: [],
+    messages: [],
+    plans: [],
+    turnItems: [],
+    checkpointScopes: [],
+    checkpoints: [],
+    contextHandoffs: [],
+    contextTransfers: [],
+    visibleTurnItems: [],
+    updatedAt: NOW,
+  },
+};
 const REFS: VcsListRefsResult = {
   refs: [
     {
@@ -29,77 +162,44 @@ const REFS: VcsListRefsResult = {
   totalCount: 1,
 };
 
-function makeThreadSnapshot(threadId: string): OrchestrationThreadDetailSnapshot {
-  return {
-    snapshotSequence: 1,
-    thread: {
-      id: ThreadId.make(threadId),
-      projectId: ProjectId.make("project-1"),
-      title: `Thread ${threadId}`,
-      modelSelection: {
-        instanceId: ProviderInstanceId.make("codex"),
-        model: "gpt-5.4",
-      },
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      branch: "main",
-      worktreePath: null,
-      enabledSkillIds: [],
-      latestTurn: null,
-      createdAt: "2026-04-01T00:00:00.000Z",
-      updatedAt: "2026-04-01T00:00:00.000Z",
-      archivedAt: null,
-      settledOverride: null,
-      settledAt: null,
-      deletedAt: null,
-      messages: [],
-      proposedPlans: [],
-      activities: [],
-      checkpoints: [],
-      session: null,
-    },
-  };
-}
-
-function cacheId(environmentId: EnvironmentId, kind: ClientCacheKind, cacheKey: string) {
+function cacheId(
+  environmentId: EnvironmentId,
+  kind: MobileDatabase.ClientCacheKind,
+  cacheKey: string,
+) {
   return `${environmentId}:${kind}:${cacheKey}`;
 }
 
 function makeDatabase() {
   const values = new Map<string, string>();
-  const updatedAt = new Map<string, number>();
-  let clock = 0;
+  const schemaVersions = new Map<string, number>();
   const removed: Array<string> = [];
-  const database = MobileDatabase.of({
+  const database = MobileDatabase.MobileDatabase.of({
     loadCache: (environmentId, kind, cacheKey) =>
       Effect.succeed(Option.fromUndefinedOr(values.get(cacheId(environmentId, kind, cacheKey)))),
-    saveCache: (environmentId, kind, cacheKey, _schemaVersion, payload) =>
+    listCache: (kind) =>
+      Effect.sync(() =>
+        [...values.entries()]
+          .filter(([key]) => key.split(":")[1] === kind)
+          .map(([, payload]) => payload),
+      ),
+    saveCache: (environmentId, kind, cacheKey, schemaVersion, payload) =>
       Effect.sync(() => {
         const id = cacheId(environmentId, kind, cacheKey);
+        values.delete(id);
         values.set(id, payload);
-        updatedAt.set(id, (clock += 1));
+        schemaVersions.set(id, schemaVersion);
       }),
     removeCache: (environmentId, kind, cacheKey) =>
       Effect.sync(() => {
         const id = cacheId(environmentId, kind, cacheKey);
         removed.push(id);
         values.delete(id);
-        updatedAt.delete(id);
       }),
-    pruneThreadCache: (environmentId, keep) =>
-      Effect.sync(() => {
-        const prefix = `${environmentId}:thread:`;
-        const ids = [...values.keys()].filter((key) => key.startsWith(prefix));
-        // Same ordering as the SQLite query: updated_at DESC, cache_key ASC.
-        ids.sort((left, right) => {
-          const byUpdatedAt = (updatedAt.get(right) ?? 0) - (updatedAt.get(left) ?? 0);
-          return byUpdatedAt !== 0 ? byUpdatedAt : left.localeCompare(right);
-        });
-        for (const id of ids.slice(keep)) {
-          values.delete(id);
-          updatedAt.delete(id);
-        }
-      }),
+    pruneCacheKind: (environmentId, kind, maximum) => Effect.sync(() => {
+      const keys = [...values.keys()].filter((key) => key.startsWith(`${environmentId}:${kind}:`));
+      for (const key of keys.slice(0, Math.max(0, keys.length - maximum))) values.delete(key);
+    }),
     clearCacheKind: (environmentId, kind) =>
       Effect.sync(() => {
         for (const key of values.keys()) {
@@ -117,14 +217,54 @@ function makeDatabase() {
     loadPreferencesJson: Effect.succeed(Option.none()),
     savePreferencesJson: () => Effect.void,
   });
-  return { database, removed, values };
+  return { database, removed, schemaVersions, values };
 }
 
 describe("mobile SQLite environment cache store", () => {
+  it.effect("round-trips V2 shell and thread DateTime fields with the shared cache schema", () =>
+    Effect.gen(function* () {
+      const memory = makeDatabase();
+      const store = yield* make().pipe(
+        Effect.provideService(MobileDatabase.MobileDatabase, memory.database),
+      );
+
+      yield* store.saveShell(ENVIRONMENT_ID, SHELL_SNAPSHOT);
+      yield* store.saveThread(ENVIRONMENT_ID, THREAD_SNAPSHOT);
+
+      const shell = Option.getOrThrow(yield* store.loadShell(ENVIRONMENT_ID));
+      const thread = Option.getOrThrow(yield* store.loadThread(ENVIRONMENT_ID, THREAD_ID));
+
+      expect(DateTime.formatIso(shell.threads[0]!.updatedAt)).toBe("2026-07-29T12:00:00.000Z");
+      expect(DateTime.formatIso(shell.threads[0]!.latestUserMessageAt!)).toBe(
+        "2026-07-29T12:00:00.000Z",
+      );
+      expect(DateTime.formatIso(shell.threads[0]!.titleRegeneration!.startedAt)).toBe(
+        "2026-07-29T12:00:00.000Z",
+      );
+      // Working and unsettled threads are exactly what a backgrounded app
+      // caches; a decode failure here discards the whole shell on relaunch.
+      expect(DateTime.formatIso(shell.threads[0]!.activityRunStartedAt!)).toBe(
+        "2026-07-29T12:00:00.000Z",
+      );
+      expect(DateTime.formatIso(shell.threads[0]!.unsettledAt!)).toBe("2026-07-29T12:00:00.000Z");
+      expect(DateTime.formatIso(thread.projection.thread.updatedAt)).toBe(
+        "2026-07-29T12:00:00.000Z",
+      );
+      expect(memory.schemaVersions.get(cacheId(ENVIRONMENT_ID, "shell", "snapshot"))).toBe(
+        ORCHESTRATION_CACHE_SCHEMA_VERSION,
+      );
+      expect(memory.schemaVersions.get(cacheId(ENVIRONMENT_ID, "thread", THREAD_ID))).toBe(
+        ORCHESTRATION_CACHE_SCHEMA_VERSION,
+      );
+    }),
+  );
+
   it.effect("round-trips schema-validated VCS refs", () =>
     Effect.gen(function* () {
       const memory = makeDatabase();
-      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+      const store = yield* make().pipe(
+        Effect.provideService(MobileDatabase.MobileDatabase, memory.database),
+      );
 
       yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo", REFS);
 
@@ -135,7 +275,9 @@ describe("mobile SQLite environment cache store", () => {
   it.effect("deletes a corrupt cache record and treats it as a miss", () =>
     Effect.gen(function* () {
       const memory = makeDatabase();
-      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+      const store = yield* make().pipe(
+        Effect.provideService(MobileDatabase.MobileDatabase, memory.database),
+      );
       const id = cacheId(ENVIRONMENT_ID, "vcs-refs", "/repo");
       memory.values.set(id, "{not-json");
 
@@ -147,7 +289,9 @@ describe("mobile SQLite environment cache store", () => {
   it.effect("removes one persisted VCS ref snapshot", () =>
     Effect.gen(function* () {
       const memory = makeDatabase();
-      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+      const store = yield* make().pipe(
+        Effect.provideService(MobileDatabase.MobileDatabase, memory.database),
+      );
       yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo", REFS);
 
       yield* store.removeVcsRefs(ENVIRONMENT_ID, "/repo");
@@ -160,7 +304,9 @@ describe("mobile SQLite environment cache store", () => {
   it.effect("clears every persisted VCS ref snapshot in one environment", () =>
     Effect.gen(function* () {
       const memory = makeDatabase();
-      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+      const store = yield* make().pipe(
+        Effect.provideService(MobileDatabase.MobileDatabase, memory.database),
+      );
       const otherEnvironmentId = EnvironmentId.make("environment-2");
       yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo", REFS);
       yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo-worktree", REFS);
@@ -177,7 +323,9 @@ describe("mobile SQLite environment cache store", () => {
   it.effect("clears one environment without touching another", () =>
     Effect.gen(function* () {
       const memory = makeDatabase();
-      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+      const store = yield* make().pipe(
+        Effect.provideService(MobileDatabase.MobileDatabase, memory.database),
+      );
       const otherEnvironmentId = EnvironmentId.make("environment-2");
       yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo", REFS);
       yield* store.saveVcsRefs(otherEnvironmentId, "/repo", REFS);
@@ -188,56 +336,130 @@ describe("mobile SQLite environment cache store", () => {
       expect(yield* store.loadVcsRefs(otherEnvironmentId, "/repo")).toEqual(Option.some(REFS));
     }),
   );
+});
 
-  it.effect("evicts the oldest thread snapshots beyond the per-environment bound", () =>
+describe("cooperative shell cache encoding", () => {
+  const encodeOriginal = Schema.encodeEffect(
+    Schema.fromJsonString(StoredOrchestrationShellSnapshot),
+  );
+  const stored = {
+    schemaVersion: ORCHESTRATION_CACHE_SCHEMA_VERSION,
+    environmentId: ENVIRONMENT_ID,
+    snapshot: {
+      ...SHELL_SNAPSHOT,
+      projects: SHELL_SNAPSHOT.projects.map((project) => ({
+        ...project,
+        title: "  Project  ",
+        unexpected: "drop this field",
+      })),
+      threads: Array.from({ length: 64 }, (_, index) => ({
+        ...SHELL_SNAPSHOT.threads[0]!,
+        id: ThreadId.make(`thread-${index}`),
+        branch: "  main  ",
+        activityRunStartedAt: index % 2 === 0 ? NOW : null,
+        unsettledAt: index % 2 === 0 ? NOW : null,
+        modelSelection: {
+          instanceId: PROVIDER_INSTANCE_ID,
+          model: "  gpt-5.4  ",
+          unexpected: "drop this field",
+        },
+        unexpected: "drop this field",
+      })),
+      archivedThreads: [{ ...SHELL_SNAPSHOT.threads[0]!, archivedAt: NOW }],
+      unexpected: "drop this field",
+    },
+    unexpected: "drop this field",
+  };
+
+  it.effect("preserves exact JSON, transforms, nulls, dates, and unknown-field stripping", () =>
     Effect.gen(function* () {
-      const memory = makeDatabase();
-      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
-      const otherEnvironmentId = EnvironmentId.make("environment-2");
-      yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo", REFS);
-      yield* store.saveThread(otherEnvironmentId, makeThreadSnapshot("thread-other"));
-
-      for (let index = 1; index <= THREAD_SNAPSHOT_CACHE_MAX_ENTRIES + 1; index += 1) {
-        yield* store.saveThread(ENVIRONMENT_ID, makeThreadSnapshot(`thread-${index}`));
-      }
-
-      // The oldest row is gone; the newest N remain.
-      expect(yield* store.loadThread(ENVIRONMENT_ID, ThreadId.make("thread-1"))).toEqual(
-        Option.none(),
-      );
-      for (let index = 2; index <= THREAD_SNAPSHOT_CACHE_MAX_ENTRIES + 1; index += 1) {
-        const loaded = yield* store.loadThread(ENVIRONMENT_ID, ThreadId.make(`thread-${index}`));
-        expect(Option.isSome(loaded)).toBe(true);
-      }
-      // Non-thread kinds and other environments are not pruned.
-      expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo")).toEqual(Option.some(REFS));
-      expect(
-        yield* store.loadThread(otherEnvironmentId, ThreadId.make("thread-other")),
-      ).not.toEqual(Option.none());
+      const expected = yield* encodeOriginal(stored);
+      const actual = yield* encodeStoredShellSnapshot(stored);
+      expect(actual).toBe(expected);
+      const parsed = JSON.parse(actual);
+      expect(parsed).not.toHaveProperty("unexpected");
+      expect(parsed.snapshot).not.toHaveProperty("unexpected");
+      expect(parsed.snapshot.projects[0]).not.toHaveProperty("unexpected");
+      expect(parsed.snapshot.projects[0].title).toBe("Project");
+      expect(parsed.snapshot.threads[0]).not.toHaveProperty("unexpected");
+      expect(parsed.snapshot.threads[0].branch).toBe("main");
+      expect(parsed.snapshot.threads[0].modelSelection).toEqual({
+        instanceId: "codex",
+        model: "gpt-5.4",
+      });
+      expect(parsed.snapshot.threads[0].activityRunStartedAt).toBe(DateTime.formatIso(NOW));
+      expect(parsed.snapshot.threads[1].activityRunStartedAt).toBeNull();
+      expect(parsed.snapshot.archivedThreads[0].archivedAt).toBe(DateTime.formatIso(NOW));
     }),
   );
 
-  it.effect("re-saving a thread refreshes its eviction recency", () =>
+  it.effect("still rejects invalid rows after an encoding batch yields", () =>
     Effect.gen(function* () {
-      const memory = makeDatabase();
-      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+      const invalid = {
+        ...stored,
+        snapshot: {
+          ...stored.snapshot,
+          threads: [...stored.snapshot.threads, { ...stored.snapshot.threads[0]!, itemCount: -1 }],
+        },
+      };
+      expect(yield* Effect.isFailure(encodeStoredShellSnapshot(invalid))).toBe(true);
+    }),
+  );
 
-      for (let index = 1; index <= THREAD_SNAPSHOT_CACHE_MAX_ENTRIES; index += 1) {
-        yield* store.saveThread(ENVIRONMENT_ID, makeThreadSnapshot(`thread-${index}`));
-      }
-      yield* store.saveThread(ENVIRONMENT_ID, makeThreadSnapshot("thread-1"));
-      yield* store.saveThread(ENVIRONMENT_ID, makeThreadSnapshot("thread-new"));
-
-      // thread-1 was refreshed by the re-save, so thread-2 is now the oldest.
-      expect(
-        Option.isSome(yield* store.loadThread(ENVIRONMENT_ID, ThreadId.make("thread-1"))),
-      ).toBe(true);
-      expect(yield* store.loadThread(ENVIRONMENT_ID, ThreadId.make("thread-2"))).toEqual(
-        Option.none(),
+  it.effect("cancels the pending host timer when encoding is interrupted", () =>
+    Effect.gen(function* () {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const fakeSetTimeout = globalThis.setTimeout;
+      const scheduled = yield* Deferred.make<ReturnType<typeof setTimeout>>();
+      vi.spyOn(globalThis, "setTimeout").mockImplementation((...args) => {
+        const timer = fakeSetTimeout(...args);
+        Deferred.doneUnsafe(scheduled, Effect.succeed(timer));
+        return timer;
+      });
+      const clearTimer = vi.spyOn(globalThis, "clearTimeout");
+      const fiber = yield* Effect.forkScoped(
+        Effect.suspend(() => encodeStoredShellSnapshot(stored)),
       );
-      expect(
-        Option.isSome(yield* store.loadThread(ENVIRONMENT_ID, ThreadId.make("thread-new"))),
-      ).toBe(true);
+      try {
+        const pendingTimer = yield* Deferred.await(scheduled);
+        expect(vi.getTimerCount()).toBe(1);
+        yield* Fiber.interrupt(fiber);
+        expect(clearTimer).toHaveBeenCalledWith(pendingTimer);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        yield* Fiber.interrupt(fiber);
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+      }
     }),
   );
 });
+
+it.effect("bounds V2 thread caches without evicting other environments or VCS records", () =>
+  Effect.gen(function* () {
+    const memory = makeDatabase();
+    const store = yield* make().pipe(Effect.provideService(MobileDatabase.MobileDatabase, memory.database));
+    const otherEnvironment = EnvironmentId.make("other");
+    yield* store.saveThread(otherEnvironment, THREAD_SNAPSHOT);
+    yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo", REFS);
+    for (let index = 0; index <= THREAD_SNAPSHOT_CACHE_MAX_ENTRIES; index++) {
+      yield* store.saveThread(ENVIRONMENT_ID, { ...THREAD_SNAPSHOT, projection: {
+        ...THREAD_SNAPSHOT.projection, thread: { ...THREAD_SNAPSHOT.projection.thread, id: ThreadId.make(`thread-${index}`) },
+      } });
+    }
+    expect(Option.isNone(yield* store.loadThread(ENVIRONMENT_ID, ThreadId.make("thread-0")))).toBe(true);
+    expect(Option.isSome(yield* store.loadThread(ENVIRONMENT_ID, ThreadId.make(`thread-${THREAD_SNAPSHOT_CACHE_MAX_ENTRIES}`)))).toBe(true);
+    expect(Option.isSome(yield* store.loadThread(otherEnvironment, THREAD_ID))).toBe(true);
+    expect(Option.isSome(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo"))).toBe(true);
+  }),
+);
+it.effect("bounds cached VCS roots independently from thread history", () =>
+  Effect.gen(function* () {
+    const memory = makeDatabase();
+    const store = yield* make().pipe(Effect.provideService(MobileDatabase.MobileDatabase, memory.database));
+    yield* store.saveThread(ENVIRONMENT_ID, THREAD_SNAPSHOT);
+    for (let index = 0; index <= VCS_REFS_CACHE_MAX_ENTRIES; index++) yield* store.saveVcsRefs(ENVIRONMENT_ID, `/repo-${index}`, REFS);
+    expect(Option.isNone(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo-0"))).toBe(true);
+    expect(Option.isSome(yield* store.loadThread(ENVIRONMENT_ID, THREAD_ID))).toBe(true);
+  }),
+);

@@ -7,13 +7,14 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
 import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { ServerIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   deregisterManagedRelayEnvironmentCommand,
   useManagedRelayEnvironments,
 } from "../../cloud/managedRelayState";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useCopyTraceId } from "../../hooks/useCopyTraceId";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
@@ -52,21 +53,16 @@ export function T3ConnectEnvironmentRow(props: {
       <Collapsible open={props.confirmationOpen} onOpenChange={props.onConfirmationChange}>
         <div className="flex items-start gap-4">
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-[0.8125rem] leading-[1.125rem] font-medium text-foreground">
+            <h3 className="truncate text-sm leading-4.5 font-medium text-foreground">
               {environment.label}
             </h3>
-            <p className="mt-1 text-xs leading-[1.125rem] text-muted-foreground">
+            <p className="mt-1 text-xs leading-4.5 text-muted-foreground">
               {linkedAtLabel(environment.linkedAt)} · {endpointLabel(environment)}
             </p>
           </div>
           <CollapsibleTrigger
             render={
-              <Button
-                size="sm"
-                variant="destructive-outline"
-                className="text-[0.8125rem]"
-                disabled={props.mutationPending}
-              >
+              <Button size="sm" variant="destructive-outline" disabled={props.mutationPending}>
                 Deregister
               </Button>
             }
@@ -80,13 +76,13 @@ export function T3ConnectEnvironmentRow(props: {
               role="group"
               aria-label={`Confirm deregistration of ${environment.label}`}
             >
-              <h4 className="text-[0.8125rem] leading-[1.125rem] font-semibold text-foreground">
+              <h4 className="text-sm leading-4.5 font-semibold text-foreground">
                 Deregister server
               </h4>
-              <p className="mt-1 text-[0.8125rem] leading-[1.125rem] text-muted-foreground">
+              <p className="mt-1 text-xs leading-4.5 text-muted-foreground">
                 “{environment.label}” will be removed from this account.
               </p>
-              <p className="mt-4 max-w-xl text-[0.8125rem] leading-[1.125rem] text-muted-foreground">
+              <p className="mt-4 max-w-xl text-xs leading-4.5 text-muted-foreground">
                 {SURGE_CONNECT_NAME} access will be revoked, any managed tunnel will be removed, and
                 a host space will become available. Local connections on your devices are not
                 changed.
@@ -95,7 +91,6 @@ export function T3ConnectEnvironmentRow(props: {
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="text-[0.8125rem]"
                   disabled={props.mutationPending}
                   onClick={() => props.onConfirmationChange(false)}
                 >
@@ -104,7 +99,6 @@ export function T3ConnectEnvironmentRow(props: {
                 <Button
                   size="sm"
                   variant="destructive"
-                  className="text-[0.8125rem]"
                   disabled={props.mutationPending}
                   onClick={() => props.onDeregister(environment)}
                 >
@@ -121,6 +115,7 @@ export function T3ConnectEnvironmentRow(props: {
 
 export function T3ConnectUserProfilePage() {
   const environmentsState = useManagedRelayEnvironments();
+  const copyTraceId = useCopyTraceId();
   const deregisterEnvironment = useAtomCommand(deregisterManagedRelayEnvironmentCommand, {
     reportFailure: false,
   });
@@ -130,21 +125,48 @@ export function T3ConnectUserProfilePage() {
     null,
   );
   const mutationPendingRef = useRef(false);
+  const activeMutationRef = useRef<symbol | null>(null);
+  const activeAccountRef = useRef(environmentsState.accountId);
+  activeAccountRef.current = environmentsState.accountId;
+  const previousAccountRef = useRef(environmentsState.accountId);
   const [removedEnvironments, setRemovedEnvironments] = useState<{
     readonly accountId: string | null;
     readonly linkedAtById: ReadonlyMap<EnvironmentId, string>;
   }>({ accountId: null, linkedAtById: new Map() });
 
+  useEffect(() => {
+    if (previousAccountRef.current === environmentsState.accountId) return;
+    previousAccountRef.current = environmentsState.accountId;
+    activeMutationRef.current = null;
+    mutationPendingRef.current = false;
+    setDeregisteringEnvironmentId(null);
+    setConfirmingEnvironmentId(null);
+  }, [environmentsState.accountId]);
+
+  useEffect(
+    () => () => {
+      activeMutationRef.current = null;
+      mutationPendingRef.current = false;
+    },
+    [],
+  );
+
   const handleDeregister = async (environment: RelayClientEnvironmentRecord) => {
     const accountId = environmentsState.accountId;
     if (!accountId || mutationPendingRef.current) return;
 
+    const operation = Symbol("deregister-relay-environment");
+    activeMutationRef.current = operation;
     mutationPendingRef.current = true;
     setDeregisteringEnvironmentId(environment.environmentId);
     const result = await deregisterEnvironment({
       accountId,
       environmentId: environment.environmentId,
     });
+    if (activeMutationRef.current !== operation || activeAccountRef.current !== accountId) {
+      return;
+    }
+    activeMutationRef.current = null;
     mutationPendingRef.current = false;
     setDeregisteringEnvironmentId(null);
 
@@ -182,7 +204,7 @@ export function T3ConnectUserProfilePage() {
         ? {
             secondaryActionProps: {
               children: "Copy trace ID",
-              onClick: () => void navigator.clipboard?.writeText(traceId),
+              onClick: () => copyTraceId(traceId),
             },
           }
         : undefined,
@@ -214,7 +236,7 @@ export function T3ConnectUserProfilePage() {
     >
       <div>
         {environmentsState.error ? (
-          <div className="mb-4 border-t border-destructive/35 py-3 text-[0.8125rem]" role="alert">
+          <div className="mb-4 border-t border-destructive/35 py-3 text-xs" role="alert">
             <p className="font-medium text-destructive-foreground">
               Could not load {SURGE_CONNECT_NAME} environments
             </p>
@@ -223,7 +245,7 @@ export function T3ConnectUserProfilePage() {
         ) : null}
 
         {isInitialLoad ? (
-          <p className="border-t py-4 text-[0.8125rem] text-muted-foreground" role="status">
+          <p className="border-t py-4 text-xs text-muted-foreground" role="status">
             Loading environments…
           </p>
         ) : environments.length > 0 ? (
@@ -242,20 +264,20 @@ export function T3ConnectUserProfilePage() {
             ))}
           </ul>
         ) : environmentsState.error ? null : (
-          <Empty className="min-h-64 gap-4 border-t px-6 py-10 md:p-10">
-            <EmptyMedia className="mb-0" variant="icon">
-              <ServerIcon />
-            </EmptyMedia>
-            <EmptyHeader>
-              <EmptyTitle className="text-[1.0625rem] leading-6">
-                No {SURGE_CONNECT_NAME} environments
-              </EmptyTitle>
-              <EmptyDescription className="text-[0.8125rem] leading-[1.125rem]">
-                Link an environment from its local Settings to make it available through{" "}
-                {SURGE_CONNECT_NAME}.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <div className="border-t">
+            <Empty size="compact">
+              <EmptyMedia variant="icon">
+                <ServerIcon />
+              </EmptyMedia>
+              <EmptyHeader>
+                <EmptyTitle>No {SURGE_CONNECT_NAME} environments</EmptyTitle>
+                <EmptyDescription>
+                  Link an environment from its local Settings to make it available through{" "}
+                  {SURGE_CONNECT_NAME}.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </div>
         )}
       </div>
     </ClerkUserProfilePage>

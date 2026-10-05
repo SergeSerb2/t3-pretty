@@ -1,52 +1,50 @@
-# Permission Modes
+# Permission modes
 
-A permission mode controls how much the agent does on its own and when it stops to ask you.
+Permission modes control when an agent needs your approval to act. Choose a mode in the message
+composer; it applies to that thread.
 
 The mode is set per thread, from the mode control in the message composer. Changing it in one
-thread does not change any other thread. A thread created from inside another thread keeps that
-thread's mode; otherwise new threads start in **Full access** (**Yolo** on Kimi) unless you pick
-something else before sending.
+thread does not change any other thread.
 
-## The Modes
+Set the default for new threads in **Settings → General → New threads → Permissions**.
+Projects can override the environment default. Ordinary new threads use this setting rather than
+the mode of the thread you were viewing. The initial default is **Full access**; existing threads
+and modes you choose in a draft keep their permissions. A thread created from another thread is
+an exception and inherits its mode.
 
-**Supervised**: ask before commands and file changes. The agent pauses and shows you what it
-wants to run or edit, and waits for approval. Work outside the workspace is restricted.
+| Mode                  | Behavior                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------- |
+| **Supervised**        | Requests approval for commands and file changes.                                      |
+| **Auto-accept edits** | Approves file edits automatically; other actions can still require approval.          |
+| **Auto**              | Uses the provider's automatic review to approve routine actions and ask about others. |
+| **Full access**       | Allows commands and edits without approval prompts.                                   |
 
-**Auto-accept edits**: auto-approve edits, ask before other actions. File changes go through
-without prompting; commands and anything else still stop for approval.
+Approve or reject requests in the conversation to let the agent continue. Permission modes do
+not prevent the agent from asking questions about the task.
 
-**Auto**: routine actions proceed without you; risky ones still ask. How this is enforced depends
-on the provider: Codex delegates routine approvals to an AI reviewer, Claude uses its own auto
-permission mode, and providers without an equivalent fall back to asking, like Supervised.
+## Provider differences
 
-**Full access**: allow commands and edits without prompts. The default. The agent runs
+Providers enforce permissions differently. Some read-only actions can proceed in **Supervised**.
+**Auto** uses automatic review on Codex, Claude, Cursor, and Grok; providers without an equivalent,
+including OpenCode and Antigravity, fall back to asking. On Grok, commands its review blocks come
+to you for approval.
+
+**Full access** allows commands and edits without prompts. The default. The agent runs
 unattended until it finishes or asks a question of its own.
 
-Kimi offers **Supervised**, **Yolo**, and **Full access** — the generic Auto and Auto-accept
-edits modes are not offered for Kimi. Both unattended modes run with full access; they differ in
-whether Kimi can stop to ask you questions: **Yolo** can (and is the default for Kimi), while
-**Full access** never does.
+Grok offers no **Auto-accept edits**. A Grok thread already set to it runs in **Supervised**. Grok
+file-change approvals offer **Allow all edits this session**. Its command approvals have no
+session-wide choice, because Grok would remember that command for the whole project.
 
-Approvals appear inline in the conversation. Approve or reject one and the agent continues from
-there.
+ACP Registry agents run their own tools in their own mode; T3 Code answers their approval requests
+by the permission mode. See [ACP Registry permissions](./providers-acp.md#permissions-and-terminals).
 
-## Choosing a Mode
+Mobile offers the same modes with the same labels and descriptions.
 
-Use **Full access** for work in a worktree or a sandbox you can throw away.
+Antigravity can still send native approval requests in **Full access**. It only offers remembered
+approvals for actions that support them.
 
-Use **Supervised** on a repository where an unwanted command is expensive, or the first time you
-run an unfamiliar task.
-
-**Auto-accept edits** suits refactors where the edits are the point and you only care about the
-shell commands.
-
-## Provider Behavior
-
-Each provider maps these modes onto its own approval and sandbox settings. Codex, for example,
-translates the mode into its approval policy and sandbox level, so **Supervised** runs the CLI
-with prompting enabled and a restricted workspace while **Full access** disables both. The
-labels above describe what you get; the exact per-provider translation is internal and may
-change.
-
-Mobile offers the same modes with the same labels and descriptions: the four generic modes above,
-or **Supervised**, **Yolo**, and **Full access** for Kimi threads.
+Antigravity's native `/plan` command requests a plan. It does not change the permission mode.
+T3 Pretty's separate Plan mode control is not available for Antigravity. See
+[Antigravity](./providers-antigravity.md) for setup and thread limits. See the
+[provider guides](./install.md#providers) for setup and provider-specific limits.

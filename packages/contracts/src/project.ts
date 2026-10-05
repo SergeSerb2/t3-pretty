@@ -1,23 +1,252 @@
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
+import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
+import { ModelSelection } from "./modelSelection.ts";
 import {
+  CommandId,
+  IsoDateTime,
   NonNegativeInt,
   PositiveInt,
   ProjectId,
   TrimmedNonEmptyString,
   TrimmedString,
 } from "./baseSchemas.ts";
-import { ProjectFaviconPath } from "./orchestration.ts";
 
-const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
-const PROJECT_SEARCH_CONTENTS_MAX_LIMIT = 500;
+
+
+
+export const PROJECT_SCRIPT_MAX_COUNT = 256;
+export const PROJECT_SCRIPT_ID_MAX_LENGTH = 512;
+export const PROJECT_SCRIPT_NAME_MAX_LENGTH = 512;
+export const PROJECT_SCRIPT_COMMAND_MAX_LENGTH = 64 * 1024;
+export const PROJECT_SCRIPT_PREVIEW_URL_MAX_LENGTH = 8_192;
+
+export const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
+export const PROJECT_SEARCH_CONTENTS_MAX_LIMIT = 500;
+export const PROJECT_PATH_MAX_LENGTH = 32 * 1024;
+export const PROJECT_SEARCH_CONTENT_LINE_MAX_LENGTH = 64 * 1024;
+export const PROJECT_SEARCH_CONTENT_MATCH_RANGES_MAX = 100;
+export const PROJECT_SEARCH_CONTENT_TOTAL_LINE_CHARS_MAX = 8 * 1024 * 1024;
+export const PROJECT_SEARCH_CONTENT_TOTAL_PATH_CHARS_MAX = 2 * 1024 * 1024;
+export const PROJECT_SEARCH_CONTENT_TOTAL_MATCH_RANGES_MAX = 50_000;
+export const PROJECT_SEARCH_CONTENT_REGEX_ERROR_MAX_LENGTH = 8_192;
+export const PROJECT_LIST_ENTRIES_MAX = 25_000;
+export const PROJECT_LIST_ENTRIES_TOTAL_PATH_CHARS_MAX = 16 * 1024 * 1024;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
+export const PROJECT_FILE_CONTENTS_MAX_BYTES = 1024 * 1024;
+export const PROJECT_FILE_CONTENTS_MAX_LENGTH = PROJECT_FILE_CONTENTS_MAX_BYTES;
+
+const ProjectPath = TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_PATH_MAX_LENGTH));
+
+export const ProjectScriptIcon = Schema.Literals([
+  "play",
+  "test",
+  "lint",
+  "configure",
+  "build",
+  "debug",
+]);
+export type ProjectScriptIcon = typeof ProjectScriptIcon.Type;
+
+export const ProjectScript = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString,
+  command: TrimmedNonEmptyString,
+  icon: ProjectScriptIcon,
+  runOnWorktreeCreate: Schema.Boolean,
+  /** Start the agent while setup runs unless explicitly disabled. */
+  async: Schema.optional(Schema.Boolean),
+  previewUrl: Schema.optional(TrimmedNonEmptyString),
+  autoOpenPreview: Schema.optional(Schema.Boolean),
+});
+export type ProjectScript = typeof ProjectScript.Type;
+
+export const ProjectIconColor = Schema.Literals([
+  "gray",
+  "red",
+  "orange",
+  "amber",
+  "yellow",
+  "lime",
+  "green",
+  "emerald",
+  "teal",
+  "cyan",
+  "sky",
+  "blue",
+  "indigo",
+  "violet",
+  "purple",
+  "fuchsia",
+  "pink",
+  "rose",
+]);
+export type ProjectIconColor = typeof ProjectIconColor.Type;
+
+const ProjectLucideIconName = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(64),
+  Schema.isPattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+);
+
+const ProjectEmoji = TrimmedNonEmptyString.check(Schema.isMaxLength(32));
+
+// Grapheme-count validation belongs to the server command boundary, not snapshot decoding.
+export const ProjectMonogramText = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(32),
+  Schema.isPattern(/^[\p{L}\p{N}][\p{L}\p{N}\p{M}\u200c\u200d]*$/u),
+);
+
+const ProjectLucideIcon = Schema.Struct({
+  kind: Schema.Literal("lucide"),
+  name: ProjectLucideIconName,
+  color: ProjectIconColor,
+});
+const ProjectEmojiIcon = Schema.Struct({
+  kind: Schema.Literal("emoji"),
+  emoji: ProjectEmoji,
+});
+const ProjectMonogramIcon = Schema.Struct({
+  kind: Schema.Literal("monogram"),
+  text: ProjectMonogramText,
+  color: ProjectIconColor,
+});
+const ProjectIcon = Schema.Union([ProjectLucideIcon, ProjectEmojiIcon, ProjectMonogramIcon]);
+const ProjectLucideIconWire = Schema.Struct({
+  ...ProjectLucideIcon.fields,
+  monogramText: Schema.optional(ProjectMonogramText),
+  monogram: Schema.optional(ProjectMonogramText),
+});
+
+/** A workspace-relative image a project may use as its favicon. */
+export const ProjectFaviconPath = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(1024),
+  Schema.isPattern(/\.(?:avif|gif|ico|jpe?g|png|svg|webp)$/i),
+);
+export type ProjectFaviconPath = typeof ProjectFaviconPath.Type;
+
+// Older peers only know lucide/emoji. Keep monograms out of their validated
+// `monogram` field too: old grapheme counters can reject otherwise valid text.
+export const ProjectIconOverride = Schema.Union([
+  ProjectLucideIconWire,
+  ProjectEmojiIcon,
+  ProjectMonogramIcon,
+]).pipe(
+  Schema.decodeTo(
+    ProjectIcon,
+    SchemaTransformation.transform({
+      decode: (icon): typeof ProjectIcon.Type => {
+        if (icon.kind !== "lucide") return icon;
+        const text = icon.monogramText ?? icon.monogram;
+        return text === undefined
+          ? { kind: "lucide", name: icon.name, color: icon.color }
+          : { kind: "monogram", text, color: icon.color };
+      },
+      encode: (icon) =>
+        icon.kind === "monogram"
+          ? {
+              kind: "lucide" as const,
+              name: "folder-code",
+              color: icon.color,
+              monogramText: icon.text,
+            }
+          : icon,
+    }),
+  ),
+);
+export type ProjectIconOverride = typeof ProjectIconOverride.Type;
+
+export const Project = Schema.Struct({
+  id: ProjectId,
+  title: TrimmedNonEmptyString,
+  workspaceRoot: TrimmedNonEmptyString,
+  repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
+  faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
+  defaultModelSelection: Schema.NullOr(ModelSelection),
+  defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
+  // Opt-in because background sync performs network I/O and may move the checkout.
+  autoPull: Schema.optional(Schema.Boolean),
+  scripts: Schema.Array(ProjectScript),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+  deletedAt: Schema.NullOr(IsoDateTime),
+});
+export type Project = typeof Project.Type;
+
+export const ProjectSnapshot = Schema.Struct({
+  projects: Schema.Array(Project),
+  updatedAt: IsoDateTime,
+});
+export type ProjectSnapshot = typeof ProjectSnapshot.Type;
+
+export const ProjectChange = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("project.upserted"), project: Project }),
+  Schema.Struct({
+    type: Schema.Literal("project.deleted"),
+    projectId: ProjectId,
+    deletedAt: IsoDateTime,
+  }),
+]);
+export type ProjectChange = typeof ProjectChange.Type;
+
+export const ProjectCreatePayload = Schema.Struct({
+  title: TrimmedNonEmptyString,
+  workspaceRoot: TrimmedNonEmptyString,
+  createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
+  defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
+  scripts: Schema.optional(Schema.Array(ProjectScript)),
+});
+export type ProjectCreatePayload = typeof ProjectCreatePayload.Type;
+
+export const ProjectUpdatePayload = Schema.Struct({
+  title: Schema.optional(TrimmedNonEmptyString),
+  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
+  autoPull: Schema.optional(Schema.Boolean),
+  projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
+  faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
+  scripts: Schema.optional(Schema.Array(ProjectScript)),
+});
+export type ProjectUpdatePayload = typeof ProjectUpdatePayload.Type;
+
+export const ProjectMutation = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("project.create"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    ...ProjectCreatePayload.fields,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("project.update"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    ...ProjectUpdatePayload.fields,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("project.delete"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    force: Schema.optional(Schema.Boolean),
+  }),
+]);
+export type ProjectMutation = typeof ProjectMutation.Type;
+
+export class ProjectMutationError extends Schema.TaggedError<ProjectMutationError>()(
+  "ProjectMutationError",
+  {
+    commandId: CommandId,
+    message: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
 
 export const ProjectEntryKind = Schema.Literals(["file", "directory"]);
 export type ProjectEntryKind = typeof ProjectEntryKind.Type;
 
 export const ProjectSearchEntriesInput = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
+  cwd: ProjectPath,
   // An empty query is a bounded browse: the index returns frecency-ordered
   // entries, which the file picker uses for its initial results.
   query: TrimmedString.check(Schema.isMaxLength(256)),
@@ -28,19 +257,20 @@ export const ProjectSearchEntriesInput = Schema.Struct({
 export type ProjectSearchEntriesInput = typeof ProjectSearchEntriesInput.Type;
 
 export const ProjectEntry = Schema.Struct({
-  path: TrimmedNonEmptyString,
+  path: ProjectPath,
   kind: ProjectEntryKind,
+  ignored: Schema.optional(Schema.Boolean),
 });
 export type ProjectEntry = typeof ProjectEntry.Type;
 
 export const ProjectSearchEntriesResult = Schema.Struct({
-  entries: Schema.Array(ProjectEntry),
+  entries: Schema.Array(ProjectEntry).check(Schema.isMaxLength(PROJECT_SEARCH_ENTRIES_MAX_LIMIT)),
   truncated: Schema.Boolean,
 });
 export type ProjectSearchEntriesResult = typeof ProjectSearchEntriesResult.Type;
 
 export const ProjectSearchContentsInput = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
+  cwd: ProjectPath,
   // Whitespace is significant in content queries (" foo", regex trailing
   // spaces), so the query is deliberately not trimmed on the wire.
   query: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256)),
@@ -52,35 +282,76 @@ export const ProjectSearchContentsInput = Schema.Struct({
 export type ProjectSearchContentsInput = typeof ProjectSearchContentsInput.Type;
 
 export const ProjectContentMatchRange = Schema.Struct({
-  start: NonNegativeInt,
-  end: NonNegativeInt,
-});
+  start: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROJECT_SEARCH_CONTENT_LINE_MAX_LENGTH)),
+  end: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROJECT_SEARCH_CONTENT_LINE_MAX_LENGTH)),
+}).check(
+  Schema.makeFilter((range) => range.start <= range.end || "match range must not be reversed"),
+);
 export type ProjectContentMatchRange = typeof ProjectContentMatchRange.Type;
 
 export const ProjectContentMatch = Schema.Struct({
-  path: TrimmedNonEmptyString,
+  path: ProjectPath,
   lineNumber: PositiveInt,
-  lineContent: Schema.String,
-  matchRanges: Schema.Array(ProjectContentMatchRange),
+  lineContent: Schema.String.check(Schema.isMaxLength(PROJECT_SEARCH_CONTENT_LINE_MAX_LENGTH)),
+  matchRanges: Schema.Array(ProjectContentMatchRange).check(
+    Schema.isMaxLength(PROJECT_SEARCH_CONTENT_MATCH_RANGES_MAX),
+  ),
 });
 export type ProjectContentMatch = typeof ProjectContentMatch.Type;
 
 export const ProjectSearchContentsResult = Schema.Struct({
-  matches: Schema.Array(ProjectContentMatch),
+  matches: Schema.Array(ProjectContentMatch).check(
+    Schema.isMaxLength(PROJECT_SEARCH_CONTENTS_MAX_LIMIT),
+  ),
   truncated: Schema.Boolean,
-  regexFallbackError: Schema.optional(Schema.String),
-});
+  regexFallbackError: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(PROJECT_SEARCH_CONTENT_REGEX_ERROR_MAX_LENGTH)),
+  ),
+}).check(
+  Schema.makeFilter((result) => {
+    let totalLineCharacters = 0;
+    let totalPathCharacters = 0;
+    let totalMatchRanges = 0;
+    for (const match of result.matches) {
+      totalLineCharacters += match.lineContent.length;
+      totalPathCharacters += match.path.length;
+      totalMatchRanges += match.matchRanges.length;
+      if (
+        totalLineCharacters > PROJECT_SEARCH_CONTENT_TOTAL_LINE_CHARS_MAX ||
+        totalPathCharacters > PROJECT_SEARCH_CONTENT_TOTAL_PATH_CHARS_MAX ||
+        totalMatchRanges > PROJECT_SEARCH_CONTENT_TOTAL_MATCH_RANGES_MAX
+      ) {
+        return "content search result exceeds its aggregate wire budget";
+      }
+    }
+    return true;
+  }),
+);
 export type ProjectSearchContentsResult = typeof ProjectSearchContentsResult.Type;
 
 export const ProjectListEntriesInput = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
+  cwd: ProjectPath,
+  // Present for immediate filesystem children, including ignored entries; empty means root.
+  // Omitted preserves the indexed recursive listing used by older clients.
+  directoryPath: Schema.optional(TrimmedString),
 });
 export type ProjectListEntriesInput = typeof ProjectListEntriesInput.Type;
 
 export const ProjectListEntriesResult = Schema.Struct({
-  entries: Schema.Array(ProjectEntry),
+  entries: Schema.Array(ProjectEntry).check(Schema.isMaxLength(PROJECT_LIST_ENTRIES_MAX)),
   truncated: Schema.Boolean,
-});
+}).check(
+  Schema.makeFilter((result) => {
+    let totalPathCharacters = 0;
+    for (const entry of result.entries) {
+      totalPathCharacters += entry.path.length;
+      if (totalPathCharacters > PROJECT_LIST_ENTRIES_TOTAL_PATH_CHARS_MAX) {
+        return "project listing exceeds its aggregate path budget";
+      }
+    }
+    return true;
+  }),
+);
 export type ProjectListEntriesResult = typeof ProjectListEntriesResult.Type;
 
 export const ProjectEntriesFailure = Schema.Literals([
@@ -91,6 +362,7 @@ export const ProjectEntriesFailure = Schema.Literals([
   "search_index_create_failed",
   "search_index_scan_timed_out",
   "search_index_search_failed",
+  "directory_list_failed",
 ]);
 export type ProjectEntriesFailure = typeof ProjectEntriesFailure.Type;
 
@@ -107,7 +379,7 @@ function decodedProjectErrorMessage(props: object): string | undefined {
   return typeof props.message === "string" ? props.message : undefined;
 }
 
-export class ProjectSearchEntriesError extends Schema.TaggedErrorClass<ProjectSearchEntriesError>()(
+export class ProjectSearchEntriesError extends Schema.TaggedError<ProjectSearchEntriesError>()(
   "ProjectSearchEntriesError",
   {
     cwd: Schema.optional(TrimmedNonEmptyString),
@@ -140,7 +412,7 @@ export class ProjectSearchEntriesError extends Schema.TaggedErrorClass<ProjectSe
   }
 }
 
-export class ProjectSearchContentsError extends Schema.TaggedErrorClass<ProjectSearchContentsError>()(
+export class ProjectSearchContentsError extends Schema.TaggedError<ProjectSearchContentsError>()(
   "ProjectSearchContentsError",
   {
     cwd: Schema.optional(TrimmedNonEmptyString),
@@ -171,7 +443,7 @@ export class ProjectSearchContentsError extends Schema.TaggedErrorClass<ProjectS
   }
 }
 
-export class ProjectListEntriesError extends Schema.TaggedErrorClass<ProjectListEntriesError>()(
+export class ProjectListEntriesError extends Schema.TaggedError<ProjectListEntriesError>()(
   "ProjectListEntriesError",
   {
     cwd: Schema.optional(TrimmedNonEmptyString),
@@ -195,13 +467,15 @@ export class ProjectListEntriesError extends Schema.TaggedErrorClass<ProjectList
 
 export const ProjectReadFileInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
+  // Workspace-relative, or an absolute host path for a file outside the
+  // workspace. Only workspace-relative paths can be written back.
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
 });
 export type ProjectReadFileInput = typeof ProjectReadFileInput.Type;
 
 export const ProjectReadFileResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,
-  contents: Schema.String,
+  contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_CONTENTS_MAX_LENGTH)),
   byteLength: NonNegativeInt,
   truncated: Schema.Boolean,
 });
@@ -212,6 +486,7 @@ export const ProjectFileFailure = Schema.Literals([
   "resolved_path_outside_root",
   "path_not_file",
   "binary_file",
+  "too_large",
   "operation_failed",
 ]);
 export type ProjectFileFailure = typeof ProjectFileFailure.Type;
@@ -239,7 +514,7 @@ type ProjectFileFailureContext = {
   readonly cause?: unknown;
 };
 
-export class ProjectReadFileError extends Schema.TaggedErrorClass<ProjectReadFileError>()(
+export class ProjectReadFileError extends Schema.TaggedError<ProjectReadFileError>()(
   "ProjectReadFileError",
   {
     cwd: Schema.optional(TrimmedNonEmptyString),
@@ -267,7 +542,7 @@ export class ProjectReadFileError extends Schema.TaggedErrorClass<ProjectReadFil
 export const ProjectWriteFileInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
-  contents: Schema.String,
+  contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_CONTENTS_MAX_LENGTH)),
 });
 export type ProjectWriteFileInput = typeof ProjectWriteFileInput.Type;
 
@@ -276,7 +551,27 @@ export const ProjectWriteFileResult = Schema.Struct({
 });
 export type ProjectWriteFileResult = typeof ProjectWriteFileResult.Type;
 
-export class ProjectWriteFileError extends Schema.TaggedErrorClass<ProjectWriteFileError>()(
+/** The environment's Scratch project, created on first request. */
+export const ProjectEnsureScratchResult = Schema.Struct({
+  projectId: ProjectId,
+});
+export type ProjectEnsureScratchResult = typeof ProjectEnsureScratchResult.Type;
+
+/** A project started from just a name, in a new folder the server makes. */
+export const ProjectCreateNewInput = Schema.Struct({
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+});
+export type ProjectCreateNewInput = typeof ProjectCreateNewInput.Type;
+
+export const ProjectCreateNewResult = Schema.Struct({
+  projectId: ProjectId,
+  workspaceRoot: TrimmedNonEmptyString,
+  /** Why the first commit failed. The project and its files exist either way. */
+  commitError: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type ProjectCreateNewResult = typeof ProjectCreateNewResult.Type;
+
+export class ProjectWriteFileError extends Schema.TaggedError<ProjectWriteFileError>()(
   "ProjectWriteFileError",
   {
     cwd: Schema.optional(TrimmedNonEmptyString),
@@ -336,7 +631,7 @@ const PROJECT_IMPORT_FAVICON_FAILURE_MESSAGES: Record<ProjectImportFaviconFailur
   write_failed: "Failed to save the project icon.",
 };
 
-export class ProjectImportFaviconError extends Schema.TaggedErrorClass<ProjectImportFaviconError>()(
+export class ProjectImportFaviconError extends Schema.TaggedError<ProjectImportFaviconError>()(
   "ProjectImportFaviconError",
   {
     failure: Schema.optional(ProjectImportFaviconFailure),

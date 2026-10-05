@@ -6,6 +6,13 @@
  * so the UI can hide it from the user's chat bubble.
  */
 
+import {
+  hasHiddenInstructionSuffix,
+  hiddenInstructionCloseMarker,
+  hiddenInstructionOpenMarker,
+  stripHiddenInstructionSuffixes,
+} from "./hiddenInstructionBlocks.ts";
+
 export const CREATE_PULL_REQUEST_TAG = "create_pull_request_instructions";
 
 export type AutoCreatePullRequestEnvMode = "local" | "worktree";
@@ -20,6 +27,12 @@ export const AUTO_CREATE_PULL_REQUEST_DEFAULTS: Record<AutoCreatePullRequestEnvM
   worktree: true,
 };
 
+/** Babysit (fix reviews + auto-merge) is opt-in in every workspace mode. */
+export const AUTO_BABYSIT_PULL_REQUEST_DEFAULTS: Record<AutoCreatePullRequestEnvMode, boolean> = {
+  local: false,
+  worktree: false,
+};
+
 export function resolveAutoCreatePullRequest(
   byEnvMode: Partial<Record<AutoCreatePullRequestEnvMode, boolean | undefined>> | null | undefined,
   envMode: AutoCreatePullRequestEnvMode,
@@ -28,18 +41,26 @@ export function resolveAutoCreatePullRequest(
   return typeof stored === "boolean" ? stored : AUTO_CREATE_PULL_REQUEST_DEFAULTS[envMode];
 }
 
-/**
- * The `source` attribute is the generated-only discriminator: a user asking
- * about this feature naturally quotes the bare `<create_pull_request_instructions>`
- * tag, which never collides with the attributed marker the clients emit.
- */
-export const CREATE_PULL_REQUEST_OPEN_MARKER = `<${CREATE_PULL_REQUEST_TAG} source="t3-auto-pr">`;
-export const CREATE_PULL_REQUEST_CLOSE_MARKER = `</${CREATE_PULL_REQUEST_TAG}>`;
+export function resolveAutoBabysitPullRequest(
+  byEnvMode: Partial<Record<AutoCreatePullRequestEnvMode, boolean | undefined>> | null | undefined,
+  envMode: AutoCreatePullRequestEnvMode,
+): boolean {
+  const stored = byEnvMode?.[envMode];
+  return typeof stored === "boolean" ? stored : AUTO_BABYSIT_PULL_REQUEST_DEFAULTS[envMode];
+}
+
+/** Markers come from the hidden-block registry so the shared stripper knows them. */
+export const CREATE_PULL_REQUEST_OPEN_MARKER = hiddenInstructionOpenMarker(CREATE_PULL_REQUEST_TAG);
+export const CREATE_PULL_REQUEST_CLOSE_MARKER =
+  hiddenInstructionCloseMarker(CREATE_PULL_REQUEST_TAG);
 
 const OPEN_TAG = CREATE_PULL_REQUEST_OPEN_MARKER;
 const CLOSE_TAG = CREATE_PULL_REQUEST_CLOSE_MARKER;
 
-function buildGuidelines(model: string | null | undefined): string {
+const BABYSIT_PULL_REQUEST_GUIDELINE_MARKER =
+  "Watch Auto Review, review comments, and required checks.";
+
+function buildGuidelines(model: string | null | undefined, babysitPullRequest: boolean): string {
   const selectedModel = model?.trim();
   return `Guidelines:
 - If the current branch IS the repository's default branch (e.g. main), first create a feature branch for this work — never commit or push directly to the default branch.
@@ -53,10 +74,22 @@ function buildGuidelines(model: string | null | undefined): string {
     selectedModel
       ? `\n- T3 Code recorded the current thread's selected model as ${JSON.stringify(selectedModel)}. If the PR body identifies the model, copy this exact identifier; do not infer or substitute a different model or version.`
       : ""
+  }${
+    babysitPullRequest
+      ? `
+- After the PR is open, stay with it until it can merge:
+  - ${BABYSIT_PULL_REQUEST_GUIDELINE_MARKER}
+  - Apply real review findings with the smallest safe fix and push.
+  - Dismiss invalid or out-of-scope review comments with a concrete reason.
+  - When required checks are green and the PR is mergeable, enable auto-merge if the host can wait on remaining required checks; otherwise merge it.
+  - Ignore Buildkite / PR deployment status, green or red. Do not wait on it, do not treat it as a merge blocker, and do not try to fix it — another bot monitors those.
+  - Stop once auto-merge is armed or the PR is merged.
+  - If you are blocked on a human decision (security, auth, billing, or conflicting intent), stop and report instead of guessing.`
+      : ""
   }`;
 }
 
-const GUIDELINES = buildGuidelines(undefined);
+const GUIDELINES = buildGuidelines(undefined, false);
 
 /** Sent on its own when the user asks for a PR without other work. */
 export const CREATE_PULL_REQUEST_PROMPT = `Please create a pull request for the work in this session.
@@ -68,13 +101,16 @@ ${GUIDELINES}`;
  * blank lines separate it from the user's own text; the marker tags let the
  * timeline strip it before rendering the bubble.
  */
-export function buildCreatePullRequestMessageSuffix(model?: string | null | undefined): string {
+export function buildCreatePullRequestMessageSuffix(
+  model?: string | null | undefined,
+  options?: { readonly babysitPullRequest?: boolean },
+): string {
   return `
 
 ${OPEN_TAG}
 When you finish the work above, also create a pull request for it.
 
-${buildGuidelines(model)}
+${buildGuidelines(model, options?.babysitPullRequest === true)}
 ${CLOSE_TAG}`;
 }
 
@@ -95,6 +131,7 @@ export function applyCreatePullRequestSuffix(input: {
   readonly autoCreatePullRequest: boolean;
   readonly threadHasStarted: boolean;
   readonly model?: string | null | undefined;
+  readonly babysitPullRequest?: boolean;
 }): string {
   if (
     !input.autoCreatePullRequest ||
@@ -104,46 +141,32 @@ export function applyCreatePullRequestSuffix(input: {
   ) {
     return input.text;
   }
-  return input.text + buildCreatePullRequestMessageSuffix(input.model);
+  return (
+    input.text +
+    buildCreatePullRequestMessageSuffix(input.model, {
+      babysitPullRequest: input.babysitPullRequest === true,
+    })
+  );
 }
 
 /**
- * The generated block viewed from its own opening marker: one open tag,
- * arbitrary instruction wording, close tag at the end of the text. Applied to
- * the slice starting at the LAST opening marker, so user-authored occurrences
- * of the marker earlier in the message can never widen the match.
+ * True when the auto-PR block is among the trailing generated blocks (other
+ * hidden blocks, such as automation run context, may sit after it).
  */
-const SUFFIX_BLOCK_FROM_OPEN_TAG_PATTERN = new RegExp(
-  `^${OPEN_TAG}\\n[\\s\\S]*\\n${CLOSE_TAG}\\s*$`,
-);
-
-/**
- * Index of the auto-generated trailing block's opening marker, or -1 when the
- * text does not end with one. Anchoring on the last opening marker keeps
- * user-authored text that merely quotes the marker (e.g. while discussing
- * this feature) from being mistaken for — or swallowed into — the suffix.
- */
-function trailingSuffixStart(text: string): number {
-  const lastOpen = text.lastIndexOf(OPEN_TAG);
-  if (lastOpen === -1) {
-    return -1;
-  }
-  return SUFFIX_BLOCK_FROM_OPEN_TAG_PATTERN.test(text.slice(lastOpen)) ? lastOpen : -1;
-}
-
 export function hasCreatePullRequestSuffix(text: string): boolean {
-  return trailingSuffixStart(text) !== -1;
+  return hasHiddenInstructionSuffix(text, CREATE_PULL_REQUEST_TAG);
+}
+
+/** True when the trailing auto-PR block also asked the agent to babysit reviews. */
+export function hasBabysitPullRequestSuffix(text: string): boolean {
+  return hasCreatePullRequestSuffix(text) && text.includes(BABYSIT_PULL_REQUEST_GUIDELINE_MARKER);
 }
 
 /**
- * Removes the trailing marker block for display so the user's chat bubble
- * shows only what they typed. Mid-text occurrences of the marker are left
- * alone — only the generated trailing block is agent-only.
+ * Removes trailing generated blocks for display so the user's chat bubble
+ * shows only what they typed. Delegates to the shared stripper; kept so
+ * callers can migrate to `stripHiddenInstructionSuffixes` incrementally.
  */
 export function stripCreatePullRequestSuffix(text: string): string {
-  let result = text;
-  for (let start = trailingSuffixStart(result); start !== -1; start = trailingSuffixStart(result)) {
-    result = result.slice(0, start).trimEnd();
-  }
-  return result;
+  return stripHiddenInstructionSuffixes(text);
 }
