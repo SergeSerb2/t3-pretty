@@ -27,7 +27,13 @@ const labels = {
   failed: "Could not save settings",
 };
 
-function MonitoringHostStatus({ environment }: { environment: EnvironmentPresentation }) {
+function MonitoringHostStatus({
+  environment,
+  savedRevision,
+}: {
+  environment: EnvironmentPresentation;
+  savedRevision: number;
+}) {
   const enrollment = useAgentMonitoringEnrollment().get(environment.environmentId);
   const connected = environment.connection.phase === "connected";
   const supported = environment.serverConfig?.observability.agentMonitoringSupported === true;
@@ -39,10 +45,18 @@ function MonitoringHostStatus({ environment }: { environment: EnvironmentPresent
         })
       : null,
   );
-  // The settings receipt precedes the monitoring worker's status, so refresh once after enrollment.
+  // Refresh after an acknowledged enrollment or a host settings change.
   useEffect(() => {
-    if (enrollment === "enrolled") refresh();
-  }, [enrollment, refresh]);
+    if (connected && supported) refresh();
+  }, [
+    connected,
+    supported,
+    enrollment,
+    environment.serverConfig?.settings.agentMonitoring.enabled,
+    environment.serverConfig?.settings.agentMonitoring.sentryDsn,
+    savedRevision,
+    refresh,
+  ]);
   const status = !connected
     ? "Waiting for connection"
     : !supported
@@ -116,6 +130,7 @@ function AgentMonitoringSettingsForm({ environmentId }: { environmentId: Environ
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savedRevision, setSavedRevision] = useState(0);
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   async function save(scope: "host" | "fleet" | "stop", enabled: boolean) {
     if (pending) return;
@@ -148,6 +163,7 @@ function AgentMonitoringSettingsForm({ environmentId }: { environmentId: Environ
             await persistChoice(null);
           },
         );
+        setSavedRevision((revision) => revision + 1);
       } else {
         await persistChoice(scope === "fleet" ? setting : null);
       }
@@ -255,7 +271,11 @@ function AgentMonitoringSettingsForm({ environmentId }: { environmentId: Environ
         ) : null}
         <div>
           {environments.map((entry) => (
-            <MonitoringHostStatus key={entry.environmentId} environment={entry} />
+            <MonitoringHostStatus
+              key={entry.environmentId}
+              environment={entry}
+              savedRevision={entry.environmentId === environmentId ? savedRevision : 0}
+            />
           ))}
         </div>
       </div>
