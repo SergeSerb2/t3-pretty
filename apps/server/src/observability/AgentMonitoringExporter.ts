@@ -122,6 +122,9 @@ export function toSentryAgentError(record: AgentObservation): Sentry.ErrorEvent 
   const category = String(record.attributes["t3.error_class"] ?? "operation_failed");
   const provider = String(record.attributes["t3.provider"] ?? "unknown");
   const tool = String(record.attributes["gen_ai.tool.name"] ?? record.operation);
+  // A failed shell command is the agent's work (a red test, an empty grep), not a T3 fault.
+  // Its span still carries the failed status and exit code.
+  if (tool === "exec_command") return undefined;
   const code = String(record.attributes["t3.error_code"] ?? "unknown");
   return {
     type: undefined,
