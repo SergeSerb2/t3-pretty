@@ -24,6 +24,19 @@ function isHostOf(hostname: string, apex: string, label?: string): boolean {
 }
 
 /**
+ * Origin pull requests live at cursor.com/codebase/{owner}/{repo}/pull/{n}, while the checkout's
+ * repository identity uses the origin.cursor.com git host, so the link is claimed under that host.
+ */
+function parseOriginChangeRequestUrl(url: URL): ChangeRequestLink | null {
+  const host = url.hostname.toLowerCase();
+  if (host !== "cursor.com" && !host.endsWith(".cursor.com")) return null;
+  return claim(
+    "origin.cursor.com",
+    /^\/codebase\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/|$)/u.exec(url.pathname),
+  );
+}
+
+/**
  * The repository and number behind a change request URL on a host this can read, or null for
  * anything else — an issue, a commit, a repository root, a host this cannot tell apart from an
  * ordinary link. A doubtful match is worse than no match, so nothing here guesses.
@@ -46,6 +59,8 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
   }
   // `javascript:`, `mailto:` and friends have no host to speak of and nothing to open.
   if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  const origin = parseOriginChangeRequestUrl(url);
+  if (origin) return origin;
   const host = url.hostname.toLowerCase();
 
   // GitHub, and any Enterprise install: /{owner}/{repo}/pull/{n}
@@ -96,6 +111,8 @@ export function changeRequestUrlFor(
   switch (kind) {
     case "github":
       return `https://${host}/${repository}/pull/${number}`;
+    case "origin":
+      return `https://cursor.com/codebase/${repository}/pull/${number}`;
     case "forgejo": {
       try {
         const remote = new URL(remoteUrl ?? "");
