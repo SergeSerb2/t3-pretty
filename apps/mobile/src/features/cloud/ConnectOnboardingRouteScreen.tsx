@@ -3,15 +3,18 @@ import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useAuth } from "@clerk/expo";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform, Pressable, RefreshControl, View } from "react-native";
+import { Platform, Pressable, RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { reportAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
+import { SheetSurface } from "../../components/SheetSurface";
+import { cn } from "../../lib/cn";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { CloudEnvironmentRows } from "../connection/CloudEnvironmentRows";
+import { GroupedCard } from "../scenery/GroupedCard";
 import { splitEnvironmentSections } from "../connection/environmentSections";
 import { useConnectionController } from "../connection/useConnectionController";
 import { optOutOfConnectOnboarding } from "./connectOnboardingOptOut";
@@ -106,7 +109,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
   }, [navigation, userId]);
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       {Platform.OS === "android" ? (
         <AndroidSheetHeader
           title={`Set up ${SURGE_CONNECT_NAME}`}
@@ -145,11 +148,14 @@ function ConfiguredConnectOnboardingRouteScreen() {
             showHeader={false}
           />
         ) : (
-          <View collapsable={false} className="rounded-[24px] bg-grouped-card p-5">
+          <GroupedCard
+            collapsable={false}
+            className={cn(Platform.OS === "android" && "rounded-[24px]", "p-5")}
+          >
             <Text className="text-sm leading-normal text-foreground-muted">
               Sign in to your {SURGE_CODE_ACCOUNT_NAME} account to set up {SURGE_CONNECT_NAME}.
             </Text>
-          </View>
+          </GroupedCard>
         )}
 
         {userId ? (
@@ -163,6 +169,6 @@ function ConfiguredConnectOnboardingRouteScreen() {
           </Pressable>
         ) : null}
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }

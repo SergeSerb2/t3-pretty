@@ -7,7 +7,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidSheetHeader } from "../../../components/AndroidScreenHeader";
 import { MaterialScreenContent } from "../../../components/MaterialScreenContent";
+import { SheetSurface } from "../../../components/SheetSurface";
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
+import { SymbolView } from "../../../components/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../../components/AppText";
 import { cn } from "../../../lib/cn";
 import { useEnvironmentQuery } from "../../../state/query";
@@ -16,15 +18,34 @@ import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
 import { useSelectedThreadWorktree } from "../../../state/use-selected-thread-worktree";
 import { vcsEnvironment } from "../../../state/vcs";
+import { useGlassChromeActive } from "../../scenery/SceneryProvider";
 import { SheetActionButton } from "./gitSheetComponents";
+import { GlassRowPressable } from "../../scenery/GroupedCard";
+import {
+  GLASS_CARD_CLASS_NAME,
+  GLASS_INPUT_CLASS_NAME,
+  glassCardStyle,
+} from "../../scenery/glassStyles";
 
 type GitBranchesSheetProps = StaticScreenProps<{
   readonly environmentId: string;
   readonly threadId: string;
 }>;
 
-export function GitBranchesSheet(_props: GitBranchesSheetProps) {
+export function GitBranchesSheet(props: GitBranchesSheetProps) {
   const navigation = useNavigation();
+  const glass = useGlassChromeActive();
+  const formCardClassName = glass
+    ? cn(GLASS_CARD_CLASS_NAME, "gap-2 px-4 py-4")
+    : Platform.OS === "android"
+      ? "gap-3 rounded-[20px] bg-card p-4"
+      : "gap-2 rounded-[18px] border border-border bg-card px-4 py-4";
+  const formCardStyle = glass ? glassCardStyle() : undefined;
+  const inputClassName = glass
+    ? GLASS_INPUT_CLASS_NAME
+    : Platform.OS === "android"
+      ? "rounded-xl bg-sheet-solid"
+      : "rounded-[18px]";
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { selectedThread } = useThreadSelection();
@@ -99,6 +120,39 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
           ? "Default branch"
           : "Local branch";
 
+      if (glass) {
+        return (
+          <View className={cn(GLASS_CARD_CLASS_NAME, "mt-2")} style={glassCardStyle()}>
+            <GlassRowPressable
+              accessibilityLabel={`${branch.name}, ${subtitle}`}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: busy || disabled, selected: branch.current }}
+              className="gap-1 px-4 py-3 disabled:opacity-[0.45]"
+              disabled={busy || disabled}
+              onPress={() => {
+                void runAndDismiss(() => gitActions.onCheckoutSelectedThreadBranch(branch.name));
+              }}
+            >
+              <View className="flex-row items-center gap-2">
+                <Text className="min-w-0 shrink text-foreground text-base font-t3-bold">
+                  {branch.name}
+                </Text>
+                {branch.current ? (
+                  <SymbolView
+                    name="checkmark"
+                    size={13}
+                    tintColorClassName="accent-icon"
+                    type="monochrome"
+                    weight="semibold"
+                  />
+                ) : null}
+              </View>
+              <Text className="text-foreground-secondary text-xs font-medium">{subtitle}</Text>
+            </GlassRowPressable>
+          </View>
+        );
+      }
+
       return (
         <Pressable
           accessibilityLabel={`${branch.name}, ${subtitle}`}
@@ -145,6 +199,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
       currentWorktreePath,
       disabledExistingBranches,
       gitActions,
+      glass,
       runAndDismiss,
     ],
   );
@@ -152,9 +207,15 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   return (
     <View
       collapsable={false}
-      className={Platform.OS === "android" ? "bg-sheet" : "flex-1 bg-sheet"}
+      className={Platform.OS === "android" ? "bg-sheet" : glass ? "flex-1" : "flex-1 bg-sheet"}
       style={Platform.OS === "android" ? { maxHeight: windowHeight * 0.92 } : undefined}
     >
+      {glass ? (
+        <SheetSurface
+          className="absolute inset-0"
+          threadKey={`${props.route.params.environmentId}:${props.route.params.threadId}`}
+        />
+      ) : null}
       {Platform.OS === "android" ? (
         <NativeStackScreenOptions
           options={{
@@ -183,17 +244,11 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
         }
         data={availableBranches}
         estimatedItemSize={64}
-        extraData={`${busy ? "busy" : "idle"}:${currentWorktreePath ?? ""}`}
+        extraData={`${busy ? "busy" : "idle"}:${currentWorktreePath ?? ""}:${glass}`}
         keyExtractor={(branch) => branch.name}
         ListHeaderComponent={
           <View className={Platform.OS === "android" ? "gap-2" : "gap-4"}>
-            <View
-              className={
-                Platform.OS === "android"
-                  ? "gap-3 rounded-[20px] bg-card p-4"
-                  : "gap-2 rounded-[18px] border border-border bg-card px-4 py-4"
-              }
-            >
+            <View className={formCardClassName} style={formCardStyle}>
               <Text
                 className={
                   Platform.OS === "android"
@@ -208,9 +263,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
                 onChangeText={setNewBranchName}
                 placeholder="feature/mobile-polish"
                 accessibilityLabel="New branch name"
-                className={
-                  Platform.OS === "android" ? "rounded-xl bg-sheet-solid" : "rounded-[18px]"
-                }
+                className={inputClassName}
               />
               <SheetActionButton
                 icon="plus"
@@ -228,13 +281,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
               />
             </View>
 
-            <View
-              className={
-                Platform.OS === "android"
-                  ? "gap-3 rounded-[20px] bg-card p-4"
-                  : "gap-2 rounded-[18px] border border-border bg-card px-4 py-4"
-              }
-            >
+            <View className={formCardClassName} style={formCardStyle}>
               <Text
                 className={
                   Platform.OS === "android"
@@ -248,17 +295,13 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
                 value={worktreeBaseBranch}
                 onChangeText={setWorktreeBaseBranch}
                 placeholder="main"
-                className={
-                  Platform.OS === "android" ? "rounded-xl bg-sheet-solid" : "rounded-[18px]"
-                }
+                className={inputClassName}
               />
               <TextInput
                 value={worktreeBranchName}
                 onChangeText={setWorktreeBranchName}
                 placeholder="feature/mobile-thread"
-                className={
-                  Platform.OS === "android" ? "rounded-xl bg-sheet-solid" : "rounded-[18px]"
-                }
+                className={inputClassName}
               />
               <SheetActionButton
                 icon="square.split.2x1"

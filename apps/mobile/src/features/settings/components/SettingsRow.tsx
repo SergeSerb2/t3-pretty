@@ -1,10 +1,12 @@
 import { MaterialListRow } from "../../../components/MaterialListRow";
 import { useNavigation } from "@react-navigation/native";
 import type { ComponentProps } from "react";
-import { Platform, Pressable, View } from "react-native";
+import { Platform, View } from "react-native";
 
 import { SymbolView } from "../../../components/AppSymbol";
 import { AppText as Text } from "../../../components/AppText";
+import { RowPressable } from "../../../components/RowPressable";
+import { useGlassChromeActive } from "../../scenery/SceneryProvider";
 import type { SettingsLegalDocumentTarget, SettingsSheetTarget } from "./settings-sheet-targets";
 import { cn } from "../../../lib/cn";
 
@@ -21,6 +23,7 @@ export function SettingsRow(props: {
   readonly onPress?: () => void;
 }) {
   const navigation = useNavigation();
+  const glass = useGlassChromeActive();
   if (Platform.OS === "android") {
     return (
       <MaterialListRow
@@ -94,52 +97,28 @@ export function SettingsRow(props: {
   );
 
   const target = props.target;
-  if (target) {
-    return (
-      <Pressable
-        accessibilityLabel={props.label}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: props.disabled === true }}
-        accessibilityValue={props.value ? { text: props.value } : undefined}
-        disabled={props.disabled}
-        onPress={() =>
-          navigation.navigate("SettingsSheet", {
-            screen: "SettingsContent",
-            params: { screen: target },
-          })
-        }
-      >
-        {content}
-      </Pressable>
-    );
-  }
-
   const fullScreenTarget = props.fullScreenTarget;
-  if (fullScreenTarget) {
-    return (
-      <Pressable
-        accessibilityLabel={props.label}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: props.disabled === true }}
-        accessibilityValue={props.value ? { text: props.value } : undefined}
-        disabled={props.disabled}
-        onPress={() => navigation.navigate(fullScreenTarget)}
-      >
-        {content}
-      </Pressable>
-    );
-  }
-
   return (
-    <Pressable
+    <RowPressable
       accessibilityLabel={props.label}
       accessibilityRole="button"
       accessibilityState={{ disabled: props.disabled === true }}
       accessibilityValue={props.value ? { text: props.value } : undefined}
       disabled={props.disabled}
-      onPress={props.onPress}
+      interactionClassName={glass ? "bg-foreground/[0.06]" : "bg-subtle"}
+      onPress={
+        target
+          ? () =>
+              navigation.navigate("SettingsSheet", {
+                screen: "SettingsContent",
+                params: { screen: target },
+              })
+          : fullScreenTarget
+            ? () => navigation.navigate(fullScreenTarget)
+            : props.onPress
+      }
     >
       {content}
-    </Pressable>
+    </RowPressable>
   );
 }

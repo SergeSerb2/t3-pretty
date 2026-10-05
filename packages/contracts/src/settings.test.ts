@@ -767,16 +767,20 @@ describe("ClientSettings send shortcut", () => {
   });
 });
 
-describe("ClientSettings follow-up behavior", () => {
-  it("defaults to queue and accepts either behavior", () => {
-    expect(decodeClientSettings({}).followUpBehavior).toBe("queue");
-    for (const followUpBehavior of ["queue", "steer"]) {
-      expect(decodeClientSettings({ followUpBehavior }).followUpBehavior).toBe(followUpBehavior);
-      expect(decodeClientSettingsPatch({ followUpBehavior }).followUpBehavior).toBe(
-        followUpBehavior,
-      );
-    }
-    expect(() => decodeClientSettingsPatch({ followUpBehavior: "invalid" })).toThrow();
+describe("ClientSettings legacy queue", () => {
+  it("defaults off and preserves an explicit legacy opt-in", () => {
+    expect(decodeClientSettings({}).legacyQueueEnabled).toBe(false);
+    expect(decodeClientSettings({ legacyQueueEnabled: true }).legacyQueueEnabled).toBe(true);
+    expect(decodeClientSettingsPatch({ legacyQueueEnabled: true }).legacyQueueEnabled).toBe(true);
+    expect(decodeClientSettingsPatch({ legacyQueueEnabled: false }).legacyQueueEnabled).toBe(false);
+    expect(() => decodeClientSettingsPatch({ legacyQueueEnabled: "queue" })).toThrow();
+  });
+
+  it.each(["queue", "steer"])("retires the old %s preference", (followUpBehavior) => {
+    const decoded = decodeClientSettings({ followUpBehavior });
+    expect(decoded.legacyQueueEnabled).toBe(false);
+    expect(decoded).not.toHaveProperty("followUpBehavior");
+    expect(decodeClientSettingsPatch({ followUpBehavior })).toEqual({});
   });
 });
 

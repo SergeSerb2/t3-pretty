@@ -85,7 +85,6 @@ import { SettingsProviderAccountsRouteScreen } from "./features/settings/Setting
 import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteScreen";
 import { SettingsEnvironmentDetailRouteScreen } from "./features/settings/SettingsEnvironmentDetailRouteScreen";
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
-import { SettingsFollowUpRouteScreen } from "./features/settings/SettingsFollowUpRouteScreen";
 import {
   SettingsEnvironmentAgentBehaviorRouteScreen,
   SettingsEnvironmentMaintenanceRouteScreen,
@@ -131,7 +130,7 @@ import {
   EMPTY_INCOMING_SHARE_PRESENTATION_STATE,
   transitionIncomingSharePresentation,
 } from "./features/sharing/incoming-share-presentation";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
+import { NATIVE_LIQUID_GLASS_SUPPORTED, TRANSPARENT_NATIVE_HEADERS } from "./native/native-glass";
 import { deriveLayout } from "./lib/layout";
 import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
 import { FORM_SHEET_PRESENTATION_OPTIONS } from "./native/sheet-surface";
@@ -147,19 +146,20 @@ type AppScreenOptions = NativeStackNavigationOptions & {
 // Shared header presets. Screens only override genuinely dynamic values (titles,
 // subtitles, toolbar items, search callbacks) via NativeStackScreenOptions.
 //
-// GLASS: transparent header over the screen's primary scroll view on supported
-// iOS versions. Pre-glass iOS gets the same solid material as internal-scroll
-// surfaces so content is laid out below the bar instead of underlapping it.
+// GLASS: transparent header over the screen's primary scroll view on iOS 26+,
+// so the scenery runs under the bar. Earlier iOS gets the same solid material
+// as internal-scroll surfaces so content is laid out below the bar instead of
+// underlapping it.
 const GLASS_HEADER_OPTIONS: AppScreenOptions = {
   headerBackButtonDisplayMode: "minimal",
   headerBackTitle: "",
   headerLargeTitle: false,
   headerShadowVisible: false,
   headerShown: true,
-  headerStyle: NATIVE_LIQUID_GLASS_SUPPORTED ? { backgroundColor: "transparent" } : undefined,
+  headerStyle: TRANSPARENT_NATIVE_HEADERS ? { backgroundColor: "transparent" } : undefined,
   headerTitleStyle: { fontSize: 18, fontWeight: "800" },
-  headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
-  scrollEdgeEffects: NATIVE_LIQUID_GLASS_SUPPORTED ? HEADER_SCROLL_EDGE_EFFECTS : undefined,
+  headerTransparent: TRANSPARENT_NATIVE_HEADERS,
+  scrollEdgeEffects: TRANSPARENT_NATIVE_HEADERS ? HEADER_SCROLL_EDGE_EFFECTS : undefined,
   unstable_navigationItemStyle: NATIVE_LIQUID_GLASS_SUPPORTED ? "editor" : undefined,
 };
 
@@ -310,13 +310,6 @@ const SettingsContentStack = createNativeStackNavigator({
       linking: "keyboard",
       options: {
         title: "Keyboard",
-      },
-    }),
-    SettingsFollowUp: createNativeStackScreen({
-      screen: SettingsFollowUpRouteScreen,
-      linking: "follow-ups",
-      options: {
-        title: "Follow-ups",
       },
     }),
     SettingsScheduledTasks: createNativeStackScreen({

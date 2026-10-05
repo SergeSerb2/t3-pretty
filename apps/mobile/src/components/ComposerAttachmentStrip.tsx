@@ -3,7 +3,14 @@ import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
 import { useEffect, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, View } from "react-native";
-import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
+import Animated, {
+  type EntryExitAnimationFunction,
+  FadeIn,
+  FadeOut,
+  LayoutAnimationConfig,
+  ReduceMotion,
+  withTiming,
+} from "react-native-reanimated";
 
 import { AppText as Text } from "./AppText";
 import { PierreEntryIcon } from "./PierreEntryIcon";
@@ -19,6 +26,7 @@ import { type MediaActionsSource } from "../lib/mediaActions";
 import { PresentationSource } from "./NativePresentation";
 import type { FilePreviewSource } from "./FilePreviewModal";
 import { isPdfFile } from "../lib/filePreview";
+import { exitFade, layoutSettle, MOTION_EASING } from "../lib/motion";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   retryComposerAttachmentUpload,
@@ -57,6 +65,22 @@ export interface ComposerAttachmentStripProps {
 
 const OVERLAY_ENTER = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
 const OVERLAY_EXIT = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
+// An added tile settles in from slightly small while it fades up.
+const TILE_ENTER_TIMING = {
+  duration: 160,
+  easing: MOTION_EASING,
+  reduceMotion: ReduceMotion.System,
+} as const;
+const TILE_ENTERING: EntryExitAnimationFunction = () => {
+  "worklet";
+  return {
+    initialValues: { opacity: 0, transform: [{ scale: 0.92 }] },
+    animations: {
+      opacity: withTiming(1, TILE_ENTER_TIMING),
+      transform: [{ scale: withTiming(1, TILE_ENTER_TIMING) }],
+    },
+  };
+};
 
 type ComposerAttachmentThumbnailProps = {
   readonly environmentId?: EnvironmentId;
@@ -368,52 +392,58 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
       className="grow-0"
     >
       <View className="flex-row gap-2.5">
-        {props.attachments.map((attachment) => {
-          const preparing = busy || attachment.preparing === true;
-          return (
-            <View
-              key={attachment.id}
-              className="relative"
-              style={{
-                paddingTop: removeButtonGutter,
-                paddingRight: removeButtonGutter,
-              }}
-            >
-              <ComposerAttachmentThumbnail
-                environmentId={props.environmentId}
-                onPressPreview={props.onPressPreview}
-                attachment={attachment}
-                size={size}
-                borderRadius={radius}
-                preparing={preparing}
-                onPressImage={props.onPressImage}
-                onPressVideo={props.onPressVideo}
-                onPressDocument={props.onPressDocument}
-              />
-              {preparing ? null : (
-                <Pressable
-                  className="absolute h-[22px] w-[22px] items-center justify-center rounded-[11px] bg-black/55"
-                  style={{
-                    top: removeButtonPlacement === "gutter" ? 0 : 4,
-                    right: removeButtonPlacement === "gutter" ? 0 : 4,
-                  }}
-                  hitSlop={6}
-                  accessibilityLabel="Remove attachment"
-                  accessibilityRole="button"
-                  onPress={() => props.onRemove(attachment.id)}
-                >
-                  <SymbolView
-                    name="xmark"
-                    size={9}
-                    tintColor="#ffffff"
-                    type="monochrome"
-                    weight="bold"
-                  />
-                </Pressable>
-              )}
-            </View>
-          );
-        })}
+        {/* Tiles present when the strip appears ride its own fade; later ones animate in. */}
+        <LayoutAnimationConfig skipEntering>
+          {props.attachments.map((attachment) => {
+            const preparing = busy || attachment.preparing === true;
+            return (
+              <Animated.View
+                key={attachment.id}
+                entering={TILE_ENTERING}
+                exiting={exitFade}
+                layout={layoutSettle}
+                className="relative"
+                style={{
+                  paddingTop: removeButtonGutter,
+                  paddingRight: removeButtonGutter,
+                }}
+              >
+                <ComposerAttachmentThumbnail
+                  environmentId={props.environmentId}
+                  onPressPreview={props.onPressPreview}
+                  attachment={attachment}
+                  size={size}
+                  borderRadius={radius}
+                  preparing={preparing}
+                  onPressImage={props.onPressImage}
+                  onPressVideo={props.onPressVideo}
+                  onPressDocument={props.onPressDocument}
+                />
+                {preparing ? null : (
+                  <Pressable
+                    className="absolute h-[22px] w-[22px] items-center justify-center rounded-[11px] bg-black/55"
+                    style={{
+                      top: removeButtonPlacement === "gutter" ? 0 : 4,
+                      right: removeButtonPlacement === "gutter" ? 0 : 4,
+                    }}
+                    hitSlop={6}
+                    accessibilityLabel="Remove attachment"
+                    accessibilityRole="button"
+                    onPress={() => props.onRemove(attachment.id)}
+                  >
+                    <SymbolView
+                      name="xmark"
+                      size={9}
+                      tintColor="#ffffff"
+                      type="monochrome"
+                      weight="bold"
+                    />
+                  </Pressable>
+                )}
+              </Animated.View>
+            );
+          })}
+        </LayoutAnimationConfig>
       </View>
     </ScrollView>
   );

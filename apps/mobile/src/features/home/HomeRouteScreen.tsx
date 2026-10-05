@@ -110,8 +110,11 @@ export function HomeRouteScreen() {
     () => new Set(environments.map((environment) => environment.environmentId)),
     [environments],
   );
-  const { options: listOptions, setSelectedEnvironmentId, setSelectedProjectKey } =
-    useHomeListOptions(availableEnvironmentIds);
+  const {
+    options: listOptions,
+    setSelectedEnvironmentId,
+    setSelectedProjectKey,
+  } = useHomeListOptions(availableEnvironmentIds);
   const selectedEnvironmentId = listOptions.selectedEnvironmentId;
   const selectedProjectKey = listOptions.selectedProjectKey;
   const startNewTask = useStartNewTaskFromHomeScope();
@@ -208,10 +211,12 @@ export function HomeRouteScreen() {
             shallow-merged. The brand slot also doubles as the connection
             status surface while an environment reconnects. */}
         <NativeStackScreenOptions
-          optionsVersion={windowWidth}
+          optionsVersion={`${windowWidth}:${automationsSupported}`}
           options={{
             ...getConnectionAwareBrandHeaderOptions({
               headerWidth: windowWidth,
+              // Pull requests, settings and, when offered, automations.
+              trailingItemCount: automationsSupported ? 3 : 2,
               onOpenEnvironments: () =>
                 navigation.navigate("SettingsSheet", {
                   screen: "SettingsContent",

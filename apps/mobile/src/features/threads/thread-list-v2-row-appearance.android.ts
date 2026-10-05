@@ -20,8 +20,10 @@ export function getThreadListV2RowAppearance(
   theme: MobileThemeVariables,
   sidebarPane: boolean,
   selected: boolean,
-  // Scenery glass rows are iOS-only; Android keeps its tonal Material rows.
+  // Scenery glass rows (and their grouping) are iOS-only; Android keeps its
+  // tonal Material rows.
   _glass = false,
+  _group?: { readonly joinsPrevious: boolean; readonly joinsNext: boolean },
 ) {
   const selectedBackgroundColor = theme["--color-thread-selected"];
   const backgroundColor = theme[sidebarPane ? "--color-drawer" : "--color-screen"];

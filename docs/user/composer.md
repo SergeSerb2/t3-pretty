@@ -65,10 +65,11 @@ See [images and videos](#images-and-videos-in-messages) for previewing and savin
 
 ## Send while the agent is working
 
-On web and desktop, choose **Settings → General → Follow-up behavior** to queue
-new messages for a later turn or steer the running turn immediately. The setting
-applies to this client; already queued messages keep their place. Queued messages
-are saved on the server and can be edited, reordered, or removed above the composer.
+Messages sent while the agent is working steer the running turn immediately by
+default. On web and desktop, turn on **Settings → General → Legacy features →
+Queue messages** to restore automatic queuing for later turns. The setting applies
+to this client; already queued messages keep their place. Queued messages are saved
+on the server and can be edited, reordered, or removed above the composer.
 `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux uses the opposite action:
 it steers when your default is Queue and queues when your default is Steer.
 
@@ -81,10 +82,11 @@ Press `Option+Up` on macOS or `Alt+Up` on Windows and Linux with the cursor at t
 start of the composer to edit the most recently queued message. Change
 `thread.editQueuedMessage` to use another shortcut.
 
-Mobile has the same choice under **Settings → Follow-ups**. While a turn is
-running the send button shows which action it will take. Long-press it to use the
-other action for a single message, or hold `Cmd` while sending from a hardware
-keyboard. The button only offers Steer when the running agent supports it.
+Mobile has the same legacy option under **Settings → Thread behavior → Legacy**.
+While a turn is running the send button shows which action it will take.
+Long-press it to use the other action for a single message, or hold `Cmd` while
+sending from a hardware keyboard. The button only offers Steer when the running
+agent supports it.
 
 ## Queue messages offline on mobile
 

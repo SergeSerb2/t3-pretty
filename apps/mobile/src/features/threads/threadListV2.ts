@@ -80,7 +80,13 @@ export type ThreadListV2Status =
   | "monitoring"
   | "done"
   | "ready";
-export type ThreadListV2SwipeAction = "archive" | "settle" | "unsettle" | "snooze" | "unsnooze" | "unstore";
+export type ThreadListV2SwipeAction =
+  | "archive"
+  | "settle"
+  | "unsettle"
+  | "snooze"
+  | "unsnooze"
+  | "unstore";
 
 export function resolveThreadListV2SnoozeMenuSelection(input: {
   readonly event: string;
@@ -185,7 +191,14 @@ export function threadHasUnseenCompletion(
 }
 
 export function resolveThreadListV2Status(
-  thread: Pick<EnvironmentThreadShell, "hasPendingApprovals" | "hasPendingUserInput" | "runtime" | "backgroundLiveness" | "pullRequests">,
+  thread: Pick<
+    EnvironmentThreadShell,
+    | "hasPendingApprovals"
+    | "hasPendingUserInput"
+    | "runtime"
+    | "backgroundLiveness"
+    | "pullRequests"
+  >,
 ): ThreadListV2Status {
   if (thread.hasPendingApprovals) {
     return "approval";
@@ -215,6 +228,22 @@ export function resolveThreadListV2Status(
     return "waiting";
   }
   return "ready";
+}
+
+/** A status a card labels. Ready and waiting cards carry no label. */
+export type ThreadListV2Badge = Exclude<ThreadListV2Status, "ready" | "waiting">;
+
+/**
+ * The label a card shows in its status slot: its list status, or "done" for a
+ * completion the user has not opened yet. Null while the slot shows a time.
+ */
+export function resolveThreadListV2Badge(
+  thread: Parameters<typeof resolveThreadListV2Status>[0] &
+    Parameters<typeof threadHasUnseenCompletion>[0],
+): ThreadListV2Badge | null {
+  const status = resolveThreadListV2Status(thread);
+  if (status === "ready") return threadHasUnseenCompletion(thread) ? "done" : null;
+  return status === "waiting" ? null : status;
 }
 
 /** NaN-safe Date.parse for sort comparators: a malformed timestamp must not
@@ -391,6 +420,10 @@ export interface ThreadListV2ThreadListItem {
       a neighbour change (e.g. the queued block appearing) updates the row
       through recycled-list equality instead of leaving a stale divider. */
   readonly showTrailingDivider: boolean;
+  /** Slim shelf row directly below another slim row. Glass rows join such
+      runs into one grouped card, so the edge rides on the item for the same
+      recycled-equality reason as the divider. */
+  readonly continuesGroup: boolean;
   /** A message for this thread is waiting in the outbox. Carried on the item
       so an outbox write (which never touches the thread shell) reaches the
       row through recycled-list equality instead of leaving a stale icon. */
@@ -400,6 +433,9 @@ export interface ThreadListV2ThreadListItem {
       availability without changing any shell. */
   readonly canMoveUp: boolean;
   readonly canMoveDown: boolean;
+  /** Scenery thumbnail for a glass Home card, carried on the item so a photo
+      landing on the thread reaches the recycled row. Null elsewhere. */
+  readonly sceneryThumbURL: string | null;
 }
 
 export interface ThreadListV2PendingListItem {
@@ -488,9 +524,11 @@ export function threadListV2ListItemsAreEqual(
         previous.timeLabel === item.timeLabel &&
         previous.snoozePresetMinute === item.snoozePresetMinute &&
         previous.showTrailingDivider === item.showTrailingDivider &&
+        previous.continuesGroup === item.continuesGroup &&
         previous.hasQueuedMessages === item.hasQueuedMessages &&
         previous.canMoveUp === item.canMoveUp &&
-        previous.canMoveDown === item.canMoveDown
+        previous.canMoveDown === item.canMoveDown &&
+        previous.sceneryThumbURL === item.sceneryThumbURL
       );
     case "v2-pending":
       return (
@@ -585,6 +623,8 @@ export function buildThreadListV2ListItems(input: {
   /** True while the shelf expansion preferences are still loading; stamped
       onto both shelf headers so the disabled state reaches recycled cells. */
   readonly shelfPreferencesLoading?: boolean;
+  /** Thumbnail for each card row (glass Home only). Absent = no thumbnails. */
+  readonly resolveSceneryThumb?: (thread: EnvironmentThreadShell) => string | null;
 }): ThreadListV2ListItem[] {
   const threadItems = input.items.map((item): ThreadListV2ListItem => {
     const snoozeWakeLabelText =
@@ -615,10 +655,13 @@ export function buildThreadListV2ListItems(input: {
       timeLabel: resolveThreadListV2ItemTimeLabel(item, snoozeWakeLabelText !== undefined),
       snoozePresetMinute,
       showTrailingDivider: false,
+      continuesGroup: false,
       hasQueuedMessages:
         input.queuedThreadKeys?.has(`${item.thread.environmentId}:${item.thread.id}`) === true,
       canMoveUp: move?.canMoveUp === true,
       canMoveDown: move?.canMoveDown === true,
+      sceneryThumbURL:
+        item.variant === "card" ? (input.resolveSceneryThumb?.(item.thread) ?? null) : null,
     };
   });
   const pendingItems = input.pendingTasks.map((pendingTask, index): ThreadListV2ListItem => ({
@@ -673,16 +716,26 @@ export function buildThreadListV2ListItems(input: {
     });
     result.push(...threadItems.slice(settledShelfHeaderIndex));
   }
-  // Hairlines depend on the final neighbour, so they are stamped after the
-  // splice: a recycled cell only re-renders when its divider actually flips.
+  // Hairlines and group edges depend on the final neighbours, so they are
+  // stamped after the splice: a recycled cell only re-renders when one
+  // actually flips.
+  const isSlimRow = (entry: ThreadListV2ListItem | undefined) =>
+    entry?.type === "v2-thread" && entry.item.variant === "slim";
   return result.map((entry, index) => {
     if (entry.type !== "v2-thread" && entry.type !== "v2-pending") return entry;
     const next = result[index + 1];
     const showTrailingDivider =
       next?.type === "v2-thread" || (next?.type === "v2-pending" && !next.showPendingDivider);
-    return showTrailingDivider === entry.showTrailingDivider
+    if (entry.type === "v2-pending") {
+      return showTrailingDivider === entry.showTrailingDivider
+        ? entry
+        : { ...entry, showTrailingDivider };
+    }
+    const continuesGroup = isSlimRow(entry) && isSlimRow(result[index - 1]);
+    return showTrailingDivider === entry.showTrailingDivider &&
+      continuesGroup === entry.continuesGroup
       ? entry
-      : { ...entry, showTrailingDivider };
+      : { ...entry, showTrailingDivider, continuesGroup };
   });
 }
 

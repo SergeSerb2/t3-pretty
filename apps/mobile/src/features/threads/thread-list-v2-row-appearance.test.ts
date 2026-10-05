@@ -46,6 +46,19 @@ describe("ios glass rows", () => {
       // Swipe actions reveal the photo, not an opaque plate.
       expect(glass.swipeBackgroundColor).toBe("transparent");
       expect(glass.swipeActionsBackgroundColor).toBe(theme["--color-chrome-glass"]);
+      // A middle row of a grouped shelf has no corners, gaps or outline
+      // edges toward its neighbours.
+      const middle = iosAppearance(theme, false, false, true, {
+        joinsPrevious: true,
+        joinsNext: true,
+      });
+      expect(middle.swipeContainerStyle).toMatchObject({
+        borderTopLeftRadius: 0,
+        borderBottomLeftRadius: 0,
+        marginTop: 0,
+        marginBottom: 0,
+      });
+      expect(middle.outlineStyle).toMatchObject({ borderTopWidth: 0, borderBottomWidth: 0 });
       // The sidebar keeps its opaque selection treatment.
       expect(iosAppearance(theme, true, true, true).style?.backgroundColor).toBe(
         theme["--color-thread-selected"],

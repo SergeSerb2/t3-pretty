@@ -8,7 +8,7 @@ import { AppText as Text } from "../../components/AppText";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
 import { cn } from "../../lib/cn";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import { TRANSPARENT_NATIVE_HEADERS } from "../../native/native-glass";
 import {
   buildFileTree,
   flattenFileTree,
@@ -130,7 +130,7 @@ export function FileTreeBrowser(props: {
   const insets = useSafeAreaInsets();
   // Native transparent-header height ≈ safe-area top + nav bar (~44). Matches the
   // observed adjustedContentInset bottom (~102) seen in the native trace.
-  const headerInset = NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top + IOS_NAV_BAR_HEIGHT : 0;
+  const headerInset = TRANSPARENT_NATIVE_HEADERS ? insets.top + IOS_NAV_BAR_HEIGHT : 0;
   const {
     onLoadDirectory,
     onPreviewFile,
@@ -250,11 +250,9 @@ export function FileTreeBrowser(props: {
       data={visibleNodes}
       extraData={rowState}
       keyExtractor={(item) => item.node.path}
-      contentInsetAdjustmentBehavior={NATIVE_LIQUID_GLASS_SUPPORTED ? "automatic" : "never"}
+      contentInsetAdjustmentBehavior={TRANSPARENT_NATIVE_HEADERS ? "automatic" : "never"}
       scrollIndicatorInsets={
-        NATIVE_LIQUID_GLASS_SUPPORTED
-          ? { top: headerInset, left: 0, right: 0, bottom: 0 }
-          : undefined
+        TRANSPARENT_NATIVE_HEADERS ? { top: headerInset, left: 0, right: 0, bottom: 0 } : undefined
       }
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"

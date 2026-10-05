@@ -48,9 +48,15 @@ chat box.
 
 With scenery on, the Home list lets the photo show through:
 
-- Active and queued threads sit on separate frosted cards.
-- Snoozed and Settled sit under quiet section labels, each thread on its own quieter card. Tap
-  the label to expand or collapse that section.
+- The top of the list shows today's date and what needs you, such as "2 threads need you",
+  with the other states counted underneath. Below that are the place and photographer of the
+  photo of the day; tap them to open the photographer's Unsplash page. This summary is hidden
+  while you search.
+- Active and queued threads sit on separate frosted cards. Each card leads with its thread's
+  own photo, badged with the project icon. A thread that has never been opened shows the
+  project icon instead. Statuses such as **Working** or **Approval** appear as colored pills.
+- Snoozed, Stored and Settled threads each gather into one grouped card under a label with
+  the section's count. Tap the label to expand or collapse that section.
 
 The list uses solid rows instead when:
 

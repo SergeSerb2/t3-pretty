@@ -1,11 +1,12 @@
 import { useNavigation, usePreventRemove, type StaticScreenProps } from "@react-navigation/native";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, View } from "react-native";
+import { Alert } from "react-native";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/AppText";
+import { SheetSurface } from "../../components/SheetSurface";
 import { useProjects } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useWorkspaceState } from "../../state/workspace";
@@ -155,9 +156,9 @@ export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraf
         }}
       />
       {preparingBranch ? (
-        <View className="flex-1 items-center justify-center bg-screen">
+        <SheetSurface className="items-center justify-center bg-screen">
           <Text className="text-foreground">Switching branch...</Text>
-        </View>
+        </SheetSurface>
       ) : (
         <NewTaskDraftScreen
           initialProjectRef={preparedProjectRef}

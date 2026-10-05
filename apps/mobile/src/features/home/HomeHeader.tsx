@@ -6,6 +6,7 @@ import type { SearchBarCommands } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { TRANSPARENT_NATIVE_HEADERS } from "../../native/native-glass";
 
 import { ControlPillMenu } from "../../components/ControlPill";
 import { SymbolView } from "../../components/AppSymbol";
@@ -293,6 +294,11 @@ function IosHomeHeader(props: HomeHeaderProps) {
           // Static header config (glass, title, fonts) lives in Stack.tsx
           // (GLASS_HEADER_OPTIONS). Only dynamic values are set here.
           headerTintColor: iconColor,
+          // The bar is transparent so the scenery runs under it, but UIKit's
+          // scroll-edge effect stops at the navigation bar and never covers
+          // the in-bar search field, so rows would scroll under the field.
+          // A thin material frosts both; at rest it is a light glass bar.
+          headerBlurEffect: TRANSPARENT_NATIVE_HEADERS ? "systemUltraThinMaterial" : undefined,
           unstable_headerRightItems: () => [
             withNativeGlassHeaderItem({
               accessibilityLabel: "Open pull requests",

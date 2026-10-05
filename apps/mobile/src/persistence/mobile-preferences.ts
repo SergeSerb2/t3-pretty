@@ -7,7 +7,6 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import type { ProviderInstanceId, SidebarProjectGroupingMode } from "@t3tools/contracts";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
-import type { FollowUpBehavior } from "../lib/followUpBehavior";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
 import { parsePhotoSetId, type PhotoSetId } from "../features/scenery/photoSets";
 import * as MobileDatabase from "./mobile-database";
@@ -36,10 +35,10 @@ export interface Preferences {
   /** What the Return key does in the composer on a hardware keyboard. iOS only. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
   /**
-   * Device-local mirror of the web `followUpBehavior` client setting: whether a
-   * message sent during a running turn queues behind it or steers it.
+   * Fresh opt-in for automatic queueing. The retired followUpBehavior preference
+   * is ignored so existing devices also default to steering.
    */
-  readonly followUpBehavior?: FollowUpBehavior;
+  readonly legacyQueueEnabled?: boolean;
   /** @deprecated Kept temporarily so older OTA bundles retain the selected mode. */
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
@@ -150,7 +149,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
     collapsedProjectGroups?: readonly string[];
     composerEnterBehavior?: ComposerEnterBehavior;
-    followUpBehavior?: FollowUpBehavior;
+    legacyQueueEnabled?: boolean;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     autoCreatePullRequestByEnvMode?: {
@@ -239,8 +238,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (parsed.composerEnterBehavior === "send" || parsed.composerEnterBehavior === "newline") {
     preferences.composerEnterBehavior = parsed.composerEnterBehavior;
   }
-  if (parsed.followUpBehavior === "queue" || parsed.followUpBehavior === "steer") {
-    preferences.followUpBehavior = parsed.followUpBehavior;
+  if (typeof parsed.legacyQueueEnabled === "boolean") {
+    preferences.legacyQueueEnabled = parsed.legacyQueueEnabled;
   }
   if (typeof parsed.projectGroupingEnabled === "boolean") {
     preferences.projectGroupingEnabled = parsed.projectGroupingEnabled;

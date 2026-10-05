@@ -1,16 +1,30 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveComposerSendPresentation } from "./composerSendPresentation";
+import { DEFAULT_FOLLOW_UP_BEHAVIOR } from "../../lib/followUpBehavior";
 
 const idle = {
   editingQueuedMessage: false,
   running: false,
   canSteer: false,
-  followUpBehavior: "queue",
+  followUpBehavior: DEFAULT_FOLLOW_UP_BEHAVIOR,
   deliveryDeferred: false,
 } as const;
 
 describe("resolveComposerSendPresentation", () => {
+  it("steers by default while running and offers queueing as the alternate", () => {
+    const presentation = resolveComposerSendPresentation({
+      ...idle,
+      running: true,
+      canSteer: true,
+    });
+
+    expect(presentation.label).toBe("Steer");
+    expect(presentation.action).toBe("steer");
+    expect(presentation.alternate).toBe("queue");
+    expect(presentation.offersFollowUpChoice).toBe(true);
+  });
+
   it("sends plainly while the thread is idle", () => {
     const presentation = resolveComposerSendPresentation(idle);
 

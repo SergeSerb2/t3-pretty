@@ -15,13 +15,15 @@ import {
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
 import { Fragment, type ReactNode, useId, useState } from "react";
-import { Linking, Pressable, ScrollView, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, View } from "react-native";
 import { Defs, Path, Pattern, Rect, Svg } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
+import { cn } from "../../lib/cn";
+import { GroupedCard } from "../scenery/GroupedCard";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
 import { ResetCredits } from "./UsageLimitsSection";
@@ -100,7 +102,7 @@ function PoolWindowCard({
       },
     });
   return (
-    <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
+    <GroupedCard className={cn(Platform.OS === "android" && "rounded-[24px]", "gap-3 p-4")}>
       <View className="flex-row items-start justify-between gap-3">
         <View className="gap-1">
           <Text className="text-sm font-t3-medium text-foreground">{label ?? pool.label}</Text>
@@ -196,7 +198,7 @@ function PoolWindowCard({
           );
         })}
       </View>
-    </View>
+    </GroupedCard>
   );
 }
 
@@ -383,7 +385,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
                 </Text>
               ) : null}
             </View>
-            <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
+            <GroupedCard className={cn(Platform.OS === "android" && "rounded-[24px]", "gap-3 p-4")}>
               <Text className="text-sm font-t3-medium text-foreground">{window.label}</Text>
               <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
                 {remainingPercent(window)}% left
@@ -402,8 +404,8 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
                   Restores {reset.restoresPercent}% of the pool
                 </Text>
               ) : null}
-            </View>
-            <View className="gap-2 rounded-[24px] border-continuous bg-grouped-card p-4">
+            </GroupedCard>
+            <GroupedCard className={cn(Platform.OS === "android" && "rounded-[24px]", "gap-2 p-4")}>
               <Text className="text-sm font-t3-medium text-foreground">
                 {account.environments.length ? "Signed in" : "Source"}
               </Text>
@@ -416,9 +418,11 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
               ) : (
                 <Text className="text-sm text-foreground-muted">{account.sourceLabel}</Text>
               )}
-            </View>
+            </GroupedCard>
             {account.redeem && account.limits.resetCredits ? (
-              <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
+              <GroupedCard
+                className={cn(Platform.OS === "android" && "rounded-[24px]", "gap-3 p-4")}
+              >
                 <Text className="text-sm font-t3-medium text-foreground">Reset credits</Text>
                 <ResetCredits
                   key={account.key}
@@ -427,7 +431,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
                   credits={account.limits.resetCredits}
                   now={now}
                 />
-              </View>
+              </GroupedCard>
             ) : null}
           </>
         )}

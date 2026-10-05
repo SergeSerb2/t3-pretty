@@ -10,6 +10,10 @@ import {
 import { QuestionAnswerHistory } from "./QuestionAnswerHistory";
 import { SlidingActivity } from "./SlidingActivity";
 import {
+  THREAD_DISCLOSURE_TRANSITION_MS,
+  ThreadDisclosureChevron,
+} from "./thread-disclosure-chevron";
+import {
   getQuestionAnswerPreview,
   hasQuestionAnswer,
 } from "@t3tools/client-runtime/work-log/user-input";
@@ -82,12 +86,16 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useAssetUrl } from "../../state/assets";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
+
+// Re-exported for existing importers; the chevron lives on its own so
+// thread-subagent-group can use it without an import cycle.
+export { THREAD_DISCLOSURE_TRANSITION_MS, ThreadDisclosureChevron };
 
 const SHIMMER_WIDTH = 72;
 const SHIMMER_SWEEP_MS = 1_350;
 const SHIMMER_PAUSE_MS = 1_450;
 const SHIMMER_ICON_AND_GAP_WIDTH = 30;
-export const THREAD_DISCLOSURE_TRANSITION_MS = 180;
 const WORK_LOG_LAYOUT_TRANSITION = LinearTransition.duration(THREAD_DISCLOSURE_TRANSITION_MS);
 const WORK_LOG_DETAIL_ENTER_TRANSITION = FadeIn.duration(140);
 const WORK_LOG_DETAIL_EXIT_TRANSITION = FadeOut.duration(120);
@@ -121,44 +129,6 @@ function WorkLogIcon(props: {
       {...(colorClassName ? { tintColorClassName: colorClassName } : { tintColor: props.color })}
       type="monochrome"
     />
-  );
-}
-
-export function ThreadDisclosureChevron(props: {
-  readonly expanded: boolean;
-  readonly collapsedDirection: "right" | "down";
-  readonly size: number;
-  readonly tintColor: ColorValue;
-}) {
-  const expandedAngle = props.collapsedDirection === "right" ? 90 : 180;
-  const rotation = useSharedValue(props.expanded ? expandedAngle : 0);
-
-  useLayoutEffect(() => {
-    rotation.value = withTiming(props.expanded ? expandedAngle : 0, {
-      duration: THREAD_DISCLOSURE_TRANSITION_MS,
-      reduceMotion: ReduceMotion.System,
-    });
-  }, [expandedAngle, props.expanded, rotation]);
-
-  const rotationStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
-
-  return (
-    <Animated.View
-      accessible={false}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      pointerEvents="none"
-      style={[{ width: props.size, height: props.size }, rotationStyle]}
-    >
-      <SymbolView
-        name={props.collapsedDirection === "right" ? "chevron.right" : "chevron.down"}
-        size={props.size}
-        tintColor={props.tintColor}
-        type="monochrome"
-      />
-    </Animated.View>
   );
 }
 
@@ -444,8 +414,8 @@ interface ThreadWorkLogProps {
   readonly rowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
   readonly scrollPositions: Map<string, ThreadWorkGroupScrollPosition>;
   readonly iconSubtleColor: ColorValue;
-  /** Feed background, painted as the scroll-edge fade over a long group. */
-  readonly edgeFadeColor: string;
+  /** Feed background, painted as the scroll-edge fade over a long group; null skips it. */
+  readonly edgeFadeColor: string | null;
   readonly themeAppearance: "light" | "dark";
   readonly onCopyRow: (rowId: string, value: string) => void;
   readonly onToggleRow: (rowId: string, anchorKey: string) => void;
@@ -527,7 +497,7 @@ export function ThreadWorkLog(props: ThreadWorkLogProps) {
 
 function ThreadWorkGroupList(props: {
   readonly activities: ReadonlyArray<ThreadFeedActivity>;
-  readonly edgeFadeColor: string;
+  readonly edgeFadeColor: string | null;
   readonly expandedRows: Readonly<Record<string, boolean>>;
   readonly groupId: string;
   readonly rowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
@@ -727,20 +697,24 @@ function ThreadWorkGroupList(props: {
         keyboardShouldPersistTaps="handled"
         style={{ height }}
       />
-      <Animated.View
-        pointerEvents="none"
-        className="absolute inset-x-0 top-0"
-        style={[{ height: WORK_GROUP_EDGE_FADE_HEIGHT }, topFadeStyle]}
-      >
-        <EdgeFade color={props.edgeFadeColor} direction="down" />
-      </Animated.View>
-      <Animated.View
-        pointerEvents="none"
-        className="absolute inset-x-0 bottom-0"
-        style={[{ height: WORK_GROUP_EDGE_FADE_HEIGHT }, bottomFadeStyle]}
-      >
-        <EdgeFade color={props.edgeFadeColor} direction="up" />
-      </Animated.View>
+      {props.edgeFadeColor === null ? null : (
+        <>
+          <Animated.View
+            pointerEvents="none"
+            className="absolute inset-x-0 top-0"
+            style={[{ height: WORK_GROUP_EDGE_FADE_HEIGHT }, topFadeStyle]}
+          >
+            <EdgeFade color={props.edgeFadeColor} direction="down" />
+          </Animated.View>
+          <Animated.View
+            pointerEvents="none"
+            className="absolute inset-x-0 bottom-0"
+            style={[{ height: WORK_GROUP_EDGE_FADE_HEIGHT }, bottomFadeStyle]}
+          >
+            <EdgeFade color={props.edgeFadeColor} direction="up" />
+          </Animated.View>
+        </>
+      )}
     </View>
   );
 }
@@ -865,9 +839,10 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
   const canExpand = row.canExpand && notifiedSubagentThreadId === undefined;
   const reasoning = row.projectedItem.item.type === "reasoning" ? row.projectedItem.item : null;
   const fullDetail = expanded && !reasoning ? row.getFullDetail() : null;
-  const generatedImage = row.projectedItem.item.type === "image_generation" ? row.projectedItem.item : null;
+  const generatedImage =
+    row.projectedItem.item.type === "image_generation" ? row.projectedItem.item : null;
   const viewedImagePath = generatedImage
-    ? generatedImage.savedPath ?? generatedImage.paths?.[0] ?? null
+    ? (generatedImage.savedPath ?? generatedImage.paths?.[0] ?? null)
     : workEntryViewedImagePath(row.workEntry);
   const toolPresentation = resolveWorkEntryToolPresentation(row.workEntry);
   const previewText = workEntryRowLabel(row.workEntry);
@@ -1150,6 +1125,7 @@ export const ThreadAgentSpawnCard = memo(function ThreadAgentSpawnCard(props: {
   readonly onCopy: () => void;
 }) {
   const { summary, expanded } = props;
+  const glass = useGlassChromeActive();
   const working = summary.tone === "working";
   const memberCount = summary.members.length;
   const canExpand = memberCount > 0;
@@ -1171,7 +1147,12 @@ export const ThreadAgentSpawnCard = memo(function ThreadAgentSpawnCard(props: {
           props.onToggle();
         }}
         onLongPress={props.onCopy}
-        className="rounded-xl border border-border-subtle bg-card px-2.5 py-2 active:bg-subtle"
+        className={
+          glass
+            ? "rounded-[20px] border-continuous border-chrome-glass-border bg-chrome-glass px-2.5 py-2 active:bg-foreground/[0.06]"
+            : "rounded-xl border border-border-subtle bg-card px-2.5 py-2 active:bg-subtle"
+        }
+        style={glass ? { borderWidth: StyleSheet.hairlineWidth } : undefined}
       >
         <View className="flex-row items-center gap-2">
           <View className="h-6 w-6 shrink-0 items-center justify-center">

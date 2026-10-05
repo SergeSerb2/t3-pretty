@@ -3,8 +3,11 @@ import { useRef } from "react";
 import { View } from "react-native";
 
 import { AppText as Text, AppTextInput } from "../../../components/AppText";
+import { cn } from "../../../lib/cn";
+import { useGlassChromeActive } from "../../scenery/SceneryProvider";
 import { SettingsChoiceRow } from "./SettingsChoiceRow";
 import { SettingsSection } from "./SettingsSection";
+import { GLASS_INPUT_CLASS_NAME } from "../../scenery/glassStyles";
 
 const MODES = {
   static: { label: "Static prefix", description: "Add your prefix to the generated branch name." },
@@ -25,6 +28,7 @@ export function BranchNamingSettings(props: {
   disabled: boolean;
   onChange: (patch: ServerSettingsPatch) => void;
 }) {
+  const glass = useGlassChromeActive();
   const prefixEdited = useRef(false);
   const instructionsEdited = useRef(false);
   return (
@@ -61,7 +65,10 @@ export function BranchNamingSettings(props: {
             editable={!props.disabled}
             autoCapitalize="none"
             autoCorrect={false}
-            className="min-h-10 rounded-xl px-3 py-2 text-base text-foreground"
+            className={cn(
+              "min-h-10 rounded-xl px-3 py-2 text-base text-foreground",
+              glass && GLASS_INPUT_CLASS_NAME,
+            )}
             onEndEditing={(event) => {
               const value = event.nativeEvent.text.trim();
               if (
@@ -95,7 +102,10 @@ export function BranchNamingSettings(props: {
             editable={!props.disabled}
             multiline
             autoCapitalize="sentences"
-            className="min-h-24 rounded-xl px-3 py-2 text-base text-foreground"
+            className={cn(
+              "min-h-24 rounded-xl px-3 py-2 text-base text-foreground",
+              glass && GLASS_INPUT_CLASS_NAME,
+            )}
             onEndEditing={(event) => {
               const value = event.nativeEvent.text.trim();
               if (

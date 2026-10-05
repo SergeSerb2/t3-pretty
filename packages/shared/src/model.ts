@@ -7,6 +7,7 @@ import {
   ProviderInstanceId,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
+  type SelectProviderOptionDescriptor,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -227,11 +228,20 @@ export function reasoningEffortOptionLabel(optionId: string, fallbackLabel?: str
   return fallbackLabel ?? `${id.charAt(0).toUpperCase()}${id.slice(1)} effort`;
 }
 
+/** Select descriptors whose choices are reasoning levels, ordered low to high. */
+export function isReasoningEffortDescriptor(
+  descriptor: ProviderOptionDescriptor,
+): descriptor is SelectProviderOptionDescriptor {
+  return (
+    descriptor.type === "select" &&
+    REASONING_EFFORT_SELECT_IDS.has(descriptor.id.trim().toLowerCase().replace(/[-_ ]/g, ""))
+  );
+}
+
 function withStandardizedEffortLabels(
   descriptor: ProviderOptionDescriptor,
 ): ProviderOptionDescriptor {
-  const selectId = descriptor.id.trim().toLowerCase().replace(/[-_ ]/g, "");
-  if (descriptor.type !== "select" || !REASONING_EFFORT_SELECT_IDS.has(selectId)) {
+  if (!isReasoningEffortDescriptor(descriptor)) {
     return descriptor;
   }
   return {

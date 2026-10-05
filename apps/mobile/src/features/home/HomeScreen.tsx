@@ -1,7 +1,8 @@
 import { useAndroidControlSizing } from "../../components/useAndroidControlSizing";
 import type { ThreadMoveDestination } from "../threads/threadOrder";
 import { computeThreadMoveAvailability } from "../threads/threadOrder";
-import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
+import { type LegendListRef } from "@legendapp/list/react-native";
+import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import {
   type EnvironmentProject,
   type EnvironmentThreadShell,
@@ -18,6 +19,7 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
+  StyleSheet,
   View,
   type GestureResponderEvent,
   type NativeScrollEvent,
@@ -26,16 +28,26 @@ import {
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
-import { useGlassChromeActive, useSceneryChromeActive } from "../scenery/SceneryProvider";
+import {
+  useDailySceneryPhoto,
+  useGlassChromeActive,
+  useScenery,
+  useSceneryChromeActive,
+} from "../scenery/SceneryProvider";
 
 import { cn } from "../../lib/cn";
+import { layoutSettle } from "../../lib/motion";
+import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { MaterialFloatingActionButton } from "../../components/MaterialFloatingActionButton";
 import type { WorkspaceEnvironment, WorkspaceState } from "../../state/workspaceModel";
 import type { SavedRemoteConnection } from "../../lib/connection";
 import { scopedProjectKey } from "../../lib/scopedEntities";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import {
+  NATIVE_LIQUID_GLASS_SUPPORTED,
+  TRANSPARENT_NATIVE_HEADERS,
+} from "../../native/native-glass";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { usePendingThreadOrder } from "../../state/thread-order";
@@ -63,6 +75,9 @@ import {
 import { useThreadListV2ShelfPreferences } from "../threads/use-thread-list-v2-shelf-preferences";
 import { ThreadListGlassContext } from "../threads/thread-list-glass-context";
 import { ANDROID_HOME_FAB_EDGE_GAP } from "./AndroidHomeFab";
+import { HomeGlance } from "./HomeGlance";
+import { resolveHomeCardSceneryThumb } from "./home-card-scenery";
+import { summarizeHomeGlance } from "./home-glance";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeProjectScopes,
@@ -642,6 +657,20 @@ export function HomeScreen(props: HomeScreenProps) {
       ),
     [props.pendingTasks, props.selectedEnvironmentId, v2ScopedProjectKeys, v2SearchQuery],
   );
+  // Only Home reads the full scenery value; rows get their photo on the item.
+  const { assignments: sceneryAssignments, photoSetId, photoForThreadKey } = useScenery();
+  const resolveSceneryThumb = useMemo(
+    () =>
+      glassRows
+        ? (thread: EnvironmentThreadShell) =>
+            resolveHomeCardSceneryThumb(thread, {
+              assignments: sceneryAssignments,
+              photoForThreadKey,
+              photoSetId,
+            })
+        : undefined,
+    [glassRows, photoForThreadKey, photoSetId, sceneryAssignments],
+  );
   const threadListV2Items = useMemo(
     () =>
       buildThreadListV2ListItems({
@@ -661,9 +690,11 @@ export function HomeScreen(props: HomeScreenProps) {
         queuedThreadKeys,
         moveAvailability: threadMoveAvailability,
         shelfPreferencesLoading: !shelfPreferencesLoaded,
+        resolveSceneryThumb,
       }),
     [
       nowMinute,
+      resolveSceneryThumb,
       queuedThreadKeys,
       threadMoveAvailability,
       settledShelfExpanded,
@@ -674,6 +705,16 @@ export function HomeScreen(props: HomeScreenProps) {
       threadListV2Layout,
       v2PendingTasks,
     ],
+  );
+
+  const dailyPhoto = useDailySceneryPhoto();
+  const glanceDate = useMemo(() => new Date(`${nowMinute}:00.000Z`), [nowMinute]);
+  const glanceSummary = useMemo(
+    () =>
+      summarizeHomeGlance(
+        threadListV2Layout.items.flatMap((item) => (item.variant === "card" ? [item.thread] : [])),
+      ),
+    [threadListV2Layout],
   );
 
   useThreadJumpShortcuts(threadListV2Items, props.onSelectThread);
@@ -751,6 +792,8 @@ export function HomeScreen(props: HomeScreenProps) {
           snoozeWakeLabelText={item.snoozeWakeLabelText}
           timeLabel={item.timeLabel}
           showTrailingDivider={item.showTrailingDivider}
+          continuesGroup={item.continuesGroup}
+          sceneryThumbURL={item.sceneryThumbURL}
           project={
             projectByKey.get(scopedProjectKey(thread.environmentId, thread.projectId)) ?? null
           }
@@ -922,7 +965,7 @@ export function HomeScreen(props: HomeScreenProps) {
           )}
           style={{
             paddingBottom: Math.max(insets.bottom, 24) + iosBottomToolbarClearance,
-            paddingTop: NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top + 72 : 0,
+            paddingTop: TRANSPARENT_NATIVE_HEADERS ? insets.top + 72 : 0,
           }}
         >
           <SceneryBackdrop threadKey={null} />
@@ -959,12 +1002,18 @@ export function HomeScreen(props: HomeScreenProps) {
   const listHeader = Platform.OS === "ios" ? undefined : <HomeTopContentSpacer />;
 
   // Project scoping lives in the header filter menu (no inline chip row on
-  // mobile — the menu is the one filter surface).
-  const v2ListHeader = listHeader;
+  // mobile — the menu is the one filter surface). Glass Home opens on the
+  // glance; search results start at the top instead.
+  const v2ListHeader =
+    glassRows && !hasSearchQuery && threadListV2Items.length > 0 ? (
+      <HomeGlance date={glanceDate} photo={dailyPhoto} summary={glanceSummary} />
+    ) : (
+      listHeader
+    );
 
   // Use the v2 project scope for its empty state. Snoozed threads need no
   // special empty state: their shelf header is a list row even while collapsed.
-  const v2ListEmpty =
+  const v2ListEmptyState =
     hasSearchQuery && threadSearch.isPending ? undefined : hasSearchQuery ? (
       <EmptyState
         title="No results"
@@ -991,6 +1040,14 @@ export function HomeScreen(props: HomeScreenProps) {
       />
     );
 
+  // Glass empty cards inset like the rows they stand in for.
+  const v2ListEmpty =
+    glassRows && v2ListEmptyState !== undefined ? (
+      <View className="mx-3 mt-2">{v2ListEmptyState}</View>
+    ) : (
+      v2ListEmptyState
+    );
+
   if (Platform.OS === "android" && threadListV2Items.length === 0) {
     return (
       <View className="flex-1 bg-header">
@@ -1013,13 +1070,13 @@ export function HomeScreen(props: HomeScreenProps) {
             : "flex-1 bg-screen"
         }
       >
-        <SceneryBackdrop threadKey={null} />
+        <SceneryBackdrop threadKey={null} surface={glassRows ? "cards" : "text"} />
         {/* Shared with the iPad sidebar: cells are reused across data
             rebuilds and `itemsAreEqual` keeps a minute tick (or an unrelated
             shell update) from re-rendering untouched rows. */}
         <ThreadListGlassContext value={glassRows}>
           <SwipeableScrollGateProvider enabled={swipeEnabled} activation={swipeRowActivation}>
-            <LegendList
+            <AnimatedLegendList
               ref={listRef}
               onLoad={() => activateVisibleRows(threadListV2Items)}
               onTouchStart={(event) => trackListTouches(event, true)}
@@ -1033,11 +1090,31 @@ export function HomeScreen(props: HomeScreenProps) {
               estimatedItemSize={ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT}
               drawDistance={THREAD_LIST_V2_DRAW_DISTANCE}
               recycleItems
+              // Settle, wake, reorder and shelf toggles reflow rows into
+              // place; the patched list skips this for recycled cells and
+              // while scrolling.
+              itemLayoutAnimation={layoutSettle}
               extraData={v2ExtraData}
               ListHeaderComponent={v2ListHeader}
               ListFooterComponent={
                 settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
-                  sceneryChrome ? (
+                  glassRows ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={showMoreSettled}
+                      className="mx-3 mt-2 items-center border-chrome-glass-border bg-chrome-glass py-3"
+                      style={({ pressed }) => ({
+                        borderCurve: "continuous",
+                        borderRadius: GLASS_CARD_RADIUS,
+                        borderWidth: StyleSheet.hairlineWidth,
+                        opacity: pressed ? 0.6 : 1,
+                      })}
+                    >
+                      <Text className="text-xs font-t3-medium text-foreground-muted">
+                        Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
+                      </Text>
+                    </Pressable>
+                  ) : sceneryChrome ? (
                     <Pressable
                       onPress={showMoreSettled}
                       className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"

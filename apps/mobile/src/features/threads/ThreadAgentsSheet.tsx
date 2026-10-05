@@ -11,19 +11,24 @@ import { StackActions, useNavigation, type StaticScreenProps } from "@react-navi
 import * as DateTime from "effect/DateTime";
 import * as Haptics from "expo-haptics";
 import { useEffect, useState } from "react";
-import { Platform, Pressable, ScrollView, View } from "react-native";
+import { Platform, ScrollView, View } from "react-native";
 import { Screen, ScreenStack, ScreenStackHeaderConfig } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
+import { SheetSurface } from "../../components/SheetSurface";
+import { cn } from "../../lib/cn";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { environmentThreadDetails } from "../../state/threads";
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { resolveSubagentRowPresentation } from "./threadAgentsPresentation";
+import { GroupedCard } from "../scenery/GroupedCard";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
 import { SubagentStatusDot } from "./SubagentStatusDot";
+import { GlassRowPressable } from "../scenery/GroupedCard";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
@@ -41,6 +46,7 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
   const turn = useThreadTurnSubagents(target);
   const subagents = turn?.subagents ?? [];
   const hasLiveAgent = (turn?.liveCount ?? 0) > 0;
+  const glass = useGlassChromeActive();
 
   const openChildThread = (childThreadId: ThreadId) => {
     void Haptics.selectionAsync();
@@ -67,6 +73,19 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
         <Text className="pt-6 text-center text-sm text-foreground-muted">
           No agents in this turn.
         </Text>
+      ) : glass ? (
+        <GroupedCard>
+          {subagents.map((subagent, index) => (
+            <AgentRow
+              key={subagent.id}
+              glass
+              isLast={index === subagents.length - 1}
+              subagent={subagent}
+              tickSeconds={hasLiveAgent}
+              onOpen={openChildThread}
+            />
+          ))}
+        </GroupedCard>
       ) : (
         subagents.map((subagent) => (
           <AgentRow
@@ -84,7 +103,7 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
     // A plain formSheet screen never renders a stack header, so it comes from
     // a nested native stack inside the sheet (same shape as the git sheet).
     return (
-      <View collapsable={false} className="flex-1 bg-sheet">
+      <SheetSurface threadKey={`${target.environmentId}:${target.threadId}`}>
         <ScreenStack style={{ flex: 1 }}>
           <Screen
             activityState={2}
@@ -92,7 +111,7 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
             isNativeStack
             screenId="thread-agents-sheet-native"
             scrollEdgeEffects={HEADER_SCROLL_EDGE_EFFECTS}
-            style={{ backgroundColor: theme["--color-sheet"], flex: 1 }}
+            style={{ backgroundColor: glass ? "transparent" : theme["--color-sheet"], flex: 1 }}
           >
             {content}
             <ScreenStackHeaderConfig
@@ -108,7 +127,7 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
             />
           </Screen>
         </ScreenStack>
-      </View>
+      </SheetSurface>
     );
   }
 
@@ -121,6 +140,8 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
 }
 
 function AgentRow(props: {
+  readonly glass?: boolean;
+  readonly isLast?: boolean;
   readonly subagent: OrchestrationV2Subagent;
   readonly tickSeconds: boolean;
   readonly onOpen: (childThreadId: ThreadId) => void;
@@ -131,7 +152,16 @@ function AgentRow(props: {
   const elapsed = useSubagentElapsed(subagent, props.tickSeconds);
 
   const row = (
-    <View className="min-h-14 flex-row items-center gap-3 border-b border-border py-3">
+    <View
+      className={
+        props.glass
+          ? cn(
+              "min-h-14 flex-row items-center gap-3 px-4 py-3",
+              !props.isLast && "border-b border-border-subtle",
+            )
+          : "min-h-14 flex-row items-center gap-3 border-b border-border py-3"
+      }
+    >
       <SubagentStatusDot tone={presentation.tone} placement="sheet" />
       <View className="min-w-0 flex-1 gap-0.5">
         <Text className="font-t3-medium text-sm text-foreground" numberOfLines={1}>
@@ -163,15 +193,15 @@ function AgentRow(props: {
   }
 
   return (
-    <Pressable
+    <GlassRowPressable
       accessibilityRole="link"
       accessibilityLabel={`${presentation.title}, ${presentation.statusLabel}`}
       accessibilityHint="Opens this agent's thread"
       onPress={() => props.onOpen(childThreadId)}
-      className="active:opacity-70"
+      fallbackClassName="active:opacity-70"
     >
       {row}
-    </Pressable>
+    </GlassRowPressable>
   );
 }
 

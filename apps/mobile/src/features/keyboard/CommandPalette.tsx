@@ -30,6 +30,7 @@ import { useWorkspaceEnvironments } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useStartNewTaskFromHomeScope } from "../home/useStartNewTaskFromHomeScope";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { ThreadSearchMatchExcerpt } from "../threads/thread-search-match";
 import {
@@ -78,21 +79,25 @@ function PaletteRow(props: {
   readonly searchQuery: string;
   readonly onSelect: () => void;
 }) {
-  const foregroundClassName = props.selected
-    ? "text-thread-selected-foreground"
-    : "text-foreground";
-  const mutedForegroundClassName = props.selected
+  // On glass the selection is a tint, not the opaque selected-thread plate.
+  const glass = useGlassChromeActive();
+  const selectedPlate = props.selected && !glass;
+  const foregroundClassName = selectedPlate ? "text-thread-selected-foreground" : "text-foreground";
+  const mutedForegroundClassName = selectedPlate
     ? "text-thread-selected-foreground-muted"
     : "text-foreground-muted";
   return (
     <RowPressable
       accessibilityRole="button"
       interactionOpacity={props.selected ? 0 : 1}
+      interactionClassName={glass ? "bg-foreground/[0.06]" : undefined}
       accessibilityState={{ selected: props.selected }}
       onPress={props.onSelect}
       className={
         props.selected
-          ? "mx-2 flex-row items-center gap-3 rounded-xl bg-thread-selected px-3"
+          ? glass
+            ? "mx-2 flex-row items-center gap-3 rounded-xl bg-foreground/[0.08] px-3"
+            : "mx-2 flex-row items-center gap-3 rounded-xl bg-thread-selected px-3"
           : "mx-2 flex-row items-center gap-3 rounded-xl px-3"
       }
       style={{ height: ROW_HEIGHT }}
@@ -101,7 +106,7 @@ function PaletteRow(props: {
         <SymbolView
           name={itemIcon(props.item)}
           size={20}
-          tintColorClassName={props.selected ? "accent-thread-selected-foreground" : "accent-icon"}
+          tintColorClassName={selectedPlate ? "accent-thread-selected-foreground" : "accent-icon"}
         />
       </View>
       <View className="flex-1">
@@ -112,7 +117,7 @@ function PaletteRow(props: {
           <ThreadSearchMatchExcerpt
             match={props.searchMatch}
             query={props.searchQuery}
-            selected={props.selected}
+            selected={selectedPlate}
             compact
           />
         ) : props.item.detail ? (
@@ -140,6 +145,7 @@ export function CommandPalette(props: {
 }) {
   const navigation = useNavigation();
   const { themeVariables } = useAppearancePreferences();
+  const glass = useGlassChromeActive();
   const { selectThread } = useAdaptiveWorkspaceLayout();
   const startNewTask = useStartNewTaskFromHomeScope();
   const runCommand = props.onCommand;
@@ -434,9 +440,9 @@ export function CommandPalette(props: {
             />
             <GlassSurface
               accessibilityViewIsModal
-              className="bg-sheet"
+              className={glass ? undefined : "bg-sheet"}
               tintColorClassName="accent-sheet/20"
-              fallbackColor={themeVariables["--color-sheet"]}
+              fallbackColor={themeVariables[glass ? "--color-glass-fallback" : "--color-sheet"]}
               style={{
                 width: Math.min(600, width - 32),
                 height: Math.min(520, height - 80),

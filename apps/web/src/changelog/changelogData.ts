@@ -26,6 +26,216 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261003.2610003114",
+    date: "2026-10-05",
+    items: [
+      {
+        kind: "new",
+        title: "Make steering the default for running threads",
+      },
+      {
+        kind: "new",
+        title: "IOS Home opens on a glance and leads cards with thread photos",
+      },
+      {
+        kind: "new",
+        title: "Rebuild the model picker around reasoning, speed, and access cards",
+      },
+      {
+        kind: "fixed",
+        title: "Frost the iPad sidebar header over the scenery",
+      },
+      {
+        kind: "fixed",
+        title: "Repair upstream sync compatibility (#776) [skip ci]",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock nightly sync test lint",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261003.2610003108",
+    date: "2026-10-04",
+    items: [
+      {
+        kind: "new",
+        title: "IOS Home opens on a glance and leads cards with thread photos",
+      },
+      {
+        kind: "new",
+        title: "Rebuild the model picker around reasoning, speed, and access cards",
+      },
+      {
+        kind: "fixed",
+        title: "Frost the iPad sidebar header over the scenery",
+      },
+      {
+        kind: "fixed",
+        title: "Repair upstream sync compatibility (#776) [skip ci]",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock nightly sync test lint",
+      },
+      {
+        kind: "new",
+        title: "Unify iOS on frosted glass over the scenery with fluid motion",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261003.2610003106",
+    date: "2026-10-04",
+    items: [
+      {
+        kind: "new",
+        title: "Rebuild the model picker around reasoning, speed, and access cards",
+      },
+      {
+        kind: "fixed",
+        title: "Frost the iPad sidebar header over the scenery",
+      },
+      {
+        kind: "fixed",
+        title: "Repair upstream sync compatibility (#776) [skip ci]",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock nightly sync test lint",
+      },
+      {
+        kind: "new",
+        title: "Unify iOS on frosted glass over the scenery with fluid motion",
+      },
+      {
+        kind: "new",
+        title: "One-screen model picker with instant-apply options",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261003.2610003100",
+    date: "2026-10-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "Frost the iPad sidebar header over the scenery",
+      },
+      {
+        kind: "fixed",
+        title: "Repair upstream sync compatibility (#776) [skip ci]",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock nightly sync test lint",
+      },
+      {
+        kind: "new",
+        title: "Unify iOS on frosted glass over the scenery with fluid motion",
+      },
+      {
+        kind: "new",
+        title: "One-screen model picker with instant-apply options",
+      },
+      {
+        kind: "fixed",
+        title: "Visible threads and Claude streaming (#772) [skip ci]",
+      },
+    ],
+  },
+  {
+    version: "0.0.45-nightly.20261002.2595003093",
+    date: "2026-10-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "Unblock nightly sync test lint",
+      },
+      {
+        kind: "new",
+        title: "Unify iOS on frosted glass over the scenery with fluid motion",
+      },
+      {
+        kind: "new",
+        title: "One-screen model picker with instant-apply options",
+      },
+      {
+        kind: "fixed",
+        title: "Visible threads and Claude streaming (#772) [skip ci]",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock tested SDK58 mobile and desktop release notices [skip ci]",
+      },
+      {
+        kind: "new",
+        title: "Integrate tested upstream orchestrator V2 into Pretty [skip ci]",
+      },
+    ],
+  },
+  {
+    version: "0.0.45-nightly.20261002.2595003091",
+    date: "2026-10-04",
+    items: [
+      {
+        kind: "new",
+        title: "Unify iOS on frosted glass over the scenery with fluid motion",
+      },
+      {
+        kind: "new",
+        title: "One-screen model picker with instant-apply options",
+      },
+      {
+        kind: "fixed",
+        title: "Visible threads and Claude streaming (#772) [skip ci]",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock tested SDK58 mobile and desktop release notices [skip ci]",
+      },
+      {
+        kind: "new",
+        title: "Integrate tested upstream orchestrator V2 into Pretty [skip ci]",
+      },
+      {
+        kind: "new",
+        title: "Let the composer hover follow the pointer",
+      },
+    ],
+  },
+  {
+    version: "0.0.45-nightly.20261002.2595003085",
+    date: "2026-10-04",
+    items: [
+      {
+        kind: "new",
+        title: "One-screen model picker with instant-apply options",
+      },
+      {
+        kind: "fixed",
+        title: "Visible threads and Claude streaming (#772) [skip ci]",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock tested SDK58 mobile and desktop release notices [skip ci]",
+      },
+      {
+        kind: "new",
+        title: "Integrate tested upstream orchestrator V2 into Pretty [skip ci]",
+      },
+      {
+        kind: "new",
+        title: "Let the composer hover follow the pointer",
+      },
+      {
+        kind: "new",
+        title: "Dock a touch console for the Tesla browser",
+      },
+    ],
+  },
+  {
     version: "0.0.45-nightly.20261002.2595003064",
     date: "2026-10-03",
     items: [

@@ -17,19 +17,25 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated, { LayoutAnimationConfig } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AnchoredMenu } from "../../components/AndroidAnchoredMenu";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
+import { SheetSurface } from "../../components/SheetSurface";
 import { cn } from "../../lib/cn";
+import { enterFade } from "../../lib/motion";
 import { useFontFamily } from "../../lib/useFontFamily";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useEnvironmentQuery } from "../../state/query";
 import { skillsEnvironment } from "../../state/skills";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useNewTaskFlow } from "./new-task-flow-provider";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
+import { GlassRowPressable } from "../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
 
 const MANAGEMENT_ACTIONS: ReadonlyArray<MenuAction> = [
   { id: "uninstall", title: "Uninstall…", attributes: { destructive: true } },
@@ -98,19 +104,31 @@ function SkillPickerRow(props: {
 
   const onPress = useCallback(() => props.onToggle(props.skill), [props.onToggle, props.skill]);
   const subtitle = props.skill.description ?? props.skill.displayPath;
+  const glass = useGlassChromeActive();
+  const checkmark = (
+    <SymbolView
+      name="checkmark"
+      size={16}
+      tintColorClassName="accent-icon"
+      type="monochrome"
+      weight="semibold"
+    />
+  );
 
   return (
     <View
       className={cn(
-        "min-h-14 flex-row items-center bg-card",
+        "min-h-14 flex-row items-center",
+        !glass && "bg-card",
         !props.isLast && "border-b border-border-subtle",
       )}
     >
-      <Pressable
+      <GlassRowPressable
         accessibilityLabel={`${props.skill.name}, ${subtitle}`}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: props.checked }}
-        className="min-h-14 min-w-0 flex-1 flex-row items-center gap-3 py-3 pr-3 pl-4 active:bg-subtle"
+        className="min-h-14 min-w-0 flex-1 flex-row items-center gap-3 py-3 pr-3 pl-4"
+        fallbackClassName="active:bg-subtle"
         onPress={onPress}
       >
         <View className="min-w-0 flex-1 gap-0.5">
@@ -122,15 +140,14 @@ function SkillPickerRow(props: {
           </Text>
         </View>
         {props.checked ? (
-          <SymbolView
-            name="checkmark"
-            size={16}
-            tintColorClassName="accent-icon"
-            type="monochrome"
-            weight="semibold"
-          />
+          glass ? (
+            // No exit: a fading mark would outlive its row as the list reflows.
+            <Animated.View entering={enterFade}>{checkmark}</Animated.View>
+          ) : (
+            checkmark
+          )
         ) : null}
-      </Pressable>
+      </GlassRowPressable>
       <AnchoredMenu actions={MANAGEMENT_ACTIONS} onPressAction={onPressManagementAction}>
         <View
           accessibilityLabel={`Manage ${props.skill.name}`}
@@ -152,6 +169,7 @@ export function NewTaskSkillsPickerRouteScreen() {
   const flow = useNewTaskFlow();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const glass = useGlassChromeActive();
   const fontFamily = useFontFamily("regular");
   const [query, setQuery] = useState("");
   // Picks saved before the skill library may hold store ids; fold them for the checkmarks.
@@ -196,7 +214,7 @@ export function NewTaskSkillsPickerRouteScreen() {
   const content =
     skills.length === 0 ? (
       <ScrollView
-        className="flex-1 bg-sheet"
+        className={glass ? "flex-1" : "flex-1 bg-sheet"}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingTop: 12 }}
         scrollEnabled={false}
@@ -216,7 +234,10 @@ export function NewTaskSkillsPickerRouteScreen() {
           {!isPending && loadError !== null ? (
             <Pressable
               accessibilityRole="button"
-              className="rounded-full bg-card px-4 py-2 active:opacity-70"
+              className={cn(
+                "rounded-full bg-card px-4 py-2 active:opacity-70",
+                glass && "border border-chrome-glass-border bg-chrome-glass",
+              )}
               onPress={refresh}
             >
               <Text className="text-sm font-t3-medium text-foreground">Try again</Text>
@@ -226,7 +247,7 @@ export function NewTaskSkillsPickerRouteScreen() {
       </ScrollView>
     ) : (
       <ScrollView
-        className="flex-1 bg-sheet"
+        className={glass ? "flex-1" : "flex-1 bg-sheet"}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{
           paddingBottom: Math.max(insets.bottom, 16) + 16,
@@ -238,18 +259,24 @@ export function NewTaskSkillsPickerRouteScreen() {
         showsVerticalScrollIndicator={false}
       >
         {environmentId !== null ? (
-          <View className="overflow-hidden rounded-2xl bg-card">
-            {skills.map((skill, index) => (
-              <SkillPickerRow
-                key={skill.id}
-                checked={pickedIds.has(skill.id)}
-                environmentId={environmentId}
-                isLast={index === skills.length - 1}
-                onToggle={toggleRow}
-                onUninstalled={dropSkillFromDraft}
-                skill={skill}
-              />
-            ))}
+          <View
+            className={glass ? GLASS_CARD_CLASS_NAME : "overflow-hidden rounded-2xl bg-card"}
+            style={glass ? glassCardStyle() : undefined}
+          >
+            {/* Checkmarks fade in on toggle, not when the list first renders. */}
+            <LayoutAnimationConfig skipEntering>
+              {skills.map((skill, index) => (
+                <SkillPickerRow
+                  key={skill.id}
+                  checked={pickedIds.has(skill.id)}
+                  environmentId={environmentId}
+                  isLast={index === skills.length - 1}
+                  onToggle={toggleRow}
+                  onUninstalled={dropSkillFromDraft}
+                  skill={skill}
+                />
+              ))}
+            </LayoutAnimationConfig>
           </View>
         ) : null}
       </ScrollView>
@@ -297,7 +324,7 @@ export function NewTaskSkillsPickerRouteScreen() {
           },
         }}
       />
-      {content}
+      {glass ? <SheetSurface>{content}</SheetSurface> : content}
     </>
   );
 }

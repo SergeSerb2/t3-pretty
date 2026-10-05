@@ -1,10 +1,11 @@
 import type { ChatAttachment, EnvironmentId } from "@t3tools/contracts";
 import { Image } from "expo-image";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { useAssetUrl } from "../../state/assets";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
 /**
  * The composer is shared, so editing a queued message needs a visible way back
@@ -74,6 +75,7 @@ function QueuedEditAttachmentChip(props: {
   readonly onRemove: (attachmentId: string) => void;
 }) {
   const { attachment } = props;
+  const glass = useGlassChromeActive();
   const isImage = attachment.mimeType.startsWith("image/");
   const url = useAssetUrl(
     props.environmentId,
@@ -89,7 +91,15 @@ function QueuedEditAttachmentChip(props: {
   );
 
   return (
-    <View className="max-w-[180px] flex-row items-center gap-2 rounded-xl border border-border bg-card py-1 pl-1 pr-2">
+    // Inside the frosted composer the chip is a tint, not a second plate.
+    <View
+      className={
+        glass
+          ? "max-w-[180px] flex-row items-center gap-2 rounded-xl border-chrome-glass-border bg-foreground/5 py-1 pl-1 pr-2"
+          : "max-w-[180px] flex-row items-center gap-2 rounded-xl border border-border bg-card py-1 pl-1 pr-2"
+      }
+      style={glass ? { borderWidth: StyleSheet.hairlineWidth } : undefined}
+    >
       {isImage && url !== null ? (
         <Image
           source={{ uri: url }}

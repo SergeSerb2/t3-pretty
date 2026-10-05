@@ -18,6 +18,7 @@ import Animated, {
   type SharedValue,
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { withUniwind } from "uniwind";
@@ -25,6 +26,7 @@ import { withUniwind } from "uniwind";
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { ControlPill } from "../../components/ControlPill";
+import { MOTION_SETTLE_SPRING } from "../../lib/motion";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { DevicePreviewButton } from "../devices/device-preview-button";
 import type { FloatingWorkingStatus } from "./floating-working-status";
@@ -97,10 +99,13 @@ export function FloatingWorkingControl(props: {
       (hasDevicePreview ? deviceWidth : 0),
   );
   const separationProgress = useSharedValue(props.showScrollToEnd ? 1 : 0);
+  // The blur-fallback arrow also grows into place instead of popping in.
+  const arrowScale = useSharedValue(props.showScrollToEnd ? 1 : 0.9);
 
   useEffect(() => {
-    separationProgress.value = withTiming(props.showScrollToEnd ? 1 : 0, CONTROL_TIMING);
-  }, [props.showScrollToEnd, separationProgress]);
+    separationProgress.set(withTiming(props.showScrollToEnd ? 1 : 0, CONTROL_TIMING));
+    arrowScale.set(withSpring(props.showScrollToEnd ? 1 : 0.9, MOTION_SETTLE_SPRING));
+  }, [arrowScale, props.showScrollToEnd, separationProgress]);
 
   const lift = props.lift;
   const liftStyle = useAnimatedStyle(() => ({
@@ -111,6 +116,17 @@ export function FloatingWorkingControl(props: {
   }));
   const arrowContentStyle = useAnimatedStyle(() => ({
     opacity: separationProgress.value,
+  }));
+  const fallbackArrowStyle = useAnimatedStyle(() => ({
+    opacity: separationProgress.value,
+    transform: [
+      { translateX: -CONTROL_SEPARATION * (1 - separationProgress.value) },
+      { scale: arrowScale.value },
+    ],
+  }));
+  // Alone, the arrow fades in with the overlay itself; it only needs the scale.
+  const soloArrowStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: arrowScale.value }],
   }));
 
   // Animate an in-flow sizer so native glass receives real layout updates.
@@ -289,7 +305,7 @@ export function FloatingWorkingControl(props: {
             pointerEvents={props.showScrollToEnd ? "auto" : "none"}
             accessibilityElementsHidden={!props.showScrollToEnd}
             importantForAccessibility={props.showScrollToEnd ? "auto" : "no-hide-descendants"}
-            style={[arrowTransformStyle, arrowContentStyle]}
+            style={fallbackArrowStyle}
           >
             <ControlPill
               accessibilityLabel="Scroll to end"
@@ -311,13 +327,15 @@ export function FloatingWorkingControl(props: {
           <ScrollToEndButton onPress={props.onScrollToEnd} />
         </UniwindGlassView>
       ) : (
-        <ControlPill
-          accessibilityLabel="Scroll to end"
-          activateOnPressIn
-          className="h-11 w-11 border border-border bg-glass-fallback shadow-md shadow-black/10"
-          icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
-          onPress={props.onScrollToEnd}
-        />
+        <Animated.View style={soloArrowStyle}>
+          <ControlPill
+            accessibilityLabel="Scroll to end"
+            activateOnPressIn
+            className="h-11 w-11 border border-border bg-glass-fallback shadow-md shadow-black/10"
+            icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
+            onPress={props.onScrollToEnd}
+          />
+        </Animated.View>
       )}
     </Animated.View>
   );

@@ -4,20 +4,29 @@ import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@t3tools/co
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Animated, Platform, Pressable, ScrollView, View } from "react-native";
+import { Animated, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Screen, ScreenStack, ScreenStackHeaderConfig } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Reanimated, { ReduceMotion, useAnimatedStyle, withTiming } from "react-native-reanimated";
+import Reanimated, {
+  ReduceMotion,
+  type SharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 
 import { MaterialButton } from "../../components/MaterialButton";
 import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { ControlPillMenu } from "../../components/ControlPill";
+import { SheetSurface } from "../../components/SheetSurface";
+import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
+import { MOTION_SETTLE_SPRING } from "../../lib/motion";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
@@ -25,6 +34,7 @@ import { useAssetUrl } from "../../state/assets";
 import { beginQueuedRunEdit, useQueuedRunEdit } from "../../state/queued-run-edit";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import {
   buildCancelQueuedRunCommand,
   resolveQueueDragBeforeRunId,
@@ -36,6 +46,11 @@ import { threadDragGapOffset } from "./threadDragGap";
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 const REMOVE_ACTION_WIDTH = 76;
 const THUMBNAIL_LIMIT = 3;
+// Over scenery each queued message is its own frosted card on the photo.
+const GLASS_ROW_STYLE = {
+  borderRadius: GLASS_CARD_RADIUS,
+  borderWidth: StyleSheet.hairlineWidth,
+} as const;
 
 type QueueTarget = { readonly environmentId: EnvironmentId; readonly threadId: ThreadId };
 type QueueAction = "steer" | "edit" | "up" | "down" | "remove";
@@ -54,6 +69,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const theme = useUniwindTheme();
+  const glass = useGlassChromeActive();
   const workflow = useThreadQueueWorkflow(target);
   const threadKey = scopedThreadKey(target.environmentId, target.threadId);
   const editing = useQueuedRunEdit(threadKey);
@@ -237,12 +253,17 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
             onLayout={({ nativeEvent }) => rowLayouts.current.set(run.id, nativeEvent.layout)}
           >
             <Animated.View
-              className="flex-row items-center border-b border-border bg-sheet"
-              style={
+              className={
+                glass
+                  ? "mb-2 flex-row items-center overflow-hidden border-continuous border-chrome-glass-border bg-chrome-glass"
+                  : "flex-row items-center border-b border-border bg-sheet"
+              }
+              style={[
+                glass ? GLASS_ROW_STYLE : undefined,
                 draggedRunId === run.id
                   ? { transform: [{ translateY: translation }], zIndex: 1, opacity: 0.85 }
-                  : undefined
-              }
+                  : undefined,
+              ]}
             >
               {canReorder ? (
                 // Outside the swipeable: two pans on one row would race, and
@@ -319,7 +340,8 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
               ) : null}
               <QueueRowSwipeable
                 enabled={draggedRunId === null && busyRunId === null && controls.canDismiss}
-                background={theme["--color-sheet"]}
+                background={glass ? "transparent" : theme["--color-sheet"]}
+                slideActions={glass}
                 onRemove={() => void act(run.id, "remove")}
               >
                 <ControlPillMenu
@@ -364,7 +386,11 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                     accessibilityHint="Opens this message in the composer for editing"
                     disabled={!controls.canEdit}
                     onPress={() => void act(run.id, "edit")}
-                    className="min-h-14 flex-row items-center gap-2.5 py-2.5 active:opacity-70"
+                    className={
+                      glass
+                        ? `min-h-14 flex-row items-center gap-2.5 py-2.5 active:opacity-70 ${canReorder ? "pr-3.5" : "px-3.5"}`
+                        : "min-h-14 flex-row items-center gap-2.5 py-2.5 active:opacity-70"
+                    }
                   >
                     <QueueAttachmentThumbnails
                       environmentId={target.environmentId}
@@ -413,7 +439,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
     // a nested native stack inside the sheet (same shape as the git sheet).
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <View collapsable={false} className="flex-1 bg-sheet">
+        <SheetSurface threadKey={threadKey}>
           <ScreenStack style={{ flex: 1 }}>
             <Screen
               activityState={2}
@@ -421,7 +447,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
               isNativeStack
               screenId="thread-queue-sheet-native"
               scrollEdgeEffects={HEADER_SCROLL_EDGE_EFFECTS}
-              style={{ backgroundColor: theme["--color-sheet"], flex: 1 }}
+              style={{ backgroundColor: glass ? "transparent" : theme["--color-sheet"], flex: 1 }}
             >
               {content}
               <ScreenStackHeaderConfig
@@ -437,7 +463,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
               />
             </Screen>
           </ScreenStack>
-        </View>
+        </SheetSurface>
       </GestureHandlerRootView>
     );
   }
@@ -459,7 +485,7 @@ function QueueShiftedRow(props: {
   readonly onLayout: React.ComponentProps<typeof View>["onLayout"];
   readonly children: React.ReactNode;
 }) {
-  const { dragging, offset } = props;
+  const { dragging, lifted, offset } = props;
   const style = useAnimatedStyle(() => ({
     transform: [
       {
@@ -467,6 +493,8 @@ function QueueShiftedRow(props: {
           ? withTiming(offset, { duration: 160, reduceMotion: ReduceMotion.System })
           : offset,
       },
+      // The held row rises slightly toward the finger.
+      { scale: withSpring(lifted ? 1.03 : 1, MOTION_SETTLE_SPRING) },
     ],
   }));
   return (
@@ -480,6 +508,8 @@ function QueueShiftedRow(props: {
 function QueueRowSwipeable(props: {
   readonly enabled: boolean;
   readonly background: string;
+  /** Slides the tray in with the row; a see-through row must not sit on top of it. */
+  readonly slideActions?: boolean;
   readonly onRemove: () => void;
   readonly children: React.ReactNode;
 }) {
@@ -501,18 +531,30 @@ function QueueRowSwipeable(props: {
         swipeableRef.current?.close();
         props.onRemove();
       }}
-      renderRightActions={() => (
-        <View
-          className="items-center justify-center bg-danger"
-          style={{ width: REMOVE_ACTION_WIDTH }}
-        >
-          <SymbolView name="trash" size={16} tintColorClassName="accent-danger-foreground" />
-          <Text className="pt-1 text-2xs font-t3-medium text-danger-foreground">Remove</Text>
-        </View>
+      renderRightActions={(_progress, translation) => (
+        <QueueRemoveAction translation={props.slideActions ? translation : undefined} />
       )}
     >
       {props.children}
     </ReanimatedSwipeable>
+  );
+}
+
+function QueueRemoveAction(props: { readonly translation?: SharedValue<number> }) {
+  const { translation } = props;
+  const slideStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translation ? Math.max(0, REMOVE_ACTION_WIDTH + translation.value) : 0 },
+    ],
+  }));
+  return (
+    <Reanimated.View
+      className="items-center justify-center bg-danger"
+      style={[{ width: REMOVE_ACTION_WIDTH }, slideStyle]}
+    >
+      <SymbolView name="trash" size={16} tintColorClassName="accent-danger-foreground" />
+      <Text className="pt-1 text-2xs font-t3-medium text-danger-foreground">Remove</Text>
+    </Reanimated.View>
   );
 }
 

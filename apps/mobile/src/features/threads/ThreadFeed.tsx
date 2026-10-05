@@ -467,6 +467,9 @@ function isFileAttachment(attachment: ChatAttachment): attachment is ChatFileAtt
   return attachment.type === "file";
 }
 
+// Inline feed cards over scenery: frosted fill with a hairline edge.
+const GLASS_FEED_CARD_BORDER = { borderWidth: StyleSheet.hairlineWidth } as const;
+
 function MessageAttachmentFile(props: {
   readonly environmentId: EnvironmentId;
   readonly attachment: ChatFileAttachment;
@@ -481,6 +484,7 @@ function MessageAttachmentFile(props: {
     reportFailure: false,
   });
   const preparedConnection = usePreparedConnection(props.environmentId);
+  const glass = useGlassChromeActive();
   const { attachment } = props;
   const videoType = videoMimeType(attachment);
   const isPdf = isPdfFile(attachment);
@@ -595,7 +599,12 @@ function MessageAttachmentFile(props: {
           accessibilityValue={{ text: `${fileTypeLabel}, ${sizeLabel}` }}
           accessibilityState={{ disabled: opening || httpBaseUrl === null, busy: opening }}
           disabled={opening || httpBaseUrl === null}
-          className="min-w-0 flex-row items-center gap-3 rounded-xl border border-border bg-card p-3 active:bg-subtle"
+          className={
+            glass
+              ? "min-w-0 flex-row items-center gap-3 rounded-[20px] border-continuous border-chrome-glass-border bg-chrome-glass p-3 active:bg-foreground/[0.06]"
+              : "min-w-0 flex-row items-center gap-3 rounded-xl border border-border bg-card p-3 active:bg-subtle"
+          }
+          style={glass ? GLASS_FEED_CARD_BORDER : undefined}
           onLongPress={() => shareFile(sourceIdentifier)}
           onPress={() =>
             isPdf
@@ -837,8 +846,16 @@ function ArtifactTemplateCard(props: {
   readonly template: CodexArtifactTemplate;
   readonly onUse?: ((template: CodexArtifactTemplate) => void) | undefined;
 }) {
+  const glass = useGlassChromeActive();
   return (
-    <View className="my-2 min-w-0 flex-row items-center gap-3 rounded-2xl border border-border bg-card px-3 py-3">
+    <View
+      className={
+        glass
+          ? "my-2 min-w-0 flex-row items-center gap-3 rounded-[20px] border-continuous border-chrome-glass-border bg-chrome-glass px-3 py-3"
+          : "my-2 min-w-0 flex-row items-center gap-3 rounded-2xl border border-border bg-card px-3 py-3"
+      }
+      style={glass ? GLASS_FEED_CARD_BORDER : undefined}
+    >
       <View className="relative h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-subtle">
         <SymbolView
           name={ARTIFACT_TEMPLATE_SYMBOL_BY_KIND[props.template.artifactKind]}
@@ -1515,7 +1532,7 @@ function renderFeedEntry(
     readonly renderViewedImage: MarkdownImageRenderer;
     readonly renderReasoning: (text: string) => ReactNode;
     readonly iconSubtleColor: string | import("react-native").ColorValue;
-    readonly screenColor: string;
+    readonly screenColor: string | null;
     readonly userBubbleSurface: ViewStyle;
     readonly markdownStyles: MarkdownStyleSets;
     readonly reviewCommentColors: ReviewCommentColors;
@@ -1620,7 +1637,10 @@ function renderFeedEntry(
     const { message } = entry;
     const isUser = message.role === "user";
     const rawPresentation = resolveUserMessagePresentation(message);
-    const presentation = { ...rawPresentation, text: isUser ? stripHiddenInstructionSuffixes(rawPresentation.text) : rawPresentation.text };
+    const presentation = {
+      ...rawPresentation,
+      text: isUser ? stripHiddenInstructionSuffixes(rawPresentation.text) : rawPresentation.text,
+    };
     const renderedText = renderAssistantCitationsAsText(presentation.text);
     const styles = isUser ? markdownStyles.user : markdownStyles.assistant;
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
@@ -2234,10 +2254,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
 
   const theme = useUniwindTheme();
   const iconSubtleColor = theme["--color-icon-subtle"];
-  const screenColor = theme["--color-screen"];
+  const glassBubble = useGlassChromeActive();
+  // Edge fades paint the screen color, which would band over scenery.
+  const screenColor = glassBubble ? null : theme["--color-screen"];
   const userBubbleColor = theme["--color-user-bubble"];
   const chromeGlassBorder = theme["--color-chrome-glass-border"];
-  const glassBubble = useGlassChromeActive();
   // Over scenery the bubble is tinted glass: the sage tint stays dense enough
   // to carry its text while the photo reads through, with a hairline edge.
   const userBubbleSurface = useMemo<ViewStyle>(
@@ -3183,6 +3204,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
 });
 
 function ThreadFeedLoadEarlierControl(props: ThreadFeedHistoryControls) {
+  const glass = useGlassChromeActive();
   const theme = useUniwindTheme();
   const mutedColor = theme["--color-icon-subtle"];
   const accentColor = theme["--color-primary"];
@@ -3197,7 +3219,12 @@ function ThreadFeedLoadEarlierControl(props: ThreadFeedHistoryControls) {
           accessibilityLabel="Load earlier activity"
           disabled={props.loading}
           onPress={props.onLoadEarlier}
-          className="min-h-9 flex-row items-center justify-center gap-2 rounded-full border border-border/60 bg-surface/80 px-4 py-2 disabled:opacity-50"
+          className={
+            glass
+              ? "min-h-9 flex-row items-center justify-center gap-2 rounded-full border-chrome-glass-border bg-chrome-glass px-4 py-2 active:bg-foreground/[0.06] disabled:opacity-50"
+              : "min-h-9 flex-row items-center justify-center gap-2 rounded-full border border-border/60 bg-surface/80 px-4 py-2 disabled:opacity-50"
+          }
+          style={glass ? GLASS_FEED_CARD_BORDER : undefined}
         >
           {props.loading ? (
             <ActivityIndicator size="small" color={accentColor} />

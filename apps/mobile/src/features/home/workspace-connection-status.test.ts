@@ -30,6 +30,7 @@ describe("workspace connection status", () => {
 
     expect(workspaceConnectionStatusPresentation(state)).toEqual({
       label: "You are offline",
+      shortLabel: "Offline",
       showsProgress: false,
     });
   });
@@ -54,6 +55,7 @@ describe("workspace connection status", () => {
 
     expect(workspaceConnectionStatusPresentation(state)).toEqual({
       label: "Reconnecting to Julius’s Mac mini",
+      shortLabel: "Reconnecting…",
       showsProgress: true,
     });
   });
@@ -67,6 +69,7 @@ describe("workspace connection status", () => {
 
     expect(workspaceConnectionStatusPresentation(state)).toEqual({
       label: "Could not reach Julius’s Mac mini",
+      shortLabel: "Can’t connect",
       showsProgress: false,
     });
   });
@@ -76,6 +79,7 @@ describe("workspace connection status", () => {
 
     expect(workspaceConnectionStatusPresentation(state)).toEqual({
       label: "Syncing threads...",
+      shortLabel: "Syncing…",
       showsProgress: true,
     });
   });
@@ -88,6 +92,7 @@ describe("workspace connection status", () => {
 
     expect(workspaceConnectionStatusPresentation(state)).toEqual({
       label: "Loading threads...",
+      shortLabel: "Loading…",
       showsProgress: true,
     });
   });

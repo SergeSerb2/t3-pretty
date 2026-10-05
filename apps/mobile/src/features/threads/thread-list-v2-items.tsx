@@ -24,9 +24,23 @@ import {
   resolveSnoozePresets,
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { MenuAction } from "@react-native-menu/menu";
-import { memo, use, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
-import { Alert, Pressable, useWindowDimensions, View } from "react-native";
+import * as Haptics from "expo-haptics";
+import {
+  memo,
+  use,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
+import { Alert, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
 import { SymbolView } from "../../components/AppSymbol";
@@ -35,6 +49,7 @@ import { ControlPillMenu } from "../../components/ControlPill";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { ProviderIcon, ProviderInstanceIcon } from "../../components/ProviderIcon";
+import { StatusPill, type StatusTone } from "../../components/StatusPill";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
@@ -43,23 +58,32 @@ import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useThreadPr } from "../../state/use-thread-pr";
 import { useSwipeRowDormant } from "../home/swipe-row-activation";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
+import {
+  clearThreadDeparting,
+  getThreadDepartureSnapshot,
+  subscribeThreadDeparture,
+  threadDepartureHasLanded,
+} from "../home/thread-departure-store";
+import { MOTION_TIMING } from "../../lib/motion";
 import { THREAD_RENAME_MENU_ACTION } from "./thread-rename";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
 import {
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   resolveThreadListV2SnoozeGateExpiryMs,
   resolveThreadListV2SnoozeMenuSelection,
-  threadHasUnseenCompletion,
+  resolveThreadListV2Badge,
   resolveThreadListV2Status,
   resolveThreadListV2ProviderDrivers,
   resolveThreadListV2SwipeActions,
-  type ThreadListV2Status,
+  type ThreadListV2Badge,
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
 import { ThreadActiveSubagentCount } from "./thread-active-subagent-count";
 import { ThreadListGlassContext } from "./thread-list-glass-context";
 import type { ThreadStatusPresentation } from "./threadPresentation";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
+import { ThreadCardTile } from "./thread-card-tile";
+import { ThreadDisclosureChevron } from "./thread-work-log";
 
 /**
  * Thread List v2 renders one flat native list: rich edge-to-edge rows for
@@ -70,17 +94,65 @@ import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 // Status hues follow the system-wide convention set by sidebar v1 and the
 // Live Activity/widgets (amber approval, indigo input, sky working) so a
-// thread reads the same color everywhere it surfaces.
-const STATUS_LABEL_BY_STATUS: Partial<
-  Record<ThreadListV2Status, { label: string; className: string }>
+// thread reads the same color everywhere it surfaces. Flat rows color the
+// label; glass Home cards set it in a tinted pill, the automation list's look.
+const STATUS_BY_BADGE: Record<
+  ThreadListV2Badge,
+  { label: string; className: string; pill: Omit<StatusTone, "label"> }
 > = {
-  approval: { label: "Approval", className: "text-warning-foreground" },
-  input: { label: "Input", className: "text-adaptive-indigo-600-300" },
-  working: { label: "Working", className: "text-adaptive-sky-600-400" },
-  monitoring: { label: "Monitoring", className: "text-foreground" },
-  failed: { label: "Failed", className: "text-danger-foreground" },
-  done: { label: "Done", className: "text-adaptive-emerald-700-300" },
-  limited: { label: "Limited", className: "text-warning-foreground" },
+  approval: {
+    label: "Approval",
+    className: "text-warning-foreground",
+    pill: {
+      pillClassName: "bg-adaptive-amber-500-a12-a16",
+      textClassName: "text-adaptive-amber-700-300",
+    },
+  },
+  input: {
+    label: "Input",
+    className: "text-adaptive-indigo-600-300",
+    pill: {
+      pillClassName: "bg-adaptive-indigo-500-a12-a16",
+      textClassName: "text-adaptive-indigo-600-300",
+    },
+  },
+  working: {
+    label: "Working",
+    className: "text-adaptive-sky-600-400",
+    pill: {
+      pillClassName: "bg-adaptive-sky-500-a12-a16",
+      textClassName: "text-adaptive-sky-700-300",
+    },
+  },
+  monitoring: {
+    label: "Monitoring",
+    className: "text-foreground",
+    pill: { pillClassName: "bg-adaptive-zinc-500-a12-a16", textClassName: "text-foreground" },
+  },
+  failed: {
+    label: "Failed",
+    className: "text-danger-foreground",
+    pill: {
+      pillClassName: "bg-adaptive-rose-500-a12-a16",
+      textClassName: "text-adaptive-rose-700-300",
+    },
+  },
+  done: {
+    label: "Done",
+    className: "text-adaptive-emerald-700-300",
+    pill: {
+      pillClassName: "bg-adaptive-emerald-500-a12-a16",
+      textClassName: "text-adaptive-emerald-700-300",
+    },
+  },
+  limited: {
+    label: "Limited",
+    className: "text-warning-foreground",
+    pill: {
+      pillClassName: "bg-adaptive-amber-500-a12-a16",
+      textClassName: "text-adaptive-amber-700-300",
+    },
+  },
 };
 
 // Menus keep lifecycle and title regeneration together. Archive keeps its
@@ -122,6 +194,9 @@ const SIDEBAR_V2_ROW_RADIUS = 12;
 
 function ThreadListV2Section(props: {
   readonly label: string;
+  /** Shelf size. Glass headers show it as a badge; flat ones fold it into
+      the collapsed label. */
+  readonly count?: number;
   readonly pane?: "screen" | "sidebar";
   readonly tone?: "default" | "snoozed";
   readonly disclosure?: {
@@ -136,23 +211,60 @@ function ThreadListV2Section(props: {
   const sidebarPane = props.pane === "sidebar";
   // Glass cards inset 12 + pad 16: the label lines up with card text.
   const glass = use(ThreadListGlassContext) && !sidebarPane;
+  const theme = useUniwindTheme();
   const className = cn(
     "mb-1.5 mt-4 flex-row items-center gap-2.5",
     sidebarPane ? "px-3" : glass ? "px-7" : "px-5",
   );
-  const content = (
+  const flatLabel =
+    props.count !== undefined && props.disclosure?.expanded === false
+      ? `${props.label} (${props.count})`
+      : props.label;
+  // Over the photo a hairline rule reads as a scratch, so glass headers are a
+  // label, a frosted count badge and the disclosure chevron.
+  const content: ReactNode = glass ? (
+    <>
+      <Text
+        className={cn(
+          "text-sm font-t3-bold",
+          snoozed ? "text-primary" : "text-foreground-secondary",
+        )}
+      >
+        {props.label}
+      </Text>
+      {props.count !== undefined ? (
+        <View
+          className="min-w-[22px] items-center rounded-full border-chrome-glass-border bg-chrome-glass px-1.5"
+          style={{ borderWidth: StyleSheet.hairlineWidth, paddingVertical: 1 }}
+        >
+          <Text className="text-xs font-t3-medium tabular-nums text-foreground-muted">
+            {props.count}
+          </Text>
+        </View>
+      ) : null}
+      <View className="flex-1" />
+      {props.disclosure ? (
+        <ThreadDisclosureChevron
+          collapsedDirection="down"
+          expanded={props.disclosure.expanded}
+          size={11}
+          tintColor={theme["--color-foreground-muted"]}
+        />
+      ) : null}
+    </>
+  ) : (
     <>
       <Text
         className={cn(
           "text-xs font-t3-medium",
           sidebarPane
             ? "text-drawer-foreground-muted"
-            : snoozed || glass
+            : snoozed
               ? "text-foreground-secondary"
               : "text-foreground-tertiary",
         )}
       >
-        {props.label}
+        {flatLabel}
       </Text>
       <View
         className={cn(
@@ -161,35 +273,40 @@ function ThreadListV2Section(props: {
         )}
       />
       {props.disclosure ? (
-        <SymbolView
-          name="chevron.down"
+        <ThreadDisclosureChevron
+          collapsedDirection="down"
+          expanded={props.disclosure.expanded}
           size={10}
-          tintColorClassName={
-            sidebarPane
-              ? "accent-drawer-foreground-muted"
-              : snoozed
-                ? "accent-icon-muted"
-                : "accent-foreground-muted"
+          tintColor={
+            theme[
+              sidebarPane
+                ? "--color-drawer-foreground-muted"
+                : snoozed
+                  ? "--color-icon-muted"
+                  : "--color-foreground-muted"
+            ]
           }
-          type="monochrome"
-          style={{ transform: [{ rotate: props.disclosure.expanded ? "180deg" : "0deg" }] }}
         />
       ) : null}
     </>
   );
 
-  return props.disclosure ? (
+  const disclosure = props.disclosure;
+  return disclosure ? (
     <Pressable
-      accessibilityHint={props.disclosure.accessibilityHint}
-      accessibilityLabel={props.disclosure.accessibilityLabel}
+      accessibilityHint={disclosure.accessibilityHint}
+      accessibilityLabel={disclosure.accessibilityLabel}
       accessibilityRole="button"
       accessibilityState={{
-        disabled: props.disclosure.disabled,
-        expanded: props.disclosure.expanded,
+        disabled: disclosure.disabled,
+        expanded: disclosure.expanded,
       }}
       className={className}
-      disabled={props.disclosure.disabled}
-      onPress={props.disclosure.onToggle}
+      disabled={disclosure.disabled}
+      onPress={() => {
+        void Haptics.selectionAsync();
+        disclosure.onToggle();
+      }}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
       {content}
@@ -220,10 +337,10 @@ const SHELF_LABELS = { snoozed: "Snoozed", stored: "Stored", settled: "Settled" 
 function ThreadListV2ShelfHeader(
   props: ThreadListV2ShelfHeaderProps & { readonly kind: keyof typeof SHELF_LABELS },
 ) {
-  const label = SHELF_LABELS[props.kind];
   return (
     <ThreadListV2Section
-      label={props.expanded ? label : `${label} (${props.count})`}
+      label={SHELF_LABELS[props.kind]}
+      count={props.count}
       pane={props.pane}
       tone={props.kind === "snoozed" ? "snoozed" : "default"}
       disclosure={{
@@ -330,7 +447,7 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   const rowContent = (
     <>
       <View className="flex-row items-center gap-1.5">
-        {props.project ? (
+        {props.project && !glassAppearance ? (
           <ProjectFavicon
             environmentId={pendingTask.environmentId}
             faviconPath={props.project.faviconPath}
@@ -448,7 +565,13 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
           accessibilityRole="button"
           key={pendingTask.key}
           className={glassAppearance ? undefined : sidebarPane ? "bg-drawer" : "bg-screen"}
-          interactionClassName={sidebarPane ? "bg-thread-hover" : "bg-row-hover"}
+          interactionClassName={
+            glassAppearance
+              ? glassAppearance.interactionClassName
+              : sidebarPane
+                ? "bg-thread-hover"
+                : "bg-row-hover"
+          }
           onPress={() => onSelectPendingTask(pendingTask)}
           style={
             glassAppearance
@@ -465,7 +588,20 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
           {sidebarPane ? (
             rowContent
           ) : glassAppearance ? (
-            <View className="px-4 py-3">{rowContent}</View>
+            <>
+              <View className="flex-row items-start gap-3 px-4 py-3">
+                <ThreadCardTile
+                  environmentId={pendingTask.environmentId}
+                  photoURL={null}
+                  project={props.project}
+                />
+                <View className="min-w-0 flex-1">{rowContent}</View>
+              </View>
+              <View
+                pointerEvents="none"
+                style={[glassAppearance.outlineStyle, StyleSheet.absoluteFill]}
+              />
+            </>
           ) : (
             <View>
               <View className="px-5 py-2.5">{rowContent}</View>
@@ -525,6 +661,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly pane?: "screen" | "sidebar";
   /** Keeps row hairlines inside a section; section headers draw their own rule. */
   readonly showTrailingDivider?: boolean;
+  /** Slim row directly below another slim row; glass rows join into one card. */
+  readonly continuesGroup?: boolean;
+  /** Photo for a glass Home card's leading tile (see ThreadCardTile). */
+  readonly sceneryThumbURL?: string | null;
   /** Highlights the thread open in the detail pane (iPad split view). The
       compact Home list never sets it — phones navigate away on select. */
   readonly selected?: boolean;
@@ -628,7 +768,22 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected === true;
   const glass = use(ThreadListGlassContext) && !sidebarPane;
-  const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected, glass);
+  // Shelf rows run together as one grouped card; active cards stand alone
+  // and lead with a photo tile.
+  const groupedRow = glass && variant === "slim";
+  const glassCard = glass && variant === "card";
+  const rowAppearance = getThreadListV2RowAppearance(
+    theme,
+    sidebarPane,
+    selected,
+    glass,
+    groupedRow
+      ? {
+          joinsPrevious: props.continuesGroup === true,
+          joinsNext: props.showTrailingDivider === true,
+        }
+      : undefined,
+  );
   const subagentColor = selected
     ? String(
         theme[
@@ -642,13 +797,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       : "#0284c7";
 
   const status = resolveThreadListV2Status(thread);
-  // "Done" marks a completion the user has not opened yet — same emerald
+  // "Done" also marks a completion the user has not opened yet — same emerald
   // label as the web sidebar, sourced from the server-side visited watermark
   // so checking a thread on any device clears it everywhere.
-  const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
-  const statusLabel =
-    STATUS_LABEL_BY_STATUS[status] ??
-    (isUnread ? { label: "Done", className: "text-adaptive-emerald-700-300" } : undefined);
+  const badge = resolveThreadListV2Badge(thread);
+  const statusLabel = badge === null ? undefined : STATUS_BY_BADGE[badge];
   // The timestamp is precomputed on the list item (same stamps the settled
   // tail sorts by) so a minute tick only re-renders rows that draw it.
   const timeLabel = props.timeLabel;
@@ -1066,10 +1219,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     ) : null;
   const cardContent = (
     <>
-      <View className="flex-row items-center gap-1.5">
+      <View className={cn("flex-row items-center gap-1.5", glassCard && "min-h-6")}>
         {nestToggle}
         {collapsedNestMeta}
-        {props.project ? (
+        {props.project && !glassCard ? (
           <ProjectFavicon
             environmentId={thread.environmentId}
             faviconPath={props.project.faviconPath}
@@ -1110,17 +1263,23 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             type="monochrome"
           />
         ) : null}
-        <Text
-          className={cn(
-            "text-xs tabular-nums",
-            statusLabel?.className ??
-              (selected
-                ? selectedThreadRowColors.foregroundClassName
-                : rowAppearance.tertiaryForegroundClassName),
+        <RowStatusFade identity={rowIdentity} status={statusLabel?.label ?? null}>
+          {glassCard && statusLabel ? (
+            <StatusPill label={statusLabel.label} size="compact" {...statusLabel.pill} />
+          ) : (
+            <Text
+              className={cn(
+                "text-xs tabular-nums",
+                statusLabel?.className ??
+                  (selected
+                    ? selectedThreadRowColors.foregroundClassName
+                    : rowAppearance.tertiaryForegroundClassName),
+              )}
+            >
+              {statusLabel?.label ?? timeLabel}
+            </Text>
           )}
-        >
-          {statusLabel?.label ?? timeLabel}
-        </Text>
+        </RowStatusFade>
       </View>
       <View className="mt-1 flex-row items-center gap-1">
         <ThreadActiveSubagentCount color={subagentColor} count={thread.activeSubagentCount} />
@@ -1169,6 +1328,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
              truncation), and the wrapper takes the slack so the trailers
              stay pinned right. */
           <View className="min-w-0 flex-1 flex-row items-center gap-1">
+            {glassCard && thread.branch ? (
+              <SymbolView
+                name="arrow.triangle.branch"
+                size={11}
+                tintColorClassName={rowAppearance.mutedIconTintClassName}
+                type="monochrome"
+              />
+            ) : null}
             <Text
               className={cn(
                 "shrink text-xs",
@@ -1306,12 +1473,26 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
              separates rows. The opaque screen background stays so swipe
              actions reveal behind the row. */
           <View>
-            <View
-              className={glass ? "px-4 py-3" : THREAD_LIST_V2_ROW_CONTENT_CLASS_NAME}
-              style={props.nest === "child" ? { paddingLeft: 36 } : undefined}
-            >
-              {cardContent}
-            </View>
+            {glassCard ? (
+              <View
+                className="flex-row items-start gap-3 px-4 py-3"
+                style={props.nest === "child" ? { paddingLeft: 36 } : undefined}
+              >
+                <ThreadCardTile
+                  environmentId={thread.environmentId}
+                  photoURL={props.sceneryThumbURL ?? null}
+                  project={props.project}
+                />
+                <View className="min-w-0 flex-1">{cardContent}</View>
+              </View>
+            ) : (
+              <View
+                className={THREAD_LIST_V2_ROW_CONTENT_CLASS_NAME}
+                style={props.nest === "child" ? { paddingLeft: 36 } : undefined}
+              >
+                {cardContent}
+              </View>
+            )}
             {THREAD_LIST_V2_ROW_DIVIDERS && !glass && props.showTrailingDivider !== false ? (
               <View className="ml-5 h-px bg-border-subtle" />
             ) : null}
@@ -1397,11 +1578,26 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               : timeLabel}
           </Text>
         </View>
+        {groupedRow && props.continuesGroup === true ? (
+          // Inset like a grouped table: the rule starts where the title does.
+          <View
+            pointerEvents="none"
+            className="absolute right-0 top-0 bg-chrome-glass-border"
+            style={{
+              height: StyleSheet.hairlineWidth,
+              left: props.nest === "child" ? 36 : props.project ? 41 : 16,
+            }}
+          />
+        ) : null}
       </RowPressable>
     );
 
   return (
-    <View collapsable={false}>
+    <RowArrival
+      identity={rowIdentity}
+      snoozed={snoozedRow}
+      settled={variant === "slim" && !snoozedRow && !storedRow}
+    >
       {customSnoozeOpen && (
         <CustomSnoozeSheet onClose={() => setCustomSnoozeOpen(false)} onSnooze={handleSnooze} />
       )}
@@ -1412,6 +1608,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         actionsBackgroundColor={rowAppearance.swipeActionsBackgroundColor}
         compactActions={variant === "slim"}
         containerStyle={rowAppearance.swipeContainerStyle}
+        outlineStyle={rowAppearance.outlineStyle}
         enableTrackpadSwipe
         // Full swipe commits the advertised lifecycle action (Settle /
         // Un-settle), never the secondary snooze action.
@@ -1458,6 +1655,74 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           </ControlPillMenu>
         )}
       </ThreadSwipeable>
-    </View>
+    </RowArrival>
   );
 });
+
+/**
+ * Fades a row in where a settle or snooze landed it (or back in place when
+ * the command failed). Driven by the departure marker, never by mounting:
+ * recycled cells mount without it, so scrolling never replays the fade.
+ */
+function RowArrival(props: {
+  readonly identity: string;
+  readonly snoozed: boolean;
+  readonly settled: boolean;
+  readonly children: ReactNode;
+}) {
+  const { identity } = props;
+  const subscribe = useCallback(
+    (listener: () => void) => subscribeThreadDeparture(identity, listener),
+    [identity],
+  );
+  const departure = useSyncExternalStore(subscribe, () => getThreadDepartureSnapshot(identity));
+  const landed = threadDepartureHasLanded(departure.departingKind, {
+    snoozed: props.snoozed,
+    settled: props.settled,
+  });
+  useEffect(() => {
+    if (landed) clearThreadDeparting(identity);
+  }, [identity, landed]);
+  const progress = useSharedValue(departure.arriving ? 0 : 1);
+  useLayoutEffect(() => {
+    // A cell recycled mid-fade must not hand its opacity to the next thread.
+    if (!departure.arriving) {
+      progress.set(1);
+      return;
+    }
+    progress.set(0);
+    progress.set(withTiming(1, MOTION_TIMING));
+  }, [departure.arriving, identity, progress]);
+  const style = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateY: (1 - progress.value) * 6 }],
+  }));
+  return (
+    <Animated.View collapsable={false} style={style}>
+      {props.children}
+    </Animated.View>
+  );
+}
+
+/**
+ * Cross-fades the status slot when a thread changes state (Working → Done).
+ * Keyed on the thread so a recycled cell taking a new thread never fades,
+ * and on the status kind so minute ticks of the timestamp never fade.
+ */
+function RowStatusFade(props: {
+  readonly identity: string;
+  readonly status: string | null;
+  readonly children: ReactNode;
+}) {
+  const opacity = useSharedValue(1);
+  const previous = useRef({ identity: props.identity, status: props.status });
+  useLayoutEffect(() => {
+    const last = previous.current;
+    previous.current = { identity: props.identity, status: props.status };
+    if (last.identity !== props.identity || last.status === props.status) return;
+    opacity.set(0);
+    opacity.set(withTiming(1, MOTION_TIMING));
+  }, [opacity, props.identity, props.status]);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  return <Animated.View style={style}>{props.children}</Animated.View>;
+}

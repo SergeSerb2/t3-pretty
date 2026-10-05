@@ -26,6 +26,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { MaterialScreenContent } from "../../components/MaterialScreenContent";
+import { SheetSurface } from "../../components/SheetSurface";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
@@ -43,6 +44,9 @@ import {
 } from "../layout/native-mail-search-toolbar";
 import { branchBadgeLabel, useNewTaskFlow } from "./new-task-flow-provider";
 import { checkoutNewTaskBranch } from "./checkout-new-task-branch";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
+import { GlassRowPressable } from "../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
 
 function SelectionRow(props: {
   readonly icon?: "arrow.triangle.branch" | ReactNode;
@@ -53,6 +57,7 @@ function SelectionRow(props: {
   readonly subtitle?: string;
   readonly title: string;
 }) {
+  const glass = useGlassChromeActive();
   if (Platform.OS === "android") {
     return (
       <MaterialListRow
@@ -83,14 +88,16 @@ function SelectionRow(props: {
     );
   }
   return (
-    <Pressable
+    <GlassRowPressable
       accessibilityLabel={[props.title, props.subtitle].filter(Boolean).join(", ")}
       accessibilityRole="radio"
       accessibilityState={{ checked: props.selected, disabled: props.disabled === true }}
       className={cn(
-        "min-h-14 flex-row items-center gap-3 bg-grouped-card px-4 py-3 active:bg-subtle",
+        "min-h-14 flex-row items-center gap-3 px-4 py-3",
+        !glass && "bg-grouped-card",
         !props.isLast && "border-b border-border-subtle",
       )}
+      fallbackClassName="active:bg-subtle"
       disabled={props.disabled}
       onPress={props.onPress}
       style={{ opacity: props.disabled ? 0.45 : 1 }}
@@ -124,7 +131,7 @@ function SelectionRow(props: {
           weight="semibold"
         />
       ) : null}
-    </Pressable>
+    </GlassRowPressable>
   );
 }
 
@@ -133,8 +140,11 @@ function ToggleRow(props: {
   readonly value: boolean;
   readonly onValueChange: (value: boolean) => void;
 }) {
+  const glass = useGlassChromeActive();
   return (
-    <View className="min-h-14 flex-row items-center gap-3 bg-grouped-card px-4 py-3">
+    <View
+      className={cn("min-h-14 flex-row items-center gap-3 px-4 py-3", !glass && "bg-grouped-card")}
+    >
       <Text
         className={cn(
           "min-w-0 flex-1 text-base text-foreground",
@@ -163,15 +173,20 @@ function BranchSelectionRow(props: {
   readonly selected: boolean;
 }) {
   const onPress = useCallback(() => props.onSelect(props.branch), [props.branch, props.onSelect]);
+  const glass = useGlassChromeActive();
 
   return (
     <View
+      style={glass ? glassCardStyle(props.isFirst, props.isLast) : undefined}
       className={cn(
-        props.isFirst &&
+        glass && GLASS_CARD_CLASS_NAME,
+        !glass &&
+          props.isFirst &&
           (Platform.OS === "android"
             ? "overflow-hidden rounded-t-[28px]"
             : "overflow-hidden rounded-t-2xl"),
-        props.isLast &&
+        !glass &&
+          props.isLast &&
           (Platform.OS === "android"
             ? "overflow-hidden rounded-b-[28px]"
             : "overflow-hidden rounded-b-2xl"),
@@ -199,6 +214,7 @@ export function NewTaskEnvironmentPickerRouteScreen() {
     reportFailure: false,
   });
   const [movingToEnvironmentId, setMovingToEnvironmentId] = useState<EnvironmentId | null>(null);
+  const glass = useGlassChromeActive();
 
   // A thread without a project moves to the other machine's own Scratch
   // project, which is created there first if it does not exist yet.
@@ -229,7 +245,7 @@ export function NewTaskEnvironmentPickerRouteScreen() {
   }
 
   return (
-    <View className="flex-1 bg-sheet" collapsable={false}>
+    <SheetSurface>
       <NativeStackScreenOptions
         options={{
           headerShown: Platform.OS !== "android",
@@ -245,21 +261,55 @@ export function NewTaskEnvironmentPickerRouteScreen() {
       ) : null}
       <MaterialScreenContent>
         <LegendList
-          className="flex-1" contentInsetAdjustmentBehavior="automatic"
-          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 16, paddingHorizontal: 16, paddingTop: 16 }}
-          data={flow.environments} estimatedItemSize={56}
-          extraData={`${flow.selectedEnvironmentId ?? ""}:${movingToEnvironmentId ?? ""}`}
-          keyExtractor={(environment) => String(environment.environmentId)} recycleItems
+          className="flex-1"
+          contentInsetAdjustmentBehavior="automatic"
+          contentContainerStyle={{
+            paddingBottom: Math.max(insets.bottom, 16) + 16,
+            paddingHorizontal: 16,
+            paddingTop: 16,
+          }}
+          data={flow.environments}
+          estimatedItemSize={56}
+          extraData={`${flow.selectedEnvironmentId ?? ""}:${movingToEnvironmentId ?? ""}:${glass}`}
+          keyExtractor={(environment) => String(environment.environmentId)}
+          recycleItems
           renderItem={({ item: environment, index }) => (
-            <View className={cn("overflow-hidden", index === 0 && "rounded-t-2xl", index === flow.environments.length - 1 && "rounded-b-2xl")}>
+            <View
+              className={
+                glass
+                  ? GLASS_CARD_CLASS_NAME
+                  : cn(
+                      "overflow-hidden",
+                      index === 0 && "rounded-t-2xl",
+                      index === flow.environments.length - 1 && "rounded-b-2xl",
+                    )
+              }
+              style={
+                glass
+                  ? glassCardStyle(index === 0, index === flow.environments.length - 1)
+                  : undefined
+              }
+            >
               <SelectionRow
-                icon={<EnvironmentMachineSymbol kind={resolveEnvironmentMachineKind(serverConfigs.get(environment.environmentId) ?? null)} size={Platform.OS === "android" ? 24 : 17} tintColorClassName="accent-icon-muted" />}
+                icon={
+                  <EnvironmentMachineSymbol
+                    kind={resolveEnvironmentMachineKind(
+                      serverConfigs.get(environment.environmentId) ?? null,
+                    )}
+                    size={Platform.OS === "android" ? 24 : 17}
+                    tintColorClassName="accent-icon-muted"
+                  />
+                }
                 isLast={index === flow.environments.length - 1}
                 disabled={movingToEnvironmentId !== null}
                 onPress={() => {
                   void Haptics.selectionAsync();
-                  if (flow.isScratchDraft && environment.environmentId !== flow.selectedEnvironmentId) {
-                    void moveScratchDraft(environment.environmentId); return;
+                  if (
+                    flow.isScratchDraft &&
+                    environment.environmentId !== flow.selectedEnvironmentId
+                  ) {
+                    void moveScratchDraft(environment.environmentId);
+                    return;
                   }
                   if (!flow.isScratchDraft) flow.selectEnvironment(environment.environmentId);
                   navigation.goBack();
@@ -268,10 +318,11 @@ export function NewTaskEnvironmentPickerRouteScreen() {
                 title={environment.environmentLabel}
               />
             </View>
-          )} showsVerticalScrollIndicator={false}
+          )}
+          showsVerticalScrollIndicator={false}
         />
       </MaterialScreenContent>
-    </View>
+    </SheetSurface>
   );
 }
 
@@ -414,6 +465,7 @@ export function BranchPickerScreen(props: {
 }) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const glass = useGlassChromeActive();
   const usesNativeMailSearchToolbar = Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
   const selectedBranchName =
     props.selectedBranchName ??
@@ -458,8 +510,13 @@ export function BranchPickerScreen(props: {
     <View
       className={cn(
         "mb-3 overflow-hidden",
-        Platform.OS === "android" ? "rounded-[28px]" : "rounded-2xl",
+        glass
+          ? GLASS_CARD_CLASS_NAME
+          : Platform.OS === "android"
+            ? "rounded-[28px]"
+            : "rounded-2xl",
       )}
+      style={glass ? glassCardStyle() : undefined}
     >
       <ToggleRow
         onValueChange={props.worktree.onChangeStartFromOrigin}
@@ -472,7 +529,7 @@ export function BranchPickerScreen(props: {
   const branchContent =
     props.branches.length === 0 ? (
       <ScrollView
-        className="flex-1 bg-sheet android:bg-sheet-solid"
+        className={glass ? "flex-1" : "flex-1 bg-sheet android:bg-sheet-solid"}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingTop: 16 }}
         scrollEnabled={false}
@@ -500,7 +557,10 @@ export function BranchPickerScreen(props: {
           {!props.loading && props.error ? (
             <Pressable
               accessibilityRole="button"
-              className="rounded-full bg-card px-4 py-2 active:opacity-70"
+              className={cn(
+                "rounded-full bg-card px-4 py-2 active:opacity-70",
+                glass && "border border-chrome-glass-border bg-chrome-glass",
+              )}
               onPress={props.onRefresh}
             >
               <Text className="text-sm font-t3-medium text-foreground">Try again</Text>
@@ -513,7 +573,7 @@ export function BranchPickerScreen(props: {
         alwaysBounceVertical={false}
         automaticallyAdjustsScrollIndicatorInsets
         automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
-        className="flex-1 bg-sheet android:bg-sheet-solid"
+        className={glass ? "flex-1" : "flex-1 bg-sheet android:bg-sheet-solid"}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={branchListContentStyle}
         data={props.branches}
@@ -604,7 +664,7 @@ export function BranchPickerScreen(props: {
           <NativeHeaderToolbar.SearchBarSlot />
         </NativeHeaderToolbar>
       )}
-      {branchContent}
+      {glass ? <SheetSurface>{branchContent}</SheetSurface> : branchContent}
     </>
   );
 }

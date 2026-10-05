@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ActivityIndicator, StatusBar, View } from "react-native";
 import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,6 +11,8 @@ import { enterFade, exitFade } from "../lib/motion";
 export function LoadingScreen(props: {
   readonly message: string;
   readonly messagePlacement?: "above-spinner" | "below-spinner";
+  /** Absolute-fill layer under the content, e.g. the scenery photo. */
+  readonly backdrop?: ReactNode;
 }) {
   const { themeAppearance: colorScheme } = useAppearancePreferences();
   const insets = useSafeAreaInsets();
@@ -22,6 +25,7 @@ export function LoadingScreen(props: {
       className="flex-1 bg-screen"
       style={{ paddingTop: insets.top }}
     >
+      {props.backdrop}
       <StatusBar barStyle={colorScheme === "dark" ? "light-content" : "dark-content"} />
       <View className="flex-1 items-center justify-center gap-5 px-6">
         <BrandMark compact />

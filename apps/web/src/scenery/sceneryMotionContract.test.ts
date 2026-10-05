@@ -186,7 +186,8 @@ describe("chat view contract", () => {
 
 describe("composer contract", () => {
   it("send and stop buttons still carry the aria-labels the press feedback keys on", () => {
-    expect(primaryActionsSource).toContain('"Send message"');
+    expect(primaryActionsSource).toContain("aria-label={submitStatus ?? submitLabel}");
+    expect(primaryActionsSource).toContain('"Submit message"');
     expect(primaryActionsSource).toContain('aria-label="Stop generation"');
   });
 
@@ -206,10 +207,13 @@ describe("composer contract", () => {
     expect(motionStylesSource).not.toContain("data-chat-composer-editor-chrome");
   });
 
-  it("the send arrow returns as a direct submit child of the right-hand actions", () => {
+  it("keeps the submit-capable message action in the right-hand actions across dispatch modes", () => {
     expect(chatComposerSource).toContain('data-chat-composer-actions="right"');
-    expect(primaryActionsSource).toContain('type="submit"');
-    expect(primaryActionsSource).toContain('data-chat-composer-send-while-running="true"');
+    expect(primaryActionsSource).toContain('type={showResume ? "button" : "submit"}');
+    expect(primaryActionsSource).toContain("resolveComposerDispatchMode({");
+    expect(primaryActionsSource).toContain(
+      '<ArrowUpIcon className="size-3.5" aria-hidden="true" />',
+    );
   });
 
   it("composer menus and the stash drawer are glass surfaces inside the drawer layer", () => {

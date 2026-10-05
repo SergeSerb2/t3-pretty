@@ -38,7 +38,10 @@ import { vcsEnvironment } from "../../state/vcs";
 import { EmptyState } from "../../components/EmptyState";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import {
+  NATIVE_LIQUID_GLASS_SUPPORTED,
+  TRANSPARENT_NATIVE_HEADERS,
+} from "../../native/native-glass";
 import { connectionTone } from "../connection/connectionTone";
 import {
   useRemoteConnections,
@@ -60,6 +63,7 @@ import {
 } from "../terminal/terminalLaunchContext";
 import { terminalDebugLog } from "../terminal/terminalDebugLog";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -213,7 +217,15 @@ function firstRouteParam(value: string | string[] | undefined): string | null {
 }
 
 function OpeningThreadLoadingScreen() {
-  return <LoadingScreen message="Opening thread…" messagePlacement="above-spinner" />;
+  // Keeps a photo on screen between Home's scenery and the thread's.
+  const glass = useGlassChromeActive();
+  return (
+    <LoadingScreen
+      message="Opening thread…"
+      messagePlacement="above-spinner"
+      backdrop={glass ? <SceneryBackdrop threadKey={null} /> : null}
+    />
+  );
 }
 
 type ThreadRouteScreenRouteProps = StaticScreenProps<{
@@ -231,7 +243,8 @@ function ThreadUnavailableScreen(props: {
   readonly actionLabel: string;
   readonly onAction: () => void;
 }) {
-  return (
+  const glass = useGlassChromeActive();
+  const content = (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{
@@ -240,7 +253,7 @@ function ThreadUnavailableScreen(props: {
         paddingHorizontal: 24,
         paddingVertical: 32,
       }}
-      className="bg-screen flex-1"
+      className={glass ? "flex-1" : "bg-screen flex-1"}
     >
       <EmptyState
         title="Thread unavailable"
@@ -249,6 +262,15 @@ function ThreadUnavailableScreen(props: {
         onAction={props.onAction}
       />
     </ScrollView>
+  );
+  // The glass empty state needs the photo under it, not a bare screen plate.
+  return glass ? (
+    <View className="flex-1 bg-screen">
+      <SceneryBackdrop threadKey={null} surface="cards" />
+      {content}
+    </View>
+  ) : (
+    content
   );
 }
 
@@ -1120,7 +1142,7 @@ function ThreadRouteContent(
           queuedMessages={composer.selectedThreadQueuedMessages}
           dispatchingMessageId={composer.dispatchingQueuedMessageId}
           layoutVariant={layout.variant}
-          usesAutomaticContentInsets={usesNativeHeaderGlass}
+          usesAutomaticContentInsets={TRANSPARENT_NATIVE_HEADERS}
           onOpenConnectionEditor={handleOpenConnectionEditor}
           onChangeDraftMessage={composer.onChangeDraftMessage}
           onPickDraftMedia={composer.onPickDraftMedia}
