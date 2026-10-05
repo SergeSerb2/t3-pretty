@@ -35,6 +35,7 @@ import { OrchestrationEventStoreLive } from "../persistence/Layers/Orchestration
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
 import * as AgentMonitoring from "./AgentMonitoring.ts";
+import * as Settings from "../serverSettings.ts";
 import * as Exporter from "./AgentMonitoringExporter.ts";
 import * as Journal from "./AgentMonitoringJournal.ts";
 import { type AgentObservation, toAgentObservation } from "./AgentObservation.ts";
@@ -76,7 +77,11 @@ const toolBase = {
   completedAt: DateTime.add(at, { seconds: 1 }),
   updatedAt: at,
 };
-const toolEvent = (id = "tool-event", failed = false): OrchestrationV2DomainEvent => ({
+const toolEvent = (
+  id = "tool-event",
+  failed = false,
+  entity = "tool:1",
+): OrchestrationV2DomainEvent => ({
   id: EventId.make(id),
   type: "turn-item.updated",
   threadId,
@@ -85,6 +90,7 @@ const toolEvent = (id = "tool-event", failed = false): OrchestrationV2DomainEven
   occurredAt: at,
   payload: {
     ...toolBase,
+    id: TurnItemId.make(entity),
     type: "command_execution",
     input: privateContent,
     output: privateContent,
@@ -450,6 +456,7 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
           getDescriptor: Effect.die("not needed by monitoring"),
         });
         const monitorLayer = AgentMonitoring.layer.pipe(
+          Layer.provide(Settings.layerTest()),
           Layer.provide(ServerConfig.layerTest(home, home)),
           Layer.provide(environment),
           Layer.provide(Layer.succeed(OrchestrationEventStore, store)),
@@ -483,5 +490,79 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
         assert.equal(report.capturedSequence, 3);
         assert.equal(report.failureGroups[0]?.category, "transport_error");
       }),
+  );
+  it.effect("uses saved settings live and skips disabled activity across a restart", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-monitoring-settings-" });
+        const storeContext = yield* Layer.build(
+          OrchestrationEventStoreLive.pipe(Layer.provide(SqlitePersistenceMemory)),
+        );
+        const store = Context.get(storeContext, OrchestrationEventStore);
+        const settingsContext = yield* Layer.build(Settings.layerTest());
+        const settings = Context.get(settingsContext, Settings.ServerSettingsService);
+        const monitorLayer = AgentMonitoring.layer.pipe(
+          Layer.provide(Layer.succeed(Settings.ServerSettingsService, settings)),
+          Layer.provide(ServerConfig.layerTest(home, home)),
+          Layer.provide(
+            Layer.succeed(ServerEnvironment.ServerEnvironment, {
+              getEnvironmentId: Effect.succeed(EnvironmentId.make("saved-settings-host")),
+              getDescriptor: Effect.die("unused"),
+            }),
+          ),
+          Layer.provide(Layer.succeed(OrchestrationEventStore, store)),
+          Layer.provide(FetchHttpClient.layer),
+          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+        );
+        const read = Effect.flatMap(
+          Journal.AgentMonitoringJournal,
+          (journal) => journal.report,
+        ).pipe(
+          Effect.provide(
+            Journal.layerAt(path.join(home, "userdata", "logs", AgentMonitoring.journalFileName), {
+              readonly: true,
+            }),
+          ),
+        );
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const context = yield* Layer.build(Layer.fresh(monitorLayer));
+            const monitor = Context.get(context, AgentMonitoring.AgentMonitoring);
+            assert.equal((yield* monitor.status).state, "disabled");
+            yield* store.appendAgentEvents({ events: [toolEvent("before-enable")] });
+            yield* settings.updateSettings({ agentMonitoring: { enabled: true } });
+            assert.equal((yield* monitor.status).state, "collecting");
+            assert.equal((yield* monitor.status).configurationSource, "settings");
+            assert.equal(
+              (yield* monitor.status).monitoringEnvironmentId,
+              observe(toolEvent(), 1, "saved-settings-host").attributes["t3.environment_id"],
+            );
+            yield* store.appendAgentEvents({ events: [toolEvent("enabled")] });
+            yield* monitor.flush;
+            assert.equal((yield* read).recordCount, 1);
+            yield* settings.updateSettings({ agentMonitoring: { enabled: false } });
+            assert.equal((yield* monitor.status).state, "disabled");
+            yield* store.appendAgentEvents({ events: [errorEvent("while-disabled")] });
+            yield* monitor.flush;
+            assert.equal((yield* read).recordCount, 1);
+          }),
+        );
+        // Restart while the saved setting is enabled: the durable pause marker skips the disabled gap.
+        yield* settings.updateSettings({ agentMonitoring: { enabled: true } });
+        const restartedContext = yield* Layer.build(Layer.fresh(monitorLayer));
+        const restarted = Context.get(restartedContext, AgentMonitoring.AgentMonitoring);
+        yield* store.appendAgentEvents({
+          events: [toolEvent("after-restart", false, "tool:after-restart")],
+        });
+        yield* restarted.flush;
+        const report = yield* read;
+        assert.equal(report.recordCount, 2);
+        assert.equal(report.pendingCount, 2);
+        assert.equal(report.failureGroups.length, 0);
+        assert.equal((yield* restarted.status).pendingCount, 2);
+      }),
+    ),
   );
 });

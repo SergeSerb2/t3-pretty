@@ -341,7 +341,19 @@ export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
 export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
 export type ChatWidth = typeof ChatWidth.Type;
 
+export const AgentMonitoringSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  sentryDsn: TrimmedString.check(Schema.isMaxLength(2048)).pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+  ),
+});
+export type AgentMonitoringSettings = typeof AgentMonitoringSettings.Type;
+
 export const ClientSettingsSchema = Schema.Struct({
+  /** Null leaves host enrollment alone; a saved choice also applies after hosts reconnect. */
+  agentMonitoringEnrollment: Schema.NullOr(AgentMonitoringSettings).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
@@ -1535,6 +1547,7 @@ export const ServerSettings = Schema.Struct({
   skills: SkillsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   subagentPolicy: SubagentPolicySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  agentMonitoring: AgentMonitoringSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   apps: AppsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   automations: AutomationsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   bitbucket: BitbucketSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -1823,6 +1836,12 @@ export const ServerSettingsPatch = Schema.Struct({
       otlpLogsUrl: Schema.optionalKey(TrimmedString),
     }),
   ),
+  agentMonitoring: Schema.optionalKey(
+    Schema.Struct({
+      enabled: Schema.optionalKey(Schema.Boolean),
+      sentryDsn: Schema.optionalKey(TrimmedString.check(Schema.isMaxLength(2048))),
+    }),
+  ),
   skills: Schema.optionalKey(SkillsSettings),
   subagentPolicy: Schema.optionalKey(
     Schema.Struct({
@@ -1877,6 +1896,7 @@ export const ServerSettingsPatch = Schema.Struct({
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
+  agentMonitoringEnrollment: Schema.optionalKey(Schema.NullOr(AgentMonitoringSettings)),
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),

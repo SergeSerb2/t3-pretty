@@ -1,5 +1,6 @@
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -23,6 +24,7 @@ export interface AgentMonitoringReport {
   readonly droppedPendingCount: number;
   readonly activeAgentCount: number;
   readonly lastObservedAt: number | null;
+  readonly lastExportAt: number | null;
   readonly failureGroups: ReadonlyArray<{
     kind: string;
     provider: string;
@@ -46,8 +48,12 @@ export interface AgentMonitoringReport {
 export class AgentMonitoringJournal extends Context.Service<
   AgentMonitoringJournal,
   {
-    readonly enroll: (sequence: number) => Effect.Effect<void, AgentMonitoringJournalError>;
+    readonly enroll: (
+      sequence: number,
+      skipUncaptured?: boolean,
+    ) => Effect.Effect<void, AgentMonitoringJournalError>;
     readonly cursor: Effect.Effect<number, AgentMonitoringJournalError>;
+    readonly pause: Effect.Effect<void, AgentMonitoringJournalError>;
     readonly capture: (
       batch: ReadonlyArray<{ sequence: number; observation?: AgentObservation | undefined }>,
     ) => Effect.Effect<void, AgentMonitoringJournalError>;
@@ -56,6 +62,18 @@ export class AgentMonitoringJournal extends Context.Service<
       ids: ReadonlyArray<string>,
     ) => Effect.Effect<void, AgentMonitoringJournalError>;
     readonly report: Effect.Effect<AgentMonitoringReport, AgentMonitoringJournalError>;
+    readonly statistics: Effect.Effect<
+      Pick<
+        AgentMonitoringReport,
+        | "capturedSequence"
+        | "recordCount"
+        | "pendingCount"
+        | "droppedPendingCount"
+        | "lastObservedAt"
+        | "lastExportAt"
+      >,
+      AgentMonitoringJournalError
+    >;
   }
 >()("t3/observability/AgentMonitoringJournal") {}
 
@@ -91,10 +109,18 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
       );
     }
 
-    const enroll = (sequence: number) =>
+    const enroll = (sequence: number, skipUncaptured = false) =>
       guard(
-        sql`INSERT OR IGNORE INTO agent_monitoring_state (key, value) VALUES ('cursor', ${sequence})`.pipe(
-          Effect.asVoid,
+        sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`INSERT OR IGNORE INTO agent_monitoring_state (key, value) VALUES ('cursor', ${sequence})`;
+            const [paused] = yield* sql<{
+              value: number;
+            }>`SELECT value FROM agent_monitoring_state WHERE key = 'paused'`;
+            if (skipUncaptured || paused?.value === 1)
+              yield* sql`UPDATE agent_monitoring_state SET value = MAX(value, ${sequence}) WHERE key = 'cursor'`;
+            yield* sql`INSERT OR REPLACE INTO agent_monitoring_state (key, value) VALUES ('paused', 0)`;
+          }),
         ),
         "enroll",
       );
@@ -157,12 +183,16 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
       ids.length === 0
         ? Effect.void
         : guard(
-            sql`UPDATE agent_observations SET exported = 1 WHERE ${sql.in("id", ids)}`.pipe(
-              Effect.asVoid,
+            sql.withTransaction(
+              Effect.gen(function* () {
+                yield* sql`UPDATE agent_observations SET exported = 1 WHERE ${sql.in("id", ids)}`;
+                const now = yield* Clock.currentTimeMillis;
+                yield* sql`INSERT OR REPLACE INTO agent_monitoring_state (key, value) VALUES ('last_export_at', ${now})`;
+              }),
             ),
             "acknowledge",
           );
-    const report = guard(
+    const statistics = guard(
       Effect.gen(function* () {
         const state = yield* sql<{
           key: string;
@@ -170,6 +200,20 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
         }>`SELECT key, value FROM agent_monitoring_state`;
         const [totals] = yield* sql<{ count: number; pending: number; last: number | null }>`SELECT
       COUNT(*) AS count, COALESCE(SUM(exported = 0), 0) AS pending, MAX(observed_at) AS last FROM agent_observations`;
+        return {
+          capturedSequence: state.find((row) => row.key === "cursor")?.value ?? 0,
+          recordCount: totals?.count ?? 0,
+          pendingCount: totals?.pending ?? 0,
+          droppedPendingCount: state.find((row) => row.key === "dropped_pending")?.value ?? 0,
+          lastObservedAt: totals?.last ?? null,
+          lastExportAt: state.find((row) => row.key === "last_export_at")?.value ?? null,
+        };
+      }),
+      "statistics",
+    );
+    const report = guard(
+      Effect.gen(function* () {
+        const totals = yield* statistics;
         const [active] = yield* sql<{ count: number }>`SELECT COUNT(*) AS count FROM (
       SELECT status, ROW_NUMBER() OVER (PARTITION BY entity_id ORDER BY sequence DESC) AS position
       FROM agent_observations WHERE kind IN ('run', 'subagent')
@@ -188,12 +232,8 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
       FROM agent_observations WHERE status = 'failed' AND kind IN ('error', 'tool', 'subagent')
       GROUP BY kind, provider, tool, category, code ORDER BY count DESC LIMIT 100`;
         return {
-          capturedSequence: state.find((row) => row.key === "cursor")?.value ?? 0,
-          recordCount: totals?.count ?? 0,
-          pendingCount: totals?.pending ?? 0,
-          droppedPendingCount: state.find((row) => row.key === "dropped_pending")?.value ?? 0,
+          ...totals,
           activeAgentCount: active?.count ?? 0,
-          lastObservedAt: totals?.last ?? null,
           failureGroups,
           outcomes,
         };
@@ -206,7 +246,21 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
       ),
       "cursor",
     );
-    return AgentMonitoringJournal.of({ enroll, cursor, capture, pending, acknowledge, report });
+    return AgentMonitoringJournal.of({
+      enroll,
+      cursor,
+      pause: guard(
+        sql`INSERT OR REPLACE INTO agent_monitoring_state (key, value) VALUES ('paused', 1)`.pipe(
+          Effect.asVoid,
+        ),
+        "pause",
+      ),
+      capture,
+      pending,
+      acknowledge,
+      report,
+      statistics,
+    });
   });
 
 /** The server writes the journal; the CLI opens the same journal read-only. */

@@ -1240,3 +1240,20 @@ describe("branch naming settings", () => {
     },
   );
 });
+
+describe("agent monitoring settings", () => {
+  it("leaves existing hosts disabled and accepts partial enable/disable patches", () => {
+    expect(decodeServerSettings({}).agentMonitoring).toEqual({ enabled: false, sentryDsn: "" });
+    expect(decodeServerSettingsPatch({ agentMonitoring: { enabled: false } })).toEqual({
+      agentMonitoring: { enabled: false },
+    });
+    expect(
+      decodeServerSettingsPatch({
+        agentMonitoring: { sentryDsn: " https://public@example.com/1 " },
+      }),
+    ).toEqual({ agentMonitoring: { sentryDsn: "https://public@example.com/1" } });
+    expect(() =>
+      decodeServerSettingsPatch({ agentMonitoring: { sentryDsn: "x".repeat(2049) } }),
+    ).toThrow();
+  });
+});

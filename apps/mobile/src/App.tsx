@@ -1,3 +1,4 @@
+import { AgentMonitoringEnrollmentCoordinator } from "./state/agentMonitoring";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo } from "react";
@@ -112,6 +113,7 @@ function AppContent() {
   return (
     <>
       <SplashScreenCoordinator />
+      <AgentMonitoringEnrollmentCoordinator />
       <SubscriptionUsageCoordinator />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>

@@ -1,3 +1,4 @@
+import { AgentMonitoringSettings } from "./AgentMonitoringSettings";
 import { ProcessSignalActions } from "./ProcessSignalActions";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
@@ -921,6 +922,7 @@ export function DiagnosticsSettingsPanel() {
 
   return (
     <SettingsPageContainer width="expanded" className="gap-10">
+      <AgentMonitoringSettings />
       <ResourceTelemetryDiagnostics environmentId={environmentId} />
 
       <SettingsSection

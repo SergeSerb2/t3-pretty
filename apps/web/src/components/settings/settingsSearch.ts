@@ -17,6 +17,7 @@ import { WORLD_SCENERY_THEME_ID } from "../../scenery/worldSceneryTheme";
 export type SettingsPath =
   | "/settings/projects"
   | "/settings/general"
+  | "/settings/diagnostics"
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/snap-shot"
@@ -101,6 +102,7 @@ export interface SettingsSearchAvailability {
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/projects": "Project",
   "/settings/general": "General",
+  "/settings/diagnostics": "Diagnostics",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
@@ -619,6 +621,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresHomeSuggestions: true,
   },
   {
+    id: "agent-monitoring",
+    title: "Agent monitoring",
+    to: "/settings/diagnostics",
+    targetId: "agent-monitoring",
+    scope: "environment",
+    searchTerms: ["sentry agents tools errors traces monitoring enrollment all hosts"],
+  },
+  {
     id: "diagnostics",
     title: "Diagnostics",
     to: "/settings/general",
@@ -1124,6 +1134,7 @@ const SEARCH_ITEMS_BY_ID = new Map(SETTINGS_SEARCH_ITEMS.map((item) => [item.id,
 const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScope | null>> = {
   "/settings/projects": "project",
   "/settings/general": null,
+  "/settings/diagnostics": "environment",
   "/settings/appearance": null,
   "/settings/snap-shot": null,
   // Keybindings fan out to the selection; Providers shows the representative

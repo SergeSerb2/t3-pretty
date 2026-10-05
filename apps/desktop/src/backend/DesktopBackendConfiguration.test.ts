@@ -1159,6 +1159,10 @@ describe("DesktopBackendConfiguration", () => {
         const standard = {
           OTEL_EXPORTER_OTLP_ENDPOINT: "https://collector.example.com:4318/base?api_key=secret",
           OTEL_EXPORTER_OTLP_LOGS_HEADERS: "authorization=Bearer%20token",
+          T3CODE_AGENT_MONITORING_ENABLED: "true",
+          T3CODE_AGENT_MONITORING_OTLP_PROTOCOL: "http/protobuf",
+          SENTRY_DSN: "https://public@example.com/1",
+          SENTRY_AUTH_TOKEN: "management-secret",
           T3CODE_OTLP_TRACES_URL: "http://t3.example.com:4318/v1/traces",
         };
         const previousWslEnv = process.env.WSLENV;
@@ -1189,6 +1193,12 @@ describe("DesktopBackendConfiguration", () => {
             assert.include(wslEnv, "OTEL_EXPORTER_OTLP_LOGS_HEADERS");
             assert.equal(config.env.T3CODE_OTLP_TRACES_URL, "http://t3.example.com:4318/v1/traces");
             assert.include(wslEnv, "T3CODE_OTLP_TRACES_URL");
+            assert.equal(config.env.SENTRY_DSN, standard.SENTRY_DSN);
+            assert.equal(config.env.T3CODE_AGENT_MONITORING_ENABLED, "true");
+            assert.include(wslEnv, "SENTRY_DSN");
+            assert.include(wslEnv, "T3CODE_AGENT_MONITORING_ENABLED");
+            assert.include(wslEnv, "T3CODE_AGENT_MONITORING_OTLP_PROTOCOL");
+            assert.notInclude(wslEnv, "SENTRY_AUTH_TOKEN");
           }).pipe(
             Effect.provide(
               DesktopBackendConfiguration.layer.pipe(

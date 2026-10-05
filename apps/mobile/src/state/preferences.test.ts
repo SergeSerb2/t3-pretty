@@ -61,6 +61,48 @@ function makePreferencesState(
 }
 
 describe("mobile preferences state", () => {
+  it.effect("withholds automatic enrollment until storage acknowledges the preference", () =>
+    Effect.gen(function* () {
+      const receipt = deferred<MobilePreferences.Preferences>();
+      const started = deferred<void>();
+      const state = makePreferencesState({
+        load: Effect.succeed({}),
+        savePatch: () =>
+          Effect.promise(() => {
+            started.resolve();
+            return receipt.promise;
+          }),
+      });
+      const registry = AtomRegistry.make();
+      const unmount = registry.mount(state.persistedPreferencesAtom);
+      const unmountUpdate = registry.mount(state.updatePreferencesAtom);
+      yield* AtomRegistry.getResult(registry, state.persistedPreferencesAtom, {
+        suspendOnWaiting: true,
+      });
+      const agentMonitoringEnrollment = {
+        enabled: true,
+        sentryDsn: "https://public@example.com/1",
+      };
+      registry.set(state.updatePreferencesAtom, { agentMonitoringEnrollment });
+      yield* Effect.promise(() => started.promise);
+      expect(
+        Option.getOrThrow(AsyncResult.value(registry.get(state.persistedPreferencesAtom)))
+          .agentMonitoringEnrollment,
+      ).toBeUndefined();
+      receipt.resolve({ agentMonitoringEnrollment });
+      yield* AtomRegistry.getResult(registry, state.updatePreferencesAtom, {
+        suspendOnWaiting: true,
+      });
+      expect(
+        Option.getOrThrow(AsyncResult.value(registry.get(state.persistedPreferencesAtom)))
+          .agentMonitoringEnrollment,
+      ).toEqual(agentMonitoringEnrollment);
+      unmountUpdate();
+      unmount();
+      registry.dispose();
+    }),
+  );
+
   it.effect("shares one preference load across consumers", () =>
     Effect.gen(function* () {
       const load = vi.fn(() =>

@@ -227,6 +227,10 @@
       "types": "./src/state/sharedSettings.ts",
       "default": "./src/state/sharedSettings.ts"
     },
+    "./state/agent-monitoring-enrollment": {
+      "types": "./src/state/agentMonitoringEnrollment.ts",
+      "default": "./src/state/agentMonitoringEnrollment.ts"
+    },
     "./state/shell": {
       "types": "./src/state/shell.ts",
       "default": "./src/state/shell.ts"
