@@ -2273,7 +2273,7 @@ function LegacyFeaturesSection() {
           <SettingsGroup>
             <SettingsRow
               {...searchableSetting("legacy-queue")}
-              description="Queue new messages for the next turn instead of steering the running agent. Use the alternate send action to queue a single message."
+              description="Queue new messages for the next turn instead of steering the running agent. The alternate send action uses the opposite behavior for one message."
               control={
                 <Switch
                   checked={settings.legacyQueueEnabled}
