@@ -11,15 +11,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { CopyTextButton } from "../../components/CopyTextButton";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { ConnectionSheetButton } from "../connection/ConnectionSheetButton";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { SettingsSection } from "./components/SettingsSection";
 import { appsCallbackOrigin, appsOAuthRedirectUri } from "./apps/appsSettings.logic";
+import { SheetSurface } from "../../components/SheetSurface";
+import { GLASS_INPUT_CLASS_NAME } from "../scenery/glassStyles";
 
 type SettingsAppOAuthClientParams = {
   readonly environmentId: string;
@@ -35,8 +37,8 @@ export function SettingsAppOAuthClientRouteScreen({
   route,
 }: StaticScreenProps<SettingsAppOAuthClientParams>) {
   const insets = useSafeAreaInsets();
+  const glass = useGlassChromeActive();
   const navigation = useNavigation();
-  const iconColor = useThemeColor("--color-icon");
   const environmentId = route.params.environmentId as EnvironmentId;
   const family = findAppOAuthClientFamily(route.params.family);
   const serverConfig = useEnvironmentServerConfig(environmentId);
@@ -86,19 +88,19 @@ export function SettingsAppOAuthClientRouteScreen({
 
   if (family === undefined) {
     return (
-      <View collapsable={false} className="flex-1 bg-sheet">
+      <SheetSurface>
         <NativeStackScreenOptions options={{ title: "OAuth client" }} />
-        <View className="px-5 pt-6">
-          <Text className="text-base text-foreground-muted">
+        <ScrollView contentInsetAdjustmentBehavior="automatic">
+          <Text className="px-5 pt-6 text-base text-foreground-muted">
             This app store does not know that OAuth client family.
           </Text>
-        </View>
-      </View>
+        </ScrollView>
+      </SheetSurface>
     );
   }
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SheetSurface>
       <NativeStackScreenOptions options={{ title: family.name }} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
@@ -117,7 +119,7 @@ export function SettingsAppOAuthClientRouteScreen({
               <CopyTextButton
                 accessibilityLabel="Copy redirect URI"
                 text={redirectUri}
-                tintColor={iconColor}
+                tintColorClassName="accent-icon"
               />
             )}
           </View>
@@ -150,6 +152,7 @@ export function SettingsAppOAuthClientRouteScreen({
                 Client ID
               </Text>
               <TextInput
+                className={glass ? GLASS_INPUT_CLASS_NAME : undefined}
                 autoCapitalize="none"
                 autoCorrect={false}
                 onChangeText={setClientId}
@@ -162,6 +165,7 @@ export function SettingsAppOAuthClientRouteScreen({
                 Client secret
               </Text>
               <TextInput
+                className={glass ? GLASS_INPUT_CLASS_NAME : undefined}
                 autoCapitalize="none"
                 autoCorrect={false}
                 onChangeText={setClientSecret}
@@ -211,6 +215,6 @@ export function SettingsAppOAuthClientRouteScreen({
           </View>
         </SettingsSection>
       </ScrollView>
-    </View>
+    </SheetSurface>
   );
 }

@@ -75,7 +75,51 @@ describe("resolveThreadHeaderSnoozePresentation", () => {
       icon: "clock",
       disabled: false,
       action: "snooze-menu",
+      offersStore: false,
     });
+  });
+
+  it("ends the snooze menu with Store when the server supports storage", () => {
+    expect(
+      resolveThreadHeaderSnoozePresentation({
+        supported: true,
+        snoozed: false,
+        canSnooze: true,
+        storageSupported: true,
+        stored: false,
+      }),
+    ).toMatchObject({ action: "snooze-menu", offersStore: true });
+  });
+
+  it("unstores a stored thread from the same slot, even while it is working", () => {
+    expect(
+      resolveThreadHeaderSnoozePresentation({
+        supported: true,
+        snoozed: false,
+        canSnooze: false,
+        storageSupported: true,
+        stored: true,
+      }),
+    ).toEqual({
+      accessibilityLabel: "Unstore thread",
+      label: "Unstore",
+      icon: "tray.and.arrow.up",
+      disabled: false,
+      action: "unstore",
+      offersStore: false,
+    });
+  });
+
+  it("ignores storedAt on a server without the storage capability", () => {
+    expect(
+      resolveThreadHeaderSnoozePresentation({
+        supported: true,
+        snoozed: false,
+        canSnooze: true,
+        storageSupported: false,
+        stored: true,
+      }),
+    ).toMatchObject({ action: "snooze-menu", offersStore: false });
   });
 
   it("wakes a snoozed thread", () => {

@@ -1,262 +1,57 @@
+import { EnvironmentId, MessageId, ProjectId, SkillId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
-
-import {
-  EnvironmentId,
-  MessageId,
-  ProjectId,
-  ProviderInstanceId,
-  ThreadId,
-  type OrchestrationThread,
-  type ScopedThreadRef,
-} from "@t3tools/contracts";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-
-import {
-  resolveSelectedThreadShell,
-  resolveSelectionDetailFallbackRef,
-  threadDetailToShell,
-} from "./use-thread-selection.logic";
+import { makeThreadProjectionFixture, makeThreadShellFixture } from "../test-fixtures";
+import { resolveSelectedThreadShell, resolveSelectionDetailFallbackRef, threadDetailToShell } from "./use-thread-selection.logic";
 
 const environmentId = EnvironmentId.make("environment-1");
-
-const threadRef: ScopedThreadRef = {
-  environmentId,
-  threadId: ThreadId.make("thread-1"),
-};
-
-type ThreadMessage = OrchestrationThread["messages"][number];
-
-function makeMessage(
-  input: Pick<ThreadMessage, "id" | "createdAt" | "text"> & Partial<ThreadMessage>,
-): ThreadMessage {
-  return {
-    role: "assistant",
-    turnId: null,
-    streaming: false,
-    updatedAt: input.createdAt,
-    ...input,
-  };
+const threadRef: ScopedThreadRef = { environmentId, threadId: ThreadId.make("thread-1") };
+function shell(title: string) {
+  return makeThreadShellFixture({ environmentId, id: threadRef.threadId, title });
 }
-
-function makeThread(
-  input: Partial<OrchestrationThread> & Pick<OrchestrationThread, "id" | "projectId" | "title">,
-): OrchestrationThread {
-  return {
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: null,
-    enabledSkillIds: [],
-    worktreePath: null,
-    latestTurn: null,
-    createdAt: "2026-04-01T00:00:00.000Z",
-    updatedAt: "2026-04-01T00:00:00.000Z",
-    archivedAt: null,
-    deletedAt: null,
-    messages: [],
-    proposedPlans: [],
-    activities: [],
-    checkpoints: [],
-    session: null,
-    ...input,
-    settledOverride: input.settledOverride ?? null,
-    settledAt: input.settledAt ?? null,
-  };
+function detail(title = "Detail thread") {
+  return makeThreadProjectionFixture({ id: threadRef.threadId, title, projectId: ProjectId.make("project-1") });
 }
-
-function makeShell(
-  input: Partial<EnvironmentThreadShell> &
-    Pick<EnvironmentThreadShell, "environmentId" | "id" | "projectId" | "title">,
-): EnvironmentThreadShell {
-  return {
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: null,
-    enabledSkillIds: [],
-    worktreePath: null,
-    latestTurn: null,
-    createdAt: "2026-04-01T00:00:00.000Z",
-    updatedAt: "2026-04-01T00:00:00.000Z",
-    archivedAt: null,
-    session: null,
-    latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
-    ...input,
-    settledOverride: input.settledOverride ?? null,
-    settledAt: input.settledAt ?? null,
-  };
-}
-
 describe("resolveSelectionDetailFallbackRef", () => {
-  it("returns null when no thread is selected", () => {
+  it("subscribes only when the shell and local starting overlay cannot resolve selection", () => {
     expect(resolveSelectionDetailFallbackRef(null, null)).toBeNull();
-  });
-
-  it("returns null when the shell already resolves the thread", () => {
-    const shell = makeShell({
-      environmentId,
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Shell thread",
-    });
-
-    // The hot per-thread detail stream must stay unsubscribed while the shell
-    // snapshot knows the thread.
-    expect(resolveSelectionDetailFallbackRef(threadRef, shell)).toBeNull();
-  });
-
-  it("returns the ref while the shell cannot identify the thread", () => {
+    expect(resolveSelectionDetailFallbackRef(threadRef, shell("Shell"))).toBeNull();
     expect(resolveSelectionDetailFallbackRef(threadRef, null)).toBe(threadRef);
-  });
-
-  it("does not subscribe to detail while a local starting thread is standing in", () => {
     expect(resolveSelectionDetailFallbackRef(threadRef, null, true)).toBeNull();
   });
 });
-
 describe("resolveSelectedThreadShell", () => {
-  it("prefers the shell snapshot entry over the detail fallback", () => {
-    const shell = makeShell({
-      environmentId,
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Shell thread",
-    });
-    const detail = makeThread({
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Detail thread",
-    });
-
-    expect(resolveSelectedThreadShell(threadRef, shell, detail)).toBe(shell);
-  });
-
-  it("converts the detail to a shell while the shell snapshot is missing the thread", () => {
-    const detail = makeThread({
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Detail thread",
-      branch: "feature/detail",
-      worktreePath: "/tmp/worktree",
-    });
-
-    const resolved = resolveSelectedThreadShell(threadRef, null, detail);
-    expect(resolved).toMatchObject({
-      environmentId,
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Detail thread",
-      branch: "feature/detail",
-      worktreePath: "/tmp/worktree",
-    });
-  });
-
-  it("uses a local starting shell when the server snapshot has not landed", () => {
-    const localStarting = makeShell({
-      environmentId,
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Starting thread",
-    });
-
-    expect(resolveSelectedThreadShell(threadRef, null, null, localStarting)).toBe(localStarting);
-  });
-
-  it("still prefers the server shell over a local starting overlay", () => {
-    const shell = makeShell({
-      environmentId,
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Shell thread",
-    });
-    const localStarting = makeShell({
-      environmentId,
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Starting thread",
-    });
-
-    expect(resolveSelectedThreadShell(threadRef, shell, null, localStarting)).toBe(shell);
-  });
-
-  it("returns null when neither the shell nor the detail can resolve the thread", () => {
+  it("prefers authoritative server shells, then local overlays, then detail", () => {
+    const server = shell("Server"); const local = shell("Starting"); const projection = detail();
+    expect(resolveSelectedThreadShell(threadRef, server, projection, local)).toBe(server);
+    expect(resolveSelectedThreadShell(threadRef, null, projection, local)).toBe(local);
+    expect(resolveSelectedThreadShell(threadRef, null, projection)?.title).toBe("Detail thread");
+    expect(resolveSelectedThreadShell(null, null, projection)).toBeNull();
     expect(resolveSelectedThreadShell(threadRef, null, null)).toBeNull();
   });
-
-  it("returns null when no thread is selected even if a detail is present", () => {
-    const detail = makeThread({
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Detail thread",
-    });
-
-    expect(resolveSelectedThreadShell(null, null, detail)).toBeNull();
-  });
 });
-
 describe("threadDetailToShell", () => {
-  it("derives latestUserMessageAt from the last user message", () => {
-    const detail = makeThread({
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Detail thread",
-      messages: [
-        makeMessage({
-          id: MessageId.make("user-first"),
-          role: "user",
-          text: "First",
-          createdAt: "2026-04-01T00:00:01.000Z",
-        }),
-        makeMessage({
-          id: MessageId.make("user-second"),
-          role: "user",
-          text: "Second",
-          createdAt: "2026-04-01T00:00:02.000Z",
-        }),
-        makeMessage({
-          id: MessageId.make("assistant-last"),
-          text: "Answer",
-          createdAt: "2026-04-01T00:00:03.000Z",
-        }),
-      ],
-    });
-
-    expect(threadDetailToShell(environmentId, detail).latestUserMessageAt).toBe(
-      "2026-04-01T00:00:02.000Z",
-    );
-  });
-
-  it("reports no latest user message and no pending flags for a fresh detail", () => {
-    const detail = makeThread({
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Detail thread",
-    });
-
-    expect(threadDetailToShell(environmentId, detail)).toMatchObject({
-      environmentId,
-      enabledSkillIds: [],
-      latestUserMessageAt: null,
-      hasPendingApprovals: false,
-      hasPendingUserInput: false,
-      hasActionableProposedPlan: false,
-      snoozedUntil: null,
-      snoozedAt: null,
+  it("carries stored state and skills across cold deep-link fallback", () => {
+    const storedAt = DateTime.makeUnsafe("2026-04-01T00:00:05.000Z");
+    const enabledSkillIds = [SkillId.make("acme/skills:skill-a")];
+    const projection = makeThreadProjectionFixture({ storedAt, enabledSkillIds, branch: "feature/detail", worktreePath: "/tmp/worktree" });
+    expect(threadDetailToShell(environmentId, projection)).toMatchObject({
+      storedAt: "2026-04-01T00:00:05.000Z", enabledSkillIds,
+      branch: "feature/detail", worktreePath: "/tmp/worktree",
     });
   });
-
-  it("copies enabledSkillIds from the detail thread", () => {
-    const enabledSkillIds = ["acme/skills:skill-a"];
-    const detail = makeThread({
-      id: threadRef.threadId,
-      projectId: ProjectId.make("project-1"),
-      title: "Detail thread",
-      enabledSkillIds,
-    });
-
-    expect(threadDetailToShell(environmentId, detail).enabledSkillIds).toBe(enabledSkillIds);
+  it("derives the last user timestamp without confusing a later assistant reply", () => {
+    const projection = detail();
+    const first = DateTime.makeUnsafe("2026-04-01T00:00:01.000Z");
+    const second = DateTime.makeUnsafe("2026-04-01T00:00:02.000Z");
+    const base = { threadId: projection.thread.id, runId: null, nodeId: null,
+      attachments: [], streaming: false, createdBy: "user" as const, creationSource: "mobile" as const };
+    const messages = [
+      { ...base, id: MessageId.make("user-first"), role: "user" as const, text: "First", createdAt: first, updatedAt: first },
+      { ...base, id: MessageId.make("user-last"), role: "user" as const, text: "Second", createdAt: second, updatedAt: second },
+      { ...base, id: MessageId.make("assistant"), role: "assistant" as const, text: "Answer", createdAt: second, updatedAt: second },
+    ];
+    expect(threadDetailToShell(environmentId, { ...projection, messages }).latestUserMessageAt).toBe("2026-04-01T00:00:02.000Z");
+    expect(threadDetailToShell(environmentId, projection).latestUserMessageAt).toBeNull();
   });
 });

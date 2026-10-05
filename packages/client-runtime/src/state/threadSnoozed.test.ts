@@ -6,6 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   canSnooze,
   effectiveSnoozed,
+  hasQueuedTurnStart,
   resolveSnoozePresets,
   snoozeWakeLabel,
   threadRaisedHandWhileSnoozed,
@@ -61,6 +62,12 @@ function makeShell(input: {
   };
 }
 
+type QueuedTurnShell = Parameters<typeof hasQueuedTurnStart>[0];
+
+function makeQueuedTurnShell(overrides: Partial<QueuedTurnShell> = {}): QueuedTurnShell {
+  return { latestUserMessageAt: null, latestTurn: null, session: null, ...overrides };
+}
+
 describe("effectiveSnoozed", () => {
   it("hides a thread whose wake time is in the future", () => {
     expect(effectiveSnoozed(makeShell({ snoozedUntil: FUTURE_WAKE }), { now: NOW })).toBe(true);
@@ -76,6 +83,12 @@ describe("effectiveSnoozed", () => {
 
   it("never hides on malformed wake data", () => {
     expect(effectiveSnoozed(makeShell({ snoozedUntil: "not-a-date" }), { now: NOW })).toBe(false);
+  });
+
+  it("never hides when the client clock input is malformed", () => {
+    expect(effectiveSnoozed(makeShell({ snoozedUntil: FUTURE_WAKE }), { now: "not-a-date" })).toBe(
+      false,
+    );
   });
 
   it("wakes early when the agent is blocked on the user", () => {
@@ -159,6 +172,26 @@ describe("threadRaisedHandWhileSnoozed", () => {
       ),
     ).toBe(true);
   });
+
+  it("fails visible when snooze or event timestamps are malformed", () => {
+    expect(
+      threadRaisedHandWhileSnoozed(
+        makeShell({
+          snoozedUntil: FUTURE_WAKE,
+          snoozedAt: "not-a-date",
+          sessionStatus: "error",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      threadRaisedHandWhileSnoozed(
+        makeShell({
+          snoozedUntil: FUTURE_WAKE,
+          turnCompletedAt: "not-a-date",
+        }),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("canSnooze", () => {
@@ -199,6 +232,55 @@ describe("canSnooze", () => {
         { now: NOW },
       ),
     ).toBe(true);
+  });
+});
+
+describe("hasQueuedTurnStart", () => {
+  it("expires queued state after two minutes", () => {
+    const thread = makeQueuedTurnShell({
+      latestUserMessageAt: "2026-04-10T11:57:59.000Z",
+    });
+    expect(hasQueuedTurnStart(thread, { now: NOW })).toBe(false);
+  });
+
+  it("clears queued state when a turn adopts the message or the session fails", () => {
+    const messageAt = "2026-04-10T11:59:00.000Z";
+    const adopted = makeQueuedTurnShell({
+      latestUserMessageAt: messageAt,
+      latestTurn: {
+        turnId: TurnId.make("turn-adopted"),
+        state: "running",
+        requestedAt: messageAt,
+        startedAt: null,
+        completedAt: null,
+        assistantMessageId: null,
+      },
+    });
+    const failed = makeQueuedTurnShell({
+      latestUserMessageAt: messageAt,
+      session: {
+        threadId: ThreadId.make("thread-failed"),
+        status: "error",
+        providerName: "Codex",
+        runtimeMode: "full-access",
+        activeTurnId: null,
+        lastError: "failed",
+        updatedAt: NOW,
+      },
+    });
+    expect(hasQueuedTurnStart(adopted, { now: NOW })).toBe(false);
+    expect(hasQueuedTurnStart(failed, { now: NOW })).toBe(false);
+  });
+
+  it("bounds future client clock skew", () => {
+    const farAhead = makeQueuedTurnShell({
+      latestUserMessageAt: "2026-04-10T12:03:00.000Z",
+    });
+    const slightlyAhead = makeQueuedTurnShell({
+      latestUserMessageAt: "2026-04-10T12:01:00.000Z",
+    });
+    expect(hasQueuedTurnStart(farAhead, { now: NOW })).toBe(false);
+    expect(hasQueuedTurnStart(slightlyAhead, { now: NOW })).toBe(true);
   });
 });
 
@@ -296,5 +378,18 @@ describe("resolveSnoozePresets", () => {
     );
     expect(nextWeek.getDay()).toBe(1);
     expect(nextWeek.getDate()).toBe(13);
+  });
+
+  it("drops next week on Sundays, when it lands on the same Monday as tomorrow", () => {
+    // Sunday 2026-08-30 07:01: "Tomorrow" and "Next week" are both Monday 9:00.
+    const presets = resolveSnoozePresets(localDate(2026, 8, 30, 7, 1));
+    expect(presets.map((preset) => preset.id)).toEqual([
+      "hour",
+      "three-hours",
+      "evening",
+      "tomorrow",
+    ]);
+    const tomorrow = new Date(presets.find((preset) => preset.id === "tomorrow")!.snoozedUntil);
+    expect(tomorrow.getDay()).toBe(1);
   });
 });

@@ -53,10 +53,13 @@ describe("thread sidebar width", () => {
       "utf8",
     );
 
-    expect(sidebarSource).toContain("hidden h-7 w-fit min-w-0 shrink-0 items-center gap-1");
+    expect(sidebarSource).toContain(
+      "hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden",
+    );
+    expect(sidebarSource).toContain("inline-flex min-w-0 items-center gap-1");
     expect(sidebarSource).toContain("md:flex");
     expect(sidebarSource).toContain('src="/t3-pretty-mark.png"');
-    expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(13 * 16);
+    expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(16 * 16);
   });
 
   it("puts the environment identification pill behind the stage-label container query", () => {
@@ -72,5 +75,103 @@ describe("thread sidebar width", () => {
     expect(sidebarChrome).toMatch(
       /className="sidebar-brand-stage[^"]*"[^>]*>\s*<Badge[^>]*data-environment-identification="pill"/s,
     );
+  });
+
+  it("keeps the rail listening after a tooltip preventDefault", () => {
+    const sidebarSource = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
+
+    expect(sidebarSource).toContain("resize.onPointerDown(event)");
+    expect(sidebarSource).toContain("resize.onPointerUp(event)");
+    expect(sidebarSource).not.toContain("if (!event.defaultPrevented) resize.onPointerDown");
+    expect(sidebarSource).not.toContain("if (!event.defaultPrevented) resize.onPointerUp");
+    expect(sidebarSource).toContain("formatSidebarWidth");
+    expect(sidebarSource).toContain("options.getCssWidth");
+  });
+
+  it("keeps the collapsed icon rail at 3rem and lets the titlebar cover the rest", () => {
+    const sidebarSource = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
+    const inset = NodeFS.readFileSync(new URL("../workspaceTitlebar.ts", import.meta.url), "utf8");
+
+    expect(sidebarSource).toContain('"--sidebar-width-icon": SIDEBAR_WIDTH_ICON');
+    expect(sidebarSource).not.toContain(
+      "`max(${SIDEBAR_WIDTH_ICON}, var(--workspace-controls-left, 0px))`",
+    );
+    expect(inset).toContain(
+      "max(0px,calc(var(--workspace-titlebar-content-left)-var(--sidebar-width-icon)))",
+    );
+  });
+
+  it("peeks by animating width over an overflow clip, not clip-path", () => {
+    const sidebar = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
+
+    expect(sidebar).toContain("group-data-collapsed:w-(--sidebar-width-icon)");
+    expect(sidebar).toContain("group-data-collapsed:group-data-peeking:w-(--sidebar-width)!");
+    expect(sidebar).toContain("group-data-collapsed:overflow-hidden");
+    expect(sidebar).toContain("group-data-present:overflow-hidden");
+    expect(sidebar).toContain("group-data-opening:overflow-hidden");
+    expect(sidebar).toContain("w-(--sidebar-width) min-w-(--sidebar-width)");
+    expect(sidebar).toContain("motion-safe:transition-[width,box-shadow]");
+    expect(sidebar).toContain("group-data-present:z-40");
+    expect(sidebar).toContain("group-data-present:shadow-[12px_0_40px_rgba(0,0,0,0.12)]");
+    expect(sidebar).toContain("data-opening-ready");
+    expect(sidebar).toContain("useSidebarPeekPointerBinding");
+    expect(sidebar).toContain('data-sidebar-peek-hover-bridge=""');
+    expect(sidebar).toContain("data-sidebar-peeking={peekFlyout");
+    expect(sidebar).not.toContain("clip-path");
+    expect(sidebar).not.toContain("data-compact");
+  });
+
+  it("fades the thread pane and settings copy with the peek width", () => {
+    const threadSidebar = NodeFS.readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
+    const settings = NodeFS.readFileSync(
+      new URL("./settings/SettingsSidebarNav.tsx", import.meta.url),
+      "utf8",
+    );
+    const chrome = NodeFS.readFileSync(
+      new URL("./sidebar/SidebarChrome.tsx", import.meta.url),
+      "utf8",
+    );
+    const css = NodeFS.readFileSync(new URL("../index.css", import.meta.url), "utf8");
+
+    expect(threadSidebar).toContain('data-sidebar-peek="pane"');
+    expect(settings).toContain('data-sidebar-peek="copy"');
+    expect(settings).not.toContain("invisible");
+    expect(chrome).toContain('data-sidebar-peek="label"');
+    expect(css).toContain('[data-sidebar-peek="pane"]');
+    expect(css).toContain("[data-opening]:not([data-opening-ready])");
+    expect(css).not.toContain("--sidebar-peek-duration: 280ms");
+    expect(css).toContain("var(--sidebar-peek-duration)");
+    expect(css).toContain("var(--sidebar-peek-ease)");
+    // Peek !important width/shadow is already scoped in index.css. This lock
+    // fails if that rule is widened to every collapsed rail or dropped.
+    expect(css).toContain(
+      '[data-slot="sidebar"][data-collapsed]:is([data-peeking], [data-present])',
+    );
+    expect(css).not.toContain(
+      '[data-slot="sidebar"][data-collapsed] [data-slot="sidebar-container"]',
+    );
+    expect(css).toContain('[data-slot="sidebar"][data-collapsed] [data-slot="sidebar-header"]');
+    expect(css).toContain(
+      '[data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-slot="sidebar-header"]',
+    );
+    expect(css).toContain("[data-sidebar-peek-drag-hole]");
+    expect(css).toContain("[data-sidebar-peeking] [data-sidebar-peek-drag-hole]");
+    expect(css).toContain("[data-sidebar-peek-hover-bridge]");
+    expect(css).toContain("calc(var(--sidebar-width) - var(--sidebar-width-icon))");
+    expect(css).toContain("calc(var(--sidebar-width) - 100%)");
+  });
+
+  it("keeps the project rail one column whether the sidebar is icon-only or open", () => {
+    const rail = NodeFS.readFileSync(
+      new URL("./sidebar/SidebarProjectRail.tsx", import.meta.url),
+      "utf8",
+    );
+    const threadSidebar = NodeFS.readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
+
+    expect(rail).not.toContain("variant");
+    expect(rail).not.toContain("group-data-compact");
+    expect(rail).toContain("w-12 shrink-0");
+    expect(threadSidebar).toContain('<SidebarUtilityMenu orientation="vertical" />');
+    expect(threadSidebar).not.toContain("showThreadList");
   });
 });

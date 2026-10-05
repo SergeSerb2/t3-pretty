@@ -1,5 +1,7 @@
 import type {
+  EnvironmentId,
   ModelSelection,
+  ProviderInstanceId,
   ProviderInteractionMode,
   ProviderOptionDescriptor,
   ProviderOptionSelection,
@@ -7,20 +9,19 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import { displayRuntimeModeForProviderDriver } from "@t3tools/contracts";
-import type { LegendListRenderItemProps } from "@legendapp/list/react-native";
+
+import type { LegendListRef, LegendListRenderItemProps } from "@legendapp/list/react-native";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
-import { HeaderHeightContext } from "@react-navigation/elements";
-import {
-  getProviderOptionCurrentLabel,
-  getProviderOptionCurrentValue,
-  getProviderOptionDescriptors,
-} from "@t3tools/shared/model";
-import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
+import { usesChatGptSharing } from "@t3tools/shared/usageLimits";
+import { StackActions, useNavigation } from "@react-navigation/native";
 import {
   createNativeStackNavigator,
   type NativeStackNavigationProp,
 } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
+import { AsyncResult } from "effect/unstable/reactivity";
 import {
   createContext,
   use,
@@ -32,51 +33,96 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Platform, Pressable, ScrollView, TextInput, View } from "react-native";
-import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
+import {
+  Alert,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  TextInput,
+  View,
+} from "react-native";
+import Animated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
+import { MaterialIconButton } from "../../components/MaterialIconButton";
 import { ProviderIcon } from "../../components/ProviderIcon";
+import { SheetSurface } from "../../components/SheetSurface";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
+import { MOTION_TIMING } from "../../lib/motion";
+import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../../lib/searchQuery";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { applyProviderOptionSelection } from "../../lib/providerOptions";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import {
   NativeHeaderToolbar,
   NativeStackScreenOptions,
   nativeHeaderScrollEdgeEffects,
 } from "../../native/StackHeader";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import {
+  NATIVE_LIQUID_GLASS_SUPPORTED,
+  TRANSPARENT_NATIVE_HEADERS,
+} from "../../native/native-glass";
+import { GlassRowPressable } from "../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
+import { ChatGptSharingStatus } from "./ChatGptSharingStatus";
+import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
+import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import {
+  createProviderCatalogRefreshRunner,
+  providerCatalogRefreshError,
+} from "./provider-catalog-refresh";
 import {
   createNativeMailSearchToolbarItem,
   NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET,
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
+import { ThreadSettingsControlStack } from "./ThreadSettingsControls";
+import { ModelRow } from "./ThreadSettingsRows";
 import {
-  runtimeModeChoicesForProvider,
-  selectableChoices,
-  selectedModelProviderDriver,
+  compatibleRuntimeModeForChoices,
+  runtimeModeChoicesForSupportedModes,
 } from "./thread-settings-options";
+import { useNewTaskFlow } from "./new-task-flow-provider";
 import { buildThreadModelIdentity } from "./threadModelIdentity";
 import { ThreadCheckpointsSection } from "./ThreadCheckpointsSection";
+import { useProjectTransferAction } from "./use-project-transfer";
 import {
+  buildNewTaskThreadSettingsSession,
   effectiveProviderFilter,
+  favoritesFirst,
   initialProviderFilter,
+  modelFavoriteKey,
   modelMatchesCatalogQuery,
-  pendingModelAfterPress,
-  presentedSettingsSheetPage,
   providerSectionIsCollapsed,
-  threadSettingsSheetPageForRoute,
+  toggleModelFavorite,
   visibleSheetOptionDescriptors,
-  type ThreadSettingsSheetPage,
 } from "./thread-settings-sheet-state";
 
-export type { ThreadSettingsSheetPage };
-
+/**
+ * Everyday harnesses start expanded; every other provider (OpenRouter catalogs
+ * and friends) starts folded so a 300-model catalog cannot bury the list. All
+ * provider headers remain user-collapsible.
+ */
+const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set([
+  "claudeAgent",
+  "codex",
+  "antigravity",
+]);
 /**
  * Keep measured row changes stable, but let catalog mutations use the list's
  * native bounds so a filtered catalog that underflows returns to the top.
@@ -88,13 +134,11 @@ const THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION = {
 const THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION = LinearTransition.duration(180);
 const THREAD_SETTINGS_CATALOG_ENTER_TRANSITION = FadeIn.duration(140);
 const THREAD_SETTINGS_CATALOG_EXIT_TRANSITION = FadeOut.duration(120);
-const THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION = LinearTransition.duration(180);
-const THREAD_SETTINGS_OPTION_ENTER_TRANSITION = FadeIn.duration(140);
-const THREAD_SETTINGS_OPTION_EXIT_TRANSITION = FadeOut.duration(100);
 const THREAD_SETTINGS_HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(
   Platform.OS,
   Platform.Version,
 );
+const DISCLOSURE_CHEVRON_TIMING = { ...MOTION_TIMING, duration: 180 };
 
 export function threadSettingsSummaryLabel(input: {
   readonly modelLabel: string;
@@ -108,7 +152,7 @@ export function threadSettingsSummaryLabel(input: {
     providerDriver: null,
     optionDescriptors: input.optionDescriptors,
   });
-  const runtime = runtimeModeChoicesForProvider(input.providerDriver).find(
+  const runtime = runtimeModeChoicesForSupportedModes(undefined).find(
     (choice) =>
       choice.mode === displayRuntimeModeForProviderDriver(input.providerDriver, input.runtimeMode),
   );
@@ -119,66 +163,54 @@ export function threadSettingsSummaryLabel(input: {
   ].join(" · ");
 }
 
-function ModelRow(props: {
-  readonly option: ModelOption;
-  readonly selected: boolean;
-  readonly onPress: () => void;
-  readonly isFirst: boolean;
-  readonly isLast: boolean;
-}) {
-  const checkmarkColor = useThemeColor("--color-icon");
+const EMPTY_MODEL_FAVORITES: ReadonlyArray<{
+  readonly provider: ProviderInstanceId;
+  readonly model: string;
+}> = [];
+const FAVORITES_PROVIDER_FILTER = "@favorites";
+/**
+ * Chevron that turns between collapsed and expanded instead of swapping
+ * glyphs. A recycled header rebinding to another `identity` snaps.
+ */
+function DisclosureChevron(props: { readonly expanded: boolean; readonly identity: string }) {
+  const rotation = useSharedValue(props.expanded ? 180 : 0);
+  const identity = useRef(props.identity);
+  // Before paint, so a recycled header never shows its old angle for a frame.
+  useLayoutEffect(() => {
+    const target = props.expanded ? 180 : 0;
+    rotation.set(
+      identity.current === props.identity ? withTiming(target, DISCLOSURE_CHEVRON_TIMING) : target,
+    );
+    identity.current = props.identity;
+  }, [props.expanded, props.identity, rotation]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.get()}deg` }] }));
   return (
-    <Pressable
-      accessibilityLabel={props.option.label}
-      accessibilityRole="radio"
-      accessibilityState={{ checked: props.selected }}
-      onPress={props.onPress}
-      className={cn(
-        "mx-4 min-h-11 flex-row items-center gap-2 bg-card px-4 py-2 active:bg-subtle",
-        props.isFirst && "rounded-t-2xl",
-        props.isLast ? "rounded-b-2xl" : "border-b border-border-subtle",
-      )}
-    >
-      <Text className="min-w-0 shrink text-base font-t3-medium text-foreground" numberOfLines={1}>
-        {props.option.label}
-      </Text>
-      {props.option.isDefault ? (
-        <View className="rounded-md bg-subtle-strong px-1.5 py-0.5">
-          <Text className="text-3xs font-t3-bold text-foreground-muted">Default</Text>
-        </View>
-      ) : null}
-      {props.option.isLegacy ? (
-        <View className="rounded-md bg-subtle px-1.5 py-0.5">
-          <Text className="text-3xs font-t3-bold text-foreground-muted">Legacy</Text>
-        </View>
-      ) : null}
-      <View className="flex-1" />
-      {props.selected ? (
-        <SymbolView
-          name="checkmark"
-          size={16}
-          tintColor={checkmarkColor}
-          type="monochrome"
-          weight="semibold"
-        />
-      ) : null}
-    </Pressable>
+    <Animated.View style={style}>
+      <SymbolView
+        name="chevron.down"
+        size={12}
+        tintColorClassName="accent-icon-subtle"
+        type="monochrome"
+      />
+    </Animated.View>
   );
 }
 
 /** Provider catalog header with its harness logo and disclosure state. */
 function ProviderHeader(props: {
+  readonly providerKey: string;
   readonly driver: string | undefined;
+  readonly iconUrl: string | undefined;
   readonly label: string;
   readonly collapsible: boolean;
   readonly collapsed: boolean;
   readonly modelCount: number;
   readonly onToggle: () => void;
 }) {
-  const iconSubtle = useThemeColor("--color-icon-subtle");
+  const glass = useGlassChromeActive();
   const content = (
     <>
-      <ProviderIcon provider={props.driver} size={15} />
+      <ProviderIcon iconUrl={props.iconUrl} provider={props.driver} size={15} />
       <Text className="text-sm font-t3-medium text-foreground-muted">{props.label}</Text>
       {props.collapsible ? (
         <>
@@ -188,12 +220,16 @@ function ProviderHeader(props: {
               {props.modelCount}
             </Text>
           ) : null}
-          <SymbolView
-            name={props.collapsed ? "chevron.down" : "chevron.up"}
-            size={12}
-            tintColor={iconSubtle}
-            type="monochrome"
-          />
+          {glass ? (
+            <DisclosureChevron expanded={!props.collapsed} identity={props.providerKey} />
+          ) : (
+            <SymbolView
+              name={props.collapsed ? "chevron.down" : "chevron.up"}
+              size={12}
+              tintColorClassName="accent-icon-subtle"
+              type="monochrome"
+            />
+          )}
         </>
       ) : null}
     </>
@@ -205,7 +241,7 @@ function ProviderHeader(props: {
         accessibilityLabel={`${props.label}, ${props.modelCount} models`}
         accessibilityRole="button"
         accessibilityState={{ expanded: !props.collapsed }}
-        className="mx-4 mt-1 min-h-11 flex-row items-center gap-2 rounded-xl px-1 pt-2 active:opacity-60"
+        className="mx-4 mt-1 min-h-11 flex-row items-center gap-2 rounded-xl px-1 pt-2 active:opacity-60 android:min-h-12"
         onPress={props.onToggle}
       >
         {content}
@@ -226,13 +262,19 @@ function DisclosureRow(props: {
   readonly value: string | undefined;
   readonly onPress: () => void;
   readonly isLast?: boolean;
+  readonly disabled?: boolean;
 }) {
-  const iconSubtle = useThemeColor("--color-icon-subtle");
   return (
-    <Pressable
+    <GlassRowPressable
       accessibilityRole="button"
+      accessibilityState={{ disabled: props.disabled === true }}
+      disabled={props.disabled}
       onPress={props.onPress}
-      className="min-h-11 flex-row items-center gap-2 px-5 py-2.5 active:opacity-70"
+      className={cn(
+        "min-h-11 flex-row items-center gap-2 px-5 py-2.5",
+        props.disabled && "opacity-55",
+      )}
+      fallbackClassName="active:opacity-70"
     >
       <Text className="text-sm font-t3-medium text-foreground">{props.label}</Text>
       <View className="flex-1" />
@@ -241,47 +283,13 @@ function DisclosureRow(props: {
           {props.value}
         </Text>
       ) : null}
-      <SymbolView name="chevron.right" size={12} tintColor={iconSubtle} type="monochrome" />
-    </Pressable>
-  );
-}
-
-/** Single option inside a submenu panel. */
-function ChoiceRow(props: {
-  readonly label: string;
-  readonly description?: string;
-  readonly selected: boolean;
-  readonly onPress: () => void;
-  readonly isLast: boolean;
-}) {
-  const checkmarkColor = useThemeColor("--color-icon");
-  return (
-    <Pressable
-      accessibilityLabel={props.description ? `${props.label}. ${props.description}` : props.label}
-      accessibilityRole="radio"
-      accessibilityState={{ checked: props.selected }}
-      onPress={props.onPress}
-      className={cn(
-        "min-h-14 flex-row items-center gap-3 bg-card px-4 py-3 active:bg-subtle",
-        !props.isLast && "border-b border-border-subtle",
-      )}
-    >
-      <View className="min-w-0 flex-1 gap-0.5">
-        <Text className="text-base font-t3-medium text-foreground">{props.label}</Text>
-        {props.description ? (
-          <Text className="text-sm leading-5 text-foreground-muted">{props.description}</Text>
-        ) : null}
-      </View>
-      {props.selected ? (
-        <SymbolView
-          name="checkmark"
-          size={16}
-          tintColor={checkmarkColor}
-          type="monochrome"
-          weight="semibold"
-        />
-      ) : null}
-    </Pressable>
+      <SymbolView
+        name="chevron.right"
+        size={12}
+        tintColorClassName="accent-icon-subtle"
+        type="monochrome"
+      />
+    </GlassRowPressable>
   );
 }
 
@@ -308,13 +316,18 @@ function FilterChip(props: {
   readonly selected: boolean;
   readonly onPress: () => void;
 }) {
+  const glass = useGlassChromeActive();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected: props.selected }}
       className={cn(
         "h-8 justify-center rounded-full px-3",
-        props.selected ? "bg-primary" : "bg-card",
+        props.selected
+          ? "bg-primary"
+          : glass
+            ? "border border-chrome-glass-border bg-chrome-glass"
+            : "bg-card",
       )}
       style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.97 : 1 }] })}
       onPress={props.onPress}
@@ -331,11 +344,9 @@ function FilterChip(props: {
   );
 }
 
-type ThreadSettingsSubmenuPage =
-  | { readonly kind: "descriptor"; readonly id: string }
-  | { readonly kind: "runtime" };
-
 type ThreadSettingsSessionProps = {
+  readonly environmentId: EnvironmentId | null;
+  readonly providerInstanceId?: ProviderInstanceId;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
   readonly selectedModel: ModelSelection | null;
   readonly onSelectModel: (option: ModelOption) => void;
@@ -343,7 +354,6 @@ type ThreadSettingsSessionProps = {
   readonly onUpdateOptionSelections: (selections: ReadonlyArray<ProviderOptionSelection>) => void;
   readonly runtimeMode: RuntimeMode;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
-  readonly initialPage?: ThreadSettingsSheetPage;
   /** Existing-thread sessions only: enables the Checkpoints card with its
       per-checkpoint revert action. Absent in the new-task flow. */
   readonly checkpointsThreadRef?: ScopedThreadRef | null;
@@ -353,17 +363,9 @@ export type ExistingThreadSettingsRouteSession = ThreadSettingsSessionProps & {
   readonly ownerId: string;
 };
 
-type PresentExistingThreadSettingsOptions = {
-  readonly preservePage?: boolean;
-};
-
 type ExistingThreadSettingsRouteContextValue = {
   readonly session: ExistingThreadSettingsRouteSession | null;
-  readonly present: (
-    session: ExistingThreadSettingsRouteSession,
-    options?: PresentExistingThreadSettingsOptions,
-  ) => void;
-  readonly setPage: (page: ThreadSettingsSheetPage) => void;
+  readonly present: (session: ExistingThreadSettingsRouteSession) => void;
   readonly clear: (ownerId: string) => void;
 };
 
@@ -373,36 +375,10 @@ const ExistingThreadSettingsRouteContext =
 /** Bridges the active thread's settings state into the root native sheet route. */
 export function ExistingThreadSettingsRouteProvider(props: { readonly children: ReactNode }) {
   const [session, setSession] = useState<ExistingThreadSettingsRouteSession | null>(null);
-  const present = useCallback(
-    (
-      nextSession: ExistingThreadSettingsRouteSession,
-      options?: PresentExistingThreadSettingsOptions,
-    ) => {
-      setSession((current) => ({
-        ...nextSession,
-        initialPage: presentedSettingsSheetPage({
-          preservePage: options?.preservePage === true,
-          currentOwnerId: current?.ownerId,
-          nextOwnerId: nextSession.ownerId,
-          currentPage: current?.initialPage,
-          requestedPage: nextSession.initialPage,
-        }),
-      }));
-    },
-    [],
-  );
-  const setPage = useCallback((page: ThreadSettingsSheetPage) => {
-    setSession((current) =>
-      current && current.initialPage !== page ? { ...current, initialPage: page } : current,
-    );
-  }, []);
   const clear = useCallback((ownerId: string) => {
     setSession((current) => (current?.ownerId === ownerId ? null : current));
   }, []);
-  const value = useMemo(
-    () => ({ session, present, setPage, clear }),
-    [clear, present, session, setPage],
-  );
+  const value = useMemo(() => ({ session, present: setSession, clear }), [clear, session]);
 
   return (
     <ExistingThreadSettingsRouteContext.Provider value={value}>
@@ -422,24 +398,25 @@ export function useExistingThreadSettingsRoutePresentation() {
 }
 
 type ThreadSettingsSessionValue = {
+  readonly environmentId: EnvironmentId | null;
+  readonly providerInstanceId?: ProviderInstanceId;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
+  readonly favoriteKeys: ReadonlySet<string>;
+  readonly favoritesLoaded: boolean;
+  readonly toggleFavorite: (option: ModelOption) => void;
   readonly runtimeMode: RuntimeMode;
+  readonly runtimeModeChoices: ReturnType<typeof runtimeModeChoicesForSupportedModes>;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
-  readonly runtimeModeChoices: ReturnType<typeof runtimeModeChoicesForProvider>;
   readonly displayedDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly displayedModel: ModelOption | null;
   readonly providerExpansionOverrides: ReadonlySet<string>;
   readonly hasLegacyModels: boolean;
-  readonly initialPage: ThreadSettingsSheetPage;
   readonly checkpointsThreadRef: ScopedThreadRef | null;
-  readonly pendingModel: ModelOption | null;
   readonly providerFilter: string | null;
   readonly searchQuery: string;
   readonly showLegacy: boolean;
   readonly applyOptionChange: (id: string, value: string | boolean) => void;
-  readonly commitPendingModel: () => void;
   readonly isApplied: (option: ModelOption) => boolean;
-  readonly isDisplayed: (option: ModelOption) => boolean;
   readonly pressModel: (option: ModelOption) => void;
   readonly setProviderFilter: (providerKey: string | null) => void;
   readonly setSearchQuery: (query: string) => void;
@@ -449,10 +426,41 @@ type ThreadSettingsSessionValue = {
 
 const ThreadSettingsSessionContext = createContext<ThreadSettingsSessionValue | null>(null);
 
-/** Owns the staged model and option state for one picker presentation. */
+/**
+ * Owns catalog browsing state for one picker presentation. Every model,
+ * option, and runtime pick applies immediately; there is nothing to save.
+ */
 function ThreadSettingsSessionProvider(
   props: ThreadSettingsSessionProps & { readonly children: ReactNode },
 ) {
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const favoritesLoaded = AsyncResult.isSuccess(preferences);
+  const modelFavorites = favoritesLoaded
+    ? (preferences.value.modelFavorites ?? EMPTY_MODEL_FAVORITES)
+    : EMPTY_MODEL_FAVORITES;
+  const favoriteKeys = useMemo(
+    () =>
+      new Set(
+        modelFavorites.map((favorite) => modelFavoriteKey(favorite.provider, favorite.model)),
+      ),
+    [modelFavorites],
+  );
+  const toggleFavorite = useCallback(
+    (option: ModelOption) => {
+      if (!favoritesLoaded) return;
+      void Haptics.selectionAsync();
+      savePreferences({
+        transform: (current) => ({
+          modelFavorites: toggleModelFavorite(
+            current.modelFavorites ?? EMPTY_MODEL_FAVORITES,
+            option,
+          ),
+        }),
+      });
+    },
+    [favoritesLoaded, savePreferences],
+  );
   const [showLegacyToggle, setShowLegacyToggle] = useState(false);
   const [providerFilter, setProviderFilter] = useState<string | null>(() =>
     initialProviderFilter({
@@ -460,96 +468,52 @@ function ThreadSettingsSessionProvider(
       selectedModel: props.selectedModel,
     }),
   );
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQueryState] = useState("");
+  const setSearchQuery = useCallback((query: string) => {
+    setSearchQueryState(limitMobileSearchQuery(query, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH));
+  }, []);
   const [providerExpansionOverrides, setProviderExpansionOverrides] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [pendingModel, setPendingModel] = useState<ModelOption | null>(null);
-
   const isApplied = useCallback(
     (option: ModelOption) =>
       option.selection.instanceId === props.selectedModel?.instanceId &&
       option.selection.model === props.selectedModel.model,
     [props.selectedModel],
   );
-  // The list highlights the staged pick; Save turns it into the applied one.
-  const isDisplayed = useCallback(
-    (option: ModelOption) => (pendingModel ? option.key === pendingModel.key : isApplied(option)),
-    [isApplied, pendingModel],
+  const displayedModel = useMemo(
+    () =>
+      props.providerGroups.flatMap((group) => group.models).find((option) => isApplied(option)) ??
+      null,
+    [isApplied, props.providerGroups],
+  );
+  const runtimeModeChoices = runtimeModeChoicesForSupportedModes(
+    displayedModel?.supportedRuntimeModes,
+  );
+  const compatibleRuntimeMode = compatibleRuntimeModeForChoices(
+    props.runtimeMode,
+    runtimeModeChoices,
   );
 
-  // While a model is staged, the settings rows describe and edit the staged
-  // model's options (kept on its pending selection); Save applies model and
-  // options together. Otherwise they edit the applied selection directly.
-  const displayedDescriptors = useMemo(
-    () =>
-      pendingModel
-        ? pendingModel.capabilities
-          ? getProviderOptionDescriptors({
-              caps: pendingModel.capabilities,
-              selections: pendingModel.selection.options,
-            })
-          : []
-        : props.optionDescriptors,
-    [pendingModel, props.optionDescriptors],
-  );
   const visibleDescriptors = useMemo(
-    () => visibleSheetOptionDescriptors(displayedDescriptors),
-    [displayedDescriptors],
-  );
-  // Runtime modes follow the same staged model as the option rows above, so
-  // a staged Kimi pick already shows Kimi's Auto/Yolo naming before Save.
-  const runtimeModeChoices = useMemo(
-    () =>
-      runtimeModeChoicesForProvider(
-        pendingModel?.providerDriver ??
-          selectedModelProviderDriver({
-            providerGroups: props.providerGroups,
-            selectedModel: props.selectedModel,
-          }),
-      ),
-    [pendingModel?.providerDriver, props.providerGroups, props.selectedModel],
+    () => visibleSheetOptionDescriptors(props.optionDescriptors),
+    [props.optionDescriptors],
   );
 
   const hasLegacyModels = useMemo(
     () => props.providerGroups.some((group) => group.models.some((model) => model.isLegacy)),
     [props.providerGroups],
   );
-  const displayedModel = useMemo(() => {
-    if (pendingModel) {
-      return pendingModel;
-    }
-    for (const group of props.providerGroups) {
-      const applied = group.models.find(isApplied);
-      if (applied) {
-        return applied;
-      }
-    }
-    return null;
-  }, [isApplied, pendingModel, props.providerGroups]);
-  const commitPendingModel = useCallback(() => {
-    if (pendingModel) {
-      void Haptics.selectionAsync();
-      props.onSelectModel(pendingModel);
-    }
-  }, [pendingModel, props.onSelectModel]);
 
   const applyOptionChange = useCallback(
     (id: string, value: string | boolean) => {
-      const next = applyProviderOptionSelection(displayedDescriptors, { id, value });
-      if (!next) {
-        return;
-      }
-      if (pendingModel) {
-        setPendingModel({
-          ...pendingModel,
-          selection: { ...pendingModel.selection, options: next },
-        });
-      } else {
+      const next = applyProviderOptionSelection(props.optionDescriptors, { id, value });
+      if (next) {
+        void Haptics.selectionAsync();
         props.onUpdateOptionSelections(next);
       }
     },
-    [displayedDescriptors, pendingModel, props.onUpdateOptionSelections],
+    [props.optionDescriptors, props.onUpdateOptionSelections],
   );
 
   const toggleProvider = useCallback((providerKey: string) => {
@@ -562,67 +526,74 @@ function ThreadSettingsSessionProvider(
     });
   }, []);
 
+  // Re-tapping the applied model must not reset its options to catalog defaults.
   const pressModel = useCallback(
     (option: ModelOption) => {
+      if (isApplied(option)) {
+        return;
+      }
+      if (option.isUnavailable) {
+        Alert.alert(
+          "Model unavailable",
+          "Set up this provider on web or desktop, or select another model.",
+        );
+        return;
+      }
       void Haptics.selectionAsync();
-      setPendingModel((current) =>
-        pendingModelAfterPress({
-          current,
-          pressed: option,
-          pressedIsApplied: isApplied(option),
-        }),
-      );
+      props.onSelectModel(option);
     },
-    [isApplied],
+    [isApplied, props.onSelectModel],
   );
 
   const value = useMemo<ThreadSettingsSessionValue>(
     () => ({
+      environmentId: props.environmentId,
+      providerInstanceId: props.providerInstanceId,
       providerGroups: props.providerGroups,
-      runtimeMode: props.runtimeMode,
+      runtimeMode: compatibleRuntimeMode,
       onUpdateRuntimeMode: props.onUpdateRuntimeMode,
       runtimeModeChoices,
       displayedDescriptors: visibleDescriptors,
       displayedModel,
+      favoriteKeys,
+      favoritesLoaded,
       providerExpansionOverrides,
       hasLegacyModels,
-      initialPage: props.initialPage ?? "home",
       checkpointsThreadRef: props.checkpointsThreadRef ?? null,
-      pendingModel,
       providerFilter,
       searchQuery,
       showLegacy: showLegacyToggle,
       applyOptionChange,
-      commitPendingModel,
       isApplied,
-      isDisplayed,
       pressModel,
       setProviderFilter,
       setSearchQuery,
       setShowLegacy: setShowLegacyToggle,
       toggleProvider,
+      toggleFavorite,
     }),
     [
       applyOptionChange,
-      commitPendingModel,
       visibleDescriptors,
       displayedModel,
+      compatibleRuntimeMode,
+      favoriteKeys,
+      favoritesLoaded,
       providerExpansionOverrides,
       hasLegacyModels,
-      props.initialPage,
       props.checkpointsThreadRef,
       isApplied,
-      isDisplayed,
-      pendingModel,
+      props.environmentId,
+      props.providerInstanceId,
       pressModel,
       providerFilter,
       props.onUpdateRuntimeMode,
       props.providerGroups,
-      props.runtimeMode,
       runtimeModeChoices,
       searchQuery,
       showLegacyToggle,
       toggleProvider,
+      toggleFavorite,
     ],
   );
 
@@ -641,9 +612,16 @@ function useThreadSettingsSession() {
   return value;
 }
 
+/** Scenery key of the thread being configured; new tasks have none. */
+function useThreadSettingsSceneryKey(): string | null {
+  const threadRef = useThreadSettingsSession().checkpointsThreadRef;
+  return threadRef === null ? null : `${threadRef.environmentId}:${threadRef.threadId}`;
+}
+
 type ThreadSettingsProviderCatalog = {
   readonly key: string;
   readonly driver: string | undefined;
+  readonly iconUrl: string | undefined;
   readonly label: string;
   readonly collapsible: boolean;
   readonly collapsed: boolean;
@@ -685,8 +663,11 @@ function ThreadSettingsModelListRow(props: {
       isFirst={props.isFirst}
       isLast={props.isLast}
       onPress={onPress}
+      isFavorite={session.favoriteKeys.has(props.option.key)}
+      favoritesLoaded={session.favoritesLoaded}
+      onToggleFavorite={() => session.toggleFavorite(props.option)}
       option={props.option}
-      selected={session.isDisplayed(props.option)}
+      selected={session.isApplied(props.option)}
     />
   );
 }
@@ -702,9 +683,11 @@ function ThreadSettingsProviderListHeader(props: {
 
   return (
     <ProviderHeader
+      providerKey={props.provider.key}
       collapsible={props.provider.collapsible}
       collapsed={props.provider.collapsed}
       driver={props.provider.driver}
+      iconUrl={props.provider.iconUrl}
       label={props.provider.label}
       modelCount={props.provider.modelCount}
       onToggle={onToggle}
@@ -725,21 +708,33 @@ function useThreadSettingsCatalogItems(
         if (activeProviderFilter !== null && group.providerKey !== activeProviderFilter) {
           return [];
         }
-        const driver = group.models[0]?.providerDriver;
-        const catalogModels = session.showLegacy
-          ? group.models
-          : group.models.filter((model) => !model.isLegacy || session.isDisplayed(model));
-        const visibleModels = catalogModels.filter((model) =>
-          modelMatchesCatalogQuery({
-            model,
-            providerLabel: group.providerLabel,
-            query: session.searchQuery,
-          }),
+        const driver = group.models[0]?.providerDriver ?? group.providerKey;
+        const catalogModels =
+          session.showLegacy || session.providerFilter === FAVORITES_PROVIDER_FILTER
+            ? group.models
+            : group.models.filter(
+                (model) =>
+                  !model.isLegacy ||
+                  session.isApplied(model) ||
+                  session.favoriteKeys.has(model.key),
+              );
+        const visibleModels = favoritesFirst(
+          catalogModels.filter(
+            (model) =>
+              (session.providerFilter !== FAVORITES_PROVIDER_FILTER ||
+                session.favoriteKeys.has(model.key)) &&
+              modelMatchesCatalogQuery({
+                model,
+                providerLabel: group.providerLabel,
+                query: session.searchQuery,
+              }),
+          ),
+          session.favoriteKeys,
         );
         if (visibleModels.length === 0) {
           return [];
         }
-        const containsDisplayedSelection = group.models.some(session.isDisplayed);
+        const containsDisplayedSelection = group.models.some(session.isApplied);
         const isNarrowed = activeProviderFilter !== null || session.searchQuery.trim().length > 0;
         const collapsible = !isNarrowed && session.providerGroups.length > 1;
         const collapsed = providerSectionIsCollapsed({
@@ -750,6 +745,7 @@ function useThreadSettingsCatalogItems(
         const provider: ThreadSettingsProviderCatalog = {
           key: group.providerKey,
           driver,
+          iconUrl: group.models[0]?.providerIconUrl,
           label: group.providerLabel,
           collapsible,
           collapsed,
@@ -773,7 +769,7 @@ function useThreadSettingsCatalogItems(
       }),
     [
       session.isApplied,
-      session.isDisplayed,
+      session.favoriteKeys,
       session.providerExpansionOverrides,
       session.providerFilter,
       session.providerGroups,
@@ -783,131 +779,139 @@ function useThreadSettingsCatalogItems(
   );
 }
 
-function ThreadSettingsOptionsCard(props: {
-  readonly onOpenSubmenu: (submenu: ThreadSettingsSubmenuPage) => void;
-}) {
+/** Current model plus its reasoning, speed, and access cards, above the catalog. */
+function ThreadSettingsOptions(props: { readonly onPressModel: () => void }) {
   const session = useThreadSettingsSession();
+  const configs = useAtomValue(environmentServerConfigsAtom);
+  const selectedProvider = session.environmentId
+    ? (configs
+        .get(session.environmentId)
+        ?.providers.find((provider) => provider.instanceId === session.providerInstanceId) ?? null)
+    : null;
 
   return (
-    <Animated.View
-      className="mx-4 overflow-hidden rounded-2xl bg-card"
-      layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}
-    >
-      {session.displayedDescriptors.map((descriptor) => {
-        if (descriptor.type === "select") {
-          return (
-            <Animated.View
-              key={descriptor.id}
-              layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}
-              entering={THREAD_SETTINGS_OPTION_ENTER_TRANSITION}
-              exiting={THREAD_SETTINGS_OPTION_EXIT_TRANSITION}
-            >
-              <DisclosureRow
-                label={descriptor.label}
-                value={getProviderOptionCurrentLabel(descriptor)}
-                onPress={() => props.onOpenSubmenu({ kind: "descriptor", id: descriptor.id })}
-              />
-            </Animated.View>
-          );
-        }
-        return (
-          <Animated.View
-            key={descriptor.id}
-            layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}
-            entering={THREAD_SETTINGS_OPTION_ENTER_TRANSITION}
-            exiting={THREAD_SETTINGS_OPTION_EXIT_TRANSITION}
-          >
-            <SwitchRow
-              label={descriptor.label}
-              value={descriptor.currentValue ?? false}
-              onValueChange={(value) => session.applyOptionChange(descriptor.id, value)}
-            />
-          </Animated.View>
-        );
-      })}
-      <Animated.View layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}>
-        <DisclosureRow
-          isLast
-          label="Runtime"
-          value={
-            session.runtimeModeChoices.find((choice) => choice.mode === session.runtimeMode)?.label
-          }
-          onPress={() => props.onOpenSubmenu({ kind: "runtime" })}
-        />
-      </Animated.View>
-    </Animated.View>
+    <ThreadSettingsControlStack
+      descriptors={session.displayedDescriptors}
+      model={session.displayedModel}
+      modelFooter={
+        usesChatGptSharing(selectedProvider) ? (
+          <ChatGptSharingStatus provider={selectedProvider} />
+        ) : undefined
+      }
+      runtimeMode={session.runtimeMode}
+      runtimeModeChoices={session.runtimeModeChoices}
+      onOptionChange={session.applyOptionChange}
+      onPressModel={props.onPressModel}
+      onRuntimeModeChange={session.onUpdateRuntimeMode}
+    />
   );
 }
 
-function ThreadSettingsHomeContent(props: {
-  readonly onOpenCatalog: () => void;
-  readonly onOpenSubmenu: (submenu: ThreadSettingsSubmenuPage) => void;
+type ThreadSettingsProjectTransfer = {
+  readonly isPending: boolean;
+  readonly pendingLabel: string;
+  readonly onPress: () => void;
+};
+
+/** Existing-thread extras below the catalog: project transfer and checkpoints. */
+function ThreadSettingsThreadSections(props: {
+  readonly projectTransfer: ThreadSettingsProjectTransfer | undefined;
 }) {
-  const insets = useSafeAreaInsets();
   const session = useThreadSettingsSession();
-  const iconSubtle = useThemeColor("--color-icon-subtle");
-  const model = session.displayedModel;
-
+  const glass = useGlassChromeActive();
   return (
-    <ScrollView
-      className="flex-1 bg-sheet"
-      contentContainerStyle={{ paddingBottom: insets.bottom + 24, paddingTop: 8 }}
-      contentInsetAdjustmentBehavior="automatic"
-      showsVerticalScrollIndicator={false}
-    >
-      <Text className="px-5 pb-2 pt-2 text-sm font-t3-medium text-foreground-muted">Model</Text>
-      <Pressable
-        accessibilityHint="Opens the model catalog"
-        accessibilityLabel={model ? `Change model, ${model.label}` : "Choose model"}
-        accessibilityRole="button"
-        className="mx-4 min-h-14 flex-row items-center gap-3 rounded-2xl bg-card px-4 py-3 active:opacity-70"
-        onPress={props.onOpenCatalog}
-      >
-        <ProviderIcon provider={model?.providerDriver} size={18} />
-        <View className="min-w-0 flex-1">
-          <Text className="text-base font-t3-medium text-foreground" numberOfLines={1}>
-            {model?.label ?? "Choose model"}
+    <>
+      {props.projectTransfer ? (
+        <>
+          <Text className="px-5 pb-2 pt-7 text-sm font-t3-medium text-foreground-muted">
+            Project
           </Text>
-          {model?.providerLabel ? (
-            <Text className="text-sm text-foreground-muted" numberOfLines={1}>
-              {model.providerLabel}
-            </Text>
-          ) : null}
-        </View>
-        <Text className="text-sm font-t3-medium text-foreground-muted">Change</Text>
-        <SymbolView name="chevron.right" size={12} tintColor={iconSubtle} type="monochrome" />
-      </Pressable>
-
-      <Text className="px-5 pb-2 pt-7 text-sm font-t3-medium text-foreground-muted">Options</Text>
-      <ThreadSettingsOptionsCard onOpenSubmenu={props.onOpenSubmenu} />
-
+          <View
+            className={
+              glass ? cn(GLASS_CARD_CLASS_NAME, "mx-4") : "mx-4 overflow-hidden rounded-2xl bg-card"
+            }
+            style={glass ? glassCardStyle() : undefined}
+          >
+            <DisclosureRow
+              disabled={props.projectTransfer.isPending}
+              label={
+                props.projectTransfer.isPending
+                  ? props.projectTransfer.pendingLabel
+                  : "Copy or move to connection"
+              }
+              value={CONNECT_BRANDING.connectName}
+              onPress={props.projectTransfer.onPress}
+            />
+          </View>
+          <Text className="px-5 pt-2 text-xs leading-4 text-foreground-muted">
+            Copy duplicates this thread. Move relocates the whole project and removes it from this
+            machine.
+          </Text>
+        </>
+      ) : null}
       {session.checkpointsThreadRef !== null ? (
         <ThreadCheckpointsSection threadRef={session.checkpointsThreadRef} />
       ) : null}
-    </ScrollView>
+    </>
   );
 }
 
-function ThreadSettingsCatalogContent() {
+/**
+ * The whole picker on one native scroll owner: options first (the everyday
+ * edit), then the model catalog, then thread extras. Searching hides the
+ * options so matches land at the top.
+ */
+function ThreadSettingsContent(props: {
+  readonly projectTransfer: ThreadSettingsProjectTransfer | undefined;
+}) {
   const session = useThreadSettingsSession();
+  const glass = useGlassChromeActive();
+  const sceneryKey = useThreadSettingsSceneryKey();
+  const refreshProvidersCommand = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
+  const refreshProviderCatalog = useMemo(
+    () => createProviderCatalogRefreshRunner(refreshProvidersCommand),
+    [refreshProvidersCommand],
+  );
+  const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
+  const refreshProviders = useCallback(() => {
+    if (!session.environmentId || isRefreshingProviders) return;
+    setIsRefreshingProviders(true);
+    void refreshProviderCatalog(session.environmentId).then((result) => {
+      setIsRefreshingProviders(false);
+      const error = providerCatalogRefreshError(result);
+      if (error) Alert.alert("Could not refresh models", error);
+    });
+  }, [isRefreshingProviders, refreshProviderCatalog, session.environmentId]);
   const catalogItems = useThreadSettingsCatalogItems(session);
   const [animationsReady, setAnimationsReady] = useState(false);
-  const nativeHeaderHeight = use(HeaderHeightContext) ?? 0;
   const insets = useSafeAreaInsets();
-  const hasActiveCatalogFilter =
-    session.providerFilter !== null || session.searchQuery.trim().length > 0;
+  const isSearching = session.searchQuery.trim().length > 0;
+  // Unfavoriting the last model must not strand the list on an empty filter.
+  const showsFavoritesChip =
+    session.favoriteKeys.size > 0 || session.providerFilter === FAVORITES_PROVIDER_FILTER;
+  const hasActiveCatalogFilter = session.providerFilter !== null || isSearching;
   const usesTransparentNativeHeader = Platform.OS === "ios" && NATIVE_LIQUID_GLASS_SUPPORTED;
   const bottomToolbarInset =
     Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED
       ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET
       : 0;
   const listItems = useMemo<ReadonlyArray<ThreadSettingsCatalogItem>>(
-    () =>
-      catalogItems.length === 0 && hasActiveCatalogFilter
-        ? ([{ kind: "empty", key: "empty" }] as const)
-        : catalogItems,
-    [catalogItems, hasActiveCatalogFilter],
+    () => (catalogItems.length === 0 ? [{ kind: "empty", key: "empty" }] : catalogItems),
+    [catalogItems],
   );
+  const listRef = useRef<LegendListRef>(null);
+  const isApplied = session.isApplied;
+  // The current-model card jumps to its row in the catalog, or to the top of it.
+  const scrollToCatalog = useCallback(() => {
+    const index = listItems.findIndex((item) => item.kind === "model" && isApplied(item.option));
+    void listRef.current?.scrollToIndex({
+      animated: true,
+      index: Math.max(0, index),
+      viewPosition: 0.2,
+    });
+  }, [isApplied, listItems]);
   const renderCatalogItem = useCallback(
     (itemProps: LegendListRenderItemProps<ThreadSettingsCatalogItem>) => {
       const item = itemProps.item;
@@ -923,10 +927,16 @@ function ThreadSettingsCatalogContent() {
             option={item.option}
           />
         );
-      } else {
+      } else if (item.kind === "empty") {
         content = (
           <View className="items-center px-8 py-14">
-            <Text className="text-center text-sm text-foreground-muted">No matching models</Text>
+            <Text className="text-center text-sm text-foreground-muted">
+              {session.providerFilter === FAVORITES_PROVIDER_FILTER && !isSearching
+                ? "No favorite models"
+                : hasActiveCatalogFilter
+                  ? "No matching models"
+                  : "No available models"}
+            </Text>
           </View>
         );
       }
@@ -941,21 +951,28 @@ function ThreadSettingsCatalogContent() {
         </Animated.View>
       );
     },
-    [animationsReady],
+    [animationsReady, hasActiveCatalogFilter, isSearching, session.providerFilter],
   );
 
-  return (
+  const list = (
     <AnimatedLegendList
+      ref={listRef}
+      alwaysBounceVertical
       automaticallyAdjustsScrollIndicatorInsets
-      className="flex-1 bg-sheet"
+      className={glass ? "flex-1" : "flex-1 bg-sheet"}
+      style={
+        Platform.OS === "android"
+          ? { width: "100%", maxWidth: 720, alignSelf: "center" }
+          : undefined
+      }
       contentContainerStyle={{
-        paddingBottom: insets.bottom + bottomToolbarInset + 12,
+        paddingBottom: insets.bottom + bottomToolbarInset + 24,
         paddingTop: 4,
       }}
       contentInsetAdjustmentBehavior={usesTransparentNativeHeader ? "never" : "automatic"}
       data={listItems}
-      estimatedItemSize={48}
-      extraData={animationsReady}
+      estimatedItemSize={Platform.OS === "android" ? 56 : 48}
+      extraData={`${animationsReady}:${glass}`}
       getItemType={(item) => item.kind}
       itemLayoutAnimation={THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION}
       keyExtractor={(item) => item.key}
@@ -964,24 +981,56 @@ function ThreadSettingsCatalogContent() {
       maintainVisibleContentPosition={THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION}
       ListHeaderComponent={
         <>
-          {usesTransparentNativeHeader ? <View style={{ height: nativeHeaderHeight }} /> : null}
-          {Platform.OS === "android" ? (
-            <View className="px-4 pb-2 pt-3">
-              <TextInput
-                accessibilityLabel="Find a model"
-                autoCapitalize="none"
-                autoCorrect={false}
-                className="h-11 rounded-xl bg-card px-4 text-base text-foreground"
-                onChangeText={session.setSearchQuery}
-                placeholder="Find a model"
-                placeholderTextColorClassName="accent-placeholder"
-                value={session.searchQuery}
-              />
+          {isSearching ? null : (
+            <View className="pt-2">
+              <ThreadSettingsOptions onPressModel={scrollToCatalog} />
             </View>
-          ) : null}
-          {session.providerGroups.length > 1 ? (
+          )}
+          {Platform.OS === "android" ? (
+            <View className="px-4 pb-1 pt-4">
+              <View
+                className="flex-row items-center rounded-full bg-input px-2"
+                style={{ minHeight: 56 }}
+              >
+                <View pointerEvents="none" className="px-2">
+                  <SymbolView
+                    name="magnifyingglass"
+                    size={24}
+                    tintColorClassName="accent-icon-subtle"
+                  />
+                </View>
+                <TextInput
+                  accessibilityLabel="Find a model"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  className="min-w-0 flex-1 px-2 py-0 text-base text-foreground"
+                  style={{ minHeight: 56, includeFontPadding: false, textAlignVertical: "center" }}
+                  onChangeText={session.setSearchQuery}
+                  placeholder="Find a model"
+                  placeholderTextColorClassName="accent-placeholder"
+                  selectionColorClassName="accent-focus/32"
+                  cursorColorClassName="accent-focus"
+                  selectionHandleColorClassName="accent-focus"
+                  value={session.searchQuery}
+                />
+                {session.searchQuery.length > 0 ? (
+                  <MaterialIconButton
+                    accessibilityLabel="Clear model search"
+                    icon="xmark"
+                    onPress={() => session.setSearchQuery("")}
+                  />
+                ) : null}
+              </View>
+            </View>
+          ) : (
+            <Text className="px-5 pb-1 pt-6 text-sm font-t3-medium text-foreground-muted">
+              Models
+            </Text>
+          )}
+          {session.providerGroups.length > 1 || showsFavoritesChip ? (
             <ScrollView
               horizontal
+              keyboardShouldPersistTaps="handled"
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{
                 gap: 8,
@@ -995,131 +1044,65 @@ function ThreadSettingsCatalogContent() {
                 selected={session.providerFilter === null}
                 onPress={() => session.setProviderFilter(null)}
               />
-              {session.providerGroups.map((group) => (
+              {showsFavoritesChip ? (
                 <FilterChip
-                  key={group.providerKey}
-                  label={group.providerLabel}
-                  selected={session.providerFilter === group.providerKey}
-                  onPress={() => session.setProviderFilter(group.providerKey)}
+                  label="Favorites"
+                  selected={session.providerFilter === FAVORITES_PROVIDER_FILTER}
+                  onPress={() => session.setProviderFilter(FAVORITES_PROVIDER_FILTER)}
                 />
-              ))}
+              ) : null}
+              {session.providerGroups.length > 1
+                ? session.providerGroups.map((group) => (
+                    <FilterChip
+                      key={group.providerKey}
+                      label={group.providerLabel}
+                      selected={session.providerFilter === group.providerKey}
+                      onPress={() => session.setProviderFilter(group.providerKey)}
+                    />
+                  ))
+                : null}
             </ScrollView>
           ) : null}
         </>
       }
       ListFooterComponent={
-        Platform.OS !== "ios" && session.hasLegacyModels ? (
-          <View className="mt-6">
-            <Text className="px-5 pb-2 text-sm font-t3-medium text-foreground-muted">Catalog</Text>
-            <View className="mx-4 overflow-hidden rounded-2xl bg-card">
-              <SwitchRow
-                isLast
-                label="Legacy models"
-                onValueChange={session.setShowLegacy}
-                value={session.showLegacy}
-              />
+        <>
+          {Platform.OS !== "ios" && session.hasLegacyModels ? (
+            <View className="mt-6">
+              <View className="mx-4 overflow-hidden rounded-2xl bg-card">
+                <SwitchRow
+                  label="Legacy models"
+                  onValueChange={session.setShowLegacy}
+                  value={session.showLegacy}
+                />
+              </View>
             </View>
-          </View>
-        ) : null
+          ) : null}
+          {isSearching ? null : (
+            <ThreadSettingsThreadSections projectTransfer={props.projectTransfer} />
+          )}
+        </>
       }
       recycleItems
+      refreshControl={
+        session.environmentId ? (
+          <RefreshControl refreshing={isRefreshingProviders} onRefresh={refreshProviders} />
+        ) : undefined
+      }
       onLoad={() => setAnimationsReady(true)}
       renderItem={renderCatalogItem}
       showsVerticalScrollIndicator={false}
     />
   );
-}
-
-/** Compact choice page pushed by the picker navigator. */
-function ThreadSettingsChoiceContent(props: {
-  readonly submenu: ThreadSettingsSubmenuPage;
-  readonly onSelected: () => void;
-}) {
-  const insets = useSafeAreaInsets();
-  const session = useThreadSettingsSession();
-  const descriptorId = props.submenu.kind === "descriptor" ? props.submenu.id : null;
-
-  const activeDescriptor =
-    descriptorId !== null
-      ? session.displayedDescriptors.find(
-          (descriptor) => descriptor.type === "select" && descriptor.id === descriptorId,
-        )
-      : undefined;
-
-  const submenuContent =
-    props.submenu.kind === "runtime"
-      ? {
-          rows: session.runtimeModeChoices.map((choice) => ({
-            id: choice.mode,
-            label: choice.label,
-            description: choice.description,
-            selected: choice.mode === session.runtimeMode,
-            onPress: () => {
-              void Haptics.selectionAsync();
-              session.onUpdateRuntimeMode(choice.mode);
-              props.onSelected();
-            },
-          })),
-        }
-      : activeDescriptor?.type === "select"
-        ? {
-            rows: selectableChoices(activeDescriptor).map((choice) => ({
-              id: choice.id,
-              label: choice.label,
-              description: undefined,
-              selected: choice.id === getProviderOptionCurrentValue(activeDescriptor),
-              onPress: () => {
-                void Haptics.selectionAsync();
-                session.applyOptionChange(activeDescriptor.id, choice.id);
-                props.onSelected();
-              },
-            })),
-          }
-        : null;
-
-  if (!submenuContent) {
-    return <View className="flex-1 bg-sheet" />;
-  }
-
-  return (
-    <ScrollView
-      className="flex-1 bg-sheet"
-      contentContainerStyle={{
-        paddingBottom: insets.bottom + 12,
-        paddingHorizontal: 16,
-        paddingTop: 16,
-      }}
-      contentInsetAdjustmentBehavior="automatic"
-      showsVerticalScrollIndicator={false}
-    >
-      <View className="overflow-hidden rounded-2xl bg-card">
-        {submenuContent.rows.map((row, index) => (
-          <ChoiceRow
-            key={row.id}
-            description={row.description}
-            isLast={index === submenuContent.rows.length - 1}
-            label={row.label}
-            selected={row.selected}
-            onPress={row.onPress}
-          />
-        ))}
-      </View>
-    </ScrollView>
-  );
+  return glass ? <SheetSurface threadKey={sceneryKey}>{list}</SheetSurface> : list;
 }
 
 type ThreadSettingsPickerStackParams = {
   ThreadSettingsHome: undefined;
-  ThreadSettingsCatalog: undefined;
-  ThreadSettingsChoice: ThreadSettingsSubmenuPage & { readonly title: string };
 };
 
 type ThreadSettingsPickerPresentation = {
   readonly onClose: () => void;
-};
-
-type ThreadSettingsPickerNavigatorProps = ThreadSettingsPickerPresentation & {
-  readonly onActivePageChange: (page: ThreadSettingsSheetPage) => void;
 };
 
 const ThreadSettingsPickerStack = createNativeStackNavigator<ThreadSettingsPickerStackParams>();
@@ -1136,91 +1119,25 @@ function useThreadSettingsPickerPresentation() {
   return value;
 }
 
-function useCommitThreadSettings() {
-  const session = useThreadSettingsSession();
-  const presentation = useThreadSettingsPickerPresentation();
-  return useCallback(() => {
-    session.commitPendingModel();
-    presentation.onClose();
-  }, [presentation, session]);
-}
-
-function openThreadSettingsSubmenu(
-  navigation: NativeStackNavigationProp<ThreadSettingsPickerStackParams>,
-  session: ThreadSettingsSessionValue,
-  submenu: ThreadSettingsSubmenuPage,
-) {
-  const title =
-    submenu.kind === "runtime"
-      ? "Runtime"
-      : (session.displayedDescriptors.find(
-          (descriptor) => descriptor.type === "select" && descriptor.id === submenu.id,
-        )?.label ?? "Option");
-  navigation.navigate("ThreadSettingsChoice", { ...submenu, title });
-}
-
 function ThreadSettingsHomeScreen() {
   const session = useThreadSettingsSession();
   const presentation = useThreadSettingsPickerPresentation();
   const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
-  const commitAndClose = useCommitThreadSettings();
-
-  useLayoutEffect(() => {
-    if (session.initialPage !== "catalog") {
-      return;
-    }
-    const state = navigation.getState();
-    const currentName = state.routes[state.index]?.name;
-    if (currentName === "ThreadSettingsCatalog" || currentName === "ThreadSettingsChoice") {
-      return;
-    }
-    navigation.navigate("ThreadSettingsCatalog");
-  }, [navigation, session.initialPage]);
-
-  return (
-    <>
-      {Platform.OS === "android" ? (
-        <AndroidScreenHeader
-          actions={[
-            {
-              accessibilityLabel: session.pendingModel ? "Save thread settings" : "Done",
-              icon: "checkmark",
-              onPress: commitAndClose,
-            },
-          ]}
-          onBack={presentation.onClose}
-          title="Thread settings"
-        />
-      ) : null}
-      <NativeStackScreenOptions options={{ headerShown: Platform.OS !== "android" }} />
-      <ThreadSettingsHomeContent
-        onOpenCatalog={() => navigation.navigate("ThreadSettingsCatalog")}
-        onOpenSubmenu={(submenu) => openThreadSettingsSubmenu(navigation, session, submenu)}
-      />
-      <NativeHeaderToolbar placement="left">
-        <NativeHeaderToolbar.Button
-          accessibilityLabel="Cancel thread settings"
-          label="Cancel"
-          onPress={presentation.onClose}
-        />
-      </NativeHeaderToolbar>
-      <NativeHeaderToolbar placement="right">
-        <NativeHeaderToolbar.Button
-          accessibilityLabel={session.pendingModel ? "Save thread settings" : "Done"}
-          label={session.pendingModel ? "Save" : "Done"}
-          onPress={commitAndClose}
-        />
-      </NativeHeaderToolbar>
-    </>
-  );
-}
-
-function ThreadSettingsCatalogScreen() {
-  const session = useThreadSettingsSession();
-  const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
   const usesNativeMailSearchToolbar = Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
   const hasCustomCatalogFilter = session.showLegacy;
-  const commitAndClose = useCommitThreadSettings();
+  const transfer = useProjectTransferAction(
+    session.checkpointsThreadRef,
+    (environmentId, threadId) => {
+      const parent = navigation.getParent();
+      presentation.onClose();
+      parent?.dispatch(
+        StackActions.replace("Thread", {
+          environmentId: String(environmentId),
+          threadId: String(threadId),
+        }),
+      );
+    },
+  );
   const filterMenu = useMemo(
     () => ({
       title: "Model filters",
@@ -1243,14 +1160,11 @@ function ThreadSettingsCatalogScreen() {
       {Platform.OS === "android" ? (
         <AndroidScreenHeader
           actions={[
-            {
-              accessibilityLabel: session.pendingModel ? "Save thread settings" : "Done",
-              icon: "checkmark",
-              onPress: commitAndClose,
-            },
+            { accessibilityLabel: "Done", icon: "checkmark", onPress: presentation.onClose },
           ]}
-          onBack={() => navigation.navigate("ThreadSettingsHome")}
+          onBack={presentation.onClose}
           title="Model"
+          hideBottomBorder
         />
       ) : null}
       <NativeStackScreenOptions
@@ -1285,12 +1199,22 @@ function ThreadSettingsCatalogScreen() {
               : undefined,
         }}
       />
-      <ThreadSettingsCatalogContent />
+      <ThreadSettingsContent
+        projectTransfer={
+          transfer.supported
+            ? {
+                isPending: transfer.isPending,
+                pendingLabel: transfer.pendingLabel,
+                onPress: transfer.present,
+              }
+            : undefined
+        }
+      />
       <NativeHeaderToolbar placement="right">
         <NativeHeaderToolbar.Button
-          accessibilityLabel={session.pendingModel ? "Save thread settings" : "Done"}
-          label={session.pendingModel ? "Save" : "Done"}
-          onPress={commitAndClose}
+          accessibilityLabel="Done"
+          label="Done"
+          onPress={presentation.onClose}
         />
       </NativeHeaderToolbar>
       {Platform.OS === "ios" && !usesNativeMailSearchToolbar && session.hasLegacyModels ? (
@@ -1318,95 +1242,56 @@ function ThreadSettingsCatalogScreen() {
   );
 }
 
-function ThreadSettingsChoiceScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
-  const route = useRoute<RouteProp<ThreadSettingsPickerStackParams, "ThreadSettingsChoice">>();
-
-  return (
-    <>
-      <NativeStackScreenOptions options={{ headerShown: Platform.OS !== "android" }} />
-      {Platform.OS === "android" ? (
-        <AndroidScreenHeader title={route.params.title} onBack={() => navigation.goBack()} />
-      ) : null}
-      <ThreadSettingsChoiceContent submenu={route.params} onSelected={() => navigation.goBack()} />
-    </>
-  );
-}
-
-function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerNavigatorProps) {
-  const solidSheetBackground = String(useThemeColor("--color-sheet-solid"));
-  const foreground = String(useThemeColor("--color-foreground"));
-  const presentation = useMemo(
-    () => ({
-      onClose: props.onClose,
-    }),
-    [props.onClose],
-  );
-  // Nested stack hydrates at home. Skip that event so a remount cannot
-  // overwrite a persisted catalog page before Home restores it.
-  const skipHydrateRef = useRef(true);
-  const onActivePageChange = props.onActivePageChange;
+function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) {
+  const theme = useUniwindTheme();
+  const solidSheetBackground = theme["--color-sheet-solid"];
+  const foreground = theme["--color-foreground"];
+  // Over glass the page plates its own photo, so the stack and its bar stay
+  // clear; iOS before 26 keeps the opaque bar like the main stack.
+  const glass = useGlassChromeActive();
+  const transparentHeader = glass && TRANSPARENT_NATIVE_HEADERS;
+  const presentation = useMemo(() => ({ onClose: props.onClose }), [props.onClose]);
 
   return (
     <ThreadSettingsPickerPresentationContext.Provider value={presentation}>
       <ThreadSettingsPickerStack.Navigator
-        initialRouteName="ThreadSettingsHome"
-        screenListeners={{
-          state: (event) => {
-            const state = event.data.state;
-            const routeName = state.routes[state.index]?.name;
-            if (!routeName) {
-              return;
-            }
-            if (skipHydrateRef.current) {
-              skipHydrateRef.current = false;
-              // Hydrate always lands on home. Don't let that overwrite a
-              // persisted catalog page before Home's restore effect runs.
-              if (routeName === "ThreadSettingsHome") {
-                return;
-              }
-            }
-            const page = threadSettingsSheetPageForRoute(routeName);
-            if (page) {
-              onActivePageChange(page);
-            }
-          },
-        }}
         screenOptions={{
-          animation: "slide_from_right",
-          contentStyle: { backgroundColor: solidSheetBackground },
-          gestureEnabled: true,
-          headerBackButtonDisplayMode: "minimal",
-          headerBackTitle: "",
+          contentStyle: { backgroundColor: glass ? "transparent" : solidSheetBackground },
+          headerShown: Platform.OS !== "android",
           headerShadowVisible: false,
           headerStyle: {
-            backgroundColor: NATIVE_LIQUID_GLASS_SUPPORTED ? "transparent" : solidSheetBackground,
+            backgroundColor:
+              NATIVE_LIQUID_GLASS_SUPPORTED || transparentHeader
+                ? "transparent"
+                : solidSheetBackground,
           },
-          headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
+          headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED || transparentHeader,
           headerTintColor: foreground,
           headerTitleStyle: { fontSize: 17, fontWeight: "700" },
-          scrollEdgeEffects: NATIVE_LIQUID_GLASS_SUPPORTED
-            ? THREAD_SETTINGS_HEADER_SCROLL_EDGE_EFFECTS
-            : undefined,
+          scrollEdgeEffects:
+            NATIVE_LIQUID_GLASS_SUPPORTED || transparentHeader
+              ? THREAD_SETTINGS_HEADER_SCROLL_EDGE_EFFECTS
+              : undefined,
         }}
       >
         <ThreadSettingsPickerStack.Screen
           name="ThreadSettingsHome"
           component={ThreadSettingsHomeScreen}
-          options={{ headerBackVisible: false, title: "Thread settings" }}
-        />
-        <ThreadSettingsPickerStack.Screen
-          name="ThreadSettingsCatalog"
-          component={ThreadSettingsCatalogScreen}
-          options={{ title: "Model" }}
-        />
-        <ThreadSettingsPickerStack.Screen
-          name="ThreadSettingsChoice"
-          component={ThreadSettingsChoiceScreen}
-          options={({ route }) => ({ title: route.params.title })}
+          options={{ headerBackVisible: false, title: "Model" }}
         />
       </ThreadSettingsPickerStack.Navigator>
     </ThreadSettingsPickerPresentationContext.Provider>
+  );
+}
+
+/** Shared model catalog and option screens, bound to the caller's draft. */
+export function ThreadSettingsPickerScreen(
+  props: ThreadSettingsSessionProps & { readonly onClose: () => void },
+) {
+  return (
+    <ThreadSettingsSessionProvider {...props}>
+      <ThreadSettingsPickerNavigator onClose={props.onClose} />
+    </ThreadSettingsSessionProvider>
   );
 }
 
@@ -1425,17 +1310,59 @@ export function ExistingThreadSettingsRouteScreen() {
   }, [navigation, session]);
 
   if (!session) {
-    return <View className="flex-1 bg-sheet" />;
+    return <SheetSurface />;
   }
 
   const { ownerId: _ownerId, ...settings } = session;
 
   return (
-    <ThreadSettingsSessionProvider {...settings} initialPage={session.initialPage}>
-      <ThreadSettingsPickerNavigator
-        onActivePageChange={presentation.setPage}
-        onClose={() => navigation.goBack()}
-      />
+    <ThreadSettingsSessionProvider {...settings}>
+      <ThreadSettingsPickerNavigator onClose={() => navigation.goBack()} />
+    </ThreadSettingsSessionProvider>
+  );
+}
+
+/** New-task model picker hosted by the root RNS form-sheet route. */
+export function NewTaskThreadSettingsRouteScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
+  const flow = useNewTaskFlow();
+  const settings = useMemo(
+    () =>
+      buildNewTaskThreadSettingsSession({
+        environmentId: flow.selectedEnvironmentId,
+        selectedModel: flow.selectedModel,
+        selectedModelOption: flow.selectedModelOption,
+        providerGroups: flow.providerGroups,
+        runtimeMode: flow.runtimeMode,
+      }),
+    [
+      flow.providerGroups,
+      flow.runtimeMode,
+      flow.selectedEnvironmentId,
+      flow.selectedModel,
+      flow.selectedModelOption,
+    ],
+  );
+  const handleSelectModel = useCallback(
+    (option: ModelOption) => {
+      flow.setSelectedModelKey(option.key, option.selection.options);
+    },
+    [flow.setSelectedModelKey],
+  );
+
+  return (
+    <ThreadSettingsSessionProvider
+      environmentId={settings.environmentId}
+      {...(settings.providerInstanceId ? { providerInstanceId: settings.providerInstanceId } : {})}
+      providerGroups={settings.providerGroups}
+      selectedModel={settings.selectedModel}
+      onSelectModel={handleSelectModel}
+      optionDescriptors={settings.optionDescriptors}
+      onUpdateOptionSelections={flow.setSelectedModelOptions}
+      runtimeMode={settings.runtimeMode}
+      onUpdateRuntimeMode={flow.setRuntimeMode}
+    >
+      <ThreadSettingsPickerNavigator onClose={() => navigation.goBack()} />
     </ThreadSettingsSessionProvider>
   );
 }

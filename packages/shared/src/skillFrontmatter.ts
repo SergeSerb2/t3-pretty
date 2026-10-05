@@ -1,6 +1,6 @@
 import { parse as parseYamlDocument } from "yaml";
 
-export const SKILL_FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+export const SKILL_FRONTMATTER_PATTERN = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 export type SkillFrontmatter =
   | { readonly kind: "missing" }

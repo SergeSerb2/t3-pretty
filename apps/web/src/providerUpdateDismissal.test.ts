@@ -13,11 +13,11 @@ describe("providerUpdateDismissal", () => {
   });
 
   it("persists provider update dismissals by notification key", () => {
-    expect(isProviderUpdateNotificationDismissed("kimi:1.14.33")).toBe(false);
+    expect(isProviderUpdateNotificationDismissed("opencode:1.14.33")).toBe(false);
 
-    dismissProviderUpdateNotification("kimi:1.14.33");
+    dismissProviderUpdateNotification("opencode:1.14.33");
 
-    expect(isProviderUpdateNotificationDismissed("kimi:1.14.33")).toBe(true);
-    expect(isProviderUpdateNotificationDismissed("kimi:1.14.34")).toBe(false);
+    expect(isProviderUpdateNotificationDismissed("opencode:1.14.33")).toBe(true);
+    expect(isProviderUpdateNotificationDismissed("opencode:1.14.34")).toBe(false);
   });
 });

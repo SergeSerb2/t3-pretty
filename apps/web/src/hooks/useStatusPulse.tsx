@@ -27,12 +27,18 @@ let subscribers = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 let phase = 0;
 let listening = false;
+let reducedMotionQuery: MediaQueryList | null = null;
+let unsubscribeMotionStore: (() => void) | null = null;
 
 function motionAllowed(): boolean {
   if (!useMotionStore.getState().enabled) {
     return false;
   }
-  return !(globalThis.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false);
+  return !(
+    reducedMotionQuery?.matches ??
+    globalThis.matchMedia?.(REDUCED_MOTION_QUERY).matches ??
+    false
+  );
 }
 
 function tick() {
@@ -58,8 +64,19 @@ function ensureListeners() {
   }
   listening = true;
   document.addEventListener("visibilitychange", sync);
-  globalThis.matchMedia?.(REDUCED_MOTION_QUERY).addEventListener?.("change", sync);
-  useMotionStore.subscribe(sync);
+  reducedMotionQuery = globalThis.matchMedia?.(REDUCED_MOTION_QUERY) ?? null;
+  reducedMotionQuery?.addEventListener?.("change", sync);
+  unsubscribeMotionStore = useMotionStore.subscribe(sync);
+}
+
+function releaseListeners(): void {
+  if (!listening || subscribers > 0) return;
+  listening = false;
+  document.removeEventListener("visibilitychange", sync);
+  reducedMotionQuery?.removeEventListener?.("change", sync);
+  reducedMotionQuery = null;
+  unsubscribeMotionStore?.();
+  unsubscribeMotionStore = null;
 }
 
 /** Keeps the shared ticker alive until the returned release is called. */
@@ -75,6 +92,7 @@ export function subscribeStatusPulse(): () => void {
     released = true;
     subscribers -= 1;
     sync();
+    releaseListeners();
   };
 }
 

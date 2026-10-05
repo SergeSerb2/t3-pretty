@@ -1,15 +1,15 @@
-import type {
-  NativeStackHeaderItem,
-  NativeStackNavigationOptions,
-} from "@react-navigation/native-stack";
+import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Animated, Platform, Pressable, View } from "react-native";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
-import { brandTitleOffset, CompactBrandTitle } from "../../components/CompactBrandTitle";
-import { useThemeColor } from "../../lib/useThemeColor";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import { useAndroidControlSizing } from "../../components/useAndroidControlSizing";
+import {
+  brandTitleOffset,
+  CompactBrandTitle,
+  getCompactBrandHeaderOptions,
+} from "../../components/CompactBrandTitle";
 import { useWorkspaceState } from "../../state/workspace";
 import {
   workspaceConnectionStatusPresentation,
@@ -55,7 +55,12 @@ function useDelayedConnectionStatus(): WorkspaceConnectionStatusPresentation | n
 function StatusFadeIn(props: {
   readonly children: ReactNode;
   readonly grow?: boolean;
-  readonly offset?: number;
+  readonly maxWidth?: number;
+  /** Centers the status on a slot this wide (phone titles are centered). */
+  readonly centeredOnWidth?: number;
+  /** Room from the bar's leading margin to the trailing actions, used when
+      centering would leave less than the slot itself. */
+  readonly leadingRoomWidth?: number;
 }) {
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -73,16 +78,48 @@ function StatusFadeIn(props: {
     <Animated.View
       collapsable={false}
       pointerEvents="box-none"
-      style={{
-        alignItems: "center",
-        bottom: 0,
-        flexDirection: "row",
-        left: props.offset ?? 0,
-        opacity,
-        position: "absolute",
-        right: props.grow === true ? 0 : undefined,
-        top: 0,
-      }}
+      style={
+        props.centeredOnWidth === undefined
+          ? {
+              alignItems: "center",
+              bottom: 0,
+              flexDirection: "row",
+              left: 0,
+              maxWidth: props.maxWidth,
+              opacity,
+              position: "absolute",
+              right: props.grow === true ? 0 : undefined,
+              top: 0,
+            }
+          : (props.maxWidth ?? 0) >= props.centeredOnWidth
+            ? {
+                alignItems: "center",
+                bottom: 0,
+                flexDirection: "row",
+                justifyContent: "center",
+                // As wide as the room either side of the centered title allows.
+                left: (props.centeredOnWidth - (props.maxWidth ?? 0)) / 2,
+                opacity,
+                position: "absolute",
+                top: 0,
+                width: props.maxWidth,
+              }
+            : {
+                alignItems: "center",
+                bottom: 0,
+                flexDirection: "row",
+                // Crowded bars shift the title left, so the status ends where
+                // the slot ends and grows toward the empty leading side.
+                justifyContent: "flex-end",
+                left:
+                  props.centeredOnWidth -
+                  Math.max(props.centeredOnWidth, props.leadingRoomWidth ?? 0),
+                opacity,
+                position: "absolute",
+                top: 0,
+                width: Math.max(props.centeredOnWidth, props.leadingRoomWidth ?? 0),
+              }
+      }
     >
       {props.children}
     </Animated.View>
@@ -110,15 +147,28 @@ export function WorkspaceConnectionTitle(props: {
   readonly size?: "navbar" | "pageTitle";
   /** Horizontal correction so the status aligns with the brand in native title slots. */
   readonly statusOffset?: number;
+  /** Space available beside the native header actions. */
+  readonly maxWidth?: number;
+  /** The slot is a centered navigation-bar title: the status centers on the
+      brand and uses the short label. */
+  readonly centered?: boolean;
+  /** Room from the bar's leading margin to the trailing actions. */
+  readonly leadingRoomWidth?: number;
 }) {
-  const iconColor = String(useThemeColor("--color-icon-muted"));
   const status = useDelayedConnectionStatus();
   const size = props.size ?? "navbar";
   const showingStatus = status !== null;
+  const { scale } = useAndroidControlSizing();
+  const [slotWidth, setSlotWidth] = useState(0);
 
   return (
     <View
       collapsable={false}
+      onLayout={
+        props.centered === true
+          ? (event) => setSlotWidth(event.nativeEvent.layout.width)
+          : undefined
+      }
       style={[
         { alignItems: "center", flexDirection: "row" },
         props.grow ? { flex: 1, minWidth: 0 } : null,
@@ -137,7 +187,12 @@ export function WorkspaceConnectionTitle(props: {
         {props.brand}
       </View>
       {status !== null ? (
-        <StatusFadeIn grow={props.grow} offset={props.statusOffset}>
+        <StatusFadeIn
+          centeredOnWidth={props.centered === true && slotWidth > 0 ? slotWidth : undefined}
+          leadingRoomWidth={props.leadingRoomWidth}
+          grow={props.grow}
+          maxWidth={props.maxWidth}
+        >
           <Pressable
             accessibilityHint="Opens environment settings"
             accessibilityLabel={status.label}
@@ -146,27 +201,30 @@ export function WorkspaceConnectionTitle(props: {
             hitSlop={8}
             onPress={props.onPress}
             className="flex-row items-center gap-2"
+            style={[
+              { flexShrink: 1, marginLeft: props.statusOffset ?? 0 },
+              Platform.OS === "android" && { gap: 7 * scale },
+            ]}
           >
             {status.showsProgress ? (
-              <ActivityIndicator color={iconColor} size="small" />
+              <ActivityIndicator
+                colorClassName={"accent-icon-muted"}
+                size={Platform.OS === "android" ? Math.round(20 * scale) : "small"}
+              />
             ) : (
               <SymbolView
                 name="wifi.slash"
-                size={size === "pageTitle" ? 17 : 15}
-                tintColor={iconColor}
+                size={Math.round((size === "pageTitle" ? 17 : 15) * scale)}
+                tintColorClassName={"accent-icon-muted"}
                 type="monochrome"
               />
             )}
             <Text
-              className={
-                size === "pageTitle"
-                  ? "text-[20px] font-t3-bold text-foreground-muted"
-                  : "text-[16px] font-t3-bold text-foreground-muted"
-              }
+              className="font-t3-bold text-foreground-muted"
               numberOfLines={1}
-              style={{ flexShrink: 1 }}
+              style={{ flexShrink: 1, fontSize: (size === "pageTitle" ? 20 : 16) * scale }}
             >
-              {status.label}
+              {props.centered === true ? status.shortLabel : status.label}
             </Text>
           </Pressable>
         </StatusFadeIn>
@@ -181,39 +239,36 @@ export function WorkspaceConnectionTitle(props: {
  * this over the static brand options at mount.
  */
 export function getConnectionAwareBrandHeaderOptions(opts: {
+  readonly headerWidth: number;
+  readonly trailingItemCount?: number;
   readonly onOpenEnvironments: () => void;
   readonly fallbackTitleStyle?: NativeStackNavigationOptions["headerTitleStyle"];
 }): NativeStackNavigationOptions {
-  if (Platform.OS === "ios" && NATIVE_LIQUID_GLASS_SUPPORTED) {
-    return {
-      headerTitle: "Threads",
-      headerTitleStyle: { color: "transparent", fontSize: 18, fontWeight: "800" },
-      title: "Threads",
-      unstable_headerLeftItems: (): NativeStackHeaderItem[] => [
-        {
-          element: (
-            <WorkspaceConnectionTitle
-              brand={<CompactBrandTitle nativeLeadingItem />}
-              onPress={opts.onOpenEnvironments}
-              statusOffset={brandTitleOffset(true)}
-            />
-          ),
-          hidesSharedBackground: true,
-          type: "custom",
-        },
-      ],
-    };
-  }
+  // Leave room for bar margins, title spacing and the 44-point native actions.
+  // Long status labels must not push Settings into UIKit's overflow menu.
+  const trailingItemCount = opts.trailingItemCount ?? 1;
+  // Phones center the title, so the status may only use the width that
+  // clears the trailing actions on both sides.
+  const centered = Platform.OS === "ios" && !Platform.isPad;
+  const trailingWidth = 16 + 44 * trailingItemCount + 12 * Math.max(0, trailingItemCount - 1);
+  const maxWidth = Math.max(
+    0,
+    centered
+      ? opts.headerWidth - 2 * (trailingWidth + 8)
+      : opts.headerWidth - 64 - 44 * trailingItemCount,
+  );
 
   return {
+    ...getCompactBrandHeaderOptions(opts.fallbackTitleStyle),
     headerTitle: () => (
       <WorkspaceConnectionTitle
         brand={<CompactBrandTitle />}
+        centered={centered}
+        leadingRoomWidth={Math.max(0, opts.headerWidth - trailingWidth - 24)}
+        maxWidth={maxWidth}
         onPress={opts.onOpenEnvironments}
-        statusOffset={brandTitleOffset(false)}
+        statusOffset={brandTitleOffset()}
       />
     ),
-    headerTitleStyle: opts.fallbackTitleStyle,
-    title: "Threads",
   };
 }

@@ -8,12 +8,23 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import { readTextWithinLimit } from "../boundedFileRead.ts";
 import * as ServerConfig from "../config.ts";
 
+const TELEMETRY_PROVIDER_IDENTITY_MAX_BYTES = 1024 * 1024;
+const TELEMETRY_ANONYMOUS_ID_MAX_BYTES = 1024;
+
+/**
+ * Codex writes `tokens` only for ChatGPT logins and omits the key for API-key,
+ * agent-identity, and personal-access-token logins, so its absence is a
+ * supported install and not a malformed file.
+ */
 const CodexAuthJsonSchema = Schema.Struct({
-  tokens: Schema.Struct({
-    account_id: Schema.String,
-  }),
+  tokens: Schema.optionalKey(
+    Schema.Struct({
+      account_id: Schema.String,
+    }),
+  ),
 });
 
 const ClaudeJsonSchema = Schema.Struct({
@@ -23,7 +34,7 @@ const ClaudeJsonSchema = Schema.Struct({
 export const TelemetryIdentitySource = Schema.Literals(["codex", "claude", "anonymous"]);
 export type TelemetryIdentitySource = typeof TelemetryIdentitySource.Type;
 
-export class TelemetryIdentityReadError extends Schema.TaggedErrorClass<TelemetryIdentityReadError>()(
+class TelemetryIdentityReadError extends Schema.TaggedError<TelemetryIdentityReadError>()(
   "TelemetryIdentityReadError",
   {
     source: TelemetryIdentitySource,
@@ -36,7 +47,7 @@ export class TelemetryIdentityReadError extends Schema.TaggedErrorClass<Telemetr
   }
 }
 
-export class TelemetryIdentityDecodeError extends Schema.TaggedErrorClass<TelemetryIdentityDecodeError>()(
+class TelemetryIdentityDecodeError extends Schema.TaggedError<TelemetryIdentityDecodeError>()(
   "TelemetryIdentityDecodeError",
   {
     source: Schema.Literals(["codex", "claude"]),
@@ -49,7 +60,7 @@ export class TelemetryIdentityDecodeError extends Schema.TaggedErrorClass<Teleme
   }
 }
 
-export class TelemetryAnonymousIdGenerationError extends Schema.TaggedErrorClass<TelemetryAnonymousIdGenerationError>()(
+export class TelemetryAnonymousIdGenerationError extends Schema.TaggedError<TelemetryAnonymousIdGenerationError>()(
   "TelemetryAnonymousIdGenerationError",
   {
     source: Schema.Literal("anonymous"),
@@ -62,7 +73,7 @@ export class TelemetryAnonymousIdGenerationError extends Schema.TaggedErrorClass
   }
 }
 
-export class TelemetryAnonymousIdPersistenceError extends Schema.TaggedErrorClass<TelemetryAnonymousIdPersistenceError>()(
+export class TelemetryAnonymousIdPersistenceError extends Schema.TaggedError<TelemetryAnonymousIdPersistenceError>()(
   "TelemetryAnonymousIdPersistenceError",
   {
     source: Schema.Literal("anonymous"),
@@ -75,7 +86,7 @@ export class TelemetryAnonymousIdPersistenceError extends Schema.TaggedErrorClas
   }
 }
 
-export class TelemetryIdentityHashError extends Schema.TaggedErrorClass<TelemetryIdentityHashError>()(
+export class TelemetryIdentityHashError extends Schema.TaggedError<TelemetryIdentityHashError>()(
   "TelemetryIdentityHashError",
   {
     source: TelemetryIdentitySource,
@@ -131,7 +142,13 @@ const readIdentityFile = (
   source: TelemetryIdentitySource,
   filePath: string,
 ) =>
-  fileSystem.readFileString(filePath).pipe(
+  readTextWithinLimit(
+    fileSystem,
+    filePath,
+    source === "anonymous"
+      ? TELEMETRY_ANONYMOUS_ID_MAX_BYTES
+      : TELEMETRY_PROVIDER_IDENTITY_MAX_BYTES,
+  ).pipe(
     Effect.map(Option.some),
     Effect.catchTags({
       PlatformError: (cause) =>
@@ -144,6 +161,14 @@ const readIdentityFile = (
                 cause,
               }),
             ),
+      FileSizeLimitExceededError: (cause) =>
+        Effect.fail(
+          new TelemetryIdentityReadError({
+            source,
+            filePath,
+            cause,
+          }),
+        ),
     }),
   );
 
@@ -183,7 +208,9 @@ const getCodexAccountId = Effect.fn("TelemetryIdentity.getCodexAccountId")(funct
     ),
   );
 
-  return Option.some(authJson.tokens.account_id);
+  return authJson.tokens === undefined
+    ? Option.none<string>()
+    : Option.some(authJson.tokens.account_id);
 });
 
 const getClaudeUserId = Effect.fn("TelemetryIdentity.getClaudeUserId")(function* (
@@ -250,6 +277,9 @@ const upsertAnonymousId = Effect.gen(function* () {
  * 1. ~/.codex/auth.json tokens.account_id
  * 2. ~/.claude.json userID
  * 3. ~/.t3/telemetry/anonymous-id
+ *
+ * A missing file or an API-key-only Codex auth.json falls through quietly. Only
+ * unreadable or malformed files warn.
  */
 export const getTelemetryIdentifierForHome = Effect.fn("getTelemetryIdentifierForHome")(
   function* (homeDirectory: string) {

@@ -105,7 +105,6 @@ export function AgentsSettingsPanel() {
                           lockedProvider={null}
                           instanceEntries={[entry]}
                           modelOptionsByInstance={modelOptionsByInstance}
-                          triggerVariant="outline"
                           triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
                           onInstanceModelChange={(_nextInstanceId, model) => {
                             setChild(instanceId, { model, options: child.options });
@@ -120,7 +119,6 @@ export function AgentsSettingsPanel() {
                           modelOptions={child.options}
                           allowPromptInjectedEffort={false}
                           planModeEnabled={settings.planModeEnabled}
-                          triggerVariant="outline"
                           triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
                           onModelOptionsChange={(nextOptions) => {
                             setChild(instanceId, { model: child.model, options: nextOptions });
