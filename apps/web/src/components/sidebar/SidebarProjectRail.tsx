@@ -116,7 +116,7 @@ function RailFolderFrame({
     >
       <div
         aria-hidden
-        className="rail-folder-tray-bg pointer-events-none absolute inset-0 rounded-[var(--control-radius)] bg-[color-mix(in_srgb,var(--sidebar-foreground)_12%,var(--sidebar))] ring-1 ring-sidebar-border"
+        className="rail-folder-tray-bg pointer-events-none absolute inset-0 rounded-[var(--control-radius)]"
       />
       <div className="relative z-[1] w-full">{button}</div>
       <div
