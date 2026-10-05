@@ -1,4 +1,5 @@
 import type * as Sentry from "@sentry/node";
+import { BinaryReader, WireType } from "@bufbuild/protobuf";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -58,6 +59,32 @@ const decodeAcknowledgment = Schema.decodeUnknownEffect(
   ),
   { onExcessProperty: "error" },
 );
+// Logs and traces use the same response wire layout: partial_success = 1,
+// rejected_<signal> = 1 (int64). Collector warnings do not mean rejected records.
+function protobufRejected(bytes: Uint8Array): boolean {
+  const reader = new BinaryReader(bytes);
+  let rejected = false;
+  while (reader.pos < reader.len) {
+    const [field, wire] = reader.tag();
+    if (field !== 1) {
+      reader.skip(wire, field);
+      continue;
+    }
+    if (wire !== WireType.LengthDelimited) throw new Error("Invalid acknowledgment");
+    const partial = new BinaryReader(reader.bytes());
+    while (partial.pos < partial.len) {
+      const [field, wire] = partial.tag();
+      if (field === 1) {
+        if (wire !== WireType.Varint) throw new Error("Invalid acknowledgment");
+        const count = partial.int64();
+        rejected = rejected || count.toString() !== "0";
+      } else {
+        partial.skip(wire, field);
+      }
+    }
+  }
+  return rejected;
+}
 const attributes = (record: AgentObservation) =>
   OtlpResource.entriesToAttributes(
     Object.entries({
@@ -232,15 +259,18 @@ const make = (configuration: ExportConfiguration) =>
           Stream.runCollect,
         );
         if (responseBytes > 0) {
-          const text = Buffer.concat(chunks).toString("utf8").trim();
-          // Empty protobuf acknowledgments have no fields. Conservatively retry nonempty binary
-          // responses, which may represent partial rejection, rather than acknowledging lost records.
-          const acknowledgment = yield* decodeAcknowledgment(text);
-          if (
-            (acknowledgment.partialSuccess?.rejectedSpans ?? 0) !== 0 ||
-            (acknowledgment.partialSuccess?.rejectedLogRecords ?? 0) !== 0
-          )
-            return yield* new AgentMonitoringExportError({ operation });
+          const bytes = Buffer.concat(chunks);
+          const rejected =
+            configuration.protocol === "http/protobuf"
+              ? yield* Effect.try(() => protobufRejected(bytes))
+              : yield* decodeAcknowledgment(bytes.toString("utf8").trim()).pipe(
+                  Effect.map(
+                    (ack) =>
+                      (ack.partialSuccess?.rejectedSpans ?? 0) !== 0 ||
+                      (ack.partialSuccess?.rejectedLogRecords ?? 0) !== 0,
+                  ),
+                );
+          if (rejected) return yield* new AgentMonitoringExportError({ operation });
         }
       }).pipe(
         Effect.timeout("10 seconds"),

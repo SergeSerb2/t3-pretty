@@ -294,7 +294,7 @@ const make = Effect.gen(function* () {
         // Stop the old exporter before acquiring another, so a destination change never overlaps exports.
         if (!next.enabled) yield* (yield* ScopedRef.get(runtime)).pause.pipe(Effect.ignore);
         yield* ScopedRef.set(runtime, Effect.succeed(inactiveRuntime(disabled)));
-        current = next;
+        current = undefined;
         if (!next.enabled) {
           yield* pausePersistedJournal.pipe(
             Effect.scoped,
@@ -313,12 +313,19 @@ const make = Effect.gen(function* () {
               ),
             ),
           );
+          current = next;
           return;
         }
         yield* ScopedRef.set(
           runtime,
           makeRuntime(next, wasDisabled).pipe(Effect.provide(runtimeDependencies)),
         ).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              current = next;
+              wasDisabled = false;
+            }),
+          ),
           Effect.catch(() =>
             Effect.logWarning(
               "Agent monitoring is unavailable; agent execution remains enabled.",
@@ -340,7 +347,6 @@ const make = Effect.gen(function* () {
             ),
           ),
         );
-        wasDisabled = false;
       }),
     );
   yield* configure(yield* settings.getSettings);

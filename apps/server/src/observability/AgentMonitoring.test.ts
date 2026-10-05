@@ -168,13 +168,13 @@ const receiver = Effect.acquireRelease(
         server: NodeHttp.Server;
         requests: Array<{ url: string; body: string; contentType?: string }>;
         setStatus: (status: number) => void;
-        setBody: (body: string) => void;
+        setBody: (body: string | Uint8Array) => void;
         setEnvelopeStatus: (status: number) => void;
       }>((resolve) => {
         const requests: Array<{ url: string; body: string; contentType?: string }> = [];
         let status = 200;
         let envelopeStatus = 200;
-        let body = "{}";
+        let body: string | Uint8Array = "{}";
         const server = NodeHttp.createServer(async (request, response) => {
           const chunks: Buffer[] = [];
           for await (const chunk of request) chunks.push(Buffer.from(chunk));
@@ -273,6 +273,81 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
       const encoded = yield* encodeJson([command, child, root, errorA, errorB]);
       assert.ok(!encoded.includes("CANARY"));
       assert.ok(!encoded.includes("Bearer"));
+    }),
+  );
+
+  it.effect(
+    "accepts protobuf success and warnings while retrying rejection or malformed acks",
+    () =>
+      Effect.gen(function* () {
+        const ingestion = yield* receiver;
+        yield* Effect.gen(function* () {
+          const exporter = yield* Exporter.AgentMonitoringExporter;
+          for (const body of [
+            [], // Empty Export*ServiceResponse.
+            [10, 0], // Empty partial_success.
+            [10, 4, 18, 2, 111, 107], // Zero rejected with warning "ok".
+            [16, 1], // Future unknown field.
+          ]) {
+            ingestion.setBody(Uint8Array.from(body));
+            yield* exporter.send([observe(toolEvent())]);
+          }
+          assert.ok(
+            ingestion.requests.every((request) => request.contentType === "application/x-protobuf"),
+          );
+          for (const body of [
+            [10, 2, 8, 1], // One rejected log record or span.
+            [10, 6, 8, 128, 128, 128, 128, 16], // Rejected count beyond 32 bits.
+            [10, 2, 8], // Truncated partial_success.
+            [8, 0], // Wrong wire type for partial_success.
+          ]) {
+            ingestion.setBody(Uint8Array.from(body));
+            assert.ok(Exit.isFailure(yield* Effect.exit(exporter.send([observe(toolEvent())]))));
+          }
+        }).pipe(
+          Effect.provide(
+            Exporter.layer({
+              otlpBaseUrl: ingestion.url,
+              protocol: "http/protobuf",
+            }).pipe(Layer.provide(FetchHttpClient.layer)),
+          ),
+        );
+      }),
+  );
+
+  it.effect("retries the same saved configuration after a transient journal startup failure", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-monitoring-recovery-" });
+      const obstruction = path.join(home, "userdata", "logs", AgentMonitoring.journalFileName);
+      yield* fs.makeDirectory(obstruction, { recursive: true });
+      const storeContext = yield* Layer.build(
+        OrchestrationEventStoreLive.pipe(Layer.provide(SqlitePersistenceMemory)),
+      );
+      const store = Context.get(storeContext, OrchestrationEventStore);
+      const context = yield* Layer.build(
+        AgentMonitoring.layer.pipe(
+          Layer.provide(Settings.layerTest({ agentMonitoring: { enabled: true, sentryDsn: "" } })),
+          Layer.provide(ServerConfig.layerTest(home, home)),
+          Layer.provide(
+            Layer.succeed(ServerEnvironment.ServerEnvironment, {
+              getEnvironmentId: Effect.succeed(EnvironmentId.make("recovering-host")),
+              getDescriptor: Effect.die("unused"),
+            }),
+          ),
+          Layer.provide(Layer.succeed(OrchestrationEventStore, store)),
+          Layer.provide(FetchHttpClient.layer),
+          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+        ),
+      );
+      const monitor = Context.get(context, AgentMonitoring.AgentMonitoring);
+      assert.equal((yield* monitor.status).state, "unavailable");
+      yield* fs.remove(obstruction, { recursive: true });
+      assert.equal((yield* monitor.status).state, "collecting");
+      yield* store.appendAgentEvents({ events: [toolEvent("recovered")] });
+      yield* monitor.flush;
+      assert.equal((yield* monitor.status).pendingCount, 1);
     }),
   );
 

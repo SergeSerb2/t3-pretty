@@ -25,6 +25,7 @@ export class AgentMonitoringEnrollment {
   private pending = new Map<EnvironmentId, { key: string; promise: Promise<void> }>();
   private states: ReadonlyMap<EnvironmentId, EnrollmentState> = new Map();
   private listeners = new Set<() => void>();
+  private hostSaves = new Set<EnvironmentId>();
 
   readonly getSnapshot = () => this.states;
   readonly subscribe = (listener: () => void) => {
@@ -42,6 +43,24 @@ export class AgentMonitoringEnrollment {
 
   async waitForPending(environmentId: EnvironmentId) {
     await this.pending.get(environmentId)?.promise;
+  }
+
+  /** A host edit supersedes fleet enrollment only after both writes succeed. */
+  async saveHost(
+    environmentId: EnvironmentId,
+    save: () => Promise<void>,
+    stopEnrollment: () => Promise<void>,
+  ) {
+    this.hostSaves.add(environmentId);
+    try {
+      await this.waitForPending(environmentId);
+      await save();
+      await stopEnrollment();
+      if (this.write) await this.reconcile(null, [...this.targets.values()], this.write);
+    } finally {
+      this.hostSaves.delete(environmentId);
+      if (this.write) await this.reconcile(this.choice, [...this.targets.values()], this.write);
+    }
   }
 
   async retryFailed() {
@@ -74,6 +93,7 @@ export class AgentMonitoringEnrollment {
     const tasks: Promise<void>[] = [];
     for (const target of targets) {
       const id = target.environmentId;
+      if (this.hostSaves.has(id)) continue;
       if (!target.connected) {
         this.attempts.delete(id);
         this.set(id, "waiting");

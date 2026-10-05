@@ -120,4 +120,56 @@ describe("automatic agent monitoring enrollment", () => {
     expect(writes).toEqual([]);
     expect(enrollment.getSnapshot().size).toBe(0);
   });
+
+  it("preserves fleet intent after a failed host save and drains older writes before a successful edit", async () => {
+    const enrollment = new AgentMonitoringEnrollment();
+    const writes: ServerSettingsPatch[] = [];
+    const write = async (_id: EnvironmentId, patch: ServerSettingsPatch) => {
+      writes.push(patch);
+    };
+    let persisted: AgentMonitoringSettings | null = choice;
+    await enrollment.reconcile(choice, [target({ settings: choice })], write);
+    await expect(
+      enrollment.saveHost(
+        id,
+        async () => {
+          throw new Error("denied");
+        },
+        async () => {
+          persisted = null;
+        },
+      ),
+    ).rejects.toThrow("denied");
+    expect(persisted).toEqual(choice);
+    await enrollment.reconcile(choice, [target({ connected: false })], write);
+    await enrollment.reconcile(choice, [target()], write);
+    expect(writes).toEqual([{ agentMonitoring: choice }]);
+
+    const started = deferred();
+    const receipt = deferred();
+    await enrollment.reconcile(choice, [target({ connected: false })], write);
+    const enrolling = enrollment.reconcile(choice, [target()], async (_id, patch) => {
+      writes.push(patch);
+      started.resolve();
+      await receipt.promise;
+    });
+    await started.promise;
+    const editing = enrollment.saveHost(
+      id,
+      async () => {
+        expect(persisted).toEqual(choice);
+        writes.push({ agentMonitoring: { enabled: false } });
+      },
+      async () => {
+        persisted = null;
+      },
+    );
+    await enrollment.reconcile(choice, [target()], write);
+    expect(writes).toHaveLength(2);
+    receipt.resolve();
+    await Promise.all([enrolling, editing]);
+    expect(writes.at(-1)).toEqual({ agentMonitoring: { enabled: false } });
+    expect(persisted).toBeNull();
+    expect(enrollment.getSnapshot().size).toBe(0);
+  });
 });

@@ -126,21 +126,30 @@ function AgentMonitoringSettingsForm({ environmentId }: { environmentId: Environ
       const setting: MonitoringSettings = { enabled, sentryDsn: dsn.trim() };
       if (enabled && setting.sentryDsn.length === 0)
         throw new Error("Enter the Sentry ingestion DSN first.");
-      await persistClientSettingsUpdate((current) => ({
-        ...current,
-        agentMonitoringEnrollment: scope === "fleet" ? setting : null,
-      }));
+      const persistChoice = (enrollment: MonitoringSettings | null) =>
+        persistClientSettingsUpdate((current) => ({
+          ...current,
+          agentMonitoringEnrollment: enrollment,
+        }));
       if (scope === "host" && environmentId !== null) {
-        await agentMonitoringEnrollment.reconcile(null, [], async () => {});
-        await agentMonitoringEnrollment.waitForPending(environmentId);
-        const result = await update({
+        await agentMonitoringEnrollment.saveHost(
           environmentId,
-          input: { patch: { agentMonitoring: enabled ? setting : { enabled: false } } },
-        });
-        if (AsyncResult.isFailure(result))
-          throw new Error(
-            "This host could not save monitoring settings. Check your connection and permissions.",
-          );
+          async () => {
+            const result = await update({
+              environmentId,
+              input: { patch: { agentMonitoring: enabled ? setting : { enabled: false } } },
+            });
+            if (AsyncResult.isFailure(result))
+              throw new Error(
+                "This host could not save monitoring settings. Check your connection and permissions.",
+              );
+          },
+          async () => {
+            await persistChoice(null);
+          },
+        );
+      } else {
+        await persistChoice(scope === "fleet" ? setting : null);
       }
       setNotice(
         scope === "fleet"
