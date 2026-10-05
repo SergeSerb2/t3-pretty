@@ -49,7 +49,7 @@ RESOLUTION_CACHE_BRANCH="${RESOLUTION_CACHE_BRANCH:-automation/sync-resolution-c
 UPSTREAM_URL="https://github.com/pingdotgg/t3code.git"
 ORIGIN_REPO="${ORIGIN_REPO:-serbinenko/t3-pretty}"
 export CLI_PROXY_API_URL="${CLI_PROXY_API_URL:-https://cli-proxy-api-production-1615.up.railway.app/v1}"
-export CLI_PROXY_MODEL="${CLI_PROXY_MODEL:-gpt-5.6-sol}"
+export CLI_PROXY_MODEL="${CLI_PROXY_MODEL:-gpt-6.1-sol}"
 export CLI_PROXY_REASONING_EFFORT="${CLI_PROXY_REASONING_EFFORT:-xhigh}"
 export CLI_PROXY_SERVICE_TIER="${CLI_PROXY_SERVICE_TIER:-priority}"
 SYNC_FAIL_REASON=""
@@ -973,7 +973,7 @@ current_sync_used_fallback() {
 write_sync_pr_body() {
   printf '%s\n\n' \
     'Automated four-hour integration of a parent T3 Code nightly into T3 Pretty.' \
-    'Clean merges are retained directly. Text conflicts are resolved through CLIProxyAPI with gpt-5.6-sol at xhigh reasoning under the T3 Pretty preservation contract.'
+    "Clean merges are retained directly. Text conflicts are resolved through CLIProxyAPI with ${CLI_PROXY_MODEL} at ${CLI_PROXY_REASONING_EFFORT} reasoning under the T3 Pretty preservation contract."
   printf 'The complete conflict-resolution audit for `%s` is committed in `.t3-fork/upstream-sync-report.md`.\n' "$UPSTREAM_TAG"
   if current_sync_used_fallback; then
     printf '\n%s\n' 'Some conflicted files took the deterministic fork-side fallback because no model resolution was available; the committed report lists every parent change it omitted.'

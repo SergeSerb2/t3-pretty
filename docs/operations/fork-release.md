@@ -70,8 +70,8 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    The fork deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes
    cannot replace the trusted sync/release boundary.
 3. Clean changes remain untouched and do not make a model request. If Git reports text conflicts,
-   the workflow asks the Railway CLIProxyAPI `gpt-5.6-sol` model to resolve each file with `xhigh`
-   reasoning, in batches of at most five conflicts per request so a heavily conflicted file cannot
+   the workflow asks the Railway CLIProxyAPI `gpt-6.1-sol` model to resolve each file with `xhigh`
+   reasoning for every batch and retry, one conflict per request so a heavily conflicted file cannot
    turn into one long-running call that the proxy times out. A batch whose edit set fails
    validation (a non-unique or missing `old_text`) is requested once more before the run gives
    up, and every completed file is checkpointed to the `automation/sync-resolution-cache` branch
