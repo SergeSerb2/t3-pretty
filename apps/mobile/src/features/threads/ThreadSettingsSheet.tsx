@@ -88,6 +88,7 @@ import {
 } from "./provider-catalog-refresh";
 import {
   createNativeMailSearchToolbarItem,
+  NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET,
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
 import { ThreadSettingsControlStack } from "./ThreadSettingsControls";
@@ -895,6 +896,11 @@ function ThreadSettingsCatalog() {
   const showsFavoritesChip =
     session.favoriteKeys.size > 0 || session.providerFilter === FAVORITES_PROVIDER_FILTER;
   const hasActiveCatalogFilter = session.providerFilter !== null || isSearching;
+  // The floating mail toolbar overlays content outside UIKit's automatic safe-area insets.
+  const bottomToolbarInset =
+    Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED
+      ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET
+      : 0;
   const listItems = useMemo<ReadonlyArray<ThreadSettingsCatalogItem>>(
     () => (catalogItems.length === 0 ? [{ kind: "empty", key: "empty" }] : catalogItems),
     [catalogItems],
@@ -953,7 +959,7 @@ function ThreadSettingsCatalog() {
           : undefined
       }
       contentContainerStyle={{
-        paddingBottom: Platform.OS === "ios" ? 24 : insets.bottom + 24,
+        paddingBottom: 24 + bottomToolbarInset + (Platform.OS === "ios" ? 0 : insets.bottom),
         paddingTop: 4,
       }}
       contentInsetAdjustmentBehavior="automatic"

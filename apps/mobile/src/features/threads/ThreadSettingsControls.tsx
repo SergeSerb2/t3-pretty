@@ -796,7 +796,9 @@ function CurrentModelCard(props: {
               ) : null}
             </Animated.View>
             <View className="flex-row items-center gap-1 rounded-full bg-subtle px-2.5 py-1.5">
-              <Text className="text-xs font-t3-medium text-foreground">Change</Text>
+              <Text className="text-xs font-t3-medium text-foreground">
+                {props.model ? "Change" : "Choose"}
+              </Text>
               <SymbolView
                 name="chevron.right"
                 size={10}
