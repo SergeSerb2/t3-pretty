@@ -27,7 +27,7 @@ import { resolveSubagentRowPresentation } from "./threadAgentsPresentation";
 import { GroupedCard } from "../scenery/GroupedCard";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
-import { SubagentStatusDot } from "./SubagentStatusDot";
+import { SubagentRow } from "./SubagentRow";
 import { GlassRowPressable } from "../scenery/GroupedCard";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
@@ -78,6 +78,7 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
           {subagents.map((subagent, index) => (
             <AgentRow
               key={subagent.id}
+              environmentId={target.environmentId}
               glass
               isLast={index === subagents.length - 1}
               subagent={subagent}
@@ -91,6 +92,7 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
           <AgentRow
             key={subagent.id}
             subagent={subagent}
+            environmentId={target.environmentId}
             tickSeconds={hasLiveAgent}
             onOpen={openChildThread}
           />
@@ -140,6 +142,7 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
 }
 
 function AgentRow(props: {
+  readonly environmentId: EnvironmentId;
   readonly glass?: boolean;
   readonly isLast?: boolean;
   readonly subagent: OrchestrationV2Subagent;
@@ -147,36 +150,23 @@ function AgentRow(props: {
   readonly onOpen: (childThreadId: ThreadId) => void;
 }) {
   const { subagent } = props;
-  const presentation = resolveSubagentRowPresentation(subagent);
   const childThreadId = subagent.childThreadId;
-  const elapsed = useSubagentElapsed(subagent, props.tickSeconds);
 
   const row = (
     <View
       className={
         props.glass
-          ? cn(
-              "min-h-14 flex-row items-center gap-3 px-4 py-3",
-              !props.isLast && "border-b border-border-subtle",
-            )
-          : "min-h-14 flex-row items-center gap-3 border-b border-border py-3"
+          ? cn("min-h-14 px-4 py-3", !props.isLast && "border-b border-border-subtle")
+          : "border-b border-border py-3.5"
       }
     >
-      <SubagentStatusDot tone={presentation.tone} placement="sheet" />
-      <View className="min-w-0 flex-1 gap-0.5">
-        <Text className="font-t3-medium text-sm text-foreground" numberOfLines={1}>
-          {presentation.title}
-        </Text>
-        <Text className="text-xs text-foreground-muted" numberOfLines={1}>
-          {presentation.detail ?? presentation.statusLabel}
-        </Text>
-      </View>
-      {elapsed === null ? null : (
-        <Text className="shrink-0 text-2xs tabular-nums text-foreground-muted">{elapsed}</Text>
-      )}
-      {presentation.canOpenThread ? (
-        <SymbolView name="chevron.right" size={12} tintColorClassName="accent-icon-subtle" />
-      ) : null}
+      <SubagentRow
+        environmentId={props.environmentId}
+        subagent={subagent}
+        elapsed={
+          <AgentElapsed compact={props.glass} subagent={subagent} tickSeconds={props.tickSeconds} />
+        }
+      />
     </View>
   );
 
@@ -184,7 +174,6 @@ function AgentRow(props: {
     return (
       <View
         accessible
-        accessibilityLabel={`${presentation.title}, ${presentation.statusLabel}`}
         accessibilityHint="Provider-managed agent. Its work appears in the transcript."
       >
         {row}
@@ -195,7 +184,6 @@ function AgentRow(props: {
   return (
     <GlassRowPressable
       accessibilityRole="link"
-      accessibilityLabel={`${presentation.title}, ${presentation.statusLabel}`}
       accessibilityHint="Opens this agent's thread"
       onPress={() => props.onOpen(childThreadId)}
       fallbackClassName="active:opacity-70"
@@ -205,9 +193,27 @@ function AgentRow(props: {
   );
 }
 
+function AgentElapsed(props: {
+  readonly compact?: boolean;
+  readonly subagent: OrchestrationV2Subagent;
+  readonly tickSeconds: boolean;
+}) {
+  const elapsed = useSubagentElapsed(props.subagent, props.tickSeconds);
+  return elapsed === null ? null : (
+    <Text
+      className={cn(
+        "shrink-0 tabular-nums text-foreground-muted",
+        props.compact ? "text-2xs" : "text-xs",
+      )}
+    >
+      {elapsed}
+    </Text>
+  );
+}
+
 /**
- * Elapsed time for one agent. Only a roster with live work subscribes to the
- * shared second tick, so a settled sheet never repaints.
+ * Elapsed time for one agent. Only live work ticks, inside AgentElapsed,
+ * so the timer never repaints the metadata or a settled sheet.
  */
 function useSubagentElapsed(
   subagent: Pick<OrchestrationV2Subagent, "status" | "startedAt" | "completedAt">,

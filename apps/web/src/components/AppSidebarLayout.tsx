@@ -45,14 +45,16 @@ import {
 import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
-import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
 import {
+  clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarCssWidth,
   resolveThreadSidebarMaximumWidth,
+  resolveThreadSidebarMinimumWidth,
   THREAD_MAIN_CONTENT_MIN_WIDTH,
   THREAD_SIDEBAR_DEFAULT_WIDTH,
   THREAD_SIDEBAR_MIN_WIDTH,
@@ -357,21 +359,24 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const teslaTouch = useTeslaTouchUi();
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
-  // Stable options object: the drag limits resolve against the live window at
-  // drag time, so no viewport subscription is needed here and the rail never
-  // sees a stale cap.
+  const [brandWidth, setBrandWidth] = useState(0);
+  const sidebarMinimumWidth = resolveThreadSidebarMinimumWidth(brandWidth);
+  // Resolve viewport limits at drag time so the rail follows the live window
+  // without a viewport subscription. Brand measurement can still raise the
+  // minimum, so refresh the options when that floor changes.
   const sidebarResizable = useMemo<SidebarResizableOptions>(
     () => ({
-      getCssWidth: resolveThreadSidebarCssWidth,
-      maxWidth: () => resolveThreadSidebarMaximumWidth(window.innerWidth),
-      minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+      getCssWidth: (width) =>
+        `max(${sidebarMinimumWidth}px, ${resolveThreadSidebarCssWidth(width)})`,
+      maxWidth: () => resolveThreadSidebarMaximumWidth(window.innerWidth, sidebarMinimumWidth),
+      minWidth: sidebarMinimumWidth,
       shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
         nextWidth <= currentWidth ||
         wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
       storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
       onResize: setSidebarWidth,
     }),
-    [],
+    [sidebarMinimumWidth],
   );
   const resetSidebarWidth = () => {
     try {
@@ -390,7 +395,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const sidebarProviderStyle = {
     "--sidebar-width": teslaTouch
       ? "min(34rem, max(20rem, 40vw))"
-      : resolveThreadSidebarCssWidth(sidebarWidth),
+      : `max(${sidebarMinimumWidth}px, ${resolveThreadSidebarCssWidth(sidebarWidth)})`,
     ...(teslaTouch ? { "--sidebar-width-icon": "5.75rem" } : {}),
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
   } as CSSProperties;
@@ -474,6 +479,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         defaultOpen
         style={sidebarProviderStyle}
       >
+        <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />
         <ProjectProjectionRetention />
         <SidebarPeekNavigationGuard />
         <Sidebar
@@ -483,7 +489,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           className="workspace-sidebar-glass group-data-[side=left]:border-r-0 text-sidebar-foreground"
           role="navigation"
           aria-label={isOnSettings ? "Settings" : "Threads"}
-          resizable={teslaTouch ? false : sidebarResizable}
+          resizable={teslaTouch ? false : { ...sidebarResizable, minWidth: sidebarMinimumWidth }}
         >
           {isOnSettings ? (
             <>

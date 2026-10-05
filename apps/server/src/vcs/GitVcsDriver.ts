@@ -77,6 +77,7 @@ export interface GitStatusDetails {
   upstreamRef: string | null;
   hasWorkingTreeChanges: boolean;
   workingTree: VcsStatusResult["workingTree"];
+  branchChanges?: VcsStatusResult["branchChanges"];
   hasUpstream: boolean;
   aheadCount: number;
   behindCount: number;
@@ -86,6 +87,8 @@ export interface GitStatusDetails {
 export interface GitLocalStatusOptions {
   /** Skip revision walks and return zero divergence counts for local-only consumers. */
   readonly includeDivergence?: boolean;
+  /** Also read the diff panel's Changes totals. Failures leave them out. */
+  readonly includeBranchChanges?: boolean;
 }
 
 export interface GitRemoteStatusDetails {
@@ -172,6 +175,8 @@ export interface GitCommitProgress {
 export interface GitCommitOptions {
   readonly timeoutMs?: number;
   readonly progress?: GitCommitProgress;
+  /** Stage the current working tree immediately before committing. */
+  readonly stage?: { readonly filePaths?: readonly string[] };
 }
 
 export interface GitDeleteLocalBranchInput {
@@ -1053,9 +1058,10 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                   maxOutputBytes: WORKSPACE_FILES_MAX_OUTPUT_BYTES,
                 });
                 if (untracked.stdoutTruncated) return yield* error;
-                const candidates = splitNullSeparatedPaths(untracked.stdout, untracked.stdoutTruncated).filter((entry) =>
-                  entry.endsWith("/"),
-                );
+                const candidates = splitNullSeparatedPaths(
+                  untracked.stdout,
+                  untracked.stdoutTruncated,
+                ).filter((entry) => entry.endsWith("/"));
                 // Refuse excessive recovery work before probing any nested repositories.
                 if (candidates.length > CHECKPOINT_RECOVERY_MAX_CANDIDATES) return yield* error;
                 // Discover each child's repository instead of inheriting the server's Git bindings.

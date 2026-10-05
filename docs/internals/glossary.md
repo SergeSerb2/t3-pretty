@@ -2,7 +2,7 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-This is a living glossary for T3 Code. It explains what common terms mean in this codebase.
+Terms whose meaning matters across T3 Code. This living glossary explains common terms in this codebase. Architecture and lifecycle constraints belong in the [overview](./overview.md), not in these definitions.
 
 ## Table of contents
 
@@ -64,7 +64,7 @@ The main durable unit of conversation and workspace history. It survives provide
 
 #### Turn
 
-A single user-to-assistant work cycle inside a thread. It starts with user input and ends when the session leaves `running` status, which [projector.ts][4] treats as the authoritative completion signal (`settledTurnStateForSessionStatus`). Checkpoint and diff work may settle afterward without changing when the turn ended. See [the contracts][1] and [ProviderRuntimeIngestion.ts][5].
+A single user-to-agent work cycle inside a thread; in V2, this is a run. It starts with user input and ends when the session leaves `running` status, which [projector.ts][4] treats as the authoritative completion signal (`settledTurnStateForSessionStatus`). Checkpoint and diff work may settle afterward without changing when the turn ended. See [the contracts][1] and [ProviderRuntimeIngestion.ts][5].
 
 #### Delivery mode
 
@@ -87,7 +87,7 @@ The plain-table inverted index behind `orchestration.searchThreads`: `search_ind
 | Term                 | Meaning                                                                                                                                                                                  |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pull request link    | A persisted thread association identified by host, repository, and number. Links can cross projects within an environment and carry a server-maintained snapshot.                        |
-| Pull request sync    | The reactor that refreshes each distinct linked review once per cadence and discovers native stack layers. Explicit refreshes and failed stack reads trigger another read.               |
+| Pull request sync    | The worker that refreshes each distinct linked review once per cadence and discovers native stack layers. Explicit refreshes and failed stack reads trigger another read.                |
 | Current pull request | The link used by single-review controls and older clients. Open work takes precedence; a completed single chain points at its top layer. Unrelated terminal links use the latest update. |
 
 ### Composer context
@@ -103,11 +103,15 @@ See [composer context references](./composer-context-references.md) for the cont
 
 ### Orchestration
 
-Orchestration is the server-side domain layer that turns runtime activity into stable app state. The main entry point is [OrchestrationEngine.ts][7], with core logic in [decider.ts][8] and [projector.ts][4].
+Orchestration is the server-side domain layer that turns runtime activity into stable app state. The main entry point is [OrchestrationEngine.ts][7], with core logic in [decider.ts][8] and [projector.ts][4]. In V2, commands are serialized before the pure decision step, and the persistence boundary atomically commits events, read-model changes, and outbox effects. Effect workers run those effects after commit and feed results back as commands.
 
 #### Aggregate
 
 The domain object a command or event belongs to. In [the contracts][1], that is usually `project` or `thread`. See [decider.ts][8].
+
+#### Orchestrator
+
+The service that serializes commands and decides their events from current state. Its decision step performs no I/O; persistence and effect execution stay at the transaction and worker boundaries.
 
 #### Command
 
@@ -125,7 +129,7 @@ The pure orchestration logic that turns commands plus current state into events.
 
 #### Projection
 
-A read-optimized view derived from events. See [projector.ts][4], [ProjectionPipeline.ts][11], and [ProjectionSnapshotQuery.ts][10].
+A persisted, read-optimized view derived from events and committed in the same transaction as the events that change it. See [projector.ts][4], [ProjectionPipeline.ts][11], and [ProjectionSnapshotQuery.ts][10].
 
 #### Projector
 
@@ -142,6 +146,14 @@ The cheap shell stream delta (`{threadId, updatedAt, sequence}`) sent instead of
 #### Ephemeral event
 
 A `thread.activity-appended` that is streamed to `subscribeThread` subscribers but never appended to the event store: it carries `sequence: 0` and the stream item is flagged `ephemeral: true`, so clients apply it in place without moving their resume cursor (older clients drop it at their cursor gate). Used for in-flight tool progress: [ToolProgress.ts][26] keeps the latest `tool.updated` per `(thread, item)` under the stable id `${itemId}:progress`, splices it into thread detail snapshots, and only a coalesced tick (at most every 3 s) plus a turn-end flush is persisted. See [the contracts][1] and [ProviderRuntimeIngestion.ts][5].
+
+#### Outbox effect
+
+Side-effect intent committed with events, such as starting a provider turn or capturing a checkpoint.
+
+#### Effect worker
+
+A worker that runs outbox effects after commit and feeds their results back as commands.
 
 #### Reactor
 

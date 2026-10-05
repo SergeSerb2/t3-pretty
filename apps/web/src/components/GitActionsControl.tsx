@@ -1210,6 +1210,8 @@ export default function GitActionsControl({
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const gitStatusForActions = gitStatus;
+  // Matches the diff panel's Changes view. Older servers only report uncommitted totals.
+  const changesTotals = gitStatusForActions?.branchChanges ?? gitStatusForActions?.workingTree;
 
   const allFiles = gitStatusForActions?.workingTree.files ?? [];
   const selectedFiles = allFiles.filter((f) => !excludedFiles.has(f.path));
@@ -1902,7 +1904,7 @@ export default function GitActionsControl({
             // the output row expands below.
             <GitActionElapsedTime
               startedAtMs={gitActionProgress.startedAtMs}
-              className="flex h-9 shrink-0 items-center self-start pe-2.5 text-2xs font-normal tabular-nums text-muted-foreground"
+              className="flex h-8 shrink-0 items-center self-start pe-2.5 text-2xs font-normal tabular-nums text-muted-foreground"
             />
           ) : (
             <>
@@ -1960,12 +1962,8 @@ export default function GitActionsControl({
           <FileDiffIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} aria-hidden />
           <span className="flex-1 text-left">Changes</span>
           <span className="flex items-center gap-1 font-mono text-2xs tabular-nums">
-            <span className="text-success">
-              +{gitStatusForActions?.workingTree.insertions ?? 0}
-            </span>
-            <span className="text-destructive">
-              -{gitStatusForActions?.workingTree.deletions ?? 0}
-            </span>
+            <span className="text-success">+{changesTotals?.insertions ?? 0}</span>
+            <span className="text-destructive">-{changesTotals?.deletions ?? 0}</span>
           </span>
         </ThreadDetailsControl>
       ) : null}
@@ -2036,54 +2034,58 @@ export default function GitActionsControl({
                     <div className="h-44 rounded-lg bg-card ring-1 ring-black/5 dark:bg-white/[0.025] dark:ring-white/5">
                       <ScrollArea>
                         <div className="space-y-1 p-1">
-                        {allFiles.map((file) => {
-                          const isExcluded = excludedFiles.has(file.path);
-                          return (
-                            <div
-                              key={file.path}
-                              className="flex w-full items-center gap-2 rounded-md px-2 py-1 font-mono hover:bg-accent/50"
-                            >
-                              {isEditingFiles && (
-                                <Checkbox
-                                  aria-label={file.path}
-                                  checked={!excludedFiles.has(file.path)}
-                                  onCheckedChange={() => {
-                                    setExcludedFiles((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(file.path)) {
-                                        next.delete(file.path);
-                                      } else {
-                                        next.add(file.path);
-                                      }
-                                      return next;
-                                    });
-                                  }}
-                                />
-                              )}
-                              <button
-                                type="button"
-                                className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
-                                onClick={() => openChangedFileInEditor(file.path)}
+                          {allFiles.map((file) => {
+                            const isExcluded = excludedFiles.has(file.path);
+                            return (
+                              <div
+                                key={file.path}
+                                className="flex w-full items-center gap-2 rounded-md px-2 py-1 font-mono hover:bg-accent/50"
                               >
-                                <StartTruncatedPath
-                                  path={file.path}
-                                  className={`flex-1${isExcluded ? " text-muted-foreground" : ""}`}
-                                />
-                                <span className="shrink-0">
-                                  {isExcluded ? (
-                                    <span className="text-muted-foreground">Excluded</span>
-                                  ) : (
-                                    <>
-                                      <span className="text-diff-addition">+{file.insertions}</span>
-                                      <span className="text-muted-foreground"> / </span>
-                                      <span className="text-diff-deletion">-{file.deletions}</span>
-                                    </>
-                                  )}
-                                </span>
-                              </button>
-                            </div>
-                          );
-                        })}
+                                {isEditingFiles && (
+                                  <Checkbox
+                                    aria-label={file.path}
+                                    checked={!excludedFiles.has(file.path)}
+                                    onCheckedChange={() => {
+                                      setExcludedFiles((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(file.path)) {
+                                          next.delete(file.path);
+                                        } else {
+                                          next.add(file.path);
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                  />
+                                )}
+                                <button
+                                  type="button"
+                                  className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+                                  onClick={() => openChangedFileInEditor(file.path)}
+                                >
+                                  <StartTruncatedPath
+                                    path={file.path}
+                                    className={`flex-1${isExcluded ? " text-muted-foreground" : ""}`}
+                                  />
+                                  <span className="shrink-0">
+                                    {isExcluded ? (
+                                      <span className="text-muted-foreground">Excluded</span>
+                                    ) : (
+                                      <>
+                                        <span className="text-diff-addition">
+                                          +{file.insertions}
+                                        </span>
+                                        <span className="text-muted-foreground"> / </span>
+                                        <span className="text-diff-deletion">
+                                          -{file.deletions}
+                                        </span>
+                                      </>
+                                    )}
+                                  </span>
+                                </button>
+                              </div>
+                            );
+                          })}
                         </div>
                       </ScrollArea>
                     </div>

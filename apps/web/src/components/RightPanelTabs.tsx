@@ -24,9 +24,8 @@ import {
   Globe2,
   Plus,
   TerminalSquare,
-  Volume2,
-  VolumeOff,
 } from "lucide-react";
+import { Volume2, VolumeOff } from "lucide";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -45,6 +44,7 @@ import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { Button } from "~/components/ui/button";
+import { MorphIcon } from "~/components/MorphIcon";
 import { AndroidIcon, AppleIcon } from "~/components/Icons";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Kbd } from "~/components/ui/kbd";
@@ -476,7 +476,9 @@ function RightPanelEmptyState(props: {
     return (
       <span className="relative inline-flex shrink-0">
         <Icon className={iconClassName} />
-        {"badgeCount" in action && typeof action.badgeCount === "number" && action.badgeCount > 0 ? (
+        {"badgeCount" in action &&
+        typeof action.badgeCount === "number" &&
+        action.badgeCount > 0 ? (
           <span
             aria-hidden
             className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
@@ -1194,11 +1196,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                                 .catch(() => undefined);
                             }}
                           >
-                            {audio === "muted" ? (
-                              <VolumeOff className="size-3" />
-                            ) : (
-                              <Volume2 className="size-3" />
-                            )}
+                            <MorphIcon
+                              className="size-3"
+                              icon={audio === "muted" ? VolumeOff : Volume2}
+                            />
                           </button>
                         }
                       />
@@ -1404,8 +1405,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddBrowserInProfile={props.onAddBrowserInProfile}
             browserProfiles={browserProfiles}
             onAddTerminal={props.onAddTerminal}
-            {...(props.onAddAgents ? {onAddAgents: props.onAddAgents} : {})}
-            {...(props.agentsAvailable === undefined ? {} : {agentsAvailable: props.agentsAvailable})}
+            {...(props.onAddAgents ? { onAddAgents: props.onAddAgents } : {})}
+            {...(props.agentsAvailable === undefined
+              ? {}
+              : { agentsAvailable: props.agentsAvailable })}
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}

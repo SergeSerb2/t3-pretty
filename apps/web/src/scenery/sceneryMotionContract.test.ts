@@ -99,7 +99,7 @@ describe("row arrival contract with the messages timeline", () => {
 describe("working-row thinking indicator contract", () => {
   it("the working row renders the shimmer Thinking indicator, not the pulse dots", () => {
     expect(messagesTimelineSource).toContain('"working"');
-    expect(messagesTimelineSource).toContain("<ThinkingTimelineRow />");
+    expect(messagesTimelineSource).toContain("<ThinkingTimelineRow row={row} />");
     expect(messagesTimelineSource).toContain('iconName="brain" active shimmer');
     expect(messagesTimelineSource).not.toContain("status-pulse-wave");
   });

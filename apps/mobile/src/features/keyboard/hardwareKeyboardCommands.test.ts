@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ENTITY_ID_MAX_LENGTH } from "@t3tools/contracts";
 
-import { parseActiveThreadPath } from "./hardwareKeyboardCommands";
+import { nextEnvironmentId, parseActiveThreadPath } from "./hardwareKeyboardCommands";
 
 describe("parseActiveThreadPath", () => {
   it("extracts the active thread from thread subroutes", () => {
@@ -31,5 +31,22 @@ describe("parseActiveThreadPath", () => {
     expect(
       parseActiveThreadPath(`/threads/${"e".repeat(ENTITY_ID_MAX_LENGTH + 1)}/thread-1`),
     ).toBeNull();
+  });
+});
+
+describe("nextEnvironmentId", () => {
+  const environments = [{ environmentId: "a" }, { environmentId: "b" }, { environmentId: "c" }];
+
+  it.each([
+    ["the next machine", "a", "b"],
+    ["the first machine after the last", "c", "a"],
+    ["the first machine when the current one is not listed", "gone", "a"],
+    ["the first machine when there is no current one", null, "a"],
+  ])("returns %s", (_label, current, expected) => {
+    expect(nextEnvironmentId(environments, current)).toBe(expected);
+  });
+
+  it("returns null when there is nowhere else to go", () => {
+    expect(nextEnvironmentId([{ environmentId: "a" }], "a")).toBeNull();
   });
 });

@@ -3646,6 +3646,53 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect.each([undefined, ["README.md"]])(
+    "a failed generation preserves staging changed while generating (paths: %s)",
+    (filePaths) =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        yield* initRepo(repoDir);
+        NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nstaged\n");
+        yield* runGit(repoDir, ["add", "README.md"]);
+        NodeFS.appendFileSync(NodePath.join(repoDir, "README.md"), "unstaged\n");
+        NodeFS.writeFileSync(NodePath.join(repoDir, "untracked.txt"), "untracked\n");
+        const indexBefore = NodeFS.readFileSync(NodePath.join(repoDir, ".git/index"));
+        const headBefore = (yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout;
+        const gitDriver = yield* GitVcsDriver.GitVcsDriver;
+        let indexDuring: Buffer | undefined;
+        let indexAfterUserStage: Buffer | undefined;
+        const { manager } = yield* makeManager({
+          textGeneration: {
+            generateCommitMessage: () =>
+              Effect.gen(function* () {
+                indexDuring = NodeFS.readFileSync(NodePath.join(repoDir, ".git/index"));
+                yield* runGit(repoDir, ["add", "untracked.txt"]).pipe(
+                  Effect.provideService(GitVcsDriver.GitVcsDriver, gitDriver),
+                  Effect.orDie,
+                );
+                indexAfterUserStage = NodeFS.readFileSync(NodePath.join(repoDir, ".git/index"));
+                return yield* new TextGenerationError({
+                  operation: "generateCommitMessage",
+                  detail: "Provider rejected generation",
+                });
+              }),
+          },
+        });
+        const result = yield* runStackedAction(manager, {
+          cwd: repoDir,
+          action: "commit",
+          ...(filePaths ? { filePaths } : {}),
+        }).pipe(Effect.result);
+        expect(Result.isFailure(result)).toBe(true);
+        expect(indexDuring).toEqual(indexBefore);
+        expect(NodeFS.readFileSync(NodePath.join(repoDir, ".git/index"))).toEqual(
+          indexAfterUserStage,
+        );
+        expect((yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout).toBe(headBefore);
+        expect((yield* runGit(repoDir, ["diff"])).stdout).toContain("+unstaged");
+      }),
+  );
+
   it.effect("uses custom commit message when provided", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
@@ -4541,7 +4588,10 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           ...mapped,
           isDraft: mapped.isDraft ?? false,
           closedAt: mapped.closedAt ?? null,
-          mergedAt: mapped.mergedAt == null ? null : Option.match(mapped.mergedAt, {onNone: () => null, onSome: DateTime.formatIso}),
+          mergedAt:
+            mapped.mergedAt == null
+              ? null
+              : Option.match(mapped.mergedAt, { onNone: () => null, onSome: DateTime.formatIso }),
         };
         const repository = GitManager.parseRepositoryNameWithOwnerFromRemoteUrl(
           `https://forgejo.example/forgejo/${owner}/project.git`,

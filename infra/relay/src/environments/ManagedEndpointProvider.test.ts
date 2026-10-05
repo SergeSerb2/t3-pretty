@@ -445,7 +445,9 @@ describe("ManagedEndpointProvider", () => {
 
     expect(ManagedEndpointProvider.isNotFoundCause(cyclic)).toBe(false);
     expect(ManagedEndpointProvider.isNotFoundCause({ cause: { status: 404 } })).toBe(true);
-    expect(ManagedEndpointProvider.isManagedEndpointNotFound({ _tag: "TunnelNotFound" })).toBe(true);
+    expect(ManagedEndpointProvider.isManagedEndpointNotFound({ _tag: "TunnelNotFound" })).toBe(
+      true,
+    );
   });
 
   it.effect("provisions a Cloudflare tunnel endpoint and connector token", () => {
@@ -1306,6 +1308,7 @@ describe("ManagedEndpointProvider", () => {
         expect(error).toMatchObject({
           _tag: "ManagedEndpointProvisioningFailed",
           stage: "record-tunnel",
+          reason: "claim-lost",
         });
         expect(tunnelCalls.map((call) => call.operation)).toEqual(["list", "create"]);
         expect((yield* provider.provision(input)).runtime.tunnelId).toBe("tunnel-id");
@@ -1362,6 +1365,7 @@ describe("ManagedEndpointProvider", () => {
       expect(error).toMatchObject({
         _tag: "ManagedEndpointProvisioningFailed",
         stage: "configure-tunnel",
+        reason: "claim-lost",
       });
       expect(tunnelCalls.map((call) => call.operation)).not.toContain("putConfiguration");
     }).pipe(Effect.provide(layer));
@@ -1417,6 +1421,7 @@ describe("ManagedEndpointProvider", () => {
       expect(error).toMatchObject({
         _tag: "ManagedEndpointProvisioningFailed",
         stage: "mark-allocation-ready",
+        reason: "claim-lost",
       });
     }).pipe(Effect.provide(layer));
   });

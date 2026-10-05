@@ -172,6 +172,8 @@ export const GUARD_LENGTH = 64;
 // readers; it never discards a record because of its size.
 const STREAMING_THRESHOLD_BYTES = 8 * 1024 * 1024;
 const NEWLINE = 0x0a;
+/** `stat` calls one transcript walk keeps in flight. The libuv pool has 4 threads. */
+const STAT_CONCURRENCY = 32;
 const CARRIAGE_RETURN = 0x0d;
 
 type SelectedFields = { readonly [key: string]: true | SelectedFields };
@@ -195,6 +197,7 @@ const USAGE_FIELDS: Record<"claude" | "codex" | "grok", SelectedFields> = {
       id: true,
       session_id: true,
       model: true,
+      thread_settings: { service_tier: true },
       forked_from_id: true,
       source: { subagent: { thread_spawn: { parent_thread_id: true } } },
       info: { last_token_usage: true },
@@ -242,6 +245,11 @@ function fnv1a(buffer: Buffer): number {
  * `fileName` restricts the walk to a single basename (Grok's `updates.jsonl`).
  * Grok sessions also ship multi-megabyte `chat_history` and `events` logs that
  * never carry usage, so the basename filter keeps a cold scan off those files.
+ *
+ * Directories are listed depth-first, one at a time, then the candidates are
+ * stat'd by a fixed pool of workers: a warm scan stats thousands of files, and
+ * one at a time each waits its own trip through the thread pool. Results keep
+ * `readdir` order, which the aggregator's first-seen dedupe relies on.
  */
 export async function listTranscriptFiles(
   root: string,
@@ -249,12 +257,12 @@ export async function listTranscriptFiles(
   options?: { readonly fileName?: string } | string,
   limits: TranscriptListingLimits = {},
 ): Promise<TranscriptListing> {
-  const found: TranscriptFile[] = [];
   const fileName = typeof options === "string" ? options : options?.fileName;
   const boundedLimit = (value: number | undefined, fallback: number) =>
     value === undefined || !Number.isFinite(value) ? fallback : Math.max(0, Math.trunc(value));
   const maxFiles = boundedLimit(limits.maxFiles, TRANSCRIPT_FILE_MAX);
   const maxEntries = boundedLimit(limits.maxEntries, TRANSCRIPT_ENTRY_MAX);
+  const candidates: string[] = [];
   const pendingDirectories = [root];
   let visitedEntries = 0;
   let unreadableDirectories = 0;
@@ -287,23 +295,37 @@ export async function listTranscriptFiles(
       if (fileName !== undefined ? entry.name !== fileName : !entry.name.endsWith(".jsonl")) {
         continue;
       }
+      candidates.push(child);
+    }
+  }
 
+  const found: Array<TranscriptFile | undefined> = Array.from({ length: candidates.length });
+  // Each worker pulls the next candidate from one shared iterator.
+  const queue = candidates.entries();
+  let matchedFiles = 0;
+  const statQueued = async (): Promise<void> => {
+    while (matchedFiles < maxFiles) {
+      const next = queue.next();
+      if (next.done) return;
+      const [index, path] = next.value;
       try {
-        const stats = await NodeFSP.stat(child);
+        const stats = await NodeFSP.stat(path);
         if (stats.mtimeMs >= sinceMs) {
-          found.push({ path: child, size: stats.size, mtimeMs: stats.mtimeMs });
-          if (found.length >= maxFiles) {
-            truncated = true;
-            break;
-          }
+          found[index] = { path, size: stats.size, mtimeMs: stats.mtimeMs };
+          matchedFiles += 1;
         }
       } catch {
         // Vanished between directory iteration and stat.
       }
     }
-  }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(STAT_CONCURRENCY, candidates.length) }, statQueued),
+  );
 
-  return { files: found, truncated, unreadableDirectories };
+  if (matchedFiles >= maxFiles) truncated = true;
+  const files = found.filter((file): file is TranscriptFile => file !== undefined);
+  return { files: files.slice(0, maxFiles), truncated, unreadableDirectories };
 }
 
 /**
@@ -354,9 +376,10 @@ async function guardMatches(
  * still match, so only appended lines are read; otherwise the whole file is
  * re-parsed from the start and `resumed` reports `false`.
  *
- * Codex carries the active model on `turn_context` lines that hold no usage of
- * their own, so those still have to pass through the reducer to keep model
- * attribution correct.
+ * Codex carries the active model on `turn_context` lines and the service tier
+ * on `thread_settings_applied` lines. Neither holds usage of its own, but both
+ * still have to pass through the reducer to keep attribution and pricing
+ * correct.
  */
 export async function readTranscriptRecords(
   filePath: string,
@@ -392,6 +415,7 @@ export async function readTranscriptRecords(
         if (
           !mightCarryUsage(line, provider) &&
           !line.includes('"turn_context"') &&
+          !line.includes('"thread_settings_applied"') &&
           !line.includes('"session_meta"')
         ) {
           return;

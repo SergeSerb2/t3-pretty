@@ -381,6 +381,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["combine matching repositories environments sidebar"],
   },
   {
+    id: "project-order",
+    title: "Project order",
+    to: "/settings/general",
+    searchTerms: ["sort projects sidebar manual created recent"],
+  },
+  {
     id: "auto-generate-project-icons",
     title: "Auto-generate project icons",
     to: "/settings/general",

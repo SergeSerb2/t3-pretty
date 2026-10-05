@@ -7,6 +7,10 @@ import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/tu
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
 import {
+  turnItemHasDetail,
+  turnItemNeedsDetailFetch,
+} from "@t3tools/client-runtime/work-log/item-detail";
+import {
   commandDisplayText,
   commandProgramName,
 } from "@t3tools/client-runtime/work-log/command-label";
@@ -49,7 +53,7 @@ import { RunId, ThreadId } from "@t3tools/contracts";
 import {
   classifyToolActivity,
   collectToolFilePaths,
-  computerUseToolTitle,
+  dynamicToolTitle,
   formatReadToolLabel,
   formatSearchToolLabel,
 } from "@t3tools/shared/toolActivity";
@@ -77,6 +81,8 @@ export interface ThreadFeedActivity {
   readonly summary: string;
   readonly detail: string | null;
   readonly canExpand: boolean;
+  /** Expanding fetches the withheld input and output with getTurnItem. */
+  readonly fetchesDetail: boolean;
   readonly getFullDetail: () => string | null;
   readonly getCopyText: () => string;
   readonly icon:
@@ -550,7 +556,7 @@ function itemSummary(
   if (item.type === "system_notice") return item.message;
   if (item.type === "compaction") return contextCompactionLabel(item);
   const title =
-    (item.type === "dynamic_tool" ? computerUseToolTitle(item.toolName, item.input) : undefined) ??
+    (item.type === "dynamic_tool" ? dynamicToolTitle(item.toolName, item.input) : undefined) ??
     item.title?.trim();
   if (item.type === "subagent") return formatSubagentDisplayTitle(title || "Subagent");
   if (title) return toolPresentation?.displayName ?? capitalizePhrase(title);
@@ -698,7 +704,9 @@ function toWorkLogEntry(
       return {
         ...common,
         ...(detail ? { detail } : {}),
-        changedFiles: [...new Set([...(item.savedPath ? [item.savedPath] : []), ...(item.paths ?? [])])],
+        changedFiles: [
+          ...new Set([...(item.savedPath ? [item.savedPath] : []), ...(item.paths ?? [])]),
+        ],
         toolTitle: title ?? "Image generation",
         toolData: item,
       };
@@ -743,6 +751,23 @@ function toWorkLogEntry(
   }
 }
 
+/** Expanded detail for a row, from its wire item or the full item from getTurnItem. */
+export function formatItemFullDetail(
+  row: OrchestrationV2ProjectedTurnItem,
+  item: OrchestrationV2TurnItem,
+): string {
+  return JSON.stringify(
+    {
+      visibility: row.visibility,
+      sourceThreadId: row.sourceThreadId,
+      sourceItemId: row.sourceItemId,
+      item: toolItemForDisplay(item),
+    },
+    null,
+    2,
+  );
+}
+
 function toFeedActivity(
   row: OrchestrationV2ProjectedTurnItem,
   attemptId: RunAttemptId | null,
@@ -757,21 +782,9 @@ function toFeedActivity(
     item.type === "dynamic_tool" && toolGroupAction(workEntry) === "read"
       ? collectToolFilePaths(item)
       : null;
-  const getFullDetail = memoizeValue(() => {
-    if (readPaths) {
-      return readPaths.join("\n") || null;
-    }
-    return JSON.stringify(
-      {
-        visibility: row.visibility,
-        sourceThreadId: row.sourceThreadId,
-        sourceItemId: row.sourceItemId,
-        item: toolItemForDisplay(item),
-      },
-      null,
-      2,
-    );
-  });
+  const getFullDetail = memoizeValue(() =>
+    readPaths ? readPaths.join("\n") || null : formatItemFullDetail(row, item),
+  );
   const getCopyText = memoizeValue(() =>
     [summary, detail, getFullDetail()]
       .filter(
@@ -787,7 +800,13 @@ function toFeedActivity(
     attemptId,
     summary,
     detail,
-    canExpand: !(item.type === "error" && item.status === "failed") && (readPaths?.length ?? 1) > 0,
+    canExpand:
+      !(item.type === "error" && item.status === "failed") &&
+      (readPaths
+        ? readPaths.length > 0 || turnItemNeedsDetailFetch(item)
+        : turnItemHasDetail(item) || workEntry.questionAnswer !== undefined),
+    // Read rows show their paths, then the fetched file contents.
+    fetchesDetail: turnItemNeedsDetailFetch(item),
     getFullDetail,
     getCopyText,
     icon: workEntry.toolSurface ?? itemIcon(item),
@@ -994,13 +1013,14 @@ export function failedFeedRunIds(
 }
 
 /**
- * A thread without runs (a provider-native subagent) folds each prompt's
- * response like a run; `isWorking` keeps its latest response open.
+ * A prompt without a run (a provider-native subagent, or a turn imported from
+ * V1) folds its response like a run. `runlessWorkActive` keeps the latest
+ * runless response open; V2 work must not reopen imported turns.
  */
 function deriveThreadFeedRunFolds(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestRun: ThreadFeedLatestRun | null,
-  isWorking: boolean,
+  runlessWorkActive: boolean,
 ): ReadonlyMap<string, ThreadFeedRunFold> {
   const firstAssistantMessageIdByRun = new Map<RunId, string>();
   const terminalAssistantMessageIdByRun = new Map<RunId, string>();
@@ -1010,14 +1030,15 @@ function deriveThreadFeedRunFolds(
     RunId,
     { entries: ThreadFeedEntry[]; startBoundary: string | null }
   >();
-  // Fold state is keyed by run, so each prompt of a runless thread lends its
-  // response a stable key of its own.
+  // Fold state is keyed by run, so each runless prompt lends its response a
+  // stable key of its own. Decide per prompt, not per thread: a V1 thread's
+  // first V2 run must not unfold every imported turn above it.
   let runlessKey: RunId | null = null;
   let pendingUserBoundary: string | null = null;
   for (const entry of feed) {
     if (entry.type === "message" && entry.message.role === "user") {
       pendingUserBoundary = entry.message.createdAt;
-      runlessKey = latestRun === null ? RunId.make(`runless:${entry.id}`) : null;
+      runlessKey = entry.message.runId == null ? RunId.make(`runless:${entry.id}`) : null;
       continue;
     }
     const runId =
@@ -1060,7 +1081,7 @@ function deriveThreadFeedRunFolds(
   for (const [runId, group] of groupsByRunId) {
     if (
       runId === activeRunId ||
-      (isWorking && runId === runlessKey) ||
+      (runlessWorkActive && runId === runlessKey) ||
       interruptedRunIds.has(runId) ||
       failedRunIds.has(runId) ||
       group.entries.some((entry) => entry.type === "message" && entry.message.streaming)
@@ -1184,7 +1205,11 @@ export function deriveThreadFeedPresentation(
   const activeTailGroup = sourceFeed.at(-1);
   const activeRunId = unsettledRunId(latestRun);
   const isWorking = activeWorkStartedAt !== null && latestRun?.status !== "preparing";
-  const foldsByAnchorId = deriveThreadFeedRunFolds(sourceFeed, latestRun, isWorking);
+  const foldsByAnchorId = deriveThreadFeedRunFolds(
+    sourceFeed,
+    latestRun,
+    isWorking && runlessWorkActive,
+  );
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorId.values()) {
     if (!expandedRunIds.has(fold.runId)) {
@@ -1294,7 +1319,10 @@ export function deriveThreadFeedPresentation(
   });
 }
 
-const headlineWorkRows = new WeakMap<ThreadFeedEntry, { readonly headline: string; readonly row: ThreadFeedEntry }>();
+const headlineWorkRows = new WeakMap<
+  ThreadFeedEntry,
+  { readonly headline: string; readonly row: ThreadFeedEntry }
+>();
 const continuedWorkLogRows = new WeakMap<ThreadFeedEntry, ThreadFeedEntry>();
 
 function isWorkLogFeedRow(row: ThreadFeedEntry | undefined): boolean {
@@ -1319,8 +1347,18 @@ export const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
 function thinkingRow(createdAt: string, runId: RunId | null, headline: string | null) {
   const label = headline ?? undefined;
-  if (cachedThinkingRow?.createdAt !== createdAt || cachedThinkingRow.runId !== runId || cachedThinkingRow.label !== label) {
-    cachedThinkingRow = { type: "thinking", id: LIVE_ACTIVITY_ROW_ID, createdAt, runId, ...(label === undefined ? {} : { label }) };
+  if (
+    cachedThinkingRow?.createdAt !== createdAt ||
+    cachedThinkingRow.runId !== runId ||
+    cachedThinkingRow.label !== label
+  ) {
+    cachedThinkingRow = {
+      type: "thinking",
+      id: LIVE_ACTIVITY_ROW_ID,
+      createdAt,
+      runId,
+      ...(label === undefined ? {} : { label }),
+    };
   }
   return cachedThinkingRow;
 }

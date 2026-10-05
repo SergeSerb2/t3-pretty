@@ -7,6 +7,8 @@ for (const stream of [process.stdout, process.stderr]) {
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - Version output must flush before Electron exits, without acquiring the runtime.
+import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -90,6 +92,15 @@ function buildTimeSshPublicEnvironment(): NonNullable<RemoteT3RunnerOptions["pub
         : __T3CODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__.trim()),
   };
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== ""));
+}
+
+if (process.argv.includes("--version")) {
+  try {
+    NodeFS.writeSync(process.stdout.fd, `${Electron.app.getVersion()}\n`);
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "EPIPE") throw error;
+  }
+  Electron.app.exit(0);
 }
 
 const desktopEnvironmentLayer = Layer.unwrap(

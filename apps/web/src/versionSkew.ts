@@ -1,4 +1,9 @@
-import type { EnvironmentId, ServerConfig, ServerSelfUpdateCapability } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ServerConfig,
+  ServerInstallation,
+  ServerSelfUpdateCapability,
+} from "@t3tools/contracts";
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { forkCliCommand } from "@t3tools/shared/connectBranding";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
@@ -114,8 +119,19 @@ export function supportsServerUpdateThreadContinuation(
 }
 
 /** The command to hand users whose server cannot update itself. */
-export function manualServerUpdateCommand(targetVersion: string): string {
-  return forkCliCommand("", targetVersion);
+export function manualServerUpdateCommand(
+  targetVersion: string,
+  installation?: ServerInstallation,
+): string {
+  const forkCommand = forkCliCommand("", targetVersion);
+  const packageSpecifier = forkCommand.trim().split(/\s+/).pop() ?? forkCommand;
+  if (installation?.kind === "npm-global") {
+    const prefix = `'${installation.prefix.replaceAll("'", "'\\''")}'`;
+    return `npm install --global --prefix ${prefix} ${packageSpecifier}`;
+  }
+  const runner =
+    installation?.kind === "pnpm-dlx" ? "pnpm dlx" : installation?.kind === "bunx" ? "bunx" : "npx";
+  return runner === "npx" ? forkCommand : `${runner} ${packageSpecifier}`;
 }
 
 /** One sentence telling the user how to resolve version skew for a server,

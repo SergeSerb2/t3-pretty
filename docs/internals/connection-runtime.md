@@ -2,9 +2,11 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-The connection runtime is shared by web, the desktop renderer, and mobile. It
-owns connectivity, authentication, retries, transport lifetime, cached
-environment data, and environment-scoped operations.
+The connection runtime in `packages/client-runtime` is shared by web, the
+desktop renderer, and mobile. It owns connectivity, authentication, retries,
+transport lifetime, cached environment data, and environment-scoped operations.
+Platform layers supply storage, credentials, network signals, and application
+lifecycle events; React views consume the runtime.
 
 Web, the desktop renderer, and mobile mount this runtime once at the application
 root. The web and mobile entry points compose it identically:
@@ -36,7 +38,8 @@ The registry creates one environment-scoped supervisor per environment.
 supervisor when the catalog entry is unchanged, and closes and recreates the
 scope when it changed. `createServiceScope` builds an `EnvironmentSupervisor`
 bound to a closeable scope and connects it; `run` and `runStream` execute caller
-effects with that supervisor provided.
+effects with that supervisor provided. Cloud-account changes apply only to relay
+registrations and do not discard directly paired environments.
 
 `EnvironmentSupervisor` owns desired state, retry scheduling, and the active
 session scope. React components do not create connections, transports, retry
@@ -44,27 +47,32 @@ loops, or RPC clients.
 
 ## Connection State
 
-The supervisor is the only retry owner.
+The supervisor is the only retry owner. Resolving an endpoint and opening an RPC
+session remain single attempts.
 
 1. A persisted or platform registration marks an environment as desired.
-2. If the device is offline, the supervisor releases the active session and
-   waits for a signal without consuming retry attempts or running a timer.
+2. If the device is offline while no session is established, the supervisor
+   waits for a signal without consuming retry attempts or running a timer. The
+   long mobile-resume recovery described below may still start a fresh attempt
+   because the platform's network report can be stale.
 3. When online, it asks the driver for one prepared connection and one RPC
    session.
-4. Transient failures retry forever with exponential backoff that grows to a
-   five-minute cap (`RETRY_DELAYS_MS`). The long tail keeps a permanently
-   offline environment at a few hundred connection attempts per day instead of
-   several thousand, which matters for relay targets where every attempt is a
-   billed relay Worker request. A connection stable for 30 seconds resets
-   accumulated backoff, and when such a connection drops the first reconnect
-   starts immediately instead of sleeping the first rung (a suspended phone
-   whose socket an idle proxy closed, a laptop waking up); only a failure of
-   that immediate attempt walks the ladder.
+4. Transient failures retry forever with jittered exponential backoff whose
+   nominal delay grows to a five-minute cap (`RETRY_DELAYS_MS`). Jitter prevents
+   every client of a restarted server from reconnecting in the same second. The
+   long tail keeps a permanently unreachable environment at a few hundred
+   connection attempts per day instead of several thousand, which matters for
+   relay targets where every attempt is a billed relay Worker request. Only a
+   connection stable for 30 seconds resets accumulated backoff, and when such a
+   connection drops the first reconnect starts immediately instead of sleeping
+   the first rung (a suspended phone whose socket an idle proxy closed, a laptop
+   waking up); only a failure of that immediate attempt walks the ladder.
 5. Authentication or configuration failures remain blocked until an external
    wakeup changes the relevant input.
 6. An involuntary session close keeps the registration and cache, then retries.
 7. Explicit removal closes the session and deletes the registration,
-   credentials, shell cache, and thread cache.
+   credentials, shell cache, and thread cache. It also runs
+   `EnvironmentOwnedDataCleanup` for platform-owned state such as drafts.
 
 ### Wakeups
 
@@ -74,9 +82,10 @@ Wakeup handling differs by phase, in [supervisor.ts][supervisor]:
   plain application activation. Restarting an in-flight attempt because the app
   came to the foreground would only delay it. The exception is
   `application-active-reconnect`, which mobile emits after a meaningful
-  background suspension; it interrupts establishment and resets the retry
-  ladder, because the OS may have silently killed the socket underneath the
-  attempt.
+  background suspension; it interrupts establishment, resets the retry ladder,
+  and may start the fresh attempt even while the platform reports offline,
+  because the OS may have silently killed the socket and the report may be
+  stale.
 - Credential changes interrupt establishment only for relay targets, where a new
   credential changes what is being established.
 - Explicit disconnect, explicit retry, and going offline interrupt establishment
@@ -84,17 +93,21 @@ Wakeup handling differs by phase, in [supervisor.ts][supervisor]:
 - While waiting out backoff, application activation resets the retry ladder so a
   foregrounded app reconnects immediately instead of serving the remaining
   delay.
-- Once connected, `monitorConnectedLease` handles every activation by probing
-  the existing session (`lease.session.probe`, with a shorter timeout for the
-  mobile reasons) rather than reconnecting; a healthy session survives
-  foregrounding. `application-active-reconnect`, which mobile emits after a
-  longer background stint, additionally opens a replacement lease in parallel
-  with the probe (make-before-break): a healthy probe cancels the replacement,
-  while a dead transport (probe failure or timeout, or the peer's buffered
-  close arriving on resume) swaps to the replacement the moment it is ready —
-  without waiting out the probe timeout and without a backoff sleep. The old
-  lease is unpublished as soon as it is known dead so the UI reports the
-  reconnect honestly.
+- Once connected, `monitorConnectedLease` handles ordinary application
+  activation, an explicit retry, and an offline report by probing the existing
+  session (`lease.session.probe`, with a shorter timeout for the mobile reasons)
+  rather than reconnecting. Only a failed probe reconnects, so a healthy session
+  survives foregrounding and an incorrect offline report, including one for a
+  reachable loopback server.
+- `application-active-reconnect`, which mobile emits after a longer background
+  stint, additionally starts a replacement lease at once, in parallel with the
+  probe, even while the platform reports offline (make-before-break). A healthy
+  probe cancels the replacement, while a dead transport (probe failure or
+  timeout, or the peer's buffered close arriving on resume) swaps to the
+  replacement the moment it is ready — without holding a dead socket in
+  `Resuming` until the probe timeout and without a backoff sleep. The old lease
+  is unpublished as soon as it is known dead so the UI reports the reconnect
+  honestly.
 - Foreground wakeups never rebuild subscriptions on a surviving session: the
   server keeps streaming into a healthy socket while the app is suspended, so
   there is nothing to catch up on. Only a replaced session re-handshakes, from

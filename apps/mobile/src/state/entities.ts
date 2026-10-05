@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { deriveReportedModelSelection } from "@t3tools/client-runtime/state/thread-execution";
 
 import { appAtomRegistry } from "./atom-registry";
 import type {
@@ -7,6 +8,7 @@ import type {
 } from "@t3tools/client-runtime/state/automations";
 import type {
   EnvironmentProject,
+  EnvironmentThread,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import type {
@@ -20,7 +22,7 @@ import { Atom } from "effect/unstable/reactivity";
 import { automationEnvironment } from "./automations";
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom, serverEnvironment } from "./server";
-import { environmentThreadShells } from "./threads";
+import { environmentThreadDetails, environmentThreadShells } from "./threads";
 
 const EMPTY_AUTOMATIONS: ReadonlyArray<EnvironmentAutomation> = Object.freeze([]);
 const EMPTY_AUTOMATIONS_ATOM = Atom.make(EMPTY_AUTOMATIONS).pipe(
@@ -131,4 +133,11 @@ export function useEnvironmentServerConfig(
 
 export function useServerConfigs(): ReadonlyMap<EnvironmentId, ServerConfig> {
   return useAtomValue(environmentServerConfigsAtom);
+}
+
+const selectReportedModelSelection = (thread: EnvironmentThread | null) =>
+  thread === null ? null : deriveReportedModelSelection(thread.projection);
+
+export function useThreadReportedModelSelection(ref: ScopedThreadRef) {
+  return useAtomValue(environmentThreadDetails.threadAtom(ref), selectReportedModelSelection);
 }

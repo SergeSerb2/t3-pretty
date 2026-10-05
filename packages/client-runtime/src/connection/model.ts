@@ -138,6 +138,8 @@ export class ConnectionBlockedError extends Schema.TaggedError<ConnectionBlocked
     reason: ConnectionBlockedReason,
     detail: ConnectionErrorDetail,
     traceId: Schema.optionalKey(ConnectionErrorTraceId),
+    /** The host speaks an older orchestration protocol; updating it restores the connection. */
+    serverUpdateRequired: Schema.optionalKey(Schema.Boolean),
   },
 ) {
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
@@ -145,8 +147,15 @@ export class ConnectionBlockedError extends Schema.TaggedError<ConnectionBlocked
     readonly reason: ConnectionBlockedReason;
     readonly detail: string;
     readonly traceId?: string;
+    readonly serverUpdateRequired?: boolean;
   }) {
-    super({ reason: props.reason, ...boundedConnectionErrorFields(props) });
+    super({
+      reason: props.reason,
+      ...boundedConnectionErrorFields(props),
+      ...(props.serverUpdateRequired === undefined
+        ? {}
+        : { serverUpdateRequired: props.serverUpdateRequired }),
+    });
   }
 
   override get message(): string {

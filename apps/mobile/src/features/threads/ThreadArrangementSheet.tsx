@@ -2,6 +2,7 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { effectiveSnoozed, effectiveStored } from "@t3tools/client-runtime/state/thread-settled";
+import { sortInboxThreadsByReturn } from "@t3tools/client-runtime/state/thread-inbox";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, FlatList, Modal, Pressable, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
@@ -28,7 +29,8 @@ import {
   threadDragAction,
   type ThreadMoveDestination,
 } from "./threadOrder";
-import { getThreadListV2OrderedSection } from "./threadListV2";
+import { getThreadListV2OrderedSection, threadListInboxReturns } from "./threadListV2";
+import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-preferences";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
 
@@ -175,6 +177,7 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
   const pendingOrder = useAtomValue(pendingThreadOrderAtom);
   const dropBusy = useAtomValue(threadDropBusyAtom);
   const { moveThread } = useThreadListActions();
+  const { workingShelfEnabled } = useThreadListV2ShelfPreferences();
   const [now, setNow] = useState(() => new Date().toISOString());
   const [expanded, setExpanded] = useState({ snoozed: false, stored: false, settled: false });
   useEffect(() => {
@@ -227,24 +230,29 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
     const unstored = parked.filter((thread) => !stored.includes(thread));
     return {
       pinned,
-      active,
+      // The Working beta orders the inbox by time; show that order here too.
+      active: workingShelfEnabled
+        ? sortInboxThreadsByReturn(active, threadListInboxReturns.returnedAt)
+        : active,
       snoozed: unstored.filter((thread) => effectiveSnoozed(thread, { now })),
       stored,
       settled: unstored.filter((thread) => !effectiveSnoozed(thread, { now })),
     };
-  }, [threads, configs, now, queuedThreadKeys, pendingOrder]);
+  }, [threads, configs, now, queuedThreadKeys, pendingOrder, workingShelfEnabled]);
   const planners = useMemo(() => {
     const planner = (section: "pinned" | "active") =>
       createThreadMovePlanner({
         ordered: sections[section],
         allThreads: threads,
         section,
+        // A time-ordered inbox has no slots, so Active takes no drops while
+        // the Working beta is on. The saved arrangement stays untouched.
         reorderableEnvironmentIds: new Set(
           [...configs].flatMap(([id, config]) =>
             (
               section === "pinned"
                 ? config.environment.capabilities.threadPinReorder
-                : config.environment.capabilities.threadActiveReorder
+                : !workingShelfEnabled && config.environment.capabilities.threadActiveReorder
             )
               ? [id]
               : [],
@@ -252,7 +260,7 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
         ),
       });
     return { pinned: planner("pinned"), active: planner("active") };
-  }, [sections, threads, configs]);
+  }, [sections, threads, configs, workingShelfEnabled]);
   const rows = useMemo(() => {
     const result: Row[] = [];
     let offset = 0;
