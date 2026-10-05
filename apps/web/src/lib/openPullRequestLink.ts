@@ -5,12 +5,12 @@ import { type MouseEvent, useCallback, useMemo } from "react";
 
 import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
 import {
-  parseChangeRequestUrl as parseSharedChangeRequestUrl,
+  parseChangeRequestUrl,
   type ChangeRequestLink,
   gitHubPullRequestBrowserUrl,
   pullRequestCandidateUrlFromReferenceAutolink,
-  matchesLinkedPullRequestUrl as sharedMatchesLinkedPullRequestUrl,
-  changeRequestRepositoryUrl as sharedChangeRequestRepositoryUrl,
+  matchesLinkedPullRequestUrl,
+  changeRequestRepositoryUrl,
 } from "@t3tools/shared/changeRequestUrl";
 import {
   canonicalRepositoryKey,
@@ -26,70 +26,13 @@ import { useProjects, useServerConfigs } from "../state/entities";
 import { serverEnvironment } from "../state/server";
 import { usePrimaryEnvironmentId } from "../state/environments";
 
-/**
- * Origin pull requests use cursor.com web URLs while checked-out repository identities use the
- * origin.cursor.com git host. Keep that fork-specific mapping around the parent's shared parser.
- */
-function parseOriginChangeRequestUrl(targetUrl: string): ChangeRequestLink | null {
-  let url: URL;
-  try {
-    url = new URL(targetUrl);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-
-  const host = url.hostname.toLowerCase();
-  if (host !== "cursor.com" && !host.endsWith(".cursor.com")) return null;
-
-  const match = /^\/codebase\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/|$)/u.exec(url.pathname);
-  const repository = match?.[1];
-  const number = Number(match?.[2]);
-  return repository && Number.isSafeInteger(number) && number > 0
-    ? { host: "origin.cursor.com", repository: repository.toLowerCase(), number }
-    : null;
-}
-
-/** Parse parent-supported change requests plus T3 Pretty's Origin web URL shape. */
-export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | null {
-  return parseOriginChangeRequestUrl(targetUrl) ?? parseSharedChangeRequestUrl(targetUrl);
-}
-
-/** Match stored Origin PRs locally and delegate every other provider to the parent helper. */
-export function matchesLinkedPullRequestUrl(
-  linkedPullRequest: Parameters<typeof sharedMatchesLinkedPullRequestUrl>[0],
-  targetUrl: string,
-): boolean {
-  const linkedOrigin = parseOriginChangeRequestUrl(linkedPullRequest.url);
-  const targetOrigin = parseOriginChangeRequestUrl(targetUrl);
-  if (linkedOrigin !== null || targetOrigin !== null) {
-    return (
-      linkedOrigin !== null &&
-      targetOrigin !== null &&
-      linkedOrigin.host === targetOrigin.host &&
-      linkedOrigin.repository === targetOrigin.repository &&
-      linkedOrigin.number === targetOrigin.number
-    );
-  }
-  return sharedMatchesLinkedPullRequestUrl(linkedPullRequest, targetUrl);
-}
-
-/** Return the Origin repository root, otherwise use the parent's shared provider handling. */
-export function changeRequestRepositoryUrl(targetUrl: string): string | null {
-  if (parseOriginChangeRequestUrl(targetUrl) === null) {
-    return sharedChangeRequestRepositoryUrl(targetUrl);
-  }
-
-  const url = new URL(targetUrl);
-  const repositoryPath = /^(.*?)\/pull\/\d+(?:\/|$)/iu.exec(url.pathname)?.[1];
-  if (!repositoryPath) return null;
-  url.pathname = repositoryPath;
-  url.search = "";
-  url.hash = "";
-  return url.toString();
-}
-
-export { gitHubPullRequestBrowserUrl, pullRequestCandidateUrlFromReferenceAutolink };
+export {
+  changeRequestRepositoryUrl,
+  gitHubPullRequestBrowserUrl,
+  matchesLinkedPullRequestUrl,
+  parseChangeRequestUrl,
+  pullRequestCandidateUrlFromReferenceAutolink,
+};
 export type { ChangeRequestLink };
 
 function resolvedForgejoRepository(project: EnvironmentProject): URL | null {
