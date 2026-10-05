@@ -123,9 +123,9 @@ export function toAgentObservation(
       attributes["t3.usage_scope"] = usage?.usageScope ?? "unknown";
       attributes["t3.usage_status"] = usage?.usageStatus ?? "unavailable";
       if (usage?.inputTokens !== undefined)
-        attributes["gen_ai.usage.input_tokens"] = usage.inputTokens;
+        attributes["t3.reported_input_tokens"] = usage.inputTokens;
       if (usage?.outputTokens !== undefined)
-        attributes["gen_ai.usage.output_tokens"] = usage.outputTokens;
+        attributes["t3.reported_output_tokens"] = usage.outputTokens;
       break;
     }
     case "subagent.updated": {
@@ -212,7 +212,12 @@ export function toAgentObservation(
   );
   attributes["t3.entity_id"] = entityId;
   attributes["t3.outcome"] = status;
-  attributes["gen_ai.operation.name"] = operation;
+  // GenAI operation names make Sentry classify a span as a model call by default.
+  attributes[
+    operation === "invoke_agent" || operation === "execute_tool"
+      ? "gen_ai.operation.name"
+      : "t3.operation.name"
+  ] = operation;
   attributes["t3.summary"] = `${kind} ${status}`;
   if (runId) attributes["t3.run_id"] = observationId(runId);
   if (kind === "run" || kind === "subagent")

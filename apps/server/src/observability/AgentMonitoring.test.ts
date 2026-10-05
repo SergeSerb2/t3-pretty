@@ -129,6 +129,30 @@ const observe = (
   return record;
 };
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeTracePayload = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      resourceSpans: Schema.Array(
+        Schema.Struct({
+          scopeSpans: Schema.Array(
+            Schema.Struct({
+              spans: Schema.Array(
+                Schema.Struct({
+                  attributes: Schema.Array(
+                    Schema.Struct({
+                      key: Schema.String,
+                      value: Schema.Struct({ stringValue: Schema.optional(Schema.String) }),
+                    }),
+                  ),
+                }),
+              ),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
+);
 
 const receiver = Effect.acquireRelease(
   Effect.promise(
@@ -377,6 +401,22 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
         assert.ok(!payloads.includes("CANARY"));
         assert.ok(payloads.includes("transport_error"));
         assert.ok(payloads.includes("gen_ai.execute_tool"));
+        const traces = yield* decodeTracePayload(
+          ingestion.requests.find((request) => request.url.endsWith("/traces/"))!.body,
+        );
+        assert.deepEqual(
+          traces.resourceSpans[0]!.scopeSpans[0]!.spans.map(
+            (span) =>
+              span.attributes.find((attribute) => attribute.key === "gen_ai.operation.type")?.value
+                .stringValue,
+          ),
+          [undefined, "tool"],
+        );
+        assert.ok(
+          !traces.resourceSpans[0]!.scopeSpans[0]!.spans[0]!.attributes.some((attribute) =>
+            attribute.key.startsWith("gen_ai."),
+          ),
+        );
         ingestion.setEnvelopeStatus(503);
         assert.ok(Exit.isFailure(yield* Effect.exit(exporter.send([observe(errorEvent())]))));
         ingestion.setEnvelopeStatus(200);

@@ -63,6 +63,12 @@ const attributes = (record: AgentObservation) =>
     Object.entries({
       ...record.attributes,
       "t3.observation_id": record.id,
+      // Keep provider lifecycle/error observations outside model-request metrics.
+      ...(record.operation === "invoke_agent"
+        ? { "gen_ai.operation.type": "agent" }
+        : record.operation === "execute_tool"
+          ? { "gen_ai.operation.type": "tool" }
+          : {}),
       "sentry.op":
         record.operation === "invoke_agent"
           ? "gen_ai.invoke_agent"
