@@ -88,7 +88,6 @@ import {
 } from "./provider-catalog-refresh";
 import {
   createNativeMailSearchToolbarItem,
-  NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET,
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
 import { ThreadSettingsControlStack } from "./ThreadSettingsControls";
@@ -896,10 +895,6 @@ function ThreadSettingsCatalog() {
   const showsFavoritesChip =
     session.favoriteKeys.size > 0 || session.providerFilter === FAVORITES_PROVIDER_FILTER;
   const hasActiveCatalogFilter = session.providerFilter !== null || isSearching;
-  const bottomToolbarInset =
-    Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED
-      ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET
-      : 0;
   const listItems = useMemo<ReadonlyArray<ThreadSettingsCatalogItem>>(
     () => (catalogItems.length === 0 ? [{ kind: "empty", key: "empty" }] : catalogItems),
     [catalogItems],
@@ -958,7 +953,7 @@ function ThreadSettingsCatalog() {
           : undefined
       }
       contentContainerStyle={{
-        paddingBottom: insets.bottom + bottomToolbarInset + 24,
+        paddingBottom: Platform.OS === "ios" ? 24 : insets.bottom + 24,
         paddingTop: 4,
       }}
       contentInsetAdjustmentBehavior="automatic"
@@ -1139,8 +1134,12 @@ function ThreadSettingsHomeScreen() {
       <SheetSurface threadKey={sceneryKey}>
         <ScrollView
           automaticallyAdjustsScrollIndicatorInsets
+          className="flex-1"
           contentInsetAdjustmentBehavior="automatic"
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: insets.bottom + 24 }}
+          contentContainerStyle={{
+            paddingTop: 12,
+            paddingBottom: Platform.OS === "ios" ? 24 : insets.bottom + 24,
+          }}
           style={
             Platform.OS === "android"
               ? { width: "100%", maxWidth: 720, alignSelf: "center" }
