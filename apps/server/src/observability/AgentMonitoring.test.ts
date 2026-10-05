@@ -1,0 +1,447 @@
+// @effect-diagnostics nodeBuiltinImport:off - the test owns a local HTTP ingestion receiver.
+import * as NodeHttp from "node:http";
+
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, it } from "@effect/vitest";
+import {
+  EnvironmentId,
+  EventId,
+  MessageId,
+  NodeId,
+  NonNegativeInt,
+  PositiveInt,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  RunId,
+  ThreadId,
+  TurnItemId,
+  type OrchestrationV2DomainEvent,
+  type OrchestrationV2Run,
+} from "@t3tools/contracts";
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+
+import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { OrchestrationEventStoreLive } from "../persistence/Layers/OrchestrationEventStore.ts";
+import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
+import * as AgentMonitoring from "./AgentMonitoring.ts";
+import * as Exporter from "./AgentMonitoringExporter.ts";
+import * as Journal from "./AgentMonitoringJournal.ts";
+import { type AgentObservation, toAgentObservation } from "./AgentObservation.ts";
+
+const privateContent = "Bearer CANARY_private_prompt_command_output_and_error";
+const threadId = ThreadId.make("thread:CANARY_private_thread");
+const runId = RunId.make("run:CANARY_private_run");
+const at = DateTime.makeUnsafe(1_800_000_000_000);
+const run: OrchestrationV2Run = {
+  id: runId,
+  threadId,
+  ordinal: PositiveInt.make(1),
+  providerInstanceId: ProviderInstanceId.make("codex-local"),
+  modelSelection: { instanceId: ProviderInstanceId.make("codex-local"), model: "gpt-6.1-sol" },
+  providerThreadId: null,
+  userMessageId: MessageId.make("message:private"),
+  rootNodeId: null,
+  activeAttemptId: null,
+  status: "running",
+  requestedAt: at,
+  startedAt: at,
+  completedAt: null,
+  checkpointId: null,
+  contextHandoffId: null,
+};
+const toolBase = {
+  id: TurnItemId.make("tool:1"),
+  threadId,
+  runId,
+  nodeId: null,
+  providerThreadId: null,
+  providerTurnId: null,
+  nativeItemRef: null,
+  parentItemId: null,
+  ordinal: PositiveInt.make(1),
+  status: "completed" as const,
+  title: privateContent,
+  startedAt: at,
+  completedAt: DateTime.add(at, { seconds: 1 }),
+  updatedAt: at,
+};
+const toolEvent = (id = "tool-event", failed = false): OrchestrationV2DomainEvent => ({
+  id: EventId.make(id),
+  type: "turn-item.updated",
+  threadId,
+  runId,
+  driver: ProviderDriverKind.make("codex"),
+  occurredAt: at,
+  payload: {
+    ...toolBase,
+    type: "command_execution",
+    input: privateContent,
+    output: privateContent,
+    exitCode: 1,
+    outputIndicatesFailure: failed,
+  },
+});
+const errorEvent = (id = "error-event", attempt?: number): OrchestrationV2DomainEvent => ({
+  ...toolEvent(id),
+  type: "turn-item.updated",
+  payload: {
+    ...toolBase,
+    id: TurnItemId.make("error:1"),
+    type: "error",
+    failure: {
+      class: "transport_error",
+      message: privateContent,
+      code: privateContent,
+      retryable: true,
+    },
+    ...(attempt === undefined
+      ? {}
+      : {
+          retry: {
+            attempt: PositiveInt.make(attempt),
+            maxAttempts: PositiveInt.make(3),
+            retryDelayMs: NonNegativeInt.make(10),
+          },
+        }),
+  },
+});
+const observe = (
+  event: OrchestrationV2DomainEvent,
+  sequence = 1,
+  environment = "host-a",
+): AgentObservation => {
+  const record = toAgentObservation(
+    { sequence: NonNegativeInt.make(sequence), commandId: null, event },
+    environment,
+  );
+  assert.ok(record);
+  return record;
+};
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+
+const receiver = Effect.acquireRelease(
+  Effect.promise(
+    () =>
+      new Promise<{
+        url: string;
+        server: NodeHttp.Server;
+        requests: Array<{ url: string; body: string; contentType?: string }>;
+        setStatus: (status: number) => void;
+        setBody: (body: string) => void;
+        setEnvelopeStatus: (status: number) => void;
+      }>((resolve) => {
+        const requests: Array<{ url: string; body: string; contentType?: string }> = [];
+        let status = 200;
+        let envelopeStatus = 200;
+        let body = "{}";
+        const server = NodeHttp.createServer(async (request, response) => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) chunks.push(Buffer.from(chunk));
+          requests.push({
+            url: request.url ?? "",
+            body: Buffer.concat(chunks).toString(),
+            ...(request.headers["content-type"]
+              ? { contentType: request.headers["content-type"] }
+              : {}),
+          });
+          response.writeHead(request.url?.includes("/envelope/") ? envelopeStatus : status, {
+            "content-type": "application/json",
+          });
+          response.end(body);
+        });
+        server.listen(0, "127.0.0.1", () => {
+          const address = server.address();
+          assert.ok(address && typeof address !== "string");
+          resolve({
+            url: `http://127.0.0.1:${address.port}`,
+            server,
+            requests,
+            setStatus: (next) => {
+              status = next;
+            },
+            setBody: (next) => {
+              body = next;
+            },
+            setEnvelopeStatus: (next) => {
+              envelopeStatus = next;
+            },
+          });
+        });
+      }),
+  ),
+  ({ server }) =>
+    Effect.promise(() => new Promise<void>((resolve) => server.close(() => resolve()))),
+);
+
+it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
+  it.effect("keeps metadata, correlates tools and subagents, and groups errors across hosts", () =>
+    Effect.gen(function* () {
+      const command = observe(toolEvent());
+      assert.equal(command.status, "completed"); // A nonzero exit code alone is not an agent failure.
+      assert.equal(command.attributes["t3.exit_code"], 1);
+      assert.equal(command.attributes["t3.result_bytes"], Buffer.byteLength(privateContent));
+      assert.equal(command.attributes["t3.duration_ms"], 1000);
+      assert.equal(Exporter.toSentryAgentError(command), undefined);
+      const root = observe({
+        id: EventId.make("run-event"),
+        type: "run.updated",
+        threadId,
+        runId,
+        occurredAt: at,
+        payload: run,
+      });
+      assert.equal(command.traceId, root.traceId);
+      assert.equal(command.parentSpanId, root.spanId);
+      const child = observe({
+        id: EventId.make("subagent-event"),
+        type: "subagent.updated",
+        threadId,
+        runId,
+        occurredAt: at,
+        payload: {
+          id: NodeId.make("subagent:private"),
+          threadId,
+          runId,
+          parentNodeId: NodeId.make("node:private"),
+          origin: "app_owned",
+          createdBy: "agent",
+          driver: ProviderDriverKind.make("claudeAgent"),
+          providerInstanceId: ProviderInstanceId.make("claude-local"),
+          providerThreadId: null,
+          childThreadId: null,
+          nativeTaskRef: null,
+          prompt: privateContent,
+          title: privateContent,
+          model: "claude-opus-4-6",
+          status: "completed",
+          progress: privateContent,
+          result: privateContent,
+          startedAt: at,
+          completedAt: at,
+          updatedAt: at,
+        },
+      });
+      assert.equal(child.traceId, root.traceId);
+      assert.equal(child.parentSpanId, root.spanId);
+      const errorA = Exporter.toSentryAgentError(observe(errorEvent()));
+      const errorB = Exporter.toSentryAgentError(observe(errorEvent(), 1, "host-b"));
+      assert.deepEqual(errorA?.fingerprint, errorB?.fingerprint);
+      assert.notEqual(errorA?.tags?.["t3.environment_id"], errorB?.tags?.["t3.environment_id"]);
+      const cancelled = { ...command, status: "cancelled" };
+      assert.equal(Exporter.toSentryAgentError(cancelled), undefined);
+      const encoded = yield* encodeJson([command, child, root, errorA, errorB]);
+      assert.ok(!encoded.includes("CANARY"));
+      assert.ok(!encoded.includes("Bearer"));
+    }),
+  );
+
+  it.effect(
+    "persists a cursor, collapses progress, records resume, and retains delivery acknowledgments across restart",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agent-journal-" });
+        const filename = path.join(directory, "journal.sqlite");
+        const runEvent = (sequence: number, status: OrchestrationV2Run["status"]) =>
+          observe(
+            {
+              id: EventId.make(`run-${sequence}`),
+              type: "run.updated",
+              threadId,
+              occurredAt: at,
+              payload: { ...run, status },
+            },
+            sequence,
+          );
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const journal = yield* Journal.AgentMonitoringJournal;
+            yield* journal.enroll(0);
+            yield* journal.capture(
+              [1, 2].map((sequence) => ({ sequence, observation: runEvent(sequence, "running") })),
+            );
+            assert.equal((yield* journal.report).recordCount, 1);
+            yield* journal.capture([
+              { sequence: 3, observation: runEvent(3, "waiting") },
+              { sequence: 4, observation: runEvent(4, "running") },
+            ]);
+            assert.equal((yield* journal.report).recordCount, 3);
+            const pending = yield* journal.pending;
+            yield* journal.acknowledge(pending.map((item) => item.id));
+            yield* journal.capture([{ sequence: 5, observation: runEvent(5, "completed") }]);
+            assert.equal((yield* journal.report).activeAgentCount, 0);
+          }).pipe(Effect.provide(Journal.layerAt(filename))),
+        );
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const journal = yield* Journal.AgentMonitoringJournal;
+            yield* journal.enroll(99);
+            assert.equal((yield* journal.report).capturedSequence, 5);
+            assert.equal((yield* journal.pending).length, 1);
+            yield* journal.capture([{ sequence: 5, observation: runEvent(5, "completed") }]);
+            assert.equal((yield* journal.report).recordCount, 4);
+          }).pipe(Effect.provide(Journal.layerAt(filename))),
+        );
+        const readOnly = yield* Effect.scoped(
+          Effect.flatMap(Journal.AgentMonitoringJournal, (journal) => journal.report),
+        ).pipe(Effect.provide(Journal.layerAt(filename, { readonly: true })));
+        assert.equal(readOnly.pendingCount, 1);
+        const fileContents = yield* fs.readFile(filename);
+        assert.ok(!Buffer.from(fileContents).includes(Buffer.from("CANARY")));
+      }),
+  );
+
+  it.effect("counts reported retries without retaining their provider messages", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agent-retries-" });
+      yield* Effect.gen(function* () {
+        const journal = yield* Journal.AgentMonitoringJournal;
+        yield* journal.enroll(0);
+        yield* journal.capture(
+          [1, 2].map((sequence) => ({
+            sequence,
+            observation: observe(errorEvent(`retry-${sequence}`, sequence), sequence),
+          })),
+        );
+        const report = yield* journal.report;
+        assert.equal(report.recordCount, 2);
+        assert.equal(report.failureGroups[0]?.count, 2);
+        const records = yield* journal.pending;
+        assert.deepEqual(
+          records.map((record) => record.attributes["t3.retry_attempt"]),
+          [1, 2],
+        );
+        assert.ok(!(yield* encodeJson(records)).includes("CANARY"));
+      }).pipe(Effect.provide(Journal.layerAt(path.join(directory, "journal.sqlite"))));
+    }),
+  );
+
+  it.effect("bounds retained records and reports pending observations lost to eviction", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agent-retention-" });
+      yield* Effect.gen(function* () {
+        const journal = yield* Journal.AgentMonitoringJournal;
+        yield* journal.enroll(0);
+        yield* journal.capture(
+          [1, 2, 3].map((sequence) => ({
+            sequence,
+            observation: {
+              ...observe(toolEvent(`tool-${sequence}`), sequence),
+              entityId: `entity-${sequence}`,
+            },
+          })),
+        );
+        const report = yield* journal.report;
+        assert.equal(report.recordCount, 2);
+        assert.equal(report.droppedPendingCount, 1);
+        assert.equal(report.capturedSequence, 3);
+      }).pipe(
+        Effect.provide(Journal.layerAt(path.join(directory, "journal.sqlite"), { maxRecords: 2 })),
+      );
+    }),
+  );
+
+  it.effect("exports safe OTLP and native Sentry errors, and rejects unavailable ingestion", () =>
+    Effect.gen(function* () {
+      const ingestion = yield* receiver;
+      const configured = Exporter.layer({
+        dsn: `http://public@127.0.0.1:${new URL(ingestion.url).port}/1`,
+        protocol: "http/json",
+      }).pipe(Layer.provide(FetchHttpClient.layer));
+      yield* Effect.gen(function* () {
+        const exporter = yield* Exporter.AgentMonitoringExporter;
+        yield* exporter.send([observe(errorEvent()), observe(toolEvent("failed-tool", true))]);
+        assert.ok(ingestion.requests.some((request) => request.url.endsWith("/traces/")));
+        assert.ok(ingestion.requests.some((request) => request.url.endsWith("/logs/")));
+        assert.equal(
+          ingestion.requests.filter((request) => request.url.includes("/envelope/")).length,
+          2,
+        );
+        const payloads = ingestion.requests.map((request) => request.body).join("\n");
+        assert.ok(!payloads.includes("CANARY"));
+        assert.ok(payloads.includes("transport_error"));
+        assert.ok(payloads.includes("gen_ai.execute_tool"));
+        ingestion.setEnvelopeStatus(503);
+        assert.ok(Exit.isFailure(yield* Effect.exit(exporter.send([observe(errorEvent())]))));
+        ingestion.setEnvelopeStatus(200);
+        ingestion.setStatus(503);
+        assert.ok(Exit.isFailure(yield* Effect.exit(exporter.send([observe(errorEvent())]))));
+        ingestion.setStatus(200);
+        ingestion.setBody(
+          '{"partialSuccess":{"rejectedLogRecords":"1","errorMessage":"CANARY_private_response"}}',
+        );
+        assert.ok(Exit.isFailure(yield* Effect.exit(exporter.send([observe(errorEvent())]))));
+      }).pipe(Effect.provide(configured));
+    }),
+  );
+
+  it.effect(
+    "captures only enrolled committed events and recovers pending delivery without blocking event appends",
+    () =>
+      Effect.gen(function* () {
+        const ingestion = yield* receiver;
+        ingestion.setStatus(503);
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agent-monitoring-" });
+        const storeContext = yield* Layer.build(
+          OrchestrationEventStoreLive.pipe(Layer.provide(SqlitePersistenceMemory)),
+        );
+        const store = Context.get(storeContext, OrchestrationEventStore);
+        yield* store.appendAgentEvents({ events: [toolEvent("pre-enrollment")] });
+        const environment = Layer.succeed(ServerEnvironment.ServerEnvironment, {
+          getEnvironmentId: Effect.succeed(EnvironmentId.make("pilot-host")),
+          getDescriptor: Effect.die("not needed by monitoring"),
+        });
+        const monitorLayer = AgentMonitoring.layer.pipe(
+          Layer.provide(ServerConfig.layerTest(home, home)),
+          Layer.provide(environment),
+          Layer.provide(Layer.succeed(OrchestrationEventStore, store)),
+          Layer.provide(FetchHttpClient.layer),
+          Layer.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromUnknown({
+                T3CODE_AGENT_MONITORING_ENABLED: true,
+                T3CODE_AGENT_MONITORING_OTLP_BASE_URL: ingestion.url,
+                T3CODE_AGENT_MONITORING_OTLP_PROTOCOL: "http/json",
+              }),
+            ),
+          ),
+        );
+        const monitorContext = yield* Layer.build(monitorLayer);
+        const monitor = Context.get(monitorContext, AgentMonitoring.AgentMonitoring);
+        assert.equal(monitor.enabled, true);
+        const [event] = yield* store.appendAgentEvents({ events: [errorEvent("post-enrollment")] });
+        assert.ok(event);
+        assert.ok(Exit.isFailure(yield* Effect.exit(monitor.flush)));
+        yield* store.appendAgentEvents({ events: [toolEvent("still-commits")] });
+        ingestion.setStatus(200);
+        yield* monitor.flush;
+        const filename = path.join(home, "userdata", "logs", AgentMonitoring.journalFileName);
+        const report = yield* Effect.flatMap(
+          Journal.AgentMonitoringJournal,
+          (journal) => journal.report,
+        ).pipe(Effect.provide(Journal.layerAt(filename, { readonly: true })));
+        assert.equal(report.recordCount, 2);
+        assert.equal(report.pendingCount, 0);
+        assert.equal(report.capturedSequence, 3);
+        assert.equal(report.failureGroups[0]?.category, "transport_error");
+      }),
+  );
+});

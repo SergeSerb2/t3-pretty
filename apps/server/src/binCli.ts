@@ -26,12 +26,12 @@ import { serviceCommand } from "./cli/service.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { themeCommand } from "./cli/theme.ts";
 import { traceCommand } from "./cli/trace.ts";
+import { agentMonitoringCommand } from "./cli/agentMonitoring.ts";
 import { triageCommand } from "./cli/triage.ts";
 
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
-const connectPublicConfigMissingMessage =
-  `${SURGE_CONNECT_NAME} commands are unavailable: this build is missing managed connection public configuration.`;
+const connectPublicConfigMissingMessage = `${SURGE_CONNECT_NAME} commands are unavailable: this build is missing managed connection public configuration.`;
 
 class ConnectPublicConfigMissingError extends CliError.UserError {
   override get message() {
@@ -42,7 +42,9 @@ class ConnectPublicConfigMissingError extends CliError.UserError {
 const connectUnavailableCommand = Command.make("connect", {
   command: Argument.String("command").pipe(Argument.variadic),
 }).pipe(
-  Command.withDescription(`${SURGE_CONNECT_NAME} is unavailable in builds without public configuration.`),
+  Command.withDescription(
+    `${SURGE_CONNECT_NAME} is unavailable in builds without public configuration.`,
+  ),
   Command.unlisted,
   Command.withHandler(() =>
     Effect.fail(
@@ -77,6 +79,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       servicePreflightCommand,
       themeCommand,
       traceCommand,
+      agentMonitoringCommand,
       triageCommand,
       cloudEnabled ? connectCommand : connectUnavailableCommand,
     ]),
