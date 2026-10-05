@@ -65,6 +65,9 @@ export interface Preferences {
   /** Newest app version whose What's New notes were shown — see
       features/whats-new. */
   readonly lastSeenChangelogVersion?: string;
+  /** ISO time the Trailhead first-run flow was finished or skipped — see
+      features/trailhead. */
+  readonly onboardingCompletedAt?: string;
   /** World Scenery state — see features/scenery. */
   readonly scenery?: MobileSceneryPreferences;
   /** Device-local counterpart of desktop's `planModeEnabled` legacy flag. */
@@ -172,6 +175,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
       worktree?: boolean;
     };
     lastSeenChangelogVersion?: string;
+    onboardingCompletedAt?: string;
     scenery?: MobileSceneryPreferences;
     planModeEnabled?: boolean;
     workingShelfEnabled?: boolean;
@@ -302,6 +306,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.lastSeenChangelogVersion === "string") {
     preferences.lastSeenChangelogVersion = parsed.lastSeenChangelogVersion;
+  }
+  if (typeof parsed.onboardingCompletedAt === "string") {
+    preferences.onboardingCompletedAt = parsed.onboardingCompletedAt;
   }
   if (typeof parsed.scenery === "object" && parsed.scenery !== null) {
     const scenery: {
