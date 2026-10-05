@@ -1,0 +1,450 @@
+/*
+ * Trailhead: first-run setup drawn as a climb over the scenery photo.
+ *
+ * The page itself is transparent so World Scenery shows through; a one-sided
+ * legibility wash carries text contrast for the field card, and the card is
+ * the only glass. The ridge at the bottom is a thin line, never a chart: the
+ * walked stretch brightens and one marker travels to the current waypoint.
+ *
+ * Motion follows the fork rules (scenery/motion.css): transform/opacity only,
+ * finite, entrances animate and exits are instant, and every transition hangs
+ * off html[data-scenery-motion] so the Motion toggle, reduced motion, and the
+ * no-transitions kill switch all leave a still page.
+ */
+
+[data-trailhead="root"] {
+  --trailhead-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --trailhead-climb-ms: 900ms;
+  --trailhead-ink: var(--foreground);
+  --trailhead-ink-quiet: color-mix(in srgb, var(--foreground) 62%, transparent);
+  --trailhead-line: color-mix(in srgb, var(--foreground) 30%, transparent);
+  --trailhead-line-walked: color-mix(in srgb, var(--foreground) 88%, transparent);
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  color: var(--trailhead-ink);
+}
+
+/* Functional wash: darkens (or lightens) only the side the card sits on. */
+[data-trailhead="root"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--background) 58%, transparent) 0%,
+    color-mix(in srgb, var(--background) 22%, transparent) 46%,
+    transparent 72%
+  );
+}
+
+[data-trailhead="root"] > * {
+  position: relative;
+}
+
+/* ------------------------------------------------------------ top bar -- */
+
+[data-trailhead="topbar"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: var(--workspace-topbar-height, 3rem);
+  padding-top: env(safe-area-inset-top);
+  padding-left: max(
+    var(--workspace-controls-left, 0.75rem),
+    calc(env(safe-area-inset-left) + 1.5rem)
+  );
+  padding-right: calc(env(safe-area-inset-right) + 1.5rem);
+}
+
+[data-trailhead="topbar"] :is(button, a) {
+  -webkit-app-region: no-drag;
+}
+
+[data-trailhead="altimeter"] {
+  display: flex;
+  align-items: baseline;
+  gap: 0.625rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+[data-trailhead="altimeter-label"] {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--trailhead-ink-quiet);
+}
+
+[data-trailhead="altimeter-value"] {
+  min-width: 7ch;
+  text-align: right;
+  font-size: 0.9375rem;
+}
+
+/* --------------------------------------------------------- field card -- */
+
+[data-trailhead="stage"] {
+  display: flex;
+  align-items: center;
+  min-height: 0;
+  padding-inline: clamp(1rem, 7vw, 6.5rem);
+  padding-block: 0.5rem 1rem;
+}
+
+[data-trailhead="card"] {
+  display: flex;
+  flex-direction: column;
+  width: min(35rem, 100%);
+  max-height: 100%;
+  min-height: 0;
+  border: 1px solid;
+  border-radius: 28px;
+}
+
+[data-trailhead="card-body"] {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.75rem 1.75rem 0.5rem;
+}
+
+[data-trailhead="card-footer"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem 1.25rem 1.75rem;
+}
+
+[data-trailhead="card-footer"] > :first-child:not(:last-child) {
+  margin-right: auto;
+}
+
+[data-trailhead="kicker"] {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--trailhead-ink-quiet);
+}
+
+/* The short rule between number and name, like a trail-map legend. */
+[data-trailhead="kicker"]::after {
+  content: "";
+  order: 1;
+  width: 1.5rem;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+[data-trailhead="kicker"] > :last-child {
+  order: 2;
+}
+
+[data-trailhead="title"] {
+  margin-top: 0.875rem;
+  font-size: clamp(1.75rem, 2.4vw + 0.9rem, 2.375rem);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+[data-trailhead="lede"] {
+  margin-top: 0.75rem;
+  max-width: 30rem;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--trailhead-ink-quiet);
+  text-wrap: pretty;
+}
+
+/* ------------------------------------------------------ survey ledger -- */
+/* Base camp reads like a field log: one ruled line per finding, a state
+   glyph in the margin, the reading on the right. */
+
+[data-trailhead="ledger"] {
+  margin-top: 1.5rem;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+[data-trailhead="ledger-row"] {
+  display: grid;
+  grid-template-columns: 1.25rem 6.5rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.75rem;
+  padding-block: 0.8rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  font-size: 0.875rem;
+}
+
+[data-trailhead="ledger-label"] {
+  padding-top: 0.0625rem;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--trailhead-ink-quiet);
+  line-height: 1.6;
+}
+
+[data-trailhead="glyph"] {
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* Hollow ring = still looking, filled = found, slashed = needs a hand. */
+[data-trailhead="glyph"]::before {
+  content: "";
+  width: 0.5625rem;
+  height: 0.5625rem;
+  border-radius: 999px;
+  border: 1.5px solid currentColor;
+}
+
+[data-trailhead="glyph"][data-state="ready"]::before {
+  background: currentColor;
+}
+
+[data-trailhead="glyph"][data-state="ready"] {
+  color: var(--success-foreground, var(--foreground));
+}
+
+[data-trailhead="glyph"][data-state="attention"] {
+  color: var(--warning-foreground, var(--foreground));
+}
+
+[data-trailhead="glyph"][data-state="attention"]::before {
+  background: linear-gradient(
+    135deg,
+    transparent 42%,
+    currentColor 42%,
+    currentColor 58%,
+    transparent 58%
+  );
+}
+
+[data-trailhead="glyph"][data-state="pending"] {
+  color: var(--trailhead-ink-quiet);
+}
+
+/* ---------------------------------------------------------- the ridge -- */
+
+[data-trailhead="ridge"] {
+  position: relative;
+  height: clamp(7.5rem, 19vh, 11rem);
+  margin-bottom: calc(env(safe-area-inset-bottom) + 2.25rem);
+}
+
+[data-trailhead="ridge"] svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+[data-trailhead="ridge-mass"] {
+  fill: color-mix(in srgb, var(--background) 26%, transparent);
+}
+
+[data-trailhead="ridge-line"] {
+  fill: none;
+  stroke: var(--trailhead-line);
+  stroke-width: 1.25px;
+  stroke-linejoin: round;
+}
+
+[data-trailhead="ridge-line"][data-walked] {
+  stroke: var(--trailhead-line-walked);
+  stroke-width: 1.75px;
+}
+
+[data-trailhead="ridge-walked-clip"] {
+  transform-origin: 0 0;
+  transform: scaleX(var(--trailhead-walked, 0));
+}
+
+/* Waypoints: a dot on the line, a hairline pole, a printed label. */
+[data-trailhead="waypoint"] {
+  position: absolute;
+  left: var(--trailhead-x);
+  top: var(--trailhead-y);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  translate: -50% calc(-100% + 0.3125rem);
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--trailhead-ink-quiet);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+button[data-trailhead="waypoint"] {
+  cursor: pointer;
+}
+
+button[data-trailhead="waypoint"]:hover,
+button[data-trailhead="waypoint"]:focus-visible {
+  color: var(--trailhead-ink);
+}
+
+[data-trailhead="waypoint"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+[data-trailhead="waypoint"][data-reached],
+[data-trailhead="waypoint"][aria-current="step"] {
+  color: var(--trailhead-ink);
+}
+
+[data-trailhead="waypoint-altitude"] {
+  opacity: 0.7;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-trailhead="waypoint-pole"] {
+  width: 1px;
+  height: 1.125rem;
+  margin-top: 0.375rem;
+  background: currentColor;
+  opacity: 0.45;
+}
+
+[data-trailhead="waypoint-dot"] {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  border: 1.5px solid currentColor;
+  background: var(--background);
+}
+
+[data-trailhead="waypoint"][data-reached] [data-trailhead="waypoint-dot"] {
+  background: currentColor;
+}
+
+@media (max-width: 40rem) {
+  [data-trailhead="waypoint-label"],
+  [data-trailhead="waypoint-altitude"] {
+    display: none;
+  }
+}
+
+/* The marker layer is the ridge's own size; translating it by percentages of
+   itself puts its top-left corner (where the marker sits) on the waypoint. */
+[data-trailhead="marker-track"] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform: translate(var(--trailhead-x), var(--trailhead-y));
+}
+
+[data-trailhead="marker"] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1.375rem;
+  height: 1.375rem;
+  translate: -50% -50%;
+  border-radius: 999px;
+  border: 1.5px solid var(--trailhead-ink);
+  background: color-mix(in srgb, var(--trailhead-ink) 14%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--background) 40%, transparent);
+}
+
+/* Planted once at the top, in place of the summit's pole. */
+[data-trailhead="flag"] {
+  width: 1.5rem;
+  height: 1.875rem;
+  margin-top: 0.25rem;
+  margin-bottom: -0.125rem;
+  color: var(--trailhead-ink);
+  transform-origin: 50% 100%;
+}
+
+/* -------------------------------------------------------------- motion -- */
+
+html[data-scenery-motion] [data-trailhead="marker-track"] {
+  transition: transform var(--trailhead-climb-ms) var(--trailhead-ease);
+}
+
+html[data-scenery-motion] [data-trailhead="ridge-walked-clip"] {
+  transition: transform var(--trailhead-climb-ms) var(--trailhead-ease);
+}
+
+html[data-scenery-motion] [data-trailhead="card"] {
+  animation: trailhead-arrive 520ms var(--trailhead-ease) both;
+}
+
+html[data-scenery-motion] [data-trailhead="waypoint-content"] {
+  animation: trailhead-rise 360ms var(--trailhead-ease) both;
+}
+
+html[data-scenery-motion] [data-trailhead="ledger-row"] {
+  animation: trailhead-rise 360ms var(--trailhead-ease) both;
+  animation-delay: calc(var(--trailhead-row, 0) * 70ms + 120ms);
+}
+
+html[data-scenery-motion] [data-trailhead="flag"] {
+  animation: trailhead-plant 520ms var(--trailhead-ease) both;
+  animation-delay: calc(var(--trailhead-climb-ms) - 120ms);
+}
+
+@keyframes trailhead-arrive {
+  from {
+    opacity: 0;
+    translate: 0 14px;
+    scale: 0.985;
+  }
+}
+
+@keyframes trailhead-rise {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@keyframes trailhead-plant {
+  from {
+    opacity: 0;
+    scale: 1 0.2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-scenery-motion] [data-trailhead="marker-track"],
+  html[data-scenery-motion] [data-trailhead="ridge-walked-clip"] {
+    transition: none;
+  }
+
+  html[data-scenery-motion] [data-trailhead="card"],
+  html[data-scenery-motion] [data-trailhead="waypoint-content"],
+  html[data-scenery-motion] [data-trailhead="ledger-row"],
+  html[data-scenery-motion] [data-trailhead="flag"] {
+    animation: none;
+  }
+}
