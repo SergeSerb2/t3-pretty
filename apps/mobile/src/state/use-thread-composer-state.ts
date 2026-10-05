@@ -311,9 +311,10 @@ export function useThreadComposerState() {
   }, [acknowledgedMessages, selectedThreadShell, selectedThreadEchoedMessageIds]);
 
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
-  const followUpBehavior = AsyncResult.isSuccess(preferencesResult)
-    ? (preferencesResult.value.followUpBehavior ?? DEFAULT_FOLLOW_UP_BEHAVIOR)
-    : DEFAULT_FOLLOW_UP_BEHAVIOR;
+  const followUpBehavior =
+    AsyncResult.isSuccess(preferencesResult) && preferencesResult.value.legacyQueueEnabled === true
+      ? "queue"
+      : DEFAULT_FOLLOW_UP_BEHAVIOR;
   // Steering needs a live provider turn the adapter can interrupt; the queue
   // workflow already derives that from the session's capabilities.
   const queueWorkflow = useAtomValue(

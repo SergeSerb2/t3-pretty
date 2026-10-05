@@ -4349,7 +4349,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               resolveComposerDispatchMode({
                 running: phase === "running",
                 alternateModifier: false,
-                activeTurnDefault: settings.followUpBehavior,
+                activeTurnDefault: settings.legacyQueueEnabled ? "queue" : "steer",
               }),
             submissionIntent,
           );
@@ -4371,7 +4371,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       dictation.active,
       noProviderAvailable,
       onSend,
-      settings.followUpBehavior,
+      settings.legacyQueueEnabled,
       phase,
       promptRef,
       shouldBlurMobileComposerOnSubmit,
@@ -4385,11 +4385,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         resolveComposerDispatchMode({
           running: phase === "running",
           alternateModifier: event.metaKey || event.ctrlKey,
-          activeTurnDefault: settings.followUpBehavior,
+          activeTurnDefault: settings.legacyQueueEnabled ? "queue" : "steer",
         }),
       );
     },
-    [phase, settings.followUpBehavior, submitComposer],
+    [phase, settings.legacyQueueEnabled, submitComposer],
   );
   const submitCitationAndSend = useCallback(() => {
     submitComposer(
@@ -4397,10 +4397,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       resolveComposerDispatchMode({
         running: phase === "running",
         alternateModifier: false,
-        activeTurnDefault: settings.followUpBehavior,
+        activeTurnDefault: settings.legacyQueueEnabled ? "queue" : "steer",
       }),
     );
-  }, [phase, settings.followUpBehavior, submitComposer]);
+  }, [phase, settings.legacyQueueEnabled, submitComposer]);
   const compactThreadContext = useCallback(() => {
     if (
       compactDisabled ||
@@ -4579,7 +4579,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         resolveComposerDispatchMode({
           running: phase === "running",
           alternateModifier: submissionIntent === "alternate",
-          activeTurnDefault: settings.followUpBehavior,
+          activeTurnDefault: settings.legacyQueueEnabled ? "queue" : "steer",
         }),
         submissionIntent,
       );
@@ -5725,7 +5725,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             <CompactComposerControlsMenu
               interactionMode={interactionMode}
               runtimeMode={runtimeMode}
-            runtimeModeOptions={compatibleRuntimeModeOptions}
+              runtimeModeOptions={compatibleRuntimeModeOptions}
               size={composerControlsCollapsed ? "xs" : "sm"}
               hidden={composerControlsHidden || hiddenRestingBlockIds.length === 0}
               showInteractionModeToggle={
@@ -7768,7 +7768,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running"}
                     canInterrupt={canInterrupt}
-                    followUpBehavior={settings.followUpBehavior}
+                    followUpBehavior={settings.legacyQueueEnabled ? "queue" : "steer"}
                     alternateShortcutLabel={shortcutLabelForCommand(
                       keybindings,
                       "composer.sendAlternate",

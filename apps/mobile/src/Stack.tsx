@@ -85,7 +85,6 @@ import { SettingsProviderAccountsRouteScreen } from "./features/settings/Setting
 import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteScreen";
 import { SettingsEnvironmentDetailRouteScreen } from "./features/settings/SettingsEnvironmentDetailRouteScreen";
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
-import { SettingsFollowUpRouteScreen } from "./features/settings/SettingsFollowUpRouteScreen";
 import {
   SettingsEnvironmentAgentBehaviorRouteScreen,
   SettingsEnvironmentMaintenanceRouteScreen,
@@ -311,13 +310,6 @@ const SettingsContentStack = createNativeStackNavigator({
       linking: "keyboard",
       options: {
         title: "Keyboard",
-      },
-    }),
-    SettingsFollowUp: createNativeStackScreen({
-      screen: SettingsFollowUpRouteScreen,
-      linking: "follow-ups",
-      options: {
-        title: "Follow-ups",
       },
     }),
     SettingsScheduledTasks: createNativeStackScreen({
