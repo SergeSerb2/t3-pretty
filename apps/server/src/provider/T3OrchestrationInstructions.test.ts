@@ -1,3 +1,4 @@
+import { ThreadId } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 
 import {
@@ -5,6 +6,7 @@ import {
   t3AcpPromptWithInstructions,
   t3OrchestrationPromptForFirstRun,
   t3OrchestrationSystemPrompt,
+  t3ThreadMessageForProvider,
 } from "./T3OrchestrationInstructions.ts";
 
 describe("T3 orchestration provider instructions", () => {
@@ -18,6 +20,39 @@ describe("T3 orchestration provider instructions", () => {
       T3_CODE_ORCHESTRATION_INSTRUCTIONS,
       "Do not use `t3_thread_send` on `childThreadId`",
     );
+  });
+
+  it("tells the receiving agent which thread sent a message", () => {
+    const sender = ThreadId.make("thread-sender");
+    const ordinary = {
+      lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: sender },
+    };
+    const wrap = (
+      text: string,
+      message: Parameters<typeof t3ThreadMessageForProvider>[0]["message"],
+      thread: Parameters<typeof t3ThreadMessageForProvider>[0]["thread"] = ordinary,
+    ) => t3ThreadMessageForProvider({ text, message, thread });
+
+    const peer = wrap("Which files did you touch?", { createdBy: "agent", senderThreadId: sender });
+    assert.match(peer, /^<t3_thread_message from_thread_id="thread-sender">/);
+    assert.include(peer, "only if this message asks for an answer");
+    assert.isTrue(peer.endsWith("\n\nWhich files did you touch?"));
+
+    // A fork's source is a peer, not the owner of a delegated task.
+    const fork = {
+      lineage: {
+        ...ordinary.lineage,
+        parentThreadId: sender,
+        relationshipToParent: "fork" as const,
+      },
+    };
+    assert.notEqual(wrap("Hi", { createdBy: "agent", senderThreadId: sender }, fork), "Hi");
+
+    // The parent of a delegated task already receives the result automatically.
+    const child = { lineage: { ...fork.lineage, relationshipToParent: "subagent" as const } };
+    assert.equal(wrap("Task", { createdBy: "agent", senderThreadId: sender }, child), "Task");
+    assert.equal(wrap("Hi", { createdBy: "user" }), "Hi");
+    assert.equal(wrap("/compact", { createdBy: "agent", senderThreadId: sender }), "/compact");
   });
 
   it("documents structured schedules instead of JSON strings", () => {

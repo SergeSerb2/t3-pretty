@@ -233,8 +233,8 @@ prior findings, responses, and unresolved objections. Track each round by its ow
 a distinct `clientRequestId` per round, stable across retries of that round.
 `childThreadId` is backing storage, not a target for another review round through
 `t3_thread_send`. Ordinary thread messaging remains available for user-requested
-conversations; it does not reopen a completed task. There is no task-level follow-up
-API for preserving the same reviewer session.
+or agent-initiated conversations; it does not reopen a completed task. There is no
+task-level follow-up API for preserving the same reviewer session.
 
 Delegation requires an active parent run owned by the MCP credential's
 provider session. The request becomes the V2 command
@@ -379,6 +379,15 @@ Sends a message to an ordinary or delegated thread in the calling project:
 The target runtime and interaction modes may not be broader than the caller's.
 Stable command and message IDs are derived from `clientRequestId` for
 idempotent retries.
+
+The message records the caller as `senderThreadId`. When it reaches the
+recipient's provider, start and steer prepend a `t3_thread_message` header so
+the recipient knows it came from another thread's agent and can answer with
+`t3_thread_send`. The stored message text stays
+unwrapped. A delegated task's parent gets no header in its child, because the
+task result already returns automatically and a manual reply would duplicate
+it. The shared orchestration instructions limit replies to messages that ask
+for an answer; there is no server-side hop limit.
 
 ### `t3_thread_wait`
 

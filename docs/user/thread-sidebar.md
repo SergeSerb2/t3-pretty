@@ -261,6 +261,18 @@ Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
+## Threads that message each other
+
+Agents in the same project can message each other's threads. Ask one to
+"tell the API thread the schema changed" or "ask the docs thread which pages it
+touched", and it finds the thread and sends the message. Agents also do this on
+their own when another thread's work affects theirs, such as overlapping edits
+or a handoff. The receiving agent knows which thread sent the message and
+replies there when asked a question. A message from another agent shows
+**Sent by another agent**; select it to open the sending thread.
+
+An agent can't message a thread that has broader permissions than its own.
+
 ## Snooze until later
 
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your
