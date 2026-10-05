@@ -1169,43 +1169,47 @@ html[data-window-inactive]
     }
   }
 
-  /* The brand mark does not fade with the copy: on the resting rail it slides
-     from beside the toggle to the center of the icon column while the
-     wordmark folds to a zero-width track toward it. Both read the same peek
-     clock as the shell so the mark lands as the width settles. */
+  /* Slide a fully laid-out brand and fade the full word instead of resizing
+     its text track on every frame. At rest, clip the link to the visible mark
+     so the hidden word neither reserves header space nor extends its hit area. */
   [data-sidebar-brand] {
     --sidebar-brand-mark-width: 1.75rem;
     margin-left: var(--workspace-titlebar-content-left);
+    transform: translateX(0);
   }
 
   [data-sidebar-brand-word] {
-    grid-template-columns: 1fr;
     opacity: 1;
-    translate: 0;
+    transform: translateX(0);
   }
 
   [data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-sidebar-brand],
   [data-slot="sidebar"][data-opening]:not([data-opening-ready]) [data-sidebar-brand] {
-    margin-left: calc((var(--sidebar-width-icon) - var(--sidebar-brand-mark-width)) / 2);
+    max-width: var(--sidebar-brand-mark-width);
+    transform: translateX(
+      calc(
+        (var(--sidebar-width-icon) - var(--sidebar-brand-mark-width)) / 2 -
+          var(--workspace-titlebar-content-left)
+      )
+    );
   }
 
   [data-slot="sidebar"][data-collapsed]:not([data-peeking]) [data-sidebar-brand-word],
   [data-slot="sidebar"][data-opening]:not([data-opening-ready]) [data-sidebar-brand-word] {
-    grid-template-columns: 0fr;
     opacity: 0;
-    translate: calc(var(--sidebar-peek-shift) * -0.6) 0;
+    pointer-events: none;
+    transform: translateX(calc(var(--sidebar-peek-shift) * -0.6));
   }
 
   @media (prefers-reduced-motion: no-preference) {
     [data-sidebar-brand] {
-      transition: margin-left var(--sidebar-peek-duration) var(--sidebar-peek-ease);
+      transition: transform var(--sidebar-peek-duration) var(--sidebar-peek-ease);
     }
 
     [data-sidebar-brand-word] {
       transition:
-        grid-template-columns var(--sidebar-peek-duration) var(--sidebar-peek-ease),
         opacity calc(var(--sidebar-peek-duration) * 0.6) var(--sidebar-peek-ease),
-        translate var(--sidebar-peek-duration) var(--sidebar-peek-ease);
+        transform var(--sidebar-peek-duration) var(--sidebar-peek-ease);
     }
   }
 
