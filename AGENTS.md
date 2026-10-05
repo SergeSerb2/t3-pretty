@@ -113,6 +113,19 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 
 For authorized mobile verification, a missing or outdated native client is a build step, not a blocker. Run `node scripts/mobile-native-client.ts ensure <ios|android> <device-id>` on the simulator host before starting Metro. It checks the local Expo fingerprint and builds/installs when needed. See `test-t3-mobile` for the full workflow.
 
+## Maintainer fleet updates
+
+For this maintainer's T3 Pretty release and rollout work, updating stale owned environments is part of delivery. The maintainer authorizes these updates over existing SSH connections; do not ask again for each machine. This policy covers T3 Pretty runtimes and dependencies needed for the requested rollout. The owned fleet is the maintainer's current MacBook and the SSH targets `m1-dev`, `sergecode-windows`, `sanas`, and `m1-linux`, plus hosts the maintainer explicitly adds to a rollout. Saved Connections and other SSH aliases are discovery evidence, not authorization to update additional machines. Deduplicate aliases and inspect running versions before making changes.
+
+- Use published artifacts from the fork's Origin `main` release pipeline and the configured updater feed. Follow [fork releases](docs/operations/fork-release.md). Preserve each host's build flavor and channel, confirm the artifact contains the requested change, verify its checksum and applicable signature/notarization, and keep the previous runtime for rollback. Never build or merge source on installed machines, downgrade implicitly, or substitute an upstream release.
+- Update hosts that need it automatically through the supported desktop updater or managed service launcher. Preserve active turns with the supported continuation handoff. If that path is unavailable, stage the verified update and wait for the host to become idle. Do not terminate agents by pattern or interrupt the app controlling the current task with an ad hoc restart. Update one execution host at a time and verify it before proceeding.
+- Preserve credentials, projects, saved connections, and host settings. Operational commands and authenticated settings RPCs on the installed app are authorized; the live-data rule above still forbids directly editing the database or starting a second server against it. Use only ingestion credentials for monitoring on hosts, keep management tokens local, and retain metadata and redacted summaries under the saved monitoring consent.
+- Verify the installed version, backend readiness, client rendering where applicable, and authenticated connectivity after every update. A relay host must register its tunnel again. For a monitoring rollout, verify the collector is ready and real host observations reach the managed destination. A published artifact or green CI alone does not prove fleet activation.
+- If installed-version, readiness, rendering, or relay verification fails after an update, stop further updates and restore the kept runtime through the supported rollback path. Verify the restored host before resuming the rollout. If only monitoring verification fails, stop further updates and repair enrollment or delivery while preserving the healthy runtime; disable a failing collector if necessary. Report the host as not activated until verification passes. Never leave a failed runtime in place and move on.
+- If a host is offline, authentication fails, or its platform artifact is not published, record the exact boundary and continue with reachable hosts. Retry deferred hosts when they reconnect or the artifact becomes available within the rollout; do not weaken authentication or claim completion for an unverified host. Report versions and verification results per environment.
+
+These instructions guide agents when they run; they do not create a background update scheduler.
+
 ## Pull requests
 
 This fork lives on **Cursor Origin**. The git remote named `origin` is
