@@ -1060,3 +1060,194 @@ Validation is scoped and serialized to avoid contention with unrelated workers. 
   - edited `packages/client-runtime/src/connection/supervisor.ts`
 - `mobile-typecheck` failed after merging `v0.0.46-nightly.20261004.2657`; repaired with `gpt-5.6-sol`: Import the parent’s shared SubagentRow component while preserving T3 Pretty’s glass card and pressable behavior.
   - edited `apps/mobile/src/features/threads/ThreadAgentsSheet.tsx`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.46-nightly.20261005.2689`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261004.2657`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `pnpm-lock.yaml` — fork-only dependency entries are re-derived by lockfile regeneration against the merged package manifests
+- `apps/desktop/src/app/DesktopApp.ts` — T3 Pretty's conditional startup path for disabled local environments, including opening the window for remote/SSH use without requiring a local backend.
+- `apps/desktop/src/app/DesktopApp.ts` — T3 Pretty's packaged-app behavior that serves the client from disk and avoids installing a backend proxy to a closed or dead local port.
+- `apps/desktop/src/app/DesktopApp.ts` — T3 Pretty's backend-aware protocol registration for enabled local environments, including server-exposure configuration and the resolved backend endpoint.
+- `apps/desktop/src/app/DesktopApp.ts` — T3 Pretty's branch-specific IPC-handler and snapshot initialization, avoiding premature or duplicate setup.
+- `apps/desktop/src/app/DesktopApp.ts` — All desktop backend pool instances, including secondary/WSL backends, are explicitly stopped before the layer-scope cascade so they receive graceful termination rather than an OS hard kill.
+- `apps/desktop/src/app/DesktopApp.ts` — Backend shutdowns remain concurrent under DESKTOP_SHUTDOWN_BACKEND_CONCURRENCY.
+- `apps/desktop/src/app/DesktopApp.ts` — Desktop shutdown completion remains guaranteed through shutdown.markComplete even if backend or renderer-history cleanup fails.
+- `apps/desktop/src/preload.ts` — The preload continues caching the seeded window active state before React/AppSidebarLayout subscribes, preventing loss of early did-finish-load state and preserving T3 Pretty's desktop sidebar/window behavior.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts` — Retained DESKTOP_ELECTRON_PROCESS_MAX_COUNT for T3 Pretty's desktop telemetry process-count safeguards and associated test coverage.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts` — The demanded telemetry snapshot remains capped at DESKTOP_ELECTRON_PROCESS_MAX_COUNT Electron processes.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts` — The test continues to require electronProcessesTruncated to be present and true when the process sample exceeds the cap, protecting desktop telemetry reliability and payload safeguards.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts` — Preserved T3 Pretty's DESKTOP_ELECTRON_PROCESS_MAX_COUNT cap, preventing oversized Electron process telemetry payloads.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts` — Preserved the electronProcessesTruncated indicator when demanded process metrics exceed the configured cap.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts` — Preserved the existing per-process normalization and name-length limits after selecting the bounded metric set.
+- `apps/mobile/src/connection/onboarding.ts` — The 30-second mobile pairing deadline remains enforced and still reports a network-class transient error on timeout.
+- `apps/mobile/src/connection/onboarding.ts` — Pairing-attempt generation checks remain before and after registry mutation, preventing invalidated or stale onboarding attempts from completing normally.
+- `apps/mobile/src/connection/onboarding.ts` — T3 Pretty's explicit prepare-then-register flow and failure propagation remain intact.
+- `apps/mobile/src/connection/platform.ts` — Application-active connection wakeups remain gated on a recorded background stint, preventing inactive→active UI interruptions such as Control Center, notification shade, or permission sheets from causing unnecessary probes or reconnects.
+- `apps/mobile/src/connection/platform.ts` — Managed relay account changes continue to emit credentials-changed wakeups for T3 Pretty's Surge Connect flow.
+- `apps/mobile/src/connection/platform.ts` — Environment-owned thread outbox and composer draft cleanup continues to use T3 Pretty's per-resource timeout and warning-based failure isolation.
+- `apps/mobile/src/connection/platform.ts` — The new cleanup operation also uses T3 Pretty's mobile cleanup safeguards, preventing one synchronous composer-error cleanup failure from disrupting the overall environment cleanup.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — Preserved T3 Pretty's connection-completion safeguards: navigation occurs only while the screen is mounted and focused, the attempt generation is still current, and the active pairing URL still matches.
+- `apps/mobile/src/features/threads/ThreadDetailScreen.tsx` — Preserved T3 Pretty's PendingSecretRequestCard import, which supports the fork's secure provider/API-key request flow.
+- `apps/server/src/mcp/PreviewAutomationBroker.ts` — Preserved the Pretty client connection key keyed by both environment ID and client ID, which is required for correctly scoped preview eviction and connection removal.
+- `apps/server/src/mcp/PreviewAutomationBroker.ts` — Preserved collision-safe JSON tuple encoding for preview client and host assignment identities.
+- `apps/server/src/mcp/toolkits/preview/handlers.ts` — Preview invocations continue to use T3 Pretty's centralized `requirePreviewCapability()` authorization path, preserving the fork's shared capability-authorization behavior.
+- `apps/server/src/orchestration-v2/Orchestrator.control-reads.test.ts` — Preserved the T3 Pretty V2 stored-shelf test, including store clearing pinned state and propagating storedAt to the thread shell.
+- `apps/server/src/orchestration-v2/Orchestrator.control-reads.test.ts` — Preserved unstore behavior that restores active/unsettled state.
+- `apps/server/src/orchestration-v2/Orchestrator.control-reads.test.ts` — Preserved World Scenery assignment semantics across repeated photos from the same set and replacement from a different photo set.
+- `apps/server/src/orchestration-v2/Orchestrator.control-reads.test.ts` — Preserved fork-specific enabled-skill deduplication and subagent-policy projection coverage.
+- `apps/server/src/orchestration-v2/Orchestrator.control-reads.test.ts` — Preserved the safeguard that pending user input prevents a thread from being stored.
+- `apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts` — Preserved the T3 Pretty import of deriveProviderThread used by legacy native-session/provider-thread migration behavior.
+- `apps/server/src/provider/providerMaintenanceCommandCoordinator.ts` — Per-target duplicate maintenance commands are still rejected immediately through the fork-supplied makeAlreadyRunningError behavior.
+- `apps/server/src/provider/providerMaintenanceCommandCoordinator.ts` — The optional queued notification still runs before waiting on or executing the keyed command lock.
+- `apps/server/src/provider/providerMaintenanceCommandCoordinator.ts` — Acquired target state is still released on success, failure, or interruption through Effect.ensuring.
+- `apps/server/src/provider/providerMaintenanceCommandCoordinator.ts` — Maintenance commands remain serialized by lockKey while independently tracking active targetKey values.
+- `apps/server/src/server.ts` — Preserved T3 Pretty's opt-in redacted agent monitoring integration through the AgentMonitoring import.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved useLocation for T3 Pretty’s location-aware connections settings behavior.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved connectionStatusTitle alongside connectionStatusText for the fork’s richer connection-state presentation.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved managedRelaySessionAtom used by T3 Pretty’s managed relay integration.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved SURGE_CODE_ACCOUNT_NAME and SURGE_CONNECT_NAME so Surge Connect retains its fork-specific identity and branding.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved T3 Pretty's `environmentCatalog.retryNow` command binding, including local failure handling via `reportFailure: false`, so saved remote environments retain the fork's retry behavior.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved T3 Pretty's fork-specific add-backend/T3 Connect state shape by not restoring the removed legacy remote-mode, host, and pairing-code state declarations.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Manual saved-backend submission continues to parse a DesktopSshEnvironmentTarget and connect through connectSshEnvironment via connectSavedBackendSshTarget rather than invoking the unrelated pairing-code flow.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Desktop SSH parse failures continue to use formatDesktopSshConnectionError and the fork's inline error UX.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — SSH-specific field cleanup, dialog closure, tunnel-oriented success messaging, and desktop SSH route handling remain centralized in connectSavedBackendSshTarget.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Route additions retain the fork's environment-identity safeguard and SSH-specific presentation.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved T3 Pretty's deliberate removal of the legacy connection-mode card, manual remote fields, and remote-mode body from ConnectionsSettings.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Avoided reintroducing an obsolete connection UI path that could conflict with the fork's current T3 Connect and saved-environment architecture.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Manual environment creation remains available only through the desktop bridge because it is an SSH flow; non-desktop surfaces continue to use Surge Connect.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The Environments header action remains hidden when there are neither server update targets nor a desktop bridge.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — T3 Pretty's subdued ghost styling for the server-updates action is retained.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Manual environment creation remains limited to the desktop bridge and uses the fork's SSH-managed tunnel form.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The generic manual remote-link option is not restored, preserving T3 Pretty's design that non-SSH environment connections flow through Surge Connect.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The fork-specific add-environment description and simplified direct SSH presentation remain intact for ordinary additions.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — T3 Pretty's responsive master-detail Environments layout, including its styled environment selector and detail panel.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Primary-environment selection and inline rendering of the fork's primary connection settings.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Environment machine icons, connection-state indicators, Surge Connect labeling, disabled-state styling, and accessible selection semantics.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Working-aware duplicate saved-environment filtering and the control for revealing or hiding duplicate saved environments.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The desktop-only SSH/manual-environment boundary: route creation is exposed only when the desktop bridge and its route dialog are available.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Existing saved-environment enable, remove, and removal-progress behavior.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — T3 Pretty's provider-definition-driven environment field flow remains authoritative, including the adjacent ProviderEnvironmentFieldRow implementation and its field-specific labels, descriptions, sensitivity handling, redacted-secret replacement behavior, and clear action.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — The removed legacy arbitrary-variable editor is not reintroduced alongside the fork's newer environment helpers and UI.
+- `apps/web/src/connection/platform.ts` — Preserved T3 Pretty's runtime-capable EnvironmentId import, avoiding regression of fork code that uses the contracts export as a value.
+- `docs/user/source-control.md` — The expanded pull-request discovery, background detection, readiness grouping, sorting, filtering, search, scope, and persisted-filter behavior remains intact.
+- `docs/user/source-control.md` — T3 Pretty's native iPhone and iPad pull-request manager and routing from thread Git controls and conversation links are preserved.
+- `docs/user/source-control.md` — Compact right-panel review tabs and in-app handling of Origin pull requests at cursor.com/codebase are preserved.
+- `docs/user/source-control.md` — The remembered review/thread file-tree toggle and proactive-panel behavior are preserved.
+- `docs/user/source-control.md` — T3 Pretty's merge-commit line-count handling, browser fallback, platform-specific command-click behavior, and local branch checkout guidance are preserved.
+- `packages/client-runtime/src/authorization/service.ts` — Preserved the original cached DPoP ticket error when relay bootstrap fails, so a relay outage does not mask a retryable endpoint error.
+- `packages/client-runtime/src/authorization/service.ts` — Preserved cached DPoP tokens when bootstrap confirms that the relay endpoint has not changed.
+- `packages/client-runtime/src/authorization/service.ts` — Preserved T3 Pretty's endpoint-relocation recovery, including refreshing the rejected token with the newly obtained bootstrap only when the relay host actually moved.
+- `packages/client-runtime/src/authorization/service.ts` — Preserved authentication-specific token renewal and session identity checks.
+- `packages/client-runtime/src/connection/catalog.ts` — Bearer connection profile HTTP and WebSocket base URLs continue using T3 Pretty's ConnectionUrl schema instead of being weakened to unvalidated strings.
+- `packages/client-runtime/src/connection/supervisor.test.ts` — Preserved the T3 Pretty test harness's `randomRoll` option for deterministic control of retry jitter and reconnect timing tests.
+- `packages/client-runtime/src/connection/supervisor.ts` — The bounded 64-entry supervisor signal buffer remains in place, preserving backpressure and preventing disconnect/control signals from being dropped during bursts.
+- `packages/client-runtime/src/connection/supervisor.ts` — Quiet replacement lease establishment continues to suppress progress reporting, preventing it from mutating the published prepared connection or visible connection state while the existing lease remains active.
+- `packages/client-runtime/src/connection/supervisor.ts` — The concurrent MonitorEvent race across supervisor signals, transport closure, DPoP refresh and expiry, authorization retry, probe completion, replacement timing, and replacement completion remains intact.
+- `packages/client-runtime/src/connection/supervisor.ts` — Authoritative intent and retry-state refs are rechecked after every raced event so simultaneous disconnect, offline, or retry signals cannot be silently consumed.
+- `packages/client-runtime/src/connection/supervisor.ts` — T3 Pretty's continuous periodic better-route checks remain active, including checks for routes learned while already connected.
+- `packages/client-runtime/src/connection/supervisor.ts` — Existing probe, replacement, authorization-refresh, lease-loss, and reconnect behavior remains under the fork's event-driven state machine rather than being regressed to the parent's older linear signal loop.
+- `packages/client-runtime/src/connection/supervisor.ts` — The replacement-connection lifecycle remains coordinated with active probes, including stopping probes and authorization retry timers after a successful replacement.
+- `packages/client-runtime/src/connection/supervisor.ts` — Failed replacement scopes are explicitly closed, preventing connection-scope leaks.
+- `packages/client-runtime/src/connection/supervisor.ts` — A failed replacement waits for an in-flight probe to determine whether the existing lease remains usable.
+- `packages/client-runtime/src/connection/supervisor.ts` — DPoP authorization replacement failures keep a viable active connection and schedule a backoff retry for transient failures, while blocked or unclassified failures remain fatal.
+- `packages/client-runtime/src/connection/supervisor.ts` — Lease-loss handling and the fork’s reconnect-without-dead-time behavior remain intact.
+- `packages/client-runtime/src/connection/supervisor.ts` — Pretty's connected-lease replacement flow remains intact, including reusable lease publication for fresh generations and attempts.
+- `packages/client-runtime/src/connection/supervisor.ts` — Lease publication continues to read the current network intent rather than a stale pre-establishment snapshot, protecting reconnect and replacement correctness.
+- `packages/client-runtime/src/connection/supervisor.ts` — Pretty's established/current lease naming and lifecycle structure are retained, including later stability timing and old-transport release behavior.
+- `packages/contracts/src/server.ts` — Retained the T3 Pretty safeguard limiting advertised SSH remote-open targets to REMOTE_OPEN_TARGET_MAX_COUNT while continuing to tolerate forward-compatible target entries.
+
+## Parent changes integrated at conflict boundaries
+
+- `pnpm-lock.yaml` — took the parent nightly's generated lockfile wholesale instead of AI-splicing it
+- `apps/desktop/src/app/DesktopApp.ts` — Load parent-provided legacy local-storage data from the resolved desktop user-data path before any window is created, allowing preload migration data to be available before renderer storage is read.
+- `apps/desktop/src/app/DesktopApp.ts` — Run rendererHistory.shutdown as a guaranteed finalizer during desktop shutdown, before marking shutdown complete.
+- `apps/desktop/src/preload.ts` — Added the parent's synchronous legacy localStorage retrieval and merge during preload startup.
+- `apps/desktop/src/preload.ts` — Marks legacy storage migration complete only after a successful merge, while retaining best-effort startup if migration fails.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts` — Added the parent NodeServices import required by the updated desktop telemetry test infrastructure.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts` — Retained the shared DesktopHostTelemetryMessage contract import.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts` — Enabling diagnostics demand is now expected to trigger a second metrics read.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts` — The newly read metrics sample is expected to be recorded in renderer history, yielding two recorded copies of the test metrics.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts` — Integrated upstream's diagnostics-demand behavior: Electron process details are emitted only while at least one diagnostics demand source is active.
+- `apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts` — Applied truncation signaling only when diagnostics are demanded, so intentionally omitted non-demand metrics are not misreported as count-based truncation.
+- `apps/mobile/src/connection/onboarding.ts` — Pairing commands now accept the parent's structured input containing pairingUrl and optional expectedEnvironmentId.
+- `apps/mobile/src/connection/onboarding.ts` — The expected environment identifier is forwarded into pairing preparation so adding a route can verify the intended saved machine.
+- `apps/mobile/src/connection/onboarding.ts` — Single-flight scheduling now distinguishes the same pairing URL used with different expected environment identifiers.
+- `apps/mobile/src/connection/onboarding.ts` — The parent's route-specific API documentation and composite concurrency key are retained.
+- `apps/mobile/src/connection/platform.ts` — Added networkPathChanges to the wakeup layer so online Wi-Fi-to-cellular and similar path transitions wake connections before a stale LAN socket times out.
+- `apps/mobile/src/connection/platform.ts` — Adopted the parent's Stream.mergeAll composition with unbounded concurrency for the application-state, credential, and network-path wakeup streams.
+- `apps/mobile/src/connection/platform.ts` — Integrated the parent cleanup of thread composer errors when an environment is cleared, adapting the synchronous operation to T3 Pretty's asynchronous cleanup wrapper.
+- `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` — Integrated the parent API change that passes params.routeFor to onConnectPress so connection handling can honor the requested post-connect route.
+- `apps/mobile/src/features/threads/ThreadDetailScreen.tsx` — Integrated the parent ComposerErrorNotice import for the upstream composer error presentation behavior.
+- `apps/server/src/mcp/PreviewAutomationBroker.ts` — Updated hostAssignmentKey to accept McpThreadInvocationScope.
+- `apps/server/src/mcp/PreviewAutomationBroker.ts` — Read the provider session ID from scope.thread.providerSessionId under the parent's new thread-scoped invocation model.
+- `apps/server/src/orchestration-v2/Orchestrator.control-reads.test.ts` — Integrated the parent regression test ensuring delegated child threads do not inherit the parent's linked pull request or pull-request list.
+- `apps/server/src/orchestration-v2/Orchestrator.control-reads.test.ts` — Integrated coverage that delegated children still inherit branch and worktree information and retain parent lineage.
+- `apps/server/src/orchestration-v2/Orchestrator.control-reads.test.ts` — Integrated coverage that a child can link its own pull request without mutating the parent's pull-request metadata.
+- `apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts` — Integrated the parent cleanup that removes the obsolete makeKeyedSerialExecutor import.
+- `apps/server/src/provider/providerMaintenanceCommandCoordinator.ts` — Replaced the fork-local ../KeyedLock.ts usage with the parent's first-party @t3tools/shared/KeyedLock implementation.
+- `apps/server/src/provider/providerMaintenanceCommandCoordinator.ts` — Integrated the parent's explicitly typed KeyedLock.make&lt;string&gt;() API.
+- `apps/server/src/provider/providerMaintenanceCommandCoordinator.ts` — Integrated the parent's simplified Effect composition using Effect.void, Effect.andThen, and Effect.ensuring without changing coordinator ordering or cleanup semantics.
+- `apps/server/src/server.ts` — Integrated the parent DirectEndpoints environment module import required by the nightly server implementation.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Integrated ChevronRightIcon, RouteIcon, and TerminalIcon required by the parent’s expanded connection UI.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Integrated RelayConnectionRegistration and RelayConnectionTarget for the parent’s relay connection model.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Integrated connectionRoutes for the parent’s connection-route behavior.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Integrated the parent `environmentCatalog.register` command binding for registering discovered environments.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Integrated the parent `useRelayEnvironmentDiscovery()` state used by the new relay environment discovery flow.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Added the parent's routeTarget state so the add-backend dialog can add a route to an existing saved machine rather than always creating a new machine.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The parent's route-target identity constraint is honored through connectSavedBackendSshTarget, which passes expectedEnvironmentId when routeTarget is present.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The parent's route-aware successful-add behavior is retained through the helper's "Route added" result and route-specific description.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Changes to routeTarget correctly refresh handleAddSavedBackend indirectly because connectSavedBackendSshTarget depends on routeTarget and is itself a dependency of this callback.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Opening the add-environment dialog now clears the current route target with setRouteTarget(null), preventing stale routing state from carrying into the new environment flow.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Closing the add-environment dialog continues to clear saved backend errors.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The dialog now identifies a route-target operation with “Add a route to …” in its title.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Route additions retain the parent's explanation that another address joins the existing machine rather than creating a duplicate machine.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — When a route target is present, the parent's remote pairing form is rendered so an alternate route such as a Tailscale address can be added.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Added the parent SavedBackendListRow route action, setting the selected route target, clearing stale saved-backend errors, and opening the existing add-environment dialog.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Adapted the upstream route action to T3 Pretty's selected-environment detail architecture rather than reverting to the parent's flat environment list.
+- `apps/web/src/connection/platform.ts` — Integrated the parent’s EnvironmentId dependency; the value-capable import remains valid for both runtime and type positions.
+- `docs/user/source-control.md` — Added the upstream web and desktop GitHub pull-request-list quick-action mode activated with Shift.
+- `docs/user/source-control.md` — Added upstream bulk closing by dragging across rows in one group, Escape cancellation, and retention of failed closes for retry.
+- `docs/user/source-control.md` — The parent's review-editing, GitLab terminology, auto-merge, waiting fork-workflow approval, and revert capabilities remain covered by the existing detailed sections surrounding this conflict without duplicating them here.
+- `packages/client-runtime/src/authorization/service.ts` — Integrated upstream's direct-endpoint behavior: an unreachable direct address no longer causes token rejection or an unnecessary relay/bootstrap round trip, allowing the cached token to remain available for the T3 Connect route.
+- `packages/client-runtime/src/authorization/service.ts` — Preserved upstream's exception for EnvironmentAuthInvalidError, which continues into token replacement rather than treating the failure as a mere direct-address connectivity problem.
+- `packages/client-runtime/src/connection/catalog.ts` — Added optional learned-route metadata so server-reported routes can be identified and replaced when their addresses change.
+- `packages/client-runtime/src/connection/catalog.ts` — Added optional T3 Connect authorization metadata for routes authenticated with the environment's T3 Connect credential.
+- `packages/client-runtime/src/connection/supervisor.test.ts` — Integrated the parent harness's `initialConfig` callback for testing session initial-configuration behavior.
+- `packages/client-runtime/src/connection/supervisor.test.ts` — Integrated the parent harness's `checkRoute` callback for testing route checks, preflight behavior, and route selection.
+- `packages/client-runtime/src/connection/supervisor.ts` — Added the 60-second periodic better-route check used while connected through a fallback route.
+- `packages/client-runtime/src/connection/supervisor.ts` — Added the five-minute better-route cooldown that prevents repeated connection attempts to a flaky preferred route.
+- `packages/client-runtime/src/connection/supervisor.ts` — Connection establishment now obtains its entry through the upstream `attemptEntry` effect rather than using the older captured `entry` value.
+- `packages/client-runtime/src/connection/supervisor.ts` — An online network change now immediately requests a better-route check for the active lease.
+- `packages/client-runtime/src/connection/supervisor.ts` — A wakeup that resets retry backoff now immediately requests a better-route check for the active lease.
+- `packages/client-runtime/src/connection/supervisor.ts` — The parent's lease-scoped route-check behavior is composed into the fork's MonitorEvent signal handling instead of replacing the fork supervisor architecture.
+- `packages/client-runtime/src/connection/supervisor.ts` — The parent’s lease-aware handling during connected probing is preserved in the refactored event loop: relevant network and wakeup signals invoke requestBetterRouteCheck(lease) before signal dispatch.
+- `packages/client-runtime/src/connection/supervisor.ts` — Disconnect, retry, offline, and wakeup events continue to interrupt or redirect probing through the current monitor state machine rather than the obsolete probeEvent control flow.
+- `packages/client-runtime/src/connection/supervisor.ts` — When a requested preferred-route switch lands on another route, the requested route is placed into the better-route cooldown using monotonic time.
+- `packages/client-runtime/src/connection/supervisor.ts` — Optional route learning now runs in a scoped fiber for each published active lease, adapted to Pretty's replacement-capable lease lifecycle.
+- `packages/client-runtime/src/connection/supervisor.ts` — Upstream connected-state publication behavior remains represented through Pretty's publication helper, with the appropriate lease generation and attempt values.
+- `packages/contracts/src/server.ts` — Added the parent's optional directEndpoints server-config field, allowing clients to discover advertised LAN and tailnet addresses while remaining compatible with older servers.
+
+## Parent changes intentionally omitted
+
+- `apps/desktop/src/app/DesktopApp.ts` — The parent's unconditional early desktop-protocol registration, IPC-handler installation, bootstrap log, and snapshot initialization from this hunk.. Reason: T3 Pretty intentionally performs these operations later with configuration specific to either the local-disabled remote/SSH path or the resolved local-backend path. Restoring the unconditional setup would duplicate initialization and could temporarily configure packaged or local-disabled startup against an invalid/dead local origin; the equivalent behavior remains present in both fork branches below.
+- `apps/desktop/src/app/DesktopApp.ts` — Use the parent stopAllPoolInstances() helper for backend cleanup.. Reason: The conflicting T3 Pretty implementation explicitly performs bounded concurrent shutdown across every pool instance. Replacing it with the parent helper call would discard that fork-specific shutdown behavior; the parent's stop-all intent is still preserved by the inline implementation.
+- `apps/mobile/src/connection/platform.ts` — Wake on every AppState transition to active, including transitions for which no background entry was recorded.. Reason: This conflicts with T3 Pretty's explicit mobile reliability safeguard: inactive→active blips do not suspend the process and must not trigger connection probes or reconnects. Genuine background resumes and the parent's new network-path wakeups remain covered.
+- `apps/server/src/mcp/toolkits/preview/handlers.ts` — Replace preview authorization with `requireThreadMcpCapability("preview")`.. Reason: The thread-specific parent call conflicts with T3 Pretty's newer dedicated shared preview-authorization path. Replacing the fork helper here would bypass that centralized behavior and could make preview authorization inconsistent across call sites.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Retention of savedBackendMode, savedBackendHost, and savedBackendPairingCode in the parent add-backend dialog state.. Reason: T3 Pretty intentionally removed these legacy declarations as part of its fork-specific connection flow. Restoring them would undo that fork change; the new saved-machine route target is compatible and is integrated independently.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Directly call connectPairing with remotePairingInput, including the new expectedEnvironmentId option, from handleAddSavedBackend.. Reason: This fork handler is the manual desktop SSH flow and has already parsed an SSH target. Calling connectPairing would ignore that target and replace the fork's SSH-managed tunnel behavior. The compatible expected-environment validation is instead preserved on connectSshEnvironment through connectSavedBackendSshTarget.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Clear pairing-code fields and show the parent's generic paired-backend success toast from this SSH handler.. Reason: Those fields and messages belong to the pairing flow. The fork's SSH helper performs the applicable SSH field cleanup and provides route-aware, SSH-specific success messaging.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Show the parent's generic error toast and reset the loading flag when manual SSH target parsing fails.. Reason: The fork intentionally uses its SSH-specific formatter and inline error state for this validation failure. The loading state is not started until connectSavedBackendSshTarget runs, so resetting it in the parse catch is unnecessary.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The parent T3 Connect fallback-route offer, including RelayConnectionRegistration, success messaging, and route-aware error handling.. Reason: The implementation is embedded entirely in legacy renderRemoteModeBody infrastructure that T3 Pretty deliberately deleted. The supplied context does not expose the fork's replacement UI where this behavior could be integrated without resurrecting the removed path.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The parent route-aware primary action label that changes from “Add environment” to “Add route” when routeTarget is present.. Reason: That action belongs to the deleted legacy remote-mode body and cannot be retained independently at this conflict boundary.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The parent's retained legacy connection-mode card and manual host/pairing-code form helpers.. Reason: T3 Pretty removed these helpers; restoring them would directly reverse the fork's authoritative UI change.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Render the manual Add environment dialog unconditionally on every web surface.. Reason: This conflicts with T3 Pretty's intentional platform behavior: manual environment creation is an SSH-only desktop capability, while other surfaces connect through Surge Connect.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Use the parent's ghost-muted variant for ServerUpdatesAction.. Reason: T3 Pretty's existing ghost variant plus fork-specific muted classes preserves its authoritative visual design while retaining the same server-update action behavior.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Offer a generic “Remote link” mode for ordinary manual environment additions and restore the remote/SSH mode chooser.. Reason: This conflicts with T3 Pretty's authoritative connection architecture: desktop hand-added environments are SSH-only, while other environment connections are handled through Surge Connect. The remote form is retained only for the compatible parent route-addition workflow.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Retain and export ProviderEnvironmentSection, the legacy arbitrary environment-variable editor.. Reason: T3 Pretty intentionally deleted this component while introducing the adjacent provider-field-definition environment flow. Restoring the old editor would reintroduce superseded behavior and dependencies instead of preserving the fork's authoritative provider/secret settings UX.

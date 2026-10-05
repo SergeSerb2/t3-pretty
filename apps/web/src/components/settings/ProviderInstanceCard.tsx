@@ -503,8 +503,16 @@ export function ProviderInstanceCard({
       driverKind={driverKind ?? instance.driver}
       displayName={displayName}
       accentColor={accentColor}
-      acpRegistryAgentId={readConfigString(instance.config, "agentId") ?? undefined}
-      acpRegistryIconUrl={readConfigString(instance.config, "registryIconUrl") ?? undefined}
+      acpRegistryAgentId={
+        readConfigString(instance.config, "source") === "local"
+          ? undefined
+          : (readConfigString(instance.config, "agentId") ?? undefined)
+      }
+      acpRegistryIconUrl={
+        readConfigString(instance.config, "source") === "local"
+          ? undefined
+          : (readConfigString(instance.config, "registryIconUrl") ?? undefined)
+      }
       showBadge={Boolean(accentColor)}
       className="size-5"
       iconClassName="size-4 text-foreground/80"

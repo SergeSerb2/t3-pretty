@@ -25,6 +25,7 @@ import * as Stream from "effect/Stream";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
+import * as DesktopRendererHistory from "./DesktopRendererHistory.ts";
 
 const LIVE_SAMPLE_INTERVAL = Duration.seconds(1);
 const BATTERY_SAMPLE_INTERVAL = Duration.seconds(5);
@@ -155,6 +156,7 @@ function sampleInterval(
 export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
   const electronApp = yield* ElectronApp.ElectronApp;
   const powerMonitor = yield* ElectronPowerMonitor.ElectronPowerMonitor;
+  const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
   yield* electronApp.whenReady;
 
   const initialPowerState: PowerState = {
@@ -222,10 +224,13 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
           powerMonitor.getSystemIdleTime,
           powerMonitor.getSystemIdleState(IDLE_THRESHOLD_SECONDS),
           powerMonitor.isOnBatteryPower,
-          demand ? electronApp.getAppMetrics : Effect.succeed([]),
+          electronApp.getAppMetrics,
         ],
         { concurrency: "unbounded" },
       );
+      // One Electron sampler preserves the shared CPU measurement interval.
+      // History follows the existing power-aware cadence, even without demand.
+      yield* rendererHistory.recordMetrics(metrics);
       const polledLocked =
         systemIdleState === "unknown"
           ? currentPower.locked
@@ -280,36 +285,41 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
           updatedAt: sampledAt,
         },
         speedLimitPercent: observedPower.speedLimitPercent,
-        ...(metrics.length > DESKTOP_ELECTRON_PROCESS_MAX_COUNT
+        ...(demand && metrics.length > DESKTOP_ELECTRON_PROCESS_MAX_COUNT
           ? { electronProcessesTruncated: true }
           : {}),
-        electronProcesses: metrics.slice(0, DESKTOP_ELECTRON_PROCESS_MAX_COUNT).map((metric) => ({
-          pid: metric.pid,
-          creationTimeMs: Math.max(0, Math.round(finiteOrZero(metric.creationTime))),
-          type: metric.type,
-          ...(metric.name === undefined
-            ? {}
-            : { name: metric.name.slice(0, DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH) }),
-          ...(metric.serviceName === undefined
-            ? {}
-            : {
-                serviceName: metric.serviceName.slice(0, DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH),
-              }),
-          cpuPercent: finiteOrZero(metric.cpu.percentCPUUsage),
-          ...(metric.cpu.cumulativeCPUUsage === undefined ||
-          !Number.isFinite(metric.cpu.cumulativeCPUUsage)
-            ? {}
-            : { cumulativeCpuSeconds: metric.cpu.cumulativeCPUUsage }),
-          idleWakeupsPerSecond: finiteOrZero(metric.cpu.idleWakeupsPerSecond),
-          workingSetBytes: Math.max(
-            0,
-            Math.round(finiteOrZero(metric.memory.workingSetSize) * 1024),
-          ),
-          peakWorkingSetBytes: Math.max(
-            0,
-            Math.round(finiteOrZero(metric.memory.peakWorkingSetSize) * 1024),
-          ),
-        })),
+        electronProcesses: (demand ? metrics.slice(0, DESKTOP_ELECTRON_PROCESS_MAX_COUNT) : []).map(
+          (metric) => ({
+            pid: metric.pid,
+            creationTimeMs: Math.max(0, Math.round(finiteOrZero(metric.creationTime))),
+            type: metric.type,
+            ...(metric.name === undefined
+              ? {}
+              : { name: metric.name.slice(0, DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH) }),
+            ...(metric.serviceName === undefined
+              ? {}
+              : {
+                  serviceName: metric.serviceName.slice(
+                    0,
+                    DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH,
+                  ),
+                }),
+            cpuPercent: finiteOrZero(metric.cpu.percentCPUUsage),
+            ...(metric.cpu.cumulativeCPUUsage === undefined ||
+            !Number.isFinite(metric.cpu.cumulativeCPUUsage)
+              ? {}
+              : { cumulativeCpuSeconds: metric.cpu.cumulativeCPUUsage }),
+            idleWakeupsPerSecond: finiteOrZero(metric.cpu.idleWakeupsPerSecond),
+            workingSetBytes: Math.max(
+              0,
+              Math.round(finiteOrZero(metric.memory.workingSetSize) * 1024),
+            ),
+            peakWorkingSetBytes: Math.max(
+              0,
+              Math.round(finiteOrZero(metric.memory.peakWorkingSetSize) * 1024),
+            ),
+          }),
+        ),
       };
 
       yield* Ref.set(latest, Option.some(snapshot));

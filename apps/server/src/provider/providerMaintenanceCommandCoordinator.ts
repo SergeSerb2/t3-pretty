@@ -1,7 +1,6 @@
+import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
-
-import * as KeyedLock from "../KeyedLock.ts";
 
 export interface ProviderMaintenanceCommandCoordinatorShape<E> {
   readonly withCommandLock: <A, R>(input: {
@@ -16,7 +15,7 @@ export const makeProviderMaintenanceCommandCoordinator = Effect.fn(
   "makeProviderMaintenanceCommandCoordinator",
 )(function* <E>(input: { readonly makeAlreadyRunningError: (targetKey: string) => E }) {
   const runningTargetsRef = yield* Ref.make<ReadonlySet<string>>(new Set());
-  const commandLocks = yield* KeyedLock.make;
+  const locks = yield* KeyedLock.make<string>();
 
   const acquireTarget = Effect.fn("acquireTarget")(function* (targetKey: string) {
     return yield* Ref.modify(runningTargetsRef, (runningTargets) => {
@@ -48,12 +47,10 @@ export const makeProviderMaintenanceCommandCoordinator = Effect.fn(
         return yield* Effect.fail(input.makeAlreadyRunningError(targetKey));
       }
 
-      return yield* Effect.gen(function* () {
-        if (onQueued) {
-          yield* onQueued;
-        }
-        return yield* commandLocks.withLock(lockKey, run);
-      }).pipe(Effect.ensuring(releaseTarget(targetKey)));
+      return yield* (onQueued ?? Effect.void).pipe(
+        Effect.andThen(locks.withLock(lockKey, run)),
+        Effect.ensuring(releaseTarget(targetKey)),
+      );
     });
 
   return {

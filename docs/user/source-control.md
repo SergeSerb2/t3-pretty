@@ -145,6 +145,10 @@ writers also follow `CLAUDE.md`.
 Open **Pull requests** to review changes and comments, request reviewers, check out a branch, or
 merge. You can keep several reviews open as tabs in the right panel.
 
+On web and desktop, hold **Shift** in the GitHub pull request list for quick actions.
+To close several, press **Close**, drag across the rows in the same group, and release.
+Press **Escape** before releasing to cancel. Failed closes stay in the list so you can retry them.
+
 ### Find and inspect reviews
 
 - See whether the current branch already has an open PR/MR.
@@ -308,7 +312,8 @@ the thread is active, the server checks the pull request every minute and wakes 
 fails, the required checks pass, someone else comments or reviews, or the branch starts to conflict.
 Comments from your own account do not wake it. Watching ends when the pull request merges or closes,
 after 10 wakes in a row that bring only comments, or when the server cannot read the pull request for
-15 minutes. To start or stop it yourself, use the row menu in the **Linked pull requests** panel.
+15 minutes. Settling a thread also ends all its watches. Unsettle the thread before starting a new
+watch. To start or stop it yourself, use the row menu in the **Linked pull requests** panel.
 
 Cross-repository links use a project on the same host. Azure DevOps reviews require a project checked
 out from the matching organization and repository.
