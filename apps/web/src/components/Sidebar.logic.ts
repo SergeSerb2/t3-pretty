@@ -42,7 +42,9 @@ export function shouldNavigateAfterThreadPark(input: {
   readonly now: string;
   readonly thread:
     | (ThreadSnoozeShell &
-        Pick<SidebarThreadSummary, "settledOverride" | "storedAt" | "latestUserMessageAt"> & { pendingBackgroundTasks?: SidebarThreadSummary["pendingBackgroundTasks"] | undefined })
+        Pick<SidebarThreadSummary, "settledOverride" | "storedAt" | "latestUserMessageAt"> & {
+          pendingBackgroundTasks?: SidebarThreadSummary["pendingBackgroundTasks"] | undefined;
+        })
     | null;
 }): boolean {
   if (input.threadKey !== input.currentThreadKey || input.thread === null) return false;
@@ -177,7 +179,12 @@ export type SidebarListMarker =
   | "settled-header";
 
 /** Headers of the collapsible shelves below the inbox, top to bottom. */
-export const SIDEBAR_SHELF_HEADERS = ["working-header", "snoozed-header", "stored-header", "settled-header"] as const;
+export const SIDEBAR_SHELF_HEADERS = [
+  "working-header",
+  "snoozed-header",
+  "stored-header",
+  "settled-header",
+] as const;
 
 export function isSidebarShelfHeader(
   marker: SidebarListMarker,
@@ -234,6 +241,50 @@ export type SidebarDropTarget = {
   readonly activeOrder: readonly string[];
 };
 
+const isNestChildItem = (item: SidebarListItem | undefined) =>
+  item?.kind === "thread" && item.nest === "child";
+
+/** End (exclusive) of the block starting at `index`: a PR nest parent owns
+ * the child rows rendered under it, which only ever move with it. */
+export function sidebarBlockEnd(items: readonly SidebarListItem[], index: number): number {
+  const head = items[index];
+  if (head?.kind !== "thread" || head.nest !== "parent") return index + 1;
+  let end = index + 1;
+  for (; end < items.length; end += 1) {
+    const item = items[end];
+    if (
+      item?.kind !== "thread" ||
+      item.nest !== "child" ||
+      item.section !== head.section ||
+      item.pullRequestKey !== head.pullRequestKey
+    ) {
+      break;
+    }
+  }
+  return end;
+}
+
+/** The manual order of the pinned and active sections. Nest children render
+ * under their parent wherever their own keys sort, so only block heads take
+ * part; `ownKey` keeps a lifted child that leaves its nest. */
+export function sidebarSectionOrders(
+  items: readonly SidebarListItem[],
+  ownKey?: string,
+): Pick<SidebarDropTarget, "pinnedOrder" | "activeOrder"> {
+  const pinnedOrder: string[] = [];
+  const activeOrder: string[] = [];
+  let section: "pinned" | "active" = "pinned";
+  for (const item of items) {
+    if (item.kind === "marker") {
+      if (item.marker === "pinned-divider") section = "active";
+      else if (isSidebarShelfHeader(item.marker)) break;
+    } else if (item.nest !== "child" || item.key === ownKey) {
+      (section === "pinned" ? pinnedOrder : activeOrder).push(item.key);
+    }
+  }
+  return { pinnedOrder, activeOrder };
+}
+
 export function resolveSidebarDropTarget(
   items: readonly SidebarListItem[],
   activeKey: string,
@@ -241,28 +292,29 @@ export function resolveSidebarDropTarget(
 ): SidebarDropTarget | null {
   const activeIndex = items.findIndex((item) => sidebarListItemId(item) === activeKey);
   const overIndex = items.findIndex((item) => sidebarListItemId(item) === overId);
-  if (activeIndex === -1 || overIndex === -1 || items[activeIndex]?.kind !== "thread") return null;
-  const moved = items.filter((_, index) => index !== activeIndex);
-  moved.splice(overIndex, 0, items[activeIndex]!);
-  const section = sectionAtSidebarSlot(moved, overIndex);
+  const active = items[activeIndex];
+  if (activeIndex === -1 || overIndex === -1 || active?.kind !== "thread") return null;
+  const end = sidebarBlockEnd(items, activeIndex);
+  const block = items.slice(activeIndex, end);
+  const rest = [...items.slice(0, activeIndex), ...items.slice(end)];
+  // arrayMove semantics: moving down lands after `over`, moving up before it.
+  let slot =
+    overIndex >= activeIndex && overIndex < end
+      ? activeIndex
+      : overIndex > activeIndex
+        ? overIndex - block.length + 1
+        : overIndex;
+  // Nothing lands between a nest parent and its children.
+  while (isNestChildItem(rest[slot])) slot += 1;
+  const moved = [...rest.slice(0, slot), ...block, ...rest.slice(slot)];
+  const section = sectionAtSidebarSlot(moved, slot);
   if (section === "working" || section === "snoozed" || section === "stored") return null;
-  const pinnedOrder: string[] = [];
-  const activeOrder: string[] = [];
-  let currentSection: SidebarSection = "pinned";
-  for (const item of moved) {
-    if (item.kind === "marker") {
-      if (item.marker === "pinned-divider") currentSection = "active";
-      else if (
-        item.marker === "working-header" ||
-        item.marker === "snoozed-header" ||
-        item.marker === "stored-header" ||
-        item.marker === "settled-header"
-      )
-        break;
-    } else if (currentSection === "pinned") pinnedOrder.push(item.key);
-    else activeOrder.push(item.key);
+  // A nest child always renders under its parent, so it can leave its section
+  // but has no position of its own inside it.
+  if (active.nest === "child" && section === active.section) {
+    return { section, ...sidebarSectionOrders(items) };
   }
-  return { section, pinnedOrder, activeOrder };
+  return { section, ...sidebarSectionOrders(moved, activeKey) };
 }
 
 export type SidebarThreadDropPlan =
@@ -1021,7 +1073,8 @@ export function shouldRecedeSidebarThread(input: {
   isSelected: boolean;
 }): boolean {
   if (input.isActive || input.isSelected || input.status === "input") return false;
-  if (input.status === "working" || input.status === "waiting" || input.status === "monitoring") return true;
+  if (input.status === "working" || input.status === "waiting" || input.status === "monitoring")
+    return true;
   if (input.status === "ready" || input.status === "approval") {
     return !input.isUnread && !input.isWoke;
   }
@@ -1515,8 +1568,20 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
-  if (thread.backgroundLiveness === "working") return { label: "Working", colorClass: "text-sky-600 dark:text-sky-300/80", dotClass: "bg-sky-500 dark:bg-sky-300/80", pulse: true };
-  if (thread.backgroundLiveness === "monitoring" && !threadChangeRequestIsMerged(thread)) return { label: "Monitoring", colorClass: "text-foreground", dotClass: "bg-foreground", pulse: false };
+  if (thread.backgroundLiveness === "working")
+    return {
+      label: "Working",
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: true,
+    };
+  if (thread.backgroundLiveness === "monitoring" && !threadChangeRequestIsMerged(thread))
+    return {
+      label: "Monitoring",
+      colorClass: "text-foreground",
+      dotClass: "bg-foreground",
+      pulse: false,
+    };
   if (hasUnseenMergedChangeRequest(thread) || hasUnseenCompletion(thread)) {
     return COMPLETED_STATUS_PILL;
   }

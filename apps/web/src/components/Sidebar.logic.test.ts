@@ -55,6 +55,8 @@ import {
   sortInboxThreadsByReturn,
   resolveSidebarDropTarget,
   planSidebarThreadDrop,
+  sidebarMarkerId,
+  sidebarSectionOrders,
   sortPinnedThreadsForSidebar,
   sortProjectsForSidebar,
   sortScopedProjectsForSidebar,
@@ -562,7 +564,7 @@ describe("hasUnseenCompletion", () => {
         latestRun: makeLatestRun(),
         lastVisitedAt: "2026-03-09T10:04:00.000Z",
         runtime: null,
-      pendingBackgroundTasks: [],
+        pendingBackgroundTasks: [],
       }),
     ).toBe(true);
   });
@@ -577,7 +579,7 @@ describe("hasUnseenCompletion", () => {
         latestRun: makeLatestRun(),
         lastVisitedAt: undefined,
         runtime: null,
-      pendingBackgroundTasks: [],
+        pendingBackgroundTasks: [],
       }),
     ).toBe(false);
   });
@@ -627,13 +629,12 @@ describe("countThreadsAwaitingUser", () => {
             ...base,
             id: ThreadId.make("working"),
             runtime: {
-
               status: "running" as const,
               providerName: "Codex",
               providerInstanceId: ProviderInstanceId.make("codex"),
 
               activeRunId: "turn-1" as never,
-      lastErrorClass: null,
+              lastErrorClass: null,
               lastError: null,
               updatedAt: "2026-03-09T10:00:00.000Z",
             },
@@ -655,13 +656,12 @@ describe("countThreadsAwaitingUser", () => {
             id: ThreadId.make("working-unread"),
             latestRun: makeLatestRun(),
             runtime: {
-
               status: "running" as const,
               providerName: "Codex",
               providerInstanceId: ProviderInstanceId.make("codex"),
 
               activeRunId: "turn-1" as never,
-      lastErrorClass: null,
+              lastErrorClass: null,
               lastError: null,
               updatedAt: "2026-03-09T10:00:00.000Z",
             },
@@ -1674,7 +1674,7 @@ describe("addProjectRailAttention", () => {
         latestRun: makeLatestRun(),
         lastVisitedAt: "2026-03-09T10:04:00.000Z",
         runtime: null,
-      pendingBackgroundTasks: [],
+        pendingBackgroundTasks: [],
       },
     });
     const approval = resolveThreadStatusPill({
@@ -1685,7 +1685,7 @@ describe("addProjectRailAttention", () => {
         interactionMode: "default",
         latestRun: null,
         runtime: null,
-      pendingBackgroundTasks: [],
+        pendingBackgroundTasks: [],
       },
     });
     const first = addProjectRailAttention(undefined, completed);
@@ -1707,7 +1707,7 @@ describe("addProjectRailAttention", () => {
             lastVisitedAt: "2026-03-09T10:06:00.000Z",
             latestRun: makeLatestRun(),
             runtime: null,
-      pendingBackgroundTasks: [],
+            pendingBackgroundTasks: [],
             pullRequests: [
               {
                 host: "github.com",
@@ -2562,7 +2562,7 @@ describe("navigation after parking a thread", () => {
             snoozedUntil,
             snoozedAt: null,
             runtime: null,
-      pendingBackgroundTasks: [],
+            pendingBackgroundTasks: [],
             latestRun: null,
             hasPendingApprovals,
             hasPendingUserInput: false,
@@ -2592,7 +2592,7 @@ describe("navigation after parking a thread", () => {
           latestUserMessageAt: null,
           // A blocked stored thread stays in Active, so the reader stays too.
           runtime: null,
-      pendingBackgroundTasks: [],
+          pendingBackgroundTasks: [],
           latestRun: null,
           hasPendingApprovals,
           hasPendingUserInput: false,
@@ -2743,6 +2743,58 @@ describe("Working shelf (beta)", () => {
         activeOrder: ["a1", "a2", "p1"],
       });
       expect(resolveSidebarDropVerb("active", "working")).toBeNull();
+    });
+
+    describe("pull request nests", () => {
+      const nested = (key: string, nest: "parent" | "child"): SidebarListItem => ({
+        kind: "thread",
+        key,
+        section: "active",
+        nest,
+        pullRequestKey: "pr",
+      });
+      // Active a1 | n (parent) > c (child) | a2
+      const nestItems: readonly SidebarListItem[] = [
+        marker("pinned-header"),
+        marker("pinned-divider"),
+        row("a1", "active"),
+        nested("n", "parent"),
+        nested("c", "child"),
+        row("a2", "active"),
+        marker("settled-header"),
+      ];
+      const activeOrder = (activeKey: string, overId: string) =>
+        resolveSidebarDropTarget(nestItems, activeKey, overId)?.activeOrder;
+
+      it("orders block heads only", () => {
+        expect(sidebarSectionOrders(nestItems)).toEqual({
+          pinnedOrder: [],
+          activeOrder: ["a1", "n", "a2"],
+        });
+      });
+
+      it("never lands between a parent and its children", () => {
+        expect(activeOrder("a1", "n")).toEqual(["n", "a1", "a2"]);
+        expect(activeOrder("a1", "c")).toEqual(["n", "a1", "a2"]);
+        expect(activeOrder("a2", "c")).toEqual(["a1", "n", "a2"]);
+        expect(activeOrder("a2", "n")).toEqual(["a1", "a2", "n"]);
+      });
+
+      it("moves a parent with its children", () => {
+        expect(activeOrder("n", "a1")).toEqual(["n", "a1", "a2"]);
+        expect(activeOrder("n", "a2")).toEqual(["a1", "a2", "n"]);
+        expect(activeOrder("n", "c")).toEqual(["a1", "n", "a2"]);
+      });
+
+      it("lets a child leave its section but not reorder inside it", () => {
+        expect(activeOrder("c", "a1")).toEqual(["a1", "n", "a2"]);
+        expect(activeOrder("c", "a2")).toEqual(["a1", "n", "a2"]);
+        expect(resolveSidebarDropTarget(nestItems, "c", sidebarMarkerId("pinned-header"))).toEqual({
+          section: "pinned",
+          pinnedOrder: ["c"],
+          activeOrder: ["a1", "n", "a2"],
+        });
+      });
     });
 
     it("only changes lifecycle when the inbox is time-ordered", () => {
