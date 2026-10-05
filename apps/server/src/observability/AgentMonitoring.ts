@@ -297,7 +297,9 @@ const make = Effect.gen(function* () {
   const runtime = yield* ScopedRef.make<MonitoringRuntime>(() => inactiveRuntime(disabled));
   const lock = yield* Semaphore.make(1);
   let current: MonitoringConfiguration | undefined;
-  let wasDisabled = false;
+  // A process cannot know whether monitoring was disabled while it was stopped.
+  // Resume already captured records, but never backfill unobserved conversation activity.
+  let wasDisabled = true;
   const configure = (snapshot: ServerSettings) =>
     lock.withPermit(
       Effect.gen(function* () {
@@ -315,10 +317,10 @@ const make = Effect.gen(function* () {
         yield* ScopedRef.set(runtime, Effect.succeed(inactiveRuntime(disabled)));
         current = undefined;
         if (!next.enabled) {
-          yield* pausePersistedJournal.pipe(
+          const paused = yield* pausePersistedJournal.pipe(
             Effect.scoped,
             Effect.provide(runtimeDependencies),
-            Effect.ignore,
+            Effect.result,
           );
           wasDisabled = true;
           yield* ScopedRef.set(
@@ -327,12 +329,17 @@ const make = Effect.gen(function* () {
               inactiveRuntime(
                 AgentMonitoring.of({
                   ...disabled,
-                  status: Effect.succeed(inactiveStatus("disabled", next.source)),
+                  status: Effect.succeed(
+                    inactiveStatus(
+                      paused._tag === "Success" ? "disabled" : "unavailable",
+                      next.source,
+                    ),
+                  ),
                 }),
               ),
             ),
           );
-          current = next;
+          if (paused._tag === "Success") current = next;
           return;
         }
         yield* ScopedRef.set(
@@ -369,6 +376,10 @@ const make = Effect.gen(function* () {
       }),
     );
   yield* configure(yield* settings.getSettings);
+  // Retry failed configuration/disable markers without requiring another settings change.
+  yield* Effect.suspend(() =>
+    current === undefined ? settings.getSettings.pipe(Effect.flatMap(configure)) : Effect.void,
+  ).pipe(Effect.andThen(Effect.sleep("2 seconds")), Effect.forever, Effect.forkScoped);
   yield* changes.pipe(
     Stream.runForEach(() => settings.getSettings.pipe(Effect.flatMap(configure))),
     Effect.forkScoped,

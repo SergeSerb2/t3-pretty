@@ -430,6 +430,72 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
     }),
   );
 
+  it.effect(
+    "skips disabled activity after a failed pause and process restart while retaining captured records",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pause-restart-" });
+        const filename = path.join(home, "userdata", "logs", AgentMonitoring.journalFileName);
+        yield* fs.makeDirectory(path.dirname(filename), { recursive: true });
+        const storeContext = yield* Layer.build(
+          OrchestrationEventStoreLive.pipe(Layer.provide(SqlitePersistenceMemory)),
+        );
+        const store = Context.get(storeContext, OrchestrationEventStore);
+        yield* store.appendAgentEvents({ events: [toolEvent("captured-before-disable")] });
+        yield* Effect.gen(function* () {
+          const journal = yield* Journal.AgentMonitoringJournal;
+          yield* journal.enroll(0);
+          yield* journal.capture([
+            { sequence: 1, observation: observe(toolEvent("captured-before-disable")) },
+          ]);
+        }).pipe(Effect.provide(Journal.layerAt(filename)));
+        yield* fs.rename(filename, filename + ".saved");
+        yield* fs.makeDirectory(filename);
+        const layer = (enabled: boolean) =>
+          AgentMonitoring.layer.pipe(
+            Layer.provide(Settings.layerTest({ agentMonitoring: { enabled, sentryDsn: "" } })),
+            Layer.provide(ServerConfig.layerTest(home, home)),
+            Layer.provide(
+              Layer.succeed(ServerEnvironment.ServerEnvironment, {
+                getEnvironmentId: Effect.succeed(EnvironmentId.make("pause-failure-host")),
+                getDescriptor: Effect.die("unused"),
+              }),
+            ),
+            Layer.provide(Layer.succeed(OrchestrationEventStore, store)),
+            Layer.provide(FetchHttpClient.layer),
+            Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+          );
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const context = yield* Layer.build(layer(false));
+            const monitor = Context.get(context, AgentMonitoring.AgentMonitoring);
+            assert.equal((yield* monitor.status).state, "unavailable");
+            yield* store.appendAgentEvents({ events: [toolEvent("disabled-private-gap")] });
+          }),
+        );
+        // Restore the last durable, unpaused journal as if the failed write never reached disk.
+        yield* fs.remove(filename, { recursive: true });
+        yield* fs.rename(filename + ".saved", filename);
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const context = yield* Layer.build(layer(true));
+            const monitor = Context.get(context, AgentMonitoring.AgentMonitoring);
+            yield* store.appendAgentEvents({ events: [toolEvent("enabled-after-restart")] });
+            yield* monitor.flush;
+          }),
+        );
+        const report = yield* Effect.flatMap(
+          Journal.AgentMonitoringJournal,
+          (journal) => journal.report,
+        ).pipe(Effect.provide(Journal.layerAt(filename, { readonly: true })));
+        assert.equal(report.recordCount, 2);
+        assert.equal(report.pendingCount, 2);
+        assert.equal(report.capturedSequence, 3);
+      }),
+  );
+
   it.effect("retries the same saved configuration after a transient journal startup failure", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
