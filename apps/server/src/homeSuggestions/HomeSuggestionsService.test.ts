@@ -234,6 +234,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     activation,
     generations,
     layer: HomeSuggestions.layer.pipe(Layer.provide(dependencies)),
+    startedLayer: HomeSuggestions.layerStarted.pipe(Layer.provide(dependencies)),
   };
 });
 
@@ -330,6 +331,72 @@ const makeFakeRelay = Effect.fn("makeFakeRelay")(function* (
 const SHARED_AT = "2026-09-21T12:00:05.000Z";
 
 describe("HomeSuggestionsService", () => {
+  it.effect(
+    "the runtime layer loads both shelves before activation and refreshes them after activation",
+    () =>
+      run((baseDir) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const config = yield* ServerConfig.ServerConfig.pipe(
+            Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
+            Effect.orDie,
+          );
+          const savedCards: HomeSuggestion[] = [
+            {
+              id: HomeSuggestionId.make("saved-project"),
+              kind: "project",
+              projectId: PROJECT_ID,
+              environmentId: null,
+              title: "Continue yesterday's project",
+              summary: "Saved project work",
+              prompt: "Continue the project.",
+            },
+            {
+              id: HomeSuggestionId.make("saved-explore"),
+              kind: "explore",
+              projectId: null,
+              environmentId: null,
+              title: "Try a new idea",
+              summary: "Saved exploration",
+              prompt: "Explore this idea.",
+            },
+          ];
+          yield* fs.makeDirectory(config.stateDir, { recursive: true });
+          yield* fs.writeFileString(
+            path.join(config.stateDir, HomeSuggestions.HOME_SUGGESTIONS_FILE_NAME),
+            JSON.stringify({
+              generatedAt: "2026-09-19T12:00:00.000Z",
+              suggestions: savedCards,
+              previousTitles: savedCards.map((card) => card.title),
+            }),
+          );
+          const begun = yield* Deferred.make<void>();
+          const harness = yield* makeHarness(baseDir, {
+            generate: () =>
+              Deferred.succeed(begun, undefined).pipe(Effect.as({ suggestions: generatedCards })),
+          });
+          yield* Effect.gen(function* () {
+            const service = yield* HomeSuggestions.HomeSuggestionsService;
+            const restored = yield* service.current;
+            assert.strictEqual(restored.status, "ready");
+            assert.deepStrictEqual(restored.suggestions, savedCards);
+            assert.isNotNull(restored.nextRunAt);
+            assert.strictEqual((yield* Ref.get(harness.generations)).length, 0);
+
+            yield* Deferred.succeed(harness.activation, undefined);
+            yield* Deferred.await(begun);
+            yield* service.drain;
+            assert.strictEqual((yield* Ref.get(harness.generations)).length, 1);
+            const refreshed = yield* service.current;
+            assert.strictEqual(refreshed.status, "ready");
+            assert.isTrue(refreshed.suggestions.some((card) => card.kind === "project"));
+            assert.isTrue(refreshed.suggestions.some((card) => card.kind === "explore"));
+          }).pipe(Effect.provide(harness.startedLayer));
+        }),
+      ),
+  );
+
   it.effect("generates the first batch on the first tick and persists it", () =>
     run((baseDir) =>
       Effect.gen(function* () {

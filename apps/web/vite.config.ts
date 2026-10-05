@@ -272,7 +272,9 @@ export default defineConfig(() => {
                 prefix,
                 {
                   target: devProxyTarget,
-                  changeOrigin: true,
+                  // Cookie-authenticated WebSocket upgrades compare Origin to
+                  // Host. Keep the browser's origin through the dev proxy.
+                  changeOrigin: false,
                   ...(prefix === "/ws" || prefix === "/api" ? { ws: true } : {}),
                 },
               ]),
