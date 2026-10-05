@@ -31,7 +31,7 @@ export const agentMonitoringCommand = Command.make("agent-monitoring", {
       const filename = path.join(paths.logsDir, journalFileName);
       if (!(yield* fs.exists(filename))) {
         yield* Console.log(
-          "No agent monitoring journal found. Enable T3CODE_AGENT_MONITORING_ENABLED on this server first.",
+          "No agent monitoring journal found. Enable this host's saved Agent monitoring setting first (Settings > Diagnostics, or the host's Connections settings on mobile).",
         );
         return;
       }

@@ -476,7 +476,10 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
           Effect.gen(function* () {
             const context = yield* Layer.build(layer(false));
             const monitor = Context.get(context, AgentMonitoring.AgentMonitoring);
-            assert.equal((yield* monitor.status).state, "unavailable");
+            const unavailable = yield* monitor.status;
+            assert.equal(unavailable.state, "unavailable");
+            assert.equal(unavailable.enabled, false);
+            assert.equal(unavailable.monitoringEnvironmentId, null);
             yield* store.appendAgentEvents({ events: [toolEvent("disabled-private-gap")] });
           }),
         );
@@ -579,7 +582,10 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
         ),
       );
       const monitor = Context.get(context, AgentMonitoring.AgentMonitoring);
-      assert.equal((yield* monitor.status).state, "unavailable");
+      const unavailable = yield* monitor.status;
+      assert.equal(unavailable.state, "unavailable");
+      assert.equal(unavailable.enabled, false);
+      assert.equal(unavailable.monitoringEnvironmentId, null);
       yield* fs.remove(obstruction, { recursive: true });
       assert.equal((yield* monitor.status).state, "collecting");
       yield* store.appendAgentEvents({ events: [toolEvent("recovered")] });

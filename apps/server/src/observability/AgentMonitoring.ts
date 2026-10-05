@@ -51,7 +51,7 @@ const inactiveStatus = (
   configurationSource: AgentMonitoringStatus["configurationSource"] = "settings",
 ): AgentMonitoringStatus => ({
   monitoringEnvironmentId: null,
-  enabled: state !== "disabled",
+  enabled: false,
   configured: false,
   state,
   configurationSource,
@@ -400,9 +400,16 @@ const make = Effect.gen(function* () {
       Effect.mapError(() => new AgentMonitoringError({ operation: "flush" })),
     ),
     status: synchronized.pipe(
-      Effect.flatMap((active) => active.status),
+      Effect.flatMap((active) =>
+        active.status.pipe(
+          Effect.map((status) => ({
+            ...status,
+            enabled: active.enabled,
+            monitoringEnvironmentId: active.enabled ? monitoringEnvironmentId : null,
+          })),
+        ),
+      ),
       Effect.catch(() => Effect.succeed(inactiveStatus("unavailable"))),
-      Effect.map((status) => ({ ...status, monitoringEnvironmentId })),
     ),
   });
 });
