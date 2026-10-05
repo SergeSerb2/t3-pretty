@@ -39,6 +39,37 @@ const makeRepositoryIdentityResolverTestLayer = (options: {
   ).pipe(Layer.provide(ProcessRunner.layer));
 
 it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
+  it.effect.each(["blob:none", "blob:limit=1024", "tree:0"])(
+    "resolves partial-clone remotes with the %s filter",
+    (filter) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-repository-identity-partial-clone-",
+        });
+        yield* git(cwd, ["init"]);
+        yield* git(cwd, [
+          "remote",
+          "add",
+          "origin",
+          "https://origin.cursor.com/serbinenko/t3-pretty.git",
+        ]);
+        yield* git(cwd, ["config", "remote.origin.promisor", "true"]);
+        yield* git(cwd, ["config", "remote.origin.partialclonefilter", filter]);
+
+        const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+        const identity = yield* resolver.resolve(cwd);
+        expect(identity?.canonicalKey).toBe("origin.cursor.com/serbinenko/t3-pretty");
+        expect(identity?.locator).toEqual({
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "https://origin.cursor.com/serbinenko/t3-pretty.git",
+        });
+        expect(identity?.provider).toBe("origin");
+        expect(identity?.displayName).toBe("serbinenko/t3-pretty");
+      }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
   it.effect("refreshes the Git root only when requested", () => {
     const calls: Array<ReadonlyArray<string>> = [];
     let rootPath = "/repo";
@@ -281,9 +312,9 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         const identity = yield* resolver.resolve(cwd, { refresh: true });
 
         expect(identity).not.toBeNull();
-        expect(identity?.locator.remoteName).toBe("upstream");
+        expect(identity?.locator.remoteName).toBe("origin");
         expect(identity?.canonicalKey).toBe("github.com/t3tools/t3code");
-        expect(identity?.displayName).toBe("t3tools/t3code");
+        expect(identity?.displayName).toBe("julius/t3code");
         expect(yield* resolver.resolve(cwd)).toEqual(identity);
       }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
