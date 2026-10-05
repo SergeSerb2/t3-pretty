@@ -129,10 +129,9 @@ export function SidebarBrandWidthProbe({
   );
 }
 
-// The mark stays on the resting icon rail; only the wordmark folds away. The
-// link's margin and the word's grid track are owned by `index.css` so the
-// collapse can transition them, since utilities would outrank the components
-// layer.
+// Keep the wordmark at its full width while it fades; resizing a clipped text
+// track reveals one glyph at a time. `index.css` moves the brand as one unit
+// between the resting icon rail and the titlebar inset.
 function SidebarPrettyBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <>
@@ -150,12 +149,12 @@ function SidebarPrettyBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
       {/* Trim only the cap edge. Trimming the alphabetic baseline clips the y in Pretty. */}
       <span
         className={cn(
-          "grid min-w-0 overflow-hidden text-sm font-medium leading-none tracking-tight",
+          "shrink-0 pl-1 text-sm font-medium leading-none tracking-tight [text-box:trim-start_cap]",
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
         data-sidebar-brand-word=""
       >
-        <span className="min-w-0 truncate pl-1 [text-box:trim-start_cap]">Pretty</span>
+        Pretty
       </span>
     </>
   );

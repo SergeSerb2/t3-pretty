@@ -30,6 +30,7 @@ import {
 } from "./cli-proxy-config.mjs";
 import {
   assertValidResolvedSource,
+  conflictResolutionEfforts,
   extractResponseText,
   isProviderAvailabilityFailure,
   providerAvailabilityRetryDelayMs,
@@ -38,7 +39,7 @@ import {
 } from "./resolve-git-conflicts.mjs";
 
 const API_URL = resolveCliProxyApiUrl(process.env.CLI_PROXY_API_URL);
-const MODEL = process.env.CLI_PROXY_MODEL ?? "gpt-5.6-sol";
+const MODEL = process.env.CLI_PROXY_MODEL ?? "gpt-6.1-sol";
 const REASONING_EFFORT = process.env.CLI_PROXY_REASONING_EFFORT ?? "xhigh";
 const SERVICE_TIER = process.env.CLI_PROXY_SERVICE_TIER ?? "priority";
 const MODEL_DEADLINE_EPOCH_MS = Number(process.env.SYNC_MODEL_DEADLINE_EPOCH_MS ?? "") || undefined;
@@ -298,6 +299,11 @@ Priority contract (follow in this order):
 6. Never suppress diagnostics with casts to any, ts-ignore, ts-expect-error, eslint/oxlint disable comments, or loosened compiler options. Fix the code.
 7. If you cannot produce a coherent fix with high confidence, return safe=false. Never guess.
 
+Behavior preservation check:
+- Passing validation is insufficient if a feature becomes unreachable. Retain home project suggestions and New ideas, their settings and generation paths, thread action animations, live activity and headlines, automatic naming, and the hooks and consumers that expose them.
+- When upstream changes an API or moves a render path, adapt both producers and consumers in the supplied files. Do not fix a diagnostic by dropping a service from its layer, unmounting a panel, removing a subscription, disabling a capability, or weakening a behavior test.
+- A parent implementation with a similar purpose is not proof of feature parity. Preserve additional fork capabilities around the parent architecture. If required wiring lies outside the offered files and excerpts, return safe=false and name the missing path or symbol in summary.
+
 Editing contract:
 - Return exact search-and-replace edits. Each edit names a path from the FILE or EXCERPT sections; no other file may be edited and no file may be created or deleted.
 - old_text must be copied byte-for-byte from that file's content and occur exactly once in the file. Include enough unchanged surrounding lines to make it unique. Excerpt line-number prefixes are not part of the file; never include them in old_text or new_text.
@@ -391,9 +397,7 @@ async function requestRepair({ prompt, token }) {
   if (!token) {
     throw new Error("CLI_PROXY_API_KEY is unavailable, so no model repair is possible");
   }
-  const efforts = ["ultra", "max", "xhigh"].includes(REASONING_EFFORT)
-    ? [REASONING_EFFORT, "high", "medium"]
-    : [REASONING_EFFORT, REASONING_EFFORT, "medium"];
+  const efforts = conflictResolutionEfforts({ initialEffort: REASONING_EFFORT });
   let apiResponse;
   let effortIndex = 0;
   let availabilityAttempts = 0;

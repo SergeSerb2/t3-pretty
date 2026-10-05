@@ -26,6 +26,96 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261004.2657003166",
+    date: "2026-10-05",
+    items: [
+      {
+        kind: "fixed",
+        title: "Smooth the sidebar hover wordmark",
+      },
+      {
+        kind: "fixed",
+        title: "Group partial clones across machines",
+      },
+      {
+        kind: "new",
+        title: "Let threads message each other",
+      },
+      {
+        kind: "fixed",
+        title: "Failed shell commands no longer open Sentry issues",
+      },
+      {
+        kind: "fixed",
+        title: "Agents stop seeing tools their credential cannot call",
+      },
+      {
+        kind: "fixed",
+        title: "Agents can link Origin pull requests by URL",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261004.2657003164",
+    date: "2026-10-05",
+    items: [
+      {
+        kind: "fixed",
+        title: "Smooth the sidebar hover wordmark",
+      },
+      {
+        kind: "fixed",
+        title: "Group partial clones across machines",
+      },
+      {
+        kind: "new",
+        title: "Let threads message each other",
+      },
+      {
+        kind: "fixed",
+        title: "Failed shell commands no longer open Sentry issues",
+      },
+      {
+        kind: "fixed",
+        title: "Agents stop seeing tools their credential cannot call",
+      },
+      {
+        kind: "fixed",
+        title: "Agents can link Origin pull requests by URL",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261004.2657003162",
+    date: "2026-10-05",
+    items: [
+      {
+        kind: "fixed",
+        title: "Group partial clones across machines",
+      },
+      {
+        kind: "new",
+        title: "Let threads message each other",
+      },
+      {
+        kind: "fixed",
+        title: "Failed shell commands no longer open Sentry issues",
+      },
+      {
+        kind: "fixed",
+        title: "Agents stop seeing tools their credential cannot call",
+      },
+      {
+        kind: "fixed",
+        title: "Agents can link Origin pull requests by URL",
+      },
+      {
+        kind: "fixed",
+        title: "Composer motion across dispatch actions [skip ci]",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261004.2657003150",
     date: "2026-10-05",
     items: [
