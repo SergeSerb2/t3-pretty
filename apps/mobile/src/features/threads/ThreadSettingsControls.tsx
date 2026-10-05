@@ -739,47 +739,55 @@ function ExtrasCard(props: {
   );
 }
 
-/** The model the thread runs on; pressing it jumps to the catalog below. */
+/** The model the thread runs on; pressing it opens the catalog. */
 function CurrentModelCard(props: {
-  readonly model: ModelOption;
+  readonly model: ModelOption | null;
   readonly footer?: ReactNode;
   readonly onPress: () => void;
 }) {
   const glass = useGlassChromeActive();
-  const detail = [props.model.providerLabel, props.model.subtitle].filter(Boolean).join(" · ");
+  const detail = props.model
+    ? [props.model.providerLabel, props.model.subtitle].filter(Boolean).join(" · ")
+    : "Browse available models";
   return (
     <Animated.View entering={cardEntering(0)} layout={layoutSettle} className="mx-4">
       <GroupedCard>
         <LayoutAnimationConfig skipEntering>
           <GlassRowPressable
             accessibilityHint="Shows the model list"
-            accessibilityLabel={`Model ${props.model.label}, ${detail}`}
+            accessibilityLabel={
+              props.model ? `Model ${props.model.label}, ${detail}` : "Choose a model"
+            }
             accessibilityRole="button"
             className="min-h-16 flex-row items-center gap-3 px-4 py-3"
             fallbackClassName="active:opacity-70"
             onPress={props.onPress}
           >
             <Animated.View
-              key={props.model.key}
+              key={props.model?.key ?? "none"}
               entering={enterFade}
               className={cn(
                 "size-10 items-center justify-center rounded-xl border-continuous",
                 glass ? "bg-foreground/[0.06]" : "bg-subtle",
               )}
             >
-              <ProviderIcon
-                iconUrl={props.model.providerIconUrl}
-                provider={props.model.providerDriver}
-                size={22}
-              />
+              {props.model ? (
+                <ProviderIcon
+                  iconUrl={props.model.providerIconUrl}
+                  provider={props.model.providerDriver}
+                  size={22}
+                />
+              ) : (
+                <SymbolView name="magnifyingglass" size={22} tintColorClassName="accent-icon" />
+              )}
             </Animated.View>
             <Animated.View
-              key={`label:${props.model.key}`}
+              key={`label:${props.model?.key ?? "none"}`}
               entering={enterFade}
               className="min-w-0 flex-1"
             >
               <Text className="text-base font-t3-bold text-foreground" numberOfLines={1}>
-                {props.model.label}
+                {props.model?.label ?? "Choose a model"}
               </Text>
               {detail ? (
                 <Text className="text-xs text-foreground-muted" numberOfLines={1}>
@@ -790,7 +798,7 @@ function CurrentModelCard(props: {
             <View className="flex-row items-center gap-1 rounded-full bg-subtle px-2.5 py-1.5">
               <Text className="text-xs font-t3-medium text-foreground">Change</Text>
               <SymbolView
-                name="chevron.down"
+                name="chevron.right"
                 size={10}
                 tintColorClassName="accent-icon-muted"
                 type="monochrome"
@@ -829,17 +837,11 @@ export function ThreadSettingsControlStack(props: {
   let order = 0;
   return (
     <View className="gap-3">
-      {props.model ? (
-        <CurrentModelCard
-          footer={props.modelFooter}
-          model={props.model}
-          onPress={props.onPressModel}
-        />
-      ) : props.modelFooter ? (
-        <Animated.View entering={cardEntering(0)} layout={layoutSettle} className="mx-4">
-          <GroupedCard>{props.modelFooter}</GroupedCard>
-        </Animated.View>
-      ) : null}
+      <CurrentModelCard
+        footer={props.modelFooter}
+        model={props.model}
+        onPress={props.onPressModel}
+      />
       {layout.reasoning ? (
         <ReasoningCard
           control={layout.reasoning}
