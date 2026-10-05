@@ -1,4 +1,5 @@
 import type {
+  AgentMonitoringEnrollmentChoice,
   AgentMonitoringSettings,
   EnvironmentId,
   ServerSettingsPatch,
@@ -11,12 +12,18 @@ export interface AgentMonitoringEnrollmentTarget {
   readonly settings: AgentMonitoringSettings | null;
 }
 
-type EnrollmentState = "waiting" | "update-required" | "pending" | "enrolled" | "failed";
+type EnrollmentState =
+  | "waiting"
+  | "update-required"
+  | "pending"
+  | "enrolled"
+  | "failed"
+  | "excluded";
 
 /** Applies a persisted fleet choice when hosts become reachable, with one ordered write per host. */
 export class AgentMonitoringEnrollment {
   private choiceKey: string | null = null;
-  private choice: AgentMonitoringSettings | null = null;
+  private choice: AgentMonitoringEnrollmentChoice | null = null;
   private write:
     | ((environmentId: EnvironmentId, patch: ServerSettingsPatch) => Promise<void>)
     | undefined;
@@ -45,21 +52,38 @@ export class AgentMonitoringEnrollment {
     await this.pending.get(environmentId)?.promise;
   }
 
-  /** A host edit supersedes fleet enrollment only after both writes succeed. */
+  /** Persist a host exception before editing it so reconnects cannot undo the host's choice. */
   async saveHost(
     environmentId: EnvironmentId,
     save: () => Promise<void>,
-    stopEnrollment: () => Promise<void>,
+    persistChoice: (choice: AgentMonitoringEnrollmentChoice) => Promise<void>,
   ) {
     this.hostSaves.add(environmentId);
     try {
       await this.waitForPending(environmentId);
-      await save();
-      await stopEnrollment();
-      if (this.write) await this.reconcile(null, [...this.targets.values()], this.write);
+      const previous = this.choice;
+      if (previous !== null) {
+        const next = {
+          ...previous,
+          excludedEnvironmentIds: [
+            ...new Set([...(previous.excludedEnvironmentIds ?? []), environmentId]),
+          ],
+        };
+        await persistChoice(next);
+        if (this.write) void this.reconcile(next, [...this.targets.values()], this.write);
+      }
+      try {
+        await save();
+      } catch (cause) {
+        if (previous !== null) {
+          await persistChoice(previous);
+          if (this.write) void this.reconcile(previous, [...this.targets.values()], this.write);
+        }
+        throw cause;
+      }
     } finally {
       this.hostSaves.delete(environmentId);
-      if (this.write) await this.reconcile(this.choice, [...this.targets.values()], this.write);
+      if (this.write) void this.reconcile(this.choice, [...this.targets.values()], this.write);
     }
   }
 
@@ -73,11 +97,14 @@ export class AgentMonitoringEnrollment {
   }
 
   async reconcile(
-    choice: AgentMonitoringSettings | null,
+    choice: AgentMonitoringEnrollmentChoice | null,
     targets: ReadonlyArray<AgentMonitoringEnrollmentTarget>,
     write: (environmentId: EnvironmentId, patch: ServerSettingsPatch) => Promise<void>,
   ): Promise<void> {
-    const key = choice === null ? null : `${choice.enabled}:${choice.sentryDsn}`;
+    const key =
+      choice === null
+        ? null
+        : `${choice.enabled}:${choice.sentryDsn}:${JSON.stringify(choice.excludedEnvironmentIds ?? [])}`;
     this.choice = choice;
     this.write = write;
     this.choiceKey = key;
@@ -91,9 +118,14 @@ export class AgentMonitoringEnrollment {
       return;
     }
     const tasks: Promise<void>[] = [];
+    const excluded = new Set(choice.excludedEnvironmentIds ?? []);
     for (const target of targets) {
       const id = target.environmentId;
       if (this.hostSaves.has(id)) continue;
+      if (excluded.has(id)) {
+        this.set(id, "excluded");
+        continue;
+      }
       if (!target.connected) {
         this.attempts.delete(id);
         this.set(id, "waiting");
@@ -123,9 +155,19 @@ export class AgentMonitoringEnrollment {
       let outcome: "enrolled" | "failed" | undefined;
       const promise = (pending?.promise ?? Promise.resolve())
         .then(async () => {
-          if (this.choiceKey !== key || this.targets.get(id)?.connected !== true) return;
+          if (
+            this.choiceKey !== key ||
+            this.targets.get(id)?.connected !== true ||
+            this.hostSaves.has(id) ||
+            this.choice?.excludedEnvironmentIds?.includes(id)
+          )
+            return;
           try {
-            await write(id, { agentMonitoring: choice.enabled ? choice : { enabled: false } });
+            await write(id, {
+              agentMonitoring: choice.enabled
+                ? { enabled: true, sentryDsn: choice.sentryDsn }
+                : { enabled: false },
+            });
             outcome = "enrolled";
           } catch {
             outcome = "failed";

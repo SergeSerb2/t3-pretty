@@ -7,6 +7,7 @@ import {
   ForwardCompatibleNullable,
   ForwardCompatibleOptional,
   OmittedWhenNull,
+  EnvironmentId,
   ProjectId,
   TrimmedNonEmptyString,
   TrimmedString,
@@ -349,9 +350,15 @@ export const AgentMonitoringSettings = Schema.Struct({
 });
 export type AgentMonitoringSettings = typeof AgentMonitoringSettings.Type;
 
+export const AgentMonitoringEnrollmentChoice = Schema.Struct({
+  ...AgentMonitoringSettings.fields,
+  excludedEnvironmentIds: Schema.optionalKey(Schema.Array(EnvironmentId)),
+});
+export type AgentMonitoringEnrollmentChoice = typeof AgentMonitoringEnrollmentChoice.Type;
+
 export const ClientSettingsSchema = Schema.Struct({
   /** Null leaves host enrollment alone; a saved choice also applies after hosts reconnect. */
-  agentMonitoringEnrollment: Schema.NullOr(AgentMonitoringSettings).pipe(
+  agentMonitoringEnrollment: Schema.NullOr(AgentMonitoringEnrollmentChoice).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   notificationMode: NotificationMode.pipe(
@@ -1896,7 +1903,7 @@ export const ServerSettingsPatch = Schema.Struct({
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
-  agentMonitoringEnrollment: Schema.optionalKey(Schema.NullOr(AgentMonitoringSettings)),
+  agentMonitoringEnrollment: Schema.optionalKey(Schema.NullOr(AgentMonitoringEnrollmentChoice)),
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),

@@ -1,5 +1,6 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type {
+  AgentMonitoringEnrollmentChoice,
   AgentMonitoringSettings as MonitoringSettings,
   EnvironmentId,
 } from "@t3tools/contracts";
@@ -64,7 +65,7 @@ export function AgentMonitoringSettings({
     try {
       const setting: MonitoringSettings = { enabled, sentryDsn: dsn.trim() };
       if (enabled && !setting.sentryDsn) throw new Error("Enter the Sentry ingestion DSN first.");
-      const persistChoice = async (enrollment: MonitoringSettings | null) => {
+      const persistChoice = async (enrollment: AgentMonitoringEnrollmentChoice | null) => {
         const saved = await persist({ agentMonitoringEnrollment: enrollment });
         if (Exit.isFailure(saved)) throw new Error("Could not save enrollment on this device.");
       };
@@ -81,7 +82,7 @@ export function AgentMonitoringSettings({
                 "This host could not save monitoring settings. Check your connection and permissions.",
               );
           },
-          () => persistChoice(null),
+          persistChoice,
         );
         refresh();
       } else {
@@ -92,7 +93,7 @@ export function AgentMonitoringSettings({
           ? "Enrollment saved. Offline hosts will apply this choice when they connect to this device."
           : scope === "stop"
             ? "Automatic enrollment stopped on this device. Hosts keep their saved settings."
-            : "Monitoring settings saved for every thread on this host.",
+            : "Monitoring settings saved for every thread on this host. Automatic enrollment leaves this host's settings alone.",
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Monitoring settings were not saved.");
@@ -171,15 +172,17 @@ export function AgentMonitoringSettings({
           ? [...presentations].map(([id, host]) => (
               <Text key={id} className="text-xs text-foreground-muted">
                 {host.entry.target.label}:{" "}
-                {states.get(id) === "enrolled"
-                  ? "Settings saved"
-                  : states.get(id) === "failed"
-                    ? "Could not save settings"
-                    : states.get(id) === "pending"
-                      ? "Saving settings"
-                      : states.get(id) === "update-required"
-                        ? "Server update required"
-                        : "Waiting for connection"}
+                {states.get(id) === "excluded"
+                  ? "Using this host's settings"
+                  : states.get(id) === "enrolled"
+                    ? "Settings saved"
+                    : states.get(id) === "failed"
+                      ? "Could not save settings"
+                      : states.get(id) === "pending"
+                        ? "Saving settings"
+                        : states.get(id) === "update-required"
+                          ? "Server update required"
+                          : "Waiting for connection"}
               </Text>
             ))
           : null}

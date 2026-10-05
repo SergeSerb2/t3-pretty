@@ -263,7 +263,7 @@ const make = (configuration: ExportConfiguration) =>
           Stream.mapEffect((chunk) => {
             responseBytes += chunk.byteLength;
             return responseBytes > 65_536
-              ? new AgentMonitoringExportError({ operation })
+              ? Effect.fail(new AgentMonitoringExportError({ operation }))
               : Effect.succeed(chunk);
           }),
           Stream.runCollect,

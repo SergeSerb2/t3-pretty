@@ -1,4 +1,5 @@
 import type {
+  AgentMonitoringEnrollmentChoice,
   AgentMonitoringSettings as MonitoringSettings,
   EnvironmentId,
 } from "@t3tools/contracts";
@@ -25,6 +26,7 @@ const labels = {
   pending: "Saving settings",
   enrolled: "Settings saved",
   failed: "Could not save settings",
+  excluded: "Using this host's settings",
 };
 
 function MonitoringHostStatus({
@@ -86,6 +88,7 @@ function MonitoringHostStatus({
           {status}
           {data?.pendingCount != null ? ` · ${data.pendingCount} pending` : ""}
           {data?.droppedPendingCount ? ` · ${data.droppedPendingCount} dropped` : ""}
+          {enrollment === "excluded" ? ` · ${labels.excluded}` : ""}
         </div>
         {data?.lastExportAt != null ? (
           <div className="text-xs text-muted-foreground">
@@ -144,7 +147,7 @@ function AgentMonitoringSettingsForm({ environmentId }: { environmentId: Environ
       const setting: MonitoringSettings = { enabled, sentryDsn: dsn.trim() };
       if (enabled && setting.sentryDsn.length === 0)
         throw new Error("Enter the Sentry ingestion DSN first.");
-      const persistChoice = (enrollment: MonitoringSettings | null) =>
+      const persistChoice = (enrollment: AgentMonitoringEnrollmentChoice | null) =>
         persistClientSettingsUpdate((current) => ({
           ...current,
           agentMonitoringEnrollment: enrollment,
@@ -162,8 +165,8 @@ function AgentMonitoringSettingsForm({ environmentId }: { environmentId: Environ
                 "This host could not save monitoring settings. Check your connection and permissions.",
               );
           },
-          async () => {
-            await persistChoice(null);
+          async (enrollment) => {
+            await persistChoice(enrollment);
           },
         );
         setSavedRevision((revision) => revision + 1);
@@ -175,7 +178,7 @@ function AgentMonitoringSettingsForm({ environmentId }: { environmentId: Environ
           ? "Enrollment saved. Offline hosts will apply this choice when they connect to this device."
           : scope === "stop"
             ? "Automatic enrollment stopped on this device. Hosts keep their saved settings."
-            : "Monitoring settings saved for every thread on this host.",
+            : "Monitoring settings saved for every thread on this host. Automatic enrollment leaves this host's settings alone.",
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Monitoring settings were not saved.");

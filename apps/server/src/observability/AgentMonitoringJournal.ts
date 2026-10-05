@@ -120,8 +120,26 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
           yield* sql`CREATE INDEX IF NOT EXISTS agent_observations_entity ON agent_observations(entity_id, sequence)`;
           yield* sql`CREATE TABLE IF NOT EXISTS agent_delivery_receipts (
             id TEXT NOT NULL, destination TEXT NOT NULL, signal TEXT NOT NULL,
-            PRIMARY KEY (id, signal)
+            PRIMARY KEY (id, destination, signal)
           )`;
+          // Preserve receipts created by development versions with one destination per signal.
+          const columns = yield* sql<{
+            name: string;
+            pk: number;
+          }>`PRAGMA table_info(agent_delivery_receipts)`;
+          if (columns.find((column) => column.name === "destination")?.pk === 0) {
+            yield* sql.withTransaction(
+              Effect.gen(function* () {
+                yield* sql`ALTER TABLE agent_delivery_receipts RENAME TO agent_delivery_receipts_legacy`;
+                yield* sql`CREATE TABLE agent_delivery_receipts (
+                id TEXT NOT NULL, destination TEXT NOT NULL, signal TEXT NOT NULL,
+                PRIMARY KEY (id, destination, signal)
+              )`;
+                yield* sql`INSERT INTO agent_delivery_receipts SELECT id, destination, signal FROM agent_delivery_receipts_legacy`;
+                yield* sql`DROP TABLE agent_delivery_receipts_legacy`;
+              }),
+            );
+          }
           yield* sql`INSERT OR IGNORE INTO agent_monitoring_state (key, value) VALUES ('dropped_pending', 0)`;
         }),
         "initialize",
@@ -233,6 +251,10 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
               sql`INSERT OR REPLACE INTO agent_delivery_receipts (id, destination, signal)
           SELECT ${id}, ${destination}, ${signal} WHERE EXISTS (SELECT 1 FROM agent_observations WHERE id = ${id} AND exported = 0)`,
             { discard: true },
+          ).pipe(
+            Effect.andThen(sql`DELETE FROM agent_delivery_receipts WHERE rowid IN (
+            SELECT rowid FROM agent_delivery_receipts ORDER BY rowid DESC LIMIT -1 OFFSET ${options.maxRecords * 3}
+          )`),
           ),
         ),
         "acknowledge signal",

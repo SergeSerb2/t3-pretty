@@ -312,6 +312,7 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
             [10, 6, 8, 128, 128, 128, 128, 16], // Rejected count beyond 32 bits.
             [10, 2, 8], // Truncated partial_success.
             [8, 0], // Wrong wire type for partial_success.
+            new Uint8Array(65_537), // Oversized acknowledgment must fail before parsing.
           ]) {
             ingestion.setBody(Uint8Array.from(body));
             assert.ok(Exit.isFailure(yield* Effect.exit(exporter.send([observe(toolEvent())]))));
@@ -394,6 +395,38 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
       assert.equal(ingestion.requests.filter((r) => r.url.endsWith("/logs/")).length, 1);
       assert.equal(ingestion.requests.filter((r) => r.url.endsWith("/traces/")).length, 2);
       assert.equal(ingestion.requests.filter((r) => r.url.includes("/envelope/")).length, 2);
+    }),
+  );
+
+  it.effect("retains destination receipts across switches and bounds receipt history", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-destination-receipts-" });
+      const record = observe(errorEvent());
+      const filename = path.join(home, "journal.sqlite");
+      yield* Effect.gen(function* () {
+        const journal = yield* Journal.AgentMonitoringJournal;
+        yield* journal.enroll(0);
+        yield* journal.capture([{ sequence: 1, observation: record }]);
+        yield* journal.acknowledgeSignal("destination-a", "logs", [record.id]);
+        yield* journal.acknowledgeSignal("destination-b", "logs", [record.id]);
+      }).pipe(Effect.provide(Journal.layerAt(filename, { maxRecords: 1 })));
+      yield* Effect.gen(function* () {
+        const journal = yield* Journal.AgentMonitoringJournal;
+        assert.deepEqual(yield* journal.deliveryReceipts("destination-a", [record.id]), [
+          { id: record.id, signal: "logs" },
+        ]);
+        assert.deepEqual(yield* journal.deliveryReceipts("destination-b", [record.id]), [
+          { id: record.id, signal: "logs" },
+        ]);
+        yield* journal.acknowledgeSignal("destination-c", "logs", [record.id]);
+        yield* journal.acknowledgeSignal("destination-d", "logs", [record.id]);
+        assert.deepEqual(yield* journal.deliveryReceipts("destination-a", [record.id]), []);
+        assert.equal((yield* journal.deliveryReceipts("destination-b", [record.id])).length, 1);
+        yield* journal.acknowledge([record.id]);
+        assert.deepEqual(yield* journal.deliveryReceipts("destination-b", [record.id]), []);
+      }).pipe(Effect.provide(Journal.layerAt(filename, { maxRecords: 1 })));
     }),
   );
 

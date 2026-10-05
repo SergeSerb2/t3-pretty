@@ -32,6 +32,10 @@ when the client is closed. Older hosts show that a server update is required. Wi
 are separate environments and need enrollment individually. Configure automatic enrollment
 on one device to avoid competing choices from different clients.
 
+Saving an individual host makes it an exception to this device's automatic enrollment;
+the other hosts keep following the fleet choice. Applying a new choice to all saved hosts
+clears those exceptions.
+
 The host list shows enrollment acknowledgements, local collection, delivery timestamps,
 pending records, and failures. A saved setting is separate from a confirmed delivery. Refresh
 a host after running an agent to check delivery. Use **Retry failed hosts** after resolving a
@@ -60,7 +64,8 @@ outcomes, grouped failures, and pending delivery. The default home is used if yo
 The journal is `userdata/logs/agent-monitoring.sqlite` under that home. It keeps up to 20,000
 observations. An outage retains pending records for retry; when the limit is exceeded, oldest
 records are evicted and `droppedPendingCount` reports unexported losses. Delivery is at least
-once. Accepted signals are checkpointed separately; an interrupted or lost acknowledgment can
+once. Accepted signals are checkpointed separately for each destination, with at most 60,000
+receipts retained. An interrupted, lost, or evicted acknowledgment can
 still produce duplicate remote logs or spans. Local counts describe
 retained observations, and `activeAgentCount` describes the last reported status rather than
 proving that an agent is still alive.
@@ -71,7 +76,7 @@ host availability, and quality evaluation of agent answers are outside this pilo
 turns are not treated as individual model requests, and usage retains its reported scope.
 
 Disable the host or all saved hosts to stop collection and delivery. Stop automatic enrollment
-on the controlling device before making independent host choices. If an environment override
+on the controlling device to leave every host's settings alone. If an environment override
 forces monitoring on, remove it or set `T3CODE_AGENT_MONITORING_ENABLED=false` and restart. Existing
 local and Sentry records remain subject to their respective retention settings. To remove the
 local journal, stop that server before deleting the journal and its `-wal`/`-shm` siblings.

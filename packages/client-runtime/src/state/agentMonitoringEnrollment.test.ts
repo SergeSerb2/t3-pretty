@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
   type AgentMonitoringSettings,
+  type AgentMonitoringEnrollmentChoice,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import {
@@ -135,13 +136,13 @@ describe("automatic agent monitoring enrollment", () => {
     expect(hostSettings).toEqual({ ...choice, enabled: false });
   });
 
-  it("preserves fleet intent after a failed host save and drains older writes before a successful edit", async () => {
+  it("preserves other hosts across edits, rolls back failed edits, and restores exceptions after restart", async () => {
     const enrollment = new AgentMonitoringEnrollment();
     const writes: ServerSettingsPatch[] = [];
     const write = async (_id: EnvironmentId, patch: ServerSettingsPatch) => {
       writes.push(patch);
     };
-    let persisted: AgentMonitoringSettings | null = choice;
+    let persisted: AgentMonitoringEnrollmentChoice = choice;
     await enrollment.reconcile(choice, [target({ settings: choice })], write);
     await expect(
       enrollment.saveHost(
@@ -149,8 +150,8 @@ describe("automatic agent monitoring enrollment", () => {
         async () => {
           throw new Error("denied");
         },
-        async () => {
-          persisted = null;
+        async (next) => {
+          persisted = next;
         },
       ),
     ).rejects.toThrow("denied");
@@ -171,11 +172,11 @@ describe("automatic agent monitoring enrollment", () => {
     const editing = enrollment.saveHost(
       id,
       async () => {
-        expect(persisted).toEqual(choice);
+        expect(persisted.excludedEnvironmentIds).toEqual([id]);
         writes.push({ agentMonitoring: { enabled: false } });
       },
-      async () => {
-        persisted = null;
+      async (next) => {
+        persisted = next;
       },
     );
     await enrollment.reconcile(choice, [target()], write);
@@ -183,7 +184,45 @@ describe("automatic agent monitoring enrollment", () => {
     receipt.resolve();
     await Promise.all([enrolling, editing]);
     expect(writes.at(-1)).toEqual({ agentMonitoring: { enabled: false } });
-    expect(persisted).toBeNull();
-    expect(enrollment.getSnapshot().size).toBe(0);
+    expect(persisted).toEqual({ ...choice, excludedEnvironmentIds: [id] });
+    expect(enrollment.getSnapshot().get(id)).toBe("excluded");
+    const otherId = EnvironmentId.make("other-host");
+    const restarted = new AgentMonitoringEnrollment();
+    const applied: EnvironmentId[] = [];
+    await restarted.reconcile(
+      persisted,
+      [target(), target({ environmentId: otherId })],
+      async (id) => {
+        applied.push(id);
+      },
+    );
+    expect(applied).toEqual([otherId]);
+    expect(restarted.getSnapshot().get(id)).toBe("excluded");
+    await restarted.reconcile(
+      choice,
+      [target(), target({ environmentId: otherId, settings: choice })],
+      async (id) => {
+        applied.push(id);
+      },
+    );
+    expect(applied).toEqual([otherId, id]);
+  });
+  it("does not edit a host when its enrollment exception cannot be persisted", async () => {
+    const enrollment = new AgentMonitoringEnrollment();
+    await enrollment.reconcile(choice, [target({ settings: choice })], async () => {});
+    let edited = false;
+    await expect(
+      enrollment.saveHost(
+        id,
+        async () => {
+          edited = true;
+        },
+        async () => {
+          throw new Error("storage failed");
+        },
+      ),
+    ).rejects.toThrow("storage failed");
+    expect(edited).toBe(false);
+    expect(enrollment.getSnapshot().get(id)).toBe("enrolled");
   });
 });
