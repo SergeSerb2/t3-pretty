@@ -934,6 +934,12 @@ validate_sync_tree() {
 # desktop/server, mobile, and relay release inputs build together.
 validate_sync_tree || exit 1
 
+# This safety gate cannot be repaired away by the model. The reviewed production
+# transport behavior must pass after all compiler repairs and before any push.
+run_validation_step learned-route-security \
+  "Automatically learned routes must retain TLS; publication and merge are blocked." \
+  node scripts/fork/verify-learned-route-security.mjs || exit 1
+
 push_sync_branch() {
   origin_git fetch origin "refs/heads/$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH" 2>/dev/null || true
   remote_head="$(git rev-parse -q --verify "origin/$SYNC_BRANCH" 2>/dev/null || true)"
