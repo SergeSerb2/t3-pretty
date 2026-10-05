@@ -282,29 +282,26 @@ const make = Effect.gen(function* () {
   );
   const changes = yield* settings.subscribeChanges;
   const overrides = yield* Config.all({
-    enabled: Config.Boolean("T3CODE_AGENT_MONITORING_ENABLED").pipe(Config.option),
     dsn: Config.String("SENTRY_DSN").pipe(Config.option),
     otlpBaseUrl: Config.String("T3CODE_AGENT_MONITORING_OTLP_BASE_URL").pipe(Config.option),
     protocol: Config.String("T3CODE_AGENT_MONITORING_OTLP_PROTOCOL").pipe(Config.option),
   });
   const configurationOf = (snapshot: ServerSettings): MonitoringConfiguration => ({
     consentVersion: snapshot.agentMonitoringConsentVersion,
-    enabled: Option.getOrElse(overrides.enabled, () => snapshot.agentMonitoring.enabled),
+    enabled: snapshot.agentMonitoring.enabled,
     dsn: Option.getOrElse(overrides.dsn, () => snapshot.agentMonitoring.sentryDsn) || undefined,
     otlpBaseUrl: Option.getOrUndefined(overrides.otlpBaseUrl),
     protocol: Option.getOrElse(overrides.protocol, () => "http/protobuf"),
     // The client edits enabled and destination; protocol is a separate startup transport setting.
-    source: [overrides.enabled, overrides.dsn, overrides.otlpBaseUrl].some(
-      (option) => option._tag === "Some",
-    )
+    source: [overrides.dsn, overrides.otlpBaseUrl].some((option) => option._tag === "Some")
       ? "environment"
       : "settings",
   });
   const runtime = yield* ScopedRef.make<MonitoringRuntime>(() => inactiveRuntime(disabled));
   const lock = yield* Semaphore.make(1);
   let current: MonitoringConfiguration | undefined;
-  // Saved consent versions survive journal write failures. Startup overrides have no durable history.
-  let wasDisabled = Option.isSome(overrides.enabled);
+  // Consent comes exclusively from saved settings, whose version survives journal write failures.
+  let wasDisabled = false;
   const configure = (snapshot: ServerSettings) =>
     lock.withPermit(
       Effect.gen(function* () {

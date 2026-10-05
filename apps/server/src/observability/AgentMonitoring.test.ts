@@ -768,7 +768,7 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
           getDescriptor: Effect.die("not needed by monitoring"),
         });
         const monitorLayer = AgentMonitoring.layer.pipe(
-          Layer.provide(Settings.layerTest()),
+          Layer.provide(Settings.layerTest({ agentMonitoring: { enabled: true, sentryDsn: "" } })),
           Layer.provide(ServerConfig.layerTest(home, home)),
           Layer.provide(environment),
           Layer.provide(Layer.succeed(OrchestrationEventStore, store)),
@@ -776,7 +776,6 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
           Layer.provide(
             ConfigProvider.layer(
               ConfigProvider.fromUnknown({
-                T3CODE_AGENT_MONITORING_ENABLED: true,
                 T3CODE_AGENT_MONITORING_OTLP_BASE_URL: ingestion.url,
                 T3CODE_AGENT_MONITORING_OTLP_PROTOCOL: "http/json",
               }),
@@ -827,7 +826,10 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
           Layer.provide(FetchHttpClient.layer),
           Layer.provide(
             ConfigProvider.layer(
-              ConfigProvider.fromUnknown({ T3CODE_AGENT_MONITORING_OTLP_PROTOCOL: "http/json" }),
+              ConfigProvider.fromUnknown({
+                T3CODE_AGENT_MONITORING_ENABLED: true,
+                T3CODE_AGENT_MONITORING_OTLP_PROTOCOL: "http/json",
+              }),
             ),
           ),
         ),

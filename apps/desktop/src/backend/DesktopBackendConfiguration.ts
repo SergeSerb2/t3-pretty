@@ -95,7 +95,6 @@ const DESKTOP_BACKEND_ENV_NAMES = [
 // across the wsl.exe boundary without WSLENV. The dev-server URL travels as
 // the `--dev-url` CLI flag instead.
 const WSL_FORWARDED_ENV_NAMES = [
-  "T3CODE_AGENT_MONITORING_ENABLED",
   "T3CODE_AGENT_MONITORING_OTLP_BASE_URL",
   "T3CODE_AGENT_MONITORING_OTLP_PROTOCOL",
   "SENTRY_DSN",

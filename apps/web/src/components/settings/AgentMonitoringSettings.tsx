@@ -102,7 +102,7 @@ function MonitoringHostStatus({
         ) : null}
         {data?.configurationSource === "environment" ? (
           <div className="text-xs text-muted-foreground">
-            Startup overrides apply; changes to those require a host restart.
+            A startup destination override applies; change it on the host and restart.
           </div>
         ) : null}
       </div>

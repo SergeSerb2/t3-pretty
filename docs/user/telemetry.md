@@ -16,8 +16,8 @@ Agent monitoring helps you find recurring provider and tool failures across your
 It is off by default and is configured on each server, including hosts you reach from desktop,
 web, or mobile. Collection starts when you enable it; it does not upload old conversations.
 After a server restart, pending records and uncaptured activity resume from the saved cursor
-when saved consent has not changed. Disabled periods are skipped. An explicit startup
-enabled override skips uncaptured activity after restart because its prior value cannot be verified.
+when saved consent has not changed. Disabled periods are skipped. The saved host setting is
+the single source of collection consent.
 
 To prepare a new Sentry destination, create a Sentry account or organization, then create a
 Node.js project named `t3-pretty-agents`. Copy its client DSN from **Settings > Projects >
@@ -44,9 +44,9 @@ pending records, and failures. A saved setting is separate from a confirmed deli
 a host after running an agent to check delivery. Use **Retry failed hosts** after resolving a
 connection or permission problem.
 
-Command-line and service launches can override the saved setting with
-`T3CODE_AGENT_MONITORING_ENABLED` and `SENTRY_DSN`. Environment overrides are read at startup.
-Omit the DSN to collect locally while preparing a destination.
+Command-line and service launches can supply a destination with `SENTRY_DSN`, read at startup.
+Collection is still controlled by the saved host setting. Omit the DSN to collect locally
+while preparing a destination.
 
 In Sentry, use
 Logs for lifecycle activity, Traces for completed operations, and Issues for reported provider
@@ -79,7 +79,6 @@ host availability, and quality evaluation of agent answers are outside this pilo
 turns are not treated as individual model requests, and usage retains its reported scope.
 
 Disable the host or all saved hosts to stop collection and delivery. Stop automatic enrollment
-on the controlling device to leave every host's settings alone. If an environment override
-forces monitoring on, remove it or set `T3CODE_AGENT_MONITORING_ENABLED=false` and restart. Existing
+on the controlling device to leave every host's settings alone. Existing
 local and Sentry records remain subject to their respective retention settings. To remove the
 local journal, stop that server before deleting the journal and its `-wal`/`-shm` siblings.

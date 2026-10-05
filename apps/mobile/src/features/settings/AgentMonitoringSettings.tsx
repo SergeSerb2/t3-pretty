@@ -150,7 +150,7 @@ export function AgentMonitoringSettings({
         ) : null}
         {data?.configurationSource === "environment" ? (
           <Text className="text-xs text-foreground-muted">
-            Startup overrides apply; changes to those require a host restart.
+            A startup destination override applies; change it on the host and restart.
           </Text>
         ) : null}
         {data?.lastExportAt != null ? (
