@@ -27,7 +27,7 @@ import { resolveSubagentRowPresentation } from "./threadAgentsPresentation";
 import { GroupedCard } from "../scenery/GroupedCard";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
-import { SubagentStatusDot } from "./SubagentStatusDot";
+import { SubagentRow } from "./SubagentRow";
 import { GlassRowPressable } from "../scenery/GroupedCard";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);

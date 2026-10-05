@@ -1058,3 +1058,5 @@ Validation is scoped and serialized to avoid contention with unrelated workers. 
 - `shared-typecheck` failed after merging `v0.0.46-nightly.20261004.2657`; repaired with `gpt-5.6-sol`: Updated both relay-discovery test fixtures for the new catalog-refresh service member and restored the missing typed supervisor helpers. The supervisor now uses the merged timeout name, the new randomized retry API, and T3 Pretty's wake-recovery state consistently.
   - edited `packages/client-runtime/src/connection/outdatedHostUpdate.test.ts`
   - edited `packages/client-runtime/src/connection/supervisor.ts`
+- `mobile-typecheck` failed after merging `v0.0.46-nightly.20261004.2657`; repaired with `gpt-5.6-sol`: Import the parent’s shared SubagentRow component while preserving T3 Pretty’s glass card and pressable behavior.
+  - edited `apps/mobile/src/features/threads/ThreadAgentsSheet.tsx`
