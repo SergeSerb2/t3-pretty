@@ -181,6 +181,7 @@ import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as AgentMonitoring from "./observability/AgentMonitoring.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import { withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as AutomationStore from "./automations/AutomationStore.ts";
@@ -1188,6 +1189,7 @@ const makeWsRpcLayer = (
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const agentMonitoring = yield* AgentMonitoring.AgentMonitoring;
       const secretRequestBroker = yield* SecretRequestBroker.SecretRequestBroker;
       const automations = yield* AutomationStore.AutomationStore;
       const instructions = yield* AgentInstructionFiles;
@@ -1675,6 +1677,7 @@ const makeWsRpcLayer = (
               otlpMetricsEnabled: config.otlpMetricsUrl !== undefined,
               ...(config.otlpLogsUrl !== undefined ? { otlpLogsUrl: config.otlpLogsUrl } : {}),
               otlpLogsEnabled: config.otlpLogsUrl !== undefined,
+              agentMonitoringSupported: true,
             },
             settings,
             shellResumeCompletionMarker: true,
@@ -2720,6 +2723,10 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.serverGetAgentMonitoringStatus]: (_input) =>
+          observeRpcEffect(WS_METHODS.serverGetAgentMonitoringStatus, agentMonitoring.status, {
+            "rpc.aggregate": "server",
+          }),
         [WS_METHODS.serverGetProcessDiagnostics]: (_input) =>
           observeRpcEffect(WS_METHODS.serverGetProcessDiagnostics, processDiagnostics.read, {
             "rpc.aggregate": "server",

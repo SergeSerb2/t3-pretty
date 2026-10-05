@@ -332,6 +332,9 @@ export function applyServerSettingsPatch(
   const next = deepMerge(current, patchForMerge);
   const nextWithReplacementsBase = {
     ...next,
+    agentMonitoringConsentVersion:
+      current.agentMonitoringConsentVersion +
+      (current.agentMonitoring.enabled === next.agentMonitoring.enabled ? 0 : 1),
     ...(worktreeCleanupPatch === undefined
       ? {}
       : {

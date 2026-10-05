@@ -5,7 +5,11 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import type { ProviderInstanceId, SidebarProjectGroupingMode } from "@t3tools/contracts";
+import {
+  AgentMonitoringSettings,
+  type ProviderInstanceId,
+  type SidebarProjectGroupingMode,
+} from "@t3tools/contracts";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
 import { parsePhotoSetId, type PhotoSetId } from "../features/scenery/photoSets";
@@ -13,12 +17,15 @@ import * as MobileDatabase from "./mobile-database";
 import * as MobileSecureStorage from "./mobile-secure-storage";
 import { MobileStorageDecodeError, MobileStorageEncodeError } from "./mobile-storage";
 
+const decodeAgentMonitoringSettings = Schema.decodeUnknownOption(AgentMonitoringSettings);
+
 const PREFERENCES_KEY = "t3code.preferences";
 const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
 export const CONNECT_ONBOARDING_OPT_OUT_MAX_ACCOUNTS = 64;
 export const CONNECT_ONBOARDING_ACCOUNT_ID_MAX_LENGTH = 512;
 
 export interface Preferences {
+  readonly agentMonitoringEnrollment?: AgentMonitoringSettings | null;
   readonly liveActivitiesEnabled?: boolean;
   readonly themeId?: MobileThemeId;
   readonly lightThemeId?: MobileThemeId;
@@ -135,6 +142,7 @@ export class MobilePreferencesStore extends Context.Service<
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
+    agentMonitoringEnrollment?: AgentMonitoringSettings | null;
     liveActivitiesEnabled?: boolean;
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
@@ -169,6 +177,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListStoredShelfExpanded?: boolean;
   } = {};
 
+  if (parsed.agentMonitoringEnrollment === null) {
+    preferences.agentMonitoringEnrollment = null;
+  } else if (parsed.agentMonitoringEnrollment !== undefined) {
+    const decoded = decodeAgentMonitoringSettings(parsed.agentMonitoringEnrollment);
+    if (Option.isSome(decoded)) preferences.agentMonitoringEnrollment = decoded.value;
+  }
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;
   }

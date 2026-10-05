@@ -125,6 +125,7 @@ import { ObservabilityLive } from "./observability/Layers/Observability.ts";
 import * as HeapSnapshot from "./observability/HeapSnapshot.ts";
 import * as EventLoopMonitor from "./observability/EventLoopMonitor.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
+import * as AgentMonitoring from "./observability/AgentMonitoring.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
 import * as ReplayMarkers from "./auth/replayMarkers.ts";
@@ -525,8 +526,13 @@ const AutomationStoreLive = AutomationStore.layer.pipe(
 );
 
 const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
-  Layer.effectDiscard(Effect.flatMap(AutomationScheduler.AutomationScheduler, (service) => service.start())).pipe(Layer.provide(AutomationScheduler.layer), Layer.provide(PullRequestServiceLive)),
-  Layer.effectDiscard(Effect.flatMap(ActivityHeadlineReactor.ActivityHeadlineReactor, (service) => service.start())).pipe(Layer.provide(ActivityHeadlineReactor.layer)),
+  AgentMonitoring.layer,
+  Layer.effectDiscard(
+    Effect.flatMap(AutomationScheduler.AutomationScheduler, (service) => service.start()),
+  ).pipe(Layer.provide(AutomationScheduler.layer), Layer.provide(PullRequestServiceLive)),
+  Layer.effectDiscard(
+    Effect.flatMap(ActivityHeadlineReactor.ActivityHeadlineReactor, (service) => service.start()),
+  ).pipe(Layer.provide(ActivityHeadlineReactor.layer)),
   AgentAwarenessRelay.layer,
   ThreadSettlementWorkerLive,
   Layer.effectDiscard(StorageCleanup.make.pipe(Effect.flatMap((service) => service.start()))).pipe(
@@ -551,7 +557,11 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
 ).pipe(
   // Core Services
   Layer.provideMerge(AutomationStoreLive),
-  Layer.provideMerge(HomeSuggestions.layer.pipe(Layer.provide(HomeSuggestionsMesh.layer.pipe(Layer.provide(ServerSecretStore.layer))))),
+  Layer.provideMerge(
+    HomeSuggestions.layer.pipe(
+      Layer.provide(HomeSuggestionsMesh.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+    ),
+  ),
   Layer.provideMerge(OrchestrationApplicationLayerLive),
   Layer.provideMerge(OrchestrationEventInfrastructureLayerLive),
   Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
@@ -606,7 +616,9 @@ const RuntimeCoreDependenciesLive = RuntimeCoreDependenciesBaseLive.pipe(
   Layer.provideMerge(
     OpenCodeRuntime.OpenCodeRuntimeLive.pipe(Layer.provide(OpenCodeServerLedger.layer)),
   ),
-  Layer.provideMerge(Layer.mergeAll(AgentInstructionFiles.layer, SkillMarketplace.layer, AppsService.layer)),
+  Layer.provideMerge(
+    Layer.mergeAll(AgentInstructionFiles.layer, SkillMarketplace.layer, AppsService.layer),
+  ),
   Layer.provideMerge(SkillLibrary.layer),
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectEnrichmentService.layer),

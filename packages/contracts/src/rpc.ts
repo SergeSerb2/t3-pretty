@@ -1,4 +1,11 @@
-import { AutomationStreamMessage, AutomationClientCommand, AutomationsListRunsInput, AutomationsListRunsResult, AutomationsGetRunInput, AutomationsGetRunResult } from "./automations.ts";
+import {
+  AutomationStreamMessage,
+  AutomationClientCommand,
+  AutomationsListRunsInput,
+  AutomationsListRunsResult,
+  AutomationsGetRunInput,
+  AutomationsGetRunResult,
+} from "./automations.ts";
 import { OrchestrationDispatchCommandError } from "./orchestrationDispatch.ts";
 import {
   ChatGptReconnectProfileInput,
@@ -200,7 +207,11 @@ import {
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
 } from "./provider.ts";
-import { ProviderInstanceEnvironment, ProviderInstanceId, ProviderInstanceMutation } from "./providerInstance.ts";
+import {
+  ProviderInstanceEnvironment,
+  ProviderInstanceId,
+  ProviderInstanceMutation,
+} from "./providerInstance.ts";
 import {
   PullRequestActionInput,
   PullRequestActivity,
@@ -342,6 +353,7 @@ import {
   ServerSelfUpdateProgressEvent,
   ServerSelfUpdateResult,
   ServerTraceDiagnosticsResult,
+  AgentMonitoringStatus,
   ServerProcessDiagnosticsResult,
   ServerProcessResourceHistoryInput,
   ServerProcessResourceHistoryResult,
@@ -554,6 +566,7 @@ export const WS_METHODS = {
   serverDisableAcpRegistryProvider: "server.disableAcpRegistryProvider",
   serverLogoutAcpRegistry: "server.logoutAcpRegistry",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
+  serverGetAgentMonitoringStatus: "server.getAgentMonitoringStatus",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetHostResources: "server.getHostResources",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
@@ -911,6 +924,12 @@ const WsServerLogoutAcpRegistryRpc = Rpc.make(WS_METHODS.serverLogoutAcpRegistry
 const WsServerGetTraceDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetTraceDiagnostics, {
   payload: Schema.Struct({}),
   success: ServerTraceDiagnosticsResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsServerGetAgentMonitoringStatusRpc = Rpc.make(WS_METHODS.serverGetAgentMonitoringStatus, {
+  payload: Schema.Struct({}),
+  success: AgentMonitoringStatus,
   error: EnvironmentAuthorizationError,
 });
 
@@ -1317,9 +1336,18 @@ const WsAgentInstructionsWriteRpc = Rpc.make(WS_METHODS.agentInstructionsWrite, 
   error: Schema.Union([AgentInstructionsError, EnvironmentAuthorizationError]),
 });
 
-const WsAutomationsSubscribeRpc = Rpc.make(WS_METHODS.automationsSubscribe, { payload: Schema.Struct({}), success: AutomationStreamMessage, error: Schema.Union([AutomationsError, EnvironmentAuthorizationError]), stream: true });
+const WsAutomationsSubscribeRpc = Rpc.make(WS_METHODS.automationsSubscribe, {
+  payload: Schema.Struct({}),
+  success: AutomationStreamMessage,
+  error: Schema.Union([AutomationsError, EnvironmentAuthorizationError]),
+  stream: true,
+});
 
-const WsAutomationsDispatchRpc = Rpc.make(WS_METHODS.automationsDispatch, { payload: AutomationClientCommand, success: Schema.Void, error: Schema.Union([AutomationsError, EnvironmentAuthorizationError]) });
+const WsAutomationsDispatchRpc = Rpc.make(WS_METHODS.automationsDispatch, {
+  payload: AutomationClientCommand,
+  success: Schema.Void,
+  error: Schema.Union([AutomationsError, EnvironmentAuthorizationError]),
+});
 
 const WsAutomationsListRunsRpc = Rpc.make(WS_METHODS.automationsListRuns, {
   payload: AutomationsListRunsInput,
@@ -1364,7 +1392,11 @@ const WsSkillsRefreshMarketplaceRpc = Rpc.make(WS_METHODS.skillsRefreshMarketpla
 });
 
 const WsSkillsSetLocationEnabledRpc = Rpc.make(WS_METHODS.skillsSetLocationEnabled, {
-  payload: Schema.Struct({ skillId: SkillId, locationKey: SkillLocationKey, enabled: Schema.Boolean }),
+  payload: Schema.Struct({
+    skillId: SkillId,
+    locationKey: SkillLocationKey,
+    enabled: Schema.Boolean,
+  }),
   success: SkillsState,
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
@@ -2033,6 +2065,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerDisableAcpRegistryProviderRpc,
   WsServerLogoutAcpRegistryRpc,
   WsServerGetTraceDiagnosticsRpc,
+  WsServerGetAgentMonitoringStatusRpc,
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetHostResourcesRpc,
   WsServerGetProcessResourceHistoryRpc,

@@ -8,6 +8,17 @@ T3 Code has one server-side observability model:
 - completed spans go to a local NDJSON trace file
 - traces, metrics, and logs can also be exported over OTLP to a real backend like Grafana LGTM
 
+Optional agent monitoring uses a separate, allowlisted projection of committed events and a
+bounded delivery journal. See [setup and retention](../user/telemetry.md#optional-agent-monitoring).
+Its Sentry destination does not enable the broad application OTLP exporter; those existing
+traces can contain diagnostic content outside the agent metadata policy.
+
+For a local ingestion receiver, set `T3CODE_AGENT_MONITORING_OTLP_BASE_URL` to the receiver's
+base URL. Agent monitoring appends `/v1/logs` and `/v1/traces`. The default wire protocol is
+`http/protobuf`; `T3CODE_AGENT_MONITORING_OTLP_PROTOCOL=http/json` enables inspectable payloads.
+This override applies to agent OTLP only; a configured `SENTRY_DSN` still receives native error
+envelopes. Use an isolated T3 home when testing ingestion.
+
 The local trace file is the persisted source of truth for normal local launches. Those launches do not
 write a separate server log file, but SSH-managed launches also persist the remote process's
 stdout/stderr at `~/.t3/ssh-launch/<state>/server.log`.

@@ -74,6 +74,7 @@ export const loadServerConfig = Effect.gen(function* () {
       otlpMetricsEnabled: config.otlpMetricsUrl !== undefined,
       ...(config.otlpLogsUrl !== undefined ? { otlpLogsUrl: config.otlpLogsUrl } : {}),
       otlpLogsEnabled: config.otlpLogsUrl !== undefined,
+      agentMonitoringSupported: true,
     },
     settings,
     shellResumeCompletionMarker: true,

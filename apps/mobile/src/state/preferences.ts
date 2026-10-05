@@ -50,6 +50,14 @@ export function createMobilePreferencesState(
   );
   let nextPatchVersion = 0;
 
+  // Enrollment uses confirmed persistence so a failed preference write cannot enroll hosts.
+  const persistedPreferencesAtom = Atom.make((get) =>
+    AsyncResult.map(get(storedPreferencesAtom), (stored) => ({
+      ...stored,
+      ...get(confirmedPreferencesAtom),
+    })),
+  ).pipe(Atom.keepAlive, Atom.withLabel("mobile:preferences:persisted"));
+
   const preferencesAtom = Atom.make((get) => {
     const stored = get(storedPreferencesAtom);
     const confirmed = get(confirmedPreferencesAtom);
@@ -133,7 +141,7 @@ export function createMobilePreferencesState(
     )
     .pipe(Atom.keepAlive, Atom.withLabel("mobile:preferences:update"));
 
-  return { preferencesAtom, updatePreferencesAtom } as const;
+  return { preferencesAtom, persistedPreferencesAtom, updatePreferencesAtom } as const;
 }
 
 const mobilePreferencesRuntime = Atom.runtime(Runtime.runtimeContextLayer);
@@ -141,3 +149,5 @@ export const mobilePreferencesState = createMobilePreferencesState(mobilePrefere
 
 export const mobilePreferencesAtom = mobilePreferencesState.preferencesAtom;
 export const updateMobilePreferencesAtom = mobilePreferencesState.updatePreferencesAtom;
+
+export const persistedMobilePreferencesAtom = mobilePreferencesState.persistedPreferencesAtom;

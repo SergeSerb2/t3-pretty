@@ -352,6 +352,19 @@ export const isProviderAvailable = (snapshot: ServerProvider): boolean =>
 export const isProviderTextGenerationCapable = (snapshot: ServerProvider): boolean =>
   snapshot.supportsTextGeneration !== false;
 
+export const AgentMonitoringStatus = Schema.Struct({
+  monitoringEnvironmentId: Schema.NullOr(Schema.String),
+  enabled: Schema.Boolean,
+  configured: Schema.Boolean,
+  state: Schema.Literals(["disabled", "collecting", "ready", "retrying", "unavailable"]),
+  configurationSource: Schema.Literals(["settings", "environment"]),
+  pendingCount: Schema.NullOr(NonNegativeInt),
+  droppedPendingCount: Schema.NullOr(NonNegativeInt),
+  lastObservedAt: Schema.NullOr(Schema.Finite),
+  lastExportAt: Schema.NullOr(Schema.Finite),
+});
+export type AgentMonitoringStatus = typeof AgentMonitoringStatus.Type;
+
 export const ServerObservability = Schema.Struct({
   logsDirectoryPath: ServerTraceDiagnosticPath,
   localTracingEnabled: Schema.Boolean,
@@ -363,6 +376,7 @@ export const ServerObservability = Schema.Struct({
   // Absent on servers from before the log signal shipped, so a newer client
   // reads those as having no log export rather than rejecting the whole config.
   otlpLogsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  agentMonitoringSupported: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerObservability = typeof ServerObservability.Type;
 

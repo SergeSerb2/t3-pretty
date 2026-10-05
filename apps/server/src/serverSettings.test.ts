@@ -431,6 +431,38 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     ).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("persists monitoring configuration and preserves the DSN when disabling", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const settings = yield* ServerSettingsModule.ServerSettingsService;
+        const changes = yield* settings.subscribeChanges;
+        const dsn = "https://public@example.com/1";
+        yield* settings.updateSettings({ agentMonitoring: { enabled: true, sentryDsn: dsn } });
+        assert.equal((yield* settings.getSettings).agentMonitoringConsentVersion, 1);
+        const change = Option.getOrUndefined(yield* Stream.runHead(changes));
+        assert.deepEqual(change?.agentMonitoring, { enabled: true, sentryDsn: dsn });
+        yield* settings.updateSettings({ agentMonitoring: { enabled: false } });
+        const persisted = yield* decodeServerSettingsJson(
+          yield* fs.readFileString(config.settingsPath),
+        );
+        assert.deepEqual(persisted.agentMonitoring, { enabled: false, sentryDsn: dsn });
+        assert.equal(persisted.agentMonitoringConsentVersion, 2);
+        const restarted = yield* Effect.flatMap(
+          ServerSettingsModule.ServerSettingsService,
+          (service) => service.getSettings,
+        ).pipe(
+          Effect.provide(
+            Layer.fresh(ServerSettingsModule.layer).pipe(Layer.provide(ServerSecretStore.layer)),
+          ),
+        );
+        assert.deepEqual(restarted.agentMonitoring, persisted.agentMonitoring);
+        assert.equal(restarted.agentMonitoringConsentVersion, 2);
+      }),
+    ).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("persists and broadcasts thread settlement settings", () =>
     Effect.scoped(
       Effect.gen(function* () {
