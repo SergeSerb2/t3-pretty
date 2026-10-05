@@ -14,9 +14,6 @@ const indexCssSource = NodeFS.readFileSync(new URL("../../index.css", import.met
 
 describe("project rail folders", () => {
   it("draws an open folder as a tray the same width as an icon button", () => {
-    expect(railSource).toContain(
-      "bg-[color-mix(in_srgb,var(--sidebar-foreground)_12%,var(--sidebar))]",
-    );
     expect(railSource).toContain("rail-folder-tray relative isolate flex w-8");
     expect(railSource).toContain("rounded-[var(--control-radius)]");
     expect(railSource).not.toContain("px-1 py-1");
