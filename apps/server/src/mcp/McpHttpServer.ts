@@ -808,12 +808,17 @@ const PreviewMcpServerLive = Layer.mergeAll(
   DeviceToolkitRegistrationLive,
 ).pipe(Layer.provide(mcpTransportLive("/mcp")));
 
+// `McpServer.toolkit` and `layerHttp` both build on the static `McpServer.layer`, so a
+// memoized build gives every endpoint one tool registry, and `/mcp` would list these
+// tools to credentials that cannot call them. Fresh builds keep each registry apart.
 const ComputerUseMcpServerLive = ComputerUseToolkitRegistrationLive.pipe(
   Layer.provide(mcpTransportLive("/mcp/computer-use", "computer-use")),
+  Layer.fresh,
 );
 
 const AutomationsMcpServerLive = AutomationsToolkitRegistrationLive.pipe(
   Layer.provide(mcpTransportLive("/mcp/automations", "automations")),
+  Layer.fresh,
 );
 
 export const layer = Layer.mergeAll(
