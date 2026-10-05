@@ -287,7 +287,10 @@ const make = Effect.gen(function* () {
     dsn: Option.getOrElse(overrides.dsn, () => snapshot.agentMonitoring.sentryDsn) || undefined,
     otlpBaseUrl: Option.getOrUndefined(overrides.otlpBaseUrl),
     protocol: Option.getOrElse(overrides.protocol, () => "http/protobuf"),
-    source: Object.values(overrides).some((option) => option._tag === "Some")
+    // The client edits enabled and destination; protocol is a separate startup transport setting.
+    source: [overrides.enabled, overrides.dsn, overrides.otlpBaseUrl].some(
+      (option) => option._tag === "Some",
+    )
       ? "environment"
       : "settings",
   });

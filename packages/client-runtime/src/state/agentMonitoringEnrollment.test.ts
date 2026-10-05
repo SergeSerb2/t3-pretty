@@ -121,6 +121,20 @@ describe("automatic agent monitoring enrollment", () => {
     expect(enrollment.getSnapshot().size).toBe(0);
   });
 
+  it("disables a fleet with an empty client DSN while preserving each saved host DSN", async () => {
+    const enrollment = new AgentMonitoringEnrollment();
+    let hostSettings = choice;
+    await enrollment.reconcile(
+      { enabled: false, sentryDsn: "" },
+      [target({ settings: choice })],
+      async (_id, patch) => {
+        expect(patch.agentMonitoring).toEqual({ enabled: false });
+        hostSettings = { ...hostSettings, ...patch.agentMonitoring };
+      },
+    );
+    expect(hostSettings).toEqual({ ...choice, enabled: false });
+  });
+
   it("preserves fleet intent after a failed host save and drains older writes before a successful edit", async () => {
     const enrollment = new AgentMonitoringEnrollment();
     const writes: ServerSettingsPatch[] = [];

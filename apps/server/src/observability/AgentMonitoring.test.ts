@@ -682,7 +682,7 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
       yield* settings.updateSettings({ agentMonitoring: { enabled: true } });
       const status = yield* monitor.status;
       assert.equal(status.state, "ready");
-      assert.equal(status.configurationSource, "environment");
+      assert.equal(status.configurationSource, "settings");
       assert.equal((yield* settings.getSettings).agentMonitoring.sentryDsn, dsn);
       yield* settings.updateSettings({ agentMonitoring: { enabled: false } });
       assert.equal((yield* monitor.status).state, "disabled");
