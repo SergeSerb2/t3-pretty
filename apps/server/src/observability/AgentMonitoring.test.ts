@@ -446,7 +446,7 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
         yield* store.appendAgentEvents({ events: [toolEvent("captured-before-disable")] });
         yield* Effect.gen(function* () {
           const journal = yield* Journal.AgentMonitoringJournal;
-          yield* journal.enroll(0);
+          yield* journal.enroll(0, false, 1);
           yield* journal.capture([
             { sequence: 1, observation: observe(toolEvent("captured-before-disable")) },
           ]);
@@ -455,7 +455,12 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
         yield* fs.makeDirectory(filename);
         const layer = (enabled: boolean) =>
           AgentMonitoring.layer.pipe(
-            Layer.provide(Settings.layerTest({ agentMonitoring: { enabled, sentryDsn: "" } })),
+            Layer.provide(
+              Settings.layerTest({
+                agentMonitoring: { enabled, sentryDsn: "" },
+                agentMonitoringConsentVersion: enabled ? 3 : 2,
+              }),
+            ),
             Layer.provide(ServerConfig.layerTest(home, home)),
             Layer.provide(
               Layer.succeed(ServerEnvironment.ServerEnvironment, {
@@ -493,6 +498,57 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
         assert.equal(report.recordCount, 2);
         assert.equal(report.pendingCount, 2);
         assert.equal(report.capturedSequence, 3);
+      }),
+  );
+
+  it.effect(
+    "resumes uncaptured enabled activity after restart when saved consent is unchanged",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-enabled-tail-" });
+        const filename = path.join(home, "userdata", "logs", AgentMonitoring.journalFileName);
+        yield* fs.makeDirectory(path.dirname(filename), { recursive: true });
+        const storeContext = yield* Layer.build(
+          OrchestrationEventStoreLive.pipe(Layer.provide(SqlitePersistenceMemory)),
+        );
+        const store = Context.get(storeContext, OrchestrationEventStore);
+        yield* store.appendAgentEvents({
+          events: [toolEvent("captured"), toolEvent("uncaptured-before-crash")],
+        });
+        yield* Effect.gen(function* () {
+          const journal = yield* Journal.AgentMonitoringJournal;
+          yield* journal.enroll(0, false, 7);
+          yield* journal.capture([{ sequence: 1, observation: observe(toolEvent("captured")) }]);
+        }).pipe(Effect.provide(Journal.layerAt(filename)));
+        const context = yield* Layer.build(
+          AgentMonitoring.layer.pipe(
+            Layer.provide(
+              Settings.layerTest({
+                agentMonitoring: { enabled: true, sentryDsn: "" },
+                agentMonitoringConsentVersion: 7,
+              }),
+            ),
+            Layer.provide(ServerConfig.layerTest(home, home)),
+            Layer.provide(
+              Layer.succeed(ServerEnvironment.ServerEnvironment, {
+                getEnvironmentId: Effect.succeed(EnvironmentId.make("enabled-tail-host")),
+                getDescriptor: Effect.die("unused"),
+              }),
+            ),
+            Layer.provide(Layer.succeed(OrchestrationEventStore, store)),
+            Layer.provide(FetchHttpClient.layer),
+            Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+          ),
+        );
+        yield* Context.get(context, AgentMonitoring.AgentMonitoring).flush;
+        const report = yield* Effect.flatMap(
+          Journal.AgentMonitoringJournal,
+          (journal) => journal.report,
+        ).pipe(Effect.provide(Journal.layerAt(filename, { readonly: true })));
+        assert.equal(report.recordCount, 2);
+        assert.equal(report.capturedSequence, 2);
       }),
   );
 

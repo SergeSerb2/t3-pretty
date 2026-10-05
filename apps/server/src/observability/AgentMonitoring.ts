@@ -67,6 +67,7 @@ const disabled = AgentMonitoring.of({
 });
 
 interface MonitoringConfiguration {
+  readonly consentVersion: number;
   readonly enabled: boolean;
   readonly dsn: string | undefined;
   readonly otlpBaseUrl: string | undefined;
@@ -98,7 +99,11 @@ const makeRuntime = (configuration: MonitoringConfiguration, skipUncaptured: boo
     );
     const journal = Context.get(journalContext, AgentMonitoringJournal.AgentMonitoringJournal);
     // Start from enrollment, rather than retroactively uploading existing private conversation history.
-    yield* journal.enroll(yield* store.latestApplicationSequence, skipUncaptured);
+    yield* journal.enroll(
+      yield* store.latestApplicationSequence,
+      skipUncaptured,
+      configuration.consentVersion,
+    );
     let destinationFailed = false;
     const exporterContext = yield* Layer.build(
       AgentMonitoringExporter.layer({
@@ -283,6 +288,7 @@ const make = Effect.gen(function* () {
     protocol: Config.String("T3CODE_AGENT_MONITORING_OTLP_PROTOCOL").pipe(Config.option),
   });
   const configurationOf = (snapshot: ServerSettings): MonitoringConfiguration => ({
+    consentVersion: snapshot.agentMonitoringConsentVersion,
     enabled: Option.getOrElse(overrides.enabled, () => snapshot.agentMonitoring.enabled),
     dsn: Option.getOrElse(overrides.dsn, () => snapshot.agentMonitoring.sentryDsn) || undefined,
     otlpBaseUrl: Option.getOrUndefined(overrides.otlpBaseUrl),
@@ -297,15 +303,15 @@ const make = Effect.gen(function* () {
   const runtime = yield* ScopedRef.make<MonitoringRuntime>(() => inactiveRuntime(disabled));
   const lock = yield* Semaphore.make(1);
   let current: MonitoringConfiguration | undefined;
-  // A process cannot know whether monitoring was disabled while it was stopped.
-  // Resume already captured records, but never backfill unobserved conversation activity.
-  let wasDisabled = true;
+  // Saved consent versions survive journal write failures. Startup overrides have no durable history.
+  let wasDisabled = Option.isSome(overrides.enabled);
   const configure = (snapshot: ServerSettings) =>
     lock.withPermit(
       Effect.gen(function* () {
         const next = configurationOf(snapshot);
         if (
           current &&
+          next.consentVersion === current.consentVersion &&
           next.enabled === current.enabled &&
           next.dsn === current.dsn &&
           next.otlpBaseUrl === current.otlpBaseUrl &&

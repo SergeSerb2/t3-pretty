@@ -15,8 +15,9 @@ starting it. This stops product events from being recorded or sent.
 Agent monitoring helps you find recurring provider and tool failures across your T3 servers.
 It is off by default and is configured on each server, including hosts you reach from desktop,
 web, or mobile. Collection starts when you enable it; it does not upload old conversations.
-After a server restart, previously captured pending records resume delivery. Activity that
-was not yet captured before the restart is skipped to preserve the collection consent boundary.
+After a server restart, pending records and uncaptured activity resume from the saved cursor
+when saved consent has not changed. Disabled periods are skipped. An explicit startup
+enabled override skips uncaptured activity after restart because its prior value cannot be verified.
 
 To prepare a new Sentry destination, create a Sentry account or organization, then create a
 Node.js project named `t3-pretty-agents`. Copy its client DSN from **Settings > Projects >

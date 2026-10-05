@@ -1555,6 +1555,8 @@ export const ServerSettings = Schema.Struct({
   subagentPolicy: SubagentPolicySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   agentMonitoring: AgentMonitoringSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  /** Advanced with saved consent changes, atomically with the enabled setting. */
+  agentMonitoringConsentVersion: Schema.Int.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   apps: AppsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   automations: AutomationsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   bitbucket: BitbucketSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),

@@ -57,6 +57,7 @@ export class AgentMonitoringJournal extends Context.Service<
     readonly enroll: (
       sequence: number,
       skipUncaptured?: boolean,
+      consentVersion?: number,
     ) => Effect.Effect<void, AgentMonitoringJournalError>;
     readonly cursor: Effect.Effect<number, AgentMonitoringJournalError>;
     readonly pause: Effect.Effect<void, AgentMonitoringJournalError>;
@@ -146,7 +147,7 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
       );
     }
 
-    const enroll = (sequence: number, skipUncaptured = false) =>
+    const enroll = (sequence: number, skipUncaptured = false, consentVersion?: number) =>
       guard(
         sql.withTransaction(
           Effect.gen(function* () {
@@ -154,8 +155,17 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
             const [paused] = yield* sql<{
               value: number;
             }>`SELECT value FROM agent_monitoring_state WHERE key = 'paused'`;
-            if (skipUncaptured || paused?.value === 1)
+            const [consent] = yield* sql<{
+              value: number;
+            }>`SELECT value FROM agent_monitoring_state WHERE key = 'consent_version'`;
+            if (
+              skipUncaptured ||
+              paused?.value === 1 ||
+              (consentVersion !== undefined && consent?.value !== consentVersion)
+            )
               yield* sql`UPDATE agent_monitoring_state SET value = MAX(value, ${sequence}) WHERE key = 'cursor'`;
+            if (consentVersion !== undefined)
+              yield* sql`INSERT OR REPLACE INTO agent_monitoring_state (key, value) VALUES ('consent_version', ${consentVersion})`;
             yield* sql`INSERT OR REPLACE INTO agent_monitoring_state (key, value) VALUES ('paused', 0)`;
           }),
         ),

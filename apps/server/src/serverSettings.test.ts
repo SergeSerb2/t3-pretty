@@ -440,6 +440,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         const changes = yield* settings.subscribeChanges;
         const dsn = "https://public@example.com/1";
         yield* settings.updateSettings({ agentMonitoring: { enabled: true, sentryDsn: dsn } });
+        assert.equal((yield* settings.getSettings).agentMonitoringConsentVersion, 1);
         const change = Option.getOrUndefined(yield* Stream.runHead(changes));
         assert.deepEqual(change?.agentMonitoring, { enabled: true, sentryDsn: dsn });
         yield* settings.updateSettings({ agentMonitoring: { enabled: false } });
@@ -447,6 +448,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           yield* fs.readFileString(config.settingsPath),
         );
         assert.deepEqual(persisted.agentMonitoring, { enabled: false, sentryDsn: dsn });
+        assert.equal(persisted.agentMonitoringConsentVersion, 2);
         const restarted = yield* Effect.flatMap(
           ServerSettingsModule.ServerSettingsService,
           (service) => service.getSettings,
@@ -456,6 +458,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           ),
         );
         assert.deepEqual(restarted.agentMonitoring, persisted.agentMonitoring);
+        assert.equal(restarted.agentMonitoringConsentVersion, 2);
       }),
     ).pipe(Effect.provide(makeServerSettingsLayer())),
   );
