@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261004.2657003150",
+    date: "2026-10-05",
+    items: [
+      {
+        kind: "fixed",
+        title: "Composer motion across dispatch actions [skip ci]",
+      },
+      {
+        kind: "new",
+        title: "Track agents across saved environments",
+      },
+      {
+        kind: "fixed",
+        title: "Frost project rail folder containers",
+      },
+      {
+        kind: "fixed",
+        title: "Make sidebar thread dragging follow the pointer again",
+      },
+      {
+        kind: "new",
+        title: "Make steering the default for running threads",
+      },
+      {
+        kind: "new",
+        title: "IOS Home opens on a glance and leads cards with thread photos",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261003.2610003137",
     date: "2026-10-05",
     items: [
