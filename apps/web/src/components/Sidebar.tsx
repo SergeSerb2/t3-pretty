@@ -196,6 +196,7 @@ import {
   planSidebarThreadDrop,
   resolveAdjacentThreadId,
   resolveSidebarDropTarget,
+  sidebarSectionOrders,
   resolveSidebarDropVerb,
   resolveSidebarThreadSection,
   resolveSidebarRowAccessibility,
@@ -2222,7 +2223,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                             <MessageCircleQuestionIcon aria-hidden className="size-4 shrink-0" />
                           ) : topStatus.icon === "approval" ? (
                             <ShieldQuestionIcon aria-hidden className="size-4 shrink-0" />
-                          ) : (topStatus.icon === "failed" || topStatus.icon === "limited") ? (
+                          ) : topStatus.icon === "failed" || topStatus.icon === "limited" ? (
                             <CircleAlertIcon aria-hidden className="size-4 shrink-0" />
                           ) : topStatus.icon === "done" ? (
                             <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
@@ -2852,6 +2853,9 @@ export default function Sidebar() {
     readonly order: readonly string[] | null;
     /** Destination order keys before the drop, to recognize concurrent writes. */
     readonly keysAtDrop: ReadonlyMap<string, string | null>;
+    /** Every thread the destination holds once the drop lands, including
+        nest children and rows hidden in collapsed nests. */
+    readonly members: ReadonlySet<string>;
     /** The keys this drop writes (one per planned assignment). The
         override holds until all of them appear in canonical state. */
     readonly assignedKeys: ReadonlyMap<string, string>;
@@ -3801,11 +3805,9 @@ export default function Sidebar() {
         (optimisticDrop.section === "pinned" ? thread.pinOrderKey : thread.activeOrderKey) ?? null,
       ]),
     );
-    const heldOrder = optimisticDrop.order;
-    const heldKeys = new Set(heldOrder);
     const membershipChanged =
-      destinationKeys.length !== heldOrder.length ||
-      destinationKeys.some((key) => !heldKeys.has(key));
+      destinationKeys.length !== optimisticDrop.members.size ||
+      destinationKeys.some((key) => !optimisticDrop.members.has(key));
     const foreignKeyLanded = destinationKeys.some((threadKey) => {
       const currentKey = keyByThread.get(threadKey) ?? null;
       if (currentKey === (optimisticDrop.keysAtDrop.get(threadKey) ?? null)) return false;
@@ -4067,6 +4069,9 @@ export default function Sidebar() {
     [sidebarListItems],
   );
   const sortableIds = useMemo(() => sidebarListItems.map(sidebarListItemId), [sidebarListItems]);
+  // The manual order each drop plan compares against: block heads only, as
+  // the list renders them.
+  const sidebarOrders = useMemo(() => sidebarSectionOrders(sidebarListItems), [sidebarListItems]);
   const draggedSettledOrder = useMemo(() => {
     const thread = dragState === null ? undefined : threadByKey.get(dragState.activeKey);
     if (dragState === null || thread === undefined) return [];
@@ -4159,10 +4164,10 @@ export default function Sidebar() {
               serverConfigs.get(source.environmentId)?.environment.capabilities.threadSettlement ===
               true,
             target,
-            pinnedOrder: pinnedKeys,
+            pinnedOrder: sidebarOrders.pinnedOrder,
             pinnedKeysById,
             reorderableKeys: draggableThreadKeys,
-            activeOrder: activeKeys,
+            activeOrder: sidebarOrders.activeOrder,
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
             activeTimeOrdered: workingShelfEnabled,
@@ -4178,14 +4183,13 @@ export default function Sidebar() {
     activeKeysById,
     pinnedKeysById,
     serverConfigs,
-    activeKeys,
     activeReorderableThreadKeys,
     draggedThreadKey,
     draggedFromSection,
     dragActivationY,
     draggableThreadKeys,
-    pinnedKeys,
     sidebarListItems,
+    sidebarOrders,
     threadByKey,
     workingShelfEnabled,
   ]);
@@ -4209,10 +4213,10 @@ export default function Sidebar() {
           serverConfigs.get(activeThread.environmentId)?.environment.capabilities
             .threadSettlement === true,
         target,
-        pinnedOrder: pinnedKeys,
+        pinnedOrder: sidebarOrders.pinnedOrder,
         pinnedKeysById,
         reorderableKeys: draggableThreadKeys,
-        activeOrder: activeKeys,
+        activeOrder: sidebarOrders.activeOrder,
         activeKeysById,
         activeReorderableKeys: activeReorderableThreadKeys,
         activeTimeOrdered: workingShelfEnabled,
@@ -4244,6 +4248,7 @@ export default function Sidebar() {
           (plan.kind === "move-active" && plan.unstore),
         order: plan.kind === "settle" ? null : plan.order,
         keysAtDrop: target.section === "active" ? activeKeysById : pinnedKeysById,
+        members: new Set([...(target.section === "active" ? activeKeys : pinnedKeys), activeKey]),
         assignedKeys: new Map(assignments.map(({ id, orderKey }) => [id, orderKey])),
       };
       setOptimisticDrop(drop);
@@ -4352,6 +4357,7 @@ export default function Sidebar() {
       sectionByThreadKey,
       settleThread,
       sidebarListItems,
+      sidebarOrders,
       threadByKey,
       unpinThread,
       unsettleThread,
@@ -5551,9 +5557,7 @@ export default function Sidebar() {
                                 isActive={routeThreadKey === threadKey}
                                 openPullRequestsInRightPanel={routeThreadRef !== null}
                                 jumpLabel={
-                                  showJumpHints
-                                    ? (jumpLabelByKey.get(threadKey) ?? null)
-                                    : null
+                                  showJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null
                                 }
                                 currentEnvironmentId={primaryEnvironmentId}
                                 environmentLabel={
@@ -5636,16 +5640,19 @@ export default function Sidebar() {
                               <SortableThreadRow
                                 key={item.key}
                                 id={item.key}
-                                contextDrag={true}
+                                contextDrag={isContextDrag}
                                 disabled={
-                                  item.section === "working" || !draggableThreadKeys.has(item.key) || optimisticDrop !== null
+                                  renamingThreadKey === item.key ||
+                                  item.section === "working" ||
+                                  !draggableThreadKeys.has(item.key) ||
+                                  optimisticDrop !== null
                                 }
                               >
                                 {(bag) => renderThreadRowInner(thread, item, bag)}
                               </SortableThreadRow>
                             );
                           };
-                          const from = dragState?.activeSection ?? null;
+                          const from = isContextDrag ? null : (dragState?.activeSection ?? null);
                           const items: ReactNode[] = [
                             <SidebarDraftBlock
                               key="draft-sessions"
@@ -5708,8 +5715,15 @@ export default function Sidebar() {
                                   <SidebarSectionHeader
                                     key="working-shelf-header"
                                     marker="working-header"
-                                    label={workingShelfExpanded ? "Working" : `Working (${workingThreads.length})`}
-                                    toggle={{expanded: workingShelfExpanded, onToggle: toggleWorkingShelf}}
+                                    label={
+                                      workingShelfExpanded
+                                        ? "Working"
+                                        : `Working (${workingThreads.length})`
+                                    }
+                                    toggle={{
+                                      expanded: workingShelfExpanded,
+                                      onToggle: toggleWorkingShelf,
+                                    }}
                                   />,
                                 );
                                 break;

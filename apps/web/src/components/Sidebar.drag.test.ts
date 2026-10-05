@@ -645,6 +645,43 @@ describe("sidebar drag projection", () => {
     expect(collapsed.get(sidebarMarkerId("stored-header"))?.scaleY).toBe(1);
   });
 
+  describe("pull request nests", () => {
+    const nested = (key: string, nest: "parent" | "child"): SidebarListItem => ({
+      kind: "thread",
+      key,
+      section: "active",
+      nest,
+      pullRequestKey: "pr",
+    });
+    // Rows are 82px tall from y=102: a1, n (parent) > c (child), a2.
+    const items = [
+      pinnedHeader,
+      divider,
+      thread("a1", "active"),
+      nested("n", "parent"),
+      nested("c", "child"),
+      thread("a2", "active"),
+      settledHeader,
+    ];
+    const input = { items, settledOrder: [], settledExpanded: false, boundaryLabelHeight: 24 };
+
+    it("carries a parent's children, hidden inside the gap", () => {
+      const result = preview(input, "n", "a1");
+      // Labels take 150px; the gap holds n (150-232) and c (233-315).
+      expect(result.get("c")).toEqual({ ...stationary, scaleY: 0, y: 233 - 268 });
+      expect(result.get("a1")).toEqual({ ...stationary, y: 316 - 102 });
+      expect(result.get("a2")).toEqual({ ...stationary, y: 399 - 351 });
+    });
+
+    it("leaves the children in place when the parent changes section", () => {
+      const result = preview(input, "n", sidebarMarkerId("pinned-header"));
+      // Pinned: label, n (125-207), Active label, then a1, c, a2.
+      expect(result.get(sidebarMarkerId("pinned-divider"))?.y).toBe(208 - 101);
+      expect(result.get("c")).toEqual({ ...stationary, y: 316 - 268 });
+      expect(result.get("a2")).toEqual({ ...stationary, y: 399 - 351 });
+    });
+  });
+
   it("keeps a collapsed settled target without inserting a hidden row", () => {
     const items = [
       pinnedHeader,

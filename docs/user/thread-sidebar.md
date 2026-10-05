@@ -165,7 +165,9 @@ The linked pull request participates in automatic settlement.
 A new thread can attach to an open PR already linked in that project. Later
 threads on the same PR nest under the first-linked thread in that sidebar
 section. Collapse the nest to hide the extra threads; the parent keeps a count
-and the strongest status from the hidden ones.
+and the strongest status from the hidden ones. Dragging the parent within its
+section moves the whole nest. A nested thread always sits under its parent, so
+you can drag it to another section but not to a new spot in its own.
 
 ## Pick a project
 

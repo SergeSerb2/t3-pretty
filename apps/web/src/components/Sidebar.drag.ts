@@ -16,10 +16,7 @@ const hidden = { ...stationary, scaleY: 0 };
 type ThreadItem = Extract<SidebarListItem, { kind: "thread" }>;
 type Layout = Parameters<SortingStrategy>[0];
 const isShelfHeader = (item: SidebarListItem | undefined) =>
-  item?.kind === "marker" &&
-  (item.marker === "working-header" ||
-    item.marker === "snoozed-header" || item.marker === "stored-header" ||
-    item.marker === "settled-header");
+  item?.kind === "marker" && isSidebarShelfHeader(item.marker);
 
 /** Keep the lifted card below the Pins label, including when Pins is empty.
  * The container rect follows scrolling; the offset is measured once at pickup. */
@@ -64,11 +61,9 @@ export function createSidebarCollisionDetection(
       if (pointer.x >= boundary.left && pointer.x <= boundary.right) {
         if (pointer.y < previousY && pointer.y <= boundary.bottom) boundarySection = "pinned";
         else if (pointer.y > previousY && pointer.y >= boundary.top) boundarySection = "active";
-        const nextHeader = (["working-header", "snoozed-header", "stored-header", "settled-header"] as const)
-          .map((marker) =>
-            args.droppableContainers.find((container) => container.id === sidebarMarkerId(marker)),
-          )
-          .find((container) => container !== undefined);
+        const nextHeader = SIDEBAR_SHELF_HEADERS.map((header) =>
+          args.droppableContainers.find((container) => container.id === sidebarMarkerId(header)),
+        ).find((container) => container !== undefined);
         const activeBottom = nextHeader?.node.current?.getBoundingClientRect().top;
         if (boundarySection === "pinned" || (activeBottom != null && pointer.y < activeBottom)) {
           const target = collisions.find((collision) => {
@@ -129,7 +124,9 @@ export function createSidebarSortingStrategy(input: {
     if (active?.kind !== "thread" || !over || !rects[0]) return [];
     const target = resolveSidebarDropTarget(items, active.key, sidebarListItemId(over));
     if (!target) return [];
-    const groups: Record<SidebarSection, ThreadItem[]> = {
+    // Each section is a run of blocks: a row plus the nest children rendered
+    // under it. Blocks move as a unit and keep their rows' relative order.
+    const blocks: Record<SidebarSection, ThreadItem[][]> = {
       pinned: [],
       active: [],
       working: [],
@@ -151,7 +148,17 @@ export function createSidebarSortingStrategy(input: {
       if (item.section === "pinned" || item.section === "active" || item.section === "working")
         cardHeight ??= rects[index]?.height;
       else slimHeight ??= rects[index]?.height;
-      if (item.key !== active.key) groups[item.section].push(item);
+      const group = blocks[item.section];
+      const last = group.at(-1);
+      if (
+        item.nest === "child" &&
+        last?.[0]?.nest === "parent" &&
+        last[0].pullRequestKey === item.pullRequestKey
+      ) {
+        last.push(item);
+      } else {
+        group.push([item]);
+      }
     }
     // Cards are 3.25rem + 0.25rem padding; slim rows/placeholders are h-9.
     const scale =
@@ -159,30 +166,74 @@ export function createSidebarSortingStrategy(input: {
     cardHeight ??= 56 * scale;
     slimHeight ??= 36 * scale;
     const labelHeight = (input.boundaryLabelHeight ?? 0) * scale;
-    const group = groups[target.section];
-    const order =
-      target.section === "pinned"
-        ? target.pinnedOrder
-        : target.section === "settled"
-          ? input.settledOrder
-          : (input.activeOrder ?? target.activeOrder);
-    const ranks = new Map(order.map((key, index) => [key, index]));
-    const rank = ranks.get(active.key) ?? Number.POSITIVE_INFINITY;
-    const index = group.findIndex(
-      (item) => (ranks.get(item.key) ?? Number.POSITIVE_INFINITY) > rank,
-    );
-    group.splice(index < 0 ? group.length : index, 0, { ...active, section: target.section });
+    // Lift the active row out. Inside its own section a nest parent takes its
+    // children along, hidden in the gap; leaving the section, it goes alone.
+    // A child's place inside its section is fixed under its parent.
+    const source = blocks[active.section];
+    const sourceIndex = source.findIndex((block) => block.some((row) => row.key === active.key));
+    const sourceBlock = source[sourceIndex]!;
+    const travelling = new Set<string>();
+    let lifted: ThreadItem[] | null = null;
+    if (target.section !== active.section) {
+      const remaining = sourceBlock.filter((row) => row.key !== active.key);
+      source.splice(sourceIndex, 1, ...(remaining.length > 0 ? [remaining] : []));
+      lifted = [{ ...active, section: target.section, nest: null }];
+    } else if (sourceBlock[0]?.key === active.key) {
+      source.splice(sourceIndex, 1);
+      lifted = sourceBlock;
+      for (const row of sourceBlock.slice(1)) travelling.add(row.key);
+    }
+    if (lifted) {
+      const order =
+        target.section === "pinned"
+          ? target.pinnedOrder
+          : target.section === "settled"
+            ? input.settledOrder
+            : (input.activeOrder ?? target.activeOrder);
+      const ranks = new Map(order.map((key, index) => [key, index]));
+      const rank = ranks.get(active.key) ?? Number.POSITIVE_INFINITY;
+      const group = blocks[target.section];
+      const index = group.findIndex(
+        (block) => (ranks.get(block[0]!.key) ?? Number.POSITIVE_INFINITY) > rank,
+      );
+      group.splice(index < 0 ? group.length : index, 0, lifted);
+    }
+    const groups: Record<SidebarSection, ThreadItem[]> = {
+      pinned: blocks.pinned.flat(),
+      active: blocks.active.flat(),
+      working: blocks.working.flat(),
+      snoozed: blocks.snoozed.flat(),
+      stored: blocks.stored.flat(),
+      settled: blocks.settled.flat(),
+    };
     const settledOrder = (
       input.settledOrder.length > 0 ? input.settledOrder : groups.settled.map((item) => item.key)
     ).filter((key) => key !== active.key || target.section === "settled");
-    const visible = input.settledExpanded
-      ? settledOrder.slice(0, input.settledVisibleCount ?? settledOrder.length)
-      : [];
+    const visible = new Set(
+      input.settledExpanded
+        ? settledOrder.slice(0, input.settledVisibleCount ?? settledOrder.length)
+        : [],
+    );
     const routeKey = input.routeThreadKey;
-    if (routeKey && settledOrder.includes(routeKey) && !visible.includes(routeKey)) {
-      visible.push(routeKey);
+    if (routeKey && settledOrder.includes(routeKey)) visible.add(routeKey);
+    // Rendered rows keep their nest layout. A row the page newly reveals has
+    // no node yet and only reserves its space at its time slot.
+    const settledRows = groups.settled.filter((item) => visible.has(item.key));
+    const shown = new Set(settledRows.map((item) => item.key));
+    const settledRanks = new Map(settledOrder.map((key, index) => [key, index]));
+    for (const [rank, key] of settledOrder.entries()) {
+      if (!visible.has(key) || shown.has(key)) continue;
+      const index = settledRows.findIndex(
+        (item) =>
+          item.nest !== "child" && (settledRanks.get(item.key) ?? Number.POSITIVE_INFINITY) > rank,
+      );
+      settledRows.splice(index < 0 ? settledRows.length : index, 0, {
+        kind: "thread",
+        key,
+        section: "settled",
+      });
     }
-    groups.settled = visible.map((key) => ({ kind: "thread", key, section: "settled" }));
+    groups.settled = settledRows;
     const projected: SidebarListItem[] = [];
     const marker = (name: SidebarListMarker) => projected.push({ kind: "marker", marker: name });
     const section = (name: "active" | "settled") => {
@@ -254,7 +305,12 @@ export function createSidebarSortingStrategy(input: {
       }
       const index = indices.get(sidebarListItemId(item));
       const rect = index === undefined ? undefined : rects[index];
-      if (index !== undefined && rect) result[index] = { ...stationary, y: top - rect.top };
+      if (index !== undefined && rect) {
+        result[index] = {
+          ...(item.kind === "thread" && travelling.has(item.key) ? hidden : stationary),
+          y: top - rect.top,
+        };
+      }
       top += heights[projectedIndex]! + 1;
     }
     result[activeIndex] = stationary;
