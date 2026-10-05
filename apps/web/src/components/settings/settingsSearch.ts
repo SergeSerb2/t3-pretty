@@ -383,9 +383,24 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Auto-generate project icons",
     to: "/settings/general",
   },
-  { id: "auto-resume-limited-threads", title: "Auto-resume limited threads", to: "/settings/general", searchTerms: ["sidebar threads runtime limits working background"] },
-  { id: "snooze-limited-threads", title: "Snooze limited threads", to: "/settings/general", searchTerms: ["sidebar threads runtime limits working background"] },
-  { id: "working-shelf", title: "Working shelf", to: "/settings/general", searchTerms: ["sidebar threads runtime limits working background"] },
+  {
+    id: "auto-resume-limited-threads",
+    title: "Auto-resume limited threads",
+    to: "/settings/general",
+    searchTerms: ["sidebar threads runtime limits working background"],
+  },
+  {
+    id: "snooze-limited-threads",
+    title: "Snooze limited threads",
+    to: "/settings/general",
+    searchTerms: ["sidebar threads runtime limits working background"],
+  },
+  {
+    id: "working-shelf",
+    title: "Working shelf",
+    to: "/settings/general",
+    searchTerms: ["sidebar threads runtime limits working background"],
+  },
   {
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
@@ -483,12 +498,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Send shortcut",
     to: "/settings/general",
     searchTerms: ["enter return command ctrl multiline prompt new line composer"],
-  },
-  {
-    id: "follow-up-behavior",
-    title: "Follow-up behavior",
-    to: "/settings/general",
-    searchTerms: ["queue steer running turn send default behavior composer"],
   },
   {
     id: "provider-update-checks",
@@ -624,6 +633,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "open-source-licenses",
     title: "Open source licenses",
     to: "/settings/general",
+  },
+  {
+    id: "legacy-queue",
+    title: "Queue messages (legacy)",
+    to: "/settings/general",
+    searchTerms: ["queue steer running turn send default follow-up behavior composer old"],
   },
   {
     id: "legacy-plan-mode",

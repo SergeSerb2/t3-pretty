@@ -254,6 +254,14 @@ function LegacySettingsSection() {
     <View className="gap-3">
       <SettingsSection title="Legacy">
         <SettingsSwitchRow
+          icon="list.number"
+          label="Queue messages"
+          value={
+            AsyncResult.isSuccess(preferences) && preferences.value.legacyQueueEnabled === true
+          }
+          onValueChange={(value) => savePreferences({ legacyQueueEnabled: value })}
+        />
+        <SettingsSwitchRow
           icon="hammer"
           label="Plan Mode"
           value={planModeEnabled}
@@ -262,7 +270,9 @@ function LegacySettingsSection() {
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
         Opt into retired interfaces kept for compatibility. Plan Mode restores the Build/Plan
-        control; otherwise every task runs in Build mode.
+        control; otherwise every task runs in Build mode. Queue messages makes follow-ups wait for
+        the next turn; otherwise they steer the running agent. Long-press send or hold Command while
+        sending to use the other action for one message.
       </Text>
     </View>
   );
