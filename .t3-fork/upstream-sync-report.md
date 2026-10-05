@@ -1055,3 +1055,6 @@ Validation is scoped and serialized to avoid contention with unrelated workers. 
 - `apps/web/src/components/ChatView.tsx` — applied a completed cache entry keyed by the current file contents
 - `apps/web/src/components/sidebar/SidebarChrome.tsx` — applied a completed cache entry keyed by the current file contents
 - `apps/web/src/components/Sidebar.tsx` — applied a completed cache entry keyed by the current file contents
+- `shared-typecheck` failed after merging `v0.0.46-nightly.20261004.2657`; repaired with `gpt-5.6-sol`: Updated both relay-discovery test fixtures for the new catalog-refresh service member and restored the missing typed supervisor helpers. The supervisor now uses the merged timeout name, the new randomized retry API, and T3 Pretty's wake-recovery state consistently.
+  - edited `packages/client-runtime/src/connection/outdatedHostUpdate.test.ts`
+  - edited `packages/client-runtime/src/connection/supervisor.ts`

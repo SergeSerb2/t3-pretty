@@ -513,6 +513,42 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     }
   };
 
+  const timedOutProbe = () =>
+    Effect.fail(
+      new ConnectionTransientError({
+        reason: "timeout",
+        detail: `${target.label} did not respond to a connection health check.`,
+      }),
+    );
+
+  const timedOutReplacement = (): Effect.Effect<never, TracedAttemptFailure> =>
+    Effect.fail({
+      error: new ConnectionTransientError({
+        reason: "timeout",
+        detail: `${target.label} did not respond during connection setup.`,
+      }),
+      attemptSpan: Option.none(),
+    });
+
+  const logUnexpectedDefect = Effect.fnUntraced(function* (exit: Exit.Exit<unknown, unknown>) {
+    if (
+      Exit.isSuccess(exit) ||
+      Cause.hasInterruptsOnly(exit.cause) ||
+      exit.cause.reasons.some(Cause.isFailReason)
+    ) {
+      return;
+    }
+    const defect = exit.cause.reasons.find(Cause.isDieReason)?.defect;
+    yield* Effect.logError("Connection attempt failed with an unexpected defect.").pipe(
+      Effect.annotateLogs({
+        "environment.id": target.environmentId,
+        "environment.label": target.label,
+        "cause.reason_count": exit.cause.reasons.length,
+        ...safeErrorLogAttributes(defect),
+      }),
+    );
+  });
+
   // Holds a connected lease until it must end, and returns whether to restart
   // the retry ladder. Returning to the app, an explicit retry, and the network
   // reporting offline all probe the live session instead of replacing it, so a
@@ -560,7 +596,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           duration:
             reason === "application-active"
               ? CONNECTION_PROBE_TIMEOUT
-              : MOBILE_CONNECTION_PROBE_TIMEOUT,
+              : QUICK_CONNECTION_PROBE_TIMEOUT,
           orElse: timedOutProbe,
         }),
         Effect.forkChild,
@@ -803,7 +839,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
             if (Option.isNone(failure) || failure.value.error._tag === "ConnectionBlockedError") {
               return yield* Effect.failCause(event.exit.cause);
             }
-            const retryDelay = retryDelayMs(authorizationFailureCount);
+            const retryDelay = retryDelayMs(authorizationFailureCount, yield* Random.next);
             authorizationFailureCount += 1;
             yield* Effect.logWarning(
               "Could not prepare a replacement environment connection; keeping the active connection.",
@@ -1081,7 +1117,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       replacing = false;
       // Consumed on every iteration so a stale marker can never leak into a
       // later, unrelated failure.
-      const failedProbe = yield* Ref.getAndSet(probeUnanswered, false);
+      const failedProbe = yield* Ref.getAndSet(wakeRecoveryFailed, false);
       if (outcome.established) {
         generation = outcome.generation;
         // A replacement lease during the attempt was a successful reconnect,
