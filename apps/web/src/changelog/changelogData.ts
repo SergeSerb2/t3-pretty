@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261003.2610003114",
+    date: "2026-10-05",
+    items: [
+      {
+        kind: "new",
+        title: "Make steering the default for running threads",
+      },
+      {
+        kind: "new",
+        title: "IOS Home opens on a glance and leads cards with thread photos",
+      },
+      {
+        kind: "new",
+        title: "Rebuild the model picker around reasoning, speed, and access cards",
+      },
+      {
+        kind: "fixed",
+        title: "Frost the iPad sidebar header over the scenery",
+      },
+      {
+        kind: "fixed",
+        title: "Repair upstream sync compatibility (#776) [skip ci]",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock nightly sync test lint",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261003.2610003108",
     date: "2026-10-04",
     items: [
