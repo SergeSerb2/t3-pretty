@@ -170,10 +170,12 @@ const receiver = Effect.acquireRelease(
         setStatus: (status: number) => void;
         setBody: (body: string | Uint8Array) => void;
         setEnvelopeStatus: (status: number) => void;
+        setTraceStatus: (status: number) => void;
       }>((resolve) => {
         const requests: Array<{ url: string; body: string; contentType?: string }> = [];
         let status = 200;
         let envelopeStatus = 200;
+        let traceStatus = 200;
         let body: string | Uint8Array = "{}";
         const server = NodeHttp.createServer(async (request, response) => {
           const chunks: Buffer[] = [];
@@ -185,9 +187,16 @@ const receiver = Effect.acquireRelease(
               ? { contentType: request.headers["content-type"] }
               : {}),
           });
-          response.writeHead(request.url?.includes("/envelope/") ? envelopeStatus : status, {
-            "content-type": "application/json",
-          });
+          response.writeHead(
+            request.url?.includes("/envelope/")
+              ? envelopeStatus
+              : request.url?.endsWith("/traces/")
+                ? traceStatus
+                : status,
+            {
+              "content-type": "application/json",
+            },
+          );
           response.end(body);
         });
         server.listen(0, "127.0.0.1", () => {
@@ -205,6 +214,9 @@ const receiver = Effect.acquireRelease(
             },
             setEnvelopeStatus: (next) => {
               envelopeStatus = next;
+            },
+            setTraceStatus: (next) => {
+              traceStatus = next;
             },
           });
         });
@@ -313,6 +325,76 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
           ),
         );
       }),
+  );
+
+  it.effect("checkpoints accepted signals across exporter and journal restarts", () =>
+    Effect.gen(function* () {
+      const ingestion = yield* receiver;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-signal-receipts-" });
+      const filename = path.join(home, "journal.sqlite");
+      const record = observe(errorEvent());
+      const attempt = (seed: boolean) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const journal = yield* Journal.AgentMonitoringJournal;
+            const exporter = yield* Exporter.AgentMonitoringExporter;
+            if (seed) {
+              yield* journal.enroll(0);
+              yield* journal.capture([{ sequence: 1, observation: record }]);
+            }
+            const pending = yield* journal.pending;
+            const result = yield* Effect.exit(
+              exporter.send(pending, {
+                receipts: yield* journal.deliveryReceipts("destination-a", [record.id]),
+                acknowledge: (signal, ids) =>
+                  journal
+                    .acknowledgeSignal("destination-a", signal, ids)
+                    .pipe(
+                      Effect.mapError(
+                        () => new Exporter.AgentMonitoringExportError({ operation: "receipt" }),
+                      ),
+                    ),
+              }),
+            );
+            if (Exit.isSuccess(result))
+              yield* journal.acknowledge(pending.map((record) => record.id));
+            return {
+              success: Exit.isSuccess(result),
+              report: yield* journal.report,
+              otherDestinationReceipts: yield* journal.deliveryReceipts("destination-b", [
+                record.id,
+              ]),
+            };
+          }).pipe(
+            Effect.provide(
+              Layer.merge(
+                Journal.layerAt(filename),
+                Exporter.layer({
+                  dsn: `http://public@127.0.0.1:${new URL(ingestion.url).port}/1`,
+                  protocol: "http/json",
+                }).pipe(Layer.provide(FetchHttpClient.layer)),
+              ),
+            ),
+          ),
+        );
+      ingestion.setTraceStatus(503);
+      assert.equal((yield* attempt(true)).success, false);
+      ingestion.setTraceStatus(200);
+      ingestion.setEnvelopeStatus(503);
+      const second = yield* attempt(false);
+      assert.equal(second.success, false);
+      assert.equal(second.report.pendingCount, 1);
+      assert.deepEqual(second.otherDestinationReceipts, []);
+      ingestion.setEnvelopeStatus(200);
+      const third = yield* attempt(false);
+      assert.equal(third.success, true);
+      assert.equal(third.report.pendingCount, 0);
+      assert.equal(ingestion.requests.filter((r) => r.url.endsWith("/logs/")).length, 1);
+      assert.equal(ingestion.requests.filter((r) => r.url.endsWith("/traces/")).length, 2);
+      assert.equal(ingestion.requests.filter((r) => r.url.includes("/envelope/")).length, 2);
+    }),
   );
 
   it.effect("retries the same saved configuration after a transient journal startup failure", () =>
@@ -566,6 +648,47 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
         assert.equal(report.failureGroups[0]?.category, "transport_error");
       }),
   );
+  it.effect("keeps saved enabled and DSN settings editable with only a protocol override", () =>
+    Effect.gen(function* () {
+      const ingestion = yield* receiver;
+      const fs = yield* FileSystem.FileSystem;
+      const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-mixed-monitoring-" });
+      const dsn = `http://public@127.0.0.1:${new URL(ingestion.url).port}/1`;
+      const settingsContext = yield* Layer.build(
+        Settings.layerTest({ agentMonitoring: { enabled: false, sentryDsn: dsn } }),
+      );
+      const settings = Context.get(settingsContext, Settings.ServerSettingsService);
+      const context = yield* Layer.build(
+        AgentMonitoring.layer.pipe(
+          Layer.provide(Layer.succeed(Settings.ServerSettingsService, settings)),
+          Layer.provide(ServerConfig.layerTest(home, home)),
+          Layer.provide(
+            Layer.succeed(ServerEnvironment.ServerEnvironment, {
+              getEnvironmentId: Effect.succeed(EnvironmentId.make("mixed-config-host")),
+              getDescriptor: Effect.die("unused"),
+            }),
+          ),
+          Layer.provide(OrchestrationEventStoreLive.pipe(Layer.provide(SqlitePersistenceMemory))),
+          Layer.provide(FetchHttpClient.layer),
+          Layer.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromUnknown({ T3CODE_AGENT_MONITORING_OTLP_PROTOCOL: "http/json" }),
+            ),
+          ),
+        ),
+      );
+      const monitor = Context.get(context, AgentMonitoring.AgentMonitoring);
+      assert.equal((yield* monitor.status).state, "disabled");
+      yield* settings.updateSettings({ agentMonitoring: { enabled: true } });
+      const status = yield* monitor.status;
+      assert.equal(status.state, "ready");
+      assert.equal(status.configurationSource, "environment");
+      assert.equal((yield* settings.getSettings).agentMonitoring.sentryDsn, dsn);
+      yield* settings.updateSettings({ agentMonitoring: { enabled: false } });
+      assert.equal((yield* monitor.status).state, "disabled");
+    }),
+  );
+
   it.effect("uses saved settings live and skips disabled activity across a restart", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -617,11 +740,14 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
             yield* store.appendAgentEvents({ events: [toolEvent("enabled")] });
             yield* monitor.flush;
             assert.equal((yield* read).recordCount, 1);
+            yield* store.appendAgentEvents({
+              events: [toolEvent("before-disable", false, "tool:before-disable")],
+            });
             yield* settings.updateSettings({ agentMonitoring: { enabled: false } });
             assert.equal((yield* monitor.status).state, "disabled");
             yield* store.appendAgentEvents({ events: [errorEvent("while-disabled")] });
             yield* monitor.flush;
-            assert.equal((yield* read).recordCount, 1);
+            assert.equal((yield* read).recordCount, 2);
           }),
         );
         // Restart while the saved setting is enabled: the durable pause marker skips the disabled gap.
@@ -633,10 +759,10 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
         });
         yield* restarted.flush;
         const report = yield* read;
-        assert.equal(report.recordCount, 2);
-        assert.equal(report.pendingCount, 2);
+        assert.equal(report.recordCount, 3);
+        assert.equal(report.pendingCount, 3);
         assert.equal(report.failureGroups.length, 0);
-        assert.equal((yield* restarted.status).pendingCount, 2);
+        assert.equal((yield* restarted.status).pendingCount, 3);
       }),
     ),
   );

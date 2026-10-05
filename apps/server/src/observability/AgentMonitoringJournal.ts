@@ -8,6 +8,12 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { AgentObservation } from "./AgentObservation.ts";
 
+export type DeliverySignal = "logs" | "traces" | "errors";
+export interface DeliveryReceipt {
+  readonly id: string;
+  readonly signal: DeliverySignal;
+}
+
 export class AgentMonitoringJournalError extends Schema.TaggedError<AgentMonitoringJournalError>()(
   "AgentMonitoringJournalError",
   { operation: Schema.String, cause: Schema.Defect() },
@@ -61,6 +67,15 @@ export class AgentMonitoringJournal extends Context.Service<
     readonly acknowledge: (
       ids: ReadonlyArray<string>,
     ) => Effect.Effect<void, AgentMonitoringJournalError>;
+    readonly deliveryReceipts: (
+      destination: string,
+      ids: ReadonlyArray<string>,
+    ) => Effect.Effect<ReadonlyArray<DeliveryReceipt>, AgentMonitoringJournalError>;
+    readonly acknowledgeSignal: (
+      destination: string,
+      signal: DeliverySignal,
+      ids: ReadonlyArray<string>,
+    ) => Effect.Effect<void, AgentMonitoringJournalError>;
     readonly report: Effect.Effect<AgentMonitoringReport, AgentMonitoringJournalError>;
     readonly statistics: Effect.Effect<
       Pick<
@@ -103,6 +118,10 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
       )`;
           yield* sql`CREATE INDEX IF NOT EXISTS agent_observations_pending ON agent_observations(exported, sequence)`;
           yield* sql`CREATE INDEX IF NOT EXISTS agent_observations_entity ON agent_observations(entity_id, sequence)`;
+          yield* sql`CREATE TABLE IF NOT EXISTS agent_delivery_receipts (
+            id TEXT NOT NULL, destination TEXT NOT NULL, signal TEXT NOT NULL,
+            PRIMARY KEY (id, signal)
+          )`;
           yield* sql`INSERT OR IGNORE INTO agent_monitoring_state (key, value) VALUES ('dropped_pending', 0)`;
         }),
         "initialize",
@@ -165,6 +184,7 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
           WHERE exported = 0 AND id IN (SELECT id FROM agent_observations ORDER BY sequence LIMIT ${excess})`;
               yield* sql`UPDATE agent_monitoring_state SET value = value + ${dropped?.count ?? 0} WHERE key = 'dropped_pending'`;
               yield* sql`DELETE FROM agent_observations WHERE id IN (SELECT id FROM agent_observations ORDER BY sequence LIMIT ${excess})`;
+              yield* sql`DELETE FROM agent_delivery_receipts WHERE id NOT IN (SELECT id FROM agent_observations)`;
             }
           }),
         ),
@@ -186,12 +206,37 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
             sql.withTransaction(
               Effect.gen(function* () {
                 yield* sql`UPDATE agent_observations SET exported = 1 WHERE ${sql.in("id", ids)}`;
+                yield* sql`DELETE FROM agent_delivery_receipts WHERE ${sql.in("id", ids)}`;
                 const now = yield* Clock.currentTimeMillis;
                 yield* sql`INSERT OR REPLACE INTO agent_monitoring_state (key, value) VALUES ('last_export_at', ${now})`;
               }),
             ),
             "acknowledge",
           );
+    const deliveryReceipts = (destination: string, ids: ReadonlyArray<string>) =>
+      ids.length === 0
+        ? Effect.succeed([])
+        : guard(
+            sql<DeliveryReceipt>`SELECT id, signal FROM agent_delivery_receipts WHERE destination = ${destination} AND ${sql.in("id", ids)}`,
+            "delivery receipts",
+          );
+    const acknowledgeSignal = (
+      destination: string,
+      signal: DeliverySignal,
+      ids: ReadonlyArray<string>,
+    ) =>
+      guard(
+        sql.withTransaction(
+          Effect.forEach(
+            ids,
+            (id) =>
+              sql`INSERT OR REPLACE INTO agent_delivery_receipts (id, destination, signal)
+          SELECT ${id}, ${destination}, ${signal} WHERE EXISTS (SELECT 1 FROM agent_observations WHERE id = ${id} AND exported = 0)`,
+            { discard: true },
+          ),
+        ),
+        "acknowledge signal",
+      );
     const statistics = guard(
       Effect.gen(function* () {
         const state = yield* sql<{
@@ -258,6 +303,8 @@ const make = (options: { readonly readonly: boolean; readonly maxRecords: number
       capture,
       pending,
       acknowledge,
+      deliveryReceipts,
+      acknowledgeSignal,
       report,
       statistics,
     });

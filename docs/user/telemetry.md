@@ -60,7 +60,8 @@ outcomes, grouped failures, and pending delivery. The default home is used if yo
 The journal is `userdata/logs/agent-monitoring.sqlite` under that home. It keeps up to 20,000
 observations. An outage retains pending records for retry; when the limit is exceeded, oldest
 records are evicted and `droppedPendingCount` reports unexported losses. Delivery is at least
-once, so partial failures can produce duplicate remote logs or spans. Local counts describe
+once. Accepted signals are checkpointed separately; an interrupted or lost acknowledgment can
+still produce duplicate remote logs or spans. Local counts describe
 retained observations, and `activeAgentCount` describes the last reported status rather than
 proving that an agent is still alive.
 

@@ -126,6 +126,10 @@ const makeRuntime = (configuration: MonitoringConfiguration, skipUncaptured: boo
       ),
     );
     const exporter = Context.get(exporterContext, AgentMonitoringExporter.AgentMonitoringExporter);
+    // Receipts are scoped to a hashed destination; changing it retries pending observations there.
+    const destinationId = observationId(
+      `${configuration.dsn ?? ""}\n${configuration.otlpBaseUrl ?? ""}`,
+    );
     const captureLock = yield* Semaphore.make(1);
     const exportLock = yield* Semaphore.make(1);
     const project = (event: ApplicationStoredEvent) => ({
@@ -150,7 +154,19 @@ const makeRuntime = (configuration: MonitoringConfiguration, skipUncaptured: boo
           if (!exporter.configured) return;
           const pending = yield* journal.pending;
           if (pending.length === 0) return;
-          yield* exporter.send(pending);
+          const ids = pending.map((record) => record.id);
+          yield* exporter.send(pending, {
+            receipts: yield* journal.deliveryReceipts(destinationId, ids),
+            acknowledge: (signal, ids) =>
+              journal.acknowledgeSignal(destinationId, signal, ids).pipe(
+                Effect.mapError(
+                  () =>
+                    new AgentMonitoringExporter.AgentMonitoringExportError({
+                      operation: "save receipt",
+                    }),
+                ),
+              ),
+          });
           yield* journal.acknowledge(pending.map((record) => record.id));
         }),
       )
@@ -236,9 +252,9 @@ const makeRuntime = (configuration: MonitoringConfiguration, skipUncaptured: boo
         flush: capture.pipe(Effect.andThen(deliver)),
         status,
       }),
-      pause: journal.pause.pipe(
-        Effect.mapError(() => new AgentMonitoringError({ operation: "pause" })),
-      ),
+      pause: capture
+        .pipe(Effect.andThen(journal.pause))
+        .pipe(Effect.mapError(() => new AgentMonitoringError({ operation: "pause" }))),
     } satisfies MonitoringRuntime;
   });
 

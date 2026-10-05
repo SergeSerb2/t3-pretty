@@ -41,7 +41,8 @@ export function AgentMonitoringSettings({
     : null;
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const states = useAgentMonitoringEnrollment();
-  const [dsn, setDsn] = useState(stored?.sentryDsn || choice?.sentryDsn || "");
+  const [draftDsn, setDsn] = useState<string | null>(null);
+  const dsn = draftDsn ?? (stored?.sentryDsn || choice?.sentryDsn || "");
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

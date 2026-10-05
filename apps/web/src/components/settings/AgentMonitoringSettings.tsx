@@ -46,6 +46,7 @@ function MonitoringHostStatus({
       : null,
   );
   // Refresh after an acknowledged enrollment or a host settings change.
+  // oxlint-disable react/exhaustive-effect-dependencies -- Settings and save receipts trigger a status refresh.
   useEffect(() => {
     if (connected && supported) refresh();
   }, [
@@ -57,6 +58,7 @@ function MonitoringHostStatus({
     savedRevision,
     refresh,
   ]);
+  // oxlint-enable react/exhaustive-effect-dependencies
   const status = !connected
     ? "Waiting for connection"
     : !supported
@@ -126,7 +128,8 @@ function AgentMonitoringSettingsForm({ environmentId }: { environmentId: Environ
   const stored = environment?.serverConfig?.settings.agentMonitoring;
   const supported = environment?.serverConfig?.observability.agentMonitoringSupported === true;
   const choice = useClientSettings((settings) => settings.agentMonitoringEnrollment);
-  const [dsn, setDsn] = useState(stored?.sentryDsn || choice?.sentryDsn || "");
+  const [draftDsn, setDsn] = useState<string | null>(null);
+  const dsn = draftDsn ?? (stored?.sentryDsn || choice?.sentryDsn || "");
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

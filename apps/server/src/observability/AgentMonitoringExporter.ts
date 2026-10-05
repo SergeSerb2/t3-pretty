@@ -16,6 +16,15 @@ import type { TraceData } from "effect/unstable/observability/OtlpTracer";
 import packageJson from "../../package.json" with { type: "json" };
 import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 import { type AgentObservation } from "./AgentObservation.ts";
+import type { DeliveryReceipt, DeliverySignal } from "./AgentMonitoringJournal.ts";
+
+export interface DeliveryProgress {
+  readonly receipts: ReadonlyArray<DeliveryReceipt>;
+  readonly acknowledge: (
+    signal: DeliverySignal,
+    ids: ReadonlyArray<string>,
+  ) => Effect.Effect<void, AgentMonitoringExportError>;
+}
 
 export class AgentMonitoringExportError extends Schema.TaggedError<AgentMonitoringExportError>()(
   "AgentMonitoringExportError",
@@ -32,6 +41,7 @@ export class AgentMonitoringExporter extends Context.Service<
     readonly configured: boolean;
     readonly send: (
       observations: ReadonlyArray<AgentObservation>,
+      progress?: DeliveryProgress,
     ) => Effect.Effect<void, AgentMonitoringExportError>;
   }
 >()("t3/observability/AgentMonitoringExporter") {}
@@ -277,9 +287,20 @@ const make = (configuration: ExportConfiguration) =>
         Effect.mapError(() => new AgentMonitoringExportError({ operation })),
       );
 
-    const send: AgentMonitoringExporter["Service"]["send"] = (records) =>
+    const send: AgentMonitoringExporter["Service"]["send"] = (records, progress) =>
       Effect.gen(function* () {
         if (records.length === 0) return;
+        const pendingSignal = (signal: DeliverySignal) => {
+          const delivered = new Set(
+            progress?.receipts
+              .filter((receipt) => receipt.signal === signal)
+              .map((receipt) => receipt.id),
+          );
+          return records.filter((record) => !delivered.has(record.id));
+        };
+        const acknowledge = (signal: DeliverySignal, ids: ReadonlyArray<string>) =>
+          progress?.acknowledge(signal, ids) ?? Effect.void;
+        const pendingLogs = pendingSignal("logs");
         const logs: LogsData = {
           resourceLogs: [
             {
@@ -287,7 +308,7 @@ const make = (configuration: ExportConfiguration) =>
               scopeLogs: [
                 {
                   scope,
-                  logRecords: records.map((record) => ({
+                  logRecords: pendingLogs.map((record) => ({
                     timeUnixNano: nano(record.observedAt),
                     observedTimeUnixNano: nano(record.observedAt),
                     severityNumber: record.status === "failed" ? 17 : 9,
@@ -303,8 +324,16 @@ const make = (configuration: ExportConfiguration) =>
             },
           ],
         };
-        yield* post(logsUrl, serialization.logs(logs), "logs");
-        const completed = records.filter((record) => record.completedAt !== undefined);
+        if (pendingLogs.length > 0) {
+          yield* post(logsUrl, serialization.logs(logs), "logs");
+          yield* acknowledge(
+            "logs",
+            pendingLogs.map((record) => record.id),
+          );
+        }
+        const completed = pendingSignal("traces").filter(
+          (record) => record.completedAt !== undefined,
+        );
         if (completed.length > 0) {
           const traces: TraceData = {
             resourceSpans: [
@@ -335,9 +364,13 @@ const make = (configuration: ExportConfiguration) =>
             ],
           };
           yield* post(tracesUrl, serialization.traces(traces), "traces");
+          yield* acknowledge(
+            "traces",
+            completed.map((record) => record.id),
+          );
         }
         if (client) {
-          const errors = records.flatMap((record) => {
+          const errors = pendingSignal("errors").flatMap((record) => {
             const event = toSentryAgentError(record);
             return event ? [event] : [];
           });
@@ -353,6 +386,7 @@ const make = (configuration: ExportConfiguration) =>
             try: () => Promise.resolve(client.flush(10_000)),
             catch: () => new AgentMonitoringExportError({ operation: "errors" }),
           });
+          yield* acknowledge("errors", [...deliveredErrors]);
           // flush() alone can succeed when rate limits discarded an event before transport.send().
           if (!flushed || !errors.every((event) => deliveredErrors.has(event.event_id!)))
             return yield* new AgentMonitoringExportError({ operation: "errors" });
