@@ -349,6 +349,7 @@ type ThreadSettingsSessionProps = {
   readonly providerInstanceId?: ProviderInstanceId;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
   readonly selectedModel: ModelSelection | null;
+  readonly reportedModelSelection?: ModelSelection | null;
   readonly onSelectModel: (option: ModelOption) => void;
   readonly optionDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly onUpdateOptionSelections: (selections: ReadonlyArray<ProviderOptionSelection>) => void;
@@ -409,6 +410,8 @@ type ThreadSettingsSessionValue = {
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
   readonly displayedDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly displayedModel: ModelOption | null;
+  readonly displayedModelSelection: ModelSelection | null;
+  readonly reportedModelSelection: ModelSelection | null;
   readonly providerExpansionOverrides: ReadonlySet<string>;
   readonly hasLegacyModels: boolean;
   readonly checkpointsThreadRef: ScopedThreadRef | null;
@@ -555,6 +558,8 @@ function ThreadSettingsSessionProvider(
       runtimeModeChoices,
       displayedDescriptors: visibleDescriptors,
       displayedModel,
+      displayedModelSelection: props.selectedModel,
+      reportedModelSelection: props.reportedModelSelection ?? null,
       favoriteKeys,
       favoritesLoaded,
       providerExpansionOverrides,
@@ -584,6 +589,8 @@ function ThreadSettingsSessionProvider(
       props.checkpointsThreadRef,
       isApplied,
       props.environmentId,
+      props.selectedModel,
+      props.reportedModelSelection,
       props.providerInstanceId,
       pressModel,
       providerFilter,

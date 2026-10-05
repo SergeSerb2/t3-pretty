@@ -33,7 +33,10 @@ import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
-import { ThreadLifecycleOutbox, QUEUED_THREAD_LIFECYCLE_DISPATCH_RESULT } from "../state/threadLifecycleOutbox.ts";
+import {
+  ThreadLifecycleOutbox,
+  QUEUED_THREAD_LIFECYCLE_DISPATCH_RESULT,
+} from "../state/threadLifecycleOutbox.ts";
 
 import { getInitialServerConfig, request } from "../rpc/client.ts";
 
@@ -247,6 +250,10 @@ export interface CancelQueuedRunInput extends ThreadCommandInput {
   readonly runId: RunId;
 }
 
+export interface RetryWorkspacePreparationInput extends ThreadCommandInput {
+  readonly runId: RunId;
+}
+
 export interface EditQueuedRunInput extends ThreadCommandInput {
   readonly runId: RunId;
   readonly text: string;
@@ -273,13 +280,18 @@ const allocateCommandId = Effect.fn("EnvironmentCommands.allocateCommandId")(fun
 
 const dispatch = (command: OrchestrationV2Command) =>
   request(ORCHESTRATION_V2_WS_METHODS.dispatchCommand, command).pipe(
-    Effect.catchTag("EnvironmentRpcUnavailableError", (error) => Effect.gen(function* () {
-      const supervisor = yield* EnvironmentSupervisor;
-      const outbox = yield* Effect.serviceOption(ThreadLifecycleOutbox);
-      if (Option.isSome(outbox) && (yield* outbox.value.enqueue(supervisor.target.environmentId, command)))
-        return QUEUED_THREAD_LIFECYCLE_DISPATCH_RESULT;
-      return yield* Effect.fail(error);
-    })),
+    Effect.catchTag("EnvironmentRpcUnavailableError", (error) =>
+      Effect.gen(function* () {
+        const supervisor = yield* EnvironmentSupervisor;
+        const outbox = yield* Effect.serviceOption(ThreadLifecycleOutbox);
+        if (
+          Option.isSome(outbox) &&
+          (yield* outbox.value.enqueue(supervisor.target.environmentId, command))
+        )
+          return QUEUED_THREAD_LIFECYCLE_DISPATCH_RESULT;
+        return yield* Effect.fail(error);
+      }),
+    ),
   );
 
 const getProjection = (threadId: ThreadId) =>
@@ -1006,6 +1018,17 @@ export const cancelQueuedRun = Effect.fn("EnvironmentCommands.cancelQueuedRun")(
   });
 });
 
+export const retryWorkspacePreparation = Effect.fn("EnvironmentCommands.retryWorkspacePreparation")(
+  function* (input: RetryWorkspacePreparationInput) {
+    return yield* dispatch({
+      type: "prepared-run.retry",
+      commandId: yield* allocateCommandId(input),
+      threadId: input.threadId,
+      runId: input.runId,
+    });
+  },
+);
+
 export const editQueuedRun = Effect.fn("EnvironmentCommands.editQueuedRun")(function* (
   input: EditQueuedRunInput,
 ) {
@@ -1051,6 +1074,20 @@ export const linkThreadPullRequest = Effect.fn("EnvironmentCommands.linkThreadPu
     });
   },
 );
+export type WatchThreadPullRequestInput = Omit<
+  Extract<OrchestrationV2Command, { type: "thread.pull-request.watch" }>,
+  "type" | "commandId"
+> &
+  CommandMetadata;
+export const watchThreadPullRequest = Effect.fn("EnvironmentCommands.watchThreadPullRequest")(
+  function* (input: WatchThreadPullRequestInput) {
+    return yield* dispatch({
+      ...input,
+      type: "thread.pull-request.watch",
+      commandId: yield* allocateCommandId(input),
+    });
+  },
+);
 export const unlinkThreadPullRequest = Effect.fn("EnvironmentCommands.unlinkThreadPullRequest")(
   function* (input: UnlinkThreadPullRequestInput) {
     return yield* dispatch({
@@ -1063,21 +1100,63 @@ export const unlinkThreadPullRequest = Effect.fn("EnvironmentCommands.unlinkThre
 
 export type StoreThreadInput = ThreadCommandInput;
 export type UnstoreThreadInput = ThreadCommandInput;
-export interface AssignThreadSceneryInput extends ThreadCommandInput { readonly scenery: import("@t3tools/contracts").ThreadSceneryAssignRequest | null; }
-export interface SetThreadSkillsInput extends ThreadCommandInput { readonly enabledSkillIds: import("@t3tools/contracts").EnabledSkillIds; }
-export interface SetThreadSubagentPolicyInput extends ThreadCommandInput { readonly subagentPolicy: import("@t3tools/contracts").ThreadSubagentPolicy; }
-export const storeThread = Effect.fn("EnvironmentCommands.storeThread")(function* (input: StoreThreadInput) {
- return yield* dispatch({ type: "thread.store", commandId: yield* allocateCommandId(input), threadId: input.threadId });
+export interface AssignThreadSceneryInput extends ThreadCommandInput {
+  readonly scenery: import("@t3tools/contracts").ThreadSceneryAssignRequest | null;
+}
+export interface SetThreadSkillsInput extends ThreadCommandInput {
+  readonly enabledSkillIds: import("@t3tools/contracts").EnabledSkillIds;
+}
+export interface SetThreadSubagentPolicyInput extends ThreadCommandInput {
+  readonly subagentPolicy: import("@t3tools/contracts").ThreadSubagentPolicy;
+}
+export const storeThread = Effect.fn("EnvironmentCommands.storeThread")(function* (
+  input: StoreThreadInput,
+) {
+  return yield* dispatch({
+    type: "thread.store",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+  });
 });
-export const unstoreThread = Effect.fn("EnvironmentCommands.unstoreThread")(function* (input: UnstoreThreadInput) {
- return yield* dispatch({ type: "thread.unstore", commandId: yield* allocateCommandId(input), threadId: input.threadId });
+export const unstoreThread = Effect.fn("EnvironmentCommands.unstoreThread")(function* (
+  input: UnstoreThreadInput,
+) {
+  return yield* dispatch({
+    type: "thread.unstore",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+  });
 });
-export const assignThreadScenery = Effect.fn("EnvironmentCommands.assignThreadScenery")(function* (input: AssignThreadSceneryInput) {
- return yield* dispatch({ type: "thread.scenery.assign", commandId: yield* allocateCommandId(input), threadId: input.threadId, scenery: input.scenery, createdAt: input.createdAt ?? DateTime.formatIso(yield* DateTime.now) });
+export const assignThreadScenery = Effect.fn("EnvironmentCommands.assignThreadScenery")(function* (
+  input: AssignThreadSceneryInput,
+) {
+  return yield* dispatch({
+    type: "thread.scenery.assign",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    scenery: input.scenery,
+    createdAt: input.createdAt ?? DateTime.formatIso(yield* DateTime.now),
+  });
 });
-export const setThreadSkills = Effect.fn("EnvironmentCommands.setThreadSkills")(function* (input: SetThreadSkillsInput) {
- return yield* dispatch({ type: "thread.skills.set", commandId: yield* allocateCommandId(input), threadId: input.threadId, enabledSkillIds: input.enabledSkillIds, createdAt: input.createdAt ?? DateTime.formatIso(yield* DateTime.now) });
+export const setThreadSkills = Effect.fn("EnvironmentCommands.setThreadSkills")(function* (
+  input: SetThreadSkillsInput,
+) {
+  return yield* dispatch({
+    type: "thread.skills.set",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    enabledSkillIds: input.enabledSkillIds,
+    createdAt: input.createdAt ?? DateTime.formatIso(yield* DateTime.now),
+  });
 });
-export const setThreadSubagentPolicy = Effect.fn("EnvironmentCommands.setThreadSubagentPolicy")(function* (input: SetThreadSubagentPolicyInput) {
- return yield* dispatch({ type: "thread.subagent-policy.set", commandId: yield* allocateCommandId(input), threadId: input.threadId, subagentPolicy: input.subagentPolicy, createdAt: input.createdAt ?? DateTime.formatIso(yield* DateTime.now) });
-});
+export const setThreadSubagentPolicy = Effect.fn("EnvironmentCommands.setThreadSubagentPolicy")(
+  function* (input: SetThreadSubagentPolicyInput) {
+    return yield* dispatch({
+      type: "thread.subagent-policy.set",
+      commandId: yield* allocateCommandId(input),
+      threadId: input.threadId,
+      subagentPolicy: input.subagentPolicy,
+      createdAt: input.createdAt ?? DateTime.formatIso(yield* DateTime.now),
+    });
+  },
+);

@@ -1,13 +1,8 @@
 import { ArrowUpIcon } from "lucide-react";
 import { memo, type MouseEventHandler, type PointerEventHandler } from "react";
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronLeftIcon,
-  CornerUpRightIcon,
-  ListPlusIcon,
-  PlayIcon,
-} from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, PlayIcon } from "lucide-react";
+import { CornerUpRight, ListPlus } from "lucide";
+import { MorphIcon } from "~/components/MorphIcon";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { useShortcutModifierState } from "../../shortcutModifierState";
@@ -330,10 +325,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <PlayIcon className="size-4 fill-current" aria-hidden="true" />
       ) : isEditingQueuedMessage ? (
         <CheckIcon className="size-4" aria-hidden="true" />
-      ) : isQueuing ? (
-        <ListPlusIcon className="size-4" aria-hidden="true" />
       ) : isRunning ? (
-        <CornerUpRightIcon className="size-4" aria-hidden="true" />
+        <MorphIcon className="size-4" icon={isQueuing ? ListPlus : CornerUpRight} />
       ) : (
         <ArrowUpIcon className="size-3.5" aria-hidden="true" />
       )}

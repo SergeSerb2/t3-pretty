@@ -166,11 +166,13 @@ import {
   usePrimaryEnvironment,
   useRelayEnvironmentDiscovery,
 } from "~/state/environments";
+import { APP_VERSION } from "~/branding";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "~/state/server";
 import { ConnectionStatusDot, connectionPhaseDotClassName } from "../ConnectionStatusDot";
 import {
+  OutdatedServerUpdateAction,
   ServerUpdateAction,
   ServerUpdateProgress,
   ServerUpdatesAction,
@@ -1552,11 +1554,23 @@ function SavedBackendListRow({
         ) : null
       }
     >
+      {unsupported &&
+      environment.entry.serverUpdateRequired === true &&
+      serverUpdateState.status !== "running" ? (
+        <OutdatedServerUpdateAction
+          environmentId={environmentId}
+          serverLabel={`${environment.label} server`}
+          fromVersion={lastDescriptor?.serverVersion}
+          targetVersion={APP_VERSION}
+          label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
+        />
+      ) : null}
       {showUpdateAction ? (
         <ServerUpdateAction
           environmentId={environmentId}
           serverLabel={`${environment.label} server`}
           selfUpdate={resolveServerSelfUpdateCapability(environment.serverConfig)}
+          installation={environment.serverConfig?.environment.capabilities.serverInstallation}
           desktopAppUpdate={supportsDesktopAppUpdate(environment.serverConfig)}
           threadContinuation={supportsServerUpdateThreadContinuation(environment.serverConfig)}
           targetVersion={versionMismatch.clientVersion}
@@ -1925,6 +1939,7 @@ export function ConnectionsSettings() {
             environmentId: environment.environmentId,
             serverLabel: environment.label,
             selfUpdate,
+            installation: environment.serverConfig?.environment.capabilities.serverInstallation,
             desktopAppUpdate,
             threadContinuation: supportsServerUpdateThreadContinuation(environment.serverConfig),
             continueThreadsAfterServerUpdate:
@@ -3267,6 +3282,9 @@ export function ConnectionsSettings() {
                         primaryEnvironment ? `${primaryEnvironment.label} server` : "server"
                       }
                       selfUpdate={resolveServerSelfUpdateCapability(primaryServerConfig)}
+                      installation={
+                        primaryServerConfig?.environment.capabilities.serverInstallation
+                      }
                       desktopAppUpdate={supportsDesktopAppUpdate(primaryServerConfig)}
                       threadContinuation={supportsServerUpdateThreadContinuation(
                         primaryServerConfig,

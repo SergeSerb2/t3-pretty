@@ -4,9 +4,11 @@ import * as NodeFS from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarCssWidth,
   resolveThreadSidebarMaximumWidth,
+  resolveThreadSidebarMinimumWidth,
   THREAD_MAIN_CONTENT_MIN_WIDTH,
   THREAD_SIDEBAR_DEFAULT_WIDTH,
   THREAD_SIDEBAR_MIN_WIDTH,
@@ -32,13 +34,52 @@ describe("thread sidebar width", () => {
     expect(resolveInitialThreadSidebarWidth(900)).toBe(900);
   });
 
+  it("keeps the default minimum when the brand fits", () => {
+    expect(resolveThreadSidebarMinimumWidth(0)).toBe(THREAD_SIDEBAR_MIN_WIDTH);
+    expect(resolveThreadSidebarMinimumWidth(194)).toBe(THREAD_SIDEBAR_MIN_WIDTH);
+  });
+
+  it("grows to a brand wider than the default, rounding up", () => {
+    expect(resolveThreadSidebarMinimumWidth(THREAD_SIDEBAR_MIN_WIDTH + 13.2)).toBe(
+      THREAD_SIDEBAR_MIN_WIDTH + 14,
+    );
+  });
+
   it("resolves the maximum against the live viewport", () => {
-    expect(resolveThreadSidebarMaximumWidth(1000)).toBe(1000 - THREAD_MAIN_CONTENT_MIN_WIDTH);
-    expect(resolveThreadSidebarMaximumWidth(1800)).toBe(1800 - THREAD_MAIN_CONTENT_MIN_WIDTH);
+    expect(resolveThreadSidebarMaximumWidth(1000, THREAD_SIDEBAR_MIN_WIDTH)).toBe(
+      1000 - THREAD_MAIN_CONTENT_MIN_WIDTH,
+    );
+    expect(resolveThreadSidebarMaximumWidth(1800, THREAD_SIDEBAR_MIN_WIDTH)).toBe(
+      1800 - THREAD_MAIN_CONTENT_MIN_WIDTH,
+    );
   });
 
   it("keeps the sidebar minimum when the whole layout is narrower than its minimums", () => {
-    expect(resolveThreadSidebarMaximumWidth(700)).toBe(THREAD_SIDEBAR_MIN_WIDTH);
+    expect(resolveThreadSidebarMaximumWidth(700, THREAD_SIDEBAR_MIN_WIDTH)).toBe(
+      THREAD_SIDEBAR_MIN_WIDTH,
+    );
+  });
+
+  it("never drops below a raised minimum on a narrow viewport", () => {
+    const raisedMinimum = THREAD_SIDEBAR_MIN_WIDTH + 14;
+
+    expect(resolveThreadSidebarMaximumWidth(800, raisedMinimum)).toBe(raisedMinimum);
+    expect(resolveThreadSidebarMaximumWidth(1200, raisedMinimum)).toBe(
+      1200 - THREAD_MAIN_CONTENT_MIN_WIDTH,
+    );
+  });
+
+  it("widens a stored width below a raised minimum", () => {
+    const raisedMinimum = THREAD_SIDEBAR_MIN_WIDTH + 14;
+
+    expect(clampThreadSidebarWidth(208, raisedMinimum, 560)).toBe(raisedMinimum);
+  });
+
+  it("keeps widths inside the range and caps wide ones", () => {
+    const raisedMinimum = THREAD_SIDEBAR_MIN_WIDTH + 14;
+
+    expect(clampThreadSidebarWidth(300, raisedMinimum, 560)).toBe(300);
+    expect(clampThreadSidebarWidth(900, raisedMinimum, 560)).toBe(560);
   });
 
   it("expresses the width with a live viewport clamp", () => {

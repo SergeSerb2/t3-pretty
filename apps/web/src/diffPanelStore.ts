@@ -14,7 +14,8 @@ export type DiffPanelSelection =
 
 export type DiffRenderMode = "stacked" | "split";
 
-const DEFAULT_SELECTION: DiffPanelSelection = { kind: "unstaged" };
+// "branch" is the Changes view: everything this checkout changed since its base.
+const DEFAULT_SELECTION: DiffPanelSelection = { kind: "branch", baseRef: null };
 
 interface DiffPanelStoreState {
   byThreadKey: Record<string, DiffPanelSelection>;

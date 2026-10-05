@@ -30,6 +30,7 @@ import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { T3Wordmark } from "../T3Wordmark";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -51,7 +52,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     // The titlebar row, not a padded SidebarHeader: it aligns to the window controls.
     <div
       className={cn(
-        "@container/sidebar-header relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 px-3 md:px-0",
+        "relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 px-3 md:pl-0",
         isElectron && "drag-region",
       )}
     >
@@ -61,44 +62,80 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         variant={backdropVariant ? "media-navigation" : "ghost"}
         className="relative top-auto z-10 translate-y-0 md:hidden"
       />
-      <SidebarBrand onBackdrop={backdropVariant !== null} />
-      {pillLabel ? (
-        // The wrapper carries the hiding: Badge's own `inline-flex` utility
-        // outranks the components-layer `sidebar-brand-stage` display rules,
-        // so the class has to live on an element without a display utility.
-        <span
-          className="sidebar-brand-stage relative z-10 ml-1 items-center"
-          data-sidebar-peek="label"
-        >
-          <Badge
-            className="rounded-full px-1.5 text-muted-foreground"
-            data-environment-identification="pill"
-            size="sm"
-            variant="secondary"
+      {/* One visible line: the pill wraps onto the clipped second line once it no longer fits.
+          The padding keeps the brand's focus ring inside the clip. */}
+      <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
+        <SidebarBrand onBackdrop={backdropVariant !== null} />
+        {pillLabel ? (
+          // The wrapper carries the hiding: Badge's own `inline-flex` utility
+          // outranks the components-layer `sidebar-brand-stage` display rules,
+          // so the class has to live on an element without a display utility.
+          <span
+            className="sidebar-brand-stage relative z-10 ml-1 h-7 items-center"
+            data-sidebar-peek="label"
           >
-            {pillLabel}
-          </Badge>
-        </span>
-      ) : null}
+            <Badge
+              className="rounded-full px-1.5 text-muted-foreground"
+              data-environment-identification="pill"
+              size="sm"
+              variant="secondary"
+            >
+              {pillLabel}
+            </Badge>
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 });
+
+// Measures the brand at its titlebar inset, plus the header's right padding and the
+// sidebar border, so the sidebar minimum follows font size, zoom and macOS window controls.
+export function SidebarBrandWidthProbe({
+  onWidthChange,
+}: {
+  onWidthChange: (width: number) => void;
+}) {
+  const observeWidth = useCallback(
+    (probe: HTMLDivElement) => {
+      const observer = new ResizeObserver(([entry]) => {
+        if (entry) onWidthChange(entry.borderBoxSize[0]?.inlineSize ?? probe.offsetWidth);
+      });
+      observer.observe(probe);
+      return () => observer.disconnect();
+    },
+    [onWidthChange],
+  );
+
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none invisible fixed top-0 left-0 flex w-max border-r border-transparent pr-3"
+      ref={observeWidth}
+    >
+      <div className="ml-[var(--workspace-titlebar-content-left)] flex">
+        {/* Keep the parent's chrome minimum while sizing for the Pretty mark
+            that is actually rendered; overlapping cells report the wider mark. */}
+        <div className="grid">
+          <div className="col-start-1 row-start-1 flex w-max items-center">
+            <SidebarBrandMark onBackdrop={false} />
+          </div>
+          <div className="col-start-1 row-start-1 flex w-max items-center">
+            <SidebarPrettyBrandMark onBackdrop={false} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // The mark stays on the resting icon rail; only the wordmark folds away. The
 // link's margin and the word's grid track are owned by `index.css` so the
 // collapse can transition them, since utilities would outrank the components
 // layer.
-function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
+function SidebarPrettyBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
-    <Link
-      aria-label="Go to threads"
-      className={cn(
-        "relative z-10 hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
-        onBackdrop ? "text-white" : "text-foreground",
-      )}
-      data-sidebar-brand=""
-      to="/"
-    >
+    <>
       <img
         alt=""
         aria-hidden="true"
@@ -120,7 +157,40 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       >
         <span className="min-w-0 truncate pl-1 [text-box:trim-start_cap]">Pretty</span>
       </span>
+    </>
+  );
+}
+
+function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
+  return (
+    <Link
+      aria-label="Go to threads"
+      className={cn(
+        "relative z-10 hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
+        onBackdrop ? "text-white" : "text-foreground",
+      )}
+      data-sidebar-brand=""
+      to="/"
+    >
+      <SidebarPrettyBrandMark onBackdrop={onBackdrop} />
     </Link>
+  );
+}
+
+function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
+  return (
+    // Center the visible capitals, without the font's ascender/descender space.
+    <span className="inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight">
+      <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />
+      <span
+        className={cn(
+          "truncate [text-box:trim-both_cap_alphabetic]",
+          onBackdrop ? "text-white/70" : "text-muted-foreground",
+        )}
+      >
+        Code
+      </span>
+    </span>
   );
 }
 

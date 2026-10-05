@@ -39,8 +39,11 @@ export function toolItemForDisplay(item: OrchestrationV2TurnItem): Orchestration
       return displayItem;
     }
     case "file_change": {
-      const { diffStr: _diffStr, oldStr: _oldStr, newStr: _newStr, ...displayItem } = item;
-      return displayItem;
+      const { diffStr, oldStr: _oldStr, newStr: _newStr, ...displayItem } = item;
+      // A failed edit's diffStr holds the provider's error, not a diff.
+      return item.status === "failed" && diffStr?.trim()
+        ? { ...displayItem, diffStr }
+        : displayItem;
     }
     default:
       return item;
@@ -95,6 +98,8 @@ export type ToolGroupAction =
   | "link-pr"
   | "unlink-pr"
   | "list-prs"
+  | "watch-pr"
+  | "unwatch-pr"
   | "read"
   | "edit"
   | "command"
@@ -166,7 +171,9 @@ function resolveT3McpToolPresentation(
   const actionKind =
     definition.summaryAction === "link-pr" ||
     definition.summaryAction === "unlink-pr" ||
-    definition.summaryAction === "list-prs"
+    definition.summaryAction === "list-prs" ||
+    definition.summaryAction === "watch-pr" ||
+    definition.summaryAction === "unwatch-pr"
       ? definition.summaryAction
       : undefined;
   const payload = asRecord(data);
@@ -549,6 +556,10 @@ function toolGroupActionLabel(action: ToolGroupAction, count: number): string {
       return `Linked ${count} ${count === 1 ? "pull request" : "pull requests"}`;
     case "unlink-pr":
       return `Unlinked ${count} ${count === 1 ? "pull request" : "pull requests"}`;
+    case "watch-pr":
+      return `Watching ${count} ${count === 1 ? "pull request" : "pull requests"}`;
+    case "unwatch-pr":
+      return `Stopped watching ${count} ${count === 1 ? "pull request" : "pull requests"}`;
     case "list-prs":
       return count === 1
         ? "Checked linked pull requests"

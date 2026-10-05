@@ -69,6 +69,8 @@ export interface Preferences {
   readonly scenery?: MobileSceneryPreferences;
   /** Device-local counterpart of desktop's `planModeEnabled` legacy flag. */
   readonly planModeEnabled?: boolean;
+  /** Device-local counterpart of web's `sidebarWorkingShelfEnabled` beta. */
+  readonly workingShelfEnabled?: boolean;
   /** Model favorites belong to this device, like the web client setting. */
   readonly modelFavorites?: ReadonlyArray<{
     readonly provider: ProviderInstanceId;
@@ -78,6 +80,7 @@ export interface Preferences {
   readonly threadListSettledShelfExpanded?: boolean;
   readonly threadListSnoozedShelfExpanded?: boolean;
   readonly threadListStoredShelfExpanded?: boolean;
+  readonly threadListWorkingShelfExpanded?: boolean;
 }
 
 /** One thread → photo binding in the World Scenery theme. */
@@ -171,10 +174,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     lastSeenChangelogVersion?: string;
     scenery?: MobileSceneryPreferences;
     planModeEnabled?: boolean;
+    workingShelfEnabled?: boolean;
     modelFavorites?: Preferences["modelFavorites"];
     threadListSettledShelfExpanded?: boolean;
     threadListSnoozedShelfExpanded?: boolean;
     threadListStoredShelfExpanded?: boolean;
+    threadListWorkingShelfExpanded?: boolean;
   } = {};
 
   if (parsed.agentMonitoringEnrollment === null) {
@@ -345,6 +350,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (typeof parsed.planModeEnabled === "boolean") {
     preferences.planModeEnabled = parsed.planModeEnabled;
   }
+  if (typeof parsed.workingShelfEnabled === "boolean") {
+    preferences.workingShelfEnabled = parsed.workingShelfEnabled;
+  }
   if (Array.isArray(parsed.modelFavorites)) {
     preferences.modelFavorites = parsed.modelFavorites.filter(
       (favorite) =>
@@ -364,6 +372,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.threadListStoredShelfExpanded === "boolean") {
     preferences.threadListStoredShelfExpanded = parsed.threadListStoredShelfExpanded;
+  }
+  if (typeof parsed.threadListWorkingShelfExpanded === "boolean") {
+    preferences.threadListWorkingShelfExpanded = parsed.threadListWorkingShelfExpanded;
   }
   return preferences;
 }

@@ -1168,7 +1168,7 @@ export function EnvironmentProviderSettings({
           })
         }
         onInstallRecommended={
-          mode === "editor" &&
+          !readOnly &&
           liveProvider?.compatibilityAdvisory?.message &&
           liveProvider.compatibilityAdvisory.recommendedVersion &&
           liveProvider.versionAdvisory?.canInstallVersion
@@ -1181,13 +1181,13 @@ export function EnvironmentProviderSettings({
             : undefined
         }
         onRunUpdate={
-          mode === "editor" && showInlineUpdateButton && updateCandidate
+          !readOnly && showInlineUpdateButton && updateCandidate
             ? () => {
                 if (canRunInlineUpdate) void runProviderUpdate(updateCandidate);
               }
             : undefined
         }
-        isUpdating={mode === "editor" ? isInstanceUpdateRunning : undefined}
+        isUpdating={isInstanceUpdateRunning}
       />
     );
   };

@@ -45,6 +45,17 @@ import {
 const isSshConnectionProfile = Schema.is(SshConnectionProfile);
 const ENVIRONMENT_REGISTRY_CONCURRENCY = 8;
 
+function unsupportedState(
+  entry: ConnectionCatalogEntry,
+): Pick<ConnectionCatalogEntry, "unsupportedReason" | "serverUpdateRequired"> {
+  return {
+    ...(entry.unsupportedReason === undefined
+      ? {}
+      : { unsupportedReason: entry.unsupportedReason }),
+    ...(entry.serverUpdateRequired === true ? { serverUpdateRequired: true } : {}),
+  };
+}
+
 export class EnvironmentNotRegisteredError extends Schema.TaggedError<EnvironmentNotRegisteredError>()(
   "EnvironmentNotRegisteredError",
   {
@@ -470,7 +481,7 @@ export const make = Effect.gen(function* () {
                 enabled: previous.enabled,
                 ...(previous.unsupportedReason !== undefined &&
                 gitHubRoutingConnectionKey(previous) === gitHubRoutingConnectionKey(registered)
-                  ? { unsupportedReason: previous.unsupportedReason }
+                  ? unsupportedState(previous)
                   : {}),
               };
         if (
@@ -509,7 +520,7 @@ export const make = Effect.gen(function* () {
           const entry: ConnectionCatalogEntry =
             previous?.unsupportedReason !== undefined &&
             gitHubRoutingConnectionKey(previous) === gitHubRoutingConnectionKey(registered)
-              ? { ...registered, enabled: false, unsupportedReason: previous.unsupportedReason }
+              ? { ...registered, enabled: false, ...unsupportedState(previous) }
               : registered;
           const persistedTarget = (yield* Ref.get(persistedTargetsByEnvironment)).get(
             target.environmentId,
@@ -903,11 +914,26 @@ export const make = Effect.gen(function* () {
       environmentId,
       Effect.gen(function* () {
         const entry = (yield* SubscriptionRef.get(entries)).get(environmentId);
-        if (entry === undefined || entry.unsupportedReason === (error?.message ?? undefined))
+        if (
+          entry === undefined ||
+          (entry.unsupportedReason === (error?.message ?? undefined) &&
+            entry.serverUpdateRequired === (error?.serverUpdateRequired ?? undefined))
+        )
           return;
-        const { unsupportedReason: _previousReason, ...rest } = entry;
+        const {
+          unsupportedReason: _previousReason,
+          serverUpdateRequired: _previousUpdateRequired,
+          ...rest
+        } = entry;
         const next: ConnectionCatalogEntry =
-          error === null ? rest : { ...rest, enabled: false, unsupportedReason: error.message };
+          error === null
+            ? rest
+            : {
+                ...rest,
+                enabled: false,
+                unsupportedReason: error.message,
+                ...(error.serverUpdateRequired === true ? { serverUpdateRequired: true } : {}),
+              };
         if (
           error !== null &&
           entry.enabled &&

@@ -275,6 +275,30 @@ async function writeThreadLifecycle<R extends { readonly _tag: string }>(
   return result;
 }
 
+/**
+ * Clears a thread's Woke marker by recording a visit at the wake time.
+ * Servers with visited tracking own the watermark (thread.visit keeps the
+ * later of the stored and supplied values, so this syncs to every device);
+ * older servers keep the browser-local watermark.
+ */
+export function useAcknowledgeThreadWoke() {
+  const visitThreadMutation = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
+  const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
+  return useCallback(
+    (target: ScopedThreadRef, wokeAt: string) => {
+      if (readEnvironmentSupportsVisitedTracking(target.environmentId)) {
+        void visitThreadMutation({
+          environmentId: target.environmentId,
+          input: { threadId: target.threadId, visitedAt: wokeAt },
+        });
+        return;
+      }
+      markThreadVisited(scopedThreadKey(target), wokeAt);
+    },
+    [markThreadVisited, visitThreadMutation],
+  );
+}
+
 export function useThreadActions() {
   const storeThreadMutation = useAtomCommand(threadEnvironment.store, {
     reportFailure: false,
@@ -1103,12 +1127,7 @@ export function useThreadActions() {
       });
       return result;
     },
-    [
-      resolveThreadTarget,
-      snoozeThreadMutation,
-      storeThreadMutation,
-      unsnoozeThread,
-    ],
+    [resolveThreadTarget, snoozeThreadMutation, storeThreadMutation, unsnoozeThread],
   );
 
   const unstoreThread = useCallback(

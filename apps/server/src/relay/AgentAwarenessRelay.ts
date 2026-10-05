@@ -197,7 +197,12 @@ const REDACTED_RELAY_AGENT_FAILURE_DETAIL = "The agent run failed.";
 const RELAY_AGENT_ACTIVITY_PUBLISH_TIMEOUT = "15 seconds";
 function relayOriginForDiagnostics(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  try { const url = new URL(value); return `${url.protocol}//${url.host}`; } catch { return "invalid-relay-url"; }
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return "invalid-relay-url";
+  }
 }
 const RELAY_AGENT_ACTIVITY_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 
@@ -308,10 +313,20 @@ function describeThreadShellForAwareness(
   };
 }
 
-const AUTOMATION_RUN_PUBLISHED_PHASES: ReadonlySet<RelayAgentActivityState["phase"]> = new Set(["failed", "waiting_for_approval", "waiting_for_input"]);
-export function awarenessForRelayThread(input: Parameters<typeof projectThreadAwarenessV2>[0]): RelayAgentActivityState | null {
+const AUTOMATION_RUN_PUBLISHED_PHASES: ReadonlySet<RelayAgentActivityState["phase"]> = new Set([
+  "failed",
+  "waiting_for_approval",
+  "waiting_for_input",
+]);
+export function awarenessForRelayThread(
+  input: Parameters<typeof projectThreadAwarenessV2>[0],
+): RelayAgentActivityState | null {
   const state = projectThreadAwarenessV2(input);
-  return state !== null && input.thread.automationRun != null && !AUTOMATION_RUN_PUBLISHED_PHASES.has(state.phase) ? null : state;
+  return state !== null &&
+    input.thread.automationRun != null &&
+    !AUTOMATION_RUN_PUBLISHED_PHASES.has(state.phase)
+    ? null
+    : state;
 }
 
 export function resolveAgentAwarenessRelayPublishSnapshot(input: {
@@ -346,7 +361,8 @@ export function resolveAgentAwarenessRelayPublishSnapshot(input: {
   return {
     projectId: input.thread.value.projectId,
     state: sanitizeRelayAgentActivityState(state),
-    reason: state === null && input.thread.value.automationRun != null ? "automation-run" : "snapshot",
+    reason:
+      state === null && input.thread.value.automationRun != null ? "automation-run" : "snapshot",
   };
 }
 
@@ -399,7 +415,6 @@ export const make = Effect.gen(function* () {
   // Holds at most one pending wake, so a burst of requests costs one retry.
   const catchUpRequests = yield* Queue.dropping<void>(1);
   const publishedStateByThreadRef = yield* Ref.make(new Map<ThreadId, string>());
-
 
   const readSecretString = (name: string) =>
     secrets
@@ -530,6 +545,16 @@ export const make = Effect.gen(function* () {
     // domain event, so materializing the full shell here would make the cost
     // of one thread's activity proportional to how many threads exist.
     const threadShell = yield* threads.getThreadShell(threadId);
+    if (
+      threadShell?.lineage.relationshipToParent === "subagent" &&
+      !(yield* Ref.get(publishedStateByThreadRef)).has(threadId)
+    ) {
+      // Subagents never project activity, so the relay holds no row to clear.
+      // Their events would otherwise publish a tombstone each, and every
+      // publish re-delivers the user's aggregate. Checked before the archive
+      // filter so archiving one stays quiet too.
+      return;
+    }
     const thread =
       threadShell === null || threadShell.archivedAt !== null
         ? Option.none<OrchestrationV2ThreadShell>()

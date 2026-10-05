@@ -2,9 +2,7 @@ import { type ReactNode } from "react";
 import { MaterialListRow } from "../../components/MaterialListRow";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { VcsRef } from "@t3tools/client-runtime/state/vcs";
-import { type EnvironmentId, resolveEnvironmentMachineKind } from "@t3tools/contracts";
-import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { LegendList } from "@legendapp/list/react-native";
 import {
   isAtomCommandInterrupted,
@@ -33,8 +31,7 @@ import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSym
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
-import { useServerConfigs, waitForProject } from "../../state/entities";
-import { projectEnvironment } from "../../state/projects";
+import { useServerConfigs } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
 import {
@@ -210,39 +207,7 @@ export function NewTaskEnvironmentPickerRouteScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const serverConfigs = useServerConfigs();
-  const ensureScratch = useAtomCommand(projectEnvironment.ensureScratch, {
-    reportFailure: false,
-  });
-  const [movingToEnvironmentId, setMovingToEnvironmentId] = useState<EnvironmentId | null>(null);
   const glass = useGlassChromeActive();
-
-  // A thread without a project moves to the other machine's own Scratch
-  // project, which is created there first if it does not exist yet.
-  async function moveScratchDraft(environmentId: EnvironmentId): Promise<void> {
-    setMovingToEnvironmentId(environmentId);
-    try {
-      const result = await ensureScratch({ environmentId, input: {} });
-      if (AsyncResult.isFailure(result)) {
-        const error = Cause.squash(result.cause);
-        Alert.alert(
-          "Could not switch machine",
-          error instanceof Error
-            ? error.message
-            : "The folder for threads without a project could not be created.",
-        );
-        return;
-      }
-      const project = await waitForProject({ environmentId, projectId: result.value.projectId });
-      if (project === null) {
-        Alert.alert("Could not switch machine", "It has not reached this device yet. Try again.");
-        return;
-      }
-      flow.setProject(project);
-      navigation.goBack();
-    } finally {
-      setMovingToEnvironmentId(null);
-    }
-  }
 
   return (
     <SheetSurface>
@@ -270,7 +235,7 @@ export function NewTaskEnvironmentPickerRouteScreen() {
           }}
           data={flow.environments}
           estimatedItemSize={56}
-          extraData={`${flow.selectedEnvironmentId ?? ""}:${movingToEnvironmentId ?? ""}:${glass}`}
+          extraData={`${flow.selectedEnvironmentId ?? ""}:${flow.switchingToEnvironmentId ?? ""}:${glass}`}
           keyExtractor={(environment) => String(environment.environmentId)}
           recycleItems
           renderItem={({ item: environment, index }) => (
@@ -301,18 +266,12 @@ export function NewTaskEnvironmentPickerRouteScreen() {
                   />
                 }
                 isLast={index === flow.environments.length - 1}
-                disabled={movingToEnvironmentId !== null}
+                disabled={flow.switchingToEnvironmentId !== null}
                 onPress={() => {
                   void Haptics.selectionAsync();
-                  if (
-                    flow.isScratchDraft &&
-                    environment.environmentId !== flow.selectedEnvironmentId
-                  ) {
-                    void moveScratchDraft(environment.environmentId);
-                    return;
-                  }
-                  if (!flow.isScratchDraft) flow.selectEnvironment(environment.environmentId);
-                  navigation.goBack();
+                  void flow.switchEnvironment(environment.environmentId).then((switched) => {
+                    if (switched) navigation.goBack();
+                  });
                 }}
                 selected={flow.selectedEnvironmentId === environment.environmentId}
                 title={environment.environmentLabel}

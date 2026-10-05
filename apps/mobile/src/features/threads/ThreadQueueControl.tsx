@@ -36,6 +36,7 @@ import { environmentThreadDetails, threadEnvironment } from "../../state/threads
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import {
+  REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL,
   buildCancelQueuedRunCommand,
   resolveQueueDragBeforeRunId,
   resolveQueueDropBeforeRunId,
@@ -532,7 +533,14 @@ function QueueRowSwipeable(props: {
         props.onRemove();
       }}
       renderRightActions={(_progress, translation) => (
-        <QueueRemoveAction translation={props.slideActions ? translation : undefined} />
+        <QueueRemoveAction
+          translation={props.slideActions ? translation : undefined}
+          enabled={props.enabled}
+          onRemove={() => {
+            swipeableRef.current?.close();
+            props.onRemove();
+          }}
+        />
       )}
     >
       {props.children}
@@ -540,7 +548,11 @@ function QueueRowSwipeable(props: {
   );
 }
 
-function QueueRemoveAction(props: { readonly translation?: SharedValue<number> }) {
+function QueueRemoveAction(props: {
+  readonly enabled: boolean;
+  readonly onRemove: () => void;
+  readonly translation?: SharedValue<number>;
+}) {
   const { translation } = props;
   const slideStyle = useAnimatedStyle(() => ({
     transform: [
@@ -548,12 +560,17 @@ function QueueRemoveAction(props: { readonly translation?: SharedValue<number> }
     ],
   }));
   return (
-    <Reanimated.View
-      className="items-center justify-center bg-danger"
-      style={[{ width: REMOVE_ACTION_WIDTH }, slideStyle]}
-    >
-      <SymbolView name="trash" size={16} tintColorClassName="accent-danger-foreground" />
-      <Text className="pt-1 text-2xs font-t3-medium text-danger-foreground">Remove</Text>
+    <Reanimated.View style={[{ width: REMOVE_ACTION_WIDTH }, slideStyle]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL}
+        disabled={!props.enabled}
+        onPress={props.onRemove}
+        className="flex-1 items-center justify-center bg-danger active:opacity-70 disabled:opacity-40"
+      >
+        <SymbolView name="trash" size={16} tintColorClassName="accent-danger-foreground" />
+        <Text className="pt-1 text-2xs font-t3-medium text-danger-foreground">Remove</Text>
+      </Pressable>
     </Reanimated.View>
   );
 }
