@@ -13,6 +13,7 @@ import { SymbolView } from "../../components/AppSymbol";
 import { CompactBrandTitle } from "../../components/CompactBrandTitle";
 import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import {
@@ -351,10 +352,17 @@ function IosHomeHeader(props: HomeHeaderProps) {
                 ],
               }
             : {
-                // Pre-Liquid-Glass iOS: standard pull-down search in the nav
-                // bar; create + sort live in the plain bottom toolbar below.
+                // Standard UIKit search; create + sort live in the bottom
+                // toolbar below. Liquid Glass collapses it to a glass button
+                // beside the header items instead of a stacked field that
+                // pushes the list down; older iOS keeps the field. Toolbar
+                // integration stays off: the bottom toolbar is the patched
+                // RNS item list, which does not place UIKit's search item.
                 headerSearchBarOptions: {
                   ref: searchBarRef,
+                  ...(NATIVE_LIQUID_GLASS_SUPPORTED
+                    ? { allowToolbarIntegration: false, placement: "integratedButton" as const }
+                    : undefined),
                   autoCapitalize: "none" as const,
                   hideNavigationBar: false,
                   placeholder: "Search",

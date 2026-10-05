@@ -2,21 +2,81 @@ import * as Linking from "expo-linking";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
 
-import { SymbolView } from "../../components/AppSymbol";
+import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
+import { cn } from "../../lib/cn";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
 import { UNSPLASH_UTM, type SceneryPhoto } from "../scenery/sceneryLogic";
+import type { ThreadListV2Badge } from "../threads/threadListV2";
 import type { HomeGlanceSummary } from "./home-glance";
 
 const DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+});
+
+const ACCESSIBLE_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   weekday: "long",
   month: "long",
   day: "numeric",
 });
 
+interface GlanceTone {
+  readonly symbol: AppSymbolName;
+  readonly orbClassName: string;
+  readonly tintClassName: string;
+}
+
+// Same hues as the card status pills below, so the orb and the cards agree.
+const TONE_BY_BADGE: Record<ThreadListV2Badge, GlanceTone> = {
+  approval: {
+    symbol: "exclamationmark.circle",
+    orbClassName: "bg-adaptive-amber-500-a12-a16",
+    tintClassName: "accent-adaptive-amber-700-300",
+  },
+  input: {
+    symbol: "text.bubble",
+    orbClassName: "bg-adaptive-indigo-500-a12-a16",
+    tintClassName: "accent-adaptive-indigo-600-300",
+  },
+  failed: {
+    symbol: "exclamationmark.triangle",
+    orbClassName: "bg-adaptive-rose-500-a12-a16",
+    tintClassName: "accent-adaptive-rose-700-300",
+  },
+  limited: {
+    symbol: "timer",
+    orbClassName: "bg-adaptive-amber-500-a12-a16",
+    tintClassName: "accent-adaptive-amber-700-300",
+  },
+  working: {
+    symbol: "sparkles",
+    orbClassName: "bg-adaptive-sky-500-a12-a16",
+    tintClassName: "accent-adaptive-sky-700-300",
+  },
+  monitoring: {
+    symbol: "eye",
+    orbClassName: "bg-adaptive-zinc-500-a12-a16",
+    tintClassName: "accent-foreground",
+  },
+  done: {
+    symbol: "checkmark",
+    orbClassName: "bg-adaptive-emerald-500-a12-a16",
+    tintClassName: "accent-adaptive-emerald-700-300",
+  },
+};
+
+const CAUGHT_UP_TONE: GlanceTone = {
+  symbol: "sun.max",
+  orbClassName: "bg-adaptive-emerald-500-a12-a16",
+  tintClassName: "accent-adaptive-emerald-700-300",
+};
+
 /**
- * Top of the iOS glass Home list: today's date, what needs the user across
- * the cards below, and where today's photo was taken. It scrolls away with
- * the list and is left out while searching.
+ * Top of the iOS glass Home list: one frosted card with the most urgent
+ * state, the other states, today's date, and where today's photo was taken.
+ * It scrolls away with the list and is left out while searching.
  */
 export const HomeGlance = memo(function HomeGlance(props: {
   readonly summary: HomeGlanceSummary;
@@ -25,32 +85,62 @@ export const HomeGlance = memo(function HomeGlance(props: {
   /** Today's photo behind Home, credited here. */
   readonly photo: SceneryPhoto | null;
 }) {
+  const { headline, detail, tone } = props.summary;
+  const glanceTone = tone === null ? CAUGHT_UP_TONE : TONE_BY_BADGE[tone];
   const dateLabel = DATE_FORMATTER.format(props.date);
-  const { headline, detail } = props.summary;
   return (
-    // Card inset 12 + card padding 16: the text lines up with the card tiles.
-    <View className="px-7 pb-3 pt-1">
+    // Same inset, fill and edge as the thread cards below.
+    <View className="px-3 pb-1">
       <View
-        accessible
-        accessibilityLabel={[dateLabel, headline, detail].filter(Boolean).join(". ")}
+        className={cn("flex-row items-center gap-3 px-4 py-3", GLASS_CARD_CLASS_NAME)}
+        style={glassCardStyle()}
       >
-        <Text className="text-2xs font-t3-bold uppercase tracking-[0.8px] text-foreground-secondary">
-          {dateLabel}
-        </Text>
-        <Text
-          accessibilityRole="header"
-          className="mt-1 text-2xl font-t3-bold tracking-tight text-foreground"
-          numberOfLines={2}
+        <View
+          className={cn("size-9 items-center justify-center rounded-full", glanceTone.orbClassName)}
         >
-          {headline}
-        </Text>
-        {detail !== null ? (
-          <Text className="mt-0.5 text-sm text-foreground-secondary" numberOfLines={1}>
-            {detail}
-          </Text>
-        ) : null}
+          <SymbolView
+            name={glanceTone.symbol}
+            size={15}
+            tintColorClassName={glanceTone.tintClassName}
+            type="monochrome"
+            weight="semibold"
+          />
+        </View>
+        <View className="min-w-0 flex-1 gap-0.5">
+          <View
+            accessible
+            accessibilityLabel={[ACCESSIBLE_DATE_FORMATTER.format(props.date), headline, detail]
+              .filter(Boolean)
+              .join(". ")}
+            accessibilityRole="header"
+            className="flex-row items-baseline gap-2"
+          >
+            <Text
+              className="shrink text-base font-t3-bold tracking-tight text-foreground"
+              numberOfLines={1}
+            >
+              {headline}
+            </Text>
+            <Text className="ml-auto shrink-0 text-xs font-t3-medium uppercase tracking-[0.4px] text-foreground-secondary">
+              {dateLabel}
+            </Text>
+          </View>
+          <View className="flex-row items-center gap-2">
+            {detail !== null ? (
+              <Text
+                className="shrink text-xs text-foreground-secondary"
+                // Already read out by the header row above.
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+                numberOfLines={1}
+              >
+                {detail}
+              </Text>
+            ) : null}
+            {props.photo !== null ? <HomeGlancePhotoCredit photo={props.photo} /> : null}
+          </View>
+        </View>
       </View>
-      {props.photo !== null ? <HomeGlancePhotoCredit photo={props.photo} /> : null}
     </View>
   );
 });
@@ -65,19 +155,19 @@ function HomeGlancePhotoCredit(props: { readonly photo: SceneryPhoto }) {
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={`Wallpaper: ${photo.name}. Photo by ${photo.photographerName} on Unsplash.`}
-      className="mt-2.5 flex-row items-center gap-1.5 self-start"
+      className="ml-auto max-w-[60%] shrink flex-row items-center gap-1"
       hitSlop={8}
       onPress={() => void Linking.openURL(profileURL).catch(() => undefined)}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
       <SymbolView
-        name="photo"
-        size={11}
-        tintColorClassName="accent-foreground-secondary"
+        name="camera"
+        size={10}
+        tintColorClassName="accent-foreground-tertiary"
         type="monochrome"
       />
-      <Text className="shrink text-2xs text-foreground-secondary" numberOfLines={1}>
-        {photo.name} · Photo by {photo.photographerName}
+      <Text className="shrink text-2xs text-foreground-tertiary" numberOfLines={1}>
+        {photo.name} · {photo.photographerName}
       </Text>
     </Pressable>
   );
