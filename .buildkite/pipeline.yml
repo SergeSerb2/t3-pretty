@@ -99,6 +99,8 @@ env:
 # one-run retry. Unset leaves normal CI/release behavior unchanged.
 # T3CODE_DESKTOP_ONLY=1 releases desktop installers without CLI, mobile,
 # relay, or an extra upstream sync. Scheduled sync ignores this selector.
+# T3CODE_SKIP_MACOS=1 skips macOS and its version-matched CLI publisher.
+# T3CODE_SKIP_IOS=1 skips iOS delivery for a scoped Linux/relay retry.
 steps:
   - label: ":github: Mirror Origin main and release tags"
     key: github-mirror
@@ -241,7 +243,7 @@ steps:
     # Hosted linux-small auto-cancels (BK #1944/#1948), so this packs on
     # the same macos-release Mac that just published the DMG. The tarball
     # is JS; it does not need linux-small or linux-arm64.
-    if: 'build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_DESKTOP_ONLY") != "1" && (build.branch == "main" && build.source != "schedule")'
+    if: 'build.env("T3CODE_IOS_ONLY") != "1" && build.env("T3CODE_DESKTOP_ONLY") != "1" && (build.branch == "main" && build.source != "schedule") && build.env("T3CODE_SKIP_MACOS") != "1"'
     timeout_in_minutes: 40
     agents:
       queue: macos-release
@@ -281,6 +283,13 @@ steps:
       T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
       GIT_TERMINAL_PROMPT: "0"
       GIT_ASKPASS: "/bin/true"
+      # References are not build inputs. A no-checkout clone avoids the
+      # agent's unconditional pre-clean of malformed vendored gitlinks;
+      # normal checkout then restores the complete pinned source tree.
+      BUILDKITE_GIT_SUBMODULES: "false"
+      BUILDKITE_CLEAN_CHECKOUT: "true"
+      BUILDKITE_GIT_CLONE_FLAGS: "-v --no-checkout"
+      RAYON_NUM_THREADS: "1"
     command: bash scripts/fork/build-linux-appimage.sh
 
   - label: ":mac: macOS arm64 DMG"
@@ -288,7 +297,7 @@ steps:
     # Both Apple builds replace the user keychain search list while signing.
     concurrency: 1
     concurrency_group: "t3-pretty/apple-signing"
-    if: 'build.env("T3CODE_IOS_ONLY") != "1" && (build.branch == "main" && build.source != "schedule")'
+    if: 'build.env("T3CODE_IOS_ONLY") != "1" && (build.branch == "main" && build.source != "schedule") && build.env("T3CODE_SKIP_MACOS") != "1"'
     timeout_in_minutes: 60
     # Temporarily on macos-release + os=macos. Hosted macos-large
     # auto-cancels in ~100ms with empty logs (BK #1944/#1948).
@@ -312,7 +321,7 @@ steps:
     # in front of TestFlight. Do not share the Apple signing slot with
     # macos-dmg: a Linux Expo job must not block the Mac DMG.
     priority: 20
-    if: build.branch == "main" && build.source != "schedule" && build.env("T3CODE_DESKTOP_ONLY") != "1"
+    if: build.branch == "main" && build.source != "schedule" && build.env("T3CODE_DESKTOP_ONLY") != "1" && build.env("T3CODE_SKIP_IOS") != "1"
     timeout_in_minutes: 90
     # Windows fails before checkout (Access denied / exit 5). Use the
     # working self-hosted Mac; os=macos excludes the mixed pool's Linux
