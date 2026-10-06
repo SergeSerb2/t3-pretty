@@ -42,7 +42,7 @@ const MINT = {
   },
 } as const;
 
-export const MINT_GLASS_SIZE = 36;
+export const MINT_GLASS_SIZE = 40;
 
 // Device tilt in [-1, 1], shared by every button and written only by
 // MintGlassMotion. Values stay 0 (a static sheen) until it mounts.
@@ -245,7 +245,7 @@ export function MintGlassButton(props: {
           (props.icon ? (
             <SymbolView
               name={props.icon}
-              size={Math.round(size * 0.44)}
+              size={Math.round(size * 0.48)}
               tintColor={ink}
               type="monochrome"
               weight="semibold"

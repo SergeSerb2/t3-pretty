@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import type { AppNativeStackNavigationOptions } from "../../native/StackHeader";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
+import { mintGlassBackItem } from "../../native/mintGlassHeaderItems";
 import {
   ThreadGitControls,
   useThreadGitCenterHeaderItems,
@@ -91,14 +92,14 @@ export function useThreadHeaderOptions(props: {
         }
       : undefined,
     title: props.title,
-    headerBackVisible: !layout.usesSplitView,
-    // Compact uses the NATIVE back button when a previous route exists;
+    headerBackVisible: false,
+    // Compact uses the mint glass back button when a previous route exists;
     // deep links / cold starts get an explicit Home button instead.
     // Split view always uses its custom left items.
     unstable_headerLeftItems: layout.usesSplitView
       ? () => splitLeftHeaderItems
       : canGoBack
-        ? undefined
+        ? () => [mintGlassBackItem(() => navigation.goBack())]
         : () => compactHomeHeaderItems,
     // Search lives in the persistent sidebar, so the split header keeps
     // the git controls on the RIGHT (no center items — center space is

@@ -1249,24 +1249,25 @@ index add33c4..489afa5 100644
    [self setHidesSharedBackground:newHeaderSubviewProps.hidesSharedBackground];
    [self setSynchronousShadowStateUpdatesEnabled:newHeaderSubviewProps.synchronousShadowStateUpdatesEnabled];
    [super updateProps:props oldProps:oldProps];
-@@ -276,7 +303,14 @@ - (void)configureBarButtonItem
+@@ -276,7 +303,16 @@ - (void)configureBarButtonItem
  #if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
--  if (@available(iOS 26.0, *)) {
-+  if (@available(iOS 26.0, *) && RNSAllowsPatchedLiquidGlassChrome()) {
+   if (@available(iOS 26.0, *)) {
      if (_barButtonItem != nil) {
 -      [_barButtonItem setHidesSharedBackground:_hidesSharedBackground];
-+      NSString *currentIdentifier = _barButtonItem.identifier;
-+      if (currentIdentifier != _barButtonItemIdentifier &&
-+          ![currentIdentifier isEqualToString:_barButtonItemIdentifier]) {
-+        _barButtonItem.identifier = _barButtonItemIdentifier;
-+      }
++      // Hiding the shared background builds no glass, so it stays live while
++      // the kill switch holds: custom header views draw their own chrome.
 +      if (_barButtonItem.hidesSharedBackground != _hidesSharedBackground) {
 +        _barButtonItem.hidesSharedBackground = _hidesSharedBackground;
++      }
++      NSString *currentIdentifier = _barButtonItem.identifier;
++      if (RNSAllowsPatchedLiquidGlassChrome() && currentIdentifier != _barButtonItemIdentifier &&
++          ![currentIdentifier isEqualToString:_barButtonItemIdentifier]) {
++        _barButtonItem.identifier = _barButtonItemIdentifier;
 +      }
      }
    }
  #endif // RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
-@@ -284,10 +318,22 @@ - (void)configureBarButtonItem
+@@ -284,10 +320,22 @@ - (void)configureBarButtonItem
  
  - (void)setHidesSharedBackground:(BOOL)hidesSharedBackground
  {

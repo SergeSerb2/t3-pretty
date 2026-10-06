@@ -7,6 +7,7 @@ import { AppText as Text } from "../../../components/AppText";
 import { LoadingStrip } from "../../../components/LoadingStrip";
 import { SymbolView } from "../../../components/AppSymbol";
 import { MintGlassButton } from "../../../components/MintGlassButton";
+import { mintGlassCustomItem } from "../../../native/mintGlassHeaderItems";
 import { isLegalDocumentUrl, LEGAL_URL } from "../lib/legal-document-url";
 
 function LegalHeaderButton(props: {
@@ -83,6 +84,9 @@ export function SettingsLegalDocumentRouteScreen({
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: renderExternalHeaderButton,
+      ...(Platform.OS === "ios"
+        ? { unstable_headerRightItems: () => [mintGlassCustomItem(renderExternalHeaderButton())] }
+        : {}),
     });
   }, [navigation, renderExternalHeaderButton]);
 

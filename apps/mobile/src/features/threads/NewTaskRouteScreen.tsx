@@ -123,7 +123,7 @@ function NewTaskHeader(props: {
               icon: "chevron.left",
             }
       }
-      options={{ headerBackVisible: !layout.usesSplitView }}
+      options={{ headerBackVisible: Platform.OS !== "ios" && !layout.usesSplitView }}
       hideBottomBorder
       onBack={() => navigation.goBack()}
       actions={
