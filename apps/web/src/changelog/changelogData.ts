@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261005.2702003210",
+    date: "2026-10-06",
+    items: [
+      {
+        kind: "fixed",
+        title: "Release retained conversation payloads",
+      },
+      {
+        kind: "fixed",
+        title: "Open model choices in a dedicated picker",
+      },
+      {
+        kind: "new",
+        title: "Balance new threads across machines on mobile",
+      },
+      {
+        kind: "new",
+        title: "Pastel mint glass buttons that shimmer with tilt",
+      },
+      {
+        kind: "new",
+        title: "Trailhead first-run onboarding for desktop, web, and mobile",
+      },
+      {
+        kind: "new",
+        title: "Condense the iOS Home header into one glass glance card",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261005.2702003200",
     date: "2026-10-06",
     items: [
