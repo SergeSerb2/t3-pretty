@@ -3,6 +3,8 @@
 # A Linux-only recovery may finish the already delivered Mac/CLI release.
 # Never reuse its version for changed application/dependency code or a
 # Linux feed that already published that version.
+# The build sources update-feed-version.sh before reading its feed floor;
+# this guard shares the manifest parser already loaded by that caller.
 t3_resolve_linux_recovery_version() (
   set -euo pipefail
   local version="${T3CODE_LINUX_RECOVERY_VERSION:?}"
@@ -28,6 +30,12 @@ t3_resolve_linux_recovery_version() (
     ! git diff --quiet "$source_commit" -- "${application_paths[@]}"; then
       echo "Linux recovery source differs from the delivered application or dependencies." >&2
       exit 1
+  fi
+  local untracked
+  untracked="$(git ls-files --others --exclude-standard -- "${application_paths[@]}")" || exit 1
+  if [[ -n "$untracked" ]]; then
+    echo "Linux recovery contains untracked application or dependency files." >&2
+    exit 1
   fi
 
   local tmp

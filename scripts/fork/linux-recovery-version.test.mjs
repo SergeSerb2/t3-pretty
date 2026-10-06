@@ -49,6 +49,11 @@ function fixture(input = {}) {
         "delivered application\n",
       );
   }
+  if (input.untrackedApplication)
+    NodeFS.writeFileSync(
+      NodePath.join(repo, "apps/server/untracked-source.ts"),
+      "new application\n",
+    );
   NodeFS.writeFileSync(
     NodePath.join(pkg, "package.json"),
     JSON.stringify({ name: "t3", version: input.packageVersion ?? version }),
@@ -134,6 +139,7 @@ describe("Linux recovery uses the delivered CLI version", () => {
     ["unstaged application changes", { unstagedApplication: true }],
     ["staged application changes", { stagedApplication: true }],
     ["index changes hidden by a clean worktree", { indexOnlyApplication: true }],
+    ["untracked application files", { untrackedApplication: true }],
     ["unrelated source commit", { sourceCommit: "0".repeat(40) }],
     ["different nightly family", { requestedVersion: "0.0.46-nightly.20261005.2703003200" }],
     ["different Mac release", { macVersion: "0.0.46-nightly.20261005.2702003201" }],
