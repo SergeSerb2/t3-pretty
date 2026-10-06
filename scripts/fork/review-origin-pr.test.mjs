@@ -321,4 +321,71 @@ describe("Origin Grok review workflow wiring", () => {
       NodeFS.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("captures an upstream diff larger than the default 32 MiB without changing its content", () => {
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-review-large-diff-"));
+    const bytes = 33 * 1024 * 1024;
+    try {
+      const bin = NodePath.join(dir, ".local", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(bin, "origin"),
+        '#!/usr/bin/env node\nconst fs = require("node:fs"); const chunk = "x".repeat(1024 * 1024); for (let i = 0; i < 33; i++) fs.writeSync(1, chunk);\n',
+        { mode: 0o755 },
+      );
+      const moduleUrl = NodeURL.pathToFileURL(NodePath.resolve(here, "review-origin-pr.mjs"));
+      const result = NodeChildProcess.spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `import { pullRequestDiff } from ${JSON.stringify(moduleUrl.href)}; const diff = pullRequestDiff(807); if (diff.length !== ${bytes} || diff[0] !== "x" || diff.at(-1) !== "x") process.exit(1); console.log(diff.length);`,
+        ],
+        { encoding: "utf8", env: { HOME: dir, PATH: process.env.PATH } },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout.trim(), String(bytes));
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("patches only main's trusted diff capture, is idempotent, and rejects an unknown diff call", () => {
+    const wrapper = NodeFS.readFileSync(
+      NodePath.resolve(here, "run-trusted-origin-pr-ci.sh"),
+      "utf8",
+    );
+    const python = wrapper.split("<<'PY'\n")[2]?.split("\nPY\n")[0];
+    assert.ok(python, "trusted diff capture patch must exist");
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-review-trusted-diff-"));
+    const file = NodePath.join(dir, "review-origin-pr.mjs");
+    const original = [
+      "export function pullRequestDiff(target, { repo } = {}) {",
+      '  return runOrigin(["pr", "diff", String(target), ...originRepoFlag(repo), "--patch"]);',
+      "}",
+      "",
+      "function unrelated() { return runOrigin(['pr', 'view']); }",
+    ].join("\n");
+    try {
+      NodeFS.writeFileSync(file, original);
+      const patch = () =>
+        NodeChildProcess.spawnSync("python3", ["-", file], { encoding: "utf8", input: python });
+      assert.equal(patch().status, 0);
+      const changed = NodeFS.readFileSync(file, "utf8");
+      assert.include(changed, "maxBuffer: 128 * 1024 * 1024");
+      assert.equal(
+        changed.split("function unrelated()")[1],
+        original.split("function unrelated()")[1],
+      );
+      assert.equal(patch().status, 0);
+      assert.equal(NodeFS.readFileSync(file, "utf8"), changed);
+      const unknown = original.replace('"--patch"', '"--unknown-diff-option"');
+      NodeFS.writeFileSync(file, unknown);
+      assert.notEqual(patch().status, 0);
+      assert.equal(NodeFS.readFileSync(file, "utf8"), unknown);
+      assert.notInclude(wrapper, 'cp "${ROOT}/scripts/fork/review-origin-pr.mjs"');
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

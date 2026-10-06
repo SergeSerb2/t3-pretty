@@ -337,7 +337,10 @@ export async function viewPullRequestWithRetry(
 }
 
 export function pullRequestDiff(target, { repo } = {}) {
-  return runOrigin(["pr", "diff", String(target), ...originRepoFlag(repo), "--patch"]);
+  // Upstream syncs include vendored reference snapshots and can exceed 32 MiB.
+  return runOrigin(["pr", "diff", String(target), ...originRepoFlag(repo), "--patch"], {
+    maxBuffer: 128 * 1024 * 1024,
+  });
 }
 
 function writeBodyFile(body) {

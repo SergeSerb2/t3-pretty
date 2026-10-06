@@ -91,10 +91,39 @@ PY
   fi
 }
 
+# Bootstrap this capture fix when origin/main still has the 32 MiB default.
+# Only adjust the diff call in the already-copied trusted reviewer; never
+# replace main's reviewer or credential loader with this checkout's files.
+allow_large_diff_capture() {
+  python3 - "$1" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+src = path.read_text()
+start = src.find("export function pullRequestDiff(")
+if start < 0:
+    raise SystemExit("Trusted reviewer has no pullRequestDiff; refusing to patch it")
+nxt = src.find("\nfunction ", start + 1)
+region = src[start:] if nxt < 0 else src[start:nxt]
+if "maxBuffer:" in region:
+    raise SystemExit(0)
+needle = 'return runOrigin(["pr", "diff", String(target), ...originRepoFlag(repo), "--patch"]);'
+if needle not in region:
+    raise SystemExit("Trusted diff call changed; refusing an unverified patch")
+replacement = (
+    'return runOrigin(["pr", "diff", String(target), ...originRepoFlag(repo), "--patch"], '
+    '{ maxBuffer: 128 * 1024 * 1024 });'
+)
+path.write_text(src[:start] + region.replace(needle, replacement, 1) + ("" if nxt < 0 else src[nxt:]))
+PY
+}
+
 DIR="$(mktemp -d)"
 if copy_from_main "$DIR"; then
   echo "Running Origin PR review scripts from origin/main"
   pass_origin_command_env "${DIR}/origin-forge.mjs"
+  allow_large_diff_capture "${DIR}/review-origin-pr.mjs"
   bash "${DIR}/review-origin-pr-ci.sh" "$@"
 else
   echo "origin/main has no review scripts yet; using this checkout"
