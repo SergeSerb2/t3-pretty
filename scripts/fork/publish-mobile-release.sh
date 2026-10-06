@@ -1305,7 +1305,9 @@ if prefer_local_xcode_ios && ! is_full_xcode "$developer_dir"; then
   annotate error "T3CODE_IOS_LOCAL_XCODE is set but this agent has no full Xcode.app. Install Xcode on a macos-release Mac or unset the flag to compile the TestFlight IPA on EAS cloud."
   exit 1
 fi
-if is_full_xcode "$developer_dir" && ! prefer_eas_cloud_ios; then
+# A per-run local request must take precedence over the pipeline cloud default.
+# The availability check above keeps that request fail-closed without Xcode.
+if is_full_xcode "$developer_dir" && { prefer_local_xcode_ios || ! prefer_eas_cloud_ios; }; then
   :
 else
   ipa_via_cloud=true
