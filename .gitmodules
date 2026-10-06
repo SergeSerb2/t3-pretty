@@ -45,7 +45,12 @@
 	path = .repos/alchemy-effect/.vendor/workers-sdk
 	url = https://github.com/cloudflare/workers-sdk.git
 	update = none
-[submodule ".repos/alchemy-effect/distilled"]
-	path = .repos/alchemy-effect/distilled
+[submodule ".repos/alchemy-effect/submodules/distilled"]
+	path = .repos/alchemy-effect/submodules/distilled
 	url = https://github.com/alchemy-run/distilled.git
+	update = none
+
+[submodule ".repos/alchemy-effect/submodules/floci"]
+	path = .repos/alchemy-effect/submodules/floci
+	url = https://github.com/alchemy-run/floci.git
 	update = none

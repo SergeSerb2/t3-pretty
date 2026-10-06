@@ -283,12 +283,9 @@ steps:
       T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
       GIT_TERMINAL_PROMPT: "0"
       GIT_ASKPASS: "/bin/true"
-      # References are not build inputs. A no-checkout clone avoids the
-      # agent's unconditional pre-clean of malformed vendored gitlinks;
-      # normal checkout then restores the complete pinned source tree.
+      # Reference submodules are not build inputs. Their root .gitmodules
+      # paths must still match the tracked gitlinks for agent pre-clean.
       BUILDKITE_GIT_SUBMODULES: "false"
-      BUILDKITE_CLEAN_CHECKOUT: "true"
-      BUILDKITE_GIT_CLONE_FLAGS: "-v --no-checkout"
       RAYON_NUM_THREADS: "1"
     command: bash scripts/fork/build-linux-appimage.sh
 
