@@ -10,7 +10,7 @@ import type {
 } from "@t3tools/contracts";
 import { displayRuntimeModeForProviderDriver } from "@t3tools/contracts";
 
-import type { LegendListRef, LegendListRenderItemProps } from "@legendapp/list/react-native";
+import type { LegendListRenderItemProps } from "@legendapp/list/react-native";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
@@ -660,10 +660,13 @@ function ThreadSettingsModelListRow(props: {
   readonly isLast: boolean;
 }) {
   const session = useThreadSettingsSession();
-  const onPress = useCallback(
-    () => session.pressModel(props.option),
-    [props.option, session.pressModel],
-  );
+  const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
+  const option = props.option;
+  const pressModel = session.pressModel;
+  const onPress = useCallback(() => {
+    pressModel(option);
+    if (!option.isUnavailable) navigation.goBack();
+  }, [navigation, option, pressModel]);
 
   return (
     <ModelRow
@@ -786,7 +789,7 @@ function useThreadSettingsCatalogItems(
   );
 }
 
-/** Current model plus its reasoning, speed, and access cards, above the catalog. */
+/** Current model plus its reasoning, speed, and access cards. */
 function ThreadSettingsOptions(props: { readonly onPressModel: () => void }) {
   const session = useThreadSettingsSession();
   const configs = useAtomValue(environmentServerConfigsAtom);
@@ -863,14 +866,8 @@ function ThreadSettingsThreadSections(props: {
   );
 }
 
-/**
- * The whole picker on one native scroll owner: options first (the everyday
- * edit), then the model catalog, then thread extras. Searching hides the
- * options so matches land at the top.
- */
-function ThreadSettingsContent(props: {
-  readonly projectTransfer: ThreadSettingsProjectTransfer | undefined;
-}) {
+/** The catalog gets its own page so changing models never scrolls past the options. */
+function ThreadSettingsCatalog() {
   const session = useThreadSettingsSession();
   const glass = useGlassChromeActive();
   const sceneryKey = useThreadSettingsSceneryKey();
@@ -899,7 +896,7 @@ function ThreadSettingsContent(props: {
   const showsFavoritesChip =
     session.favoriteKeys.size > 0 || session.providerFilter === FAVORITES_PROVIDER_FILTER;
   const hasActiveCatalogFilter = session.providerFilter !== null || isSearching;
-  const usesTransparentNativeHeader = Platform.OS === "ios" && NATIVE_LIQUID_GLASS_SUPPORTED;
+  // The floating mail toolbar overlays content outside UIKit's automatic safe-area insets.
   const bottomToolbarInset =
     Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED
       ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET
@@ -908,17 +905,6 @@ function ThreadSettingsContent(props: {
     () => (catalogItems.length === 0 ? [{ kind: "empty", key: "empty" }] : catalogItems),
     [catalogItems],
   );
-  const listRef = useRef<LegendListRef>(null);
-  const isApplied = session.isApplied;
-  // The current-model card jumps to its row in the catalog, or to the top of it.
-  const scrollToCatalog = useCallback(() => {
-    const index = listItems.findIndex((item) => item.kind === "model" && isApplied(item.option));
-    void listRef.current?.scrollToIndex({
-      animated: true,
-      index: Math.max(0, index),
-      viewPosition: 0.2,
-    });
-  }, [isApplied, listItems]);
   const renderCatalogItem = useCallback(
     (itemProps: LegendListRenderItemProps<ThreadSettingsCatalogItem>) => {
       const item = itemProps.item;
@@ -963,8 +949,8 @@ function ThreadSettingsContent(props: {
 
   const list = (
     <AnimatedLegendList
-      ref={listRef}
       alwaysBounceVertical
+      automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
       automaticallyAdjustsScrollIndicatorInsets
       className={glass ? "flex-1" : "flex-1 bg-sheet"}
       style={
@@ -973,10 +959,10 @@ function ThreadSettingsContent(props: {
           : undefined
       }
       contentContainerStyle={{
-        paddingBottom: insets.bottom + bottomToolbarInset + 24,
+        paddingBottom: 24 + bottomToolbarInset + (Platform.OS === "ios" ? 0 : insets.bottom),
         paddingTop: 4,
       }}
-      contentInsetAdjustmentBehavior={usesTransparentNativeHeader ? "never" : "automatic"}
+      contentInsetAdjustmentBehavior="automatic"
       data={listItems}
       estimatedItemSize={Platform.OS === "android" ? 56 : 48}
       extraData={`${animationsReady}:${glass}`}
@@ -988,11 +974,6 @@ function ThreadSettingsContent(props: {
       maintainVisibleContentPosition={THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION}
       ListHeaderComponent={
         <>
-          {isSearching ? null : (
-            <View className="pt-2">
-              <ThreadSettingsOptions onPressModel={scrollToCatalog} />
-            </View>
-          )}
           {Platform.OS === "android" ? (
             <View className="px-4 pb-1 pt-4">
               <View
@@ -1029,11 +1010,7 @@ function ThreadSettingsContent(props: {
                 ) : null}
               </View>
             </View>
-          ) : (
-            <Text className="px-5 pb-1 pt-6 text-sm font-t3-medium text-foreground-muted">
-              Models
-            </Text>
-          )}
+          ) : null}
           {session.providerGroups.length > 1 || showsFavoritesChip ? (
             <ScrollView
               horizontal
@@ -1085,9 +1062,6 @@ function ThreadSettingsContent(props: {
               </View>
             </View>
           ) : null}
-          {isSearching ? null : (
-            <ThreadSettingsThreadSections projectTransfer={props.projectTransfer} />
-          )}
         </>
       }
       recycleItems
@@ -1106,6 +1080,7 @@ function ThreadSettingsContent(props: {
 
 type ThreadSettingsPickerStackParams = {
   ThreadSettingsHome: undefined;
+  ThreadSettingsModels: undefined;
 };
 
 type ThreadSettingsPickerPresentation = {
@@ -1130,8 +1105,13 @@ function ThreadSettingsHomeScreen() {
   const session = useThreadSettingsSession();
   const presentation = useThreadSettingsPickerPresentation();
   const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
-  const usesNativeMailSearchToolbar = Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
-  const hasCustomCatalogFilter = session.showLegacy;
+  const insets = useSafeAreaInsets();
+  const sceneryKey = useThreadSettingsSceneryKey();
+  const setSearchQuery = session.setSearchQuery;
+  const openModels = useCallback(() => {
+    setSearchQuery("");
+    navigation.navigate("ThreadSettingsModels");
+  }, [navigation, setSearchQuery]);
   const transfer = useProjectTransferAction(
     session.checkpointsThreadRef,
     (environmentId, threadId) => {
@@ -1145,6 +1125,64 @@ function ThreadSettingsHomeScreen() {
       );
     },
   );
+  return (
+    <>
+      {Platform.OS === "android" ? (
+        <AndroidScreenHeader
+          actions={[
+            { accessibilityLabel: "Done", icon: "checkmark", onPress: presentation.onClose },
+          ]}
+          onBack={presentation.onClose}
+          title="Model"
+          hideBottomBorder
+        />
+      ) : null}
+      <SheetSurface threadKey={sceneryKey}>
+        <ScrollView
+          automaticallyAdjustsScrollIndicatorInsets
+          className="flex-1"
+          contentInsetAdjustmentBehavior="automatic"
+          contentContainerStyle={{
+            paddingTop: 12,
+            paddingBottom: Platform.OS === "ios" ? 24 : insets.bottom + 24,
+          }}
+          style={
+            Platform.OS === "android"
+              ? { width: "100%", maxWidth: 720, alignSelf: "center" }
+              : undefined
+          }
+        >
+          <ThreadSettingsOptions onPressModel={openModels} />
+          <ThreadSettingsThreadSections
+            projectTransfer={
+              transfer.supported
+                ? {
+                    isPending: transfer.isPending,
+                    pendingLabel: transfer.pendingLabel,
+                    onPress: transfer.present,
+                  }
+                : undefined
+            }
+          />
+        </ScrollView>
+      </SheetSurface>
+      <NativeHeaderToolbar placement="right">
+        <NativeHeaderToolbar.Button
+          accessibilityLabel="Done"
+          label="Done"
+          onPress={presentation.onClose}
+        />
+      </NativeHeaderToolbar>
+    </>
+  );
+}
+
+function ThreadSettingsModelsScreen() {
+  const session = useThreadSettingsSession();
+  const presentation = useThreadSettingsPickerPresentation();
+  const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
+  const usesNativeMailSearchToolbar = Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
+  const hasCustomCatalogFilter = session.showLegacy;
   const filterMenu = useMemo(
     () => ({
       title: "Model filters",
@@ -1169,8 +1207,8 @@ function ThreadSettingsHomeScreen() {
           actions={[
             { accessibilityLabel: "Done", icon: "checkmark", onPress: presentation.onClose },
           ]}
-          onBack={presentation.onClose}
-          title="Model"
+          onBack={() => navigation.goBack()}
+          title="Models"
           hideBottomBorder
         />
       ) : null}
@@ -1198,6 +1236,7 @@ function ThreadSettingsHomeScreen() {
               ? {
                   autoCapitalize: "none",
                   hideNavigationBar: false,
+                  hideWhenScrolling: false,
                   obscureBackground: false,
                   onCancelButtonPress: () => session.setSearchQuery(""),
                   onChangeText: (event) => session.setSearchQuery(event.nativeEvent.text),
@@ -1206,17 +1245,7 @@ function ThreadSettingsHomeScreen() {
               : undefined,
         }}
       />
-      <ThreadSettingsContent
-        projectTransfer={
-          transfer.supported
-            ? {
-                isPending: transfer.isPending,
-                pendingLabel: transfer.pendingLabel,
-                onPress: transfer.present,
-              }
-            : undefined
-        }
-      />
+      <ThreadSettingsCatalog />
       <NativeHeaderToolbar placement="right">
         <NativeHeaderToolbar.Button
           accessibilityLabel="Done"
@@ -1285,6 +1314,11 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
           name="ThreadSettingsHome"
           component={ThreadSettingsHomeScreen}
           options={{ headerBackVisible: false, title: "Model" }}
+        />
+        <ThreadSettingsPickerStack.Screen
+          name="ThreadSettingsModels"
+          component={ThreadSettingsModelsScreen}
+          options={{ title: "Models" }}
         />
       </ThreadSettingsPickerStack.Navigator>
     </ThreadSettingsPickerPresentationContext.Provider>
