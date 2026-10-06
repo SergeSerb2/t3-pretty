@@ -5,6 +5,7 @@ import { SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
 import { MaterialIconButton } from "./MaterialIconButton";
 import { MaterialButton } from "./MaterialButton";
+import { MintGlassButton } from "./MintGlassButton";
 import { useAndroidControlSizing } from "./useAndroidControlSizing";
 
 export { ControlPillMenu } from "./ControlPillMenu";
@@ -116,6 +117,21 @@ export function ControlPill(props: {
         onPress={props.onPress}
         disabled={props.disabled}
         variant={variant === "primary" ? "primary" : variant === "danger" ? "danger" : "tonal"}
+      />
+    );
+  }
+
+  if (Platform.OS === "ios" && variant === "circle" && !props.label) {
+    return (
+      <MintGlassButton
+        accessibilityLabel={props.accessibilityLabel}
+        icon={props.icon}
+        iconNode={props.iconNode}
+        size={44}
+        disabled={props.disabled}
+        onPress={props.activateOnPressIn ? handlePress : props.onPress}
+        onPressIn={props.activateOnPressIn ? handlePressIn : undefined}
+        onPressOut={props.activateOnPressIn ? handlePressOut : undefined}
       />
     );
   }

@@ -447,6 +447,10 @@
       "types": "./src/connectBranding.ts",
       "import": "./src/connectBranding.ts"
     },
+    "./trailhead": {
+      "types": "./src/trailhead.ts",
+      "import": "./src/trailhead.ts"
+    },
     "./threadPullRequestNesting": {
       "types": "./src/threadPullRequestNesting.ts",
       "import": "./src/threadPullRequestNesting.ts"

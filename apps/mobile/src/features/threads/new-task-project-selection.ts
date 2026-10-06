@@ -24,17 +24,25 @@ export function resolveNewTaskSheetRoute(input: {
   readonly selectedEnvironmentId: EnvironmentId | null;
   readonly projectScopes: ReadonlyArray<HomeProjectScope>;
 }):
-  | { readonly screen: "NewTask" }
+  | { readonly screen: "NewTask"; readonly params?: { readonly environmentId: string } }
   | {
       readonly screen: "NewTaskDraft";
       readonly params: {
         readonly environmentId: string;
         readonly projectId: string;
         readonly title: string;
+        readonly environmentSelection?: "manual";
       };
     } {
   if (input.selectedProjectKey === null) {
-    return { screen: "NewTask" };
+    return {
+      screen: "NewTask",
+      ...(input.selectedEnvironmentId !== null
+        ? {
+            params: { environmentId: String(input.selectedEnvironmentId) },
+          }
+        : {}),
+    };
   }
   const scope = input.projectScopes.find((candidate) => candidate.key === input.selectedProjectKey);
   if (!scope) {
@@ -47,6 +55,10 @@ export function resolveNewTaskSheetRoute(input: {
       environmentId: String(project.environmentId),
       projectId: String(project.id),
       title: project.title,
+      ...(input.selectedEnvironmentId !== null &&
+      project.environmentId === input.selectedEnvironmentId
+        ? { environmentSelection: "manual" as const }
+        : {}),
     },
   };
 }

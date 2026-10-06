@@ -3675,7 +3675,9 @@ function LiveActivityContent({
         ) : null
       }
       label={
-        <span
+        <ActivityLabel
+          activityKey={activityKey}
+          headline={headline}
           className={cn(
             "block truncate",
             highlighted && "text-foreground",
@@ -3683,7 +3685,7 @@ function LiveActivityContent({
           )}
         >
           {label}
-        </span>
+        </ActivityLabel>
       }
       trailing={
         showTrailingFailureMark ? (

@@ -48,11 +48,16 @@ const unread = () =>
 
 describe("summarizeHomeGlance", () => {
   it("is caught up when no card carries a status label", () => {
-    expect(summarizeHomeGlance([])).toEqual({ headline: "All caught up", detail: null });
+    expect(summarizeHomeGlance([])).toEqual({
+      headline: "All caught up",
+      detail: null,
+      tone: null,
+    });
     // Ready and waiting cards show a time, not a label.
     expect(summarizeHomeGlance([thread(), thread({ runtime: runtime("idle") })])).toEqual({
       headline: "All caught up",
       detail: null,
+      tone: null,
     });
   });
 
@@ -61,16 +66,24 @@ describe("summarizeHomeGlance", () => {
     expect(summarizeHomeGlance([approval(), input()]).headline).toBe("2 threads need you");
   });
 
+  it("takes its tone from the most urgent badge present in the lead group", () => {
+    expect(summarizeHomeGlance([input()]).tone).toBe("input");
+    expect(summarizeHomeGlance([input(), approval()]).tone).toBe("approval");
+    expect(summarizeHomeGlance([working(), unread()]).tone).toBe("working");
+  });
+
   it("leads with the most urgent state and lists the rest in attention order", () => {
     expect(
       summarizeHomeGlance([unread(), working(), working(), limited(), failed(), input()]),
     ).toEqual({
       headline: "1 thread needs you",
       detail: "1 failed · 1 limited · 2 working · 1 done",
+      tone: "input",
     });
     expect(summarizeHomeGlance([unread(), working(), working(), working()])).toEqual({
       headline: "3 threads working",
       detail: "1 done",
+      tone: "working",
     });
   });
 
@@ -78,6 +91,7 @@ describe("summarizeHomeGlance", () => {
     expect(summarizeHomeGlance([unread(), unread()])).toEqual({
       headline: "2 threads done",
       detail: null,
+      tone: "done",
     });
   });
 });

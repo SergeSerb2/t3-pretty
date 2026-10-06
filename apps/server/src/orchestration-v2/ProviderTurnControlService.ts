@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { t3ThreadMessageForProvider } from "../provider/T3OrchestrationInstructions.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 
@@ -293,6 +294,14 @@ export const layer: Layer.Layer<
               cause: "The persisted steering message or target run is missing.",
             });
           }
+          let text = projectComposerContextForProvider({
+            text: message.text,
+            records: message.context?.records ?? [],
+          });
+          if (message.senderThreadId !== undefined) {
+            const thread = yield* projections.getThread(input.threadId);
+            text = t3ThreadMessageForProvider({ text, message, thread });
+          }
           yield* loaded.session.value
             .steerTurn({
               threadId: input.threadId,
@@ -301,10 +310,7 @@ export const layer: Layer.Layer<
               providerTurnId: loaded.providerTurn.id,
               message: {
                 messageId: message.id,
-                text: projectComposerContextForProvider({
-                  text: message.text,
-                  records: message.context?.records ?? [],
-                }),
+                text,
                 attachments: message.attachments,
                 createdBy: message.createdBy,
                 creationSource: message.creationSource,

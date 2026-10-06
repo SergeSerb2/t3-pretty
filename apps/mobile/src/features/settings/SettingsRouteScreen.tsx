@@ -129,6 +129,7 @@ function LocalSettingsRouteScreen() {
 }
 
 function SettingsIndexSections() {
+  const navigation = useNavigation();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const noServerTargets = selectedTargets.length === 0;
   const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
@@ -209,6 +210,11 @@ function SettingsIndexSections() {
         <SettingsRow icon="square.grid.2x2" label="Apps" target="SettingsApps" />
         <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
         <SettingsRow icon="info.circle" label="About T3 Code" target="SettingsAbout" />
+        <SettingsRow
+          icon="point.topleft.down.curvedto.point.bottomright.up"
+          label="Replay welcome"
+          onPress={() => navigation.navigate("Trailhead")}
+        />
       </SettingsSection>
     </>
   );

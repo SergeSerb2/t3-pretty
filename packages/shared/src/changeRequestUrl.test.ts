@@ -16,6 +16,21 @@ describe("parseChangeRequestUrl", () => {
     });
   });
 
+  it("reads an Origin pull request under the origin.cursor.com git host", () => {
+    for (const url of [
+      "https://cursor.com/codebase/Serbinenko/T3-Pretty/pull/787",
+      "https://www.cursor.com/codebase/serbinenko/t3-pretty/pull/787/files",
+    ]) {
+      expect(parseChangeRequestUrl(url)).toEqual({
+        host: "origin.cursor.com",
+        repository: "serbinenko/t3-pretty",
+        number: 787,
+      });
+    }
+    expect(parseChangeRequestUrl("https://cursor.com/codebase/serbinenko/t3-pretty")).toBeNull();
+    expect(parseChangeRequestUrl("https://evil.test/codebase/a/b/pull/1")).toBeNull();
+  });
+
   it("reads a pull request on a GitHub Enterprise host", () => {
     expect(parseChangeRequestUrl("https://github.acme.test/platform/api/pull/7")).toEqual({
       host: "github.acme.test",
@@ -150,6 +165,12 @@ describe("siblingPullRequestUrl", () => {
 });
 
 describe("changeRequestUrlFor", () => {
+  it("writes the cursor.com web URL for an Origin pull request", () => {
+    expect(changeRequestUrlFor("origin", "origin.cursor.com", "serbinenko/t3-pretty", 787)).toBe(
+      "https://cursor.com/codebase/serbinenko/t3-pretty/pull/787",
+    );
+  });
+
   it("preserves the origin when the Forgejo host already contains its port", () => {
     expect(
       changeRequestUrlFor(

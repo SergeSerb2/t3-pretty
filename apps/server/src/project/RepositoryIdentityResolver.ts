@@ -63,7 +63,9 @@ function parseRemoteUrls(stdout: string): Map<string, RemoteUrls> {
   for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
-    const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/.exec(trimmed);
+    // Git appends the object filter to partial-clone fetch lines, e.g.
+    // `(fetch) [blob:none]`. It is metadata, not part of the remote URL.
+    const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)(?:\s+\[[^\]\r\n]*\])?$/.exec(trimmed);
     if (!match) continue;
     const [, remoteName = "", rawRemoteUrl = "", direction = ""] = match;
     if (

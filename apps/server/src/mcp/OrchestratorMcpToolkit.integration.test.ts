@@ -489,7 +489,7 @@ describe("orchestrator MCP toolkit", () => {
               },
               capturedTurns,
               shouldComplete: (turn) =>
-                turn.threadId !== parentThreadId && turn.message.text !== cancellationPrompt,
+                turn.threadId !== parentThreadId && !turn.message.text.endsWith(cancellationPrompt),
               terminalGate: (turn) =>
                 turn.message.text.startsWith("Delegated task") ||
                 turn.message.text.startsWith("Delegated tasks")
@@ -502,7 +502,7 @@ describe("orchestrator MCP toolkit", () => {
               driver: ProviderDriverKind.make("claudeAgent"),
               capabilities: ClaudeProviderCapabilitiesV2,
               capturedTurns,
-              shouldComplete: (turn) => turn.message.text !== cancellationPrompt,
+              shouldComplete: (turn) => !turn.message.text.endsWith(cancellationPrompt),
               terminalGate: (turn) =>
                 turn.message.text.startsWith("Delegated task") ||
                 turn.message.text.startsWith("Delegated tasks")
@@ -2138,8 +2138,10 @@ describe("orchestrator MCP toolkit", () => {
               promptedReadNextCall.structuredContent,
             ).pipe(Effect.orDie);
             expect(promptedReadNext.items.map((item) => item.type)).toEqual(["assistant_message"]);
-            expect(promptedReadNext.items[0]?.text).toBe(
-              `Claude completed: ${createdThreadPrompt}`,
+            expect(promptedReadNext.items[0]?.text).toMatch(
+              new RegExp(
+                `^Claude completed: <t3_thread_message from_thread_id="${parentThreadId}">[^]*\n\n${createdThreadPrompt}$`,
+              ),
             );
 
             const forkedThreadId = ThreadId.make("thread:mcp-orchestrator-inherited-read");
@@ -2213,6 +2215,13 @@ describe("orchestrator MCP toolkit", () => {
               status: "completed",
               timedOut: false,
             });
+            const sentTurn = (yield* Ref.get(capturedTurns)).find(
+              (turn) => turn.threadId === emptyThread.threadId,
+            );
+            expect(sentTurn?.text).toMatch(
+              new RegExp(`^<t3_thread_message from_thread_id="${parentThreadId}">`),
+            );
+            expect(sentTurn?.text.endsWith(`\n\n${ordinaryLoopPrompt}`)).toBe(true);
             const repeatedSendCall = yield* invoke("t3_thread_send", {
               threadId: emptyThread.threadId,
               message: ordinaryLoopPrompt,

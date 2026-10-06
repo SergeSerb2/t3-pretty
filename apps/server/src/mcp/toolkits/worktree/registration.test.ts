@@ -65,7 +65,10 @@ const decodeToolsListPayload = Schema.decodeUnknownEffect(ToolsListPayload);
 it.effect("production mcp layer lists worktree tools over http", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const routes = McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer), Layer.provide(Layer.mock(SecretRequestBroker)({})));
+      const routes = McpHttpServer.layer.pipe(
+        Layer.provide(McpSessionRegistry.layer),
+        Layer.provide(Layer.mock(SecretRequestBroker)({})),
+      );
       yield* HttpRouter.serve(routes, {
         disableListenLog: true,
         disableLogger: true,
@@ -88,35 +91,37 @@ it.effect("production mcp layer lists worktree tools over http", () =>
       expect(credential).toBeDefined();
 
       const httpClient = yield* HttpClient.HttpClient;
-      const auth = credential!.config.authorizationHeader;
-      const initResponse = yield* httpClient.post("/mcp", {
-        headers: {
-          accept: "application/json, text/event-stream",
-          authorization: auth,
-        },
-        body: HttpBody.text(
-          `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"scratch","version":"1.0.0"}}}`,
-          "application/json",
-        ),
-      });
-      expect(initResponse.status).toBe(200);
-      const sessionId = initResponse.headers["mcp-session-id"];
+      const listTools = (path: string, auth: string) =>
+        Effect.gen(function* () {
+          const initResponse = yield* httpClient.post(path, {
+            headers: {
+              accept: "application/json, text/event-stream",
+              authorization: auth,
+            },
+            body: HttpBody.text(
+              `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"scratch","version":"1.0.0"}}}`,
+              "application/json",
+            ),
+          });
+          expect(initResponse.status).toBe(200);
+          const sessionId = initResponse.headers["mcp-session-id"];
 
-      const listResponse = yield* httpClient.post("/mcp", {
-        headers: {
-          accept: "application/json, text/event-stream",
-          authorization: auth,
-          "mcp-protocol-version": "2025-06-18",
-          ...(sessionId ? { "mcp-session-id": sessionId } : {}),
-        },
-        body: HttpBody.text(
-          `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
-          "application/json",
-        ),
-      });
-      const bodyText = yield* listResponse.text;
-      const payload = yield* decodeToolsListPayload(bodyText.match(/\{.*\}/s)![0]);
-      const tools = payload.result.tools;
+          const listResponse = yield* httpClient.post(path, {
+            headers: {
+              accept: "application/json, text/event-stream",
+              authorization: auth,
+              "mcp-protocol-version": "2025-06-18",
+              ...(sessionId ? { "mcp-session-id": sessionId } : {}),
+            },
+            body: HttpBody.text(
+              `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
+              "application/json",
+            ),
+          });
+          const bodyText = yield* listResponse.text;
+          return (yield* decodeToolsListPayload(bodyText.match(/\{.*\}/s)![0])).result.tools;
+        });
+      const tools = yield* listTools("/mcp", credential!.config.authorizationHeader);
       const toolNames = tools.map((tool) => tool.name);
       expect(toolNames).toContain("t3_worktree_handoff");
       expect(toolNames).toContain("t3_worktree_status");
@@ -124,6 +129,21 @@ it.effect("production mcp layer lists worktree tools over http", () =>
       // than replacing them.
       expect(toolNames).toContain("preview_status");
       expect(toolNames).toContain("delegate_task");
+      // Capability-specific endpoints keep their tools off the base server, where
+      // a credential without that capability could only fail to call them.
+      expect(toolNames).not.toContain("computer_screenshot");
+      expect(toolNames).not.toContain("automations_create");
+      const computer = yield* McpSessionRegistry.issueActiveMcpCredential({
+        threadId: ThreadId.make("thread-scratch"),
+        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+        capabilities: new Set(["computer-use"]),
+      });
+      const computerTools = yield* listTools(
+        "/mcp/computer-use",
+        computer!.config.authorizationHeader,
+      );
+      expect(computerTools.map((tool) => tool.name)).toContain("computer_screenshot");
+      expect(computerTools.map((tool) => tool.name)).not.toContain("delegate_task");
 
       // The handoff tool mutates thread state, reaches the network (origin
       // fetch), and runs project setup scripts, so its MCP hints must not

@@ -37,6 +37,7 @@ import {
   rememberCheckoutIsRepo,
 } from "./ChatView.logic";
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
+import { shouldAutoBalanceDraft } from "@t3tools/client-runtime/load-balancing";
 import {
   loadBalancedAssignmentIsStale,
   loadBalancingHostVerdict,
@@ -3089,11 +3090,14 @@ export default function ChatView(props: ChatViewProps) {
     draftId &&
     !envLocked &&
     canAutoBalanceEnvironments &&
-    loadBalancingSettings.loadBalancingEnabled &&
-    draftThread?.environmentSelection !== "manual" &&
-    (!composerHasAttachments || Boolean(draftThread?.loadBalancedEnvironmentId)) &&
-    (!draftThread?.branch || draftThread.environmentSelection === "auto") &&
-    !draftThread?.worktreePath,
+    shouldAutoBalanceDraft({
+      enabled: loadBalancingSettings.loadBalancingEnabled,
+      selection: draftThread?.environmentSelection,
+      hasAttachments: composerHasAttachments,
+      assignedEnvironmentId: draftThread?.loadBalancedEnvironmentId,
+      branch: draftThread?.branch,
+      worktreePath: draftThread?.worktreePath,
+    }),
   );
   const autoUpdateEnvironments = useMemo(
     () =>

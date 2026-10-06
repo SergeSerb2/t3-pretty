@@ -706,3 +706,8 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(HomeSuggestionsService, make);
+
+/** Loads the saved batch at boot and parks background work until server activation. */
+export const layerStarted = Layer.effectDiscard(
+  Effect.flatMap(HomeSuggestionsService, (service) => service.start()),
+).pipe(Layer.provideMerge(layer));

@@ -23,6 +23,7 @@ import { useResolveClassNames } from "uniwind";
 
 import { AppText as Text } from "./components/AppText";
 import { getCompactBrandHeaderOptions } from "./components/CompactBrandTitle";
+import { mintGlassBackOptions, mintGlassCustomItem } from "./native/mintGlassHeaderItems";
 import {
   RenderErrorBoundary,
   RenderFailureView,
@@ -120,6 +121,8 @@ import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
 import { SettingsThreadsRouteScreen } from "./features/settings/SettingsThreadsRouteScreen";
 import { SettingsEnvironmentFilterProvider } from "./features/settings/settings-environment-filter";
 import { ShowcaseCaptureCoordinator } from "./features/showcase/ShowcaseCaptureCoordinator";
+import { TrailheadRouteScreen } from "./features/trailhead/TrailheadRouteScreen";
+import { useTrailheadGate } from "./features/trailhead/useTrailheadGate";
 import {
   SettingsLegalDocumentCloseHeaderButton,
   SettingsLegalDocumentExternalHeaderButton,
@@ -195,16 +198,28 @@ const LEGAL_DOCUMENT_HEADER_OPTIONS: AppScreenOptions = {
   headerBackVisible: false,
   headerLeft: SettingsLegalDocumentCloseHeaderButton,
   headerRight: () => <SettingsLegalDocumentExternalHeaderButton />,
+  // iOS uses items so the mint glass buttons skip the system glass capsule.
+  ...(Platform.OS === "ios"
+    ? {
+        unstable_headerLeftItems: () => [
+          mintGlassCustomItem(<SettingsLegalDocumentCloseHeaderButton />),
+        ],
+        unstable_headerRightItems: () => [
+          mintGlassCustomItem(<SettingsLegalDocumentExternalHeaderButton />),
+        ],
+      }
+    : {}),
   presentation: "fullScreenModal",
 };
 
 const SettingsContentStack = createNativeStackNavigator({
   initialRouteName: "Settings",
-  screenOptions: {
+  screenOptions: (props) => ({
     ...GLASS_HEADER_OPTIONS,
+    ...mintGlassBackOptions(props),
     // Sheets read better with the iOS-default centered title (no editor style).
     unstable_navigationItemStyle: undefined,
-  },
+  }),
   screens: {
     Settings: createNativeStackScreen({
       screen: SettingsRouteScreen,
@@ -460,8 +475,9 @@ const THREAD_LINKING_PREFIX = "threads/:environmentId/:threadId";
 // whether the flow opens in the workspace or in a compact form sheet.
 const NewTaskSheetStack = createNativeStackNavigator({
   initialRouteName: "NewTask",
-  screenOptions: {
+  screenOptions: (props) => ({
     ...SHEET_GLASS_HEADER_OPTIONS,
+    ...mintGlassBackOptions(props),
     // The form-sheet host owns the one opaque adaptive surface. Child screens
     // and the navigation bar stay transparent over it, avoiding visible color
     // slabs as view controllers move horizontally.
@@ -471,7 +487,7 @@ const NewTaskSheetStack = createNativeStackNavigator({
     // simple_push retains native push/pop gestures without either artifact.
     animation: Platform.OS === "ios" ? "simple_push" : undefined,
     animationDuration: Platform.OS === "ios" ? 350 : undefined,
-  },
+  }),
   screens: {
     NewTask: createNativeStackScreen({
       screen: NewTaskRouteScreen,
@@ -577,6 +593,7 @@ const WORKSPACE_OVERLAY_ROUTES = new Set([
   "ThreadReviewComment",
   "ThreadDevicePreview",
   "ThreadSettingsSheet",
+  "Trailhead",
 ]);
 
 /**
@@ -603,6 +620,13 @@ function workspaceLocationFromState(state: NavigationState) {
 function ThreadOutboxDrainWorker() {
   useThreadOutboxDrain();
   useComposerAttachmentUploadWorker();
+  return null;
+}
+
+// Opens first-run Trailhead. A leaf for the same reason as the drain worker:
+// it watches the connection list, which must not re-render RootStackLayout.
+function TrailheadGate() {
+  useTrailheadGate();
   return null;
 }
 
@@ -642,6 +666,7 @@ function RootStackLayout(props: {
   return (
     <HardwareKeyboardCommandProvider pathname={pathname}>
       <ThreadOutboxDrainWorker />
+      <TrailheadGate />
       <ShowcaseCaptureCoordinator pathname={pathname} />
       <ExistingThreadSettingsRouteProvider>
         <AdaptiveWorkspaceLayout
@@ -698,9 +723,10 @@ function NotFoundScreen() {
 const RootStackConfig = createNativeStackNavigator({
   initialRouteName: "Home",
   layout: RootStackLayout,
-  screenOptions: {
+  screenOptions: (props) => ({
     headerShown: false,
-  },
+    ...mintGlassBackOptions(props),
+  }),
   screens: {
     Home: createNativeStackScreen({
       screen: HomeRouteScreen,
@@ -979,6 +1005,15 @@ const RootStackConfig = createNativeStackNavigator({
       options: {
         gestureEnabled: true,
         headerShown: false,
+      },
+    }),
+    Trailhead: createNativeStackScreen({
+      screen: TrailheadRouteScreen,
+      linking: "welcome",
+      options: {
+        presentation: "fullScreenModal",
+        headerShown: false,
+        gestureEnabled: false,
       },
     }),
     NotFound: createNativeStackScreen({

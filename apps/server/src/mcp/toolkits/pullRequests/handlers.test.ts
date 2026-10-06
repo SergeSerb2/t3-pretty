@@ -226,6 +226,20 @@ describe("pull request toolkit handlers", () => {
     }),
   );
 
+  it.effect("links an Origin pull request by its cursor.com URL", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const url = "https://cursor.com/codebase/serbinenko/t3-pretty/pull/787";
+      const result = yield* harness.call("link_pull_request", { url });
+      expect(result).toMatchObject({
+        host: "origin.cursor.com",
+        repository: "serbinenko/t3-pretty",
+        number: 787,
+        url,
+      });
+    }),
+  );
+
   it.effect("watching an unlinked pull request links it first", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness();

@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import {
   AgentMonitoringSettings,
+  LoadBalancingWeights,
   type ProviderInstanceId,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
@@ -18,6 +19,7 @@ import * as MobileSecureStorage from "./mobile-secure-storage";
 import { MobileStorageDecodeError, MobileStorageEncodeError } from "./mobile-storage";
 
 const decodeAgentMonitoringSettings = Schema.decodeUnknownOption(AgentMonitoringSettings);
+const decodeLoadBalancingWeights = Schema.decodeUnknownOption(LoadBalancingWeights);
 
 const PREFERENCES_KEY = "t3code.preferences";
 const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
@@ -25,6 +27,8 @@ export const CONNECT_ONBOARDING_OPT_OUT_MAX_ACCOUNTS = 64;
 export const CONNECT_ONBOARDING_ACCOUNT_ID_MAX_LENGTH = 512;
 
 export interface Preferences {
+  readonly loadBalancingEnabled?: boolean;
+  readonly loadBalancingWeights?: Readonly<Record<string, number>>;
   readonly agentMonitoringEnrollment?: AgentMonitoringSettings | null;
   readonly liveActivitiesEnabled?: boolean;
   readonly themeId?: MobileThemeId;
@@ -65,6 +69,9 @@ export interface Preferences {
   /** Newest app version whose What's New notes were shown — see
       features/whats-new. */
   readonly lastSeenChangelogVersion?: string;
+  /** ISO time the Trailhead first-run flow was finished or skipped — see
+      features/trailhead. */
+  readonly onboardingCompletedAt?: string;
   /** World Scenery state — see features/scenery. */
   readonly scenery?: MobileSceneryPreferences;
   /** Device-local counterpart of desktop's `planModeEnabled` legacy flag. */
@@ -145,6 +152,8 @@ export class MobilePreferencesStore extends Context.Service<
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
+    loadBalancingEnabled?: boolean;
+    loadBalancingWeights?: Readonly<Record<string, number>>;
     agentMonitoringEnrollment?: AgentMonitoringSettings | null;
     liveActivitiesEnabled?: boolean;
     themeId?: MobileThemeId;
@@ -172,6 +181,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
       worktree?: boolean;
     };
     lastSeenChangelogVersion?: string;
+    onboardingCompletedAt?: string;
     scenery?: MobileSceneryPreferences;
     planModeEnabled?: boolean;
     workingShelfEnabled?: boolean;
@@ -181,6 +191,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListStoredShelfExpanded?: boolean;
     threadListWorkingShelfExpanded?: boolean;
   } = {};
+
+  if (typeof parsed.loadBalancingEnabled === "boolean") {
+    preferences.loadBalancingEnabled = parsed.loadBalancingEnabled;
+  }
+  const weights = decodeLoadBalancingWeights(parsed.loadBalancingWeights);
+  if (Option.isSome(weights)) preferences.loadBalancingWeights = weights.value;
 
   if (parsed.agentMonitoringEnrollment === null) {
     preferences.agentMonitoringEnrollment = null;
@@ -302,6 +318,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.lastSeenChangelogVersion === "string") {
     preferences.lastSeenChangelogVersion = parsed.lastSeenChangelogVersion;
+  }
+  if (typeof parsed.onboardingCompletedAt === "string") {
+    preferences.onboardingCompletedAt = parsed.onboardingCompletedAt;
   }
   if (typeof parsed.scenery === "object" && parsed.scenery !== null) {
     const scenery: {

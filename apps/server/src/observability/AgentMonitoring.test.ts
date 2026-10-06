@@ -235,6 +235,9 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
       assert.equal(command.attributes["t3.result_bytes"], Buffer.byteLength(privateContent));
       assert.equal(command.attributes["t3.duration_ms"], 1000);
       assert.equal(Exporter.toSentryAgentError(command), undefined);
+      const failedCommand = observe(toolEvent("failed-command", true));
+      assert.equal(failedCommand.status, "failed");
+      assert.equal(Exporter.toSentryAgentError(failedCommand), undefined);
       const root = observe({
         id: EventId.make("run-event"),
         type: "run.updated",
@@ -717,9 +720,10 @@ it.layer(NodeServices.layer)("agent monitoring pilot", (it) => {
         yield* exporter.send([observe(errorEvent()), observe(toolEvent("failed-tool", true))]);
         assert.ok(ingestion.requests.some((request) => request.url.endsWith("/traces/")));
         assert.ok(ingestion.requests.some((request) => request.url.endsWith("/logs/")));
+        // The provider error becomes an issue; the failed shell command stays a span.
         assert.equal(
           ingestion.requests.filter((request) => request.url.includes("/envelope/")).length,
-          2,
+          1,
         );
         const payloads = ingestion.requests.map((request) => request.body).join("\n");
         assert.ok(!payloads.includes("CANARY"));
