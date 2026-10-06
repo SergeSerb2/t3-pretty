@@ -43,6 +43,7 @@ import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
 import { VoiceInputProvider } from "./features/voice-input/VoiceInputProvider";
 import { GlobalVoiceInputControl } from "./features/voice-input/GlobalVoiceInputControl";
+import { MintGlassMotion } from "./components/MintGlassButton";
 
 import "../global.css";
 
@@ -85,6 +86,7 @@ export default function App() {
           <AppearancePreferencesProvider>
             <SceneryProvider>
               <AppContent />
+              <MintGlassMotion />
             </SceneryProvider>
           </AppearancePreferencesProvider>
         </CloudAuthProvider>

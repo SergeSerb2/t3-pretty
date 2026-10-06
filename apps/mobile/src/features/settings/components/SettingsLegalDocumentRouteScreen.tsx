@@ -1,32 +1,47 @@
 import { type NavigationProp, type ParamListBase, useNavigation } from "@react-navigation/native";
 import { useCallback, useLayoutEffect, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, View } from "react-native";
+import { ActivityIndicator, Linking, Platform, Pressable, View } from "react-native";
 import { WebView } from "react-native-webview";
 
 import { AppText as Text } from "../../../components/AppText";
 import { LoadingStrip } from "../../../components/LoadingStrip";
 import { SymbolView } from "../../../components/AppSymbol";
+import { MintGlassButton } from "../../../components/MintGlassButton";
 import { isLegalDocumentUrl, LEGAL_URL } from "../lib/legal-document-url";
+
+function LegalHeaderButton(props: {
+  readonly accessibilityLabel: string;
+  readonly icon: "xmark" | "safari";
+  readonly onPress: () => void;
+}) {
+  if (Platform.OS === "ios") return <MintGlassButton {...props} />;
+  return (
+    <Pressable
+      accessibilityLabel={props.accessibilityLabel}
+      accessibilityRole="button"
+      hitSlop={12}
+      onPress={props.onPress}
+      className="p-2 active:opacity-60"
+    >
+      <SymbolView
+        name={props.icon}
+        size={18}
+        tintColorClassName={"accent-icon"}
+        type="monochrome"
+      />
+    </Pressable>
+  );
+}
 
 export function SettingsLegalDocumentCloseHeaderButton() {
   const navigation = useNavigation();
 
   return (
-    <Pressable
+    <LegalHeaderButton
       accessibilityLabel="Close legal document"
-      accessibilityRole="button"
-      hitSlop={12}
+      icon="xmark"
       onPress={() => navigation.goBack()}
-      className="p-2 active:opacity-60"
-    >
-      <SymbolView
-        name="xmark"
-        size={18}
-        tintColorClassName={"accent-icon"}
-        type="monochrome"
-        weight="semibold"
-      />
-    </Pressable>
+    />
   );
 }
 
@@ -38,21 +53,11 @@ export function SettingsLegalDocumentExternalHeaderButton({
   const safeExternalUrl = isLegalDocumentUrl(externalUrl) ? externalUrl : LEGAL_URL;
 
   return (
-    <Pressable
+    <LegalHeaderButton
       accessibilityLabel="Open legal documents in external browser"
-      accessibilityRole="button"
-      hitSlop={12}
+      icon="safari"
       onPress={() => void Linking.openURL(safeExternalUrl).catch(() => undefined)}
-      className="p-2 active:opacity-60"
-    >
-      <SymbolView
-        name="safari"
-        size={19}
-        tintColorClassName={"accent-icon"}
-        type="monochrome"
-        weight="regular"
-      />
-    </Pressable>
+    />
   );
 }
 

@@ -15,6 +15,7 @@ import {
 } from "react";
 import type { ColorValue } from "react-native";
 
+import { mintGlassHeaderItems } from "./mintGlassHeaderItems";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native-glass";
 
 function useNativeStackNavigation(): NativeStackNavigationProp<ParamListBase> | null {
@@ -209,13 +210,15 @@ function NativeHeaderToolbarRoot(props: {
         } as NativeStackOptionsWithToolbar);
       };
     }
+    // Bar items become mint glass views; the bottom UIToolbar stays native.
+    const glassItems = mintGlassHeaderItems(items);
     if (props.placement === "left") {
-      navigation.setOptions({ unstable_headerLeftItems: () => items });
+      navigation.setOptions({ unstable_headerLeftItems: () => glassItems });
       return () => {
         navigation.setOptions({ unstable_headerLeftItems: () => [] });
       };
     }
-    navigation.setOptions({ unstable_headerRightItems: () => items });
+    navigation.setOptions({ unstable_headerRightItems: () => glassItems });
     return () => {
       navigation.setOptions({ unstable_headerRightItems: () => [] });
     };
