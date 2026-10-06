@@ -84,7 +84,15 @@ if [[ -d "${HOME}/.local/t3-pretty-node24/bin" ]]; then
 fi
 command -v node >/dev/null
 
-version="$(node scripts/fork/resolve-fork-release.mjs --print version)"
+if [[ -n "${T3CODE_LINUX_RECOVERY_VERSION:-}" ]]; then
+  # Finish a verified Mac/CLI release without minting a Linux version whose
+  # matching remote CLI tarball does not exist.
+  # shellcheck source=linux-recovery-version.sh
+  . "${root}/scripts/fork/linux-recovery-version.sh"
+  version="$(t3_resolve_linux_recovery_version)"
+else
+  version="$(node scripts/fork/resolve-fork-release.mjs --print version)"
+fi
 test -n "$version"
 echo "Building Linux x64 AppImage $version"
 
