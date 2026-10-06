@@ -21,6 +21,22 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("Clear responses settings", () => {
+  it("enables guidance for new and existing settings files", () => {
+    expect(decodeServerSettings({}).clearAgentResponses).toBe(true);
+    expect(DEFAULT_SERVER_SETTINGS.clearAgentResponses).toBe(true);
+  });
+
+  it.each([true, false])("round-trips %s and a project override", (clearAgentResponses) => {
+    const input = {
+      clearAgentResponses,
+      projectSettingsOverrides: { project: { clearAgentResponses } },
+    };
+    expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
+    expect(decodeServerSettingsPatch(input)).toEqual(input);
+  });
+});
+
 describe("ServerSettings response streaming", () => {
   it("defaults to paragraph buffering", () => {
     expect(decodeServerSettings({}).responseStreamingMode).toBe("paragraph");

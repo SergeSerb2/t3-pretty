@@ -11,6 +11,7 @@
 export const HIDDEN_INSTRUCTION_BLOCKS = [
   { tag: "create_pull_request_instructions", source: "t3-auto-pr" },
   { tag: "automation_run", source: "t3-automations" },
+  { tag: "t3_pretty_response_style", source: "t3-clear-responses" },
 ] as const;
 
 export type HiddenInstructionTag = (typeof HIDDEN_INSTRUCTION_BLOCKS)[number]["tag"];

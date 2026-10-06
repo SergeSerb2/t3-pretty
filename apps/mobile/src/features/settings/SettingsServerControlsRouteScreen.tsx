@@ -56,7 +56,7 @@ const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettin
     "branchNamePrefix",
     "branchNameInstructions",
   ],
-  "agent-behavior": ["responseStreamingMode", "enableAgentBrowserAccess"],
+  "agent-behavior": ["responseStreamingMode", "clearAgentResponses", "enableAgentBrowserAccess"],
   maintenance: ["continueThreadsAfterServerUpdate"],
 };
 
@@ -370,6 +370,16 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
 
               {props.page === "agent-behavior" ? (
                 <>
+                  <SettingsSection title="Responses">
+                    <SettingsSwitchRow
+                      icon="text.bubble"
+                      label="Clear responses"
+                      subtitle="Use about 80% ASD-STE100 Simplified Technical English and visuals when helpful. Applies from the next prompt."
+                      value={uniform("clearAgentResponses")}
+                      disabled={disabledFor("clearAgentResponses")}
+                      onValueChange={(value) => write({ clearAgentResponses: value })}
+                    />
+                  </SettingsSection>
                   <SettingsSection
                     title="Response streaming"
                     trailing={

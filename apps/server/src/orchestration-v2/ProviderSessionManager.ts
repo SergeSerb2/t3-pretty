@@ -31,6 +31,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
+import { responseStylePrompt } from "../provider/ResponseStyleInstructions.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "../mcp/McpProviderSession.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -323,6 +324,24 @@ export const layerWithOptions = (
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const responseStyleMessage = Effect.fn("ProviderSessionManagerV2.responseStyleMessage")(
+        function* (threadId: ThreadId, text: string) {
+          if (text.trimStart().startsWith("/")) return text;
+          if (Option.isNone(serverSettings)) return responseStylePrompt(text, true);
+          return yield* Effect.gen(function* () {
+            const settings = yield* serverSettings.value.getSettings;
+            const thread = yield* projectionStore.getThread(threadId);
+            const effective = resolveProjectSettings(settings, thread.projectId).settings;
+            return responseStylePrompt(text, effective.clearAgentResponses);
+          }).pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("Failed to read response style setting", { threadId, cause }).pipe(
+                Effect.as(text),
+              ),
+            ),
+          );
+        },
+      );
       const agentAccessSettings = Effect.fn("ProviderSessionManagerV2.agentAccessSettings")(
         function* (threadId: ThreadId) {
           if (Option.isNone(serverSettings)) return { browser: true, device: false };
@@ -1509,7 +1528,13 @@ export const layerWithOptions = (
               }),
             ).pipe(
               Effect.andThen(observeActivity(providerSessionId, markBusy(providerSessionId))),
-              Effect.andThen(runtime.startTurn(input)),
+              Effect.andThen(
+                responseStyleMessage(input.threadId, input.message.text).pipe(
+                  Effect.flatMap((text) =>
+                    runtime.startTurn({ ...input, message: { ...input.message, text } }),
+                  ),
+                ),
+              ),
               Effect.catch((error) =>
                 observeActivity(providerSessionId, markIdle(providerSessionId)).pipe(
                   Effect.andThen(Effect.fail(error)),
@@ -1518,7 +1543,13 @@ export const layerWithOptions = (
             ),
           steerTurn: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
-              Effect.andThen(runtime.steerTurn(input)),
+              Effect.andThen(
+                responseStyleMessage(input.threadId, input.message.text).pipe(
+                  Effect.flatMap((text) =>
+                    runtime.steerTurn({ ...input, message: { ...input.message, text } }),
+                  ),
+                ),
+              ),
             ),
           interruptTurn: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
