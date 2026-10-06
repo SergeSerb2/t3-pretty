@@ -463,6 +463,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["output token paragraph buffered wait turn legacy"],
   },
   {
+    id: "clear-agent-responses",
+    title: "Clear responses",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: [
+      "agent language ASD-STE100 simplified technical English 80% visuals diagrams charts",
+    ],
+  },
+  {
     id: "hide-whitespace-changes",
     title: "Hide whitespace changes",
     to: "/settings/general",

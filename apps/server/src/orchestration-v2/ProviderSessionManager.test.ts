@@ -142,6 +142,8 @@ interface TestProviderRuntimeState {
   readonly interruptCount: number;
   readonly resumeCount: number;
   readonly unloadedNativeThreadIds: ReadonlyArray<string>;
+  readonly startedTexts: ReadonlyArray<string>;
+  readonly steeredTexts: ReadonlyArray<string>;
   readonly eventQueues: ReadonlyMap<string, Queue.Queue<ProviderAdapterV2Event, Cause.Done>>;
 }
 
@@ -151,6 +153,8 @@ const emptyState: TestProviderRuntimeState = {
   interruptCount: 0,
   resumeCount: 0,
   unloadedNativeThreadIds: [],
+  startedTexts: [],
+  steeredTexts: [],
   eventQueues: new Map(),
 };
 
@@ -364,8 +368,16 @@ function makeProviderAdapter(
               ...current,
               resumeCount: current.resumeCount + 1,
             })).pipe(Effect.as(threadInput.providerThread)),
-          startTurn: () => Effect.void,
-          steerTurn: () => Effect.void,
+          startTurn: ({ message }) =>
+            Ref.update(state, (current) => ({
+              ...current,
+              startedTexts: [...current.startedTexts, message.text],
+            })),
+          steerTurn: ({ message }) =>
+            Ref.update(state, (current) => ({
+              ...current,
+              steeredTexts: [...current.steeredTexts, message.text],
+            })),
           interruptTurn: () =>
             Ref.update(state, (current) => ({
               ...current,
@@ -505,6 +517,120 @@ function makeBrowserAccessProject(projectId: ProjectId): Project {
     deletedAt: null,
   };
 }
+
+it.effect(
+  "ProviderSessionManagerV2 refreshes hidden response guidance on starts and steering",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const settingsLayer = ServerSettings.layerTest();
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const settings = yield* ServerSettings.ServerSettingsService;
+        const now = yield* DateTime.now;
+        const projectId = ProjectId.make("project-response-style");
+        const threadId = ThreadId.make("thread-response-style");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, projectId, threadId, now })],
+        });
+        const runtime = yield* manager.open({
+          threadId,
+          providerSessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const providerThread = makeProviderThread({
+          idAllocator,
+          threadId,
+          providerSessionId,
+          now,
+        });
+        const runId = idAllocator.derive.run({ threadId, ordinal: 1 });
+        const message = {
+          createdBy: "user" as const,
+          creationSource: "web" as const,
+          messageId: yield* idAllocator.allocate.message({ threadId, ordinal: 1 }),
+          text: "Explain the result.",
+          attachments: [],
+        };
+        const startInput = {
+          appThread: yield* projections.getThread(threadId),
+          threadId,
+          runId,
+          runOrdinal: 1,
+          providerTurnOrdinal: 1,
+          attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
+          rootNodeId: idAllocator.derive.rootNode({ runId }),
+          providerThread,
+          message,
+          modelSelection,
+          runtimePolicy,
+        };
+        const steerInput = {
+          threadId,
+          runId,
+          providerThread,
+          providerTurnId: idAllocator.derive.providerTurn({
+            driver: CODEX_DRIVER,
+            nativeTurnId: "response-style-turn",
+          }),
+          message,
+        };
+        yield* runtime.startTurn(startInput);
+        const initialText = (yield* Ref.get(state)).startedTexts[0]!;
+        assert.include(initialText, "approximately 80%");
+        assert.include(initialText, "ASD-STE100");
+        assert.include(initialText, "Visualize the response when");
+        assert.include(initialText, "Do not change code, commands, paths, identifiers");
+        assert.equal(message.text, "Explain the result.");
+
+        yield* settings.updateSettings({ clearAgentResponses: false });
+        yield* runtime.steerTurn(steerInput);
+        const disabledText = (yield* Ref.get(state)).steeredTexts[0]!;
+        assert.include(disabledText, "setting is off");
+        assert.include(disabledText, "Stop applying the earlier");
+        assert.notInclude(disabledText, "ASD-STE100");
+
+        yield* runtime.startTurn({ ...startInput, runOrdinal: 2, providerTurnOrdinal: 2 });
+        assert.include((yield* Ref.get(state)).startedTexts[1]!, "setting is off");
+        assert.equal((yield* Ref.get(state)).openCount, 1);
+
+        yield* settings.updateSettings({
+          projectSettingsOverrides: { [projectId]: { clearAgentResponses: true } },
+        });
+        yield* runtime.steerTurn(steerInput);
+        assert.include((yield* Ref.get(state)).steeredTexts[1]!, "ASD-STE100");
+
+        yield* settings.updateSettings({ projectSettingsOverrides: { [projectId]: null } });
+        yield* runtime.steerTurn(steerInput);
+        assert.include((yield* Ref.get(state)).steeredTexts[2]!, "setting is off");
+
+        yield* settings.updateSettings({ clearAgentResponses: true });
+        yield* runtime.steerTurn(steerInput);
+        assert.include((yield* Ref.get(state)).steeredTexts[3]!, "ASD-STE100");
+
+        yield* runtime.startTurn({ ...startInput, message: { ...message, text: "/compact" } });
+        assert.equal((yield* Ref.get(state)).startedTexts[2], "/compact");
+        yield* runtime.steerTurn({ ...steerInput, message: { ...message, text: "/model next" } });
+        assert.equal((yield* Ref.get(state)).steeredTexts[4], "/model next");
+        assert.equal(message.text, "Explain the result.");
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            settingsLayer,
+            makeTestLayer({ state, idleTimeoutMs: 30_000, serverSettingsLayer: settingsLayer }),
+          ),
+        ),
+      );
+    }),
+);
 
 function runBrowserAccessScenario(input: {
   readonly enableAgentBrowserAccess: boolean;

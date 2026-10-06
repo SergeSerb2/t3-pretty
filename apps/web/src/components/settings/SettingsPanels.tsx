@@ -638,6 +638,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode
         ? ["Response streaming"]
         : []),
+      ...(settings.clearAgentResponses !== DEFAULT_UNIFIED_SETTINGS.clearAgentResponses
+        ? ["Clear responses"]
+        : []),
       ...(settings.enableProviderUpdateChecks !==
       DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
         ? ["Provider update checks"]
@@ -722,6 +725,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.chromeGlassBlur,
       settings.panelAnimationDurationMs,
       settings.responseStreamingMode,
+      settings.clearAgentResponses,
       settings.persistComposerContextStrip,
       settings.enableProviderUpdateChecks,
       settings.continueThreadsAfterServerUpdate,
@@ -839,6 +843,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
+      clearAgentResponses: DEFAULT_UNIFIED_SETTINGS.clearAgentResponses,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -2759,6 +2764,22 @@ export function GeneralSettingsPanel() {
                 </SelectItem>
               </SelectPopup>
             </Select>
+          }
+        />
+        <SettingsRow
+          serverScoped
+          settingKeys={["clearAgentResponses"]}
+          {...searchableSetting("clear-agent-responses")}
+          description="Ask agents to use about 80% ASD-STE100 Simplified Technical English and add visuals when they help. Applies from the next prompt in all threads."
+          control={
+            <ScopedSwitch
+              settingKeys={["clearAgentResponses"]}
+              checked={settings.clearAgentResponses}
+              onCheckedChange={(checked) =>
+                updateSettings({ clearAgentResponses: Boolean(checked) })
+              }
+              aria-label="Clear responses"
+            />
           }
         />
         <SettingsRow

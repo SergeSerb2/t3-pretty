@@ -12,6 +12,15 @@ becomes an attachment when inserting it would exceed the message limit. On a
 hardware keyboard, use `Cmd+Shift+V` on Apple devices or `Ctrl+Shift+V` elsewhere
 to keep a large paste editable in the composer instead.
 
+## Clear responses
+
+Agents receive guidance by default to write clear English using approximately 80%
+of ASD-STE100 Simplified Technical English principles and add visuals when they help.
+This is a style preference; your requested language and exact technical terms still apply.
+Turn it off in **Settings → General → Clear responses** on web or desktop, or
+**Settings → Agent behavior → Clear responses** on mobile. The change applies to
+the next prompt in new and existing threads. Projects can override the environment default.
+
 ## Sending while the agent is working
 
 While a turn is running, the composer keeps a send button next to stop, and every provider
