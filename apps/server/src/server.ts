@@ -569,7 +569,7 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   // Core Services
   Layer.provideMerge(AutomationStoreLive),
   Layer.provideMerge(
-    HomeSuggestions.layer.pipe(
+    HomeSuggestions.layerStarted.pipe(
       Layer.provide(HomeSuggestionsMesh.layer.pipe(Layer.provide(ServerSecretStore.layer))),
     ),
   ),
