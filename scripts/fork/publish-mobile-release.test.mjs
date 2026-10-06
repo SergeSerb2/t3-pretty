@@ -560,6 +560,53 @@ describe("iOS publish Xcode selection", () => {
     assert.notInclude(gate, "Cloud IPA builds are opt-in");
   });
 
+  it("honors explicit local Xcode over the pipeline cloud default without changing cloud fallback", () => {
+    const gate = mobileRelease.slice(
+      mobileRelease.indexOf("ipa_via_cloud=false"),
+      mobileRelease.indexOf("if ! command -v unzip", mobileRelease.indexOf("ipa_via_cloud=false")),
+    );
+    const select = (hasXcode, env = {}) =>
+      NodeChildProcess.spawnSync(
+        "bash",
+        [
+          "-c",
+          [
+            "set -euo pipefail",
+            extractPreferLocalXcodeIos(),
+            extractPreferEasCloudIos(),
+            'is_full_xcode() { [[ "$TEST_HAS_XCODE" == "1" ]]; }',
+            "annotate() { :; }",
+            'developer_dir="/mock/Xcode.app/Contents/Developer"',
+            gate,
+            'printf "selected_cloud=%s\\n" "$ipa_via_cloud"',
+          ].join("\n"),
+        ],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            TEST_HAS_XCODE: hasXcode ? "1" : "0",
+            T3CODE_IOS_LOCAL_XCODE: "",
+            T3CODE_IOS_ALLOW_EAS_CLOUD: "1",
+            T3CODE_IOS_PREFER_EAS_CLOUD: "",
+            ...env,
+          },
+        },
+      );
+    const local = select(true, { T3CODE_IOS_LOCAL_XCODE: "1" });
+    assert.equal(local.status, 0, local.stderr);
+    assert.include(local.stdout, "selected_cloud=false");
+    const normal = select(true);
+    assert.equal(normal.status, 0, normal.stderr);
+    assert.include(normal.stdout, "selected_cloud=true");
+    const fallback = select(false);
+    assert.equal(fallback.status, 0, fallback.stderr);
+    assert.include(fallback.stdout, "selected_cloud=true");
+    const unavailable = select(false, { T3CODE_IOS_LOCAL_XCODE: "1" });
+    assert.equal(unavailable.status, 1);
+    assert.notInclude(unavailable.stdout, "selected_cloud=");
+  });
+
   it("skips Expo OTA and cloud IPA when the Vancouver daily cap is exhausted", () => {
     const field = mobileRelease.match(/ios_expo_daily_cap_field\(\) \{\n[\s\S]*?\n\}/);
     const blocks = mobileRelease.match(/ios_expo_cap_blocks\(\) \{\n[\s\S]*?\n\}/);
