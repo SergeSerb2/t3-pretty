@@ -189,7 +189,7 @@ it.effect("revokes the previous credential before replacing it for the same thre
     const secondToken = second.config.authorizationHeader.replace(/^Bearer\s+/, "");
 
     expect(yield* registry.resolve(firstToken)).toBeUndefined();
-    expect((yield* registry.resolve(secondToken))?.threadId).toBe(request.threadId);
+    expect((yield* registry.resolve(secondToken))?.thread.threadId).toBe(request.threadId);
   }),
 );
 

@@ -251,11 +251,6 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
   });
 
   const dependencies = Layer.mergeAll(
-    // Jitter at its maximum, so each retry waits exactly its ceiling: 2s, 4s, 8s...
-    Layer.succeed(Random.Random, {
-      nextDoubleUnsafe: () => 1 - Number.EPSILON,
-      nextIntUnsafe: () => 0,
-    }),
     Layer.succeed(Connectivity.Connectivity, connectivity),
     Layer.succeed(
       ConnectionWakeups.ConnectionWakeups,
@@ -316,12 +311,14 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
 });
 
 describe("retryDelayMs", () => {
-  it("doubles from 2 seconds to a 5 minute cap, jittered within the upper half of each step", () => {
-    const ceilings = [2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 128_000, 256_000, 300_000];
-    for (const [failureCount, ceiling] of [...ceilings, 300_000].entries()) {
-      expect(EnvironmentSupervisor.retryDelayMs(failureCount, 0)).toBe(ceiling / 2);
-      expect(EnvironmentSupervisor.retryDelayMs(failureCount, 0.5)).toBe((ceiling * 3) / 4);
-      expect(EnvironmentSupervisor.retryDelayMs(failureCount, 1 - Number.EPSILON)).toBe(ceiling);
+  it("keeps Pretty retry rungs, ±20% jitter and the five minute cap", () => {
+    const delays = [3_000, 4_000, 8_000, 16_000, 32_000, 60_000, 120_000, 300_000];
+    for (const [failureCount, delay] of [...delays, 300_000].entries()) {
+      expect(EnvironmentSupervisor.retryDelayMs(failureCount, 0)).toBe(delay * 0.8);
+      expect(EnvironmentSupervisor.retryDelayMs(failureCount, 0.5)).toBe(delay);
+      expect(EnvironmentSupervisor.retryDelayMs(failureCount, 1 - Number.EPSILON)).toBe(
+        Math.min(300_000, delay * 1.2),
+      );
     }
   });
 });
@@ -708,7 +705,7 @@ describe("EnvironmentSupervisor", () => {
       );
       expect(yield* Ref.get(harness.prepareCount)).toBe(3);
 
-      yield* TestClock.adjust("1999 millis");
+      yield* TestClock.adjust("2999 millis");
       expect(yield* Ref.get(harness.prepareCount)).toBe(3);
       yield* TestClock.adjust("1 milli");
       yield* eventuallyState(
@@ -804,7 +801,7 @@ describe("EnvironmentSupervisor", () => {
     }),
   );
 
-  it.effect("replaces the session on a long resume while the network reports offline", () =>
+  it.effect("keeps a healthy session on a long resume while the network reports offline", () =>
     Effect.gen(function* () {
       const probeCount = yield* Ref.make(0);
       const harness = yield* makeHarness({
@@ -826,17 +823,15 @@ describe("EnvironmentSupervisor", () => {
       }
       expect(yield* Ref.get(harness.sessionCount)).toBe(1);
 
-      // The replacement connects although the network still reports offline.
+      // Pretty probes first: an offline hint must not tear down a working lease.
       yield* harness.wake("application-active-reconnect");
-      const replaced = yield* awaitState(
-        supervisor.state,
-        (state) => state.phase === "connected" && state.generation === 2,
-      );
-
-      expect(replaced.attempt).toBe(1);
-      expect(yield* Ref.get(probeCount)).toBe(1);
-      expect(yield* Ref.get(harness.sessionCount)).toBe(2);
-      expect(yield* Ref.get(harness.releaseCount)).toBe(1);
+      yield* eventuallyCount(probeCount, 2);
+      expect(yield* SubscriptionRef.get(supervisor.state)).toMatchObject({
+        phase: "connected",
+        generation: 1,
+      });
+      expect(yield* Ref.get(harness.sessionCount)).toBe(1);
+      expect(yield* Ref.get(harness.releaseCount)).toBe(0);
     }),
   );
 
@@ -910,7 +905,7 @@ describe("EnvironmentSupervisor", () => {
         supervisor.state,
         (state) => state.phase === "backoff" && state.attempt === 1,
       );
-      yield* TestClock.adjust("2 seconds");
+      yield* TestClock.adjust("3 seconds");
       yield* awaitState(
         supervisor.state,
         (state) => state.phase === "connected" && state.generation === 2,
@@ -1161,7 +1156,7 @@ describe("EnvironmentSupervisor", () => {
         supervisor.state,
         (state) => state.phase === "backoff" && state.attempt === 1,
       );
-      yield* TestClock.adjust("2 seconds");
+      yield* TestClock.adjust("3 seconds");
       yield* awaitState(
         supervisor.state,
         (state) => state.phase === "connected" && state.generation === 2 && state.attempt === 2,
@@ -1633,7 +1628,7 @@ describe("EnvironmentSupervisor", () => {
         supervisor.state,
         (state) => state.phase === "backoff" && state.attempt === 1,
       );
-      yield* TestClock.adjust("1999 millis");
+      yield* TestClock.adjust("2999 millis");
       expect(yield* Ref.get(harness.prepareCount)).toBe(2);
       yield* TestClock.adjust("1 milli");
       yield* eventuallyState(
@@ -2188,7 +2183,7 @@ describe("EnvironmentSupervisor routes", () => {
       expect(Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target._tag).toBe(
         "BearerConnectionTarget",
       );
-      expect(yield* Ref.get(harness.releaseCount)).toBe(1);
+      yield* eventuallyCount(harness.releaseCount, 1);
     }),
   );
 
@@ -2356,14 +2351,35 @@ describe("EnvironmentSupervisor routes", () => {
     }),
   );
 
-  it.effect("learns the LAN address over T3 Connect and moves to it", () =>
+  it.effect("tries a healthy relay after a LAN session stalls during synchronization", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        checkRoute: () => Effect.succeed("answered"),
+        prepare: (_attempt, target) => Effect.succeed(preparedFor(target)),
+        ready: (attempt) => (attempt === 1 ? Effect.never : Effect.void),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+      yield* awaitState(supervisor.state, (state) => state.stage === "synchronizing");
+      yield* TestClock.adjust("15 seconds");
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      expect(Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target._tag).toBe(
+        "RelayConnectionTarget",
+      );
+      expect(yield* Ref.get(harness.sessionCount)).toBe(2);
+      expect(yield* Ref.get(harness.releaseCount)).toBe(1);
+    }),
+  );
+
+  it.effect("learns the TLS LAN address over T3 Connect and moves to it", () =>
     Effect.gen(function* () {
       const relayEntry: ConnectionCatalogEntry = {
         target: RELAY_TARGET,
         profile: Option.none(),
         enabled: true,
       };
-      const lanAddress = yield* Ref.make("http://192.168.1.10:3773/");
+      const lanAddress = yield* Ref.make("https://192.168.1.10:3773/");
       const learned = yield* Ref.make<ReadonlyArray<string>>([]);
       const harness = yield* makeHarness({
         checkRoute: (route) =>
@@ -2390,7 +2406,6 @@ describe("EnvironmentSupervisor routes", () => {
               entry,
               activeRoute,
               reported,
-              allowInsecure: true,
             });
             if (routes === null) return Option.none();
             const next = entryWithRoutes(entry, routes);
@@ -2413,7 +2428,7 @@ describe("EnvironmentSupervisor routes", () => {
         "BearerConnectionTarget",
       );
       expect(yield* Ref.get(learned)).toEqual([
-        `learned:${TARGET.environmentId}:http://192.168.1.10:3773`,
+        `learned:${TARGET.environmentId}:https://192.168.1.10:3773`,
       ]);
     }),
   );

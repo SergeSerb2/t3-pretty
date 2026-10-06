@@ -135,11 +135,11 @@ export const requireAutomationsCapability = () =>
   );
 
 /**
- * Preview tabs and device sessions belong to the calling thread, so their
+ * Preview tabs, device sessions, and secret prompts belong to the calling thread, so their
  * capabilities are only ever granted to thread callers. A scope that carries
  * one without a thread is refused the same way as a missing capability.
  */
-export const requireThreadMcpCapability = <const C extends "preview" | "device">(
+export const requireThreadMcpCapability = <const C extends "preview" | "device" | "secrets">(
   capability: C,
 ): Effect.Effect<McpThreadInvocationScope, McpCapabilityError<C>, McpInvocationContext> =>
   McpInvocationContext.pipe(

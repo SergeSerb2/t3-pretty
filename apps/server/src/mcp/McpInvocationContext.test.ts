@@ -11,12 +11,40 @@ import * as Effect from "effect/Effect";
 
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 
+it.effect("refuses thread-owned capabilities for an external MCP client", () =>
+  Effect.gen(function* () {
+    const invocation: McpInvocationContext.McpInvocationScope = {
+      environmentId: EnvironmentId.make("environment-external"),
+      requestNamespace: "external-client",
+      thread: undefined,
+      client: {
+        sessionId: "external-client",
+        label: "External client",
+        runtimeModeCeiling: "full-access",
+      },
+      capabilities: new Set(["preview", "device", "secrets"]),
+      issuedAt: 1,
+    };
+    for (const capability of ["preview", "device", "secrets"] as const) {
+      const error = yield* McpInvocationContext.requireThreadMcpCapability(capability).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+        Effect.flip,
+      );
+      expect(error).toMatchObject({ capability, environmentId: invocation.environmentId });
+    }
+  }),
+);
+
 it("checks each scoped MCP capability independently", () => {
   const invocation: McpInvocationContext.McpInvocationScope = {
     environmentId: EnvironmentId.make("environment-capabilities"),
-    threadId: ThreadId.make("thread-capabilities"),
-    providerSessionId: "provider-session-capabilities",
-    providerInstanceId: ProviderInstanceId.make("codex"),
+    requestNamespace: "provider-session-capabilities",
+    client: undefined,
+    thread: {
+      threadId: ThreadId.make("thread-capabilities"),
+      providerSessionId: "provider-session-capabilities",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    },
     capabilities: new Set(["preview"]),
     issuedAt: 1,
   };
@@ -61,9 +89,13 @@ it.effect("reports the scoped credential context when preview capability is unav
 it.effect("names the missing capability when automations are not granted", () => {
   const invocation: McpInvocationContext.McpInvocationScope = {
     environmentId: EnvironmentId.make("environment-2"),
-    threadId: ThreadId.make("thread-2"),
-    providerSessionId: "provider-session-2",
-    providerInstanceId: ProviderInstanceId.make("codex"),
+    requestNamespace: "provider-session-2",
+    client: undefined,
+    thread: {
+      threadId: ThreadId.make("thread-2"),
+      providerSessionId: "provider-session-2",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    },
     capabilities: new Set(["preview"]),
     issuedAt: 1,
   };

@@ -38,41 +38,63 @@ import * as SecretRequestBroker from "./SecretRequestBroker.ts";
 const THREAD_ID = ThreadId.make("thread-secret-1");
 const INSTANCE_ID = ProviderInstanceId.make("codex");
 
-const scope: McpInvocationContext.McpInvocationScope = {
+const scope: McpInvocationContext.McpThreadInvocationScope = {
   environmentId: EnvironmentId.make("environment-1"),
-  threadId: THREAD_ID,
-  providerSessionId: "provider-session-1",
-  providerInstanceId: INSTANCE_ID,
+  requestNamespace: "provider-session-1",
+  client: undefined,
+  thread: {
+    threadId: THREAD_ID,
+    providerSessionId: "provider-session-1",
+    providerInstanceId: INSTANCE_ID,
+  },
   capabilities: new Set(["secrets"]),
   issuedAt: 1,
 };
 
 const run: OrchestrationV2Run = {
-  id: RunId.make("secret-run"), threadId: THREAD_ID, ordinal: 1,
-  providerInstanceId: INSTANCE_ID, modelSelection: { instanceId: INSTANCE_ID, model: "gpt-5" },
-  providerThreadId: null, userMessageId: MessageId.make("secret-message"),
-  rootNodeId: NodeId.make("secret-node"), activeAttemptId: null, status: "running",
-  requestedAt: DateTime.makeUnsafe("2026-10-02T00:00:00Z"), startedAt: null, completedAt: null,
-  checkpointId: null, contextHandoffId: null,
+  id: RunId.make("secret-run"),
+  threadId: THREAD_ID,
+  ordinal: 1,
+  providerInstanceId: INSTANCE_ID,
+  modelSelection: { instanceId: INSTANCE_ID, model: "gpt-5" },
+  providerThreadId: null,
+  userMessageId: MessageId.make("secret-message"),
+  rootNodeId: NodeId.make("secret-node"),
+  activeAttemptId: null,
+  status: "running",
+  requestedAt: DateTime.makeUnsafe("2026-10-02T00:00:00Z"),
+  startedAt: null,
+  completedAt: null,
+  checkpointId: null,
+  contextHandoffId: null,
 };
-class TestEvents extends Context.Service<TestEvents, {
-  readonly stream: Stream.Stream<OrchestrationV2DomainEvent>;
-  readonly publish: (event: OrchestrationV2DomainEvent) => Effect.Effect<void>;
-}>()("t3/mcp/SecretRequestBroker.test/TestEvents") {}
-const runtimeLayer = Layer.unwrap(Effect.gen(function* () {
-  const pubSub = yield* PubSub.unbounded<OrchestrationV2DomainEvent>();
-  const stream = Stream.fromPubSub(pubSub);
-  const publish = (event: OrchestrationV2DomainEvent) => PubSub.publish(pubSub, event).pipe(Effect.asVoid);
-  return Layer.mergeAll(
-    Layer.succeed(TestEvents, { stream, publish }),
-    Layer.mock(ThreadManagementService)({
-      getThreadRecords: () => Effect.succeed({ ...fixtureProjection(), runs: [run], runtimeRequests: [] }),
-      streamDomainEvents: stream,
-    }),
-    Layer.mock(ProjectionStoreV2)({ getNextTurnItemOrdinal: () => Effect.succeed(1) }),
-    Layer.mock(EventSinkV2)({ write: ({ events }) => Effect.forEach(events, publish).pipe(Effect.as([])) }),
-  );
-}));
+class TestEvents extends Context.Service<
+  TestEvents,
+  {
+    readonly stream: Stream.Stream<OrchestrationV2DomainEvent>;
+    readonly publish: (event: OrchestrationV2DomainEvent) => Effect.Effect<void>;
+  }
+>()("t3/mcp/SecretRequestBroker.test/TestEvents") {}
+const runtimeLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const pubSub = yield* PubSub.unbounded<OrchestrationV2DomainEvent>();
+    const stream = Stream.fromPubSub(pubSub);
+    const publish = (event: OrchestrationV2DomainEvent) =>
+      PubSub.publish(pubSub, event).pipe(Effect.asVoid);
+    return Layer.mergeAll(
+      Layer.succeed(TestEvents, { stream, publish }),
+      Layer.mock(ThreadManagementService)({
+        getThreadRecords: () =>
+          Effect.succeed({ ...fixtureProjection(), runs: [run], runtimeRequests: [] }),
+        streamDomainEvents: stream,
+      }),
+      Layer.mock(ProjectionStoreV2)({ getNextTurnItemOrdinal: () => Effect.succeed(1) }),
+      Layer.mock(EventSinkV2)({
+        write: ({ events }) => Effect.forEach(events, publish).pipe(Effect.as([])),
+      }),
+    );
+  }),
+);
 
 const TestLayer = SecretRequestBroker.layer.pipe(
   Layer.provideMerge(runtimeLayer),
@@ -96,7 +118,12 @@ const collectEvents = Effect.gen(function* () {
     Stream.runForEach(testEvents.stream, (event) =>
       Effect.gen(function* () {
         events.push(event);
-        if (event.type === "turn-item.updated" && event.payload.type === "user_input_request" && event.payload.status === "pending") yield* Deferred.succeed(requested, event);
+        if (
+          event.type === "turn-item.updated" &&
+          event.payload.type === "user_input_request" &&
+          event.payload.status === "pending"
+        )
+          yield* Deferred.succeed(requested, event);
       }),
     ),
     { startImmediately: true },
@@ -105,7 +132,8 @@ const collectEvents = Effect.gen(function* () {
 });
 
 function requestIdOf(event: OrchestrationV2DomainEvent): RuntimeRequestId {
-  if (event.type !== "turn-item.updated" || event.payload.type !== "user_input_request") throw new Error("Expected secret prompt");
+  if (event.type !== "turn-item.updated" || event.payload.type !== "user_input_request")
+    throw new Error("Expected secret prompt");
   return event.payload.requestId;
 }
 
@@ -122,7 +150,11 @@ describe("SecretRequestBroker", () => {
         );
         const requested = yield* awaitRequested;
         expect(requested.type).toBe("turn-item.updated");
-        if (requested.type !== "turn-item.updated" || requested.payload.type !== "user_input_request") return;
+        if (
+          requested.type !== "turn-item.updated" ||
+          requested.payload.type !== "user_input_request"
+        )
+          return;
         expect(requested.payload.questions).toEqual([
           {
             id: "OPENAI_API_KEY",
@@ -152,11 +184,25 @@ describe("SecretRequestBroker", () => {
           { name: "OPENAI_API_KEY", value: "sk-test", sensitive: true, valueRedacted: true },
         ]);
         // The reply itself never becomes an event; only the closing marker does.
-        const resolved = events.find((event) => event.type === "runtime-request.updated" && event.payload.status === "resolved");
-        expect(resolved?.type === "runtime-request.updated" ? resolved.payload.id : null).toBe(requestIdOf(requested));
-        const eventJson = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Array(Schema.toCodecJson(OrchestrationV2DomainEvent))))(events);
+        const resolved = events.find(
+          (event) =>
+            event.type === "runtime-request.updated" && event.payload.status === "resolved",
+        );
+        expect(resolved?.type === "runtime-request.updated" ? resolved.payload.id : null).toBe(
+          requestIdOf(requested),
+        );
+        const eventJson = yield* Schema.encodeEffect(
+          Schema.fromJsonString(Schema.Array(Schema.toCodecJson(OrchestrationV2DomainEvent))),
+        )(events);
         expect(eventJson).not.toContain("sk-test");
-        expect(events.some(event => event.type === "turn-item.updated" && event.payload.type === "user_input_request" && event.payload.status === "completed")).toBe(true);
+        expect(
+          events.some(
+            (event) =>
+              event.type === "turn-item.updated" &&
+              event.payload.type === "user_input_request" &&
+              event.payload.status === "completed",
+          ),
+        ).toBe(true);
       }),
     ).pipe(Effect.provide(TestLayer)),
   );
@@ -226,8 +272,12 @@ describe("SecretRequestBroker", () => {
         );
         const requested = yield* awaitRequested;
         yield* testEvents.publish({
-          type: "run.updated", id: EventId.make("secret-run-aborted"), threadId: THREAD_ID,
-          occurredAt: yield* DateTime.now, runId: run.id, payload: { ...run, status: "interrupted" },
+          type: "run.updated",
+          id: EventId.make("secret-run-aborted"),
+          threadId: THREAD_ID,
+          occurredAt: yield* DateTime.now,
+          runId: run.id,
+          payload: { ...run, status: "interrupted" },
         });
         expect(yield* Fiber.join(request)).toEqual({ status: "cancelled", name: "STRIPE_KEY" });
 

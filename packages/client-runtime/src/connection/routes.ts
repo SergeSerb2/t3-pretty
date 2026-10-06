@@ -13,6 +13,17 @@ import {
 } from "./catalog.ts";
 import { BearerConnectionTarget, type ConnectionTarget } from "./model.ts";
 
+/** A drag order expires when saved, or when the catalog replaces any route. */
+export function reconcilePendingRouteOrder(
+  pending: ReadonlyArray<string> | null,
+  saved: ReadonlyArray<string>,
+): ReadonlyArray<string> | null {
+  if (pending === null || pending.length !== saved.length) return null;
+  const savedIds = new Set(saved);
+  if (pending.some((id) => !savedIds.has(id))) return null;
+  return pending.every((id, index) => id === saved[index]) ? null : pending;
+}
+
 /**
  * A saved environment can hold several routes: T3 Connect, direct URLs (LAN,
  * tailnet, public), and SSH. The client connects over the first route in
@@ -39,7 +50,24 @@ export function connectionRouteId(target: ConnectionTarget): string {
 
 /** Every route of an entry, preferred first. */
 export function connectionRoutes(entry: ConnectionCatalogEntry): ReadonlyArray<ConnectionRoute> {
-  return [{ target: entry.target, profile: entry.profile }, ...(entry.alternateRoutes ?? [])];
+  return [
+    { target: entry.target, profile: entry.profile },
+    ...(entry.alternateRoutes ?? []),
+  ].filter((route) => {
+    if (!isLearned(route)) return true;
+    try {
+      const url = routeHttpBaseUrl(route);
+      const profile = Option.getOrNull(route.profile);
+      return (
+        url !== null &&
+        new URL(url).protocol === "https:" &&
+        profile?._tag === "BearerConnectionProfile" &&
+        new URL(profile.wsBaseUrl).protocol === "wss:"
+      );
+    } catch {
+      return false;
+    }
+  });
 }
 
 /** Builds an entry whose preferred route is the first of `routes`, which must not be empty. */
@@ -219,8 +247,6 @@ export function mergeLearnedRoutes(input: {
   readonly entry: ConnectionCatalogEntry;
   readonly activeRoute: ConnectionRoute;
   readonly reported: ReadonlyArray<{ readonly httpBaseUrl: string }>;
-  /** Plain HTTP routes are unusable from an HTTPS page (mixed content). */
-  readonly allowInsecure: boolean;
 }): ReadonlyArray<ConnectionRoute> | null {
   const { entry } = input;
   const active = input.activeRoute.target;
@@ -252,8 +278,8 @@ export function mergeLearnedRoutes(input: {
     } catch {
       continue;
     }
-    if (url.protocol !== "http:" && url.protocol !== "https:") continue;
-    if (url.protocol === "http:" && !input.allowInsecure) continue;
+    // Learning a route must never silently downgrade transport confidentiality.
+    if (url.protocol !== "https:") continue;
     // A loopback address names whichever device opens it, never the server.
     if (isLocalLoopbackHost(url.hostname)) continue;
     reported.set(url.origin, url);

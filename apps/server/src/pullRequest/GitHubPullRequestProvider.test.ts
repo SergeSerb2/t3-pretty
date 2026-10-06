@@ -529,6 +529,7 @@ describe("gitHubViewerPermissions", () => {
               dismissalsByReviewId: new Map<string, string>(),
               botLogins: new Set<string>(),
               reviewThreads: [],
+              reviewThreadsTruncated: false,
               commentCount: 0,
               truncated: false,
               reactions: [

@@ -25,7 +25,11 @@ import { readBootstrapEnvelope } from "../bootstrap.ts";
 import { readTextWithinLimit } from "../boundedFileRead.ts";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
-import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
+import {
+  isProcessAlive,
+  isRecordedServerResponding,
+  readPersistedServerRuntimeState,
+} from "../serverRuntimeState.ts";
 
 const modeFlag = Flag.Literals("mode", ServerConfig.RuntimeMode.literals).pipe(
   Flag.withDescription("Runtime mode. `desktop` keeps loopback defaults unless overridden."),
@@ -351,7 +355,12 @@ export const resolveServerConfig = (
     // and supervisor handoff are separate; this preflight cannot arbitrate two starts.
     if (options?.rejectRunningServer && mode === "web") {
       const runtime = yield* readPersistedServerRuntimeState(derivedPaths.serverRuntimeStatePath);
-      if (Option.isSome(runtime) && runtime.value.pid > 0 && isProcessAlive(runtime.value.pid)) {
+      if (
+        Option.isSome(runtime) &&
+        runtime.value.pid > 0 &&
+        isProcessAlive(runtime.value.pid) &&
+        (yield* isRecordedServerResponding(runtime.value))
+      ) {
         return yield* new CliError.UserError({
           cause: `A T3 Code server is already running for ${baseDir} (pid ${runtime.value.pid}, ${runtime.value.origin}). Connect to that server, stop it before starting another, or use a different --base-dir.`,
         });

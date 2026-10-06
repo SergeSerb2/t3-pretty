@@ -707,7 +707,7 @@ it.effect("keeps equal client ids independent across environments", () =>
           scope: {
             ...scope,
             environmentId: secondEnvironmentId,
-            providerSessionId: "provider-session-2",
+            thread: { ...scope.thread, providerSessionId: "provider-session-2" },
           },
           operation: "status",
           input: {},

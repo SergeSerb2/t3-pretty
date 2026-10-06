@@ -857,10 +857,6 @@ export const make = Effect.gen(function* () {
       Effect.ignore,
     );
 
-  // Plain HTTP routes are unusable from an HTTPS page, which blocks mixed content.
-  const allowInsecureRoutes =
-    typeof globalThis.location === "undefined" || globalThis.location.protocol !== "https:";
-
   /**
    * Saves the direct addresses a connected server reports as learned routes,
    * replacing learned routes it no longer reports. Routes the user saved are
@@ -884,7 +880,6 @@ export const make = Effect.gen(function* () {
           entry,
           activeRoute: input.activeRoute,
           reported: input.reported,
-          allowInsecure: allowInsecureRoutes,
         });
         if (routes === null) return Option.none<ConnectionCatalogEntry>();
         const next = entryWithRoutes(entry, routes);

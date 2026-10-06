@@ -4852,43 +4852,48 @@ describe("PreviewManager", () => {
           let finishEvaluation: (() => void) | undefined;
           let cancelledGroup: string | undefined;
           let humanInput: ((event: unknown, signal: unknown) => void) | undefined;
-          const wc = makeTestPreviewWebContents(vi.fn());
-          Object.assign(wc, { isDevToolsOpened: () => false });
-          Object.assign(wc.ipc, {
-            on: vi.fn((channel: string, listener: typeof humanInput) => {
-              if (channel === "preview:human-input") humanInput = listener;
-            }),
-          });
-          Object.assign(wc.debugger, {
-            sendCommand: vi.fn(async (method: string, params?: Record<string, unknown>) => {
-              const group = String(params?.objectGroup ?? "");
-              if (method === "Runtime.releaseObjectGroup") {
-                retained.delete(group);
-                if (group === cancelledGroup) Deferred.doneUnsafe(lateRelease, Effect.void);
-              }
-              if (method !== "Runtime.evaluate") return undefined;
-              if (params?.expression === "cancelled") {
-                cancelledGroup = group;
-                Deferred.doneUnsafe(pendingEvaluation, Effect.void);
-                await new Promise<void>((resolve) => {
-                  finishEvaluation = resolve;
-                });
-              }
-              retained.set(group, 2);
-              if (params?.expression === "exception") {
-                return {
-                  result: { objectId: "exception-result" },
-                  exceptionDetails: {
-                    text: "failure",
-                    exception: { objectId: "exception-detail" },
-                  },
-                };
-              }
-              if (params?.expression === "takeover") {
-                humanInput?.({}, { kind: "pointer", x: 1, y: 2, button: 0 });
-              }
-              return { result: { value: 42 } };
-            }),
+          const wc = makeTestPreviewWebContents(vi.fn(), 42, undefined, {
+            ipc: {
+              on: vi.fn((channel: string, listener: typeof humanInput) => {
+                if (channel === "preview:human-input") humanInput = listener;
+              }),
+              off: vi.fn(),
+            },
+            debugger: {
+              isAttached: () => false,
+              attach: vi.fn(),
+              on: vi.fn(),
+              off: vi.fn(),
+              sendCommand: vi.fn(async (method: string, params?: Record<string, unknown>) => {
+                const group = String(params?.objectGroup ?? "");
+                if (method === "Runtime.releaseObjectGroup") {
+                  retained.delete(group);
+                  if (group === cancelledGroup) Deferred.doneUnsafe(lateRelease, Effect.void);
+                }
+                if (method !== "Runtime.evaluate") return undefined;
+                if (params?.expression === "cancelled") {
+                  cancelledGroup = group;
+                  Deferred.doneUnsafe(pendingEvaluation, Effect.void);
+                  await new Promise<void>((resolve) => {
+                    finishEvaluation = resolve;
+                  });
+                }
+                retained.set(group, 2);
+                if (params?.expression === "exception") {
+                  return {
+                    result: { objectId: "exception-result" },
+                    exceptionDetails: {
+                      text: "failure",
+                      exception: { objectId: "exception-detail" },
+                    },
+                  };
+                }
+                if (params?.expression === "takeover") {
+                  humanInput?.({}, { kind: "pointer", x: 1, y: 2, button: 0 });
+                }
+                return { result: { value: 42 } };
+              }),
+            },
           });
           fromId.mockReturnValue(wc);
           yield* manager.createTab("tab_1");

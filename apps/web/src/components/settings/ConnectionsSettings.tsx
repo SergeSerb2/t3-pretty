@@ -1403,7 +1403,7 @@ type SavedBackendListRowProps = {
   removingEnvironmentId: EnvironmentId | null;
   onSetEnabled: (environmentId: EnvironmentId, enabled: boolean) => void;
   onRemove: (environment: EnvironmentPresentation) => void;
-  onAddRoute: (environment: EnvironmentPresentation) => void;
+  onAddRoute?: ((environment: EnvironmentPresentation) => void) | undefined;
 };
 
 /**
@@ -1604,7 +1604,7 @@ function SavedBackendListRow({
         routesOpen ? (
           <EnvironmentRoutesList
             environment={environment}
-            onAddRoute={() => onAddRoute(environment)}
+            onAddRoute={onAddRoute ? () => onAddRoute(environment) : undefined}
           />
         ) : null
       }
@@ -3753,13 +3753,11 @@ export function ConnectionsSettings() {
                       </DialogTitle>
                       <DialogDescription>
                         {routeTarget
-                          ? "Pair this machine again over another address, such as its Tailscale name. It joins the existing routes instead of adding a second machine."
+                          ? "Connect this machine through another SSH target. It joins the existing routes instead of adding a second machine."
                           : "Connect another environment over an SSH-managed tunnel."}
                       </DialogDescription>
                     </DialogHeader>
-                    <DialogPanel>
-                      {routeTarget ? renderRemoteModeBody() : renderSshFields()}
-                    </DialogPanel>
+                    <DialogPanel>{renderSshFields()}</DialogPanel>
                   </DialogPopup>
                 </Dialog>
               ) : null}

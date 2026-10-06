@@ -53,7 +53,7 @@ import { AcpRegistrySearchStep } from "./AcpRegistrySearchStep";
 import { ProviderWizardAuthenticationStep } from "./ProviderWizardAuthenticationStep";
 import { resolveOfficialAcpRegistryIconUrl } from "./AcpRegistryIcon";
 import { AddManagedCodexAccountDialog } from "./CodexSetupSection";
-import { ProviderEnvironmentSection } from "./ProviderInstanceCard";
+import { EnvironmentVariablesEditor } from "./EnvironmentVariablesEditor";
 
 /**
  * Normalize a user-provided label into a slug suffix for the instance id.
@@ -503,7 +503,9 @@ export function AddProviderInstanceDialog({
                           onChange={setConfigDraft}
                         />
                         {isLocalAcp ? (
-                          <ProviderEnvironmentSection
+                          <EnvironmentVariablesEditor
+                            title="Environment variables"
+                            description="Additional environment variables for this local ACP executable. Sensitive values are stored separately."
                             environment={localEnvironment}
                             onChange={setLocalEnvironment}
                           />
