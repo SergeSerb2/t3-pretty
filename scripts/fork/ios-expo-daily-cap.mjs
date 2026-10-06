@@ -303,16 +303,7 @@ export async function fetchUpdatesViaGraphql({
 
 export function fetchBuildsViaEas({ cwd, env } = {}) {
   const stdout = runEas(
-    [
-      "build:list",
-      "--platform",
-      "ios",
-      "--build-profile",
-      "production",
-      "--limit",
-      "50",
-      "--json",
-    ],
+    ["build:list", "--platform", "ios", "--build-profile", "production", "--limit", "50", "--json"],
     { cwd, env },
   );
   return parseEasJson(stdout, "eas build:list");
@@ -343,7 +334,7 @@ export function fetchUpdatesViaEas({ cwd, env, branch = DEFAULT_BRANCH } = {}) {
     const group = groupIdOf(row);
     if (!group) continue;
     const viewed = parseEasJson(
-      runEas(["update:view", group, "--json", "--non-interactive"], { cwd, env }),
+      runEas(["update:view", group, "--json"], { cwd, env }),
       `eas update:view ${group}`,
     );
     updates.push(...flattenGroups(viewed));
@@ -351,12 +342,7 @@ export function fetchUpdatesViaEas({ cwd, env, branch = DEFAULT_BRANCH } = {}) {
   return updates;
 }
 
-export async function fetchIosBuilds({
-  token,
-  appId,
-  cwd,
-  env = NodeProcess.env,
-} = {}) {
+export async function fetchIosBuilds({ token, appId, cwd, env = NodeProcess.env } = {}) {
   if (token && appId) {
     try {
       return await fetchCloudBuildsViaGraphql({ token, appId, limit: 50 });
