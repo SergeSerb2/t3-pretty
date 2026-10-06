@@ -5654,11 +5654,10 @@ export default function Sidebar() {
                             const threadKey = scopedThreadKey(
                               scopeThreadRef(thread.environmentId, thread.id),
                             );
-                            // The parked shelves are the ONLY things that collapse a
-                            // row: every other thread is a full card. Density comes
-                            // from users (or the auto rules) actually parking work,
-                            // not from the sidebar second-guessing what still matters.
-                            const isCard = section === "active" || section === "pinned";
+                            // Working threads keep their project and provider details;
+                            // only snoozed, stored, and settled rows collapse.
+                            const isCard =
+                              section === "active" || section === "pinned" || section === "working";
                             const rowVariant = isCard ? "card" : "slim";
                             return (
                               <SidebarThreadRow
