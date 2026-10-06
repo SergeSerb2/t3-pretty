@@ -180,8 +180,8 @@ function RootRouteView() {
     );
   }
 
-  // Show onboarding over the workspace, keeping automatic thread navigation
-  // and other startup dialogs suspended until setup finishes.
+  // Trailhead owns the whole window over the scenery photo, keeping automatic
+  // thread navigation and other startup dialogs suspended until setup finishes.
   if (pathname === "/welcome") {
     return (
       <ToastProvider>
@@ -194,11 +194,7 @@ function RootRouteView() {
           <SceneryHost />
           <ProviderAuthCallbackCoordinator />
           <CustomSnoozeDialogHost />
-          <CommandPalette>
-            <AppSidebarLayout>
-              <Outlet />
-            </AppSidebarLayout>
-          </CommandPalette>
+          <Outlet />
         </AnchoredToastProvider>
       </ToastProvider>
     );

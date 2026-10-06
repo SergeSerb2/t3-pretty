@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
   refresh: vi.fn(),
   toast: vi.fn(),
+  agentSurvey: "ready" as "ready" | "needsSetup",
+  candidates: [] as Array<Record<string, unknown>>,
   projects: [] as Array<{ id: string; environmentId: string; workspaceRoot: string }>,
 }));
 vi.mock("../../state/agentSessions", () => ({ agentSessionImport: "import" }));
@@ -46,28 +48,19 @@ vi.mock("../../state/server", () => ({
   },
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: (value: unknown) => value }));
+vi.mock("../../onboarding/useAgentSurveys", () => ({
+  useAgentSurveys: (ids: readonly string[]) =>
+    ids.map((environmentId) => ({ environmentId, providers: [], survey: mocks.agentSurvey })),
+}));
 vi.mock("../../onboarding/useProjectScans", () => ({
-  useProjectScans: () => [
-    {
-      environmentId: "test-env",
+  useProjectScans: (ids: readonly string[]) =>
+    ids.map((environmentId) => ({
+      environmentId,
       isPending: false,
       error: null,
       refresh: mocks.refresh,
-      data: {
-        truncated: false,
-        candidates: [
-          {
-            path: "/project",
-            title: "project",
-            projectId: "test-project",
-            threadCount: 29,
-            lastActiveAt: new Date().toISOString(),
-            sources: ["codex"],
-          },
-        ],
-      },
-    },
-  ],
+      data: { truncated: false, candidates: mocks.candidates },
+    })),
 }));
 vi.mock("../../connection/onboarding", () => ({ connectPairing: vi.fn() }));
 vi.mock("../../state/terminal", () => ({ terminalEnvironment: {} }));
@@ -86,7 +79,7 @@ vi.mock("../ui/toast", () => ({
   toastManager: { add: mocks.toast, close: vi.fn(), update: vi.fn() },
 }));
 
-import { WelcomeWizard } from "./WelcomeWizard";
+import { Trailhead } from "./Trailhead";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -105,6 +98,17 @@ beforeEach(() => {
     configurable: true,
     value: () => [],
   });
+  mocks.agentSurvey = "ready";
+  mocks.candidates = [
+    {
+      path: "/project",
+      title: "project",
+      projectId: "test-project",
+      threadCount: 29,
+      lastActiveAt: new Date().toISOString(),
+      sources: ["codex"],
+    },
+  ];
   mocks.projects = [{ id: "test-project", environmentId: "test-env", workspaceRoot: "/project" }];
   mocks.complete.mockResolvedValue(undefined);
   mocks.refresh.mockResolvedValue(undefined);
@@ -122,93 +126,87 @@ afterEach(async () => {
   container.remove();
 });
 
-async function click(label: string) {
-  const button = [...document.querySelectorAll("button")].find(
+function button(label: string) {
+  return [...document.querySelectorAll("button")].find(
     (element) => element.textContent?.trim() === label,
   );
-  expect(button, `button ${label}`).toBeDefined();
-  await act(async () => button!.click());
 }
 
-it("enters the workspace after a partial import and warns after navigation finishes", async () => {
-  let finishNavigation = () => {};
-  const navigation = new Promise<void>((resolve) => {
-    finishNavigation = resolve;
-  });
-  const onDone = vi.fn(() => navigation);
-  await act(async () => root.render(<WelcomeWizard localAvailable onDone={onDone} />));
-  await click("Continue");
-  await click("Continue");
+async function click(label: string) {
+  const target = button(label);
+  expect(target, `button ${label}`).toBeDefined();
+  await act(async () => target!.click());
+}
+
+function currentStep() {
+  return document.querySelector("[data-trailhead-step]")?.getAttribute("data-trailhead-step");
+}
+
+it("walks past the ridge when agents are ready and lands on the imported project", async () => {
+  const onDone = vi.fn();
+  await act(async () => root.render(<Trailhead localAvailable onDone={onDone} />));
+  await click("Agents are ready — pick projects");
+  expect(currentStep()).toBe("saddle");
   await click("Import 1 project");
+  expect(currentStep()).toBe("summit");
+  expect(document.body.textContent).toContain(
+    "Imported 28 threads. 1 thread could not be imported.",
+  );
+  await click("Start the first thread");
+  expect(mocks.complete).toHaveBeenCalledOnce();
   expect(onDone).toHaveBeenCalledWith({
     environmentId: EnvironmentId.make("test-env"),
     projectId: ProjectId.make("test-project"),
   });
-  expect(mocks.toast).not.toHaveBeenCalled();
-  await act(async () => finishNavigation());
-  expect(mocks.toast).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "warning",
-      description: "Imported 28 threads. 1 thread could not be imported.",
-    }),
-  );
-  expect(mocks.toast.mock.invocationCallOrder[0]).toBeGreaterThan(
-    onDone.mock.invocationCallOrder[0]!,
-  );
 });
 
-it.each([
-  [0, 0, null],
-  [29, 0, null],
-  [1, 0, null],
-  [0, 1, "1 thread could not be imported."],
-  [0, 2, "2 threads could not be imported."],
-] as const)(
-  "finishes setup with %i imported and %i skipped threads",
-  async (importedCount, skippedCount, warning) => {
-    mocks.importThreads.mockResolvedValue({
-      _tag: "Success",
-      value: { importedCount, skippedCount },
-    });
-    const onDone = vi.fn();
-    await act(async () => root.render(<WelcomeWizard localAvailable onDone={onDone} />));
-    await click("Continue");
-    await click("Continue");
-    await click("Import 1 project");
-    expect(onDone).toHaveBeenCalledOnce();
-    if (warning === null && importedCount > 0) {
-      expect(mocks.toast).toHaveBeenCalledWith({
-        type: "success",
-        title: `Imported ${importedCount} ${importedCount === 1 ? "thread" : "threads"}`,
-      });
-    } else if (warning === null) {
-      expect(mocks.toast).not.toHaveBeenCalled();
-    } else {
-      expect(mocks.toast).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "warning", description: warning }),
-      );
-    }
-  },
-);
+it("stops at the ridge when no agent is ready, then skips an empty saddle", async () => {
+  mocks.agentSurvey = "needsSetup";
+  mocks.candidates = [];
+  const onDone = vi.fn();
+  await act(async () => root.render(<Trailhead localAvailable onDone={onDone} />));
+  await click("Continue");
+  expect(currentStep()).toBe("ridge");
+  await click("Continue");
+  expect(currentStep()).toBe("summit");
+  await click("Open T3 Pretty");
+  expect(onDone).toHaveBeenCalledWith(undefined);
+});
 
-it("keeps setup open when saving completion fails and preserves the import warning on retry", async () => {
+it("returns to a passed waypoint from the ridge line", async () => {
+  await act(async () => root.render(<Trailhead localAvailable onDone={vi.fn()} />));
+  await click("Agents are ready — pick projects");
+  const back = document.querySelector<HTMLButtonElement>('button[aria-label="Back to Ridge"]');
+  expect(back).not.toBeNull();
+  await act(async () => back!.click());
+  expect(currentStep()).toBe("ridge");
+});
+
+it("stays on the summit when saving completion fails and finishes on retry", async () => {
   mocks.complete.mockRejectedValueOnce(new Error("settings unavailable"));
   const onDone = vi.fn();
-  await act(async () => root.render(<WelcomeWizard localAvailable onDone={onDone} />));
-  await click("Continue");
-  await click("Continue");
-  await click("Import 1 project");
+  await act(async () => root.render(<Trailhead localAvailable onDone={onDone} />));
+  await click("Agents are ready — pick projects");
+  await click("Skip import");
+  await click("Open T3 Pretty");
   expect(onDone).not.toHaveBeenCalled();
   expect(mocks.toast).toHaveBeenCalledWith(
     expect.objectContaining({ type: "error", title: "Could not finish setup" }),
   );
-  await click("Do not import projects");
+  await click("Open T3 Pretty");
   expect(onDone).toHaveBeenCalledOnce();
-  expect(mocks.importThreads).toHaveBeenCalledOnce();
-  expect(mocks.toast).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      type: "warning",
-      description: "Imported 28 threads. 1 thread could not be imported.",
-    }),
+  expect(mocks.importThreads).not.toHaveBeenCalled();
+});
+
+it("lets the summit retry when opening the app fails after saving", async () => {
+  const onDone = vi.fn().mockRejectedValueOnce(new Error("navigation failed"));
+  await act(async () => root.render(<Trailhead localAvailable onDone={onDone} />));
+  await click("Agents are ready — pick projects");
+  await click("Skip import");
+  await click("Open T3 Pretty");
+  expect(mocks.toast).toHaveBeenCalledWith(
+    expect.objectContaining({ type: "error", description: "T3 Pretty could not open. Try again." }),
   );
+  await click("Open T3 Pretty");
+  expect(onDone).toHaveBeenCalledTimes(2);
 });
