@@ -6,8 +6,8 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { ChildProcessSpawner } from "effect/unstable/process";
-import { FetchHttpClient } from "effect/unstable/http";
+import { ChildProcessSpawner } from "effect/process";
+import { FetchHttpClient } from "effect/http";
 import { VcsRepositoryDetectionError } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
@@ -328,7 +328,10 @@ it.effect("propagates OriginCli layer construction failures", () =>
           Layer.provide(
             Layer.mergeAll(
               NodeServices.layer,
-              Layer.effect(OriginCli.OriginCli, Effect.die(new Error("Service not found: t3/sourceControl/OriginCli"))),
+              Layer.effect(
+                OriginCli.OriginCli,
+                Effect.die(new Error("Service not found: t3/sourceControl/OriginCli")),
+              ),
               Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
               Layer.mock(BitbucketApi.BitbucketApi)({}),
               Layer.mock(GitHubCli.GitHubCli)({}),
@@ -364,7 +367,10 @@ it.effect("propagates ForgejoCli layer construction failures", () =>
           Layer.provide(
             Layer.mergeAll(
               NodeServices.layer,
-              Layer.effect(ForgejoCli.ForgejoCli, Effect.die(new Error("Service not found: t3/sourceControl/ForgejoCli"))),
+              Layer.effect(
+                ForgejoCli.ForgejoCli,
+                Effect.die(new Error("Service not found: t3/sourceControl/ForgejoCli")),
+              ),
               Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
               Layer.mock(BitbucketApi.BitbucketApi)({}),
               Layer.mock(GitHubCli.GitHubCli)({}),

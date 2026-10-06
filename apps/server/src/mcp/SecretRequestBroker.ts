@@ -137,7 +137,7 @@ const make = Effect.gen(function* () {
         (cause) =>
           new SecretRequestError({
             reason: "persist-failed",
-            message: `Could not store ${name}: ${cause.message}`,
+            cause,
           }),
       ),
     );
@@ -311,7 +311,6 @@ const make = Effect.gen(function* () {
     ) {
       return yield* new SecretRequestError({
         reason: "unknown-request",
-        message: "This API key request is no longer waiting for an answer.",
       });
     }
     // Claim the request before persisting so a double submit cannot store

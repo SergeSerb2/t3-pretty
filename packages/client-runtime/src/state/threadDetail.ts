@@ -1,6 +1,6 @@
 import type { OrchestrationV2ThreadProjection, ScopedThreadRef } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import {
   deriveThreadQueueWorkflowState,
@@ -35,7 +35,10 @@ export function createEnvironmentThreadDetailAtoms<E>(
         AsyncResult.value(get(threadStateAtom(ref.environmentId, ref.threadId))),
         () => EMPTY_ENVIRONMENT_THREAD_STATE,
       ),
-    ).pipe(Atom.setIdleTTL(options?.idleTtlMs ?? 0), Atom.withLabel(`environment-thread-state-value:${key}`));
+    ).pipe(
+      Atom.setIdleTTL(options?.idleTtlMs ?? 0),
+      Atom.withLabel(`environment-thread-state-value:${key}`),
+    );
   });
 
   const threadAtomFamily = Atom.family((key: string) => {
@@ -56,7 +59,10 @@ export function createEnvironmentThreadDetailAtoms<E>(
     return Atom.make((get): OrchestrationV2ThreadProjection["visibleTurnItems"] => {
       const projection = Option.getOrNull(get(threadStateValueAtomFamily(key)).data);
       return projection === null ? EMPTY_VISIBLE_TURN_ITEMS : projectQuestionHistory(projection);
-    }).pipe(Atom.setIdleTTL(options?.idleTtlMs ?? 0), Atom.withLabel(`environment-thread-visible-turn-items:${key}`));
+    }).pipe(
+      Atom.setIdleTTL(options?.idleTtlMs ?? 0),
+      Atom.withLabel(`environment-thread-visible-turn-items:${key}`),
+    );
   });
 
   const queueWorkflowAtomFamily = Atom.family((key: string) => {
@@ -85,7 +91,10 @@ export function createEnvironmentThreadDetailAtoms<E>(
         previous = { thread, runs, messages, providerThreads, providerSessions, providerTurns };
       }
       return value;
-    }).pipe(Atom.setIdleTTL(options?.idleTtlMs ?? 0), Atom.withLabel(`environment-thread-queue:${key}`));
+    }).pipe(
+      Atom.setIdleTTL(options?.idleTtlMs ?? 0),
+      Atom.withLabel(`environment-thread-queue:${key}`),
+    );
   });
   const queuedCountAtomFamily = Atom.family((key: string) => {
     let previous: Pick<OrchestrationV2ThreadProjection, "runs" | "messages"> | null = null;
@@ -101,7 +110,10 @@ export function createEnvironmentThreadDetailAtoms<E>(
         count = getUserQueuedThreadRuns(previous).length;
       }
       return count;
-    }).pipe(Atom.setIdleTTL(options?.idleTtlMs ?? 0), Atom.withLabel(`environment-thread-queue-count:${key}`));
+    }).pipe(
+      Atom.setIdleTTL(options?.idleTtlMs ?? 0),
+      Atom.withLabel(`environment-thread-queue-count:${key}`),
+    );
   });
 
   const turnSubagentsAtomFamily = Atom.family((key: string) => {
@@ -121,14 +133,20 @@ export function createEnvironmentThreadDetailAtoms<E>(
         value = deriveThreadTurnSubagents(previous);
       }
       return value;
-    }).pipe(Atom.setIdleTTL(options?.idleTtlMs ?? 0), Atom.withLabel(`environment-thread-turn-subagents:${key}`));
+    }).pipe(
+      Atom.setIdleTTL(options?.idleTtlMs ?? 0),
+      Atom.withLabel(`environment-thread-turn-subagents:${key}`),
+    );
   });
 
   const worktreePathAtomFamily = Atom.family((key: string) =>
     Atom.make(
       (get) =>
         Option.getOrNull(get(threadStateValueAtomFamily(key)).data)?.thread.worktreePath ?? null,
-    ).pipe(Atom.setIdleTTL(options?.idleTtlMs ?? 0), Atom.withLabel(`environment-thread-worktree:${key}`)),
+    ).pipe(
+      Atom.setIdleTTL(options?.idleTtlMs ?? 0),
+      Atom.withLabel(`environment-thread-worktree:${key}`),
+    ),
   );
   const pendingRequestsAtomFamily = Atom.family((key: string) => {
     let previous: Pick<OrchestrationV2ThreadProjection, "runtimeRequests" | "turnItems"> | null =
@@ -162,7 +180,10 @@ export function createEnvironmentThreadDetailAtoms<E>(
         value = derivePendingThreadRequests(previous);
       }
       return value;
-    }).pipe(Atom.setIdleTTL(options?.idleTtlMs ?? 0), Atom.withLabel(`environment-thread-pending-requests:${key}`));
+    }).pipe(
+      Atom.setIdleTTL(options?.idleTtlMs ?? 0),
+      Atom.withLabel(`environment-thread-pending-requests:${key}`),
+    );
   });
 
   const statusAtomFamily = Atom.family((key: string) =>

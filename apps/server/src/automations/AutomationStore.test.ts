@@ -16,7 +16,7 @@ import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { ProjectionAutomationRepositoryLive } from "../persistence/Layers/ProjectionAutomations.ts";
 import { ProjectionAutomationRunRepositoryLive } from "../persistence/Layers/ProjectionAutomationRuns.ts";

@@ -4,13 +4,15 @@ import {
   MessageId,
   ProjectId,
   ProviderInstanceId,
+  RunId,
+  TurnItemId,
   ThreadId,
   type OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -114,6 +116,65 @@ const message = (
   },
 });
 
+const canonicalAssistant = (
+  threadId: ThreadId,
+  messageId: string,
+): ReadonlyArray<OrchestrationV2DomainEvent> => {
+  const runId = RunId.make(`run:${messageId}`);
+  const now = at(1);
+  return [
+    {
+      type: "run.created",
+      id: EventId.make(`run:${messageId}`),
+      threadId,
+      occurredAt: now,
+      payload: {
+        id: runId,
+        threadId,
+        ordinal: 1,
+        providerInstanceId,
+        modelSelection: { instanceId: providerInstanceId, model: "gpt-5" },
+        providerThreadId: null,
+        userMessageId: MessageId.make(`user:${messageId}`),
+        rootNodeId: null,
+        activeAttemptId: null,
+        status: "completed",
+        requestedAt: now,
+        startedAt: now,
+        completedAt: now,
+        checkpointId: null,
+        contextHandoffId: null,
+      },
+    },
+    {
+      type: "turn-item.updated",
+      id: EventId.make(`item:${messageId}`),
+      threadId,
+      occurredAt: now,
+      payload: {
+        id: TurnItemId.make(`item:${messageId}`),
+        threadId,
+        runId,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 1,
+        type: "assistant_message",
+        status: "completed",
+        title: null,
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+        messageId: MessageId.make(messageId),
+        text: "Canonical assistant",
+        streaming: false,
+      },
+    },
+  ];
+};
+
 it.layer(TestLayer)("ThreadSearch", (it) => {
   it.effect("returns one finished user or assistant match per active thread", () =>
     Effect.gen(function* () {
@@ -148,6 +209,7 @@ it.layer(TestLayer)("ThreadSearch", (it) => {
         message(both, "both-user-new", "user", "newer needle question", { minute: 2 }),
         thread(assistantOnly, project),
         message(assistantOnly, "assistant-only", "assistant", "needle in an answer"),
+        ...canonicalAssistant(assistantOnly, "assistant-only"),
         message(assistantOnly, "assistant-streaming", "user", "needle still typing", {
           streaming: true,
         }),
@@ -175,7 +237,7 @@ it.layer(TestLayer)("ThreadSearch", (it) => {
     }),
   );
 
-  it.effect("reports an unreadable match as a decode failure", () =>
+  it.effect("reports an unreadable legacy substring match as a decode failure", () =>
     Effect.gen(function* () {
       const projections = yield* ProjectionStore.ProjectionStoreV2;
       const search = yield* ThreadSearch.ThreadSearch;
@@ -194,7 +256,7 @@ it.layer(TestLayer)("ThreadSearch", (it) => {
         WHERE message_id = 'corrupt'
       `;
 
-      const error = yield* Effect.flip(search.search({ query: "0260927" }));
+      const error = yield* Effect.flip(search.search({ query: "2" }));
       assert.equal(error.operation, "decode");
     }),
   );

@@ -17,7 +17,7 @@ import {
   AutomationsValidateScheduleResult,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 
 import { AutomationStore } from "../../../automations/AutomationStore.ts";
 import { ThreadManagementService } from "../../../orchestration-v2/ThreadManagementService.ts";

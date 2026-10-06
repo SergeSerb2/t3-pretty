@@ -9,7 +9,7 @@ import type {
   ScopedThreadRef,
   ThreadId,
 } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { isAutomationRunThread } from "./automations.ts";
 import type { EnvironmentThreadShell } from "./models.ts";
@@ -37,7 +37,9 @@ export function createEnvironmentThreadShellAtoms(input: {
   readonly snapshotAtom: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<OrchestrationV2ShellSnapshot | null>;
-  readonly automationIndexAtom?: (environmentId: EnvironmentId) => Atom.Atom<ReadonlyMap<AutomationId, AutomationShell>>;
+  readonly automationIndexAtom?: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<ReadonlyMap<AutomationId, AutomationShell>>;
 }) {
   // Point reads and aggregate lists share values without keeping an atom alive
   // for every listed thread. Replaced source objects can be collected.

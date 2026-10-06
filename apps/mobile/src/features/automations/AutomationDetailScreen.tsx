@@ -17,7 +17,7 @@ import {
 import { automationRunTriggerLabel } from "@t3tools/shared/automationSchedule";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,

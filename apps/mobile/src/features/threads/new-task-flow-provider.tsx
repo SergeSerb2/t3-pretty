@@ -39,7 +39,7 @@ import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 
 import {
   useEnvironmentServerConfig,

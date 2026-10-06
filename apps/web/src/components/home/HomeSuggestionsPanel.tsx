@@ -9,7 +9,7 @@ import type {
   ScopedProjectRef,
 } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { SettingsIcon, SparklesIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";

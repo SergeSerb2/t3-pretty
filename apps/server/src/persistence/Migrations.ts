@@ -8,10 +8,12 @@
  * schema is always up to date before the application starts.
  */
 
-import * as Migrator from "effect/unstable/sql/Migrator";
+import * as Migrator from "effect/sql/Migrator";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import { reconcileV2PreviewMigration } from "./reconcileV2PreviewMigration.ts";
+
+import MigrationWebhookDispatchOutbox from "./Migrations/059_WebhookDispatchOutbox.ts";
 
 // Import all migrations statically
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -82,6 +84,8 @@ import Migration0065 from "./Migrations/054_ProjectionThreadsAutoSettleDisabledA
 import Migration0066 from "./Migrations/055_ProjectionThreadsStored.ts";
 import Migration0067 from "./Migrations/055_OrchestrationV2.ts";
 import Migration0069 from "./Migrations/069_AutomationCommandReceipts.ts";
+import Migration0070 from "./Migrations/057_ScheduledTaskWebhooks.ts";
+import Migration0071 from "./Migrations/058_WebhookRelayDeliveries.ts";
 import Migration0068 from "./Migrations/056_RemoveRedundantProjectionIndexes.ts";
 
 /**
@@ -166,6 +170,9 @@ export const migrationEntries = [
   [67, "OrchestrationV2", Migration0067],
   [68, "RemoveRedundantProjectionIndexes", Migration0068],
   [69, "AutomationCommandReceipts", Migration0069],
+  [70, "ScheduledTaskWebhooks", Migration0070],
+  [71, "WebhookRelayDeliveries", Migration0071],
+  [72, "WebhookDispatchOutbox", MigrationWebhookDispatchOutbox],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

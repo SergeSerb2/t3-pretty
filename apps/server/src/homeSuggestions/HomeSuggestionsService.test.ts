@@ -365,7 +365,7 @@ describe("HomeSuggestionsService", () => {
           yield* fs.makeDirectory(config.stateDir, { recursive: true });
           yield* fs.writeFileString(
             path.join(config.stateDir, HomeSuggestions.HOME_SUGGESTIONS_FILE_NAME),
-            JSON.stringify({
+            yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({
               generatedAt: "2026-09-19T12:00:00.000Z",
               suggestions: savedCards,
               previousTitles: savedCards.map((card) => card.title),

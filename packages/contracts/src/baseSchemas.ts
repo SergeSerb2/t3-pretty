@@ -279,9 +279,9 @@ const knownTags = (
 /**
  * Construct a branded identifier. Enforces bounded, non-empty trimmed strings.
  */
-const makeEntityId = <Brand extends string>(brand: Brand) => {
+const makeEntityId = <Brand extends string>(brand: Parameters<typeof Schema.brand<Brand>>[0]) => {
   return TrimmedNonEmptyString.check(Schema.isMaxLength(ENTITY_ID_MAX_LENGTH)).pipe(
-    Schema.brand(brand),
+    Schema.brand<Brand>(brand),
   );
 };
 
@@ -363,6 +363,9 @@ export type RuntimeRequestId = typeof RuntimeRequestId.Type;
 export const RuntimeTaskId = makeEntityId("RuntimeTaskId");
 export type RuntimeTaskId = typeof RuntimeTaskId.Type;
 export const ScheduledTaskId = makeEntityId("ScheduledTaskId");
+/** A one-use handle to a secret the user entered for an agent; the agent never sees the value. */
+export const SecretRef = makeEntityId("SecretRef");
+export type SecretRef = typeof SecretRef.Type;
 export type ScheduledTaskId = typeof ScheduledTaskId.Type;
 export const ApprovalRequestId = makeEntityId("ApprovalRequestId");
 export type ApprovalRequestId = typeof ApprovalRequestId.Type;

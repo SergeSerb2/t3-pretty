@@ -26,6 +26,8 @@ import { resolveCloudPublicConfig, resolveRelayClerkTokenOptions } from "./publi
 export interface CloudLinkDesiredState {
   readonly managedTunnel: boolean;
   readonly publish: boolean;
+  /** Omit to leave the webhook-hold setting as it is. */
+  readonly holdWebhooksWhileOffline?: boolean;
 }
 
 /**
@@ -106,6 +108,8 @@ export function useCloudLinkController() {
   const activeLink = linked && !relayMembershipMissing;
   const managedTunnelActive = activeLink && storedManagedTunnelActive;
   const publishAgentActivity = activeLink && storedPublishAgentActivity;
+  const holdWebhooksWhileOffline =
+    activeLink && (storedLinkState?.holdWebhooksWhileOffline ?? false);
 
   const reconcileCloudState = async (desired: CloudLinkDesiredState): Promise<boolean> => {
     setOperationError(null);
@@ -182,6 +186,9 @@ export function useCloudLinkController() {
       const prefResult = await updatePrimaryEnvironmentPreferences({
         target,
         publishAgentActivity: desired.publish,
+        ...(desired.holdWebhooksWhileOffline === undefined
+          ? {}
+          : { holdWebhooksWhileOffline: desired.holdWebhooksWhileOffline }),
       });
       if (prefResult._tag === "Failure") {
         if (!isAtomCommandInterrupted(prefResult)) {
@@ -211,6 +218,7 @@ export function useCloudLinkController() {
     relayMembershipMissing,
     managedTunnelActive,
     publishAgentActivity,
+    holdWebhooksWhileOffline,
     operationError,
     reconcileCloudState,
   };

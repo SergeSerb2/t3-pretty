@@ -7,12 +7,7 @@ import * as NodeChildProcess from "node:child_process";
 
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import {
-  CommandId,
-  EnvironmentHttpApi,
-  ProviderInstanceId,
-  ThreadId,
-} from "@t3tools/contracts";
+import { CommandId, EnvironmentHttpApi, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as NetService from "@t3tools/shared/Net";
 import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
 import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
@@ -20,15 +15,15 @@ import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Layer from "effect/Layer";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
-import * as CliError from "effect/unstable/cli/CliError";
+import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpServer from "effect/http/HttpServer";
+import * as HttpApi from "effect/http-api/HttpApi";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import * as CliError from "effect/cli/CliError";
 import * as TestConsole from "effect/testing/TestConsole";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 
 import { cli, makeCli } from "./binCli.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
@@ -78,7 +73,9 @@ const DisconnectedLauncherChildLayer = Layer.mergeAll(
     off: () => undefined,
   }),
 );
-class ProjectCliHttpApi extends HttpApi.make("environment").add(EnvironmentHttpApi.groups.projects) {}
+class ProjectCliHttpApi extends HttpApi.make("environment").add(
+  EnvironmentHttpApi.groups.projects,
+) {}
 
 const connectCli = makeCli({ cloudEnabled: true });
 const noConnectCli = makeCli({ cloudEnabled: false });
@@ -171,7 +168,9 @@ const readPersistedState = Effect.gen(function* () {
   const rows = yield* projects.list({ includeDeleted: true });
   const threadIds = yield* sql<{ readonly id: string }>`
     SELECT thread_id AS id FROM orchestration_v2_projection_threads`;
-  const threads = yield* Effect.forEach(threadIds, ({ id }) => projections.getThread(ThreadId.make(id)));
+  const threads = yield* Effect.forEach(threadIds, ({ id }) =>
+    projections.getThread(ThreadId.make(id)),
+  );
   return { projects: rows.map((row) => ({ ...row, id: row.projectId })), threads };
 });
 

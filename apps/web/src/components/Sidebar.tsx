@@ -1375,12 +1375,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Status hues follow the system-wide convention set by sidebar v1 and the
   // mobile Live Activity/widgets (amber approval, indigo input, sky working)
   // so a thread reads the same color everywhere it surfaces.
-  const topStatus = resolveSidebarThreadTopStatus({
+  const resolvedTopStatus = resolveSidebarThreadTopStatus({
     status,
     isWoke,
     isUnread,
     changeRequestMerged,
   });
+  const topStatus =
+    resolvedTopStatus && status === "working" && thread.goal?.status === "active"
+      ? { ...resolvedTopStatus, label: "Goal" }
+      : resolvedTopStatus;
   const isWokeStatus = topStatus?.icon === "woke";
   // Fork motion: a keyed title or status animates only when it changed in place.
   const titleChanged = useInPlaceChange(thread.title, threadKey);

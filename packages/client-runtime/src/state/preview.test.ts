@@ -1,6 +1,6 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Layer from "effect/Layer";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";

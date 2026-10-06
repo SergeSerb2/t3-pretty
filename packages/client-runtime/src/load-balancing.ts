@@ -1,5 +1,5 @@
 import type { EnvironmentId, HostResourcesSnapshot } from "@t3tools/contracts";
-import { Atom, type AsyncResult } from "effect/unstable/reactivity";
+import { Atom, type AsyncResult } from "effect/reactivity";
 
 export const LOAD_BALANCING_PREFERENCES = [
   { value: 100, label: "Prefer", description: "Favor this machine when resources are available." },

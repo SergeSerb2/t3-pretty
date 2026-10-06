@@ -3,7 +3,7 @@ import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64 from "effect/encoding/Base64";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -381,7 +381,7 @@ function decodeSecretBytes(
   registryPath: string,
   encoded: string,
 ): Effect.Effect<Uint8Array, DesktopSavedEnvironmentSecretDecodeError> {
-  return Effect.fromResult(Encoding.decodeBase64(encoded)).pipe(
+  return Effect.fromResult(Base64.decode(encoded)).pipe(
     Effect.mapError(
       (cause) =>
         new DesktopSavedEnvironmentSecretDecodeError({
@@ -536,7 +536,7 @@ export const make = Effect.gen(function* () {
             return false;
           }
 
-          const encryptedBearerToken = Encoding.encodeBase64(
+          const encryptedBearerToken = Base64.encode(
             yield* safeStorage.encryptString(secret).pipe(
               Effect.mapError(
                 (cause) =>

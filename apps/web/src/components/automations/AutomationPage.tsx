@@ -35,7 +35,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import * as Option from "effect/Option";
-import { Atom, AsyncResult } from "effect/unstable/reactivity";
+import { Atom, AsyncResult } from "effect/reactivity";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isElectron } from "../../env";

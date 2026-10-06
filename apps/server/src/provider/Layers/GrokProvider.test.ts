@@ -7,7 +7,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { GrokSettings } from "@t3tools/contracts";
 
 import {
@@ -521,7 +521,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
         ["grok-4.5", false],
       ]);
       expect(snapshot.message).toContain("ACP initialize failed");
-      expect(snapshot.slashCommands.map((command) => command.name)).toEqual(["compact"]);
+      expect(snapshot.slashCommands.map((command) => command.name)).toEqual(["resume", "compact"]);
     }),
   );
 

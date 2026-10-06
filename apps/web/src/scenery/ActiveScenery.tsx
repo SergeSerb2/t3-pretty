@@ -18,7 +18,7 @@ import {
   serverSceneryMatchesPhotoSet,
 } from "@t3tools/client-runtime/state/scenery-sync";
 import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { getMediaQueryEntry } from "../hooks/useMediaQuery";
 import { usePaintedAppearance } from "../hooks/usePaintedAppearance";

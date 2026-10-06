@@ -17,7 +17,7 @@ import type {
   ScopedThreadRef,
   ServerConfig,
 } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { automationEnvironment } from "./automations";
 import { environmentProjects } from "./projects";

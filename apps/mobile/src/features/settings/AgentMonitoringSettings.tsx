@@ -5,7 +5,7 @@ import type {
   EnvironmentId,
 } from "@t3tools/contracts";
 import * as Exit from "effect/Exit";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 

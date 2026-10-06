@@ -4,7 +4,7 @@ import {
   loadPreferenceForWeight,
 } from "@t3tools/client-runtime/load-balancing";
 import { DEFAULT_LOAD_BALANCING_ENABLED } from "@t3tools/contracts";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 import { Alert, View } from "react-native";
 

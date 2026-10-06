@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import * as OpenApi from "effect/unstable/httpapi/OpenApi";
+import * as OpenApi from "effect/http-api/OpenApi";
 
 import { AUTH_ACCESS_TOKEN_MAX_EXPIRES_IN_SECONDS } from "./auth.ts";
 import {

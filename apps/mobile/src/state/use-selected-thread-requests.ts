@@ -15,12 +15,16 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { type ProviderApprovalDecision, type RuntimeRequestId, type ThreadSecretRequestResponse } from "@t3tools/contracts";
+import {
+  type ProviderApprovalDecision,
+  type RuntimeRequestId,
+  type ThreadSecretRequestResponse,
+} from "@t3tools/contracts";
 import {
   type PendingThreadRequests,
   type ThreadUserInputQuestion,
 } from "@t3tools/client-runtime/state/thread-requests";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { threadEnvironment } from "../state/threads";
 import { scopedRequestKey } from "../lib/scopedEntities";
@@ -105,10 +109,14 @@ export function useSelectedThreadRequests() {
 
   const activePendingApprovals = pendingRequests?.approvals ?? EMPTY_PENDING_REQUESTS.approvals;
   const activePendingApproval = activePendingApprovals[0] ?? null;
-  const [respondingSecretRequestId, setRespondingSecretRequestId] = useState<RuntimeRequestId | null>(null);
+  const [respondingSecretRequestId, setRespondingSecretRequestId] =
+    useState<RuntimeRequestId | null>(null);
   const { userInputs: activePendingUserInputs, secretRequests: activePendingSecretRequests } =
-    useMemo(() => splitPendingUserInputs(pendingRequests?.userInputs ?? EMPTY_PENDING_REQUESTS.userInputs),
-      [pendingRequests?.userInputs]);
+    useMemo(
+      () =>
+        splitPendingUserInputs(pendingRequests?.userInputs ?? EMPTY_PENDING_REQUESTS.userInputs),
+      [pendingRequests?.userInputs],
+    );
   const activePendingUserInput = activePendingUserInputs[0] ?? null;
   const activePendingSecretRequest = activePendingSecretRequests[0] ?? null;
   const questionServerConfigs = useServerConfigs();

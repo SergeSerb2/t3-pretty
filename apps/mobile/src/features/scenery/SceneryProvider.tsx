@@ -22,7 +22,7 @@ import {
 } from "react";
 
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { Platform } from "react-native";
 
 import {

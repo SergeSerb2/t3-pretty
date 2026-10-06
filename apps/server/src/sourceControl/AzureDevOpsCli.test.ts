@@ -6,7 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 import { VcsProcessExitError, VcsProcessSpawnError } from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -164,7 +164,10 @@ describe("AzureDevOpsCli.layer", () => {
       });
 
       assert.strictEqual(result[0]?.state, "merged");
-      assert.deepEqual(result[0]?.mergedAt, Option.some(DateTime.makeUnsafe("2026-01-03T00:00:00.000Z")));
+      assert.deepEqual(
+        result[0]?.mergedAt,
+        Option.some(DateTime.makeUnsafe("2026-01-03T00:00:00.000Z")),
+      );
       assert.strictEqual(result[0]?.closedAt, null);
       expect(mockRun).toHaveBeenCalledWith({
         operation: "AzureDevOpsCli.execute",

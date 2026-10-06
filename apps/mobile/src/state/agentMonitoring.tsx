@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { AgentMonitoringEnrollment } from "@t3tools/client-runtime/state/agent-monitoring-enrollment";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useEffect, useSyncExternalStore } from "react";
 
 import { environmentPresentations } from "./presentation";

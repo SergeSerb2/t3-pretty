@@ -1,5 +1,5 @@
 import { AgentMonitoringEnrollment } from "@t3tools/client-runtime/state/agent-monitoring-enrollment";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useEffect, useSyncExternalStore } from "react";
 
 import { useClientSettings } from "../hooks/useSettings";

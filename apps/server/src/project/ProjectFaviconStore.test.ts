@@ -1,3 +1,4 @@
+import * as Hex from "effect/encoding/Hex";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProjectImportFaviconError } from "@t3tools/contracts";
@@ -5,7 +6,6 @@ import { MANAGED_PROJECT_FAVICON_REVISION_LENGTH } from "@t3tools/shared/project
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -30,9 +30,7 @@ const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from(svgBytes).toString("
 const contentRevision = (bytes: string) =>
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
-    const hex = yield* crypto
-      .digest("SHA-256", Buffer.from(bytes))
-      .pipe(Effect.map(Encoding.encodeHex));
+    const hex = yield* crypto.digest("SHA-256", Buffer.from(bytes)).pipe(Effect.map(Hex.encode));
     return hex.slice(0, MANAGED_PROJECT_FAVICON_REVISION_LENGTH);
   });
 

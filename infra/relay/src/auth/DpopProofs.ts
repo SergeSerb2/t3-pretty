@@ -1,7 +1,7 @@
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { sha256 } from "@noble/hashes/sha2";
@@ -16,7 +16,7 @@ const RELAY_DPOP_JTI_MAX_LENGTH = 255;
 
 function persistedReplayKey(value: string, maxLength: number) {
   if (value.length <= maxLength) return value;
-  return `sha256:${Encoding.encodeBase64Url(sha256(new TextEncoder().encode(value)))}`;
+  return `sha256:${Base64Url.encode(sha256(new TextEncoder().encode(value)))}`;
 }
 
 export class DpopProofReplayPersistenceError extends Schema.TaggedError<DpopProofReplayPersistenceError>()(

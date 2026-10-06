@@ -22,6 +22,8 @@ import {
   formatReadToolLabel,
   formatSearchToolLabel,
 } from "@t3tools/shared/toolActivity";
+import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
+import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
 import {
   contextCompactionLabel,
   workEntryIndicatesToolFailure,
@@ -154,6 +156,14 @@ export type TimelineEntry = (
       readonly kind: "proposed-plan";
       readonly createdAt: string;
       readonly proposedPlan: ProposedPlan;
+    }
+  | {
+      /** A page a completed `html_render` call published, shown where the call happened. */
+      readonly id: string;
+      readonly kind: "html-render";
+      readonly createdAt: string;
+      readonly runId: RunId | null;
+      readonly htmlRender: HtmlRenderReference;
     }
   | {
       readonly id: string;
@@ -330,12 +340,15 @@ const STANDALONE_V2_ITEM_TYPES = new Set<OrchestrationV2ProjectedTurnItem["item"
   "handoff",
   "run_interrupt_request",
   "run_interrupt_result",
+  "secret_request",
   "subagent",
 ]);
 
 const PERSISTENT_RESOURCE_V2_ITEM_TYPES = new Set<OrchestrationV2TurnItem["type"]>([
   "fork",
   "thread_created",
+  // Still answerable after a steer supersedes the attempt that asked.
+  "secret_request",
 ]);
 
 export function timelineEntryIsPersistentResourceCard(entry: TimelineEntry): boolean {
@@ -462,7 +475,9 @@ function projectedWorkEntry(row: OrchestrationV2ProjectedTurnItem): WorkLogEntry
       return {
         ...common,
         label: title ?? "Generated image",
-        changedFiles: [...new Set([...(item.savedPath ? [item.savedPath] : []), ...(item.paths ?? [])])],
+        changedFiles: [
+          ...new Set([...(item.savedPath ? [item.savedPath] : []), ...(item.paths ?? [])]),
+        ],
         toolTitle: title ?? "Image generation",
         toolData: item,
       };
@@ -714,6 +729,22 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
         kind: "proposed-plan",
         createdAt,
         proposedPlan,
+        ...attemptMetadata,
+      });
+      continue;
+    }
+
+    const htmlRender =
+      item.type === "dynamic_tool" && item.status === "completed"
+        ? htmlRenderFromToolItem(item)
+        : undefined;
+    if (htmlRender !== undefined) {
+      entries.push({
+        id: item.id,
+        kind: "html-render",
+        createdAt,
+        runId: item.runId,
+        htmlRender,
         ...attemptMetadata,
       });
       continue;
@@ -1068,7 +1099,10 @@ export type { TurnDiffSummary };
 
 /** A persisted headline belongs only to an active run; settled shells keep history. */
 export function resolveLiveThreadHeadline(
-  thread: { readonly liveHeadline?: string | null | undefined; readonly runtime: ThreadRuntimeSummary | null } | null,
+  thread: {
+    readonly liveHeadline?: string | null | undefined;
+    readonly runtime: ThreadRuntimeSummary | null;
+  } | null,
   enabled = true,
 ): string | null {
   return enabled && thread?.runtime?.status === "running" && thread.runtime.activeRunId != null

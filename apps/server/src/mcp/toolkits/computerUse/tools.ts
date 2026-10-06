@@ -11,7 +11,7 @@ import {
   ComputerTypeInput,
   ComputerUseError,
 } from "@t3tools/contracts";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 
 import { ComputerUseService } from "../../../computerUse/ComputerUseService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";

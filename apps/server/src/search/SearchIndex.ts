@@ -21,7 +21,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import {
   PersistenceSqlError,
@@ -326,7 +326,8 @@ const makeSearchIndex = Effect.gen(function* () {
     );
 
   const bootstrapIfNeeded = Effect.gen(function* () {
-    const done = yield* sql`SELECT 1 FROM projection_state WHERE projector = 'projection.search-index-v2' LIMIT 1`;
+    const done =
+      yield* sql`SELECT 1 FROM projection_state WHERE projector = 'projection.search-index-v2' LIMIT 1`;
     if (done.length > 0) return;
     yield* backfillFromProjection();
     yield* sql`INSERT INTO projection_state (projector, last_applied_sequence, updated_at)

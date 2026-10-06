@@ -15,9 +15,9 @@ import {
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ThreadId,
 } from "@t3tools/contracts";
-import { AtomRegistry } from "effect/unstable/reactivity";
-import * as RpcClientError from "effect/unstable/rpc/RpcClientError";
-import * as Socket from "effect/unstable/socket/Socket";
+import { AtomRegistry } from "effect/reactivity";
+import * as RpcClientError from "effect/rpc/RpcClientError";
+import * as Socket from "effect/socket/Socket";
 import { onTestFinished, vi } from "vite-plus/test";
 
 const outboxFiles = vi.hoisted(() => new Map<string, string | Error>());
@@ -1607,6 +1607,12 @@ describe("thread outbox", () => {
 
 it("migrates persisted fork queue and steering choices to V2 dispatch", () => {
   const message = queuedMessage({ messageId: "legacy", createdAt: "2026-06-08T10:00:01.000Z" });
-  expect(decodeQueuedThreadMessage({ ...message, schemaVersion: 3, delivery: "queue" })).toEqual({ ...message, dispatchMode: "queue" });
-  expect(decodeQueuedThreadMessage({ ...message, schemaVersion: 3, delivery: "steer" })).toEqual({ ...message, dispatchMode: "auto" });
+  expect(decodeQueuedThreadMessage({ ...message, schemaVersion: 3, delivery: "queue" })).toEqual({
+    ...message,
+    dispatchMode: "queue",
+  });
+  expect(decodeQueuedThreadMessage({ ...message, schemaVersion: 3, delivery: "steer" })).toEqual({
+    ...message,
+    dispatchMode: "auto",
+  });
 });

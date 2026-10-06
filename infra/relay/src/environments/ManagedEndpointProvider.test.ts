@@ -204,6 +204,7 @@ function makeAllocations(calls: AllocationCall[] = []) {
     }
   };
   return ManagedEndpointAllocations.ManagedEndpointAllocations.of({
+    getByTunnelName: () => Effect.die("unused getByTunnelName"),
     get: (input) =>
       Effect.sync(() => {
         calls.push({ operation: "get", input });
@@ -380,6 +381,24 @@ function expectedManagedTunnelName(environmentId: string, userId = "user_ABC"): 
 }
 
 describe("ManagedEndpointProvider", () => {
+  it("recognizes active tunnel connections without traversing cycles or accessors", () => {
+    expect(
+      ManagedEndpointProvider.isManagedEndpointTunnelInUse({
+        cause: { message: "Tunnel has active connections" },
+      }),
+    ).toBe(true);
+    const cyclic: { cause?: unknown } = {};
+    cyclic.cause = cyclic;
+    expect(ManagedEndpointProvider.isManagedEndpointTunnelInUse(cyclic)).toBe(false);
+    expect(
+      ManagedEndpointProvider.isManagedEndpointTunnelInUse({
+        get cause() {
+          throw new Error("must not read accessors");
+        },
+      }),
+    ).toBe(false);
+  });
+
   it.effect("does not require the deployment RuntimeContext when building the Worker layer", () => {
     let tunnelListRequest: unknown;
     let dnsListRequest: unknown;
@@ -1558,6 +1577,36 @@ describe("ManagedEndpointProvider", () => {
         tunnelId: "tunnel-id",
       });
       expect(error.cause).toBe(failure);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("reports a tunnel with an attached connector as not released", () => {
+    const tunnelClient = ManagedEndpointProvider.ManagedEndpointTunnelClient.of({
+      ...makeTunnelClient(),
+      delete: (tunnelId) =>
+        Effect.fail(
+          new ManagedEndpointProvider.ManagedEndpointTunnelClientError({
+            operation: "delete",
+            tunnelId,
+            cause: {
+              _tag: "BadRequest",
+              code: 1022,
+              message:
+                "This tunnel has active connections. Please stop all cloudflared replicas, or wait a few minutes for connections to close, then try again.",
+            },
+          }),
+        ),
+    });
+    const layer = providerLayer(tunnelClient, makeDnsClient(), makeAllocations());
+
+    return Effect.gen(function* () {
+      const provider = yield* ManagedEndpointProvider.ManagedEndpointProvider;
+      const key = { userId: "user_ABC", environmentId: "env_ABC" } as const;
+      yield* provider.provision({
+        ...key,
+        origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
+      });
+      expect(yield* provider.release(key)).toBe(false);
     }).pipe(Effect.provide(layer));
   });
 

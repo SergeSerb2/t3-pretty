@@ -1,7 +1,7 @@
 import { afterEach, assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import * as OriginCli from "../sourceControl/OriginCli.ts";
 import * as OriginPullRequestCli from "./OriginPullRequestCli.ts";

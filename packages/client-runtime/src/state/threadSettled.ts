@@ -148,7 +148,8 @@ export function hasQueuedTurnStart(
   if (shell.latestUserMessageAt == null) return false;
   // A failed session start clears the queued state: the failure is already
   // visible (status edge / error).
-  if ((shell.runtime?.status === "failed" || shell.runtime?.status === "error")) return false;
+  const runtime = shell.runtime ?? shell.session;
+  if (runtime?.status === "failed" || runtime?.status === "error") return false;
   const messageAt = Date.parse(shell.latestUserMessageAt);
   if (Number.isNaN(messageAt)) return false;
   const nowMs = Date.parse(options.now);
@@ -180,7 +181,11 @@ export function canSettle(
   options: { readonly now: string },
 ): boolean {
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return false;
-  if (shell.runtime != null && ["preparing", "queued", "starting", "running", "waiting"].includes(shell.runtime.status)) return false;
+  if (
+    shell.runtime != null &&
+    ["preparing", "queued", "starting", "running", "waiting"].includes(shell.runtime.status)
+  )
+    return false;
   // Queued work is as blocked-on-progress as a live session: settling it
   // (or auto-settling it on a closed PR) would hide a just-requested turn.
   if (hasQueuedTurnStart(shell, options)) return false;
@@ -228,7 +233,7 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
   if (
     (runtime?.status === "error" || runtime?.status === "failed") &&
     (shell.snoozedAt == null ||
-      (runtime.updatedAt != null && Date.parse(runtime.updatedAt) > Date.parse(shell.snoozedAt)))
+      (runtime.updatedAt != null && happenedAfterSnooze(runtime.updatedAt, shell.snoozedAt)))
   ) {
     return true;
   }
@@ -236,7 +241,7 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
     shell.snoozedAt != null &&
     (latestRun?.state === "completed" || latestRun?.status === "completed") &&
     latestRun.completedAt != null &&
-    Date.parse(latestRun.completedAt) > Date.parse(shell.snoozedAt)
+    happenedAfterSnooze(latestRun.completedAt, shell.snoozedAt)
   ) {
     return true;
   }
@@ -336,7 +341,7 @@ export function threadWokeAt(
       shell.snoozedAt != null &&
       (latestRun?.state === "completed" || latestRun?.status === "completed") &&
       latestRun.completedAt != null &&
-      Date.parse(latestRun.completedAt) > Date.parse(shell.snoozedAt)
+      happenedAfterSnooze(latestRun.completedAt, shell.snoozedAt)
     ) {
       return latestRun.completedAt;
     }
@@ -374,7 +379,11 @@ export function effectiveSettled(
 ): boolean {
   // Blocked work must remain visible even when a user explicitly settled it.
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return false;
-  if (shell.runtime != null && ["preparing", "queued", "starting", "running", "waiting"].includes(shell.runtime.status)) return false;
+  if (
+    shell.runtime != null &&
+    ["preparing", "queued", "starting", "running", "waiting"].includes(shell.runtime.status)
+  )
+    return false;
   if (hasQueuedTurnStart(shell, { now: options.now })) {
     // The queued-turn blocker alone is forgivable: it is clock-derived, and
     // list callers pass a coarser `now` than the settle action used. When

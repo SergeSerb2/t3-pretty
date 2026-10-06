@@ -71,7 +71,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Order from "effect/Order";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { cn } from "../../lib/cn";
 import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
 import { useProjects, useServerConfigs, waitForProject } from "../../state/entities";

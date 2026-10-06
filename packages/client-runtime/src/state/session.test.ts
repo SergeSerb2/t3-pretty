@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Layer from "effect/Layer";
-import type { HttpClient } from "effect/unstable/http";
-import { Atom } from "effect/unstable/reactivity";
+import type { HttpClient } from "effect/http";
+import { Atom } from "effect/reactivity";
 
 import { EnvironmentId } from "@t3tools/contracts";
 

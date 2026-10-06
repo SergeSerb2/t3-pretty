@@ -1,3 +1,4 @@
+import * as Hex from "effect/encoding/Hex";
 // @effect-diagnostics nodeBuiltinImport:off
 /**
  * Stores project icons picked from outside the workspace in T3 home.
@@ -21,7 +22,6 @@ import {
 } from "@t3tools/shared/projectFavicon";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -192,7 +192,7 @@ export const importProjectFavicon = Effect.fn("ProjectFaviconStore.importProject
 
     const crypto = yield* Crypto.Crypto;
     const revision = yield* crypto.digest("SHA-256", bytes).pipe(
-      Effect.map(Encoding.encodeHex),
+      Effect.map(Hex.encode),
       Effect.map((hex) => hex.slice(0, MANAGED_PROJECT_FAVICON_REVISION_LENGTH)),
       Effect.mapError(
         (cause) =>

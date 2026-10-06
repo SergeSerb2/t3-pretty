@@ -1212,6 +1212,147 @@ describe("native provider presentation in the v2 timeline", () => {
   });
 });
 
+describe("HTML renders in the timeline", () => {
+  const runId = RunId.make("render-run");
+  const at = (second: number) =>
+    DateTime.makeUnsafe(`2026-09-04T12:00:${String(second).padStart(2, "0")}.000Z`);
+  const base = (id: string, second: number) => ({
+    id: TurnItemId.make(id),
+    threadId: ThreadId.make("render-thread"),
+    runId,
+    nodeId: null,
+    providerThreadId: null,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    ordinal: second,
+    status: "completed" as const,
+    title: null,
+    startedAt: at(second),
+    completedAt: at(second),
+    updatedAt: at(second),
+  });
+  const visible = (item: OrchestrationV2TurnItem): OrchestrationV2ProjectedTurnItem => ({
+    position: item.ordinal,
+    visibility: "local",
+    sourceThreadId: item.threadId,
+    sourceItemId: item.id,
+    item,
+  });
+  const htmlRender = { attachmentId: "render-thread-chart.html", title: "Chart", height: 420 };
+  const renderCall = (
+    status: OrchestrationV2TurnItem["status"],
+    output?: unknown,
+  ): OrchestrationV2TurnItem => ({
+    ...base("render", 2),
+    status,
+    type: "dynamic_tool",
+    toolName: "mcp__t3-code__html_render",
+    input: { title: "Chart", height: 420 },
+    ...(output === undefined ? {} : { output }),
+  });
+  const command = (id: string, second: number): OrchestrationV2TurnItem => ({
+    ...base(id, second),
+    type: "command_execution",
+    input: "vp test run",
+  });
+  const turn = (render: OrchestrationV2TurnItem) => {
+    const items: OrchestrationV2TurnItem[] = [
+      {
+        ...base("prompt", 0),
+        type: "user_message",
+        messageId: MessageId.make("prompt"),
+        inputIntent: "turn_start",
+        text: "Chart it",
+        createdBy: "user",
+        creationSource: "server",
+        attachments: [],
+      },
+      command("before", 1),
+      render,
+      command("after", 3),
+      {
+        ...base("reply", 4),
+        type: "assistant_message",
+        messageId: MessageId.make("reply"),
+        text: "Here it is.",
+        streaming: false,
+      },
+    ];
+    return deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: items.map(visible),
+      optimisticMessages: [],
+    });
+  };
+  const rowsFor = (entries: TimelineEntry[], expanded: boolean) =>
+    deriveMessagesTimelineRows({
+      timelineEntries: entries,
+      latestRun: {
+        runId,
+        status: "completed",
+        startedAt: DateTime.formatIso(at(0)),
+        completedAt: DateTime.formatIso(at(5)),
+      },
+      ...(expanded ? { expandedRunIds: new Set([runId]) } : {}),
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    }).map((row) => row.kind);
+
+  it("shows a completed render in place, above the reply, through the turn fold", () => {
+    const entries = turn(
+      renderCall("completed", { structuredContent: { htmlRender }, content: [] }),
+    );
+    expect(entries.find((entry) => entry.kind === "html-render")).toMatchObject({
+      id: "render",
+      runId,
+      htmlRender,
+    });
+    expect(rowsFor(entries, false)).toEqual(["message", "turn-fold", "html-render", "message"]);
+    expect(rowsFor(entries, true)).toEqual([
+      "message",
+      "turn-fold",
+      "work",
+      "html-render",
+      "work",
+      "message",
+    ]);
+  });
+
+  it("keeps a render visible when its superseded attempt folds", () => {
+    const attempt: OrchestrationV2RunAttempt = {
+      id: RunAttemptId.make("attempt-superseded"),
+      runId,
+      attemptOrdinal: 1,
+      rootNodeId: NodeId.make("node-superseded"),
+      providerInstanceId: ProviderInstanceId.make("codex-default"),
+      providerThreadId: ProviderThreadId.make("provider-thread"),
+      providerTurnId: null,
+      reason: "initial",
+      status: "superseded",
+      startedAt: at(0),
+      completedAt: at(4),
+    };
+    const entries = turn(
+      renderCall("completed", { structuredContent: { htmlRender }, content: [] }),
+    ).map((entry) =>
+      entry.kind === "message" && entry.message.role === "user" ? entry : { ...entry, attempt },
+    );
+    expect(rowsFor(entries, true)).toEqual(["message", "turn-fold", "attempt-fold", "html-render"]);
+  });
+
+  it.each([
+    ["running", "running", undefined],
+    ["failed", "failed", { content: [{ type: "text", text: "Invalid HTML" }], isError: true }],
+    ["errored", "completed", { structuredContent: { htmlRender }, isError: true }],
+  ] as const)("keeps a %s call in the work log", (_label, status, output) => {
+    const entries = turn(renderCall(status, output));
+    expect(entries.some((entry) => entry.kind === "html-render")).toBe(false);
+    expect(entries.find((entry) => entry.id === "render")?.kind).toBe("work");
+  });
+});
+
 describe("work-log failure policy (#7999/#7893)", () => {
   const toolEntry = (overrides: Record<string, unknown>) =>
     ({
@@ -1677,30 +1818,63 @@ describe("V2 generated image presentation", () => {
     const now = DateTime.makeUnsafe("2026-10-02T00:00:00.000Z");
     const savedPath = "/Users/serge/.grok/sessions/%2Frepo/run/images/1.jpg";
     const item = {
-      id: TurnItemId.make("generated-image"), threadId: ThreadId.make("image-thread"),
-      runId: RunId.make("image-run"), nodeId: null, providerThreadId: null, providerTurnId: null,
-      nativeItemRef: null, parentItemId: null, ordinal: 1, status: "completed" as const,
-      title: null, startedAt: now, completedAt: now, updatedAt: now,
-      type: "image_generation" as const, savedPath, paths: [savedPath, "/repo/images/2.png"],
-    } satisfies Extract<OrchestrationV2TurnItem, {type: "image_generation"}>;
+      id: TurnItemId.make("generated-image"),
+      threadId: ThreadId.make("image-thread"),
+      runId: RunId.make("image-run"),
+      nodeId: null,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 1,
+      status: "completed" as const,
+      title: null,
+      startedAt: now,
+      completedAt: now,
+      updatedAt: now,
+      type: "image_generation" as const,
+      savedPath,
+      paths: [savedPath, "/repo/images/2.png"],
+    } satisfies Extract<OrchestrationV2TurnItem, { type: "image_generation" }>;
     const entries = deriveTimelineEntriesFromVisibleTurnItems({
-      visibleTurnItems: [{ item, position: 0, visibility: "local", sourceThreadId: item.threadId, sourceItemId: item.id }],
+      visibleTurnItems: [
+        {
+          item,
+          position: 0,
+          visibility: "local",
+          sourceThreadId: item.threadId,
+          sourceItemId: item.id,
+        },
+      ],
       optimisticMessages: [],
     });
-    expect(entries[0]).toMatchObject({kind: "work", entry: {
-      label: "Generated image", tone: "tool", itemType: "image_generation", runId: item.runId,
-      changedFiles: [savedPath, "/repo/images/2.png"], toolData: item,
-    }});
+    expect(entries[0]).toMatchObject({
+      kind: "work",
+      entry: {
+        label: "Generated image",
+        tone: "tool",
+        itemType: "image_generation",
+        runId: item.runId,
+        changedFiles: [savedPath, "/repo/images/2.png"],
+        toolData: item,
+      },
+    });
   });
 });
 
 describe("resolveLiveThreadHeadline", () => {
   it("hides persisted status when no run is active or headlines are disabled", () => {
-    const runtime = { status: "running", activeRunId: RunId.make("run-1") } as NonNullable<import("./types").Thread["runtime"]>;
+    const runtime = { status: "running", activeRunId: RunId.make("run-1") } as NonNullable<
+      import("./types").Thread["runtime"]
+    >;
     const thread = { liveHeadline: "Updating contract tests", runtime };
     expect(resolveLiveThreadHeadline(thread)).toBe("Updating contract tests");
-    expect(resolveLiveThreadHeadline({ ...thread, runtime: { ...runtime, activeRunId: null } })).toBeNull();
-    expect(resolveLiveThreadHeadline({ ...thread, runtime: { ...runtime, status: "completed" } })).toBeNull();
+    expect(
+      resolveLiveThreadHeadline({ ...thread, runtime: { ...runtime, activeRunId: null } }),
+    ).toBeNull();
+    expect(
+      resolveLiveThreadHeadline({ ...thread, runtime: { ...runtime, status: "completed" } }),
+    ).toBeNull();
     expect(resolveLiveThreadHeadline(thread, false)).toBeNull();
     expect(resolveLiveThreadHeadline(null)).toBeNull();
   });

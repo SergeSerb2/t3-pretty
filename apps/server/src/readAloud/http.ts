@@ -1,3 +1,4 @@
+import * as Base64 from "effect/encoding/Base64";
 import {
   AuthOrchestrationOperateScope,
   EnvironmentHttpApi,
@@ -7,9 +8,8 @@ import {
 } from "@t3tools/contracts";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import { HttpClient, HttpClientRequest } from "effect/http";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import { annotateEnvironmentRequest, requireEnvironmentScope } from "../auth/http.ts";
 import { resolveDictationAvailability } from "../dictation/availability.ts";
@@ -68,7 +68,7 @@ export const requestGroqSpeech = Effect.fn("readAloud.requestGroqSpeech")(functi
   if (!isWavAudio(audio)) {
     return yield* new ReadAloudUpstreamError();
   }
-  return { audioBase64: Encoding.encodeBase64(audio), mimeType: "audio/wav" as const };
+  return { audioBase64: Base64.encode(audio), mimeType: "audio/wav" as const };
 });
 
 const synthesize = Effect.fn("readAloud.synthesize")(function* (text: string) {

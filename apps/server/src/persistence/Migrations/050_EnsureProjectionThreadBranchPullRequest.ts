@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 /** Idempotent: existing ~/.t3 DBs may already have migration 48 under a
  * different name (fork slot collision), so 048 never ran and listThreads

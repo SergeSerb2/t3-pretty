@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
-import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerRespondable from "effect/http/HttpServerRespondable";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export const READ_ALOUD_TEXT_MAX_LENGTH = 200;
 export const READ_ALOUD_AUDIO_BASE64_MAX_LENGTH = 8 * 1024 * 1024;
