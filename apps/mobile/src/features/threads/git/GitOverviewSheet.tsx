@@ -47,6 +47,7 @@ import { useSelectedThreadWorktree } from "../../../state/use-selected-thread-wo
 import { vcsEnvironment } from "../../../state/vcs";
 import { resolveGitOverviewReviewNavigationAction } from "./git-overview-navigation";
 import { MetaCard, SheetListRow, menuItemIconName, statusSummary } from "./gitSheetComponents";
+import { StopWatchingPullRequest } from "./StopWatchingPullRequest";
 import { useThreadInspectorVisibility } from "../thread-inspector-content-stack";
 import { useGlassChromeActive } from "../../scenery/SceneryProvider";
 import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../../scenery/glassStyles";
@@ -387,6 +388,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
                       });
                     }}
                   />
+                  <StopWatchingPullRequest threadRef={{ environmentId, threadId }} link={link} />
                 </View>
               ))}
             </View>
