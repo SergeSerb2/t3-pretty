@@ -1,4 +1,4 @@
-import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
+import { NativeStackScreenOptions } from "../../native/StackHeader";
 import type { MenuAction } from "@react-native-menu/menu";
 import { useCallback, useMemo, useRef } from "react";
 import { Platform, Pressable, TextInput, View } from "react-native";
@@ -10,6 +10,8 @@ import { TRANSPARENT_NATIVE_HEADERS } from "../../native/native-glass";
 
 import { ControlPillMenu } from "../../components/ControlPill";
 import { SymbolView } from "../../components/AppSymbol";
+import { homeListFilterItemsToActions } from "../../components/anchored-menu.logic";
+import { MintGlassButton } from "../../components/MintGlassButton";
 import { CompactBrandTitle } from "../../components/CompactBrandTitle";
 import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
@@ -352,17 +354,17 @@ function IosHomeHeader(props: HomeHeaderProps) {
                 ],
               }
             : {
-                // Standard UIKit search; create + sort live in the bottom
-                // toolbar below. Liquid Glass collapses it to a glass button
+                // Standard UIKit search; create + sort float in the bottom
+                // corners below. Liquid Glass collapses it to a glass button
                 // beside the header items instead of a stacked field that
-                // pushes the list down; older iOS keeps the field. Toolbar
-                // integration stays off: the bottom toolbar is the patched
-                // RNS item list, which does not place UIKit's search item.
+                // pushes the list down; otherwise the field stays stacked
+                // under the title, since iOS 26+ would move it to the bottom
+                // edge over the corner buttons.
                 headerSearchBarOptions: {
                   ref: searchBarRef,
                   ...(NATIVE_LIQUID_GLASS_SUPPORTED
                     ? { allowToolbarIntegration: false, placement: "integratedButton" as const }
-                    : undefined),
+                    : { placement: "stacked" as const }),
                   autoCapitalize: "none" as const,
                   hideNavigationBar: false,
                   placeholder: "Search",
@@ -378,68 +380,54 @@ function IosHomeHeader(props: HomeHeaderProps) {
       />
 
       {NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED ? null : (
-        <NativeHeaderToolbar placement="bottom">
-          <NativeHeaderToolbar.Menu
-            accessibilityLabel="Filter threads"
-            icon={
-              hasCustomListOptions
-                ? "line.3.horizontal.decrease.circle.fill"
-                : "line.3.horizontal.decrease.circle"
-            }
-            title="Thread list options"
-            separateBackground
-          >
-            <NativeHeaderToolbar.Menu title="Environment">
-              <NativeHeaderToolbar.Label>Environment</NativeHeaderToolbar.Label>
-              <NativeHeaderToolbar.MenuAction
-                isOn={props.selectedEnvironmentId === null}
-                onPress={() => props.onEnvironmentChange(null)}
-                subtitle="Show threads from every environment"
-              >
-                <NativeHeaderToolbar.Label>All environments</NativeHeaderToolbar.Label>
-              </NativeHeaderToolbar.MenuAction>
-              {props.environments.map((environment) => (
-                <NativeHeaderToolbar.MenuAction
-                  key={environment.environmentId}
-                  isOn={props.selectedEnvironmentId === environment.environmentId}
-                  onPress={() => props.onEnvironmentChange(environment.environmentId)}
-                >
-                  <NativeHeaderToolbar.Label>{environment.label}</NativeHeaderToolbar.Label>
-                </NativeHeaderToolbar.MenuAction>
-              ))}
-            </NativeHeaderToolbar.Menu>
-
-            {props.projects.length > 0 ? (
-              <NativeHeaderToolbar.Menu title="Project">
-                <NativeHeaderToolbar.Label>Project</NativeHeaderToolbar.Label>
-                <NativeHeaderToolbar.MenuAction
-                  isOn={props.selectedProjectKey === null}
-                  onPress={() => props.onProjectChange(null)}
-                  subtitle="Show threads from every project"
-                >
-                  <NativeHeaderToolbar.Label>All projects</NativeHeaderToolbar.Label>
-                </NativeHeaderToolbar.MenuAction>
-                {props.projects.map((project) => (
-                  <NativeHeaderToolbar.MenuAction
-                    key={project.key}
-                    isOn={props.selectedProjectKey === project.key}
-                    onPress={() => props.onProjectChange(project.key)}
-                  >
-                    <NativeHeaderToolbar.Label>{project.label}</NativeHeaderToolbar.Label>
-                  </NativeHeaderToolbar.MenuAction>
-                ))}
-              </NativeHeaderToolbar.Menu>
-            ) : null}
-          </NativeHeaderToolbar.Menu>
-          <NativeHeaderToolbar.Spacer flexible />
-          <NativeHeaderToolbar.Button
-            accessibilityLabel="New task"
-            icon="square.and.pencil"
-            onPress={props.onStartNewTask}
-            separateBackground
-          />
-        </NativeHeaderToolbar>
+        <HomeCornerButtons
+          filterMenu={filterMenu}
+          hasCustomListOptions={hasCustomListOptions}
+          onStartNewTask={props.onStartNewTask}
+        />
       )}
     </>
+  );
+}
+
+/** Floating mint glass filter and compose buttons in the bottom corners. */
+function HomeCornerButtons(props: {
+  readonly filterMenu: ReturnType<typeof buildHomeListFilterMenu>;
+  readonly hasCustomListOptions: boolean;
+  readonly onStartNewTask: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const menu = homeListFilterItemsToActions(props.filterMenu.items);
+  return (
+    <View
+      pointerEvents="box-none"
+      className="absolute inset-x-0 z-10 flex-row justify-between px-6"
+      style={{ bottom: Math.max(insets.bottom - 6, 16) }}
+    >
+      <ControlPillMenu
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel="Filter threads"
+        title={props.filterMenu.title}
+        actions={menu.actions}
+        onPressAction={({ nativeEvent }) => menu.handlers.get(nativeEvent.event)?.()}
+      >
+        <MintGlassButton
+          accessible={false}
+          icon={
+            props.hasCustomListOptions
+              ? "line.3.horizontal.decrease.circle.fill"
+              : "line.3.horizontal.decrease"
+          }
+          size={44}
+        />
+      </ControlPillMenu>
+      <MintGlassButton
+        accessibilityLabel="New task"
+        icon="square.and.pencil"
+        size={44}
+        onPress={props.onStartNewTask}
+      />
+    </View>
   );
 }

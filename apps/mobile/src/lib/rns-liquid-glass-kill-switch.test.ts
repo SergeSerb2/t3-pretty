@@ -6,7 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 const patchPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
-  "../../../../patches/react-native-screens@4.26.2.patch",
+  "../../../../patches/react-native-screens@4.28.0.patch",
 );
 
 describe("RNS liquid-glass kill-switch", () => {
