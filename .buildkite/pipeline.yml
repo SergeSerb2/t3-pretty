@@ -108,7 +108,7 @@ steps:
     # This independent step does not gate the internal packaging steps below.
     # Pinned recovery source may precede newer application changes on main.
     # It publishes only the missing installer; never mirror that older tip.
-    if: 'build.env("T3CODE_IOS_ONLY") != "1" && !build.env("T3CODE_LINUX_RECOVERY_VERSION") && (build.branch == "main" && build.source != "schedule")'
+    if: 'build.env("T3CODE_IOS_ONLY") != "1" && (build.env("T3CODE_LINUX_RECOVERY_VERSION") == null || build.env("T3CODE_LINUX_RECOVERY_VERSION") == "") && (build.branch == "main" && build.source != "schedule")'
     agents:
       # GITHUB_MIRROR_SSH_KEY is a fork cluster secret. Hosted macos-medium
       # cannot resolve it (BK 1878/1880: "cluster secret ... is not
