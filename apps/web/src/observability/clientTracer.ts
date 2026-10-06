@@ -1,3 +1,4 @@
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Tracer from "effect/Tracer";
 
@@ -23,7 +24,12 @@ export const layer = Layer.succeed(
   Tracer.Tracer,
   Tracer.make({
     span(options) {
-      return delegate?.span(options) ?? new Tracer.NativeSpan(options);
+      const span = delegate?.span(options) ?? new Tracer.NativeSpan(options);
+      const end = span.end.bind(span);
+      // Cached child fibers can keep ended spans alive. Status needs the outcome,
+      // not the returned conversation, HTTP response, or registry state.
+      span.end = (endTime, exit) => end(endTime, Exit.isSuccess(exit) ? Exit.void : exit);
+      return span;
     },
   }),
 );
