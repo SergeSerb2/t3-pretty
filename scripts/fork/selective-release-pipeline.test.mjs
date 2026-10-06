@@ -66,6 +66,35 @@ describe("selective release retries", () => {
     assert.isTrue(selected("upstream-sync", "schedule", env));
     assert.isTrue(selected("ios-mobile"));
   });
+  it("publishes pinned Linux recovery without moving the main mirror or repeating delivery", () => {
+    const env = {
+      T3CODE_LINUX_RECOVERY_VERSION: "0.0.46-nightly.20261005.2702003200",
+      T3CODE_DESKTOP_ONLY: "1",
+      T3CODE_SKIP_MACOS: "1",
+      T3CODE_SKIP_IOS: "1",
+      T3CODE_SKIP_WINDOWS: "1",
+      T3CODE_SKIP_ANDROID: "1",
+      T3CODE_SKIP_RELAY: "1",
+    };
+    for (const source of ["ui", "api"]) {
+      assert.isTrue(selected("linux-appimage", source, env));
+      for (const key of [
+        "github-mirror",
+        "origin-workflows",
+        "upstream-sync",
+        "publish-cli",
+        "macos-dmg",
+        "ios-mobile",
+        "windows-nsis",
+        "android-mobile",
+        "deploy-relay",
+      ])
+        assert.isFalse(selected(key, source, env), key);
+    }
+    assert.isTrue(selected("github-mirror"));
+    assert.isTrue(selected("github-mirror", "ui", { T3CODE_LINUX_RECOVERY_VERSION: "" }));
+    assert.isTrue(selected("upstream-sync", "schedule", env));
+  });
   it("keeps normal delivery enabled and allows per-run skips", () => {
     assert.isTrue(selected("android-mobile"));
     assert.isTrue(selected("deploy-relay"));
