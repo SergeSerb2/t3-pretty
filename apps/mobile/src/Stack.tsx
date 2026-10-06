@@ -121,6 +121,8 @@ import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
 import { SettingsThreadsRouteScreen } from "./features/settings/SettingsThreadsRouteScreen";
 import { SettingsEnvironmentFilterProvider } from "./features/settings/settings-environment-filter";
 import { ShowcaseCaptureCoordinator } from "./features/showcase/ShowcaseCaptureCoordinator";
+import { TrailheadRouteScreen } from "./features/trailhead/TrailheadRouteScreen";
+import { useTrailheadGate } from "./features/trailhead/useTrailheadGate";
 import {
   SettingsLegalDocumentCloseHeaderButton,
   SettingsLegalDocumentExternalHeaderButton,
@@ -591,6 +593,7 @@ const WORKSPACE_OVERLAY_ROUTES = new Set([
   "ThreadReviewComment",
   "ThreadDevicePreview",
   "ThreadSettingsSheet",
+  "Trailhead",
 ]);
 
 /**
@@ -617,6 +620,13 @@ function workspaceLocationFromState(state: NavigationState) {
 function ThreadOutboxDrainWorker() {
   useThreadOutboxDrain();
   useComposerAttachmentUploadWorker();
+  return null;
+}
+
+// Opens first-run Trailhead. A leaf for the same reason as the drain worker:
+// it watches the connection list, which must not re-render RootStackLayout.
+function TrailheadGate() {
+  useTrailheadGate();
   return null;
 }
 
@@ -656,6 +666,7 @@ function RootStackLayout(props: {
   return (
     <HardwareKeyboardCommandProvider pathname={pathname}>
       <ThreadOutboxDrainWorker />
+      <TrailheadGate />
       <ShowcaseCaptureCoordinator pathname={pathname} />
       <ExistingThreadSettingsRouteProvider>
         <AdaptiveWorkspaceLayout
@@ -994,6 +1005,15 @@ const RootStackConfig = createNativeStackNavigator({
       options: {
         gestureEnabled: true,
         headerShown: false,
+      },
+    }),
+    Trailhead: createNativeStackScreen({
+      screen: TrailheadRouteScreen,
+      linking: "welcome",
+      options: {
+        presentation: "fullScreenModal",
+        headerShown: false,
+        gestureEnabled: false,
       },
     }),
     NotFound: createNativeStackScreen({
