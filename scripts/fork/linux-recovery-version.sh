@@ -22,12 +22,13 @@ t3_resolve_linux_recovery_version() (
 
   git merge-base --is-ancestor "$source_commit" HEAD || exit 1
   git merge-base --is-ancestor "${nightly}^{commit}" "$source_commit" || exit 1
-  git diff --quiet "$source_commit" HEAD -- apps packages package.json \
-    pnpm-lock.yaml pnpm-workspace.yaml \
-    ':(exclude)apps/web/src/changelog/changelogData.ts' || {
+  local application_paths=(apps packages package.json pnpm-lock.yaml pnpm-workspace.yaml \
+    ':(exclude)apps/web/src/changelog/changelogData.ts')
+  if ! git diff --quiet --cached "$source_commit" -- "${application_paths[@]}" || \
+    ! git diff --quiet "$source_commit" -- "${application_paths[@]}"; then
       echo "Linux recovery source differs from the delivered application or dependencies." >&2
       exit 1
-    }
+  fi
 
   local tmp
   tmp="$(mktemp -d)" || exit 1

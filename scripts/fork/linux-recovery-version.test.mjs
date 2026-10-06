@@ -40,6 +40,15 @@ function fixture(input = {}) {
     NodeFS.writeFileSync(NodePath.join(repo, "pnpm-lock.yaml"), "changed dependencies\n");
   git("add", ".");
   git("commit", "--quiet", "-m", "Recovery checkout fix");
+  if (input.unstagedApplication || input.stagedApplication || input.indexOnlyApplication) {
+    NodeFS.appendFileSync(NodePath.join(repo, "apps/server/source.txt"), "dirty application\n");
+    if (input.stagedApplication || input.indexOnlyApplication) git("add", "apps/server/source.txt");
+    if (input.indexOnlyApplication)
+      NodeFS.writeFileSync(
+        NodePath.join(repo, "apps/server/source.txt"),
+        "delivered application\n",
+      );
+  }
   NodeFS.writeFileSync(
     NodePath.join(pkg, "package.json"),
     JSON.stringify({ name: "t3", version: input.packageVersion ?? version }),
@@ -122,6 +131,9 @@ describe("Linux recovery uses the delivered CLI version", () => {
   it.each([
     ["changed application source", { changedApplication: true }],
     ["changed dependencies", { changedDependencies: true }],
+    ["unstaged application changes", { unstagedApplication: true }],
+    ["staged application changes", { stagedApplication: true }],
+    ["index changes hidden by a clean worktree", { indexOnlyApplication: true }],
     ["unrelated source commit", { sourceCommit: "0".repeat(40) }],
     ["different nightly family", { requestedVersion: "0.0.46-nightly.20261005.2703003200" }],
     ["different Mac release", { macVersion: "0.0.46-nightly.20261005.2702003201" }],
