@@ -288,7 +288,11 @@ describe("T3 Pretty upstream conflict resolver", () => {
     assert.include(prompt, "upstream_changes_omitted");
     assert.include(prompt, "fork-owned Expo project and OTA boundary");
     assert.include(prompt, "integrate compatible upstream mobile features");
-    assert.include(prompt, "take upstream's implementation and keep only Pretty branding");
+    assert.include(prompt, "all fork capabilities remain reachable");
+    assert.include(prompt, "A similar name or shared purpose does not establish feature parity");
+    assert.include(prompt, "Continue a project and New ideas");
+    assert.include(prompt, "automatic thread naming");
+    assert.include(prompt, "matching producer and consumer wiring");
   });
 
   it("allows a large generated file when its conflict prompt remains bounded", () => {
@@ -932,36 +936,31 @@ ${">".repeat(7)} theirs
   it("retries transient resolver failures instead of aborting the whole sync", () => {
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
 
-    // Network errors, 408, non-availability 5xx, and unparseable/incomplete
-    // responses retry; retries step down to high and then medium so one
-    // long-think cannot burn the same five-minute gateway timeout three times.
+    // Transient failures retry without silently reducing the reasoning budget,
+    // including after completed batches or when retrying with wider context.
     assert.deepEqual(conflictResolutionEfforts({ initialEffort: "xhigh" }), [
       "xhigh",
-      "high",
-      "medium",
+      "xhigh",
+      "xhigh",
     ]);
     assert.deepEqual(conflictResolutionEfforts({ initialEffort: "high" }), [
       "high",
-      "medium",
-      "medium",
-    ]);
-    assert.deepEqual(conflictResolutionEfforts({ completedBatches: 1 }), [
       "high",
-      "medium",
-      "medium",
+      "high",
     ]);
-    assert.deepEqual(conflictResolutionEfforts({ widened: true }), ["medium", "medium", "medium"]);
+    assert.deepEqual(conflictResolutionEfforts({ completedBatches: 1, initialEffort: "xhigh" }), [
+      "xhigh",
+      "xhigh",
+      "xhigh",
+    ]);
+    assert.deepEqual(conflictResolutionEfforts({ widened: true, initialEffort: "xhigh" }), [
+      "xhigh",
+      "xhigh",
+      "xhigh",
+    ]);
     assert.deepEqual(conflictResolutionEfforts({ initialEffort: "low" }), ["low", "low", "low"]);
-    assert.deepEqual(
-      conflictResolutionEfforts({ completedBatches: 1, widened: true, initialEffort: "low" }),
-      ["low", "low", "low"],
-    );
     assert.include(resolver, "while (effortIndex < efforts.length)");
     assert.include(resolver, "efforts = conflictResolutionEfforts()");
-    assert.include(
-      resolver,
-      "const efforts = conflictResolutionEfforts({ completedBatches, widened: widenNextBatch })",
-    );
     assert.include(resolver, "usedEffort = efforts[0]");
     assert.include(resolver, "status !== 0 && status !== 408 && status !== 429 && status < 500");
     assert.include(resolver, "setTimeout(resolve, effortIndex * 15_000)");

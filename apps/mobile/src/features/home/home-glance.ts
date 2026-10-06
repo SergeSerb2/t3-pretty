@@ -5,6 +5,8 @@ export interface HomeGlanceSummary {
   readonly headline: string;
   /** The remaining states, e.g. "3 working · 1 done". */
   readonly detail: string | null;
+  /** The headline's status, so the glance can wear the same hue as its card pill. */
+  readonly tone: ThreadListV2Badge | null;
 }
 
 interface GlanceGroup {
@@ -67,9 +69,10 @@ export function summarizeHomeGlance(
     return count > 0 ? [{ group, count }] : [];
   });
   const [lead, ...rest] = present;
-  if (lead === undefined) return { headline: "All caught up", detail: null };
+  if (lead === undefined) return { headline: "All caught up", detail: null, tone: null };
   return {
     headline: lead.group.headline(lead.count),
+    tone: lead.group.badges.find((badge) => counts.has(badge)) ?? null,
     detail:
       rest.length > 0 ? rest.map(({ group, count }) => group.detail(count)).join(" · ") : null,
   };

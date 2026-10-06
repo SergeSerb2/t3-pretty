@@ -340,6 +340,10 @@ describe("buildRepairPrompt and the report section", () => {
     assert.include(prompt, "- abc123 feat: fork thing");
     assert.include(prompt, "EXCERPT apps/web/src/y.ts around line 12");
     assert.include(prompt, "Never suppress diagnostics");
+    assert.include(prompt, "New ideas");
+    assert.include(prompt, "unmounting a panel");
+    assert.include(prompt, "automatic naming");
+    assert.include(prompt, "name the missing path or symbol");
     assert.include(prompt, "return safe=false");
   });
 
