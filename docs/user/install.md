@@ -49,7 +49,13 @@ installer prints the line to add.
 | Move to the newest T3 Pretty release             | `t3 update`                                               |
 | Remove it again                                  | `t3 uninstall`                                            |
 
-Run `t3 --help` for the full reference.
+Run `t3 help` or `t3 --help` for the full reference. To start in a new working
+directory, use an explicit path such as `t3 ./my-project`. A bare directory name
+is accepted only if it already exists.
+
+If `t3` or `t3 start` reports an already running server, connect to that server
+instead. Stop it before starting a replacement, or use a different `--base-dir`
+for an independent server.
 
 On a macOS or Linux machine that should stay reachable after logout, run
 `t3 service install` and pair from another device, then turn on **Surge Connect**

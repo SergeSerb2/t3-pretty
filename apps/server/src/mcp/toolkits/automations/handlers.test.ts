@@ -43,9 +43,13 @@ const makeScope = (
   capabilities: ReadonlySet<McpInvocationContext.McpCapability>,
 ): McpInvocationContext.McpInvocationScope => ({
   environmentId: EnvironmentId.make("environment-automations"),
-  threadId,
-  providerSessionId: "provider-session-automations",
-  providerInstanceId: ProviderInstanceId.make("codex"),
+  requestNamespace: "provider-session-automations",
+  client: undefined,
+  thread: {
+    threadId,
+    providerSessionId: "provider-session-automations",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+  },
   capabilities,
   issuedAt: 1,
 });
@@ -95,6 +99,7 @@ const makeAutomationShell = (input: {
 });
 
 interface HarnessInput {
+  readonly scope?: McpInvocationContext.McpInvocationScope;
   readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
   readonly thread?: OrchestrationV2ThreadShell;
   readonly automation?: AutomationShell | null;
@@ -138,7 +143,7 @@ const makeHarness = (input: HarnessInput = {}) => {
     effect.pipe(
       Effect.provideService(
         McpInvocationContext.McpInvocationContext,
-        makeScope(input.capabilities ?? new Set(["automations"])),
+        input.scope ?? makeScope(input.capabilities ?? new Set(["automations"])),
       ),
       Effect.provideService(AutomationStore, projection),
       Effect.provideService(ThreadManagementService, threadService),
@@ -146,6 +151,25 @@ const makeHarness = (input: HarnessInput = {}) => {
     );
   return { dispatched, threadReads, run };
 };
+
+it.effect("refuses an external automation caller before reading a thread or dispatching", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({
+      scope: {
+        ...makeScope(new Set(["automations"])),
+        thread: undefined,
+        client: { sessionId: "external", label: "External", runtimeModeCeiling: "full-access" },
+      },
+    });
+    const error = yield* harness.run(
+      automationsToolkitHandlers.automations_list().pipe(Effect.flip),
+    );
+    assert.ok(isAutomationsError(error));
+    assert.match(error.message, /requires a calling T3 thread/);
+    assert.deepEqual(harness.threadReads, []);
+    assert.deepEqual(harness.dispatched, []);
+  }),
+);
 
 it.effect("refuses every automation tool without the automations capability", () =>
   Effect.gen(function* () {

@@ -11,11 +11,11 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Stdio from "effect/Stdio";
-import * as RpcClient from "effect/unstable/rpc/RpcClient";
-import * as RpcClientError from "effect/unstable/rpc/RpcClientError";
-import * as RpcMessage from "effect/unstable/rpc/RpcMessage";
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
-import * as RpcServer from "effect/unstable/rpc/RpcServer";
+import * as RpcClient from "effect/rpc/RpcClient";
+import * as RpcClientError from "effect/rpc/RpcClientError";
+import * as RpcMessage from "effect/rpc/RpcMessage";
+import * as RpcSerialization from "effect/rpc/RpcSerialization";
+import * as RpcServer from "effect/rpc/RpcServer";
 
 import * as AcpSchema from "./schema.ts";
 import * as AcpSchemaV1 from "./_generated/schema-v1.gen.ts";
@@ -253,6 +253,25 @@ const decodeElicitationComplete = Schema.decodeUnknownEffect(
   AcpSchema.CompleteElicitationNotification,
 );
 const parserFactory = RpcSerialization.ndJsonRpc();
+// ndJsonRpc skips lines that are not JSON. A malformed agent line has to end the
+// session, so frames are split here and each one goes through the strict codec.
+const makeStrictNdJsonRpcParser = () => {
+  const codec = RpcSerialization.jsonRpc().makeUnsafe();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  return {
+    decode: (bytes: Uint8Array | string): ReadonlyArray<unknown> => {
+      buffer += typeof bytes === "string" ? bytes : decoder.decode(bytes, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      return lines.flatMap((line) => codec.decode(line));
+    },
+    encode: (response: Parameters<typeof codec.encode>[0]) => {
+      const encoded = codec.encode(response);
+      return encoded === undefined ? undefined : `${encoded}\n`;
+    },
+  };
+};
 const MAX_BUFFERED_RAW_NOTIFICATIONS = 32;
 // Outbound JSON-RPC notification: no `id`, so peers never treat it as a request.
 const encodeJsonRpcNotification = Schema.encodeUnknownExit(
@@ -298,7 +317,7 @@ function normalizeAcpJsonRpcError(
 export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(function* (
   options: AcpPatchedProtocolOptions,
 ): Effect.fn.Return<AcpPatchedProtocol, never, Scope.Scope> {
-  const parser = parserFactory.makeUnsafe();
+  const parser = makeStrictNdJsonRpcParser();
   const wireLineFramer = makeAcpWireLineFramer(options.maximumWireLineBytes);
   const wireEncoder = new TextEncoder();
   const serverQueue = yield* Queue.bounded<RpcMessage.FromClientEncoded>(
@@ -749,9 +768,11 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
           // The Effect NDJSON parser emits only newline-terminated records.
           // Framing first keeps its own partial-record buffer empty.
           try: () =>
-            (parser.decode(`${line}\n`) as ReadonlyArray<
-              RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded
-            >).map(normalizeAcpJsonRpcError),
+            (
+              parser.decode(`${line}\n`) as ReadonlyArray<
+                RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded
+              >
+            ).map(normalizeAcpJsonRpcError),
           catch: (cause) =>
             new AcpError.AcpProtocolParseError({
               operation: "decode-wire-message",

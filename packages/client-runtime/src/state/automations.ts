@@ -28,7 +28,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { request, subscribe } from "../rpc/client.ts";
@@ -448,23 +448,36 @@ export function createAutomationEnvironmentAtoms<R, E>(
   const subscription = createEnvironmentSubscriptionAtomFamily(runtime, {
     label: "environment-automations-stream",
     restartOnReconnect: true,
-    subscribe: (_input: {}) => subscribe(WS_METHODS.automationsSubscribe, {}).pipe(
-      Stream.scan({revision: -1, rows: EMPTY_AUTOMATIONS}, (state, message) => {
-        if (message.type === "automation.snapshot") return {revision: message.revision, rows: message.automations};
-        if (message.revision <= state.revision) return state;
-        return {revision: message.revision, rows: message.type === "automation.removed"
-          ? state.rows.filter((row) => row.id !== message.automationId)
-          : state.rows.some((row) => row.id === message.automation.id)
-            ? state.rows.map((row) => row.id === message.automation.id ? message.automation : row)
-            : [...state.rows, message.automation]};
-      }),
-    ),
+    subscribe: (_input: {}) =>
+      subscribe(WS_METHODS.automationsSubscribe, {}).pipe(
+        Stream.scan(
+          () => ({ revision: -1, rows: EMPTY_AUTOMATIONS }),
+          (state, message) => {
+            if (message.type === "automation.snapshot")
+              return { revision: message.revision, rows: message.automations };
+            if (message.revision <= state.revision) return state;
+            return {
+              revision: message.revision,
+              rows:
+                message.type === "automation.removed"
+                  ? state.rows.filter((row) => row.id !== message.automationId)
+                  : state.rows.some((row) => row.id === message.automation.id)
+                    ? state.rows.map((row) =>
+                        row.id === message.automation.id ? message.automation : row,
+                      )
+                    : [...state.rows, message.automation],
+            };
+          },
+        ),
+      ),
   });
   const sourceAutomationsAtom = Atom.family((environmentId: EnvironmentId) =>
-    Atom.make((get): ReadonlyArray<AutomationShell> => Option.match(
-      AsyncResult.value(get(subscription({environmentId, input: {}}))),
-      {onNone: () => get(input.snapshotAtom(environmentId))?.automations ?? EMPTY_AUTOMATIONS, onSome: (state) => state.rows},
-    )).pipe(Atom.withLabel(`environment-automations-source:${environmentId}`)),
+    Atom.make((get): ReadonlyArray<AutomationShell> =>
+      Option.match(AsyncResult.value(get(subscription({ environmentId, input: {} }))), {
+        onNone: () => get(input.snapshotAtom(environmentId))?.automations ?? EMPTY_AUTOMATIONS,
+        onSome: (state) => state.rows,
+      }),
+    ).pipe(Atom.withLabel(`environment-automations-source:${environmentId}`)),
   );
 
   const environmentAutomationsAtom = Atom.family((environmentId: EnvironmentId) =>

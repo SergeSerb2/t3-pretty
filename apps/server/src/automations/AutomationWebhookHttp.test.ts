@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off - the test owns an ephemeral loopback HTTP server.
+import * as NodeHttp from "node:http";
 import { assert, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import {
@@ -13,7 +15,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
-import { HttpBody, HttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
+import { FetchHttpClient, HttpBody, HttpClient, HttpRouter, HttpServer } from "effect/http";
 
 import { AutomationStore, AutomationStoreError } from "./AutomationStore.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -107,7 +109,21 @@ const makeHarness = Effect.fn("makeWebhookHarness")(function* (options: {
 
 const withServer = <A, E>(
   effect: Effect.Effect<A, E, HttpClient.HttpClient | HttpServer.HttpServer | Scope.Scope>,
-) => Effect.scoped(effect).pipe(Effect.provide(NodeHttpServer.layerTest));
+) =>
+  Effect.scoped(effect).pipe(
+    Effect.provide(
+      HttpServer.layerTestClient.pipe(
+        Layer.provide(
+          Layer.fresh(FetchHttpClient.layer).pipe(
+            Layer.provide(Layer.succeed(FetchHttpClient.RequestInit)({ keepalive: false })),
+          ),
+        ),
+        Layer.provideMerge(
+          NodeHttpServer.layer(NodeHttp.createServer, { host: "127.0.0.1", port: 0 }),
+        ),
+      ),
+    ),
+  );
 
 it.effect("answers 404 for an unknown automation and for a token mismatch alike", () =>
   withServer(

@@ -812,7 +812,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   // label as the web sidebar, sourced from the server-side visited watermark
   // so checking a thread on any device clears it everywhere.
   const badge = resolveThreadListV2Badge(thread);
-  const statusLabel = badge === null ? undefined : STATUS_BY_BADGE[badge];
+  const badgeLabel = badge === null ? undefined : STATUS_BY_BADGE[badge];
+  const statusLabel =
+    badgeLabel && badge === "working" && thread.goal?.status === "active"
+      ? { ...badgeLabel, label: "Goal" }
+      : badgeLabel;
   // The timestamp is precomputed on the list item (same stamps the settled
   // tail sorts by) so a minute tick only re-renders rows that draw it.
   const timeLabel = props.timeLabel;

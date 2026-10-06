@@ -30,9 +30,9 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import { HttpBody, HttpClient, HttpClientResponse } from "effect/unstable/http";
-import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import type * as HttpServerRequest from "effect/http/HttpServerRequest";
+import { HttpBody, HttpClient, HttpClientResponse } from "effect/http";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import {
   base64UrlDecodeUtf8,

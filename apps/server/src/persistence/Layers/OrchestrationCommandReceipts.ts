@@ -1,5 +1,5 @@
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import * as SqlSchema from "effect/unstable/sql/SqlSchema";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlSchema from "effect/sql/SqlSchema";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -130,21 +130,20 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
         ),
       );
 
-  const pruneAcceptedBefore: OrchestrationCommandReceipts.OrchestrationCommandReceiptRepositoryShape["pruneAcceptedBefore"] = (
-    input,
-  ) =>
-    sql<{ readonly command_id: string }>`
+  const pruneAcceptedBefore: OrchestrationCommandReceipts.OrchestrationCommandReceiptRepositoryShape["pruneAcceptedBefore"] =
+    (input) =>
+      sql<{ readonly command_id: string }>`
       DELETE FROM orchestration_command_receipts WHERE command_id IN (
         SELECT command_id FROM orchestration_command_receipts
         WHERE accepted_at < ${input.acceptedBefore}
         ORDER BY accepted_at, command_id LIMIT ${input.limit}
       ) RETURNING command_id
     `.pipe(
-      Effect.map((rows) => rows.length),
-      Effect.mapError(
-        toPersistenceSqlError("OrchestrationCommandReceiptRepository.pruneAcceptedBefore:query"),
-      ),
-    );
+        Effect.map((rows) => rows.length),
+        Effect.mapError(
+          toPersistenceSqlError("OrchestrationCommandReceiptRepository.pruneAcceptedBefore:query"),
+        ),
+      );
 
   return {
     insertIfAbsent,

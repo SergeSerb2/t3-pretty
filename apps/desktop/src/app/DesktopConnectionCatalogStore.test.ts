@@ -4,7 +4,7 @@ import { ConnectionCatalogDocument } from "@t3tools/client-runtime/platform";
 import { EnvironmentId, type PersistedSavedEnvironmentRecord } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64 from "effect/encoding/Base64";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Path from "effect/Path";
@@ -240,7 +240,7 @@ describe("DesktopConnectionCatalogStore", () => {
               record.environmentId === "bearer-environment"
                 ? {
                     ...record,
-                    encryptedBearerToken: Encoding.encodeBase64(
+                    encryptedBearerToken: Base64.encode(
                       textEncoder.encode("encrypted:legacy-token"),
                     ),
                   }

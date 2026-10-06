@@ -43,7 +43,7 @@ const make = Effect.gen(function* () {
   return SecretsToolkit.of({
     request_api_key: (input) =>
       Effect.gen(function* () {
-        const scope = yield* McpInvocationContext.requireMcpCapability("secrets");
+        const scope = yield* McpInvocationContext.requireThreadMcpCapability("secrets");
         const outcome = yield* broker
           .request({
             scope,

@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { MessageId } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import type { DraftComposerAttachment } from "../lib/composerImages";
 import { appAtomRegistry } from "./atom-registry";

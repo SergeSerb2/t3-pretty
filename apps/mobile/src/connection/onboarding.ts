@@ -46,18 +46,33 @@ function withOnboardingDeadline<A, E, R>(
 export const connectPairingUrl = createRuntimeCommand(connectionAtomRuntime, {
   label: "mobile:connection:connect-pairing-url",
   scheduler: onboardingScheduler,
-  concurrency: { mode: "singleFlight", key: (pairingUrl: string) => pairingUrl },
-  execute: (pairingUrl: string) =>
-    withOnboardingDeadline("Pairing with the environment timed out.", Effect.gen(function* () {
-      const generation = ++pairingAttemptGeneration;
-      const prepared = yield* ConnectionOnboarding.preparePairingRegistration({ pairingUrl }).pipe(Effect.result);
-      if (generation !== pairingAttemptGeneration) return yield* Effect.interrupt;
-      if (prepared._tag === "Failure") return yield* Effect.fail(prepared.failure);
-      const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-      yield* registry.register(prepared.success);
-      if (generation !== pairingAttemptGeneration) return yield* Effect.interrupt;
-      return prepared.success.target.environmentId;
-    })),
+  concurrency: {
+    mode: "singleFlight",
+    // Adding a route to a different machine with the same link is its own
+    // operation: it must check its own expected machine.
+    key: (input: { readonly pairingUrl: string; readonly expectedEnvironmentId?: EnvironmentId }) =>
+      JSON.stringify([input.pairingUrl, input.expectedEnvironmentId ?? null]),
+  },
+  execute: (input: {
+    readonly pairingUrl: string;
+    /** Set when adding a route to this saved machine. */
+    readonly expectedEnvironmentId?: EnvironmentId;
+  }) =>
+    withOnboardingDeadline(
+      "Pairing with the environment timed out.",
+      Effect.gen(function* () {
+        const generation = ++pairingAttemptGeneration;
+        const prepared = yield* ConnectionOnboarding.preparePairingRegistration(input).pipe(
+          Effect.result,
+        );
+        if (generation !== pairingAttemptGeneration) return yield* Effect.interrupt;
+        if (prepared._tag === "Failure") return yield* Effect.fail(prepared.failure);
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.register(prepared.success);
+        if (generation !== pairingAttemptGeneration) return yield* Effect.interrupt;
+        return prepared.success.target.environmentId;
+      }),
+    ),
 });
 
 export const updateBearerConnection = createRuntimeCommand(connectionAtomRuntime, {
@@ -72,8 +87,10 @@ export const updateBearerConnection = createRuntimeCommand(connectionAtomRuntime
     readonly label: string;
     readonly httpBaseUrl: string;
   }) =>
-    withOnboardingDeadline("Saving the environment connection timed out.",
+    withOnboardingDeadline(
+      "Saving the environment connection timed out.",
       ConnectionOnboarding.ConnectionOnboarding.pipe(
         Effect.flatMap((onboarding) => onboarding.updateBearer(input)),
-      )),
+      ),
+    ),
 });

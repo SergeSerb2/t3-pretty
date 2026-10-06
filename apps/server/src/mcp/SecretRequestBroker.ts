@@ -30,7 +30,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import type * as McpInvocationContext from "./McpInvocationContext.ts";
 
 export interface SecretRequestInput {
-  readonly scope: McpInvocationContext.McpInvocationScope;
+  readonly scope: McpInvocationContext.McpThreadInvocationScope;
   /** Environment variable the value will be stored under, e.g. OPENAI_API_KEY. */
   readonly name: string;
   /** Why the agent needs it, shown to the user verbatim. */
@@ -137,7 +137,7 @@ const make = Effect.gen(function* () {
         (cause) =>
           new SecretRequestError({
             reason: "persist-failed",
-            message: `Could not store ${name}: ${cause.message}`,
+            cause,
           }),
       ),
     );
@@ -145,13 +145,15 @@ const make = Effect.gen(function* () {
   const requestUnchecked: SecretRequestBroker["Service"]["request"] = Effect.fn(
     "SecretRequestBroker.request",
   )(function* (input) {
-    const threadId = input.scope.threadId;
+    const threadId = input.scope.thread.threadId;
     for (const entry of pending.values()) {
       if (entry.threadId === threadId) {
         return yield* new SecretRequestPendingError({ threadId });
       }
     }
-    const projection = yield* threads.getThreadRecords(threadId, ["runs", "runtimeRequests"]).pipe(Effect.orDie);
+    const projection = yield* threads
+      .getThreadRecords(threadId, ["runs", "runtimeRequests"])
+      .pipe(Effect.orDie);
     const run = projection.runs.findLast((candidate) => candidate.status === "running");
     if (run?.rootNodeId == null) return { status: "cancelled", name: input.name } as const;
     if (projection.runtimeRequests.some((request) => request.status === "pending")) {
@@ -169,23 +171,66 @@ const make = Effect.gen(function* () {
     pending.set(requestId, entry);
     const at = yield* DateTime.now;
     const runtimeRequest: OrchestrationV2RuntimeRequest = {
-      id: requestId, nodeId: run.rootNodeId, providerTurnId: null, nativeRequestRef: null,
-      kind: "user_input", status: "pending", responseCapability: { type: "not_resumable", reason: "Respond through the secret request broker." }, createdAt: at, resolvedAt: null,
+      id: requestId,
+      nodeId: run.rootNodeId,
+      providerTurnId: null,
+      nativeRequestRef: null,
+      kind: "user_input",
+      status: "pending",
+      responseCapability: {
+        type: "not_resumable",
+        reason: "Respond through the secret request broker.",
+      },
+      createdAt: at,
+      resolvedAt: null,
     };
     const turnItem: Extract<OrchestrationV2TurnItem, { type: "user_input_request" }> = {
-      id: TurnItemId.make(`secret-prompt:${requestId}`), threadId, runId: run.id, nodeId: run.rootNodeId,
-      providerThreadId: run.providerThreadId, providerTurnId: null, nativeItemRef: null, parentItemId: null,
+      id: TurnItemId.make(`secret-prompt:${requestId}`),
+      threadId,
+      runId: run.id,
+      nodeId: run.rootNodeId,
+      providerThreadId: run.providerThreadId,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
       ordinal: yield* projections.getNextTurnItemOrdinal(threadId).pipe(Effect.orDie),
-      type: "user_input_request", requestId, questions: [questionFor(input)],
-      status: "pending", title: "API key needed", startedAt: at, completedAt: null, updatedAt: at,
+      type: "user_input_request",
+      requestId,
+      questions: [questionFor(input)],
+      status: "pending",
+      title: "API key needed",
+      startedAt: at,
+      completedAt: null,
+      updatedAt: at,
     };
-    const publish = (request: OrchestrationV2RuntimeRequest, item: typeof turnItem) => Effect.gen(function* () {
-      const occurredAt = yield* DateTime.now;
-      yield* events.write({ events: [
-        { id: EventId.make(`secret-runtime:${yield* uuid}`), type: "runtime-request.updated", threadId, runId: run.id, nodeId: runtimeRequest.nodeId, occurredAt, payload: request },
-        { id: EventId.make(`secret-item:${yield* uuid}`), type: "turn-item.updated", threadId, runId: run.id, nodeId: runtimeRequest.nodeId, occurredAt, payload: item },
-      ] }).pipe(Effect.orDie);
-    });
+    const publish = (request: OrchestrationV2RuntimeRequest, item: typeof turnItem) =>
+      Effect.gen(function* () {
+        const occurredAt = yield* DateTime.now;
+        yield* events
+          .write({
+            events: [
+              {
+                id: EventId.make(`secret-runtime:${yield* uuid}`),
+                type: "runtime-request.updated",
+                threadId,
+                runId: run.id,
+                nodeId: runtimeRequest.nodeId,
+                occurredAt,
+                payload: request,
+              },
+              {
+                id: EventId.make(`secret-item:${yield* uuid}`),
+                type: "turn-item.updated",
+                threadId,
+                runId: run.id,
+                nodeId: runtimeRequest.nodeId,
+                occurredAt,
+                payload: item,
+              },
+            ],
+          })
+          .pipe(Effect.orDie);
+      });
 
     // A claimed entry is mid-write: hand the outcome to the reply path instead.
     const settle = (outcome: SecretRequestOutcome) =>
@@ -204,7 +249,10 @@ const make = Effect.gen(function* () {
       const resolvedAt = yield* DateTime.now;
       // The stored transcript contains prompt metadata and status only. Secret
       // responses never travel through runtime-request.respond or answers.
-      yield* publish({ ...runtimeRequest, status: "resolved", resolvedAt }, { ...turnItem, status: "completed", completedAt: resolvedAt, updatedAt: resolvedAt });
+      yield* publish(
+        { ...runtimeRequest, status: "resolved", resolvedAt },
+        { ...turnItem, status: "completed", completedAt: resolvedAt, updatedAt: resolvedAt },
+      );
     });
 
     return yield* Effect.scoped(
@@ -213,7 +261,14 @@ const make = Effect.gen(function* () {
         // slip past; starting immediately attaches the subscription right away.
         yield* Effect.forkScoped(
           Stream.runForEach(threads.streamDomainEvents, (event) =>
-            event.threadId === threadId && ((event.type === "run.updated" && event.payload.id === run.id && !["running", "starting", "queued"].includes(event.payload.status)) || event.type === "thread.deleted" || event.type === "thread.archived") ? settle(cancelled) : Effect.void,
+            event.threadId === threadId &&
+            ((event.type === "run.updated" &&
+              event.payload.id === run.id &&
+              !["running", "starting", "queued"].includes(event.payload.status)) ||
+              event.type === "thread.deleted" ||
+              event.type === "thread.archived")
+              ? settle(cancelled)
+              : Effect.void,
           ),
           { startImmediately: true },
         );
@@ -230,12 +285,16 @@ const make = Effect.gen(function* () {
   });
 
   const reservedThreads = new Set<ThreadId>();
-  const request: SecretRequestBroker["Service"]["request"] = (input) => Effect.suspend(() => {
-    const threadId = input.scope.threadId;
-    if (reservedThreads.has(threadId)) return Effect.fail(new SecretRequestPendingError({ threadId }));
-    reservedThreads.add(threadId);
-    return requestUnchecked(input).pipe(Effect.ensuring(Effect.sync(() => reservedThreads.delete(threadId))));
-  });
+  const request: SecretRequestBroker["Service"]["request"] = (input) =>
+    Effect.suspend(() => {
+      const threadId = input.scope.thread.threadId;
+      if (reservedThreads.has(threadId))
+        return Effect.fail(new SecretRequestPendingError({ threadId }));
+      reservedThreads.add(threadId);
+      return requestUnchecked(input).pipe(
+        Effect.ensuring(Effect.sync(() => reservedThreads.delete(threadId))),
+      );
+    });
 
   const respond: SecretRequestBroker["Service"]["respond"] = Effect.fn(
     "SecretRequestBroker.respond",
@@ -252,7 +311,6 @@ const make = Effect.gen(function* () {
     ) {
       return yield* new SecretRequestError({
         reason: "unknown-request",
-        message: "This API key request is no longer waiting for an answer.",
       });
     }
     // Claim the request before persisting so a double submit cannot store

@@ -3,7 +3,7 @@ import type {
   AgentMonitoringSettings as MonitoringSettings,
   EnvironmentId,
 } from "@t3tools/contracts";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useEffect, useState } from "react";
 
 import { persistClientSettingsUpdate, useClientSettings } from "../../hooks/useSettings";

@@ -43,9 +43,9 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
-import * as HttpClientError from "effect/unstable/http/HttpClientError";
-import type * as HttpMethod from "effect/unstable/http/HttpMethod";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
+import * as HttpClientError from "effect/http/HttpClientError";
+import type * as HttpMethod from "effect/http/HttpMethod";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
 import { NETWORK_BLOCKING_HINT } from "../errors/network.ts";
 
 export interface ManagedRelayDpopProofInput {

@@ -30,7 +30,7 @@ import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest } from "effect/http";
 
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as ServerConfig from "../config.ts";

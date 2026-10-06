@@ -6,7 +6,7 @@ import { type EnvironmentId, resolveEnvironmentMachineKind } from "@t3tools/cont
 import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Platform, Pressable, View } from "react-native";
 import Animated, {

@@ -1,3 +1,4 @@
+import * as Base64Url from "effect/encoding/Base64Url";
 /**
  * OAuth 2.1 client pieces for remote MCP servers, per the MCP authorization
  * spec (2025-06-18): RFC 9728 protected-resource discovery, RFC 8414 /
@@ -8,12 +9,11 @@
  */
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 /** MCP protocol version sent while probing an upstream for its auth challenge. */
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -251,11 +251,11 @@ export const registerClient = Effect.fn("apps.oauth.register")(function* (input:
 
 export const makePkce = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
-  const verifier = Encoding.encodeBase64Url(yield* crypto.randomBytes(32).pipe(Effect.orDie));
-  const challenge = Encoding.encodeBase64Url(
+  const verifier = Base64Url.encode(yield* crypto.randomBytes(32).pipe(Effect.orDie));
+  const challenge = Base64Url.encode(
     yield* crypto.digest("SHA-256", new TextEncoder().encode(verifier)).pipe(Effect.orDie),
   );
-  const state = Encoding.encodeBase64Url(yield* crypto.randomBytes(24).pipe(Effect.orDie));
+  const state = Base64Url.encode(yield* crypto.randomBytes(24).pipe(Effect.orDie));
   return { verifier, challenge, state };
 });
 

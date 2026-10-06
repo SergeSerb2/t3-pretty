@@ -22,7 +22,7 @@ import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Definitions from "../persistence/Services/ProjectionAutomations.ts";
 import * as Runs from "../persistence/Services/ProjectionAutomationRuns.ts";
 import * as ProjectService from "../project/ProjectService.ts";

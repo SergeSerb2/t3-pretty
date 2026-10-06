@@ -20,6 +20,7 @@ import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import * as DesktopLegacyLocalStorage from "./DesktopLegacyLocalStorage.ts";
 import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
 import * as DesktopObservability from "./DesktopObservability.ts";
@@ -33,6 +34,7 @@ import * as DesktopRemoteUpdates from "../updates/DesktopRemoteUpdates.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
+import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
 const MAX_TCP_PORT = 65_535;
@@ -203,6 +205,10 @@ const bootstrap = Effect.gen(function* () {
 
   const settings = yield* desktopSettings.get;
   const electronProtocol = yield* ElectronProtocol.ElectronProtocol;
+  // Before any window: the preload merges these items before the app reads storage.
+  yield* (yield* DesktopLegacyLocalStorage.DesktopLegacyLocalStorage).load(
+    yield* (yield* DesktopAppIdentity.DesktopAppIdentity).resolveUserDataPath,
+  );
 
   // Local environment can be disabled so the window still opens against
   // remote/SSH environments. Packaged builds serve the client from disk
@@ -419,6 +425,7 @@ const scopedProgram = Effect.scoped(
     yield* Effect.annotateCurrentSpan({ scope: "desktop", runId });
 
     const shutdown = yield* DesktopShutdown.DesktopShutdown;
+    const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
 
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
@@ -432,7 +439,7 @@ const scopedProgram = Effect.scoped(
         yield* Effect.forEach(instances, (instance) => instance.stop(), {
           concurrency: DESKTOP_SHUTDOWN_BACKEND_CONCURRENCY,
         });
-      }).pipe(Effect.ensuring(shutdown.markComplete)),
+      }).pipe(Effect.ensuring(rendererHistory.shutdown), Effect.ensuring(shutdown.markComplete)),
     );
 
     yield* startup;

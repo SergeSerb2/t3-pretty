@@ -25,6 +25,7 @@ import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegi
 import type { ProviderAdapterV2Shape } from "./orchestration-v2/ProviderAdapter.ts";
 import * as ProviderEventIngestor from "./orchestration-v2/ProviderEventIngestor.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
+import * as ThreadCommandExecutor from "./orchestration-v2/ThreadCommandExecutor.ts";
 import { makeOrchestratorV2ReplayLayerWithRegistry } from "./orchestration-v2/testkit/ProviderReplayHarness.ts";
 import { subscribeOrchestrationV2Thread } from "./ws.ts";
 
@@ -47,13 +48,18 @@ const runtime = makeOrchestratorV2ReplayLayerWithRegistry(
 );
 const projections = ProjectionStore.layer.pipe(Layer.provide(database));
 const ingestor = ProviderEventIngestor.layer.pipe(
-  Layer.provide(Layer.mergeAll(runtime, projections, IdAllocator.layer)),
+  Layer.provide(
+    Layer.mergeAll(runtime, projections, IdAllocator.layer, ThreadCommandExecutor.layer),
+  ),
 );
 const testLayer = Layer.mergeAll(
+  ThreadCommandExecutor.layer,
   runtime,
   projections,
   ingestor,
-  ThreadManagementService.layer.pipe(Layer.provide(runtime)),
+  ThreadManagementService.layer.pipe(
+    Layer.provide(Layer.mergeAll(runtime, ThreadCommandExecutor.layer)),
+  ),
   OrchestrationEventStoreLive.pipe(Layer.provide(database)),
 );
 

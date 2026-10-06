@@ -28,7 +28,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerConfig from "../config.ts";
@@ -853,13 +853,15 @@ export const make = Effect.gen(function* () {
     ServerAuthInvalidCredentialError | ServerAuthInternalError | ServerAuthScopeNotGrantedError
   > => {
     if (!devAuth?.matches(credential)) {
-      return bootstrapCredentials.consume(credential, input).pipe(
-        Effect.mapError((cause) =>
-          cause._tag === "BootstrapCredentialScopeNotGrantedError"
-            ? new ServerAuthScopeNotGrantedError({})
-            : toBootstrapExchangeError(cause),
-        ),
-      );
+      return bootstrapCredentials
+        .consume(credential, input)
+        .pipe(
+          Effect.mapError((cause) =>
+            cause._tag === "BootstrapCredentialScopeNotGrantedError"
+              ? new ServerAuthScopeNotGrantedError({})
+              : toBootstrapExchangeError(cause),
+          ),
+        );
     }
     return sessions.verify(credential).pipe(
       mapSessionVerificationErrors,

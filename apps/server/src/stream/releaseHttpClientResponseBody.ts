@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import type * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 /**
  * Consume at most one response chunk, then close the stream scope so the HTTP

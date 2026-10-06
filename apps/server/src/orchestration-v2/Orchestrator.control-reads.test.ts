@@ -20,7 +20,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as Orchestrator from "./Orchestrator.ts";
@@ -534,38 +534,220 @@ it.effect("settles only the stopped run's background work, once", () =>
     ]);
   }).pipe(Effect.provide(testLayer)),
 );
-
 it.effect("preserves Pretty stored shelf and scenery behavior in V2", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const threadId = ThreadId.make("thread:pretty-customization");
-    yield* orchestrator.dispatch({ type: "thread.create", commandId: CommandId.make("pretty:create"), threadId, projectId: ProjectId.make("project:pretty"), title: "Pretty", modelSelection, runtimeMode: "full-access", interactionMode: "default", branch: null, worktreePath: null, createdBy: "user", creationSource: "web" });
-    yield* orchestrator.dispatch({ type: "thread.pin", commandId: CommandId.make("pretty:pin"), threadId });
-    yield* orchestrator.dispatch({ type: "thread.store", commandId: CommandId.make("pretty:store"), threadId });
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("pretty:create"),
+      threadId,
+      projectId: ProjectId.make("project:pretty"),
+      title: "Pretty",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.pin",
+      commandId: CommandId.make("pretty:pin"),
+      threadId,
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.store",
+      commandId: CommandId.make("pretty:store"),
+      threadId,
+    });
     const stored = yield* projections.getThread(threadId);
     assert.ok(stored.storedAt);
     assert.isNull(stored.pinnedAt);
     const storedShell = yield* projections.getThreadShell(threadId);
     assert.deepEqual(storedShell?.storedAt, stored.storedAt);
-    yield* orchestrator.dispatch({ type: "thread.unstore", commandId: CommandId.make("pretty:unstore"), threadId });
+    yield* orchestrator.dispatch({
+      type: "thread.unstore",
+      commandId: CommandId.make("pretty:unstore"),
+      threadId,
+    });
     const active = yield* projections.getThread(threadId);
     assert.isNull(active.storedAt);
     assert.equal(active.settledOverride, "active");
     assert.ok(active.unsettledAt);
-    const photo = { photoId: "one", name: "Mountains", averageColorHex: null, heroURL: "https://example.com/hero", thumbURL: "https://example.com/thumb", rawURL: null, downloadLocationURL: null, photographerName: "Artist", photographerProfileURL: null, photoSetId: "catalog-a" };
-    yield* orchestrator.dispatch({ type: "thread.scenery.assign", commandId: CommandId.make("pretty:scenery-1"), threadId, createdAt: DateTime.formatIso(yield* DateTime.now), scenery: photo });
-    yield* orchestrator.dispatch({ type: "thread.scenery.assign", commandId: CommandId.make("pretty:scenery-2"), threadId, createdAt: DateTime.formatIso(yield* DateTime.now), scenery: { ...photo, photoId: "two" } });
+    const photo = {
+      photoId: "one",
+      name: "Mountains",
+      averageColorHex: null,
+      heroURL: "https://example.com/hero",
+      thumbURL: "https://example.com/thumb",
+      rawURL: null,
+      downloadLocationURL: null,
+      photographerName: "Artist",
+      photographerProfileURL: null,
+      photoSetId: "catalog-a",
+    };
+    yield* orchestrator.dispatch({
+      type: "thread.scenery.assign",
+      commandId: CommandId.make("pretty:scenery-1"),
+      threadId,
+      createdAt: DateTime.formatIso(yield* DateTime.now),
+      scenery: photo,
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.scenery.assign",
+      commandId: CommandId.make("pretty:scenery-2"),
+      threadId,
+      createdAt: DateTime.formatIso(yield* DateTime.now),
+      scenery: { ...photo, photoId: "two" },
+    });
     assert.equal((yield* projections.getThread(threadId)).scenery?.photoId, "one");
-    yield* orchestrator.dispatch({ type: "thread.scenery.assign", commandId: CommandId.make("pretty:scenery-3"), threadId, createdAt: DateTime.formatIso(yield* DateTime.now), scenery: { ...photo, photoId: "three", photoSetId: "catalog-b" } });
+    yield* orchestrator.dispatch({
+      type: "thread.scenery.assign",
+      commandId: CommandId.make("pretty:scenery-3"),
+      threadId,
+      createdAt: DateTime.formatIso(yield* DateTime.now),
+      scenery: { ...photo, photoId: "three", photoSetId: "catalog-b" },
+    });
     assert.equal((yield* projections.getThreadShell(threadId))?.scenery?.photoId, "three");
-    yield* orchestrator.dispatch({ type: "thread.skills.set", commandId: CommandId.make("pretty:skills"), threadId, createdAt: DateTime.formatIso(yield* DateTime.now), enabledSkillIds: ["git", "git", "review"] });
+    yield* orchestrator.dispatch({
+      type: "thread.skills.set",
+      commandId: CommandId.make("pretty:skills"),
+      threadId,
+      createdAt: DateTime.formatIso(yield* DateTime.now),
+      enabledSkillIds: ["git", "git", "review"],
+    });
     assert.deepEqual((yield* projections.getThread(threadId)).enabledSkillIds, ["git", "review"]);
-    yield* orchestrator.dispatch({ type: "thread.subagent-policy.set", commandId: CommandId.make("pretty:policy"), threadId, createdAt: DateTime.formatIso(yield* DateTime.now), subagentPolicy: { mode: "off" } });
-    assert.deepEqual((yield* projections.getThreadShell(threadId))?.subagentPolicy, { mode: "off" });
+    yield* orchestrator.dispatch({
+      type: "thread.subagent-policy.set",
+      commandId: CommandId.make("pretty:policy"),
+      threadId,
+      createdAt: DateTime.formatIso(yield* DateTime.now),
+      subagentPolicy: { mode: "off" },
+    });
+    assert.deepEqual((yield* projections.getThreadShell(threadId))?.subagentPolicy, {
+      mode: "off",
+    });
     const requestId = RuntimeRequestId.make("pretty:pending-input");
-    yield* projections.apply({ id: EventId.make("pretty:pending-input"), type: "runtime-request.updated", threadId, occurredAt: yield* DateTime.now, payload: { id: requestId, nodeId: NodeId.make("pretty:node"), providerTurnId: null, nativeRequestRef: null, kind: "user_input", status: "pending", createdAt: yield* DateTime.now, resolvedAt: null, responseCapability: { type: "not_resumable", reason: "fixture" } } });
-    assert.equal((yield* Effect.exit(orchestrator.dispatch({ type: "thread.store", commandId: CommandId.make("pretty:store-blocked"), threadId })))._tag, "Failure");
+    yield* projections.apply({
+      id: EventId.make("pretty:pending-input"),
+      type: "runtime-request.updated",
+      threadId,
+      occurredAt: yield* DateTime.now,
+      payload: {
+        id: requestId,
+        nodeId: NodeId.make("pretty:node"),
+        providerTurnId: null,
+        nativeRequestRef: null,
+        kind: "user_input",
+        status: "pending",
+        createdAt: yield* DateTime.now,
+        resolvedAt: null,
+        responseCapability: { type: "not_resumable", reason: "fixture" },
+      },
+    });
+    assert.equal(
+      (yield* Effect.exit(
+        orchestrator.dispatch({
+          type: "thread.store",
+          commandId: CommandId.make("pretty:store-blocked"),
+          threadId,
+        }),
+      ))._tag,
+      "Failure",
+    );
     assert.isNull((yield* projections.getThread(threadId)).storedAt);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("keeps delegated child pull-request links independent of the parent", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const parentThreadId = ThreadId.make("thread:parent-pr");
+    const projectId = ProjectId.make("project:parent-pr");
+    const parentPullRequest = {
+      projectId,
+      repository: "pingdotgg/t3code",
+      number: 123,
+      url: "https://github.com/pingdotgg/t3code/pull/123",
+    };
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-parent-pr"),
+      threadId: parentThreadId,
+      projectId,
+      title: "Parent with a linked PR",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: "feature/parent-pr",
+      worktreePath: "/repo-worktree",
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.metadata.update",
+      commandId: CommandId.make("link-parent-pr"),
+      threadId: parentThreadId,
+      linkedPullRequest: parentPullRequest,
+    });
+    yield* orchestrator.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make("start-parent-pr"),
+      threadId: parentThreadId,
+      messageId: MessageId.make("message:parent-pr"),
+      text: "Delegate a review",
+      attachments: [],
+      dispatchMode: { type: "start_immediately" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const parent = yield* projections.getThreadProjection(parentThreadId);
+    const parentRun = parent.runs[0]!;
+    yield* orchestrator.dispatch({
+      type: "delegated_task.request",
+      commandId: CommandId.make("delegate-parent-pr"),
+      parentThreadId,
+      parentRunId: parentRun.id,
+      parentNodeId: parentRun.rootNodeId!,
+      task: "Review the changes",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdBy: "agent",
+      creationSource: "mcp",
+    });
+    const updatedParent = yield* projections.getThreadProjection(parentThreadId);
+    const childThreadId = updatedParent.subagents[0]!.childThreadId!;
+    const child = yield* projections.getThreadProjection(childThreadId);
+    assert.isNull(child.thread.linkedPullRequest);
+    assert.deepEqual(child.thread.pullRequests, []);
+    assert.equal(child.thread.branch, parent.thread.branch);
+    assert.equal(child.thread.worktreePath, parent.thread.worktreePath);
+    assert.equal(child.thread.lineage.parentThreadId, parentThreadId);
+
+    const childPullRequest = {
+      ...parentPullRequest,
+      number: 456,
+      url: "https://github.com/pingdotgg/t3code/pull/456",
+    };
+    yield* orchestrator.dispatch({
+      type: "thread.metadata.update",
+      commandId: CommandId.make("link-child-pr"),
+      threadId: childThreadId,
+      linkedPullRequest: childPullRequest,
+    });
+    const linkedChild = yield* projections.getThreadProjection(childThreadId);
+    assert.deepEqual(linkedChild.thread.linkedPullRequest, childPullRequest);
+    assert.deepEqual(
+      linkedChild.thread.pullRequests?.map((link) => link.number),
+      [456],
+    );
+    const parentAfterChildLink = yield* projections.getThreadProjection(parentThreadId);
+    assert.deepEqual(parentAfterChildLink.thread.linkedPullRequest, parentPullRequest);
+    assert.deepEqual(parentAfterChildLink.thread.pullRequests, parent.thread.pullRequests);
   }).pipe(Effect.provide(testLayer)),
 );

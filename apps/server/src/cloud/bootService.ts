@@ -13,7 +13,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/http";
 import * as Schema from "effect/Schema";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 

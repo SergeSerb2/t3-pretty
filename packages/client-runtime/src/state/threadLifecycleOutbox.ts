@@ -16,7 +16,7 @@ import * as Result from "effect/Result";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
@@ -214,16 +214,16 @@ export function coalescePendingThreadLifecycleEntryBatch(
 }
 
 interface LifecycleThread {
- readonly id: OrchestrationV2ThreadShell["id"];
- readonly settledOverride: "settled" | "active" | null;
- readonly settledAt: string | DateTime.Utc | null;
- readonly snoozedUntil?: string | DateTime.Utc | null | undefined;
- readonly snoozedAt?: string | DateTime.Utc | null | undefined;
- readonly storedAt?: string | DateTime.Utc | null | undefined;
- readonly pinnedAt?: string | DateTime.Utc | null | undefined;
- readonly pinOrderKey?: string | null | undefined;
- readonly activeOrderKey?: string | null | undefined;
- readonly updatedAt: string | DateTime.Utc;
+  readonly id: OrchestrationV2ThreadShell["id"];
+  readonly settledOverride: "settled" | "active" | null;
+  readonly settledAt: string | DateTime.Utc | null;
+  readonly snoozedUntil?: string | DateTime.Utc | null | undefined;
+  readonly snoozedAt?: string | DateTime.Utc | null | undefined;
+  readonly storedAt?: string | DateTime.Utc | null | undefined;
+  readonly pinnedAt?: string | DateTime.Utc | null | undefined;
+  readonly pinOrderKey?: string | null | undefined;
+  readonly activeOrderKey?: string | null | undefined;
+  readonly updatedAt: string | DateTime.Utc;
 }
 export function applyPendingThreadLifecycleToThread<
   T extends Pick<
@@ -265,10 +265,14 @@ function applyQueuedThreadLifecycleCommand<
     | "updatedAt"
   >,
 >(thread: T, entry: PendingThreadLifecycleEntry): T {
-  const queuedAt = typeof thread.updatedAt === "string" ? entry.queuedAt : DateTime.makeUnsafe(entry.queuedAt);
-  const snoozedUntil = entry.command.type === "thread.snooze"
-    ? typeof thread.updatedAt === "string" ? entry.command.snoozedUntil : DateTime.makeUnsafe(entry.command.snoozedUntil)
-    : null;
+  const queuedAt =
+    typeof thread.updatedAt === "string" ? entry.queuedAt : DateTime.makeUnsafe(entry.queuedAt);
+  const snoozedUntil =
+    entry.command.type === "thread.snooze"
+      ? typeof thread.updatedAt === "string"
+        ? entry.command.snoozedUntil
+        : DateTime.makeUnsafe(entry.command.snoozedUntil)
+      : null;
   switch (entry.command.type) {
     case "thread.settle":
       return {
@@ -356,8 +360,7 @@ function applyQueuedThreadLifecycleCommand<
       return {
         ...thread,
         pinOrderKey: entry.command.orderKey,
-        updatedAt:
-          thread.pinOrderKey === entry.command.orderKey ? thread.updatedAt : queuedAt,
+        updatedAt: thread.pinOrderKey === entry.command.orderKey ? thread.updatedAt : queuedAt,
       };
     case "thread.active.reorder":
       // Arranging the list is not thread activity — same as the server decider.
@@ -368,10 +371,9 @@ function applyQueuedThreadLifecycleCommand<
   }
 }
 
-export function applyPendingThreadLifecycleToSnapshot<T extends { readonly threads: ReadonlyArray<LifecycleThread> }>(
-  snapshot: T,
-  pending: ReadonlyArray<PendingThreadLifecycleEntry>,
-): T {
+export function applyPendingThreadLifecycleToSnapshot<
+  T extends { readonly threads: ReadonlyArray<LifecycleThread> },
+>(snapshot: T, pending: ReadonlyArray<PendingThreadLifecycleEntry>): T {
   if (pending.length === 0) {
     return snapshot;
   }

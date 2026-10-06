@@ -22,7 +22,11 @@ import * as Deferred from "effect/Deferred";
 import * as Option from "effect/Option";
 
 import * as MobileDatabase from "../persistence/mobile-database";
-import { make, THREAD_SNAPSHOT_CACHE_MAX_ENTRIES, VCS_REFS_CACHE_MAX_ENTRIES } from "./environment-cache-store";
+import {
+  make,
+  THREAD_SNAPSHOT_CACHE_MAX_ENTRIES,
+  VCS_REFS_CACHE_MAX_ENTRIES,
+} from "./environment-cache-store";
 import { encodeStoredShellSnapshot } from "./shell-cache-encoding";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
@@ -196,10 +200,13 @@ function makeDatabase() {
         removed.push(id);
         values.delete(id);
       }),
-    pruneCacheKind: (environmentId, kind, maximum) => Effect.sync(() => {
-      const keys = [...values.keys()].filter((key) => key.startsWith(`${environmentId}:${kind}:`));
-      for (const key of keys.slice(0, Math.max(0, keys.length - maximum))) values.delete(key);
-    }),
+    pruneCacheKind: (environmentId, kind, maximum) =>
+      Effect.sync(() => {
+        const keys = [...values.keys()].filter((key) =>
+          key.startsWith(`${environmentId}:${kind}:`),
+        );
+        for (const key of keys.slice(0, Math.max(0, keys.length - maximum))) values.delete(key);
+      }),
     clearCacheKind: (environmentId, kind) =>
       Effect.sync(() => {
         for (const key of values.keys()) {
@@ -393,16 +400,105 @@ describe("cooperative shell cache encoding", () => {
     }),
   );
 
-  it.effect("still rejects invalid rows after an encoding batch yields", () =>
+  it.effect("preserves optional fields and dates across chunk boundaries and archived rows", () =>
     Effect.gen(function* () {
-      const invalid = {
+      const base = SHELL_SNAPSHOT.threads[0]!;
+      const { titleRegeneration: _, unsettledAt: __, ...withoutOptional } = base;
+      const row = (index: number) =>
+        index % 3 === 0
+          ? { ...withoutOptional, id: ThreadId.make(`row-${index}`) }
+          : {
+              ...base,
+              id: ThreadId.make(`row-${index}`),
+              snoozedUntil: DateTime.add(NOW, { minutes: index }),
+              pinnedAt: index % 2 === 0 ? null : NOW,
+            };
+      const mixed = {
         ...stored,
         snapshot: {
           ...stored.snapshot,
-          threads: [...stored.snapshot.threads, { ...stored.snapshot.threads[0]!, itemCount: -1 }],
+          threads: Array.from({ length: 65 }, (_, index) => row(index)),
+          archivedThreads: Array.from({ length: 33 }, (_, index) => ({
+            ...row(index + 100),
+            archivedAt: DateTime.add(NOW, { hours: index }),
+          })),
         },
       };
-      expect(yield* Effect.isFailure(encodeStoredShellSnapshot(invalid))).toBe(true);
+      const actual = yield* encodeStoredShellSnapshot(mixed);
+      expect(actual).toBe(yield* encodeOriginal(mixed));
+      const parsed = JSON.parse(actual);
+      expect(parsed.snapshot.threads).toHaveLength(65);
+      expect(parsed.snapshot.threads[63]).not.toHaveProperty("titleRegeneration");
+      expect(parsed.snapshot.threads[63]).not.toHaveProperty("unsettledAt");
+      expect(parsed.snapshot.threads[64].snoozedUntil).toBe(
+        DateTime.formatIso(DateTime.add(NOW, { minutes: 64 })),
+      );
+      expect(parsed.snapshot.archivedThreads).toHaveLength(33);
+      expect(parsed.snapshot.archivedThreads[32].archivedAt).toBe(
+        DateTime.formatIso(DateTime.add(NOW, { hours: 32 })),
+      );
+    }),
+  );
+
+  it.effect("yields to a host timer between every 32-row chunk", () =>
+    Effect.gen(function* () {
+      const setTimer = vi.spyOn(globalThis, "setTimeout");
+      try {
+        yield* encodeStoredShellSnapshot({
+          ...stored,
+          snapshot: {
+            ...stored.snapshot,
+            threads: Array.from({ length: 65 }, () => stored.snapshot.threads[0]!),
+            archivedThreads: Array.from({ length: 33 }, () => stored.snapshot.archivedThreads[0]!),
+          },
+        });
+        // Five row chunks (3 active + 2 archived): four yields between them, one before the envelope.
+        expect(setTimer).toHaveBeenCalledTimes(5);
+      } finally {
+        vi.restoreAllMocks();
+      }
+    }),
+  );
+
+  it.effect("still rejects invalid active and archived rows after an encoding chunk yields", () =>
+    Effect.gen(function* () {
+      const invalidRow = { ...stored.snapshot.threads[0]!, itemCount: -1 };
+      const invalidActive = {
+        ...stored,
+        snapshot: { ...stored.snapshot, threads: [...stored.snapshot.threads, invalidRow] },
+      };
+      const invalidArchived = {
+        ...stored,
+        snapshot: { ...stored.snapshot, archivedThreads: [invalidRow] },
+      };
+      const invalidEnvelope = { ...stored, snapshot: { ...stored.snapshot, snapshotSequence: -1 } };
+      expect(yield* Effect.isFailure(encodeStoredShellSnapshot(invalidActive))).toBe(true);
+      expect(yield* Effect.isFailure(encodeStoredShellSnapshot(invalidArchived))).toBe(true);
+      expect(yield* Effect.isFailure(encodeOriginal(invalidEnvelope))).toBe(true);
+      expect(yield* Effect.isFailure(encodeStoredShellSnapshot(invalidEnvelope))).toBe(true);
+    }),
+  );
+
+  it.effect("keeps concurrent saves independent", () =>
+    Effect.gen(function* () {
+      const other = {
+        ...stored,
+        environmentId: EnvironmentId.make("environment-2"),
+        snapshot: {
+          ...stored.snapshot,
+          threads: stored.snapshot.threads.slice(0, 40).map((thread) => ({
+            ...thread,
+            title: `Other ${thread.id}`,
+          })),
+          archivedThreads: [],
+        },
+      };
+      const [first, second] = yield* Effect.all(
+        [encodeStoredShellSnapshot(stored), encodeStoredShellSnapshot(other)],
+        { concurrency: "unbounded" },
+      );
+      expect(first).toBe(yield* encodeOriginal(stored));
+      expect(second).toBe(yield* encodeOriginal(other));
     }),
   );
 
@@ -438,17 +534,32 @@ describe("cooperative shell cache encoding", () => {
 it.effect("bounds V2 thread caches without evicting other environments or VCS records", () =>
   Effect.gen(function* () {
     const memory = makeDatabase();
-    const store = yield* make().pipe(Effect.provideService(MobileDatabase.MobileDatabase, memory.database));
+    const store = yield* make().pipe(
+      Effect.provideService(MobileDatabase.MobileDatabase, memory.database),
+    );
     const otherEnvironment = EnvironmentId.make("other");
     yield* store.saveThread(otherEnvironment, THREAD_SNAPSHOT);
     yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo", REFS);
     for (let index = 0; index <= THREAD_SNAPSHOT_CACHE_MAX_ENTRIES; index++) {
-      yield* store.saveThread(ENVIRONMENT_ID, { ...THREAD_SNAPSHOT, projection: {
-        ...THREAD_SNAPSHOT.projection, thread: { ...THREAD_SNAPSHOT.projection.thread, id: ThreadId.make(`thread-${index}`) },
-      } });
+      yield* store.saveThread(ENVIRONMENT_ID, {
+        ...THREAD_SNAPSHOT,
+        projection: {
+          ...THREAD_SNAPSHOT.projection,
+          thread: { ...THREAD_SNAPSHOT.projection.thread, id: ThreadId.make(`thread-${index}`) },
+        },
+      });
     }
-    expect(Option.isNone(yield* store.loadThread(ENVIRONMENT_ID, ThreadId.make("thread-0")))).toBe(true);
-    expect(Option.isSome(yield* store.loadThread(ENVIRONMENT_ID, ThreadId.make(`thread-${THREAD_SNAPSHOT_CACHE_MAX_ENTRIES}`)))).toBe(true);
+    expect(Option.isNone(yield* store.loadThread(ENVIRONMENT_ID, ThreadId.make("thread-0")))).toBe(
+      true,
+    );
+    expect(
+      Option.isSome(
+        yield* store.loadThread(
+          ENVIRONMENT_ID,
+          ThreadId.make(`thread-${THREAD_SNAPSHOT_CACHE_MAX_ENTRIES}`),
+        ),
+      ),
+    ).toBe(true);
     expect(Option.isSome(yield* store.loadThread(otherEnvironment, THREAD_ID))).toBe(true);
     expect(Option.isSome(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo"))).toBe(true);
   }),
@@ -456,9 +567,12 @@ it.effect("bounds V2 thread caches without evicting other environments or VCS re
 it.effect("bounds cached VCS roots independently from thread history", () =>
   Effect.gen(function* () {
     const memory = makeDatabase();
-    const store = yield* make().pipe(Effect.provideService(MobileDatabase.MobileDatabase, memory.database));
+    const store = yield* make().pipe(
+      Effect.provideService(MobileDatabase.MobileDatabase, memory.database),
+    );
     yield* store.saveThread(ENVIRONMENT_ID, THREAD_SNAPSHOT);
-    for (let index = 0; index <= VCS_REFS_CACHE_MAX_ENTRIES; index++) yield* store.saveVcsRefs(ENVIRONMENT_ID, `/repo-${index}`, REFS);
+    for (let index = 0; index <= VCS_REFS_CACHE_MAX_ENTRIES; index++)
+      yield* store.saveVcsRefs(ENVIRONMENT_ID, `/repo-${index}`, REFS);
     expect(Option.isNone(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo-0"))).toBe(true);
     expect(Option.isSome(yield* store.loadThread(ENVIRONMENT_ID, THREAD_ID))).toBe(true);
   }),

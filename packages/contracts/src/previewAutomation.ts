@@ -728,11 +728,12 @@ export const PreviewAutomationResponse = Schema.Struct({
 });
 export type PreviewAutomationResponse = typeof PreviewAutomationResponse.Type;
 
+// Thread fields are absent when the caller signed in from outside a T3 thread.
 const McpCapabilityErrorFields = {
   environmentId: EnvironmentId,
-  threadId: ThreadId,
-  providerSessionId: TrimmedNonEmptyString,
-  providerInstanceId: ProviderInstanceId,
+  threadId: Schema.optional(ThreadId),
+  providerSessionId: Schema.optional(TrimmedNonEmptyString),
+  providerInstanceId: Schema.optional(ProviderInstanceId),
 };
 
 /** Agents read this message, so it names the next step and not only the failure. */
@@ -760,8 +761,6 @@ export class McpCapabilityUnavailableError extends Schema.TaggedError<McpCapabil
     return `MCP credential does not grant the ${this.capability} capability.`;
   }
 }
-
-
 
 const PreviewAutomationScopeErrorFields = {
   operation: PreviewAutomationOperation,

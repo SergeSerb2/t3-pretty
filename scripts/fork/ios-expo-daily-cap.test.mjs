@@ -11,6 +11,7 @@ import {
   DEFAULT_TIMEZONE,
   collectIosUpdateGroups,
   evaluateDailyCap,
+  fetchUpdatesViaEas,
   formatCapReport,
   includesIosPlatform,
   parseLimit,
@@ -172,3 +173,32 @@ describe("iOS Expo daily cap", () => {
     }
   });
 });
+
+// The installed EAS CLI accepts --non-interactive for update:list, but not update:view.
+it.skipIf(NodeProcess.platform === "win32")(
+  "reads missing update timestamps using the supported noninteractive CLI arguments",
+  () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "ios-cap-cli-"));
+    try {
+      const executable = NodePath.join(root, "eas-fixture");
+      NodeFS.writeFileSync(
+        executable,
+        `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === "update:list") console.log(JSON.stringify({ currentPage: [{ group: "fixture", platform: "ios" }] }));
+else if (args[0] === "update:view" && !args.includes("--non-interactive") && process.env.CI === "1") console.log(JSON.stringify([{ group: "fixture", platform: "ios", createdAt: "2026-10-05T21:42:11.683Z" }]));
+else { console.error("Unsupported CLI arguments"); process.exit(2); }
+`,
+        { mode: 0o755 },
+      );
+      const updates = fetchUpdatesViaEas({
+        cwd: root,
+        env: { ...process.env, EAS_BIN: executable, CI: "1" },
+      });
+      assert.lengthOf(updates, 1);
+      assert.equal(updates[0].createdAt, "2026-10-05T21:42:11.683Z");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);

@@ -8,7 +8,7 @@ import {
   DEFAULT_RUNTIME_MODE,
   type OrchestrationV2ProjectedTurnItem,
 } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import * as DateTime from "effect/DateTime";
 
 import { deriveThreadTitleFromPrompt } from "../lib/projectThreadStartTurn";

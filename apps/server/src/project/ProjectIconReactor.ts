@@ -1,3 +1,4 @@
+import * as Base64 from "effect/encoding/Base64";
 import {
   CommandId,
   DEFAULT_MODEL_BY_PROVIDER,
@@ -15,7 +16,6 @@ import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -24,7 +24,7 @@ import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-import * as Mime from "effect/unstable/http/Mime";
+import * as Mime from "effect/http/Mime";
 import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
 import { ProjectService } from "./ProjectService.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
@@ -229,7 +229,7 @@ const make = Effect.gen(function* () {
       });
       return;
     }
-    const dataUrl = `data:${mimeTypeForPath(candidatePath)};base64,${Encoding.encodeBase64(bytes)}`;
+    const dataUrl = `data:${mimeTypeForPath(candidatePath)};base64,${Base64.encode(bytes)}`;
     const imported = yield* importProjectFavicon({
       projectId,
       fileName: "icon.png",
@@ -321,16 +321,23 @@ const make = Effect.gen(function* () {
       }
 
       yield* forkParked(
-        Stream.runForEach(applicationEvents.streamProjectedApplicationEvents({ project: (event) => event }), (event) => {
-          if (!("aggregateKind" in event) || event.aggregateKind !== "project" || event.type !== "project.created") {
-            return Effect.void;
-          }
-          return Ref.get(enabledRef).pipe(
-            Effect.flatMap((enabled) =>
-              enabled ? worker.enqueue(event.payload.projectId, true) : Effect.void,
-            ),
-          );
-        }),
+        Stream.runForEach(
+          applicationEvents.streamProjectedApplicationEvents({ project: (event) => event }),
+          (event) => {
+            if (
+              !("aggregateKind" in event) ||
+              event.aggregateKind !== "project" ||
+              event.type !== "project.created"
+            ) {
+              return Effect.void;
+            }
+            return Ref.get(enabledRef).pipe(
+              Effect.flatMap((enabled) =>
+                enabled ? worker.enqueue(event.payload.projectId, true) : Effect.void,
+              ),
+            );
+          },
+        ),
       );
 
       yield* forkParked(

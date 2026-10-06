@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, type HostResourcesSnapshot } from "@t3tools/contracts";
-import { Atom, AsyncResult, AtomRegistry } from "effect/unstable/reactivity";
+import { Atom, AsyncResult, AtomRegistry } from "effect/reactivity";
 import {
   chooseLoadBalancedEnvironment,
   createLoadBalancingResourcesAtom,

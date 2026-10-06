@@ -5,9 +5,10 @@ import {
   isSettledAtomQueryInterrupt,
   readAtomQueryResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { Cause, Option } from "effect";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect, useRef } from "react";
+import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
 
 const EMPTY_ASYNC_RESULT_ATOM = Atom.make(AsyncResult.initial<never, never>(false)).pipe(
   Atom.withLabel("web-environment-query:empty"),

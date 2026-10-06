@@ -193,6 +193,7 @@ describe("searchSettings", () => {
       "source-control-writer-model",
       "source-control-writing-style",
       "t3-connect",
+      "hold-webhooks-while-offline",
       "tailscale-https",
       "wsl-backend",
       "auto-settle-inactive-threads",
@@ -278,6 +279,25 @@ describe("searchSettings", () => {
       "home-suggestions-time",
       "home-suggestions-generate",
     ]);
+  });
+
+  it("offers webhook holding only while the managed tunnel is on, like its row", () => {
+    const availability = {
+      hasCloudPublicConfig: true,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: false,
+      canManageLocalBackend: true,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+      hasAutomations: false,
+    };
+    const itemIds = (managedTunnelActive: boolean) =>
+      filterAvailableSettingsSearchItems({ ...availability, managedTunnelActive }).map(
+        (item) => item.id,
+      );
+    expect(itemIds(false)).not.toContain("hold-webhooks-while-offline");
+    expect(itemIds(true)).toContain("hold-webhooks-while-offline");
   });
 
   it("shows automatic settlement settings when the server supports them", () => {

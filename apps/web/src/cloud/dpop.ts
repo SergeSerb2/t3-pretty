@@ -1,3 +1,4 @@
+import * as Base64Url from "effect/encoding/Base64Url";
 import {
   computeDpopAccessTokenHash,
   computeDpopJwkThumbprint,
@@ -14,7 +15,6 @@ import {
 import * as Crypto from "effect/Crypto";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -55,10 +55,10 @@ function normalizeDpopPrivateJwk(
   jwk: typeof StoredDpopPrivateJwk.Type,
   publicJwk: DpopPublicJwk,
 ): typeof StoredDpopPrivateJwk.Type {
-  const d = Result.getOrThrow(Encoding.decodeBase64Url(jwk.d));
+  const d = Result.getOrThrow(Base64Url.decode(jwk.d));
   return {
     ...publicJwk,
-    d: Encoding.encodeBase64Url(padP256Coordinate(d)),
+    d: Base64Url.encode(padP256Coordinate(d)),
   };
 }
 

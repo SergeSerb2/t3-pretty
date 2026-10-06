@@ -7,8 +7,8 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import * as ChildProcess from "effect/unstable/process/ChildProcess";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import {
@@ -239,13 +239,11 @@ const collectText = Effect.fnUntraced(function* (input: {
         });
       },
     ),
-    Effect.map(
-      (state): CollectedUint8StreamText => ({
-        ...decodeUtf8(Buffer.concat(state.chunks, state.bytes)),
-        bytes: state.bytes,
-        truncated: false,
-      }),
-    ),
+    Effect.map((state): CollectedUint8StreamText => ({
+      ...decodeUtf8(Buffer.concat(state.chunks, state.bytes)),
+      bytes: state.bytes,
+      truncated: false,
+    })),
   );
 });
 

@@ -14,7 +14,7 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { ServerConfig } from "../config.ts";
@@ -45,18 +45,31 @@ const LATER = "2026-01-01T00:00:01.000Z";
 // Typed V2 projection events exercise the production tables used by the index.
 // Index refresh is explicit: this suite covers indexing/query semantics independently
 // of the runtime subscriber and never restores the retired V1 projector.
-const appendProject = (projectId: string) => Effect.gen(function* () {
-  const store = yield* ProjectStore.ProjectStoreV2;
-  yield* store.apply({
-    sequence: 0, type: "project.created", eventId: EventId.make(`evt-project-${projectId}`),
-    aggregateKind: "project", aggregateId: ProjectId.make(projectId), occurredAt: NOW,
-    commandId: CommandId.make(`cmd-project-${projectId}`), causationEventId: null,
-    correlationId: null, metadata: {},
-    payload: { projectId: ProjectId.make(projectId), title: `Project ${projectId}`,
-      workspaceRoot: `/tmp/${projectId}`, defaultModelSelection: null, scripts: [],
-      createdAt: NOW, updatedAt: NOW },
+const appendProject = (projectId: string) =>
+  Effect.gen(function* () {
+    const store = yield* ProjectStore.ProjectStoreV2;
+    yield* store.apply({
+      sequence: 0,
+      type: "project.created",
+      eventId: EventId.make(`evt-project-${projectId}`),
+      aggregateKind: "project",
+      aggregateId: ProjectId.make(projectId),
+      occurredAt: NOW,
+      commandId: CommandId.make(`cmd-project-${projectId}`),
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+      payload: {
+        projectId: ProjectId.make(projectId),
+        title: `Project ${projectId}`,
+        workspaceRoot: `/tmp/${projectId}`,
+        defaultModelSelection: null,
+        scripts: [],
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    });
   });
-});
 
 const appendThread = (threadId: string, projectId: string, at: string = NOW) =>
   Effect.gen(function* () {
@@ -64,89 +77,189 @@ const appendThread = (threadId: string, projectId: string, at: string = NOW) =>
     const id = ThreadId.make(threadId);
     const now = DateTime.makeUnsafe(at);
     const thread: OrchestrationV2AppThread = {
-      id, projectId: ProjectId.make(projectId), title: `Thread ${threadId}`,
+      id,
+      projectId: ProjectId.make(projectId),
+      title: `Thread ${threadId}`,
       providerInstanceId: ProviderInstanceId.make("codex"),
       modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
-      runtimeMode: "full-access", interactionMode: "default", branch: null, worktreePath: null,
-      activeProviderThreadId: null, lineage: { rootThreadId: id, parentThreadId: null, relationshipToParent: null },
-      forkedFrom: null, createdBy: "user", creationSource: "web", createdAt: now, updatedAt: now,
-      archivedAt: null, settledOverride: null, settledAt: null, lastVisitedAt: null, deletedAt: null,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      activeProviderThreadId: null,
+      lineage: { rootThreadId: id, parentThreadId: null, relationshipToParent: null },
+      forkedFrom: null,
+      createdBy: "user",
+      creationSource: "web",
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null,
+      settledOverride: null,
+      settledAt: null,
+      lastVisitedAt: null,
+      deletedAt: null,
     };
-    yield* store.apply({ type: "thread.created", id: EventId.make(`evt-thread-${threadId}`),
-      threadId: id, occurredAt: now, payload: thread });
+    yield* store.apply({
+      type: "thread.created",
+      id: EventId.make(`evt-thread-${threadId}`),
+      threadId: id,
+      occurredAt: now,
+      payload: thread,
+    });
   });
 
 const appendMessage = (input: {
-  readonly eventId: string; readonly threadId: string; readonly messageId: string;
-  readonly role: "user" | "assistant"; readonly text: string; readonly turnId?: string;
-  readonly streaming?: boolean; readonly createdAt?: string;
-}) => Effect.gen(function* () {
-  const store = yield* ProjectionStore.ProjectionStoreV2;
-  const threadId = ThreadId.make(input.threadId);
-  const now = DateTime.makeUnsafe(input.createdAt ?? NOW);
-  yield* store.apply({ type: "message.updated", id: EventId.make(input.eventId), threadId,
-    occurredAt: now, payload: {
-      id: MessageId.make(input.messageId), threadId, runId: input.turnId ? RunId.make(input.turnId) : null,
-      nodeId: null, role: input.role, text: input.text, attachments: [], streaming: input.streaming ?? false,
-      createdBy: "user", creationSource: "web", createdAt: now, updatedAt: now,
-    } });
-});
+  readonly eventId: string;
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly role: "user" | "assistant";
+  readonly text: string;
+  readonly turnId?: string;
+  readonly streaming?: boolean;
+  readonly createdAt?: string;
+}) =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make(input.threadId);
+    const now = DateTime.makeUnsafe(input.createdAt ?? NOW);
+    yield* store.apply({
+      type: "message.updated",
+      id: EventId.make(input.eventId),
+      threadId,
+      occurredAt: now,
+      payload: {
+        id: MessageId.make(input.messageId),
+        threadId,
+        runId: input.turnId ? RunId.make(input.turnId) : null,
+        nodeId: null,
+        role: input.role,
+        text: input.text,
+        attachments: [],
+        streaming: input.streaming ?? false,
+        createdBy: "user",
+        creationSource: "web",
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+  });
 
 // A V2 assistant_message turn item identifies canonical assistant output. Updating
 // the same item's messageId replaces the canonical output without deleting history.
 const appendTurnDiffCompleted = (input: {
-  readonly eventId: string; readonly threadId: string; readonly turnId: string;
-  readonly checkpointTurnCount: number; readonly assistantMessageId?: string;
-}) => Effect.gen(function* () {
-  const store = yield* ProjectionStore.ProjectionStoreV2;
-  const threadId = ThreadId.make(input.threadId);
-  const runId = RunId.make(input.turnId);
-  const now = DateTime.makeUnsafe(LATER);
-  yield* store.apply({ type: "run.created", id: EventId.make(`${input.eventId}-run`), threadId,
-    occurredAt: now, payload: {
-      id: runId, threadId, ordinal: input.checkpointTurnCount,
-      providerInstanceId: ProviderInstanceId.make("codex"),
-      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
-      providerThreadId: null, userMessageId: MessageId.make(`user-${input.turnId}`),
-      rootNodeId: null, activeAttemptId: null, status: "completed", requestedAt: now,
-      startedAt: now, completedAt: now, checkpointId: null, contextHandoffId: null,
-    } });
-  if (input.assistantMessageId) {
-    yield* store.apply({ type: "turn-item.updated", id: EventId.make(input.eventId), threadId,
-      occurredAt: now, payload: {
-        id: TurnItemId.make(`canonical-${input.turnId}`), threadId, runId, nodeId: null,
-        providerThreadId: null, providerTurnId: null, nativeItemRef: null, parentItemId: null,
-        ordinal: input.checkpointTurnCount, type: "assistant_message", status: "completed",
-        title: null, startedAt: now, completedAt: now, updatedAt: now,
-        messageId: MessageId.make(input.assistantMessageId), text: "Canonical assistant", streaming: false,
-      } });
-  }
-});
+  readonly eventId: string;
+  readonly threadId: string;
+  readonly turnId: string;
+  readonly checkpointTurnCount: number;
+  readonly assistantMessageId?: string;
+}) =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make(input.threadId);
+    const runId = RunId.make(input.turnId);
+    const now = DateTime.makeUnsafe(LATER);
+    yield* store.apply({
+      type: "run.created",
+      id: EventId.make(`${input.eventId}-run`),
+      threadId,
+      occurredAt: now,
+      payload: {
+        id: runId,
+        threadId,
+        ordinal: input.checkpointTurnCount,
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+        providerThreadId: null,
+        userMessageId: MessageId.make(`user-${input.turnId}`),
+        rootNodeId: null,
+        activeAttemptId: null,
+        status: "completed",
+        requestedAt: now,
+        startedAt: now,
+        completedAt: now,
+        checkpointId: null,
+        contextHandoffId: null,
+      },
+    });
+    if (input.assistantMessageId) {
+      yield* store.apply({
+        type: "turn-item.updated",
+        id: EventId.make(input.eventId),
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: TurnItemId.make(`canonical-${input.turnId}`),
+          threadId,
+          runId,
+          nodeId: null,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: input.checkpointTurnCount,
+          type: "assistant_message",
+          status: "completed",
+          title: null,
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+          messageId: MessageId.make(input.assistantMessageId),
+          text: "Canonical assistant",
+          streaming: false,
+        },
+      });
+    }
+  });
 
-const updateThreadLifecycle = (threadId: string, kind: "archive" | "unarchive" | "delete", at: string) =>
+const updateThreadLifecycle = (
+  threadId: string,
+  kind: "archive" | "unarchive" | "delete",
+  at: string,
+) =>
   Effect.gen(function* () {
     const store = yield* ProjectionStore.ProjectionStoreV2;
     const id = ThreadId.make(threadId);
     const thread = yield* store.getThread(id);
     const now = DateTime.makeUnsafe(at);
-    yield* store.apply({ type: kind === "archive" ? "thread.archived" : kind === "unarchive" ? "thread.unarchived" : "thread.deleted",
-      id: EventId.make(`evt-${kind}-${threadId}`), threadId: id, occurredAt: now,
-      payload: { ...thread, updatedAt: now,
+    yield* store.apply({
+      type:
+        kind === "archive"
+          ? "thread.archived"
+          : kind === "unarchive"
+            ? "thread.unarchived"
+            : "thread.deleted",
+      id: EventId.make(`evt-${kind}-${threadId}`),
+      threadId: id,
+      occurredAt: now,
+      payload: {
+        ...thread,
+        updatedAt: now,
         archivedAt: kind === "archive" ? now : kind === "unarchive" ? null : thread.archivedAt,
-        deletedAt: kind === "delete" ? now : thread.deletedAt },
+        deletedAt: kind === "delete" ? now : thread.deletedAt,
+      },
     });
   });
 const appendThreadArchived = (id: string, at = LATER) => updateThreadLifecycle(id, "archive", at);
-const appendThreadUnarchived = (id: string, at = LATER) => updateThreadLifecycle(id, "unarchive", at);
+const appendThreadUnarchived = (id: string, at = LATER) =>
+  updateThreadLifecycle(id, "unarchive", at);
 const appendThreadDeleted = (id: string, at = LATER) => updateThreadLifecycle(id, "delete", at);
-const appendProjectDeleted = (projectId: string, at: string = LATER) => Effect.gen(function* () {
-  const store = yield* ProjectStore.ProjectStoreV2;
-  yield* store.apply({ sequence: 0, type: "project.deleted", eventId: EventId.make(`delete-${projectId}`),
-    aggregateKind: "project", aggregateId: ProjectId.make(projectId), occurredAt: at,
-    commandId: null, causationEventId: null, correlationId: null, metadata: {},
-    payload: { projectId: ProjectId.make(projectId), deletedAt: at },
+const appendProjectDeleted = (projectId: string, at: string = LATER) =>
+  Effect.gen(function* () {
+    const store = yield* ProjectStore.ProjectStoreV2;
+    yield* store.apply({
+      sequence: 0,
+      type: "project.deleted",
+      eventId: EventId.make(`delete-${projectId}`),
+      aggregateKind: "project",
+      aggregateId: ProjectId.make(projectId),
+      occurredAt: at,
+      commandId: null,
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+      payload: { projectId: ProjectId.make(projectId), deletedAt: at },
+    });
   });
-});
 
 const search = (query: string, limit?: number) =>
   Effect.gen(function* () {
@@ -549,7 +662,9 @@ it.layer(makeTestLayer("t3-thread-search-backfill-"))("ThreadSearch", (it) => {
       assert.strictEqual(result.matches[0]?.threadId, "thread-1");
 
       yield* searchIndex.bootstrapIfNeeded;
-      const indexed = yield* sql<{ readonly n: number }>`SELECT COUNT(*) AS n FROM search_index_docs`;
+      const indexed = yield* sql<{
+        readonly n: number;
+      }>`SELECT COUNT(*) AS n FROM search_index_docs`;
       assert.equal(indexed[0]?.n, 1);
       const marker = yield* sql<{ readonly n: number }>`SELECT last_applied_sequence AS n
         FROM projection_state WHERE projector = 'projection.search-index-v2'`;
@@ -600,7 +715,8 @@ it.layer(makeTestLayer("t3-thread-search-supersede-"))("ThreadSearch", (it) => {
         assistantMessageId: "message-new",
       });
       yield* searchIndex.reindexCanonicalAssistants({
-        threadId: ThreadId.make("thread-1"), assistantMessageId: MessageId.make("message-new"),
+        threadId: ThreadId.make("thread-1"),
+        assistantMessageId: MessageId.make("message-new"),
       });
 
       assert.equal((yield* search("zebraold")).matches.length, 0);
@@ -785,7 +901,6 @@ it.layer(makeTestLayer("t3-thread-search-orphan-"))("ThreadSearch", (it) => {
         INSERT INTO search_index_postings (term, message_id, tf)
         VALUES (${"orphanzebra"}, ${"orphan-message"}, ${1})
       `;
-
 
       yield* searchIndex.backfillFromProjection();
 

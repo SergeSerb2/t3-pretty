@@ -8,7 +8,7 @@ import {
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,

@@ -64,9 +64,12 @@ interface AutomationsCaller {
 const requireCaller = (operation: AutomationsOperation) =>
   Effect.gen(function* () {
     const scope = yield* McpInvocationContext.requireAutomationsCapability();
+    if (scope.thread === undefined) {
+      return yield* failure(operation, "Automation management requires a calling T3 thread.");
+    }
     const projection = yield* ThreadManagement.ThreadManagementService;
     const thread = yield* projection
-      .getThreadShell(scope.threadId)
+      .getThreadShell(scope.thread.threadId)
       .pipe(
         Effect.mapError(
           (cause) =>
@@ -77,7 +80,7 @@ const requireCaller = (operation: AutomationsOperation) =>
       return yield* failure(operation, "This thread is no longer available.");
     }
     return {
-      threadId: scope.threadId,
+      threadId: scope.thread.threadId,
       projectId: thread.projectId,
       runtimeMode: thread.runtimeMode,
       isRunThread: (thread.automationRun ?? null) !== null,

@@ -756,7 +756,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "t3-pretty/upstream-sync");
     assert.include(
       pipeline,
-      'build.branch == "main" && (build.source == "schedule" || build.source == "ui" || build.source == "api")',
+      'build.branch == "main" && (build.source == "schedule" || (build.env("T3CODE_DESKTOP_ONLY") != "1" && (build.source == "ui" || build.source == "api")))',
     );
     assert.notInclude(pipeline, "- .github/workflows/fork-upstream-sync.yml");
     assert.include(pipeline, "soft_fail: true");
@@ -767,7 +767,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "run-trusted-origin-pr-ci.sh check");
     assert.include(pipeline, "automation");
     assert.include(reviewCi, "review-origin-pr.mjs");
-    assert.include(reviewCi, "grok-4.6");
+    assert.include(reviewCi, "grok-4.7-build-fast");
     assert.include(reviewCi, "CLI_PROXY_API_KEY");
     assert.include(reviewCi, "cli-proxy-api-production-1615.up.railway.app");
     assert.notInclude(reviewCi, "api.x.ai");
