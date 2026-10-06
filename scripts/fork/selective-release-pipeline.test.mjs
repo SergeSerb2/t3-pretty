@@ -21,6 +21,31 @@ function selected(key, source = "ui", env = {}) {
 }
 
 describe("selective release retries", () => {
+  it("recovers Linux and relay without republishing macOS, CLI or iOS", () => {
+    const env = {
+      T3CODE_SKIP_MACOS: "1",
+      T3CODE_SKIP_IOS: "1",
+      T3CODE_SKIP_WINDOWS: "1",
+      T3CODE_SKIP_ANDROID: "1",
+    };
+    for (const source of ["ui", "api"]) {
+      for (const key of ["deploy-relay", "linux-appimage", "github-mirror"])
+        assert.isTrue(selected(key, source, env), key);
+      for (const key of [
+        "macos-dmg",
+        "publish-cli",
+        "ios-mobile",
+        "windows-nsis",
+        "android-mobile",
+      ])
+        assert.isFalse(selected(key, source, env), key);
+    }
+    assert.isTrue(selected("upstream-sync", "schedule", env));
+    assert.isTrue(selected("macos-dmg"));
+    assert.isTrue(selected("publish-cli"));
+    assert.isTrue(selected("ios-mobile"));
+  });
+
   it("selects desktop installers without other delivery or manual sync", () => {
     const env = { T3CODE_DESKTOP_ONLY: "1" };
     for (const source of ["ui", "api"]) {

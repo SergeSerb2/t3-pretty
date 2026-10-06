@@ -49,7 +49,9 @@ describe("relay postgres migration snapshots", () => {
         const referenced = new Set(entries.flatMap(({ snapshot }) => snapshot.prevIds));
         const heads = entries.filter(({ snapshot }) => !referenced.has(snapshot.id));
 
-        expect(heads.map(({ name }) => name)).toEqual(["20260922120000_home_suggestions"]);
+        expect(heads.map(({ name }) => name)).toEqual([
+          "20261004061459_hold_webhooks_while_offline",
+        ]);
 
         const parent = new Map<string, string[]>();
         for (const { name, snapshot } of entries) {
@@ -75,7 +77,7 @@ describe("relay postgres migration snapshots", () => {
       withNodeServices(
         Effect.gen(function* () {
           const latest = (yield* loadSnapshots).at(-1);
-          expect(latest?.name).toBe("20260922120000_home_suggestions");
+          expect(latest?.name).toBe("20261004061459_hold_webhooks_while_offline");
 
           const names = new Set(
             (latest?.snapshot.ddl ?? []).map((item) =>
@@ -92,6 +94,7 @@ describe("relay postgres migration snapshots", () => {
           ).toBe(true);
           expect(names.has("relay_home_suggestion_digests")).toBe(true);
           expect(names.has("relay_home_suggestions")).toBe(true);
+          expect(names.has("relay_environment_links.hold_webhooks_while_offline")).toBe(true);
           expect(names.has("relay_managed_endpoint_allocations.recovery_enabled_at")).toBe(true);
           expect(
             names.has("relay_managed_endpoint_allocations.recovery_environment_public_key"),
