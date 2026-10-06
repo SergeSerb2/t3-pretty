@@ -1894,6 +1894,9 @@ describe("mobile composer drafts", () => {
       [key]: {
         ...getComposerDraftSnapshot(key),
         runtimeMode: "approval-required",
+        environmentSelection: "auto",
+        loadBalancedEnvironmentId: from.environmentId,
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol" },
         workspaceSelection: { mode: "worktree", branch: "feature/a", worktreePath: null },
       },
     });
@@ -1904,12 +1907,44 @@ describe("mobile composer drafts", () => {
     const moved = getComposerDraftSnapshot(key);
     expect(moved.text).toBe("moving house");
     expect(moved.runtimeMode).toBe("approval-required");
+    expect(moved.modelSelection).toEqual({ instanceId: "codex", model: "gpt-6.1-sol" });
+    expect(moved.environmentSelection).toBe("auto");
+    expect(moved.loadBalancedEnvironmentId).toBeUndefined();
     // Branch and worktree belong to the old repo.
     expect(moved.workspaceSelection).toBeUndefined();
     expect(moved.project).toEqual({ ...to, createdAt });
     expect(findNewTaskDraftKeys(appAtomRegistry.get(composerDraftsAtom), from)).toEqual([]);
     expect(findNewTaskDraftKeys(appAtomRegistry.get(composerDraftsAtom), to)).toEqual([key]);
   });
+
+  it.each(["auto", "manual"] as const)(
+    "restores a draft's %s routing choice",
+    (environmentSelection) => {
+      const environmentId = EnvironmentId.make("environment-1");
+      const draftKey = "new-task:routing";
+      const result = decodePersistedComposerState({
+        schemaVersion: 1,
+        drafts: {
+          [draftKey]: {
+            text: "Continue this task",
+            attachments: [],
+            environmentSelection,
+            loadBalancedEnvironmentId: environmentSelection === "auto" ? environmentId : null,
+            project: {
+              environmentId,
+              projectId: "project-1",
+              createdAt: "2026-10-05T12:00:00.000Z",
+            },
+          },
+        },
+      });
+      expect(result.drafts[draftKey]).toMatchObject({
+        environmentSelection,
+        loadBalancedEnvironmentId: environmentSelection === "auto" ? environmentId : null,
+        project: { environmentId, projectId: "project-1" },
+      });
+    },
+  );
 
   it("hydrates the global sticky model selection", () => {
     expect(

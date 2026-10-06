@@ -15,6 +15,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import { EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -40,6 +41,7 @@ import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
 type NewTaskRouteParams = {
+  readonly environmentId?: string;
   readonly incomingShareId?: string | string[];
 };
 
@@ -149,7 +151,11 @@ function NewTaskHeader(props: {
 export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRouteParams | undefined>) {
   const projects = useProjects();
   const [searchText, setSearchText] = useState("");
-  const { projectScopes, selectedEnvironmentId, setProject } = useNewTaskFlow();
+  const { projectScopes, selectedEnvironmentId: flowEnvironmentId, setProject } = useNewTaskFlow();
+  const machineFilter = route.params?.environmentId;
+  const selectedEnvironmentId = machineFilter
+    ? EnvironmentId.make(machineFilter)
+    : flowEnvironmentId;
   const { state: catalogState } = useWorkspaceState();
   const navigation = useNavigation();
   const isFocused = useIsFocused();
@@ -173,6 +179,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   // of their own.
   const listScopes = projectScopes.filter(
     (scope) =>
+      (!machineFilter ||
+        scope.projects.some((project) => project.environmentId === machineFilter)) &&
       !scope.projects.every((project) =>
         isScratchProject(project, serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot),
       ),
@@ -238,10 +246,18 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
           projectId: project.id,
           title: project.title,
           incomingShareId: incomingShare?.id,
+          ...(machineFilter ? { environmentSelection: "manual" } : {}),
         }),
       );
     },
-    [incomingShare, navigation, releaseShareReservation, reservedDestinationProject, setProject],
+    [
+      incomingShare,
+      navigation,
+      releaseShareReservation,
+      reservedDestinationProject,
+      setProject,
+      machineFilter,
+    ],
   );
 
   const glass = useGlassChromeActive();

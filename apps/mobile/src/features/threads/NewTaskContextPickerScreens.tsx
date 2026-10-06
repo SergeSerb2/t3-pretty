@@ -234,8 +234,29 @@ export function NewTaskEnvironmentPickerRouteScreen() {
             paddingTop: 16,
           }}
           data={flow.environments}
+          ListHeaderComponent={
+            flow.canAutoBalance ? (
+              <View className="mb-3 overflow-hidden rounded-2xl">
+                <SelectionRow
+                  title={flow.autoEnvironmentLabel ?? "Auto balance"}
+                  subtitle={
+                    flow.autoEnvironmentLabel === "Auto balance unavailable"
+                      ? "Choose a machine below to continue"
+                      : "Choose the machine with the most available resources"
+                  }
+                  selected={flow.automaticEnvironment}
+                  disabled={flow.switchingToEnvironmentId !== null || flow.submitting}
+                  isLast
+                  onPress={() => {
+                    flow.selectAutoEnvironment();
+                    navigation.goBack();
+                  }}
+                />
+              </View>
+            ) : null
+          }
           estimatedItemSize={56}
-          extraData={`${flow.selectedEnvironmentId ?? ""}:${flow.switchingToEnvironmentId ?? ""}:${glass}`}
+          extraData={`${flow.selectedEnvironmentId ?? ""}:${flow.switchingToEnvironmentId ?? ""}:${flow.automaticEnvironment}:${glass}`}
           keyExtractor={(environment) => String(environment.environmentId)}
           recycleItems
           renderItem={({ item: environment, index }) => (
@@ -266,14 +287,17 @@ export function NewTaskEnvironmentPickerRouteScreen() {
                   />
                 }
                 isLast={index === flow.environments.length - 1}
-                disabled={flow.switchingToEnvironmentId !== null}
+                disabled={flow.switchingToEnvironmentId !== null || flow.submitting}
                 onPress={() => {
                   void Haptics.selectionAsync();
                   void flow.switchEnvironment(environment.environmentId).then((switched) => {
                     if (switched) navigation.goBack();
                   });
                 }}
-                selected={flow.selectedEnvironmentId === environment.environmentId}
+                selected={
+                  !flow.automaticEnvironment &&
+                  flow.selectedEnvironmentId === environment.environmentId
+                }
                 title={environment.environmentLabel}
               />
             </View>
@@ -322,6 +346,8 @@ export function NewTaskBranchPickerRouteScreen() {
 
       try {
         if (!flow.selectedProject) return;
+        // Pin before checkout mutates Git, so an in-flight resource check cannot move it.
+        await flow.switchEnvironment(flow.selectedProject.environmentId);
         setSwitchingBranchName(branch.name);
         const result = await checkoutNewTaskBranch({
           branch,
@@ -360,6 +386,7 @@ export function NewTaskBranchPickerRouteScreen() {
     },
     [
       flow.selectBranch,
+      flow.switchEnvironment,
       flow.selectedProject,
       flow.setBranchQuery,
       flow.workspaceMode,

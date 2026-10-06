@@ -18,6 +18,7 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_LOAD_BALANCING_ENABLED,
   MessageId,
   effectiveRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
@@ -133,12 +134,20 @@ import {
 } from "./new-task-context-presentation";
 import { resolveEnvironmentProjectMatch } from "./new-task-project-selection";
 import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
+import {
+  loadBalancedAssignmentIsStale,
+  partitionLoadBalancingHosts,
+  shouldAutoBalanceDraft,
+  type LoadBalancingHost,
+} from "@t3tools/client-runtime/load-balancing";
+import { useLoadBalancedEnvironment } from "../../state/use-load-balanced-environment";
 
 type WorkspaceMode = "local" | "worktree";
 
 const BRANCH_SEARCH_DEBOUNCE_MS = 150;
 
 const EMPTY_SKILL_IDS: ReadonlyArray<SkillId> = [];
+const EMPTY_LOAD_BALANCING_WEIGHTS: Readonly<Record<string, number>> = {};
 
 function pendingTaskDraftKey(messageId: string): string {
   return `pending-task:${messageId}`;
@@ -238,6 +247,11 @@ type NewTaskFlowContextValue = {
   readonly switchEnvironment: (environmentId: EnvironmentId) => Promise<boolean>;
   /** The machine a switch in progress is heading to. */
   readonly switchingToEnvironmentId: EnvironmentId | null;
+  readonly automaticEnvironment: boolean;
+  readonly canAutoBalance: boolean;
+  readonly autoEnvironmentLabel: string | null;
+  readonly routingSettled: boolean;
+  readonly selectAutoEnvironment: () => void;
   readonly setSelectedModelKey: (
     key: string | null,
     options?: ReadonlyArray<ProviderOptionSelection>,
@@ -555,6 +569,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const preferencesHydrated = AsyncResult.isSuccess(preferencesResult);
+  const preferencesPending = preferencesResult._tag === "Initial";
   const autoCreatePullRequestByEnvMode = preferencesHydrated
     ? preferencesResult.value.autoCreatePullRequestByEnvMode
     : undefined;
@@ -711,6 +726,111 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       ) ?? null,
     [selectedEnvironmentServerConfig, selectedModel?.instanceId],
   );
+  // Use the same logical project group as Home. Never automatically move to
+  // a different repository just because its directory has the same name.
+  const routingProjects = useMemo(
+    () =>
+      projectScopes.find((scope) =>
+        scope.projects.some(
+          (project) =>
+            project.environmentId === selectedProject?.environmentId &&
+            project.id === selectedProject.id,
+        ),
+      )?.projects ?? [],
+    [projectScopes, selectedProject],
+  );
+  const loadBalancingEnabled = preferencesHydrated
+    ? (preferencesResult.value.loadBalancingEnabled ?? DEFAULT_LOAD_BALANCING_ENABLED)
+    : false;
+  const loadBalancingWeights = preferencesHydrated
+    ? (preferencesResult.value.loadBalancingWeights ?? EMPTY_LOAD_BALANCING_WEIGHTS)
+    : EMPTY_LOAD_BALANCING_WEIGHTS;
+  const routingModel = selectedProjectDraft.modelSelection ?? selectedModel;
+  const routingProvider = selectedEnvironmentServerConfig?.providers.find(
+    (provider) => provider.instanceId === routingModel?.instanceId,
+  );
+  const routingDriver =
+    routingProvider?.driver ??
+    (routingModel
+      ? selectedEnvironmentServerConfig?.settings.providerInstances[routingModel.instanceId]?.driver
+      : undefined) ??
+    "";
+  const routingCustomModel =
+    routingProvider?.models.some(
+      (model) => model.slug === routingModel?.model && model.isCustom,
+    ) === true;
+  const routingTarget = useMemo(
+    () => ({
+      instanceId: routingModel?.instanceId ?? null,
+      driver: routingDriver,
+      model: routingModel?.model ?? null,
+      customModel: routingCustomModel,
+    }),
+    [routingModel?.instanceId, routingModel?.model, routingDriver, routingCustomModel],
+  );
+  const routingHosts = useMemo((): ReadonlyArray<LoadBalancingHost> => {
+    const ids = [...new Set(routingProjects.map((project) => project.environmentId))];
+    return ids.map((environmentId) => ({
+      environmentId,
+      connected: connectedEnvironments.some(
+        (environment) =>
+          environment.environmentId === environmentId &&
+          environment.connectionState === "connected",
+      ),
+      weight: loadBalancingWeights[environmentId] ?? 50,
+      providers: (serverConfigs.get(environmentId)?.providers ?? []).map((provider) => ({
+        ...provider,
+        authStatus: provider.auth.status,
+      })),
+    }));
+  }, [connectedEnvironments, loadBalancingWeights, routingProjects, serverConfigs]);
+  const draftAllowsAutoBalancing = Boolean(
+    selectedProjectDraftKey &&
+    !editingPendingTask &&
+    !isScratchDraft &&
+    routingHosts.length > 1 &&
+    routingHosts.some((host) => host.connected) &&
+    shouldAutoBalanceDraft({
+      enabled: true,
+      selection: selectedProjectDraft.environmentSelection,
+      hasAttachments: attachments.length > 0,
+      assignedEnvironmentId: selectedProjectDraft.loadBalancedEnvironmentId,
+      branch: selectedBranchName,
+      worktreePath: selectedWorktreePath,
+    }),
+  );
+  const automaticEnvironment = loadBalancingEnabled && draftAllowsAutoBalancing;
+  const canAutoBalance =
+    loadBalancingEnabled && !editingPendingTask && !isScratchDraft && routingHosts.length > 1;
+  const routingPartition = useMemo(
+    () => partitionLoadBalancingHosts(routingHosts, routingTarget),
+    [routingHosts, routingTarget],
+  );
+  const assignedEnvironmentIsStale = loadBalancedAssignmentIsStale(
+    selectedProjectDraft.loadBalancedEnvironmentId,
+    routingHosts,
+    routingTarget,
+  );
+  const needsLoadBalancing =
+    automaticEnvironment &&
+    (!selectedProjectDraft.loadBalancedEnvironmentId || assignedEnvironmentIsStale);
+  const routingCandidates = useMemo(
+    () =>
+      (needsLoadBalancing
+        ? routingPartition.eligibleEnvironmentIds
+        : []) as readonly EnvironmentId[],
+    [needsLoadBalancing, routingPartition.eligibleEnvironmentIds],
+  );
+  const loadBalancing = useLoadBalancedEnvironment(routingCandidates, loadBalancingWeights);
+  const routingPending = needsLoadBalancing && (loadBalancing.pending || routingPartition.pending);
+  const routingSettled = !needsLoadBalancing && (!draftAllowsAutoBalancing || !preferencesPending);
+  const autoEnvironmentLabel = automaticEnvironment
+    ? !needsLoadBalancing
+      ? "Auto balance"
+      : routingPending
+        ? "Checking machines…"
+        : "Auto balance unavailable"
+    : null;
   const planModeEnabled =
     legacyPlanModeEnabled && selectedProviderStatus?.showInteractionModeToggle !== false;
   const interactionMode = planModeEnabled
@@ -879,16 +999,25 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       const target = { environmentId: project.environmentId, projectId: project.id };
       if (activeDraftKey !== null && isNewTaskDraftKey(activeDraftKey)) {
         retargetNewTaskDraft(activeDraftKey, target);
+        return activeDraftKey;
       } else if (!editingPendingTaskRef.current) {
-        setActiveDraftKey(createNewTaskDraft(target));
+        const key = createNewTaskDraft(target);
+        setActiveDraftKey(key);
+        return key;
       }
+      return null;
     },
     [activeDraftKey],
   );
 
   const setProject = useCallback(
-    (project: EnvironmentProject) => {
-      carryDraftContentTo(project);
+    (project: EnvironmentProject, environmentSelection?: "manual") => {
+      const key = carryDraftContentTo(project);
+      if (key)
+        updateComposerDraftSettings(key, {
+          environmentSelection,
+          loadBalancedEnvironmentId: null,
+        });
       setSelectedEnvironmentId(project.environmentId);
       setSelectedProjectKey(scopedProjectKey(project.environmentId, project.id));
     },
@@ -927,7 +1056,12 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         selectedProject,
       );
       if (match) {
-        carryDraftContentTo(match);
+        const key = carryDraftContentTo(match);
+        if (key)
+          updateComposerDraftSettings(key, {
+            environmentSelection: "manual",
+            loadBalancedEnvironmentId: null,
+          });
       }
       setSelectedEnvironmentId(environmentId);
       setSelectedProjectKey(match ? scopedProjectKey(match.environmentId, match.id) : null);
@@ -944,6 +1078,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const switchEnvironment = useCallback(
     async (environmentId: EnvironmentId): Promise<boolean> => {
       if (environmentId === selectedEnvironmentId) {
+        if (selectedProjectDraftKey)
+          updateComposerDraftSettings(selectedProjectDraftKey, {
+            environmentSelection: "manual",
+            loadBalancedEnvironmentId: null,
+          });
         latestSwitchRef.current = null;
         setSwitchingToEnvironmentId(null);
         return true;
@@ -959,7 +1098,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         const result = await openScratch({ environmentId, input: {} });
         if (latestSwitchRef.current !== request) return false;
         if (result._tag === "Success") {
-          setProject(result.value);
+          setProject(result.value, "manual");
           return true;
         }
         if (!isAtomCommandInterrupted(result)) {
@@ -979,8 +1118,96 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         }
       }
     },
-    [isScratchDraft, openScratch, selectEnvironment, selectedEnvironmentId, setProject],
+    [
+      isScratchDraft,
+      openScratch,
+      selectEnvironment,
+      selectedEnvironmentId,
+      selectedProjectDraftKey,
+      setProject,
+    ],
   );
+
+  useEffect(() => {
+    if (!needsLoadBalancing || routingPending || !selectedProjectDraftKey || submitting) return;
+    const live = getComposerDraftSnapshot(selectedProjectDraftKey);
+    if (
+      live.project?.environmentId !== selectedProject?.environmentId ||
+      live.project?.projectId !== selectedProject?.id
+    )
+      return;
+    if (
+      !shouldAutoBalanceDraft({
+        enabled: loadBalancingEnabled,
+        selection: live.environmentSelection,
+        hasAttachments: live.attachments.length > 0,
+        assignedEnvironmentId: live.loadBalancedEnvironmentId,
+        branch: live.workspaceSelection?.branch,
+        worktreePath: live.workspaceSelection?.worktreePath,
+      })
+    )
+      return;
+    const target =
+      selectedProject?.environmentId === loadBalancing.environmentId
+        ? selectedProject
+        : routingProjects.find((project) => project.environmentId === loadBalancing.environmentId);
+    if (!target) return;
+    retargetNewTaskDraft(selectedProjectDraftKey, {
+      environmentId: target.environmentId,
+      projectId: target.id,
+    });
+    updateComposerDraftSettings(selectedProjectDraftKey, {
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: target.environmentId,
+      // Keep the selected model and its options when the target has different defaults.
+      ...(routingModel ? { modelSelection: routingModel } : {}),
+    });
+    setSelectedEnvironmentId(target.environmentId);
+    setSelectedProjectKey(scopedProjectKey(target.environmentId, target.id));
+  }, [
+    needsLoadBalancing,
+    routingPending,
+    selectedProjectDraftKey,
+    submitting,
+    loadBalancingEnabled,
+    loadBalancing.environmentId,
+    routingProjects,
+    routingModel,
+    selectedProject,
+  ]);
+
+  const selectAutoEnvironment = useCallback(() => {
+    if (!selectedProjectDraftKey || editingPendingTask || isScratchDraft || !loadBalancingEnabled)
+      return;
+    if (attachments.length > 0) {
+      Alert.alert(
+        "Keep attachments on this machine",
+        "Remove attachments before choosing automatic routing, then attach them on the selected machine.",
+      );
+      return;
+    }
+    loadBalancing.refresh(routingProjects.map((project) => project.environmentId));
+    updateComposerDraftSettings(selectedProjectDraftKey, {
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: null,
+      workspaceSelection: {
+        mode: workspaceMode,
+        branch: null,
+        worktreePath: null,
+        ...(draftStartFromOrigin !== undefined ? { startFromOrigin: draftStartFromOrigin } : {}),
+      },
+    });
+  }, [
+    selectedProjectDraftKey,
+    editingPendingTask,
+    isScratchDraft,
+    loadBalancingEnabled,
+    attachments.length,
+    loadBalancing.refresh,
+    routingProjects,
+    workspaceMode,
+    draftStartFromOrigin,
+  ]);
 
   const setWorkspaceMode = useCallback(
     (mode: WorkspaceMode) => {
@@ -1000,6 +1227,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         pendingLocalBranchSyncDraftKeysRef.current.delete(selectedProjectDraftKey);
       }
       updateComposerDraftSettings(selectedProjectDraftKey, {
+        environmentSelection: "manual",
+        loadBalancedEnvironmentId: null,
         workspaceSelection: {
           mode,
           branch: mode === "local" ? localSelection.branch : selectedBranchName,
@@ -1053,12 +1282,15 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   ]);
 
   const selectBranch = useCallback(
-    (branch: VcsRef) => {
+    (branch: VcsRef, implicit = false) => {
       if (!selectedProject || !selectedProjectDraftKey) {
         return;
       }
       pendingLocalBranchSyncDraftKeysRef.current.delete(selectedProjectDraftKey);
       updateComposerDraftSettings(selectedProjectDraftKey, {
+        ...(!implicit
+          ? { environmentSelection: "manual" as const, loadBalancedEnvironmentId: null }
+          : {}),
         workspaceSelection: {
           mode: workspaceMode,
           branch: branch.name,
@@ -1105,6 +1337,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     if (
       !selectedProjectDraftKey ||
       !defaultWorkspaceModeSettled ||
+      !routingSettled ||
       workspaceMode !== "worktree" ||
       selectedBranchName !== null
     ) {
@@ -1124,12 +1357,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       availableBranches.find((branch) => branch.current) ??
       null;
     if (preferredBranch) {
-      selectBranch(preferredBranch);
+      selectBranch(preferredBranch, true);
     }
   }, [
     allBranchRefs,
     availableBranches,
     defaultWorkspaceModeSettled,
+    routingSettled,
     selectBranch,
     selectedBranchName,
     selectedProjectDraftKey,
@@ -1498,6 +1732,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectEnvironment,
       switchEnvironment,
       switchingToEnvironmentId,
+      automaticEnvironment,
+      canAutoBalance,
+      autoEnvironmentLabel,
+      routingSettled,
+      selectAutoEnvironment,
       setSelectedModelKey,
       setWorkspaceMode,
       selectBranch,
@@ -1574,6 +1813,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectEnvironment,
       switchEnvironment,
       switchingToEnvironmentId,
+      automaticEnvironment,
+      canAutoBalance,
+      autoEnvironmentLabel,
+      routingSettled,
+      selectAutoEnvironment,
       setInteractionMode,
       toggleSkill,
       setPrompt,

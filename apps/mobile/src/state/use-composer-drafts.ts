@@ -337,6 +337,8 @@ export interface ComposerDraft {
   readonly enabledSkillIds?: ReadonlyArray<string>;
   readonly autoCreatePullRequest?: boolean;
   readonly autoBabysitPullRequest?: boolean;
+  readonly environmentSelection?: "auto" | "manual";
+  readonly loadBalancedEnvironmentId?: EnvironmentId | null;
   /**
    * Set on new-task drafts only. The project is stored here rather than in
    * the key so a project can hold any number of drafts and a draft can be
@@ -384,6 +386,8 @@ export type ComposerDraftSettingsUpdate = Pick<
   | "enabledSkillIds"
   | "autoCreatePullRequest"
   | "autoBabysitPullRequest"
+  | "environmentSelection"
+  | "loadBalancedEnvironmentId"
 >;
 
 const ComposerDraftWorkspaceSelectionSchema = Schema.Struct({
@@ -418,6 +422,8 @@ const ComposerDraftSchema = Schema.Struct({
   enabledSkillIds: Schema.optional(Schema.Array(Schema.String)),
   autoCreatePullRequest: Schema.optional(Schema.Boolean),
   autoBabysitPullRequest: Schema.optional(Schema.Boolean),
+  environmentSelection: Schema.optional(Schema.Literals(["auto", "manual"])),
+  loadBalancedEnvironmentId: Schema.optional(Schema.NullOr(EnvironmentIdSchema)),
   project: Schema.optional(ComposerDraftProjectSchema),
 });
 
@@ -1941,7 +1947,11 @@ export function retargetNewTaskDraft(
     ) {
       return current;
     }
-    const { workspaceSelection: _workspaceSelection, ...retained } = normalizeDraft(existing);
+    const {
+      workspaceSelection: _workspaceSelection,
+      loadBalancedEnvironmentId: _loadBalancedEnvironmentId,
+      ...retained
+    } = normalizeDraft(existing);
     // Pending uploads live on one server. Crossing environments keeps the
     // local bytes (the upload worker re-sends them to the new environment)
     // but drops the old stamp, so it cannot pin the source environment's

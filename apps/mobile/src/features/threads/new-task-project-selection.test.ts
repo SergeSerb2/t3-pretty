@@ -83,6 +83,16 @@ describe("resolveNewTaskSheetRoute", () => {
     ).toEqual({ screen: "NewTask" });
   });
 
+  it("carries a machine filter through the project picker", () => {
+    expect(
+      resolveNewTaskSheetRoute({
+        selectedProjectKey: null,
+        selectedEnvironmentId: EnvironmentId.make("server"),
+        projectScopes: [],
+      }),
+    ).toEqual({ screen: "NewTask", params: { environmentId: "server" } });
+  });
+
   it("opens a draft in the filtered project, preferring the current environment", () => {
     const projects = [makeProject("t3code-mac", "mac"), makeProject("t3code-server", "server")];
     const scope = makeScope(projects);
@@ -98,8 +108,23 @@ describe("resolveNewTaskSheetRoute", () => {
         environmentId: "server",
         projectId: "t3code-server",
         title: "t3code-server",
+        environmentSelection: "manual",
       },
     });
+  });
+
+  it("leaves drafts automatic when Home has no machine filter", () => {
+    const scope = makeScope([
+      makeProject("t3code-mac", "mac"),
+      makeProject("t3code-server", "server"),
+    ]);
+    const route = resolveNewTaskSheetRoute({
+      selectedProjectKey: scope.key,
+      selectedEnvironmentId: null,
+      projectScopes: [scope],
+    });
+    expect(route).toMatchObject({ screen: "NewTaskDraft", params: { environmentId: "mac" } });
+    expect(route).not.toHaveProperty("params.environmentSelection");
   });
 
   it("falls back to the picker when the filtered project is gone", () => {

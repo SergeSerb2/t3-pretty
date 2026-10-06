@@ -279,6 +279,7 @@ const NEW_TASK_GLASS_CHIP_STYLE = {
 export function NewTaskDraftScreen(props: {
   readonly initialProjectRef?: {
     readonly environmentId?: string;
+    readonly environmentSelection?: "manual";
     readonly projectId?: string;
     readonly branch?: string | null;
     readonly worktreePath?: string | null;
@@ -787,7 +788,12 @@ export function NewTaskDraftScreen(props: {
         if (appliedInitialProjectKeyRef.current === directProjectKey) {
           return;
         }
-        if (props.initialProjectRef?.branch) {
+        if (
+          props.initialProjectRef?.branch ||
+          props.initialProjectRef?.environmentSelection === "manual" ||
+          props.incomingShareId ||
+          props.initialProjectRef?.cloning
+        ) {
           if (
             selectedProject?.environmentId !== directProject.environmentId ||
             selectedProject.id !== directProject.id
@@ -799,12 +805,18 @@ export function NewTaskDraftScreen(props: {
           // The route completes checkout before mounting this composer. Local
           // mode reuses an existing worktree; worktree mode would create another.
           updateComposerDraftSettings(flow.draftKey, {
-            workspaceSelection: {
-              mode: "local",
-              branch: props.initialProjectRef.branch,
-              worktreePath: props.initialProjectRef.worktreePath ?? null,
-              startFromOrigin: false,
-            },
+            environmentSelection: "manual",
+            loadBalancedEnvironmentId: null,
+            ...(props.initialProjectRef.branch
+              ? {
+                  workspaceSelection: {
+                    mode: "local",
+                    branch: props.initialProjectRef.branch,
+                    worktreePath: props.initialProjectRef.worktreePath ?? null,
+                    startFromOrigin: false,
+                  },
+                }
+              : {}),
           });
         }
         appliedInitialProjectKeyRef.current = directProjectKey;
@@ -1106,6 +1118,9 @@ export function NewTaskDraftScreen(props: {
     flow.environments.find(
       (environment) => environment.environmentId === flow.selectedEnvironmentId,
     )?.environmentLabel ?? "Environment";
+  const selectedEnvironmentDisplayLabel = flow.autoEnvironmentLabel
+    ? `${flow.autoEnvironmentLabel} · ${selectedEnvironmentLabel}`
+    : selectedEnvironmentLabel;
   const availableCurrentBranchName =
     flow.availableBranches.find((branch) => branch.current)?.name ??
     flow.availableBranches.find((branch) => branch.isDefault)?.name ??
@@ -1335,6 +1350,7 @@ export function NewTaskDraftScreen(props: {
       initialMessageText.length === 0 ||
       flow.submitting ||
       !flow.autoCreatePullRequestSettled ||
+      !flow.routingSettled ||
       (workspaceMode === "worktree" && !selectedBranchName)
     ) {
       return;
@@ -1490,6 +1506,7 @@ export function NewTaskDraftScreen(props: {
     !isImportingShare &&
     !flow.submitting &&
     flow.autoCreatePullRequestSettled &&
+    flow.routingSettled &&
     pendingPastedTextAttachmentCount === 0 &&
     !voiceInput.blocksSubmission &&
     !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
@@ -1592,7 +1609,7 @@ export function NewTaskDraftScreen(props: {
 
   const environmentControl = (
     <ComposerInlineControl
-      accessibilityLabel={`Environment: ${selectedEnvironmentLabel}`}
+      accessibilityLabel={`Environment: ${selectedEnvironmentDisplayLabel}`}
       chevronDirection="right"
       disabled={isComposerInteractionLocked || voiceInput.isBusy}
       renderIcon={(size) => (
@@ -1602,7 +1619,7 @@ export function NewTaskDraftScreen(props: {
           tintColorClassName="accent-icon-muted"
         />
       )}
-      label={`on ${selectedEnvironmentLabel}`}
+      label={`on ${selectedEnvironmentDisplayLabel}`}
       maxWidth={flow.isScratchDraft ? 170 : 260}
       onPress={
         flow.environments.length > 1 ? () => openContextPicker("NewTaskEnvironment") : undefined

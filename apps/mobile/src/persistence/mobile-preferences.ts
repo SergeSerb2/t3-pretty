@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import {
   AgentMonitoringSettings,
+  LoadBalancingWeights,
   type ProviderInstanceId,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
@@ -18,6 +19,7 @@ import * as MobileSecureStorage from "./mobile-secure-storage";
 import { MobileStorageDecodeError, MobileStorageEncodeError } from "./mobile-storage";
 
 const decodeAgentMonitoringSettings = Schema.decodeUnknownOption(AgentMonitoringSettings);
+const decodeLoadBalancingWeights = Schema.decodeUnknownOption(LoadBalancingWeights);
 
 const PREFERENCES_KEY = "t3code.preferences";
 const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
@@ -25,6 +27,8 @@ export const CONNECT_ONBOARDING_OPT_OUT_MAX_ACCOUNTS = 64;
 export const CONNECT_ONBOARDING_ACCOUNT_ID_MAX_LENGTH = 512;
 
 export interface Preferences {
+  readonly loadBalancingEnabled?: boolean;
+  readonly loadBalancingWeights?: Readonly<Record<string, number>>;
   readonly agentMonitoringEnrollment?: AgentMonitoringSettings | null;
   readonly liveActivitiesEnabled?: boolean;
   readonly themeId?: MobileThemeId;
@@ -148,6 +152,8 @@ export class MobilePreferencesStore extends Context.Service<
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
+    loadBalancingEnabled?: boolean;
+    loadBalancingWeights?: Readonly<Record<string, number>>;
     agentMonitoringEnrollment?: AgentMonitoringSettings | null;
     liveActivitiesEnabled?: boolean;
     themeId?: MobileThemeId;
@@ -185,6 +191,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListStoredShelfExpanded?: boolean;
     threadListWorkingShelfExpanded?: boolean;
   } = {};
+
+  if (typeof parsed.loadBalancingEnabled === "boolean") {
+    preferences.loadBalancingEnabled = parsed.loadBalancingEnabled;
+  }
+  const weights = decodeLoadBalancingWeights(parsed.loadBalancingWeights);
+  if (Option.isSome(weights)) preferences.loadBalancingWeights = weights.value;
 
   if (parsed.agentMonitoringEnrollment === null) {
     preferences.agentMonitoringEnrollment = null;

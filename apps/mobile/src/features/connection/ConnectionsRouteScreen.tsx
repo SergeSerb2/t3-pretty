@@ -10,6 +10,7 @@ import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { LocalEnvironmentList } from "./LocalEnvironmentList";
 import { GitHubRoutingSettings } from "./GitHubRoutingSettings";
+import { LoadBalancingSettings } from "./LoadBalancingSettings";
 import { SheetSurface } from "../../components/SheetSurface";
 
 export function ConnectionsRouteScreen() {
@@ -70,6 +71,7 @@ export function ConnectionsRouteScreen() {
           onSetEnabled={onSetEnvironmentEnabled}
           onUpdate={onUpdateEnvironment}
         />
+        <LoadBalancingSettings />
         <GitHubRoutingSettings />
       </ScrollView>
     </SheetSurface>

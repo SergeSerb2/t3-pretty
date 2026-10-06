@@ -6,7 +6,7 @@ import {
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useContext, useMemo } from "react";
 
-import { serverEnvironment } from "../state/server";
+import { serverEnvironment } from "./server";
 
 /** Only mounted for unresolved automatic drafts, so idle clients do not poll hosts. */
 export function useLoadBalancedEnvironment(

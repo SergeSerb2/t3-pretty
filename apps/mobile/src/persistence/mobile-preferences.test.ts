@@ -46,6 +46,19 @@ describe("mobile legacy queue preference", () => {
       expect(yield* store.load).toEqual({ baseFontSize: 18, legacyQueueEnabled: true });
       yield* store.savePatch({ legacyQueueEnabled: false });
       expect(yield* store.load).toEqual({ baseFontSize: 18, legacyQueueEnabled: false });
+      yield* store.savePatch({
+        loadBalancingEnabled: true,
+        loadBalancingWeights: { remote: 100, manual: 0 },
+      });
+      expect(yield* store.load).toMatchObject({
+        loadBalancingEnabled: true,
+        loadBalancingWeights: { remote: 100, manual: 0 },
+      });
+      yield* store.savePatch({ loadBalancingEnabled: false });
+      expect(yield* store.load).toMatchObject({
+        loadBalancingEnabled: false,
+        loadBalancingWeights: { remote: 100, manual: 0 },
+      });
       const agentMonitoringEnrollment = {
         enabled: true,
         sentryDsn: "https://public@example.com/1",

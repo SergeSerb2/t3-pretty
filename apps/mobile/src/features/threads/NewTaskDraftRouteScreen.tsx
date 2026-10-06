@@ -18,6 +18,7 @@ import { NewTaskDraftScreen } from "./NewTaskDraftScreen";
 
 type NewTaskDraftRouteParams = {
   readonly environmentId?: string | string[];
+  readonly environmentSelection?: "manual";
   readonly projectId?: string | string[];
   readonly branch?: string | null;
   readonly worktreePath?: string | null;
@@ -50,6 +51,7 @@ export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraf
         : params.environmentId,
       projectId: Array.isArray(params.projectId) ? params.projectId[0] : params.projectId,
       branch: params.branch,
+      environmentSelection: params.environmentSelection,
       worktreePath: params.worktreePath,
       cloning: (Array.isArray(params.cloning) ? params.cloning[0] : params.cloning) === "1",
     }),

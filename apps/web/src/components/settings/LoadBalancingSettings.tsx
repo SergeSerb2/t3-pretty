@@ -1,4 +1,10 @@
 import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import {
+  LOAD_BALANCING_PREFERENCES as preferences,
+  loadPreferenceForWeight,
+} from "@t3tools/client-runtime/load-balancing";
+
+export { loadPreferenceForWeight } from "@t3tools/client-runtime/load-balancing";
 
 import {
   useClientSettings,
@@ -12,21 +18,7 @@ import { EnvironmentRow, environmentTransportLabel } from "./EnvironmentRow";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { searchableSetting } from "./settingsSearch";
 
-const preferences = [
-  { value: 100, label: "Prefer" },
-  { value: 50, label: "Normal" },
-  { value: 25, label: "Less often" },
-  { value: 0, label: "Manual only" },
-] as const;
-
 type LoadPreference = (typeof preferences)[number]["value"];
-
-/** Snaps a saved weight (older builds stored a slider value) onto the four preferences. */
-export function loadPreferenceForWeight(weight: number | undefined): LoadPreference {
-  if (weight === undefined || weight === 50) return 50;
-  if (weight === 0) return 0;
-  return weight < 50 ? 25 : 100;
-}
 
 function preferenceLabel(preference: LoadPreference): string {
   return preferences.find((entry) => entry.value === preference)!.label;
