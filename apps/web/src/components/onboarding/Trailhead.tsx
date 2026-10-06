@@ -135,20 +135,23 @@ export function Trailhead({
       if (finishingRef.current) return;
       finishingRef.current = true;
       setFinishing(true);
+      let saved = false;
       try {
         await completeOnboarding();
+        saved = true;
+        await onDone(projectRef);
       } catch {
-        finishingRef.current = false;
-        setFinishing(false);
         toastManager.add({
           type: "error",
           title: "Could not finish setup",
-          description: "Your settings could not be saved. Try again.",
+          description: saved
+            ? "T3 Pretty could not open. Try again."
+            : "Your settings could not be saved. Try again.",
         });
-        return;
+      } finally {
+        finishingRef.current = false;
+        setFinishing(false);
       }
-      await onDone(projectRef);
-      finishingRef.current = false;
     },
     [completeOnboarding, onDone],
   );

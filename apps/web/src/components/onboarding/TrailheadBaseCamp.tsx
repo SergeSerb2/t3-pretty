@@ -76,6 +76,15 @@ export function TrailheadBaseCamp({
     selected.length > 0 &&
     selected.every((environment) => environment.connection.phase === "connected");
   const next = resolveStepAfterBaseCamp(agentSurveys.map((entry) => entry.survey));
+  // T3 Connect computers are listed in the panel below, not the ledger. Keep
+  // it open while one of them still holds up Continue, so the blocker is
+  // visible and can be unchecked.
+  const relayPending =
+    cloudEnabled &&
+    selected.some(
+      (environment) =>
+        isOnboardingRelayEnvironment(environment) && environment.connection.phase !== "connected",
+    );
   const continueRef = useRef<HTMLButtonElement>(null);
 
   // Hand focus to Continue once the survey has something to continue with,
@@ -105,12 +114,14 @@ export function TrailheadBaseCamp({
           <HistoryRow scans={scans} />
         </div>
 
-        <Collapsible open={moreOpen} onOpenChange={setMoreOpen} className="mt-4">
+        <Collapsible open={moreOpen || relayPending} onOpenChange={setMoreOpen} className="mt-4">
           <CollapsibleTrigger
             disabled={isPairing}
             render={<Button variant="ghost-muted" size="sm" className="-ml-2" />}
           >
-            <ChevronRightIcon className={cn("size-3.5", moreOpen && "rotate-90")} />
+            <ChevronRightIcon
+              className={cn("size-3.5", (moreOpen || relayPending) && "rotate-90")}
+            />
             {directEnvironments.length > 0 ? "Bring another computer" : "Connect a computer"}
           </CollapsibleTrigger>
           <CollapsiblePanel>

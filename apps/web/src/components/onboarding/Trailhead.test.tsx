@@ -197,3 +197,16 @@ it("stays on the summit when saving completion fails and finishes on retry", asy
   expect(onDone).toHaveBeenCalledOnce();
   expect(mocks.importThreads).not.toHaveBeenCalled();
 });
+
+it("lets the summit retry when opening the app fails after saving", async () => {
+  const onDone = vi.fn().mockRejectedValueOnce(new Error("navigation failed"));
+  await act(async () => root.render(<Trailhead localAvailable onDone={onDone} />));
+  await click("Agents are ready — pick projects");
+  await click("Skip import");
+  await click("Open T3 Pretty");
+  expect(mocks.toast).toHaveBeenCalledWith(
+    expect.objectContaining({ type: "error", description: "T3 Pretty could not open. Try again." }),
+  );
+  await click("Open T3 Pretty");
+  expect(onDone).toHaveBeenCalledTimes(2);
+});
