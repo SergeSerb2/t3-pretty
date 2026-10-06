@@ -6,7 +6,7 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import compression from "compression";
 import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import "vite-plus/test/config";
-import { defineConfig, type Connect, type Plugin } from "vite-plus";
+import { defineConfig, type Connect, type Plugin, type ProxyOptions } from "vite-plus";
 import pkg from "./package.json" with { type: "json" };
 
 import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
@@ -272,11 +272,22 @@ export default defineConfig(() => {
                 prefix,
                 {
                   target: devProxyTarget,
-                  // Cookie-authenticated WebSocket upgrades compare Origin to
-                  // Host. Keep the browser's origin through the dev proxy.
-                  changeOrigin: false,
-                  ...(prefix === "/ws" || prefix === "/api" ? { ws: true } : {}),
-                },
+                  changeOrigin: true,
+                  ...(prefix === "/ws" || prefix === "/api"
+                    ? {
+                        ws: true,
+                        configure(proxy) {
+                          proxy.on("proxyReqWs", (proxyRequest, request) => {
+                            // Cookie-authenticated upgrades compare Origin to Host.
+                            // Preserve the browser's Host only for WebSockets.
+                            if (request.headers.host !== undefined) {
+                              proxyRequest.setHeader("host", request.headers.host);
+                            }
+                          });
+                        },
+                      }
+                    : {}),
+                } satisfies ProxyOptions,
               ]),
             ),
           }
