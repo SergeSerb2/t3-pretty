@@ -28,6 +28,8 @@ interface HookEndpoint {
   readonly httpBaseUrl: string;
   readonly environmentId: string;
   readonly holdWhileOffline: boolean;
+  /** Environment key that signed the hold-while-offline capability. */
+  readonly environmentPublicKey: string;
 }
 
 export class HeldHooks extends Context.Service<
@@ -89,6 +91,7 @@ const make = Effect.gen(function* () {
       ...result.success,
       environmentId: allocation.environmentId,
       holdWhileOffline: link.holdWebhooksWhileOffline,
+      environmentPublicKey: link.environmentPublicKey,
     };
   });
 

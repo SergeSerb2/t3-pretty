@@ -110,6 +110,8 @@ function layerHttpClient(
   );
 }
 
+const httpClientLayer = layerHttpClient;
+
 const layerHealthyHttpClient = layerHttpClient((request) =>
   Effect.succeed(responseForRequest(request, 200)),
 );

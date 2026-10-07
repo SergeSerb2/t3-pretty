@@ -101,6 +101,9 @@ function layerEnvironment(
   );
 }
 
+const serverExposureLayer = layerServerExposure;
+const makeEnvironmentLayer = layerEnvironment;
+
 const restoreEnv = (name: string, value: string | undefined) => {
   if (value === undefined) {
     delete process.env[name];

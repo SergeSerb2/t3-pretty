@@ -21,14 +21,17 @@ import {
   currentDesktopBootstrapToken,
 } from "@t3tools/shared/desktopBootstrapToken";
 
+import * as DesktopBackendManager from "./DesktopBackendManager.ts";
 import * as DesktopBackendPool from "./DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "./DesktopLocalEnvironmentAuth.ts";
 
 const config = {
   executablePath: "/electron",
+  args: ["/server/bin.mjs", "--bootstrap-fd", "3"],
   entryPath: "/server/bin.mjs",
   cwd: "/server",
   env: {},
+  extendEnv: true,
   bootstrap: {
     mode: "desktop",
     noBrowser: true,
@@ -39,9 +42,11 @@ const config = {
     tailscaleServeEnabled: false,
     tailscaleServePort: 443,
   },
+  bootstrapDelivery: "fd3",
   httpBaseUrl: new URL("http://127.0.0.1:3773"),
   captureOutput: true,
-};
+  preflightFailure: Option.none(),
+} satisfies DesktopBackendManager.DesktopBackendStartConfig;
 
 const refused = (request: HttpClientRequest.HttpClientRequest) =>
   new HttpClientError.HttpClientError({
@@ -107,6 +112,7 @@ describe("DesktopLocalEnvironmentAuth", () => {
           Ref.update(requestCount, (count) => count + 1).pipe(Effect.as(tokenResponse(request))),
         ),
       );
+      const httpClientLayer = layerHttpClient;
       const testLayer = DesktopLocalEnvironmentAuth.layer.pipe(
         Layer.provide(Layer.mergeAll(makePoolLayer(), httpClientLayer)),
       );

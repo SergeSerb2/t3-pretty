@@ -126,7 +126,7 @@ describe("getLocalEnvironmentBootstraps", () => {
 
   it.effect("hands out the current window's token to a backend launched with the secret", () =>
     Effect.gen(function* () {
-      const result = yield* getLocalEnvironmentBootstraps.handler();
+      const result = yield* getLocalEnvironmentBootstraps.handler(undefined);
 
       assert.deepEqual(result, [
         {
@@ -230,7 +230,7 @@ describe("getLocalEnvironmentBootstraps", () => {
       const result = yield* getLocalEnvironmentBootstraps.handler(undefined);
       if (!Array.isArray(result)) throw new TypeError("Expected a bootstrap array.");
       assert.equal(result.length, 64);
-    }).pipe(Effect.provide(DesktopBackendPool.layerTest(instances)));
+    }).pipe(Effect.provide(bootstrapsLayer(instances)));
   });
 });
 

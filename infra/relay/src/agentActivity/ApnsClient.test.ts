@@ -33,7 +33,7 @@ const decodeDeliveredState = Schema.decodeUnknownSync(
   ),
 );
 
-const layerTest = ApnsClient.layer.pipe(
+const TestLayer = ApnsClient.layer.pipe(
   Layer.provide(ApnsProviderTokens.layer),
   Layer.provide(
     Layer.succeed(
@@ -90,7 +90,7 @@ describe("ApnsClient", () => {
           },
         },
       });
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("builds a low-priority update payload", () =>
@@ -113,7 +113,7 @@ describe("ApnsClient", () => {
           },
         },
       });
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("builds a high-priority update payload when the update is urgent", () =>
@@ -155,7 +155,7 @@ describe("ApnsClient", () => {
           },
         },
       });
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("builds an end payload with a dismissal date", () =>
@@ -192,7 +192,7 @@ describe("ApnsClient", () => {
           "dismissal-date": 15,
         },
       });
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("builds a standard APNs alert payload with routing metadata", () =>
@@ -223,7 +223,7 @@ describe("ApnsClient", () => {
         threadId: "thread",
         deepLink: "/threads/env/thread",
       });
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("compacts Live Activity state to the APNs payload ceiling", () =>
@@ -322,7 +322,7 @@ describe("ApnsClient", () => {
         cause: expect.any(Error),
         message: "Failed to sign APNs JWT for key key-1.",
       });
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("preserves APNs request context and the HTTP cause", () => {

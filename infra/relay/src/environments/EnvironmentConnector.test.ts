@@ -780,7 +780,7 @@ describe("EnvironmentConnector", () => {
         });
       }
       expect(cancelled).toBe(true);
-    }).pipe(Effect.provide(connectorTestLayer(execute)));
+    }).pipe(Effect.provide(layerConnectorTest(execute)));
   });
 
   it.effect("only accepts mint responses signed by the user's linked environment key", () => {
