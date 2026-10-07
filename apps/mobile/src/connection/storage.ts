@@ -158,3 +158,6 @@ export const layer = Layer.effectContext(
     );
   }),
 );
+
+/** Previous export name; prefer `layer`. */
+export const connectionStorageLayer = layer;

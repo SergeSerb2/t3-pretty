@@ -47,6 +47,9 @@ export const layer: Layer.Layer<
   Layer.Error<RuntimeLayerSource>
 > = Layer.effectContext(runtime.contextEffect);
 
+/** Previous export name; prefer `layer`. */
+export const runtimeContextLayer = layer;
+
 disposeOnFoundationReplace(typeof module === "undefined" ? undefined : module.hot, () =>
   runtime.dispose(),
 );

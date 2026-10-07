@@ -15,6 +15,8 @@ import {
 import { createDpopProof, generateDpopProofKeyPair, loadOrCreateDpopProofKeyPair } from "./dpop";
 import * as Dpop from "./dpop";
 
+const cryptoLayer = Dpop.layer;
+
 vi.mock("expo-crypto", () => ({
   CryptoDigestAlgorithm: {
     SHA1: "SHA-1",

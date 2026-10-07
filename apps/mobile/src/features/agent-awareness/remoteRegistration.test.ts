@@ -228,6 +228,7 @@ function savedConnection(): SavedRemoteConnection {
 const layerRelayTest = ManagedRelayLayer.layer("https://relay.example.test").pipe(
   Layer.provide(Layer.mergeAll(FetchHttpClient.layer, Dpop.layer)),
 );
+const relayTestLayer = layerRelayTest;
 
 const runBackgroundOperations = Effect.fn("TestRemoteRegistration.runBackgroundOperations")(
   function* () {

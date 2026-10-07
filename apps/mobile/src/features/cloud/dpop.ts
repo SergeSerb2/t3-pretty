@@ -119,6 +119,9 @@ export const layer = Layer.succeed(
   }),
 );
 
+/** Previous export name; prefer `layer`. */
+export const cryptoLayer = layer;
+
 type DpopPrivateJwk = typeof DpopPrivateJwkSchema.Type;
 
 export interface DpopProofKeyPair {

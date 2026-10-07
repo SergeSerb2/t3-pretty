@@ -19,7 +19,7 @@ import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
+import { OrchestrationEventStore } from "../persistence/OrchestrationEventStore.ts";
 import * as Settings from "../serverSettings.ts";
 import * as AgentMonitoringExporter from "./AgentMonitoringExporter.ts";
 import * as AgentMonitoringJournal from "./AgentMonitoringJournal.ts";

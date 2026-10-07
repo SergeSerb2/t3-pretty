@@ -13,14 +13,14 @@ import {
   AutomationTriggers,
   ModelSelection,
 } from "@t3tools/contracts";
-import { toPersistenceSqlError } from "../Errors.ts";
+import { toPersistenceSqlError } from "./Errors.ts";
 import {
   GetProjectionAutomationInput,
   ListProjectionAutomationsByProjectInput,
   ProjectionAutomation,
   ProjectionAutomationRepository,
   type ProjectionAutomationRepositoryShape,
-} from "../Services/ProjectionAutomations.ts";
+} from "./Services/ProjectionAutomations.ts";
 
 const ProjectionAutomationDbRow = ProjectionAutomation.mapFields(
   Struct.assign({

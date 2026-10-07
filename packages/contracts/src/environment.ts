@@ -266,7 +266,7 @@ export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabi
 
 export const ExecutionEnvironmentDescriptor = Schema.Struct({
   environmentId: EnvironmentId,
-  label: TrimmedNonEmptyString,
+  label: TrimmedNonEmptyString.check(Schema.isMaxLength(ENVIRONMENT_LABEL_MAX_LENGTH)),
   platform: ExecutionEnvironmentPlatform,
   serverVersion: TrimmedNonEmptyString,
   /** Absent on hosts from before explicit orchestration protocol negotiation. */
@@ -277,8 +277,12 @@ export type ExecutionEnvironmentDescriptor = typeof ExecutionEnvironmentDescript
 
 export const RepositoryIdentityLocator = Schema.Struct({
   source: Schema.Literal("git-remote"),
-  remoteName: TrimmedNonEmptyString,
-  remoteUrl: TrimmedNonEmptyString,
+  remoteName: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(REPOSITORY_IDENTITY_REMOTE_NAME_MAX_LENGTH),
+  ),
+  remoteUrl: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(REPOSITORY_IDENTITY_REMOTE_URL_MAX_LENGTH),
+  ),
 });
 export type RepositoryIdentityLocator = typeof RepositoryIdentityLocator.Type;
 

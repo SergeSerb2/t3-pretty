@@ -23,49 +23,49 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as Schedule from "effect/Schedule";
-import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as ServerConfig from "./config.ts";
 import {
-  otlpTracesProxyRouteLayer,
-  assetRouteLayer,
-  attachmentUploadRouteLayer,
-  serverEnvironmentHttpApiLayer,
+  layerOtlpTracesProxyRoute as otlpTracesProxyRouteLayer,
+  layerAssetRoute as assetRouteLayer,
+  layerAttachmentUploadRoute as attachmentUploadRouteLayer,
+  layerServerEnvironmentHttpApi as serverEnvironmentHttpApiLayer,
   serverConfigHttpApiLayer,
-  staticAndDevRouteLayer,
-  browserApiCorsLayer,
-  httpCompressionLayer,
-  untracedRequestsLayer,
+  layerStaticAndDevRoute as staticAndDevRouteLayer,
+  layerBrowserApiCors as browserApiCorsLayer,
+  layerHttpCompression as httpCompressionLayer,
+  withUntracedRequests,
 } from "./http.ts";
 import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
-import { websocketRpcRouteLayer } from "./ws.ts";
+import { layer as websocketRpcRouteLayer } from "./ws.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
-import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
+import { layer as pullRequestHttpApiLayer } from "./pullRequest/http.ts";
 import { readAloudHttpApiLayer } from "./readAloud/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
-import * as SqlitePersistence from "./persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ProviderEventIngestor from "./orchestration-v2/ProviderEventIngestor.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
-import * as ResetCreditCoordinator from "./provider/Layers/resetCreditCoordinator.ts";
-import * as ProviderEventLoggers from "./provider/Layers/ProviderEventLoggers.ts";
+import * as ResetCreditCoordinator from "./provider/resetCreditCoordinator.ts";
+import * as ProviderEventLoggers from "./provider/ProviderEventLoggers.ts";
 import * as OpenCodeRuntime from "./provider/opencodeRuntime.ts";
 import * as OpenCodeServerLedger from "./provider/OpenCodeServerLedger.ts";
-import { AcpRegistryCatalogLive } from "./provider/Layers/AcpRegistryCatalog.ts";
+import { layer as AcpRegistryCatalogLive } from "./provider/AcpRegistryCatalog.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as ForgejoCli from "./sourceControl/ForgejoCli.ts";
 import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
-import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
+import { layer as ProviderInstanceRegistryHydrationLive } from "./provider/ProviderInstanceRegistryHydration.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
@@ -73,11 +73,11 @@ import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as AutomationStore from "./automations/AutomationStore.ts";
 import * as AutomationScheduler from "./automations/AutomationScheduler.ts";
 import * as AutomationWebhookHttp from "./automations/AutomationWebhookHttp.ts";
-import { ProjectionAutomationRepositoryLive } from "./persistence/Layers/ProjectionAutomations.ts";
-import { ProjectionAutomationRunRepositoryLive } from "./persistence/Layers/ProjectionAutomationRuns.ts";
+import { ProjectionAutomationRepositoryLive } from "./persistence/ProjectionAutomations.ts";
+import { ProjectionAutomationRunRepositoryLive } from "./persistence/ProjectionAutomationRuns.ts";
 import * as SecretRequestBroker from "./mcp/SecretRequestBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
-import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";
+import { layer as deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as ProcessRunner from "./processRunner.ts";
@@ -91,16 +91,16 @@ import * as HomeSuggestionsMesh from "./homeSuggestions/HomeSuggestionsMesh.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import * as ActivityHeadlineReactor from "./orchestration-v2/ActivityHeadlineReactor.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
-import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
+import { layer as ProviderRegistryLive } from "./provider/ProviderRegistry.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as NativeAppIconResolver from "./assets/NativeAppIconResolver.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
 import * as CodexInstallation from "./provider/CodexInstallation.ts";
-import * as ProviderInstanceRegistry from "./provider/Services/ProviderInstanceRegistry.ts";
+import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegistry.ts";
-import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
-import { ProviderUsageLimitsIngestionLive } from "./provider/Layers/ProviderUsageLimitsIngestion.ts";
+import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
+import { layer as ProviderUsageLimitsIngestionLive } from "./provider/ProviderUsageLimitsIngestion.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
@@ -122,14 +122,17 @@ import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
-import { ObservabilityLive } from "./observability/Layers/Observability.ts";
+import { layer as ObservabilityLive } from "./observability/Observability.ts";
 import * as HeapSnapshot from "./observability/HeapSnapshot.ts";
 import * as EventLoopMonitor from "./observability/EventLoopMonitor.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as AgentMonitoring from "./observability/AgentMonitoring.ts";
 import * as DirectEndpoints from "./environment/DirectEndpoints.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
-import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
+import {
+  layer as authHttpApiLayer,
+  layerAuthenticatedAuth as environmentAuthenticatedAuthLayer,
+} from "./auth/http.ts";
 import * as ReplayMarkers from "./auth/replayMarkers.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -143,8 +146,8 @@ import {
   releaseManagedTunnelOnShutdown,
 } from "./cloud/http.ts";
 import * as CloudLink from "./cloud/CloudLink.ts";
-import { serverRelayBrokerTracingLayer } from "./cloud/relayTracing.ts";
-import { shouldRetryCloudLink } from "./cloud/relayResponse.ts";
+import { shouldRetryCloudLink } from "./cloud/CloudLink.ts";
+import { layerServerRelayBroker as serverRelayBrokerTracingLayer } from "./cloud/relayTracing.ts";
 import * as CloudManagedEndpointRuntime from "./cloud/ManagedEndpointRuntime.ts";
 import {
   MANAGED_TUNNEL_FIRST_REGISTRATION_JITTER,
@@ -169,10 +172,10 @@ import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as StorageInventoryService from "./storage/StorageInventoryService.ts";
 import {
-  OrchestrationEventInfrastructureLayerLive,
-  OrchestrationV2ProductionLayerLive,
-  ProjectServiceLayerLive,
-  ProjectSetupScriptRunnerLayerLive,
+  layerEventInfrastructure as OrchestrationEventInfrastructureLayerLive,
+  layerProduction as OrchestrationV2ProductionLayerLive,
+  layerProjectService as ProjectServiceLayerLive,
+  layerProjectSetupScriptRunner as ProjectSetupScriptRunnerLayerLive,
 } from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
@@ -186,8 +189,8 @@ import {
   makePersistedServerRuntimeState,
   persistServerRuntimeState,
 } from "./serverRuntimeState.ts";
-import { orchestrationHttpApiLayer } from "./orchestration-v2/http.ts";
-import { projectHttpApiLayer } from "./project/http.ts";
+import { layer as orchestrationHttpApiLayer } from "./orchestration-v2/http.ts";
+import { layer as projectHttpApiLayer } from "./project/http.ts";
 import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
@@ -395,7 +398,7 @@ const VcsLayerLive = Layer.empty.pipe(
       // consumes the broadcaster (run finalization), so the policy cannot read
       // the store from the runtime's output.
       Layer.provide(
-        VcsStatusBroadcaster.autoPullPolicyLayer.pipe(Layer.provide(ProjectStore.layer)),
+        VcsStatusBroadcaster.layerAutoPullPolicy.pipe(Layer.provide(ProjectStore.layer)),
       ),
     ),
   ),
@@ -461,12 +464,12 @@ const CloudManagedEndpointRuntimeLive = Layer.mergeAll(
 );
 
 const OrchestrationV2RuntimeLayerLive = OrchestrationV2ProductionLayerLive.pipe(
-  Layer.provide(ProviderEventIngestor.analyticsLive),
+  Layer.provide(ProviderEventIngestor.layerAnalytics),
   Layer.provide(CheckpointStoreLayerLive),
   Layer.provide(GitWorkflowLayerLive),
-  Layer.provide(ResourceCleanupService.live),
+  Layer.provide(ResourceCleanupService.layer),
   Layer.provide(
-    RunFinalizationService.observerLive.pipe(
+    RunFinalizationService.layerObserver.pipe(
       Layer.provide(ProjectionStoreV2.layer),
       Layer.provide(PullRequestServiceLive),
       Layer.provide(ProjectServiceLayerLive),
@@ -627,7 +630,7 @@ const RuntimeCoreDependenciesLive = RuntimeCoreDependenciesBaseLive.pipe(
   // no longer transitively provides it. Exposing it at the runtime level
   // keeps a single Live for all opencode consumers.
   Layer.provideMerge(
-    OpenCodeRuntime.OpenCodeRuntimeLive.pipe(Layer.provide(OpenCodeServerLedger.layer)),
+    OpenCodeRuntime.layer.pipe(Layer.provide(OpenCodeServerLedger.layer)),
   ),
   Layer.provideMerge(
     Layer.mergeAll(AgentInstructionFiles.layer, SkillMarketplace.layer, AppsService.layer),
@@ -703,8 +706,6 @@ const makeRoutesLayer = Layer.mergeAll(
   McpHttpServer.layer.pipe(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
   ),
-  // Last, so no route layer can replace the server's one TracerDisabledWhen.
-  untracedRequestsLayer,
 ).pipe(
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
@@ -1056,7 +1057,10 @@ const makeServerLayer = Layer.unwrap(
     const routesLayer = HttpRouter.serve(makeRoutesLayer.pipe(Layer.provide(launcherLayer)), {
       disableLogger: !config.logWebSocketEvents,
       routerConfig: HTTP_ROUTER_CONFIG,
-    }).pipe(Layer.tap(() => Deferred.succeed(routesReady, undefined).pipe(Effect.orDie)));
+    }).pipe(
+      withUntracedRequests,
+      Layer.tap(() => Deferred.succeed(routesReady, undefined).pipe(Effect.orDie)),
+    );
     const serverApplicationLayer = Layer.mergeAll(
       routesLayer,
       httpListeningLayer,

@@ -309,11 +309,17 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
   const finalGroups = new Map<string, ProjectGroupMember<TProject>[]>();
   for (const [key, members] of groupedMembers) {
     const membersByCheckoutSlot = new Map<string, ProjectGroupMember<TProject>[]>();
+    const sharedMembers: ProjectGroupMember<TProject>[] = [];
+    const standaloneMembers: ProjectGroupMember<TProject>[] = [];
     for (const member of members) {
-      // An identity without a known root reads as a clone at the root.
-      const slot = `${member.project.environmentId}\0${
-        deriveRepositoryRelativeProjectPath(member.project) ?? ""
-      }`;
+      // Unknown checkout roots stay in the repository group. Pretty only
+      // splits when two clones share a known slot on one machine.
+      const relativePath = deriveRepositoryRelativeProjectPath(member.project);
+      if (relativePath === null) {
+        sharedMembers.push(member);
+        continue;
+      }
+      const slot = `${member.project.environmentId}\0${relativePath}`;
       const slotMembers = membersByCheckoutSlot.get(slot);
       if (slotMembers) {
         slotMembers.push(member);
@@ -321,8 +327,6 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
         membersByCheckoutSlot.set(slot, [member]);
       }
     }
-    const sharedMembers: ProjectGroupMember<TProject>[] = [];
-    const standaloneMembers: ProjectGroupMember<TProject>[] = [];
     for (const slotMembers of membersByCheckoutSlot.values()) {
       (slotMembers.length === 1 ? sharedMembers : standaloneMembers).push(...slotMembers);
     }

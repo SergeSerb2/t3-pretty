@@ -399,3 +399,6 @@ export const connectionPlatformLayer: Layer.Layer<
   platformConnectionSourceLayer,
   environmentOwnedDataCleanupLayer,
 );
+
+/** 2735 export name; Pretty still uses `connectionPlatformLayer`. */
+export const layer = connectionPlatformLayer;

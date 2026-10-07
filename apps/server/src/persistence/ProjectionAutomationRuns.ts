@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
 import { AutomationRunTrigger } from "@t3tools/contracts";
-import { toPersistenceSqlError } from "../Errors.ts";
+import { toPersistenceSqlError } from "./Errors.ts";
 import {
   AutomationRunRetentionInput,
   DeleteProjectionAutomationRunsInput,
@@ -15,7 +15,7 @@ import {
   ProjectionAutomationRun,
   ProjectionAutomationRunRepository,
   type ProjectionAutomationRunRepositoryShape,
-} from "../Services/ProjectionAutomationRuns.ts";
+} from "./Services/ProjectionAutomationRuns.ts";
 
 const ProjectionAutomationRunDbRow = ProjectionAutomationRun.mapFields(
   Struct.assign({
