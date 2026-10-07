@@ -1334,4 +1334,5 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
   - Restored `RepositoryOrigin`, `origin`, `repositoryGroupingKeyOf`, `repositoryGroupingDisplayNameOf`, plus 2735 `worktreesDirectory` / `serverBrowser` capabilities, while keeping Pretty capability keys.
   - Restored `packages/client-runtime/src/connection/supervisor.test.ts` from Origin main so the harness still provides `checkRoute` / `preflight` and Pretty's retry/TLS tests.
   - Corrected `threads-sync.test.ts` to import `effect/http` (both parents) and added 2735's cache-read-failure case with the wider `loadCached` error channel.
+- `web-typecheck` failed on stale cache mixes in chat/storage/preview. Restored Pretty `ChatView.tsx` / `MessagesTimeline.tsx`, then wired `usePreviewAvailable` so server-browser environments can open preview. Composed connection storage (`makeCatalogBackend` + `layer`/`connectionStorageLayer`), `AgentBrowserCursor` (`AgentCursorMark` + Pretty pointer phases), `CloudEnvironmentConnectList` fixtures (`loaded`), and both HTTP-layer export names.
 
