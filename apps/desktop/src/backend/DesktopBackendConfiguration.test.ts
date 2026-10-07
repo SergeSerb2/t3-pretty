@@ -364,7 +364,14 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(config.bootstrap.mode, "desktop");
         assert.equal(config.bootstrap.port, 4888);
         assert.equal(config.bootstrap.host, "0.0.0.0");
-        assert.match(config.bootstrap.desktopBootstrapToken, /^[0-9a-f]{48}$/i);
+        assert.match(config.bootstrap.desktopBootstrapSecret ?? "", /^[0-9a-f]{64}$/i);
+        assert.equal(
+          config.bootstrap.desktopBootstrapToken,
+          currentDesktopBootstrapToken(
+            config.bootstrap.desktopBootstrapSecret ?? "",
+            yield* Clock.currentTimeMillis,
+          ),
+        );
       }).pipe(
         Effect.provide(
           DesktopBackendConfiguration.layer.pipe(
