@@ -594,6 +594,10 @@ describe("Origin release and blocked-sync helpers", () => {
       NodePath.resolve(here, "run-web-scenery-unit.sh"),
       "utf8",
     );
+    const relayMigrations = NodeFS.readFileSync(
+      NodePath.resolve(here, "run-relay-migrations-unit.sh"),
+      "utf8",
+    );
     const desktop = workflow("fork-release.yml");
     const mobile = NodeFS.readFileSync(NodePath.resolve(here, "publish-mobile-release.sh"), "utf8");
     const reviewCi = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
@@ -631,6 +635,10 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(sceneryUnit, "sceneryDomContract.test.ts");
     assert.include(syncScript, "--filter t3 build:bundle");
     assert.include(syncScript, "--filter t3code-relay typecheck");
+    assert.include(syncScript, "run-relay-migrations-unit.sh");
+    assert.include(syncScript, "relay-migrations");
+    assert.include(relayMigrations, "src/persistence/migrations.test.ts");
+    assert.include(relayMigrations, 'cd "$ROOT/infra/relay"');
     assert.include(syncScript, "expo export --platform ios");
     assert.isBelow(
       syncScript.indexOf("validate_sync_tree || exit 1"),

@@ -843,6 +843,12 @@ validate_sync_tree_once() {
   run_validation_step relay-typecheck \
     "The merged sync tree failed the relay typecheck." \
     vp run --filter t3code-relay typecheck || return 1
+  # Drizzle snapshot drift is silent in typecheck. Upstream nightlies can
+  # add a linear successor whose snapshot omits Pretty-only tables or
+  # indexes; Alchemy then regenerates CREATE TABLE/INDEX against prod.
+  run_validation_step relay-migrations \
+    "The merged sync tree would regenerate already-applied Relay Postgres SQL." \
+    bash scripts/fork/run-relay-migrations-unit.sh || return 1
   # Metro strips types without checking them, and the mobile release runs
   # `tsc` before publishing OTA: a merge that bundles but does not typecheck
   # lands on main and then fails every mobile release (nightly 1284).

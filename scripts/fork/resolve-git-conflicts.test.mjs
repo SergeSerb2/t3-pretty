@@ -3147,6 +3147,11 @@ ${">".repeat(7)} theirs
     const webLint = script.indexOf("vp lint apps/web/src", validationStart);
     const webSceneryUnit = script.indexOf("run-web-scenery-unit.sh", validationStart);
     const webBuild = script.indexOf("vp run --filter @t3tools/web build", validationStart);
+    const relayTypecheck = script.indexOf(
+      "vp run --filter t3code-relay typecheck",
+      validationStart,
+    );
+    const relayMigrations = script.indexOf("run-relay-migrations-unit.sh", validationStart);
 
     assert.isAtLeast(earlyInstall, 0);
     assert.isBelow(earlyInstall, firstMerge);
@@ -3154,8 +3159,11 @@ ${">".repeat(7)} theirs
     assert.isAbove(webLint, webTypecheck);
     assert.isAbove(webSceneryUnit, webLint);
     assert.isAbove(webBuild, webSceneryUnit);
+    assert.isAbove(relayTypecheck, webBuild);
+    assert.isAbove(relayMigrations, relayTypecheck);
     assert.include(script, "failed the web lint error gate");
     assert.include(script, "failed the scenery motion unit contract");
+    assert.include(script, "would regenerate already-applied Relay Postgres SQL");
   });
 
   it("requests a fresh resolution when a batch's edit set fails validation", () => {
