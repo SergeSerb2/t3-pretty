@@ -80,6 +80,10 @@ import * as DeviceService from "./device/DeviceService.ts";
 import { layer as deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
+import * as PreviewBrowser from "./preview/PreviewBrowser.ts";
+import * as DesktopBrowserChannel from "./preview/DesktopBrowserChannel.ts";
+import * as ServerBrowser from "./preview/ServerBrowser.ts";
+import * as ServerBrowserStream from "./preview/ServerBrowserStream.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
@@ -158,6 +162,8 @@ import {
 import * as CloudCliTokenManager from "./cloud/CliTokenManager.ts";
 import * as CloudCliState from "./cloud/CliState.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
+import * as WebhookRoute from "./scheduledTasks/webhookRoute.ts";
+import * as RelayDeliveryProof from "./scheduledTasks/RelayDeliveryProof.ts";
 import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
@@ -629,9 +635,7 @@ const RuntimeCoreDependenciesLive = RuntimeCoreDependenciesBaseLive.pipe(
   // the rewritten registry reads snapshots off the instance registry and
   // no longer transitively provides it. Exposing it at the runtime level
   // keeps a single Live for all opencode consumers.
-  Layer.provideMerge(
-    OpenCodeRuntime.layer.pipe(Layer.provide(OpenCodeServerLedger.layer)),
-  ),
+  Layer.provideMerge(OpenCodeRuntime.layer.pipe(Layer.provide(OpenCodeServerLedger.layer))),
   Layer.provideMerge(
     Layer.mergeAll(AgentInstructionFiles.layer, SkillMarketplace.layer, AppsService.layer),
   ),
@@ -687,12 +691,16 @@ const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(serverEnvironmentHttpApiLayer),
       Layer.provide(serverConfigHttpApiLayer),
       Layer.provide(readAloudHttpApiLayer),
+      // EnvironmentHttpApi includes the public /api/hooks group. HttpApiBuilder
+      // waits for every group; omitting this never finishes HttpRouter.serve.
+      Layer.provide(WebhookRoute.layer.pipe(Layer.provide(RelayDeliveryProof.layer))),
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
     otlpTracesProxyRouteLayer,
     assetRouteLayer,
     attachmentUploadRouteLayer,
     deviceHubProxyRouteLayer,
+    ServerBrowserStream.routeLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
     AutomationWebhookHttp.layer,
@@ -710,6 +718,12 @@ const makeRoutesLayer = Layer.mergeAll(
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),
+  // The stream route and the WebSocket RPCs share one browser. Ws.layer
+  // yields ServerBrowser while building, so omitting this keeps
+  // HttpRouter.serve from finishing and the process never logs Listening.
+  Layer.provide(ServerBrowser.layer.pipe(Layer.provide(DesktopBrowserChannel.layer))),
+  // Server browser tabs and HTML render previews install and run the same headless browser.
+  Layer.provide(PreviewBrowser.layer),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(SecretRequestBroker.layer),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(DesktopAppUpdateLayerLive))),

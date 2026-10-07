@@ -217,6 +217,21 @@ steps:
       queue: macos-release
     command: bash scripts/fork/run-trusted-origin-pr-ci.sh
 
+  - label: ":mag: Desktop listen contract"
+    key: desktop-listen-contract
+    # PR builds skip windows-nsis / macos-dmg. This is the check that the
+    # 2735 route layer still provides every group HttpRouter.serve needs
+    # before it can log Listening. Source-only; no packaging, no vp i.
+    if: >-
+      build.env("T3CODE_IOS_ONLY") != "1" && (
+      build.branch != "main" && build.source != "schedule" &&
+      !(build.branch =~ /^automation\//)
+      )
+    timeout_in_minutes: 5
+    agents:
+      queue: macos-release
+    command: node scripts/fork/check-desktop-listen-contract.mjs
+
   - label: ":white_check_mark: Origin PR comments resolved"
     key: origin-pr-comments
     depends_on: origin-pr-review
