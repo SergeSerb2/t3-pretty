@@ -1329,4 +1329,9 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
 
 - `shared-typecheck` on the scheduled bot tree failed because auto-merge dropped `previewAutomationHostFocusConcurrencyKey` and renamed HTTP/relay test helpers without updating every call site. This compose keeps both names/behaviors and restores the missing export and RPC surface.
 - `install` failed with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH` because the merge took 2735's lockfile while Pretty's `pnpm-workspace.yaml` `patchedDependencies` set differs. Regenerated `pnpm-lock.yaml` with `pnpm install --lockfile-only --no-frozen-lockfile` (same path as `scripts/fork/run-upstream-sync.sh` `regenerate_lockfile`).
+- `shared-typecheck` on this composed tree then failed because path-matched cache blobs dropped 2735 contract/runtime symbols Pretty still calls:
+  - Re-exported `PREVIEW_AUTOMATION_OPERATIONS` (2735 left it file-private after the V1/server split).
+  - Restored `RepositoryOrigin`, `origin`, `repositoryGroupingKeyOf`, `repositoryGroupingDisplayNameOf`, plus 2735 `worktreesDirectory` / `serverBrowser` capabilities, while keeping Pretty capability keys.
+  - Restored `packages/client-runtime/src/connection/supervisor.test.ts` from Origin main so the harness still provides `checkRoute` / `preflight` and Pretty's retry/TLS tests.
+  - Corrected `threads-sync.test.ts` to import `effect/http` (both parents) and added 2735's cache-read-failure case with the wider `loadCached` error channel.
 
