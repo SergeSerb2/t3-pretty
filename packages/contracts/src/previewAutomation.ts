@@ -78,7 +78,7 @@ export const PREVIEW_AUTOMATION_V1_OPERATIONS = [
 ] as const;
 
 /** Advertised by current desktop hosts for mixed-version routing. */
-const PREVIEW_AUTOMATION_OPERATIONS = [
+export const PREVIEW_AUTOMATION_OPERATIONS = [
   ...PREVIEW_AUTOMATION_V1_OPERATIONS,
   "resize",
   "setColorScheme",
