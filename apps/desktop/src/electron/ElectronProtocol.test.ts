@@ -16,6 +16,8 @@ vi.mock("electron", () => ({
 
 import * as ElectronProtocol from "./ElectronProtocol.ts";
 
+const layerProtocol = ElectronProtocol.layer;
+
 describe("ElectronProtocol", () => {
   beforeEach(() => {
     handleMock.mockReset();
@@ -86,7 +88,7 @@ describe("ElectronProtocol", () => {
       assert.isNull(forwardedHeaders.get("referer"));
       assert.isNull(forwardedHeaders.get("sec-fetch-site"));
       assert.deepEqual(unhandleMock.mock.calls, [["t3code-dev"]]);
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("rejects custom protocol requests for another host", () =>
@@ -112,7 +114,7 @@ describe("ElectronProtocol", () => {
 
       assert.equal(response.status, 404);
       assert.equal(netFetchMock.mock.calls.length, 0);
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("retries transient renderer target failures", () =>
@@ -141,7 +143,7 @@ describe("ElectronProtocol", () => {
 
       assert.equal(yield* Effect.promise(() => response.text()), "ready");
       assert.equal(netFetchMock.mock.calls.length, 2);
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("preserves protocol registration failures", () =>
@@ -166,7 +168,7 @@ describe("ElectronProtocol", () => {
       assert.equal(error.scheme, "t3code-dev");
       assert.strictEqual(error.cause, cause);
       assert.equal(error.message, 'Failed to register Electron protocol scheme "t3code-dev".');
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("preserves protocol unregistration failures", () =>
@@ -197,7 +199,7 @@ describe("ElectronProtocol", () => {
         assert.strictEqual(error.cause, cause);
         assert.equal(error.message, 'Failed to unregister Electron protocol scheme "t3code".');
       }
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("serves the renderer from disk and proxies only API paths", () =>
@@ -260,7 +262,7 @@ describe("ElectronProtocol", () => {
       assert.equal(responses.asset.headers.get("content-type"), "text/javascript");
       assert.equal(yield* Effect.promise(() => responses.api.text()), "api");
       assert.equal(responses.traversal.status, 404);
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("serves disk assets without proxying when no backend origin is registered", () =>
@@ -305,7 +307,7 @@ describe("ElectronProtocol", () => {
       assert.equal(yield* Effect.promise(() => responses.root.text()), "<html>");
       assert.equal(responses.api.status, 503);
       assert.equal(responses.wellKnown.status, 503);
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("falls back to the SPA shell for unknown files on disk", () =>
@@ -337,7 +339,7 @@ describe("ElectronProtocol", () => {
         netFetchMock.mock.calls.map((call) => call[0]),
         ["file:///app/client/projects/a.b", "file:///app/client/index.html"],
       );
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it("maps renderer paths onto the client dist", () => {

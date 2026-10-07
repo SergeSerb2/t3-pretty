@@ -63,9 +63,12 @@ export interface ComposerBannerStackItem {
 interface ComposerBannerStackProps {
   readonly className?: string;
   readonly items: ReadonlyArray<ComposerBannerStackItem>;
+  /** Attachments that sit between the stacked notices and the front item, such as the queue.
+      The stacked notices peek above the whole column, never from between two attachments. */
+  readonly attachedAbove?: ReactNode;
 }
 
-export function ComposerBannerStack({ className, items }: ComposerBannerStackProps) {
+export function ComposerBannerStack({ className, items, attachedAbove }: ComposerBannerStackProps) {
   const [requestedExitingItemId, setExitingItemId] = useState<string | null>(null);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exitingItemId =
@@ -81,13 +84,15 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
     };
   }, []);
 
-  if (items.length === 0) {
-    return null;
-  }
-
   const frontItem = items[0];
   if (!frontItem) {
-    return null;
+    return (
+      <>
+        {null}
+        {attachedAbove}
+        {null}
+      </>
+    );
   }
   const stackedItems = items.slice(1);
   const hasStack = stackedItems.length > 0;
@@ -110,42 +115,90 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
 
   return (
     <div
-      className={cn("mount-rise-in group/banner-stack chat-composer-drawer-slot", className)}
+      className={cn(
+        "mount-rise-in group/banner-stack chat-composer-drawer-slot motion-reduce:animate-none! motion-reduce:transition-none!",
+        className,
+      )}
       data-composer-banner-drawer="true"
     >
       <div
         className={cn(
-          "relative flex flex-col-reverse",
+          "relative flex flex-col",
           hasStack ? "group-hover/banner-stack:z-50 group-focus-within/banner-stack:z-50" : null,
         )}
       >
-        {showCollapsedStackCap && firstStackedItem ? (
-          // Focus is the handler: the group-focus-within rules below open the
-          // stack, so the cap needs no onClick, and blurring closes it again.
-          // Without a focusable cap the stacked banners are unreachable
-          // whenever the front banner carries no control of its own.
-          <button
-            type="button"
-            className={cn(
-              "absolute inset-x-0 -top-3 z-0 mx-auto h-3 rounded-t-2xl",
-              "chat-composer-banner-stack-cap border border-b-0 shadow-[0_6px_18px_rgba(0,0,0,0.06)]",
-              stackCapBorderClass[firstStackedItem.variant],
-              "transition-opacity duration-150 ease-out",
-              // Once the stack is revealed the faded cap must not keep
-              // intercepting clicks meant for the chat content behind it.
-              "group-hover/banner-stack:pointer-events-none group-hover/banner-stack:opacity-0",
-              "group-focus-within/banner-stack:pointer-events-none group-focus-within/banner-stack:opacity-0",
-            )}
-            style={{ width: "96%" }}
-            aria-label={`Show ${stackedItems.length} more ${
-              stackedItems.length === 1 ? "notice" : "notices"
-            }`}
-          />
+        {hasStack ? (
+          <div className="relative" data-chat-composer-collapsed-controls="true">
+            {showCollapsedStackCap && firstStackedItem ? (
+              // Focus is the handler: the group-focus-within rules below open the
+              // stack, so the cap needs no onClick, and blurring closes it again.
+              // Without a focusable cap the stacked banners are unreachable
+              // whenever the front banner carries no control of its own.
+              <button
+                type="button"
+                className={cn(
+                  "absolute inset-x-0 -top-3 z-0 mx-auto h-3 rounded-t-2xl",
+                  "chat-composer-banner-stack-cap border border-b-0 shadow-[0_6px_18px_rgba(0,0,0,0.06)]",
+                  stackCapBorderClass[firstStackedItem.variant],
+                  "transition-opacity duration-150 ease-out motion-reduce:transition-none!",
+                  // Once the stack is revealed the faded cap must not keep
+                  // intercepting clicks meant for the chat content behind it.
+                  "group-hover/banner-stack:pointer-events-none group-hover/banner-stack:opacity-0",
+                  "group-focus-within/banner-stack:pointer-events-none group-focus-within/banner-stack:opacity-0",
+                )}
+                style={{ width: "96%" }}
+                aria-label={`Show ${stackedItems.length} more ${
+                  stackedItems.length === 1 ? "notice" : "notices"
+                }`}
+              />
+            ) : null}
+            <div
+              data-composer-banner-stack-expanded-items="true"
+              className={cn(
+                "relative z-20 grid grid-rows-[0fr] transition-[grid-template-rows] duration-150 ease-out motion-reduce:transition-none!",
+                "group-hover/banner-stack:grid-rows-[1fr] group-focus-within/banner-stack:grid-rows-[1fr]",
+              )}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <div
+                  className={cn(
+                    "invisible pointer-events-none space-y-2 pb-2 opacity-0",
+                    "translate-y-1 transform-gpu transition-[opacity,transform] duration-150 ease-out will-change-[opacity,transform] motion-reduce:transition-none!",
+                    "group-hover/banner-stack:visible group-hover/banner-stack:pointer-events-auto group-hover/banner-stack:translate-y-0 group-hover/banner-stack:opacity-100",
+                    "group-focus-within/banner-stack:visible group-focus-within/banner-stack:pointer-events-auto group-focus-within/banner-stack:translate-y-0 group-focus-within/banner-stack:opacity-100",
+                  )}
+                >
+                  {stackedItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        "motion-reduce:transition-none!",
+                        exitingItemId === item.id ? "pointer-events-none" : null,
+                      )}
+                      style={{
+                        ...exitTransitionStyle,
+                        ...(exitingItemId === item.id ? stackedExitStyle : restingStyle),
+                      }}
+                    >
+                      <ComposerBannerStackAlert
+                        item={item}
+                        attached={false}
+                        exiting={exitingItemId === item.id}
+                        onDismissRequest={() => requestDismiss(item)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         ) : null}
+        {attachedAbove}
         <div
           key={frontItem.id}
+          data-chat-composer-collapsed-controls="true"
           className={cn(
-            "relative z-10",
+            "relative z-10 motion-reduce:transition-none!",
             exitingItemId === frontItem.id ? "pointer-events-none" : null,
           )}
           style={{
@@ -160,44 +213,6 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
             onDismissRequest={() => requestDismiss(frontItem)}
           />
         </div>
-        {hasStack ? (
-          <div
-            data-composer-banner-stack-expanded-items="true"
-            className={cn(
-              "relative z-20 grid grid-rows-[0fr] transition-[grid-template-rows] duration-150 ease-out",
-              "group-hover/banner-stack:grid-rows-[1fr] group-focus-within/banner-stack:grid-rows-[1fr]",
-            )}
-          >
-            <div className="min-h-0 overflow-hidden">
-              <div
-                className={cn(
-                  "invisible pointer-events-none space-y-2 pb-2 opacity-0",
-                  "translate-y-1 transform-gpu transition-[opacity,transform] duration-150 ease-out will-change-[opacity,transform]",
-                  "group-hover/banner-stack:visible group-hover/banner-stack:pointer-events-auto group-hover/banner-stack:translate-y-0 group-hover/banner-stack:opacity-100",
-                  "group-focus-within/banner-stack:visible group-focus-within/banner-stack:pointer-events-auto group-focus-within/banner-stack:translate-y-0 group-focus-within/banner-stack:opacity-100",
-                )}
-              >
-                {stackedItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className={cn(exitingItemId === item.id ? "pointer-events-none" : null)}
-                    style={{
-                      ...exitTransitionStyle,
-                      ...(exitingItemId === item.id ? stackedExitStyle : restingStyle),
-                    }}
-                  >
-                    <ComposerBannerStackAlert
-                      item={item}
-                      attached={false}
-                      exiting={exitingItemId === item.id}
-                      onDismissRequest={() => requestDismiss(item)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );

@@ -13,6 +13,7 @@ import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
@@ -40,6 +41,7 @@ function ChatRouteGlobalShortcuts() {
     scopedProjectRef,
   } = useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const isMobile = useIsMobile();
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
@@ -56,48 +58,6 @@ function ChatRouteGlobalShortcuts() {
     [primaryEnvironmentId, projectGroupingSettings, projects],
   );
   const newDraftShortcutPendingRef = useRef(false);
-  // Thread identity changes while a turn streams. Keep it in a ref so the
-  // window keydown listener below is not removed and added on each shell tick.
-  const shortcutTargetRef = useRef({
-    activeDraftThread,
-    activeThread,
-    defaultProjectRef,
-    handleNewThread,
-    legacySidebarEnabled,
-    primaryEnvironmentId,
-    projectGroupCount,
-    routeThreadRef,
-    scopedProjectRef,
-    scratchEnvironmentId,
-    startScratchThread,
-  });
-  useEffect(() => {
-    shortcutTargetRef.current = {
-      activeDraftThread,
-      activeThread,
-      defaultProjectRef,
-      handleNewThread,
-      legacySidebarEnabled,
-      primaryEnvironmentId,
-      projectGroupCount,
-      routeThreadRef,
-      scopedProjectRef,
-      scratchEnvironmentId,
-      startScratchThread,
-    };
-  }, [
-    activeDraftThread,
-    activeThread,
-    defaultProjectRef,
-    handleNewThread,
-    legacySidebarEnabled,
-    primaryEnvironmentId,
-    projectGroupCount,
-    routeThreadRef,
-    scopedProjectRef,
-    scratchEnvironmentId,
-    startScratchThread,
-  ]);
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
@@ -162,33 +122,29 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
-      const shortcutTarget = shortcutTargetRef.current;
-
       if (command === "chat.newLocal") {
         event.preventDefault();
         event.stopPropagation();
         runNewDraftShortcut("thread", () =>
           startNewThreadFromContext({
-            activeDraftThread: shortcutTarget.activeDraftThread,
-            activeThread: shortcutTarget.activeThread ?? undefined,
-            defaultProjectRef: shortcutTarget.defaultProjectRef,
-            handleNewThread: shortcutTarget.handleNewThread,
-            scopedProjectRef: shortcutTarget.scopedProjectRef,
+            activeDraftThread,
+            activeThread: activeThread ?? undefined,
+            defaultProjectRef,
+            handleNewThread,
+            scopedProjectRef,
           }),
         );
         return;
       }
 
       if (command === "chat.newWithoutProject") {
-        const environmentId = shortcutTarget.scratchEnvironmentId(
-          shortcutTarget.activeThread?.environmentId ??
-            shortcutTarget.activeDraftThread?.environmentId ??
-            shortcutTarget.primaryEnvironmentId,
+        const environmentId = scratchEnvironmentId(
+          activeThread?.environmentId ?? activeDraftThread?.environmentId ?? primaryEnvironmentId,
         );
         if (environmentId === null) return;
         event.preventDefault();
         event.stopPropagation();
-        void shortcutTarget.startScratchThread(environmentId);
+        void startScratchThread(environmentId);
         return;
       }
 
@@ -199,21 +155,17 @@ function ChatRouteGlobalShortcuts() {
         // whenever there is a real choice to make; a scoped project list is
         // already that choice. The legacy sidebar (and single-project setups)
         // keep the immediate contextual create.
-        if (
-          !shortcutTarget.legacySidebarEnabled &&
-          shortcutTarget.projectGroupCount > 1 &&
-          shortcutTarget.scopedProjectRef === null
-        ) {
+        if (!legacySidebarEnabled && projectGroupCount > 1 && scopedProjectRef === null) {
           openCommandPalette({ open: "new-thread-in" });
           return;
         }
         runNewDraftShortcut("thread", () =>
           startNewThreadFromContext({
-            activeDraftThread: shortcutTarget.activeDraftThread,
-            activeThread: shortcutTarget.activeThread ?? undefined,
-            defaultProjectRef: shortcutTarget.defaultProjectRef,
-            handleNewThread: shortcutTarget.handleNewThread,
-            scopedProjectRef: shortcutTarget.scopedProjectRef,
+            activeDraftThread,
+            activeThread: activeThread ?? undefined,
+            defaultProjectRef,
+            handleNewThread,
+            scopedProjectRef,
           }),
         );
         return;
@@ -222,7 +174,7 @@ function ChatRouteGlobalShortcuts() {
       if (command === "preview.toggle") {
         event.preventDefault();
         event.stopPropagation();
-        if (!shortcutTarget.routeThreadRef) return;
+        if (!routeThreadRef) return;
         if (!isPreviewSupportedInRuntime()) {
           toastManager.add(
             stackedThreadToast({
@@ -267,7 +219,25 @@ function ChatRouteGlobalShortcuts() {
     return () => {
       window.removeEventListener("keydown", onWindowKeyDown);
     };
-  }, [clearSelection, keybindings, previewOpen, selectedThreadKeysSize, terminalOpen]);
+  }, [
+    activeDraftThread,
+    activeThread,
+    clearSelection,
+    handleNewThread,
+    keybindings,
+    defaultProjectRef,
+    isMobile,
+    previewOpen,
+    primaryEnvironmentId,
+    projectGroupCount,
+    routeThreadRef,
+    scopedProjectRef,
+    scratchEnvironmentId,
+    selectedThreadKeysSize,
+    startScratchThread,
+    legacySidebarEnabled,
+    terminalOpen,
+  ]);
 
   return null;
 }

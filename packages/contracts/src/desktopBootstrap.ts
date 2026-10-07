@@ -33,6 +33,11 @@ export const DesktopBackendBootstrap = Schema.Struct({
   desktopBootstrapToken: Schema.String.check(
     Schema.isMaxLength(DESKTOP_BOOTSTRAP_TOKEN_MAX_LENGTH),
   ),
+  // Present when the desktop rotates the renderer's bootstrap token: the
+  // backend derives the accepted tokens from this secret instead of trusting
+  // `desktopBootstrapToken` for its whole run. See
+  // `@t3tools/shared/desktopBootstrapToken`.
+  desktopBootstrapSecret: Schema.optionalKey(Schema.String),
   tailscaleServeEnabled: Schema.Boolean,
   tailscaleServePort: PortSchema,
   otlpTracesUrl: Schema.optional(DesktopBootstrapUrl),
@@ -40,6 +45,10 @@ export const DesktopBackendBootstrap = Schema.Struct({
   otlpLogsUrl: Schema.optional(DesktopBootstrapUrl),
   desktopTelemetryFd: Schema.optionalKey(PositiveInt),
   desktopTelemetryControlFd: Schema.optionalKey(PositiveInt),
+  /** Desktop -> server: the desktop's browser tabs, as newline-delimited JSON. */
+  desktopBrowserFd: Schema.optionalKey(PositiveInt),
+  /** Server -> desktop: commands for those tabs. */
+  desktopBrowserControlFd: Schema.optionalKey(PositiveInt),
   resourceMonitorPath: Schema.optionalKey(
     TrimmedNonEmptyString.check(Schema.isMaxLength(DESKTOP_BOOTSTRAP_PATH_MAX_LENGTH)),
   ),

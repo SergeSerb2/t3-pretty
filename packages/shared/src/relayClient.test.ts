@@ -18,7 +18,7 @@ import * as RelayClient from "./relayClient.ts";
 // POSIX exec bits that NTFS never reports; the win32 branch skips that check.
 const windowsHost = HostProcessPlatform.defaultValue() === "win32";
 
-const hostRuntimeLayer = (
+const layerHostRuntime = (
   env: Record<string, string> = {},
   platform: NodeJS.Platform = "linux",
   architecture: NodeJS.Architecture = "x64",
@@ -45,7 +45,7 @@ function makeHandle(exitCode = 0) {
   });
 }
 
-const makeHttpClientLayer = (bytes: Uint8Array) =>
+const layerHttpClient = (bytes: Uint8Array) =>
   Layer.succeed(
     HttpClient.HttpClient,
     HttpClient.make((request) =>
@@ -55,7 +55,7 @@ const makeHttpClientLayer = (bytes: Uint8Array) =>
     ),
   );
 
-const makeSpawnerLayer = (commands: Array<string>) =>
+const layerSpawner = (commands: Array<string>) =>
   Layer.succeed(
     ChildProcessSpawner.ChildProcessSpawner,
     ChildProcessSpawner.make((command) =>
@@ -105,9 +105,9 @@ describe("RelayClient", () => {
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
-            makeHttpClientLayer(new Uint8Array()),
-            makeSpawnerLayer([]),
-            hostRuntimeLayer(),
+            layerHttpClient(new Uint8Array()),
+            layerSpawner([]),
+            layerHostRuntime(),
           ),
         ),
       ),
@@ -164,9 +164,9 @@ describe("RelayClient", () => {
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
-            makeHttpClientLayer(new TextEncoder().encode("test-cloudflared-binary")),
-            makeSpawnerLayer([]),
-            hostRuntimeLayer(),
+            layerHttpClient(new TextEncoder().encode("test-cloudflared-binary")),
+            layerSpawner([]),
+            layerHostRuntime(),
           ),
         ),
       ),
@@ -195,9 +195,9 @@ describe("RelayClient", () => {
       Effect.provide(
         Layer.mergeAll(
           NodeServices.layer,
-          makeHttpClientLayer(new TextEncoder().encode("tampered")),
-          makeSpawnerLayer([]),
-          hostRuntimeLayer(),
+          layerHttpClient(new TextEncoder().encode("tampered")),
+          layerSpawner([]),
+          layerHostRuntime(),
         ),
       ),
     ),
@@ -230,9 +230,9 @@ describe("RelayClient", () => {
       Effect.provide(
         Layer.mergeAll(
           NodeServices.layer,
-          makeHttpClientLayer(bytes),
-          makeSpawnerLayer(commands),
-          hostRuntimeLayer(),
+          layerHttpClient(bytes),
+          layerSpawner(commands),
+          layerHostRuntime(),
         ),
       ),
     );
@@ -301,9 +301,9 @@ describe("RelayClient", () => {
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
-            makeHttpClientLayer(new Uint8Array()),
-            makeSpawnerLayer([]),
-            hostRuntimeLayer(env),
+            layerHttpClient(new Uint8Array()),
+            layerSpawner([]),
+            layerHostRuntime(env),
           ),
         ),
       );

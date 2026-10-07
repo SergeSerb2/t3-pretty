@@ -28,16 +28,16 @@ interface CapturedLog {
 
 const runMock = vi.fn<ProcessRunner.ProcessRunner["Service"]["run"]>();
 
-const ProcessRunnerTest = Layer.succeed(
+const layerProcessRunnerTest = Layer.succeed(
   ProcessRunner.ProcessRunner,
   ProcessRunner.ProcessRunner.of({
     run: (input) => runMock(input),
   }),
 );
-const NoopFileSystemLayer = FileSystem.layerNoop({});
-const TestLayer = Layer.merge(NoopFileSystemLayer, ProcessRunnerTest);
-const LinuxMachineInfoLayer = Layer.merge(
-  ProcessRunnerTest,
+const layerNoopFileSystem = FileSystem.layerNoop({});
+const layerTest = Layer.merge(layerNoopFileSystem, layerProcessRunnerTest);
+const layerLinuxMachineInfo = Layer.merge(
+  layerProcessRunnerTest,
   Layer.effect(
     FileSystem.FileSystem,
     Effect.gen(function* () {
@@ -75,7 +75,7 @@ describe("resolveServerEnvironmentLabel", () => {
     Effect.gen(function* () {
       const result = yield* ServerEnvironmentLabel.resolveServerEnvironmentLabel({
         cwdBaseName: "t3code",
-      }).pipe(Effect.provide(withHostPlatform(TestLayer, "win32", "macbook-pro")));
+      }).pipe(Effect.provide(withHostPlatform(layerTest, "win32", "macbook-pro")));
 
       expect(result).toBe("macbook-pro");
     }),
@@ -98,7 +98,7 @@ describe("resolveServerEnvironmentLabel", () => {
 
       const result = yield* ServerEnvironmentLabel.resolveServerEnvironmentLabel({
         cwdBaseName: "t3code",
-      }).pipe(Effect.provide(withHostPlatform(TestLayer, "darwin", "macbook-pro")));
+      }).pipe(Effect.provide(withHostPlatform(layerTest, "darwin", "macbook-pro")));
 
       expect(result).toBe("Julius's MacBook Pro");
       expect(runMock).toHaveBeenCalledWith(
@@ -115,7 +115,7 @@ describe("resolveServerEnvironmentLabel", () => {
     Effect.gen(function* () {
       const result = yield* ServerEnvironmentLabel.resolveServerEnvironmentLabel({
         cwdBaseName: "t3code",
-      }).pipe(Effect.provide(withHostPlatform(LinuxMachineInfoLayer, "linux", "buildbox")));
+      }).pipe(Effect.provide(withHostPlatform(layerLinuxMachineInfo, "linux", "buildbox")));
 
       expect(result).toBe("Build Agent 01");
       expect(runMock).not.toHaveBeenCalled();
@@ -139,7 +139,7 @@ describe("resolveServerEnvironmentLabel", () => {
 
       const result = yield* ServerEnvironmentLabel.resolveServerEnvironmentLabel({
         cwdBaseName: "t3code",
-      }).pipe(Effect.provide(withHostPlatform(TestLayer, "linux", "runner-01")));
+      }).pipe(Effect.provide(withHostPlatform(layerTest, "linux", "runner-01")));
 
       expect(result).toBe("CI Runner");
       expect(runMock).toHaveBeenCalledWith(
@@ -156,7 +156,7 @@ describe("resolveServerEnvironmentLabel", () => {
     Effect.gen(function* () {
       const result = yield* ServerEnvironmentLabel.resolveServerEnvironmentLabel({
         cwdBaseName: "t3code",
-      }).pipe(Effect.provide(withHostPlatform(TestLayer, "win32", "JULIUS-LAPTOP")));
+      }).pipe(Effect.provide(withHostPlatform(layerTest, "win32", "JULIUS-LAPTOP")));
 
       expect(result).toBe("JULIUS-LAPTOP");
     }),
@@ -202,7 +202,7 @@ describe("resolveServerEnvironmentLabel", () => {
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
-          withHostPlatform(TestLayer, "darwin", "macbook-pro"),
+          withHostPlatform(layerTest, "darwin", "macbook-pro"),
           Logger.layer([logger], { mergeWithExisting: false }),
           Layer.succeed(References.MinimumLogLevel, "Debug"),
         ),
@@ -226,7 +226,7 @@ describe("resolveServerEnvironmentLabel", () => {
       pathOrDescriptor: "/etc/machine-info",
       cause: fileCause,
     });
-    const fileSystemLayer = FileSystem.layerNoop({
+    const layerFileSystem = FileSystem.layerNoop({
       exists: () => Effect.fail(platformError),
     });
     runMock.mockReturnValueOnce(
@@ -262,7 +262,11 @@ describe("resolveServerEnvironmentLabel", () => {
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
-          withHostPlatform(Layer.merge(ProcessRunnerTest, fileSystemLayer), "linux", "buildbox"),
+          withHostPlatform(
+            Layer.merge(layerProcessRunnerTest, layerFileSystem),
+            "linux",
+            "buildbox",
+          ),
           Logger.layer([logger], { mergeWithExisting: false }),
           Layer.succeed(References.MinimumLogLevel, "Debug"),
         ),
@@ -287,7 +291,7 @@ describe("resolveServerEnvironmentLabel", () => {
 
       const result = yield* ServerEnvironmentLabel.resolveServerEnvironmentLabel({
         cwdBaseName: "t3code",
-      }).pipe(Effect.provide(withHostPlatform(TestLayer, "linux", "   ")));
+      }).pipe(Effect.provide(withHostPlatform(layerTest, "linux", "   ")));
 
       expect(result).toBe("t3code");
     }),

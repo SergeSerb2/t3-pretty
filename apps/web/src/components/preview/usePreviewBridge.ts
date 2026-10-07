@@ -39,8 +39,10 @@ export function usePreviewBridge(input: {
   threadRef: ScopedThreadRef;
   tabId: string;
   runtimeTabId: string;
+  /** The server drives this tab and reports its navigation itself. */
+  serverDriven?: boolean;
 }): void {
-  const { threadRef, tabId, runtimeTabId } = input;
+  const { threadRef, tabId, runtimeTabId, serverDriven = false } = input;
   const clearBrowserPointer = useBrowserPointerStore((state) => state.clear);
   const reportStatus = useAtomCommand(previewEnvironment.reportStatus, "preview status report");
   const bridge = previewBridge;
@@ -78,8 +80,8 @@ export function usePreviewBridge(input: {
         tabId,
         state,
       });
-      latestReportInput.current = reportInput;
-      if (!reportInput) return;
+      latestReportInput.current = serverDriven ? null : reportInput;
+      if (!reportInput || serverDriven) return;
       const generation = reportGeneration.current;
       void reportPreviewStatusWithRetry({
         tracker: reportTracker.current,
@@ -98,6 +100,12 @@ export function usePreviewBridge(input: {
       });
     },
   );
+  // Invalidate reports on ownership changes without resetting navigation tracking.
+  useEffect(() => {
+    reportGeneration.current += 1;
+    latestReportInput.current = null;
+    reportTracker.current.reset();
+  }, [serverDriven]);
   useEffect(() => {
     if (!bridge || typeof window === "undefined") return;
     reportGeneration.current += 1;

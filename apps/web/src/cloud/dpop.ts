@@ -62,7 +62,7 @@ function normalizeDpopPrivateJwk(
   };
 }
 
-export const browserCryptoLayer = Layer.succeed(
+export const layer = Layer.succeed(
   Crypto.Crypto,
   Crypto.make({
     randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),

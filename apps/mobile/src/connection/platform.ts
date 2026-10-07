@@ -27,7 +27,6 @@ import { authClientMetadata } from "../lib/authClientMetadata";
 import * as Runtime from "../lib/runtime";
 import * as MobileStorage from "../persistence/mobile-storage";
 import { appAtomRegistry } from "../state/atom-registry";
-import { createNetworkPathTracker } from "./network-path-tracker";
 import { clearThreadOutboxEnvironment } from "../state/thread-outbox-removal";
 import { clearComposerDraftsEnvironment } from "../state/use-composer-drafts";
 import { clearThreadComposerErrorsForEnvironment } from "../state/thread-composer-error";
@@ -130,19 +129,20 @@ const networkPathChanges = Stream.callback<"network-changed">((queue) =>
   Effect.acquireRelease(
     Effect.sync(() => {
       let active = true;
-      const tracker = createNetworkPathTracker<Network.NetworkStateType>();
+      let previous: Network.NetworkStateType | undefined;
       const record = (state: Network.NetworkState) => {
         const type = state.isConnected === true ? state.type : undefined;
-        if (active && tracker.record(type)) {
+        if (previous !== undefined && type !== undefined && type !== previous) {
           Queue.offerUnsafe(queue, "network-changed");
         }
+        previous = type ?? previous;
       };
       // The listener reports changes only, so seed the current type; without
       // it the first Wi-Fi to cellular move would go unnoticed.
       void Network.getNetworkStateAsync()
         .then((state) => {
-          if (active && state.isConnected === true) {
-            tracker.seed(state.type);
+          if (active && previous === undefined && state.isConnected === true) {
+            previous = state.type;
           }
         })
         .catch(() => undefined);
@@ -364,9 +364,13 @@ const environmentOwnedDataCleanupLayer = Layer.succeed(
           cleanupEnvironmentResource(environmentId, "composer drafts", () =>
             clearComposerDraftsEnvironment(environmentId),
           ),
-          cleanupEnvironmentResource(environmentId, "thread composer errors", async () => {
-            clearThreadComposerErrorsForEnvironment(environmentId);
-          }),
+          cleanupEnvironmentResource(
+            environmentId,
+            "thread composer errors",
+            async () => {
+              clearThreadComposerErrorsForEnvironment(environmentId);
+            },
+          ),
         ],
         { concurrency: "unbounded", discard: true },
       ),

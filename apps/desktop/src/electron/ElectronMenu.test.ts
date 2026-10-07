@@ -27,7 +27,7 @@ vi.mock("electron", () => ({
 
 import * as ElectronMenu from "./ElectronMenu.ts";
 
-const TestLayer = ElectronMenu.layer.pipe(
+const layerTest = ElectronMenu.layer.pipe(
   Layer.provide(Layer.succeed(HostProcessPlatform, "linux")),
 );
 
@@ -56,7 +56,7 @@ describe("ElectronMenu", () => {
 
       assert.isTrue(Option.isNone(selectedItemId));
       assert.equal(buildFromTemplateMock.mock.calls.length, 0);
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("strips separators and headers before building a native menu", () =>
@@ -111,7 +111,7 @@ describe("ElectronMenu", () => {
       });
 
       assert.equal(Option.getOrNull(selectedItemId), "copy");
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("resolves with none when the menu closes without a click", () =>
@@ -148,7 +148,7 @@ describe("ElectronMenu", () => {
         ),
         ["Copy", "separator", "Delete"],
       );
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("keeps a preceding non-destructive action in the destructive section", () =>
@@ -174,7 +174,7 @@ describe("ElectronMenu", () => {
         ),
         ["Copy", "separator", "Archive", "Delete"],
       );
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("defers popupTemplate side effects until the returned Effect runs", () =>
@@ -198,7 +198,7 @@ describe("ElectronMenu", () => {
       assert.equal(buildFromTemplateMock.mock.calls.length, 1);
       assert.equal(popupMock.mock.calls.length, 1);
       assert.strictEqual(popupMock.mock.calls[0]?.[0].frame, frame);
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("preserves application-menu failures as structured defects", () =>
@@ -224,7 +224,7 @@ describe("ElectronMenu", () => {
         assert.strictEqual(error.cause, cause);
         assert.notInclude(error.message, cause.message);
       }
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("preserves popup-template failures with window context", () =>
@@ -253,7 +253,7 @@ describe("ElectronMenu", () => {
         assert.equal(error.itemCount, 1);
         assert.strictEqual(error.cause, cause);
       }
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("preserves context-menu failures with normalized item context", () =>
@@ -281,6 +281,6 @@ describe("ElectronMenu", () => {
         assert.equal(error.itemCount, 1);
         assert.strictEqual(error.cause, cause);
       }
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 });

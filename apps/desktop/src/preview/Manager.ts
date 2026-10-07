@@ -13,7 +13,6 @@ import {
 } from "@t3tools/contracts";
 import type {
   DesktopPreviewAnnotationTheme,
-  DesktopPreviewAutomationStatus,
   DesktopPreviewColorScheme,
   DesktopPreviewFavicon,
   DesktopPreviewPointerEvent,
@@ -34,6 +33,7 @@ import type {
   PreviewAutomationScrollInput,
   PreviewAutomationSnapshot,
   PreviewAutomationTypeInput,
+  PreviewAutomationStatus,
   PreviewAutomationWaitForInput,
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -65,11 +65,13 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { PREVIEW_PICTURE_IN_PICTURE_FRAME_CHANNEL } from "../ipc/channels.ts";
+import * as DesktopBrowserHost from "./DesktopBrowserHost.ts";
 import * as BrowserSession from "./BrowserSession.ts";
 import {
   ANNOTATION_CAPTURED_CHANNEL,
@@ -86,14 +88,390 @@ import {
   START_PICK_CHANNEL,
 } from "./GuestProtocol.ts";
 import { isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
-import { playwrightInjectedRuntimeInstallExpression } from "./PlaywrightInjectedRuntime.ts";
-import {
-  makePreviewAutomationKeySequence,
-  makePreviewAutomationNativeKeySequence,
-  previewAutomationEditingCommandExpression,
-} from "./PreviewKeyboard.ts";
+import { playwrightInjectedSource } from "./PlaywrightInjectedSource.generated.ts";
 import { captureFavicon, safeHttpOrigin, selectFaviconCandidates } from "./FaviconCapture.ts";
 import { DEFAULT_RECORDING_INPUT_OPTIONS, type RecordingInputOptions } from "./RecordingInput.ts";
+
+interface KeyDefinition {
+  readonly code: string;
+  readonly key: string;
+  readonly keyCode: number;
+  readonly text?: string;
+  readonly location?: number;
+  readonly shiftedKey?: string;
+}
+
+interface PreviewAutomationKeyEvent {
+  readonly [key: string]: unknown;
+  readonly type: "keyDown" | "rawKeyDown" | "keyUp";
+  readonly key: string;
+  readonly code: string;
+  readonly modifiers: number;
+  readonly windowsVirtualKeyCode: number;
+  readonly location: number;
+  readonly isKeypad: boolean;
+  readonly text?: string;
+  readonly unmodifiedText?: string;
+  readonly commands?: ReadonlyArray<string>;
+}
+
+interface PreviewAutomationKeySequence {
+  readonly keyDown: PreviewAutomationKeyEvent;
+  readonly keyUp: PreviewAutomationKeyEvent;
+  readonly signal: {
+    readonly kind: "key";
+    readonly key: string;
+    readonly code: string;
+  };
+}
+
+const NAMED_KEYS: Readonly<Record<string, KeyDefinition>> = {
+  Escape: { code: "Escape", key: "Escape", keyCode: 27 },
+  Backspace: { code: "Backspace", key: "Backspace", keyCode: 8 },
+  Tab: { code: "Tab", key: "Tab", keyCode: 9 },
+  Enter: { code: "Enter", key: "Enter", keyCode: 13, text: "\r" },
+  Shift: { code: "ShiftLeft", key: "Shift", keyCode: 16, location: 1 },
+  Control: { code: "ControlLeft", key: "Control", keyCode: 17, location: 1 },
+  Alt: { code: "AltLeft", key: "Alt", keyCode: 18, location: 1 },
+  Meta: { code: "MetaLeft", key: "Meta", keyCode: 91, location: 1 },
+  CapsLock: { code: "CapsLock", key: "CapsLock", keyCode: 20 },
+  Space: { code: "Space", key: " ", keyCode: 32, text: " " },
+  PageUp: { code: "PageUp", key: "PageUp", keyCode: 33 },
+  PageDown: { code: "PageDown", key: "PageDown", keyCode: 34 },
+  End: { code: "End", key: "End", keyCode: 35 },
+  Home: { code: "Home", key: "Home", keyCode: 36 },
+  ArrowLeft: { code: "ArrowLeft", key: "ArrowLeft", keyCode: 37 },
+  ArrowUp: { code: "ArrowUp", key: "ArrowUp", keyCode: 38 },
+  ArrowRight: { code: "ArrowRight", key: "ArrowRight", keyCode: 39 },
+  ArrowDown: { code: "ArrowDown", key: "ArrowDown", keyCode: 40 },
+  Insert: { code: "Insert", key: "Insert", keyCode: 45 },
+  Delete: { code: "Delete", key: "Delete", keyCode: 46 },
+};
+
+const PRINTABLE_KEYS: ReadonlyArray<KeyDefinition> = [
+  { code: "Backquote", key: "`", shiftedKey: "~", keyCode: 192 },
+  { code: "Digit1", key: "1", shiftedKey: "!", keyCode: 49 },
+  { code: "Digit2", key: "2", shiftedKey: "@", keyCode: 50 },
+  { code: "Digit3", key: "3", shiftedKey: "#", keyCode: 51 },
+  { code: "Digit4", key: "4", shiftedKey: "$", keyCode: 52 },
+  { code: "Digit5", key: "5", shiftedKey: "%", keyCode: 53 },
+  { code: "Digit6", key: "6", shiftedKey: "^", keyCode: 54 },
+  { code: "Digit7", key: "7", shiftedKey: "&", keyCode: 55 },
+  { code: "Digit8", key: "8", shiftedKey: "*", keyCode: 56 },
+  { code: "Digit9", key: "9", shiftedKey: "(", keyCode: 57 },
+  { code: "Digit0", key: "0", shiftedKey: ")", keyCode: 48 },
+  { code: "Minus", key: "-", shiftedKey: "_", keyCode: 189 },
+  { code: "Equal", key: "=", shiftedKey: "+", keyCode: 187 },
+  { code: "Backslash", key: "\\", shiftedKey: "|", keyCode: 220 },
+  { code: "BracketLeft", key: "[", shiftedKey: "{", keyCode: 219 },
+  { code: "BracketRight", key: "]", shiftedKey: "}", keyCode: 221 },
+  { code: "Semicolon", key: ";", shiftedKey: ":", keyCode: 186 },
+  { code: "Quote", key: "'", shiftedKey: '"', keyCode: 222 },
+  { code: "Comma", key: ",", shiftedKey: "<", keyCode: 188 },
+  { code: "Period", key: ".", shiftedKey: ">", keyCode: 190 },
+  { code: "Slash", key: "/", shiftedKey: "?", keyCode: 191 },
+];
+
+/**
+ * Chromium does not infer macOS editing commands from synthetic Meta chords.
+ * Keep the common browser editing/navigation shortcuts explicit so dispatched
+ * key events behave like their physical-key equivalents.
+ */
+const MAC_EDITING_COMMANDS: Readonly<Record<string, string>> = {
+  "Meta+Backspace": "deleteToBeginningOfLine",
+  "Meta+ArrowUp": "moveToBeginningOfDocument",
+  "Meta+ArrowDown": "moveToEndOfDocument",
+  "Meta+ArrowLeft": "moveToLeftEndOfLine",
+  "Meta+ArrowRight": "moveToRightEndOfLine",
+  "Shift+Meta+ArrowUp": "moveToBeginningOfDocumentAndModifySelection",
+  "Shift+Meta+ArrowDown": "moveToEndOfDocumentAndModifySelection",
+  "Shift+Meta+ArrowLeft": "moveToLeftEndOfLineAndModifySelection",
+  "Shift+Meta+ArrowRight": "moveToRightEndOfLineAndModifySelection",
+  "Meta+KeyA": "selectAll",
+  "Meta+KeyC": "copy",
+  "Meta+KeyX": "cut",
+  "Meta+KeyV": "paste",
+  "Meta+KeyZ": "undo",
+  "Shift+Meta+KeyZ": "redo",
+};
+const SHORTCUT_MODIFIER_ORDER = ["Shift", "Control", "Alt", "Meta"] as const;
+
+const macEditingCommands = (
+  code: string,
+  modifiers: PreviewAutomationPressInput["modifiers"],
+): ReadonlyArray<string> => {
+  const shortcut = [
+    ...SHORTCUT_MODIFIER_ORDER.filter((modifier) => modifiers?.includes(modifier)),
+    code,
+  ].join("+");
+  const command = MAC_EDITING_COMMANDS[shortcut];
+  return command ? [command] : [];
+};
+
+const modifierMask = (modifiers: PreviewAutomationPressInput["modifiers"]): number =>
+  (modifiers ?? []).reduce((value, modifier) => {
+    switch (modifier) {
+      case "Alt":
+        return value | 1;
+      case "Control":
+        return value | 2;
+      case "Meta":
+        return value | 4;
+      case "Shift":
+        return value | 8;
+    }
+  }, 0);
+
+function resolveKeyDefinition(input: PreviewAutomationPressInput): KeyDefinition {
+  const named = NAMED_KEYS[input.key === " " ? "Space" : input.key];
+  if (named) return named;
+
+  const functionKey = /^F([1-9]|1[0-2])$/.exec(input.key);
+  if (functionKey) {
+    const number = Number(functionKey[1]);
+    return { code: input.key, key: input.key, keyCode: 111 + number };
+  }
+
+  if (/^[a-z]$/i.test(input.key)) {
+    const upper = input.key.toUpperCase();
+    const shifted = input.modifiers?.includes("Shift") ?? false;
+    const key = shifted || input.key === upper ? upper : input.key;
+    return { code: `Key${upper}`, key, keyCode: upper.charCodeAt(0), text: key };
+  }
+
+  const printable = PRINTABLE_KEYS.find(
+    (definition) => definition.key === input.key || definition.shiftedKey === input.key,
+  );
+  if (printable) {
+    const shifted = input.modifiers?.includes("Shift") ?? false;
+    const key =
+      printable.shiftedKey && (shifted || input.key === printable.shiftedKey)
+        ? printable.shiftedKey
+        : printable.key;
+    return { ...printable, key, text: key };
+  }
+
+  return {
+    code: input.key.length > 1 ? input.key : "",
+    key: input.key,
+    keyCode: 0,
+    ...(input.key.length === 1 ? { text: input.key } : {}),
+  };
+}
+
+/**
+ * Build Chromium CDP key packets using the same required fields and down-event
+ * choice as Playwright's pinned Chromium keyboard implementation.
+ */
+function makePreviewAutomationKeySequence(
+  input: PreviewAutomationPressInput,
+  options?: { readonly isMac?: boolean },
+): PreviewAutomationKeySequence {
+  const definition = resolveKeyDefinition(input);
+  const modifiers = modifierMask(input.modifiers);
+  const suppressText = input.modifiers?.some((modifier) => modifier !== "Shift") ?? false;
+  const text = suppressText ? "" : (definition.text ?? "");
+  const location = definition.location ?? 0;
+  const commands = options?.isMac ? macEditingCommands(definition.code, input.modifiers) : [];
+  const shared = {
+    key: definition.key,
+    code: definition.code,
+    modifiers,
+    windowsVirtualKeyCode: definition.keyCode,
+    location,
+    isKeypad: location === 3,
+  };
+
+  return {
+    keyDown: {
+      type: text ? "keyDown" : "rawKeyDown",
+      ...shared,
+      ...(text ? { text, unmodifiedText: text } : {}),
+      ...(commands.length > 0 ? { commands } : {}),
+    },
+    keyUp: { type: "keyUp", ...shared },
+    signal: { kind: "key", key: definition.key, code: definition.code },
+  };
+}
+
+/** Root CDP input can retarget the embedder; native packets address the guest widget. */
+function makePreviewAutomationNativeKeySequence(
+  input: PreviewAutomationPressInput,
+  options?: { readonly isMac?: boolean },
+) {
+  const { keyDown, signal } = makePreviewAutomationKeySequence(input, options);
+  const modifiers = (
+    [
+      [1, "alt"],
+      [2, "control"],
+      [4, "meta"],
+      [8, "shift"],
+    ] as const
+  )
+    .filter(([mask]) => keyDown.modifiers & mask)
+    .map(([, modifier]) => modifier);
+  const shared = {
+    keyCode: keyDown.key.startsWith("Arrow") ? keyDown.key.slice(5) : keyDown.key,
+    modifiers,
+    skipIfUnhandled: true as const,
+  };
+  // Electron lowercases unshifted letters and reports no key for Unicode accelerators.
+  const key =
+    keyDown.windowsVirtualKeyCode === 0 && keyDown.key.length === 1
+      ? ""
+      : /^[A-Z]$/.test(keyDown.key) && !modifiers.includes("shift")
+        ? keyDown.key.toLowerCase()
+        : keyDown.key;
+  return {
+    keyDown: { type: "keyDown" as const, ...shared },
+    ...(keyDown.text ? { char: { type: "char" as const, ...shared, keyCode: keyDown.text } } : {}),
+    keyUp: { type: "keyUp" as const, ...shared },
+    ...(keyDown.commands ? { commands: keyDown.commands } : {}),
+    signal: { ...signal, key },
+  };
+}
+
+/** Keep macOS editing shortcuts inside the target page without native focus. */
+function previewAutomationEditingCommandExpression(
+  input: PreviewAutomationPressInput,
+  sequence: ReturnType<typeof makePreviewAutomationNativeKeySequence>,
+  clipboardData: ReadonlyArray<{ readonly type: string; readonly data: string }> = [],
+): string {
+  const definition = resolveKeyDefinition(input);
+  const event = {
+    key: definition.key,
+    code: definition.code,
+    keyCode: definition.keyCode,
+    which: definition.keyCode,
+    location: definition.location ?? 0,
+    altKey: input.modifiers?.includes("Alt") ?? false,
+    ctrlKey: input.modifiers?.includes("Control") ?? false,
+    metaKey: input.modifiers?.includes("Meta") ?? false,
+    shiftKey: input.modifiers?.includes("Shift") ?? false,
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+  };
+  return `(() => {
+    let element = document.activeElement;
+    while (element?.shadowRoot?.activeElement) element = element.shadowRoot.activeElement;
+    if (!element) return;
+    const event = ${JSON.stringify(event)};
+    try {
+      if (!element.dispatchEvent(new KeyboardEvent("keydown", event))) return;
+      for (const command of ${JSON.stringify(sequence.commands ?? [])}) {
+        // Main-process clipboard reads also work on insecure HTTP previews.
+        // Let the page's paste handler consume the clipboard MIME formats.
+        if (command === "paste") {
+          const transfer = new DataTransfer();
+          for (const { type, data } of ${JSON.stringify(clipboardData)}) {
+            if (type === "text/html") {
+              // Match native paste sanitization before page handlers or insertion.
+              const container = document.createElement("div");
+              container.setHTML(data);
+              transfer.setData(type, container.innerHTML);
+            } else if (type.startsWith("text/")) transfer.setData(type, data);
+            else {
+              const bytes = Uint8Array.from(atob(data), character => character.charCodeAt(0));
+              transfer.items.add(new File([bytes], "clipboard", { type }));
+            }
+          }
+          if (!element.dispatchEvent(new ClipboardEvent("paste", {
+            clipboardData: transfer, bubbles: true, cancelable: true, composed: true,
+          }))) continue;
+          const text = transfer.getData("text/plain");
+          if (!element.dispatchEvent(new InputEvent("beforeinput", {
+            inputType: "insertFromPaste", data: text, dataTransfer: transfer,
+            bubbles: true, cancelable: true, composed: true,
+          }))) continue;
+          const html = element.isContentEditable ? transfer.getData("text/html") : "";
+          document.execCommand(html ? "insertHTML" : "insertText", false, html || text);
+          continue;
+        }
+        const inputType = command === "deleteToBeginningOfLine" ? "deleteSoftLineBackward"
+          : command === "undo" ? "historyUndo"
+          : command === "redo" ? "historyRedo" : null;
+        // execCommand emits input without beforeinput. Let controlled editors
+        // perform the edit before applying the browser's default operation.
+        if (inputType && !element.dispatchEvent(new InputEvent("beforeinput", {
+          inputType, bubbles: true, cancelable: true, composed: true,
+        }))) continue;
+        const selection = document.getSelection();
+        if (command === "deleteToBeginningOfLine") {
+          const collapsed = typeof element.selectionStart === "number"
+            ? element.selectionStart === element.selectionEnd
+            : selection?.isCollapsed;
+          if (collapsed) selection?.modify("extend", "backward", "lineboundary");
+          document.execCommand("delete");
+        } else if (command.startsWith("moveTo")) {
+          const selectionElement = selection?.anchorNode?.nodeType === Node.ELEMENT_NODE
+            ? selection.anchorNode : selection?.anchorNode?.parentElement;
+          const editable = element.isContentEditable || selectionElement?.isContentEditable ||
+            (((element instanceof HTMLInputElement && element.selectionStart !== null) ||
+              element instanceof HTMLTextAreaElement) &&
+              !element.readOnly && !element.disabled);
+          if (!editable && (command === "moveToBeginningOfDocument" || command === "moveToEndOfDocument")) {
+            let scrollable = element === document.body ? selectionElement ?? element : element;
+            while (scrollable && !(scrollable.scrollHeight > scrollable.clientHeight &&
+              /^(auto|scroll|overlay)$/.test(getComputedStyle(scrollable).overflowY))) {
+              scrollable = scrollable.parentElement ?? scrollable.getRootNode().host;
+            }
+            scrollable ??= document.scrollingElement;
+            if (scrollable) scrollable.scrollTop = command === "moveToBeginningOfDocument"
+              ? 0 : scrollable.scrollHeight;
+            continue;
+          }
+          const direction = command.includes("Beginning") ? "backward"
+            : command.includes("Left") ? "left"
+            : command.includes("Right") ? "right" : "forward";
+          selection?.modify(
+            command.endsWith("AndModifySelection") ? "extend" : "move",
+            direction,
+            command.includes("Document") ? "documentboundary" : "lineboundary",
+          );
+          if (element instanceof HTMLInputElement && element.selectionStart !== null) {
+            if (command.includes("Left") || command.includes("Beginning")) element.scrollLeft = 0;
+            else element.scrollLeft = element.scrollWidth;
+          }
+          // Programmatic selection changes do not reveal the caret like native editing commands.
+          if (editable && command.includes("Document")) {
+            const beginning = command.includes("Beginning");
+            if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+              element.scrollTop = beginning ? 0 : element.scrollHeight;
+            } else {
+              const caretElement = selection?.focusNode?.nodeType === Node.ELEMENT_NODE
+                ? selection.focusNode : selection?.focusNode?.parentElement;
+              caretElement?.scrollIntoView({ block: beginning ? "start" : "end", inline: "nearest" });
+            }
+          }
+        } else {
+          document.execCommand(command);
+        }
+      }
+    } finally {
+      element.dispatchEvent(new KeyboardEvent("keyup", event));
+    }
+  })()`;
+}
+
+const PLAYWRIGHT_INJECTED_OPTIONS = JSON.stringify({
+  isUnderTest: false,
+  sdkLanguage: "javascript",
+  testIdAttributeName: "data-testid",
+  stableRafCount: 1,
+  browserName: "chromium",
+  shouldPrependErrorPrefix: false,
+  isUtilityWorld: false,
+  customEngines: [],
+});
+
+const playwrightInjectedRuntimeInstallExpression = `(() => {
+    if (globalThis.__t3PlaywrightInjected) return true;
+    const module = { exports: {} };
+    ${playwrightInjectedSource}
+    globalThis.__t3PlaywrightInjected = new (module.exports.InjectedScript())(globalThis, ${PLAYWRIGHT_INJECTED_OPTIONS});
+    return true;
+  })()`;
 
 export type PreviewNavStatus =
   | { kind: "Idle" }
@@ -122,6 +500,8 @@ export interface PreviewTabState {
   audible: boolean;
   controller: "human" | "agent" | "none";
   favicon?: DesktopPreviewFavicon;
+  /** Set for a tab of the desktop's own server, which drives it over the browser channel. */
+  serverTab?: { readonly threadId: string; readonly tabId: string };
   updatedAt: string;
 }
 
@@ -144,8 +524,14 @@ const MAX_INTERACTIVE_ELEMENT_NAME_LENGTH = 200;
 const MAX_SCREENSHOT_WIDTH = 1280;
 /** How long an armed tab keeps the exclusive display-media slot before another tab may take it. */
 const RECORDING_ARM_GRACE_MS = 10_000;
-const PICTURE_IN_PICTURE_FRAME_INTERVAL_MS = Math.ceil(1_000 / 12);
-const PICTURE_IN_PICTURE_JPEG_QUALITY = 80;
+const RECORDING_FRAME_INTERVAL_MS = Math.ceil(1_000 / 12);
+const RECORDING_JPEG_QUALITY = 80;
+/** Longest edge of a recording/PiP frame; bounds both screencast and fallback encodes. */
+const RECORDING_MAX_DIMENSION = 1600;
+/** A guest whose screencast produced a frame this recently is healthy; the capturePage fallback only runs once it has gone quiet. */
+const SCREENCAST_GRACE_MS = RECORDING_FRAME_INTERVAL_MS * 3;
+const PICTURE_IN_PICTURE_FRAME_INTERVAL_MS = RECORDING_FRAME_INTERVAL_MS;
+const PICTURE_IN_PICTURE_JPEG_QUALITY = RECORDING_JPEG_QUALITY;
 /**
  * Cold guests can reject capturePage with UnknownVizError or never settle it.
  * Bound each attempt so snapshots release control even when Chromium stalls.
@@ -522,6 +908,8 @@ interface FrameCaptureSession {
   readonly consumers: ReadonlySet<FrameCaptureConsumer>;
   readonly unthrottledWebContentsIds: ReadonlySet<number>;
   readonly lastPictureInPictureFrame: Buffer | null;
+  /** Clock millis of the last `Page.screencastFrame`; shared across session copies. */
+  readonly screencast: { lastFrameAt: number; lastDeliveredAt: number };
 }
 
 interface PictureInPictureSession {
@@ -712,6 +1100,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const hostPlatform = yield* HostProcessPlatform;
   const path = yield* Path.Path;
   const parentScope = yield* Scope.Scope;
+  const browserHost = yield* DesktopBrowserHost.DesktopBrowserHost;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
   const resolvedArtifactDirectory = path.resolve(artifactDirectory);
@@ -969,11 +1358,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         consumers.delete(consumer);
         if (consumers.size > 0) {
           return [
-            consumer === "picture-in-picture" ? current.scope : undefined,
+            undefined,
             replaceMap(sessions, (copy) => {
               copy.set(tabId, {
                 ...current,
-                scope: consumer === "picture-in-picture" ? null : current.scope,
                 consumers,
                 lastPictureInPictureFrame:
                   consumer === "picture-in-picture" ? null : current.lastPictureInPictureFrame,
@@ -981,6 +1369,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             }),
           ] as const;
         }
+        yield* Effect.forEach(current.unthrottledWebContentsIds, (webContentsId) => {
+          const contents = webContents.fromId(webContentsId);
+          return contents && !contents.isDestroyed()
+            ? stopScreencast(tabId, contents)
+            : Effect.void;
+        });
         const remainingSessions = replaceMap(sessions, (copy) => {
           copy.delete(tabId);
         });
@@ -1000,6 +1394,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     ).pipe(
       Effect.flatMap((captureScope) =>
         captureScope ? Scope.close(captureScope, Exit.void).pipe(Effect.ignore) : Effect.void,
+      ),
+      Effect.tap(() =>
+        Effect.gen(function* () {
+          const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+          if (tab?.webContentsId != null) {
+            yield* releaseIdleControlSession(tabId, tab.webContentsId);
+          }
+        }),
       ),
       Effect.uninterruptible,
     );
@@ -1347,6 +1749,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const detachControlSession = Effect.fn("PreviewManager.detachControlSession")(function* (
     webContentsId: number,
+    /** The server tab it rendered, when the caller already took the tab out of `tabsRef`. */
+    closedServerTab?: PreviewTabState["serverTab"],
   ) {
     const control = yield* SynchronizedRef.modify(controlSessionsRef, (sessions) => [
       sessions.get(webContentsId),
@@ -1355,8 +1759,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       }),
     ]);
     if (control) {
+      // The server can only drive a tab while the desktop holds its debugger.
+      if (closedServerTab) browserHost.detach(closedServerTab);
+      for (const tab of (yield* SynchronizedRef.get(tabsRef)).values()) {
+        if (tab.webContentsId === webContentsId && tab.serverTab) browserHost.detach(tab.serverTab);
+      }
       yield* Scope.close(control.scope, Exit.void).pipe(Effect.ignore);
-      return;
     }
     yield* Ref.update(diagnosticsRef, (diagnostics) =>
       replaceMap(diagnostics, (copy) => {
@@ -1442,35 +1850,37 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                 ).pipe(Effect.ignore);
               }
               const tabId = yield* tabIdForWebContents(wc.id);
+              if (!tabId || typeof params["data"] !== "string") return;
+              const captureSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(
+                tabId,
+              );
+              if (!captureSession) return;
+              const now = yield* currentMillis;
+              captureSession.screencast.lastFrameAt = now;
+              // Chromium pushes screencast frames at compositor rate; the
+              // recorder/PiP contract is ~12 fps, so drop (but still ack)
+              // frames that land inside the interval.
+              if (now - captureSession.screencast.lastDeliveredAt < RECORDING_FRAME_INTERVAL_MS) {
+                return;
+              }
+              captureSession.screencast.lastDeliveredAt = now;
               const metadata =
                 typeof params["metadata"] === "object" && params["metadata"] !== null
                   ? (params["metadata"] as Record<string, unknown>)
                   : {};
-              const host = wc.hostWebContents;
-              if (tabId && typeof params["data"] === "string" && host && !host.isDestroyed()) {
-                const captureSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(
-                  tabId,
-                );
-                if (captureSession?.consumers.has("recording")) {
-                  const receivedAt = yield* currentIso;
-                  const listeners = yield* Ref.get(recordingFrameListenersRef);
-                  const frame: DesktopPreviewRecordingFrame = {
-                    tabId,
-                    data: Buffer.from(params["data"], "base64"),
-                    width:
-                      typeof metadata["deviceWidth"] === "number" ? metadata["deviceWidth"] : 0,
-                    height:
-                      typeof metadata["deviceHeight"] === "number" ? metadata["deviceHeight"] : 0,
-                    receivedAt,
-                  };
-                  yield* Effect.forEach(
-                    listeners,
-                    (listener) =>
-                      deliverEvent("recording-frame", frame.tabId, () => listener(frame, host)),
-                    { discard: true },
-                  );
-                }
-              }
+              const width =
+                typeof metadata["deviceWidth"] === "number" ? metadata["deviceWidth"] : 0;
+              const height =
+                typeof metadata["deviceHeight"] === "number" ? metadata["deviceHeight"] : 0;
+              if (width <= 0 || height <= 0) return;
+              yield* deliverPreviewFrame(tabId, wc, captureSession, {
+                tabId,
+                data: Buffer.from(params["data"], "base64"),
+                width,
+                height,
+                receivedAt: yield* currentIso,
+              });
+              return;
             }
             yield* captureDiagnosticMessage(wc.id, method, params);
             if (method === "Runtime.consoleAPICalled" || method === "Runtime.exceptionThrown") {
@@ -1506,15 +1916,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             onMessage,
           };
           const initialize = Effect.fn("PreviewManager.initializeControlSession")(function* () {
-            yield* Ref.update(diagnosticsRef, (diagnostics) =>
-              replaceMap(diagnostics, (copy) => {
-                copy.set(wc.id, {
-                  consoleEntries: [],
-                  networkEntries: [],
-                  requests: new Map(),
-                });
-              }),
-            );
             yield* attempt({ operation: "attachDebuggerListeners", webContentsId: wc.id }, () => {
               wcDebugger.on("message", onMessage);
               wcDebugger.attach("1.3");
@@ -1534,15 +1935,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                   color: { r: 255, g: 255, b: 255, a: 1 },
                 }),
             );
-            yield* Effect.forEach(
-              ["Runtime.enable", "Accessibility.enable", "Network.enable", "Log.enable"],
-              (method) =>
-                attemptPromise(
-                  { operation: `initializeDebugger.${method}`, webContentsId: wc.id },
-                  () => wcDebugger.sendCommand(method),
-                ),
-              { concurrency: "unbounded", discard: true },
-            );
             return [
               control,
               replaceMap(sessions, (copy) => {
@@ -1558,6 +1950,53 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       },
     );
   });
+
+  // Console/network history starts with the first automation action on a guest
+  // so a tab the agent never touches pays for no CDP domains.
+  const armDiagnostics = Effect.fn("PreviewManager.armDiagnostics")(function* (
+    wc: Electron.WebContents,
+  ) {
+    const existing = (yield* Ref.get(diagnosticsRef)).get(wc.id);
+    if (existing) return;
+    yield* Ref.update(diagnosticsRef, (diagnostics) =>
+      replaceMap(diagnostics, (copy) => {
+        copy.set(wc.id, { consoleEntries: [], networkEntries: [], requests: new Map() });
+      }),
+    );
+    yield* Effect.forEach(
+      ["Runtime.enable", "Log.enable", "Network.enable"],
+      (method) =>
+        attemptPromise({ operation: `armDiagnostics.${method}`, webContentsId: wc.id }, () =>
+          wc.debugger.sendCommand(method),
+        ),
+      { concurrency: "unbounded", discard: true },
+    ).pipe(
+      Effect.onError(() =>
+        Ref.update(diagnosticsRef, (diagnostics) =>
+          replaceMap(diagnostics, (copy) => {
+            copy.delete(wc.id);
+          }),
+        ),
+      ),
+    );
+  });
+
+  // Drops the debugger once no color-scheme override, diagnostics history,
+  // server tab, or frame capture needs it.
+  const releaseIdleControlSession = Effect.fn("PreviewManager.releaseIdleControlSession")(
+    function* (tabId: string, webContentsId: number) {
+      const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+      if (
+        tab?.webContentsId === webContentsId &&
+        tab.colorScheme === "system" &&
+        tab.serverTab === undefined &&
+        !(yield* Ref.get(diagnosticsRef)).has(webContentsId) &&
+        !(yield* SynchronizedRef.get(frameCaptureSessionsRef)).has(tabId)
+      ) {
+        yield* detachControlSession(webContentsId);
+      }
+    },
+  );
 
   const pushAction = (tabId: string, event: PreviewAutomationActionEvent) =>
     Ref.update(actionTimelineRef, (timelines) =>
@@ -1618,6 +2057,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     yield* pushAction(tabId, actionEvent);
     const epoch = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
     const control = yield* ensureControlSession(wc);
+    yield* armDiagnostics(wc);
     const execute = Effect.fn("PreviewManager.executeControlAction")(function* () {
       const checkControl = Effect.gen(function* () {
         const currentEpoch = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
@@ -2290,6 +2730,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           audioMuted: false,
           audible: false,
           controller: "none",
+          ...(defaults?.serverTab === undefined ? {} : { serverTab: defaults.serverTab }),
           updatedAt,
         };
         return [
@@ -2342,7 +2783,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const closedTab = tab.value;
     if (closedTab.webContentsId != null) {
       yield* Effect.all(
-        [detachControlSession(closedTab.webContentsId), detachListeners(closedTab.webContentsId)],
+        [
+          detachControlSession(closedTab.webContentsId, closedTab.serverTab),
+          detachListeners(closedTab.webContentsId),
+        ],
         { concurrency: 2, discard: true },
       );
     }
@@ -2954,12 +3398,25 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     Effect.gen(function* () {
       const beforeAttach = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
       if (beforeAttach?.webContentsId !== wc.id) return;
+      const capturing = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).has(tabId);
+      if (
+        beforeAttach.colorScheme === "system" &&
+        !capturing &&
+        beforeAttach.serverTab === undefined
+      ) {
+        return;
+      }
       const control = yield* ensureControlSession(wc);
       const afterAttach = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
       if (afterAttach?.webContentsId !== wc.id) {
         yield* detachControlSession(wc.id);
         return;
       }
+      if (afterAttach.serverTab) {
+        yield* listenForAgentPointers;
+        browserHost.attach(afterAttach.serverTab, { webContents: wc, debugger: control.debugger });
+      }
+      if (capturing) yield* startScreencast(tabId, wc);
       if (afterAttach.colorScheme !== "system") {
         yield* attemptPromise({ operation: "applyColorScheme", tabId, webContentsId: wc.id }, () =>
           control.debugger.sendCommand("Emulation.setEmulatedMedia", {
@@ -3084,75 +3541,29 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     };
   });
 
-  const capturePreviewFrame = Effect.fn("PreviewManager.capturePreviewFrame")(function* (
+  const deliverPreviewFrame = Effect.fn("PreviewManager.deliverPreviewFrame")(function* (
     tabId: string,
+    wc: Electron.WebContents,
+    session: FrameCaptureSession,
+    frame: DesktopPreviewRecordingFrame,
   ) {
-    const captureSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
-    if (!captureSession?.consumers.has("picture-in-picture") || captureSession.scope === null)
-      return;
-    const wc = yield* requireWebContents(tabId);
-    const image = yield* attemptPromise(
-      {
-        operation: "frameCapture.capturePage",
-        tabId,
-        webContentsId: wc.id,
-      },
-      () => wc.capturePage(),
-    );
-    const currentCaptureSession = yield* Effect.all(
-      [SynchronizedRef.get(frameCaptureSessionsRef), SynchronizedRef.get(tabsRef)],
-      { concurrency: 2 },
-    ).pipe(
-      Effect.map(([captureSessions, tabs]) => {
-        const current = captureSessions.get(tabId);
-        return current?.scope === captureSession.scope &&
-          tabs.get(tabId)?.webContentsId === wc.id &&
-          !wc.isDestroyed()
-          ? current
-          : undefined;
-      }),
-    );
-    if (!currentCaptureSession) return;
-    const size = yield* attempt(
-      {
-        operation: "frameCapture.measureFrame",
-        tabId,
-        webContentsId: wc.id,
-      },
-      () => image.getSize(),
-    );
-    if (
-      !Number.isFinite(size.width) ||
-      !Number.isFinite(size.height) ||
-      size.width <= 0 ||
-      size.height <= 0
-    ) {
-      return;
-    }
-    const encoded = yield* attempt(
-      {
-        operation: "frameCapture.encodeFrame",
-        tabId,
-        webContentsId: wc.id,
-      },
-      () => image.toJPEG(PICTURE_IN_PICTURE_JPEG_QUALITY),
-    );
-    const frameSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
-    if (frameSession?.scope !== captureSession.scope) return;
-    const pictureInPicture =
-      frameSession.consumers.has("picture-in-picture") &&
-      frameSession.lastPictureInPictureFrame?.equals(encoded) !== true;
-    if (!pictureInPicture) return;
-    const receivedAt = yield* currentIso;
-    const frame: DesktopPreviewRecordingFrame = {
-      tabId,
-      data: encoded,
-      width: size.width,
-      height: size.height,
-      receivedAt,
-    };
+    const encoded = Buffer.isBuffer(frame.data) ? frame.data : Buffer.from(frame.data);
     const deliveries: Array<Effect.Effect<void>> = [];
-    if (pictureInPicture) {
+    const host = wc.hostWebContents;
+    if (session.consumers.has("recording") && host && !host.isDestroyed()) {
+      const listeners = yield* Ref.get(recordingFrameListenersRef);
+      deliveries.push(
+        Effect.forEach(
+          listeners,
+          (listener) => deliverEvent("recording-frame", frame.tabId, () => listener(frame, host)),
+          { discard: true },
+        ),
+      );
+    }
+    if (
+      session.consumers.has("picture-in-picture") &&
+      session.lastPictureInPictureFrame?.equals(encoded) !== true
+    ) {
       const pictureInPictureWindow = (yield* SynchronizedRef.get(pictureInPictureSessionsRef)).get(
         tabId,
       )?.window;
@@ -3203,10 +3614,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               },
             );
             yield* SynchronizedRef.update(frameCaptureSessionsRef, (sessions) => {
-              if (sessions.get(tabId) !== frameSession) return sessions;
+              const current = sessions.get(tabId);
+              if (!current || current.scope !== session.scope) return sessions;
               return replaceMap(sessions, (copy) => {
                 copy.set(tabId, {
-                  ...frameSession,
+                  ...current,
                   lastPictureInPictureFrame: encoded,
                 });
               });
@@ -3225,13 +3637,131 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     yield* Effect.all(deliveries, { concurrency: 2, discard: true });
   });
 
+  // Screencast frames arrive JPEG-encoded from Chromium's capture thread, so a
+  // healthy screencast keeps the main thread out of the encode loop entirely.
+  const startScreencast = (tabId: string, wc: Electron.WebContents) =>
+    Effect.gen(function* () {
+      yield* ensureControlSession(wc);
+      for (const [method, params] of [
+        ["Page.enable", undefined],
+        [
+          "Page.startScreencast",
+          {
+            format: "jpeg",
+            quality: RECORDING_JPEG_QUALITY,
+            maxWidth: RECORDING_MAX_DIMENSION,
+            maxHeight: RECORDING_MAX_DIMENSION,
+            everyNthFrame: 1,
+          },
+        ],
+      ] as const) {
+        yield* attemptPromise(
+          { operation: `frameCapture.${method}`, tabId, webContentsId: wc.id },
+          () => wc.debugger.sendCommand(method, params),
+        );
+      }
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.logDebug("Preview screencast unavailable; falling back to capturePage.", {
+          tabId,
+          error,
+        }),
+      ),
+    );
+
+  const stopScreencast = (tabId: string, wc: Electron.WebContents) =>
+    Effect.gen(function* () {
+      if (wc.isDestroyed() || !(yield* SynchronizedRef.get(controlSessionsRef)).has(wc.id)) {
+        return;
+      }
+      yield* attemptPromise(
+        { operation: "frameCapture.Page.stopScreencast", tabId, webContentsId: wc.id },
+        () => wc.debugger.sendCommand("Page.stopScreencast"),
+      );
+    }).pipe(Effect.ignore);
+
+  // Fallback tick: only captures while the screencast is quiet (unavailable,
+  // starved on a hidden guest, or DevTools holding the debugger).
+  const capturePreviewFrame = Effect.fn("PreviewManager.capturePreviewFrame")(function* (
+    tabId: string,
+  ) {
+    const captureSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
+    if (!captureSession) return;
+    if ((yield* currentMillis) - captureSession.screencast.lastFrameAt < SCREENCAST_GRACE_MS) {
+      return;
+    }
+    const wc = yield* requireWebContents(tabId);
+    const sourceImage = yield* attemptPromise(
+      {
+        operation: "frameCapture.capturePage",
+        tabId,
+        webContentsId: wc.id,
+      },
+      () => wc.capturePage(),
+    );
+    const currentCaptureSession = yield* Effect.all(
+      [SynchronizedRef.get(frameCaptureSessionsRef), SynchronizedRef.get(tabsRef)],
+      { concurrency: 2 },
+    ).pipe(
+      Effect.map(([captureSessions, tabs]) => {
+        const current = captureSessions.get(tabId);
+        return current?.scope === captureSession.scope &&
+          tabs.get(tabId)?.webContentsId === wc.id &&
+          !wc.isDestroyed()
+          ? current
+          : undefined;
+      }),
+    );
+    if (!currentCaptureSession) return;
+    const sourceSize = yield* attempt(
+      {
+        operation: "frameCapture.measureFrame",
+        tabId,
+        webContentsId: wc.id,
+      },
+      () => sourceImage.getSize(),
+    );
+    if (
+      !Number.isFinite(sourceSize.width) ||
+      !Number.isFinite(sourceSize.height) ||
+      sourceSize.width <= 0 ||
+      sourceSize.height <= 0
+    ) {
+      return;
+    }
+    const image =
+      Math.max(sourceSize.width, sourceSize.height) > RECORDING_MAX_DIMENSION
+        ? sourceImage.resize(
+            sourceSize.width >= sourceSize.height
+              ? { width: RECORDING_MAX_DIMENSION }
+              : { height: RECORDING_MAX_DIMENSION },
+          )
+        : sourceImage;
+    const size = image === sourceImage ? sourceSize : image.getSize();
+    const encoded = yield* attempt(
+      {
+        operation: "frameCapture.encodeFrame",
+        tabId,
+        webContentsId: wc.id,
+      },
+      () => image.toJPEG(RECORDING_JPEG_QUALITY),
+    );
+    const frameSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
+    if (frameSession?.scope !== captureSession.scope) return;
+    yield* deliverPreviewFrame(tabId, wc, frameSession, {
+      tabId,
+      data: encoded,
+      width: size.width,
+      height: size.height,
+      receivedAt: yield* currentIso,
+    });
+  });
+
   const startFrameCapture = Effect.fn("PreviewManager.startFrameCapture")(function* (
     tabId: string,
     consumer: FrameCaptureConsumer,
   ) {
-    // Recording keeps only the activity lease. Picture-in-picture owns the
-    // capturePage loop and tolerates transient compositor warmup failures.
-    const captureNextFrame = Effect.sleep(PICTURE_IN_PICTURE_FRAME_INTERVAL_MS).pipe(
+    const captureNextFrame = Effect.sleep(RECORDING_FRAME_INTERVAL_MS).pipe(
       Effect.andThen(capturePreviewFrame(tabId)),
       Effect.catch((error) =>
         Effect.logWarning("Background preview frame capture failed.", {
@@ -3261,12 +3791,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               yield* setFrameCaptureWebContentsBackgroundThrottling(wc, false);
             }
             let scope = current.scope;
-            if (consumer === "picture-in-picture" && scope === null) {
+            if (scope === null) {
               scope = yield* Scope.fork(parentScope, "sequential");
               yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
+              yield* startScreencast(tabId, wc);
             }
             return [
-              consumer === "picture-in-picture",
+              false,
               replaceMap(sessions, (copy) => {
                 copy.set(tabId, {
                   ...current,
@@ -3282,24 +3813,32 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           }
           yield* setFrameCaptureWebContentsBackgroundThrottling(wc, false).pipe(
             Effect.onError(() =>
-              sessions.size === 0
-                ? setFrameCaptureBackgroundThrottling(true).pipe(Effect.ignore)
-                : Effect.void,
+              Effect.all(
+                [
+                  setFrameCaptureWebContentsBackgroundThrottling(wc, true).pipe(Effect.ignore),
+                  sessions.size === 0
+                    ? setFrameCaptureBackgroundThrottling(true).pipe(Effect.ignore)
+                    : Effect.void,
+                ],
+                { discard: true },
+              ),
             ),
           );
-          const scope =
-            consumer === "picture-in-picture" ? yield* Scope.fork(parentScope, "sequential") : null;
-          if (scope !== null) {
-            yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
-          }
+          const scope = yield* Scope.fork(parentScope, "sequential");
+          yield* startScreencast(tabId, wc);
+          yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
           return [
-            consumer === "picture-in-picture",
+            true,
             replaceMap(sessions, (copy) => {
               copy.set(tabId, {
                 scope,
                 consumers: new Set([consumer]),
                 unthrottledWebContentsIds: new Set([wc.id]),
                 lastPictureInPictureFrame: null,
+                screencast: {
+                  lastFrameAt: Number.NEGATIVE_INFINITY,
+                  lastDeliveredAt: Number.NEGATIVE_INFINITY,
+                },
               });
             }),
           ] as const;
@@ -3739,14 +4278,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         yield* attempt({ operation: "recording.cursor", tabId, webContentsId: wc.id }, () =>
           wc.send(RECORDING_CURSOR_CHANNEL, true, options, tab?.controller),
         );
-        yield* attemptPromise(
-          {
-            operation: "recording.warmSource",
-            tabId,
-            webContentsId: wc.id,
-          },
-          () => wc.capturePage().then(() => undefined),
-        ).pipe(Effect.retry({ times: 1 }), Effect.ignore);
         const currentWebContents = yield* requireWebContents(tabId);
         if (currentWebContents !== wc || wc.isDestroyed()) {
           return yield* new PreviewWebContentsNotFoundError({
@@ -4789,6 +5320,58 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
+  let pointerSequence = 0;
+  /**
+   * The server reports where an agent action is about to land on a tab it
+   * drives here. The live cursor and desktop recordings draw it like any agent.
+   */
+  const emitAgentPointer = Effect.fn("PreviewManager.emitAgentPointer")(function* (pointer: {
+    readonly key: { readonly threadId: string; readonly tabId: string };
+    readonly phase: "move" | "click";
+    readonly x: number;
+    readonly y: number;
+  }) {
+    const tab = [...(yield* SynchronizedRef.get(tabsRef)).values()].find(
+      (candidate) =>
+        candidate.serverTab?.threadId === pointer.key.threadId &&
+        candidate.serverTab.tabId === pointer.key.tabId,
+    );
+    if (!tab) return;
+    const event: DesktopPreviewPointerEvent = {
+      tabId: tab.tabId,
+      phase: pointer.phase,
+      x: pointer.x,
+      y: pointer.y,
+      sequence: ++pointerSequence,
+      createdAt: yield* currentIso,
+    };
+    const recording = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tab.tabId);
+    const webContentsId = tab.webContentsId;
+    if (recording?.consumers.has("recording") && webContentsId != null) {
+      yield* attempt({ operation: "recording.pointer", tabId: tab.tabId }, () => {
+        const contents = webContents.fromId(webContentsId);
+        if (contents && !contents.isDestroyed()) contents.send(RECORDING_POINTER_CHANNEL, event);
+      }).pipe(Effect.ignore);
+    }
+    const listeners = yield* Ref.get(pointerEventListenersRef);
+    yield* Effect.forEach(
+      listeners,
+      (listener) => deliverEvent("pointer-event", tab.tabId, () => listener(event)),
+      { discard: true },
+    );
+  });
+  // Listening starts with the first tab of the desktop's own server.
+  let pointersStarted = false;
+  const listenForAgentPointers = Effect.suspend(() => {
+    if (pointersStarted) return Effect.void;
+    pointersStarted = true;
+    return browserHost.pointers.pipe(
+      Stream.runForEach(emitAgentPointer),
+      Effect.forkIn(parentScope),
+      Effect.asVoid,
+    );
+  });
+
   const subscribe = <A>(
     ref: Ref.Ref<ReadonlySet<A>>,
     listener: A,
@@ -4847,6 +5430,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     refresh,
     registerWebview,
     resetZoom: (tabId: string) => applyZoom(tabId, () => DEFAULT_ZOOM_FACTOR),
+    setZoomFactor: (tabId: string, zoomFactor: number) =>
+      applyZoom(tabId, () => normalizeZoomFactor(zoomFactor)),
     revealArtifact,
     saveRecording,
     setAnnotationTheme,
@@ -5195,6 +5780,10 @@ export class PreviewManager extends Context.Service<
       tabId: string,
       colorScheme: DesktopPreviewColorScheme,
     ) => Effect.Effect<void, PreviewManagerError>;
+    readonly setZoomFactor: (
+      tabId: string,
+      zoomFactor: number,
+    ) => Effect.Effect<void, PreviewManagerError>;
     readonly setAudioMuted: (
       tabId: string,
       audioMuted: boolean,
@@ -5237,7 +5826,7 @@ export class PreviewManager extends Context.Service<
     ) => Effect.Effect<DesktopPreviewRecordingArtifact, PreviewManagerError>;
     readonly automationStatus: (
       tabId: string,
-    ) => Effect.Effect<DesktopPreviewAutomationStatus, PreviewManagerError>;
+    ) => Effect.Effect<PreviewAutomationStatus, PreviewManagerError>;
     readonly automationSnapshot: (
       tabId: string,
     ) => Effect.Effect<PreviewAutomationSnapshot, PreviewManagerError>;
@@ -5282,6 +5871,18 @@ export class PreviewManager extends Context.Service<
 export const make = Effect.gen(function* PreviewManagerMake() {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const browserSession = yield* BrowserSession.BrowserSession;
+  const browserHost = yield* DesktopBrowserHost.DesktopBrowserHost;
+  const downloadSessions = new WeakSet<Electron.Session>();
+  // Server tabs save downloads where the server's engine reads them. Downloads
+  // the person starts in a tab the server is not driving keep Electron's dialog.
+  const placeServerDownloads = (session: Electron.Session) => {
+    if (downloadSessions.has(session)) return;
+    downloadSessions.add(session);
+    session.on("will-download", (_event, item, source) => {
+      browserHost.placeDownload(source, item);
+    });
+  };
+
   const operations = yield* makeNativeOperations(
     environment.browserArtifactsDir,
     environment.path.join(environment.dirname, "preview-pip-preload.cjs"),
@@ -5298,6 +5899,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
               (cause) => new PreviewOperationError({ operation: "getBrowserSession", cause }),
             ),
           );
+        placeServerDownloads(session);
         operations.installDownloadHandler(session);
         return session;
       },
@@ -5317,6 +5919,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     reapplyZoom: operations.reapplyZoom,
     hardReload: operations.hardReload,
     setColorScheme: operations.setColorScheme,
+    setZoomFactor: operations.setZoomFactor,
     setAudioMuted: operations.setAudioMuted,
     openDevTools: operations.openDevTools,
     clearCookies: Effect.fn("PreviewManager.clearCookies")(function* (partitions) {

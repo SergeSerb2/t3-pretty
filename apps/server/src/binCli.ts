@@ -11,6 +11,7 @@ import packageJson from "../package.json" with { type: "json" };
 import { acpMcpBridgeCommand, acpMcpCallCommand } from "./cli/acpMcpBridge.ts";
 import { authCommand } from "./cli/auth.ts";
 import { appCommand } from "./cli/app.ts";
+import { browserCommand } from "./cli/browser.ts";
 import { connectCommand } from "./cli/connect.ts";
 import { pairCommand } from "./cli/pair.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
@@ -29,7 +30,7 @@ import { traceCommand } from "./cli/trace.ts";
 import { agentMonitoringCommand } from "./cli/agentMonitoring.ts";
 import { triageCommand } from "./cli/triage.ts";
 
-const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
+const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
 const connectPublicConfigMissingMessage = `${SURGE_CONNECT_NAME} commands are unavailable: this build is missing managed connection public configuration.`;
 
@@ -74,6 +75,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       appCommand,
       pairCommand,
       authCommand,
+      browserCommand,
       projectCommand,
       serviceCommand,
       updateCommand,
@@ -96,7 +98,7 @@ export const cli = makeCli();
 export function runCli() {
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
-    Effect.provide(CliRuntimeLayer),
+    Effect.provide(layerCliRuntime),
     NodeRuntime.runMain,
   );
 }

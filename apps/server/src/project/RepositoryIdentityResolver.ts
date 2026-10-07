@@ -262,11 +262,27 @@ function deriveDisplayRepositoryPathSegments(remoteUrl: string): ReadonlyArray<s
     .filter((segment) => segment.length > 0);
 }
 
+function repositoryPathOf(canonicalKey: string): string {
+  return canonicalKey.split("/").slice(1).join("/");
+}
+
+function buildRepositoryOrigin(
+  originUrl: string | undefined,
+  canonicalKey: string,
+): RepositoryIdentity["origin"] {
+  if (!originUrl) return undefined;
+  const originKey = normalizeGitRemoteUrl(originUrl);
+  if (originKey === canonicalKey) return undefined;
+  const displayName = repositoryPathOf(originKey);
+  return { canonicalKey: originKey, ...(displayName ? { displayName } : {}) };
+}
+
 function buildRepositoryIdentity(input: {
   readonly groupingRemoteUrl: string;
   readonly remoteName: string;
   readonly remoteUrl: string;
   readonly fallbackProviderUrl?: string | undefined;
+  readonly originUrl: string | undefined;
   readonly rootPath: string;
 }): RepositoryIdentity | null {
   const canonicalKey = normalizeGitRemoteUrl(input.groupingRemoteUrl);
@@ -308,6 +324,7 @@ function buildRepositoryIdentity(input: {
     repositoryPath.length <= REPOSITORY_IDENTITY_DISPLAY_NAME_MAX_LENGTH
       ? repositoryPath
       : undefined;
+  const origin = buildRepositoryOrigin(input.originUrl, canonicalKey);
 
   return {
     canonicalKey,
@@ -321,6 +338,7 @@ function buildRepositoryIdentity(input: {
     ...(sourceControlProvider ? { provider: sourceControlProvider.kind } : {}),
     ...(owner ? { owner } : {}),
     ...(repositoryName ? { name: repositoryName } : {}),
+    ...(origin ? { origin } : {}),
   };
 }
 
@@ -371,6 +389,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
         ...displayRemote,
         groupingRemoteUrl: groupingRemote.remoteUrl,
         fallbackProviderUrl: remotes.get(displayRemote.remoteName)?.fetchUrl,
+        originUrl: remotes.get("origin")?.fetchUrl,
         rootPath: cacheKey,
       })
     : null;

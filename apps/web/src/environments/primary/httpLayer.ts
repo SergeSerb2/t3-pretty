@@ -1,4 +1,4 @@
-import { remoteHttpClientLayer } from "@t3tools/client-runtime/rpc";
+import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
@@ -44,11 +44,11 @@ function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpC
   );
 }
 
-export function makePrimaryEnvironmentHttpLayer() {
+export function layerForCurrentOrigin() {
   return Layer.unwrap(
     Effect.sync(() => {
       const usesCookies = isSameOriginBrowserPrimary();
-      const baseLayer = remoteHttpClientLayer((input, init) =>
+      const baseLayer = layerRemoteHttpClient((input, init) =>
         fetchPrimaryEnvironmentWithDeadline(globalThis.fetch, input, init),
       );
       return Layer.effect(
@@ -69,4 +69,4 @@ export function makePrimaryEnvironmentHttpLayer() {
   );
 }
 
-export const primaryEnvironmentHttpLayer = makePrimaryEnvironmentHttpLayer();
+export const layer = layerForCurrentOrigin();

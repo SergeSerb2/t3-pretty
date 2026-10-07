@@ -9,7 +9,7 @@ import {
   resolveTailscaleAdvertisedEndpoints,
 } from "./tailscaleEndpointProvider.ts";
 
-const unusedTailscaleExternalServicesLayer = Layer.mergeAll(
+const layerUnusedTailscaleExternalServices = Layer.mergeAll(
   Layer.succeed(
     HttpClient.HttpClient,
     HttpClient.make(() => Effect.die("unexpected Tailscale HTTPS probe")),
@@ -93,7 +93,7 @@ describe("tailscale endpoint provider", () => {
           description: "MagicDNS hostname. Configure Tailscale Serve for HTTPS access.",
         },
       ]);
-    }).pipe(Effect.provide(unusedTailscaleExternalServicesLayer)),
+    }).pipe(Effect.provide(layerUnusedTailscaleExternalServices)),
   );
 
   it.effect("resolves Tailscale IPs when the interface family is numeric", () =>
@@ -134,7 +134,7 @@ describe("tailscale endpoint provider", () => {
         endpoints.map((endpoint) => endpoint.httpBaseUrl),
         ["https://desktop.tail.ts.net/"],
       );
-    }).pipe(Effect.provide(unusedTailscaleExternalServicesLayer)),
+    }).pipe(Effect.provide(layerUnusedTailscaleExternalServices)),
   );
 
   it.effect(
@@ -170,6 +170,6 @@ describe("tailscale endpoint provider", () => {
             description: "HTTPS endpoint served by Tailscale Serve.",
           },
         ]);
-      }).pipe(Effect.provide(unusedTailscaleExternalServicesLayer)),
+      }).pipe(Effect.provide(layerUnusedTailscaleExternalServices)),
   );
 });

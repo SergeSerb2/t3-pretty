@@ -1293,3 +1293,39 @@ Both existing exact-head reviews completed (security07:54:49UTC, code07:58:51UTC
 Composed suites include32files in the user fork and85in Pretty, with4 existing skipped real-browser cases each. Focused subnet, driver-only recovery, theme, mobile user-action and both answer-order regressions pass; all seven scoped types, targeted lint, both server bundles, Pretty production web build and iOS export pass, as do the unchanged actual four-case TLS guards. Fresh native fingerprint still matches delivered iOS184, retaining OTA-only delivery. Exact committed-head results are recorded externally after commit hooks. Two Git overview React memo-dependency warnings remain; no unrelated memoization refactor was made. QA/evidence waiver and narrow3189 checkout log permission remain pending. No merge/release or duplicate native review build.
 
 The two old-main fork Release failures37430133691 and37432384696 were scheduled at438fb6230 and failed before any job/check ran. Both visible workflow annotations state Queue is full for concurrency group release-nightly; read-only metadata shows100pending runs plus the older queued37077047894. These are queue/startup failures, not2702 source validation. Exhausted included Actions allowance remains a separate execution constraint; no rerun, cancellation, workflow, queue or billing change was performed.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.46-nightly.20261006.2735`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261005.2702`
+- Conflict resolver: manual compose (Cursor Grok 4.6 Cloud Agent). Scheduled Buildkite sync (#3229 and earlier) could not land this tag: shared contract typecheck failed after the automated repair declined on `preview.ts`.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `packages/client-runtime/src/state/preview.ts` — Kept `PREVIEW_STATE_IDLE_TTL_MS`, `previewAutomationHostFocusConcurrencyKey`, and the automation atoms (`automationRequests`, `respondToAutomation`, `focusAutomationHost`). A 3-way merge against 2702 treated those unchanged-vs-base symbols as deleted by 2735.
+- `packages/client-runtime/src/state/preview.test.ts` — Kept the idle-TTL and connection-specific focus-concurrency tests (upstream deleted the file).
+- `packages/client-runtime/src/rpc/http.ts` — Exported `remoteHttpClientLayer` as an alias of 2735's `layerRemoteHttpClient` so Pretty tests and callers still typecheck.
+- `packages/contracts/src/rpc.ts`, `apps/server/src/ws.ts`, `apps/server/src/auth/RpcAuthorization.ts`, `packages/client-runtime/src/rpc/client.ts` — Restored `previewAutomation.connect` / `.respond` / `.focusHost` RPCs, auth scopes, websocket handlers, and the 1s re-register-on-completion stream policy.
+- `apps/web/src/environments/primary/httpLayer.ts` — Kept Pretty's fetch deadline and scoped cookie/bearer RequestInit; used the upstream layer name.
+- `apps/desktop/src/preview/Manager.ts` — Kept Uint8Array recording frames and host-targeted listeners.
+- `apps/server/src/textGeneration/*` — Kept `collectUint8StreamText` / 1 MiB diagnostic caps and Pretty extra operations.
+- Relay worker — Kept home-suggestions API/store and `serveRelayHttpRequestWith` (health-path deadline).
+- Fork workflows under `.github/workflows` remain the Pretty set.
+
+## Parent changes integrated at conflict boundaries
+
+- Preview `adjust` and `clearProfile` commands, server-browser / CDP host path, and `HttpObservability.layer` / `layerRemoteHttpClient` naming.
+- Text generation `TextGenerationOperations.fromRunner` extraction and 2735 CLI/runner changes.
+- Relay `layer*` HTTP API names, `traceRelayHttpRequestWith`, and HeldHooks-owned hook endpoint resolution.
+- PlaywrightInjectedRuntime and the unused web preview-automation helper modules were deleted with the parent; WelcomeWizard stays deleted in favor of Trailhead.
+
+## Parent changes intentionally omitted
+
+- None of the 2735 preview-adjust / clear-profile / server-browser work was omitted. The parent deletion of preview-automation RPCs was not taken: Pretty still hosts automation connections.
+
+## Post-merge repairs
+
+- `shared-typecheck` on the scheduled bot tree failed because auto-merge dropped `previewAutomationHostFocusConcurrencyKey` and renamed HTTP/relay test helpers without updating every call site. This compose keeps both names/behaviors and restores the missing export and RPC surface.
+

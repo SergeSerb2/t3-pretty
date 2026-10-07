@@ -983,7 +983,7 @@ export const make = Effect.fn("effect-acp/AcpClient.make")(function* (
     method,
   });
 
-  const clientHandlerLayer = AcpRpcs.CompatClientRpcs.toLayer(
+  const layerClientHandler = AcpRpcs.CompatClientRpcs.toLayer(
     AcpRpcs.CompatClientRpcs.of({
       [CLIENT_METHODS.session_request_permission]: (payload, { requestId }) =>
         runHandler(
@@ -1113,7 +1113,7 @@ export const make = Effect.fn("effect-acp/AcpClient.make")(function* (
 
   yield* RpcServer.make(AcpRpcs.CompatClientRpcs).pipe(
     Effect.provideService(RpcServer.Protocol, transport.serverProtocol),
-    Effect.provide(clientHandlerLayer),
+    Effect.provide(layerClientHandler),
     Effect.forkScoped,
   );
 

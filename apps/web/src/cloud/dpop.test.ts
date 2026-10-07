@@ -8,12 +8,13 @@ import { afterEach, vi } from "vite-plus/test";
 
 import {
   type BrowserDpopKey,
-  browserCryptoLayer,
   createBrowserDpopProof,
   generateBrowserDpopKey,
+  layer as browserCryptoLayer,
   readStoredBrowserDpopKey,
   writeStoredBrowserDpopKey,
 } from "./dpop";
+import * as Dpop from "./dpop";
 
 function createFakeDpopIndexedDb() {
   let requestResult: unknown;
@@ -73,7 +74,7 @@ describe("browser DPoP proofs", () => {
         url: "https://relay.example.test/v1/environments/env-1/connect?ignored=true",
         accessToken: "relay-access-token",
         proofKey,
-      }).pipe(Effect.provide(browserCryptoLayer));
+      }).pipe(Effect.provide(Dpop.layer));
       const issuedAt = decodeJwt(proof.proof).iat;
       expect(issuedAt).toBeTypeOf("number");
 

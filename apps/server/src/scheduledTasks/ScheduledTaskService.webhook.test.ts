@@ -23,7 +23,7 @@ import * as Stream from "effect/Stream";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as ScheduledTaskService from "./ScheduledTaskService.ts";
 
@@ -88,7 +88,7 @@ const withService = <A, E>(
     const sql = yield* SqlClient.SqlClient;
     const launches = yield* Queue.unbounded<LaunchInput>();
     const secretsByRef = new Map<string, string>();
-    const dependencies = Layer.mergeAll(
+    const layerDependencies = Layer.mergeAll(
       NodePlatformCrypto.layer,
       Scheduler.layer,
       Layer.mock(ThreadLaunchService.ThreadLaunchService)({
@@ -142,7 +142,7 @@ const withService = <A, E>(
     yield* Effect.addFinalizer((exit) => Scope.close(serviceScope, exit));
     const build = () =>
       Layer.buildWithScope(
-        Layer.fresh(ScheduledTaskService.layer.pipe(Layer.provide(dependencies))),
+        Layer.fresh(ScheduledTaskService.layer.pipe(Layer.provide(layerDependencies))),
         serviceScope,
       ).pipe(
         Effect.provideService(SqlClient.SqlClient, sql),
@@ -155,7 +155,7 @@ const withService = <A, E>(
       return yield* build();
     });
     return yield* body({ service, launches, secretsByRef, sql, restart });
-  }).pipe(Effect.provide(SqlitePersistenceMemory));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory));
 
 it.effect("dispatches exactly the rendered prompt and logs the delivery", () =>
   withService(({ service, launches }) =>

@@ -1,5 +1,5 @@
-import * as NodeVM from "node:vm";
 import { it as effectIt } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES } from "@t3tools/contracts";
 import type {
   DesktopPreviewRecordingFrame,
@@ -12,11 +12,12 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import { TestClock } from "effect/testing";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -25,6 +26,7 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as BrowserSession from "./BrowserSession.ts";
+import * as DesktopBrowserHost from "./DesktopBrowserHost.ts";
 import * as PreviewManager from "./Manager.ts";
 
 describe("fitPictureInPictureContentSize", () => {
@@ -281,7 +283,7 @@ const testHostWebContents = {
   send: vi.fn(),
 } as unknown as Electron.WebContents;
 
-const browserSessionLayer = Layer.succeed(
+const layerBrowserSession = Layer.succeed(
   BrowserSession.BrowserSession,
   BrowserSession.BrowserSession.of({
     getPartition: () => Effect.succeed("persist:t3code-preview-test"),
@@ -292,7 +294,7 @@ const browserSessionLayer = Layer.succeed(
   }),
 );
 
-const environmentLayer = Layer.succeed(
+const layerEnvironment = Layer.succeed(
   DesktopEnvironment.DesktopEnvironment,
   DesktopEnvironment.DesktopEnvironment.of({
     browserArtifactsDir: "/tmp/t3/dev/browser-artifacts",
@@ -303,7 +305,7 @@ const environmentLayer = Layer.succeed(
   } as DesktopEnvironment.DesktopEnvironment["Service"]),
 );
 
-const fileSystemLayer = FileSystem.layerNoop({
+const layerFileSystem = FileSystem.layerNoop({
   makeDirectory: (path) =>
     Effect.sync(() => {
       mkdir(path);
@@ -322,13 +324,14 @@ const layer = PreviewManager.layer.pipe(
       shutdown: Effect.void,
     }),
   ),
-  Layer.provideMerge(browserSessionLayer),
-  Layer.provideMerge(environmentLayer),
-  Layer.provideMerge(fileSystemLayer),
+  Layer.provideMerge(DesktopBrowserHost.layer),
+  Layer.provideMerge(layerBrowserSession),
+  Layer.provideMerge(layerEnvironment),
+  Layer.provideMerge(layerFileSystem),
   Layer.provideMerge(Path.layer),
+  Layer.provideMerge(NodeCrypto.layer),
   Layer.provideMerge(Layer.succeed(HostProcessPlatform, "darwin")),
 );
-const encodePreviewManagerError = Schema.encodeSync(PreviewManager.PreviewManagerError);
 
 const withManager = <A>(
   use: (
@@ -668,33 +671,6 @@ describe("PreviewManager", () => {
     ),
   );
 
-  effectIt.effect("reports an unregistered webview as temporarily unavailable", () =>
-    withManager((manager) =>
-      Effect.gen(function* () {
-        expect(yield* manager.automationStatus("tab_1")).toEqual({
-          available: false,
-          visible: true,
-          tabId: "tab_1",
-          url: null,
-          title: null,
-          loading: false,
-        });
-
-        yield* manager.createTab("tab_1");
-
-        expect(yield* manager.automationStatus("tab_1")).toEqual({
-          available: false,
-          visible: true,
-          tabId: "tab_1",
-          url: null,
-          title: null,
-          loading: false,
-        });
-        expect(fromId).not.toHaveBeenCalled();
-      }),
-    ),
-  );
-
   effectIt.effect("rejects a destroyed webview during registration", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -825,15 +801,6 @@ describe("PreviewManager", () => {
         } as never);
 
         yield* manager.navigate("tab_pending", "localhost:3200");
-
-        expect(yield* manager.automationStatus("tab_pending")).toEqual({
-          available: false,
-          visible: true,
-          tabId: "tab_pending",
-          url: "http://localhost:3200/",
-          title: "",
-          loading: true,
-        });
 
         yield* manager.registerWebview("tab_pending", 42);
         yield* Effect.yieldNow;
@@ -2372,6 +2339,40 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("preserves both screenshots of the same site in the same millisecond", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const firstPng = Buffer.from("first-preview-png");
+        const secondPng = Buffer.from("second-preview-png");
+        const pngImage = (png: Buffer) => ({
+          toPNG: () => png,
+          toJPEG: () => png,
+          getSize: () => ({ width: 1280, height: 720 }),
+        });
+        const capturePage = vi
+          .fn<() => Promise<ReturnType<typeof pngImage>>>()
+          .mockResolvedValueOnce(pngImage(firstPng))
+          .mockResolvedValueOnce(pngImage(secondPng));
+        fromId.mockReturnValue(makeTestPreviewWebContents(capturePage));
+        yield* manager.createTab("tab_1");
+        yield* manager.registerWebview("tab_1", 42);
+        // it.effect keeps TestClock fixed until explicitly advanced.
+        const first = yield* manager.captureScreenshot("tab_1");
+        const second = yield* manager.captureScreenshot("tab_1");
+
+        expect(first.createdAt).toBe(second.createdAt);
+        expect(first.id).not.toBe(second.id);
+        expect(first.path).not.toBe(second.path);
+        expect(first.id).toMatch(/^browser-screenshot-example-com-[a-z0-9]+-[0-9a-f]{8}$/);
+        expect(second.id).toMatch(/^browser-screenshot-example-com-[a-z0-9]+-[0-9a-f]{8}$/);
+        expect(writeFile.mock.calls).toEqual([
+          [first.path, firstPng],
+          [second.path, secondPng],
+        ]);
+      }),
+    ),
+  );
+
   effectIt.effect("keeps each capture source unthrottled until its last consumer stops", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -2512,6 +2513,39 @@ describe("PreviewManager", () => {
         expect(replacementWindowThrottling).not.toHaveBeenCalled();
       }),
     ),
+  );
+
+  effectIt.effect("tells the server when a tab it renders natively closes", () =>
+    Effect.gen(function* () {
+      const host = yield* DesktopBrowserHost.DesktopBrowserHost;
+      const serverTab = { threadId: "thread-1", tabId: "server-tab-1" };
+      const lines = yield* Queue.unbounded<string>();
+      yield* host.events.pipe(
+        Stream.runForEach((line) => Queue.offer(lines, new TextDecoder().decode(line))),
+        Effect.forkScoped,
+      );
+      const nextType = Queue.take(lines).pipe(
+        Effect.map((line) => /"type":"(\w+)"/.exec(line)?.[1]),
+      );
+      const capturePage = vi.fn(async () => ({
+        toPNG: () => Buffer.from("png"),
+        toJPEG: () => Buffer.from("jpeg"),
+        getSize: () => ({ width: 100, height: 80 }),
+      }));
+      fromId.mockReturnValue(
+        Object.assign(makeTestPreviewWebContents(capturePage, 42), {
+          isDevToolsOpened: () => false,
+          getUserAgent: () => "Electron",
+        }),
+      );
+      const manager = yield* PreviewManager.PreviewManager;
+      yield* manager.createTab("tab_1", { serverTab });
+      yield* manager.registerWebview("tab_1", 42);
+      // The debugger attaches in the background; the server hears it here.
+      expect(yield* nextType).toBe("attached");
+      yield* manager.closeTab("tab_1");
+      expect(yield* nextType).toBe("detached");
+    }).pipe(Effect.provide(layer), Effect.scoped),
   );
 
   effectIt.effect("stops capture retries when the tab swaps during the retry delay", () =>
@@ -5119,91 +5153,5 @@ describe("PreviewOperationError", () => {
 
     expect(error.message).not.toContain(cause.message);
     expect(PreviewManager.PreviewOperationError.toTimelineMessage(error)).toBe(cause.message);
-  });
-});
-
-describe("Preview automation diagnostics", () => {
-  it("keeps browser exception detail out of structural diagnostics", () => {
-    const secret = "unrelated-browser-payload-secret";
-    const detail = "ReferenceError: missingValue is not defined";
-    const cause = {
-      text: "Uncaught Error",
-      exception: { description: detail },
-      unsafePayload: secret,
-    };
-    const error = new PreviewManager.PreviewAutomationEvaluationError({
-      tabId: "tab_1",
-      detailKind: "exception-description",
-      detailLength: detail.length,
-      cause,
-    });
-
-    const encoded = encodePreviewManagerError(error);
-    const { cause: encodedCause, ...encodedDiagnostics } = encoded as typeof encoded & {
-      readonly cause?: unknown;
-    };
-
-    expect(error.cause).toBe(cause);
-    expect(encodedCause).toStrictEqual(cause);
-    expect(error.message).toBe("Preview JavaScript evaluation failed in tab tab_1");
-    expect(error.message).not.toContain(secret);
-    expect(JSON.stringify(encodedDiagnostics)).not.toContain(secret);
-    expect("detail" in error).toBe(false);
-    expect(PreviewManager.PreviewAutomationEvaluationError.toTimelineMessage(error)).toBe(detail);
-    expect(PreviewManager.PreviewAutomationEvaluationError.toTimelineMessage(error)).not.toContain(
-      secret,
-    );
-  });
-
-  it("retains bounded selector diagnostics without exposing selector or reason text", () => {
-    const selector = "role=button[name='selector-secret']";
-    const reason = "Unexpected token near reason-secret";
-    const cause = { invalidSelector: true as const, message: reason };
-    const error = new PreviewManager.PreviewAutomationInvalidSelectorError({
-      operation: "click",
-      tabId: "tab_1",
-      selectorKind: "locator",
-      selectorLength: selector.length,
-      reasonLength: reason.length,
-      cause,
-    });
-
-    const encoded = encodePreviewManagerError(error);
-    const { cause: encodedCause, ...encodedDiagnostics } = encoded as typeof encoded & {
-      readonly cause?: unknown;
-    };
-
-    expect(error.cause).toBe(cause);
-    expect(encodedCause).toStrictEqual(cause);
-    expect(error).toMatchObject({
-      selectorKind: "locator",
-      selectorLength: selector.length,
-      reasonLength: reason.length,
-    });
-    expect(error.detail).toEqual({
-      selectorKind: "locator",
-      selectorLength: selector.length,
-    });
-    expect(error.message).not.toContain("secret");
-    expect(JSON.stringify(encodedDiagnostics)).not.toContain("secret");
-    expect("selector" in error).toBe(false);
-    expect("reason" in error).toBe(false);
-    expect(PreviewManager.PreviewAutomationInvalidSelectorError.toTimelineMessage(error)).toBe(
-      reason,
-    );
-  });
-
-  it("does not retain a missing target locator", () => {
-    const selector = "[data-token='target-secret']";
-    const error = new PreviewManager.PreviewAutomationTargetNotFoundError({
-      operation: "scroll",
-      tabId: "tab_1",
-      selectorKind: "selector",
-      selectorLength: selector.length,
-    });
-
-    expect(error.message).not.toContain(selector);
-    expect(JSON.stringify(error)).not.toContain(selector);
-    expect("locator" in error).toBe(false);
   });
 });

@@ -53,7 +53,7 @@ const withService = <A, E>(
     let secretStatus = "pending";
     let failedRecords = options.failedRecords ?? 0;
     const requestThreadId = options.threadId ?? threadId;
-    const dependencies = Layer.mergeAll(
+    const layerDependencies = Layer.mergeAll(
       NodeCrypto.layer,
       NodeServices.layer,
       Layer.succeed(
@@ -137,7 +137,7 @@ const withService = <A, E>(
     return yield* Effect.gen(function* () {
       const service = yield* SecretRequests.SecretRequests;
       return yield* body({ service, stored, dispatched, sql });
-    }).pipe(Effect.provide(SecretRequests.layer.pipe(Layer.provide(dependencies))));
+    }).pipe(Effect.provide(SecretRequests.layer.pipe(Layer.provide(layerDependencies))));
   }).pipe(Effect.provide(SqlitePersistenceMemory));
 
 /** The secret values in the store, leaving out the server's own salt. */

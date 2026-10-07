@@ -59,17 +59,34 @@ function AgentBrowserCursorGlide(props: {
   readonly controller: BrowserController;
 }) {
   const { event, content, zoomFactor, controller } = props;
+  const scale = zoomFactor * (content?.scale ?? 1);
+  return (
+    <AgentCursorMark
+      phase={event.phase}
+      sequence={event.sequence}
+      left={event.x * scale + (content?.x ?? 0) - (content?.scrollLeft ?? 0)}
+      top={event.y * scale + (content?.y ?? 0) - (content?.scrollTop ?? 0)}
+      controller={controller}
+    />
+  );
+}
+
+/** The agent's pointer at a surface position; it fades once the agent stops acting. */
+export function AgentCursorMark(props: {
+  readonly phase: "move" | "click";
+  readonly sequence: number;
+  readonly left: number;
+  readonly top: number;
+  readonly controller: BrowserController;
+}) {
+  const { phase, sequence, left, top, controller } = props;
   const [inactiveSequence, setInactiveSequence] = useState<number | null>(null);
-  const active = inactiveSequence !== event.sequence;
+  const active = inactiveSequence !== sequence;
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setInactiveSequence(event.sequence), CURSOR_ACTIVE_MS);
+    const timeout = window.setTimeout(() => setInactiveSequence(sequence), CURSOR_ACTIVE_MS);
     return () => window.clearTimeout(timeout);
-  }, [event.sequence]);
-
-  const scale = content?.scale ?? 1;
-  const x = event.x * zoomFactor * scale + (content?.x ?? 0) - (content?.scrollLeft ?? 0);
-  const y = event.y * zoomFactor * scale + (content?.y ?? 0) - (content?.scrollTop ?? 0);
+  }, [sequence]);
 
   // Persist duration on the sequence that started the glide so later paints
   // of the same event (store, overlay, zoom, StrictMode) do not drop to 0ms
@@ -82,28 +99,28 @@ function AgentBrowserCursorGlide(props: {
   } | null>(null);
   const durationMs = agentCursorTransitionMs({
     last: glideRef.current,
-    sequence: event.sequence,
-    x,
-    y,
+    sequence,
+    x: left,
+    y: top,
   });
-  glideRef.current = { sequence: event.sequence, x, y, durationMs };
+  glideRef.current = { sequence, x: left, y: top, durationMs };
 
-  const label = active ? agentCursorActionLabel(event.phase) : null;
+  const label = active ? agentCursorActionLabel(phase) : null;
 
   return (
     <div
       className="pointer-events-none absolute left-0 top-0 z-40 transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none"
       style={{
         opacity: agentBrowserCursorOpacity(active, controller),
-        transform: `translate3d(${x}px, ${y}px, 0)`,
-        transitionDuration: `${durationMs}ms, 150ms`,
+        transform: `translate3d(${left}px, ${top}px, 0)`,
+        transitionDuration: `150ms, ${durationMs}ms`,
       }}
       aria-hidden="true"
       data-agent-browser-cursor
     >
-      {event.phase === "click" ? (
+      {phase === "click" ? (
         <span
-          key={event.sequence}
+          key={sequence}
           className="absolute left-0.5 top-0.5 size-4 animate-agent-ripple rounded-full bg-primary/40 motion-reduce:hidden"
         />
       ) : null}

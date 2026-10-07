@@ -20,6 +20,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as HttpClient from "effect/http/HttpClient";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
@@ -437,6 +438,10 @@ export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const stateRef = yield* Ref.make(initialRuntimeState());
+  // Each change reads the runtime state, persists settings, then writes the
+  // state back. Run them one at a time so a change never writes over another
+  // with values it read before that change persisted.
+  const changePermit = yield* Semaphore.make(1);
 
   // Cache the `tailscale status` spawn for the TTL. On macOS, the Mac App
   // Store Tailscale CLI lives inside Tailscale's sandbox container, so each
@@ -541,7 +546,7 @@ export const make = Effect.gen(function* () {
       state: toContractState(resolved),
       requiresRelaunch: change.changed || requiresBackendRelaunch(previous, resolved),
     };
-  });
+  }, changePermit.withPermit);
 
   const setTailscaleServeEnabled = Effect.fn("desktop.serverExposure.setTailscaleServeEnabled")(
     function* (input: { readonly enabled: boolean; readonly port?: number }) {
@@ -576,6 +581,7 @@ export const make = Effect.gen(function* () {
         requiresRelaunch: result.changed,
       };
     },
+    changePermit.withPermit,
   );
 
   const getAdvertisedEndpoints = Effect.gen(function* () {

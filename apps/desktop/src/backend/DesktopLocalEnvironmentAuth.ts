@@ -1,10 +1,13 @@
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
+import type { RemoteEnvironmentRequestError } from "@t3tools/client-runtime/rpc";
 import {
   DESKTOP_LOCAL_BEARER_EXCHANGE_RETRY_TIMEOUT_MS,
   DESKTOP_LOCAL_BEARER_READY_TIMEOUT_MS,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
 } from "@t3tools/contracts";
+import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -32,6 +35,10 @@ export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT = Duration.millis(
 );
 export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_SPACING = Duration.millis(200);
 export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_TIMEOUT_MS = 2_000;
+
+// Only transient loopback failures are retryable; rejected credentials and other
+// server errors are final.
+const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([502, 503, 504]);
 
 export class DesktopLocalEnvironmentAuthBackendNotConfiguredError extends Schema.TaggedError<DesktopLocalEnvironmentAuthBackendNotConfiguredError>()(
   "DesktopLocalEnvironmentAuthBackendNotConfiguredError",
@@ -64,15 +71,13 @@ export class DesktopLocalEnvironmentAuth extends Context.Service<
   }
 >()("@t3tools/desktop/backend/DesktopLocalEnvironmentAuth") {}
 
-const isRetryableLocalBearerBootstrapError = (error: { readonly _tag: string }): boolean => {
+const isRetryableLocalBearerBootstrapError = (error: RemoteEnvironmentRequestError): boolean => {
   switch (error._tag) {
     case "RemoteEnvironmentAuthFetchError":
     case "RemoteEnvironmentAuthTimeoutError":
       return true;
     case "RemoteEnvironmentAuthUndeclaredStatusError":
-      return (
-        "status" in error && (error.status === 502 || error.status === 503 || error.status === 504)
-      );
+      return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status);
     default:
       return false;
   }
@@ -113,7 +118,14 @@ export const make = Effect.gen(function* () {
           return yield* new DesktopLocalEnvironmentAuthBackendNotConfiguredError();
         }
         const config = configOption.value;
-        const credential = config.bootstrap.desktopBootstrapToken;
+        // A backend launched with the desktop secret accepts the current
+        // window's token, not the one frozen into its launch config; this
+        // exchange can run long after launch (e.g. after a suspend).
+        const secret = config.bootstrap.desktopBootstrapSecret;
+        const credential =
+          secret === undefined
+            ? config.bootstrap.desktopBootstrapToken
+            : currentDesktopBootstrapToken(secret, yield* Clock.currentTimeMillis);
         if (!credential) {
           return yield* new DesktopLocalEnvironmentAuthBackendNotConfiguredError();
         }
@@ -147,6 +159,7 @@ export const make = Effect.gen(function* () {
             while: isRetryableLocalBearerBootstrapError,
             schedule: Schedule.spaced(LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_SPACING),
           }),
+          // Bounds the attempts and any request still in flight at the deadline.
           Effect.timeoutOption(LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT),
           Effect.mapError(
             (cause) =>

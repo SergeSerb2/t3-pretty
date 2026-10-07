@@ -127,13 +127,6 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
       );
       return;
     }
-    let request: IDBOpenDBRequest;
-    try {
-      request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-    } catch (cause) {
-      resume(Effect.fail(catalogError("open", cause)));
-      return;
-    }
     let settled = false;
     let blockedTimeout: ReturnType<typeof setTimeout> | null = null;
     const settle = (effect: Effect.Effect<IDBDatabase, ConnectionTransientError>) => {
@@ -146,54 +139,59 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
       resume(effect);
       return true;
     };
-    request.addEventListener("upgradeneeded", () => {
-      if (!request.result.objectStoreNames.contains(CATALOG_STORE_NAME)) {
-        request.result.createObjectStore(CATALOG_STORE_NAME);
-      }
-      if (!request.result.objectStoreNames.contains(SHELL_STORE_NAME)) {
-        request.result.createObjectStore(SHELL_STORE_NAME);
-      }
-      if (!request.result.objectStoreNames.contains(THREAD_STORE_NAME)) {
-        request.result.createObjectStore(THREAD_STORE_NAME);
-      }
-      if (!request.result.objectStoreNames.contains(SERVER_CONFIG_STORE_NAME)) {
-        request.result.createObjectStore(SERVER_CONFIG_STORE_NAME);
-      }
-      if (!request.result.objectStoreNames.contains(VCS_REFS_STORE_NAME)) {
-        request.result.createObjectStore(VCS_REFS_STORE_NAME);
-      }
-      if (!request.result.objectStoreNames.contains(THREAD_LIFECYCLE_OUTBOX_STORE_NAME)) {
-        request.result.createObjectStore(THREAD_LIFECYCLE_OUTBOX_STORE_NAME);
-      }
-    });
-    request.addEventListener("error", () => {
-      settle(Effect.fail(catalogError("open", request.error ?? "Unknown IndexedDB error")));
-    });
-    request.addEventListener("blocked", () => {
-      if (blockedTimeout !== null) return;
-      blockedTimeout = setTimeout(() => {
-        settle(
-          Effect.fail(
-            catalogError(
-              "open",
-              "IndexedDB upgrade is blocked by another open T3 Code tab. Close or reload the older tab and retry.",
+    try {
+      const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+      request.addEventListener("upgradeneeded", () => {
+        if (!request.result.objectStoreNames.contains(CATALOG_STORE_NAME)) {
+          request.result.createObjectStore(CATALOG_STORE_NAME);
+        }
+        if (!request.result.objectStoreNames.contains(SHELL_STORE_NAME)) {
+          request.result.createObjectStore(SHELL_STORE_NAME);
+        }
+        if (!request.result.objectStoreNames.contains(THREAD_STORE_NAME)) {
+          request.result.createObjectStore(THREAD_STORE_NAME);
+        }
+        if (!request.result.objectStoreNames.contains(SERVER_CONFIG_STORE_NAME)) {
+          request.result.createObjectStore(SERVER_CONFIG_STORE_NAME);
+        }
+        if (!request.result.objectStoreNames.contains(VCS_REFS_STORE_NAME)) {
+          request.result.createObjectStore(VCS_REFS_STORE_NAME);
+        }
+        if (!request.result.objectStoreNames.contains(THREAD_LIFECYCLE_OUTBOX_STORE_NAME)) {
+          request.result.createObjectStore(THREAD_LIFECYCLE_OUTBOX_STORE_NAME);
+        }
+      });
+      request.addEventListener("error", () => {
+        settle(Effect.fail(catalogError("open", request.error ?? "Unknown IndexedDB error")));
+      });
+      request.addEventListener("blocked", () => {
+        if (blockedTimeout !== null) return;
+        blockedTimeout = setTimeout(() => {
+          settle(
+            Effect.fail(
+              catalogError(
+                "open",
+                "IndexedDB upgrade is blocked by another open T3 Code tab. Close or reload the older tab and retry.",
+              ),
             ),
-          ),
-        );
-      }, BLOCKED_DATABASE_OPEN_TIMEOUT_MS);
-    });
-    request.addEventListener("success", () => {
-      const database = request.result;
-      if (!settle(Effect.succeed(database))) {
-        // A blocked request can still succeed after its caller has already
-        // failed. Do not leave that late database handle open indefinitely.
-        database.close();
-        return;
-      }
-      // Cooperate with a future schema upgrade in another tab instead of
-      // holding it blocked for the lifetime of this page.
-      database.addEventListener("versionchange", () => database.close(), { once: true });
-    });
+          );
+        }, BLOCKED_DATABASE_OPEN_TIMEOUT_MS);
+      });
+      request.addEventListener("success", () => {
+        const database = request.result;
+        if (!settle(Effect.succeed(database))) {
+          // A blocked request can still succeed after its caller has already
+          // failed. Do not leave that late database handle open indefinitely.
+          database.close();
+          return;
+        }
+        // Cooperate with a future schema upgrade in another tab instead of
+        // holding it blocked for the lifetime of this page.
+        database.addEventListener("versionchange", () => database.close(), { once: true });
+      });
+    } catch (cause) {
+      settle(Effect.fail(catalogError("open", cause)));
+    }
 
     return Effect.sync(() => {
       if (settled) return;
@@ -208,7 +206,83 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
   });
 });
 
-function readDatabaseValue(database: IDBDatabase, storeName: string, key: IDBValidKey) {
+interface DatabaseHandle {
+  readonly get: Effect.Effect<IDBDatabase, ConnectionTransientError>;
+  /** Forget `database` if it is still the shared connection, so the next access reopens. */
+  readonly invalidate: (database: IDBDatabase) => Effect.Effect<void>;
+}
+
+/** Share a connection until the browser closes it; the next access reopens it. */
+const makeDatabaseHandle = Effect.fn("web.connectionStorage.makeDatabaseHandle")(function* () {
+  const lock = yield* Semaphore.make(1);
+  let current: IDBDatabase | null = null;
+  const forget = (database: IDBDatabase) => {
+    if (current === database) current = null;
+  };
+  const get = Effect.suspend(() =>
+    current !== null
+      ? Effect.succeed(current)
+      : lock.withPermits(1)(
+          Effect.gen(function* () {
+            if (current !== null) return current;
+            const opened = yield* openDatabase();
+            current = opened;
+            opened.addEventListener("close", () => forget(opened));
+            // Another tab upgrading the schema waits on this connection.
+            opened.addEventListener("versionchange", () => {
+              forget(opened);
+              opened.close();
+            });
+            return opened;
+          }),
+        ),
+  );
+  const close = lock.withPermits(1)(
+    Effect.sync(() => {
+      current?.close();
+      current = null;
+    }),
+  );
+  const handle: DatabaseHandle = {
+    get,
+    invalidate: (database) => Effect.sync(() => forget(database)),
+  };
+  return { handle, close };
+});
+
+/**
+ * Runs `use` on the shared connection. A connection the browser already closed
+ * throws InvalidStateError even when no close event reached this tab, so drop
+ * it and retry once on a fresh one instead of failing every later operation.
+ */
+function withDatabase<A>(
+  database: DatabaseHandle,
+  use: (opened: IDBDatabase) => Effect.Effect<A, ConnectionTransientError>,
+) {
+  // Only a connection that opened and then failed is stale; a failing open is
+  // storage being unavailable, which a retry would not fix.
+  const closedConnection = Symbol("closedConnection");
+  const attempt = Effect.flatMap(database.get, (opened) =>
+    use(opened).pipe(
+      Effect.catchIf(
+        (error) => error.detail.includes("InvalidStateError"),
+        (error) =>
+          database
+            .invalidate(opened)
+            .pipe(Effect.andThen(Effect.fail({ [closedConnection]: error } as const))),
+      ),
+    ),
+  );
+  return attempt.pipe(
+    Effect.catchIf(
+      (error): error is { readonly [closedConnection]: ConnectionTransientError } =>
+        closedConnection in error,
+      () => Effect.flatMap(database.get, use),
+    ),
+  );
+}
+
+function readDatabaseValueOnConnection(database: IDBDatabase, storeName: string, key: IDBValidKey) {
   return Effect.callback<unknown, ConnectionTransientError>((resume) => {
     let settled = false;
     let transaction: IDBTransaction | null = null;
@@ -266,7 +340,7 @@ function readDatabaseValue(database: IDBDatabase, storeName: string, key: IDBVal
   }).pipe(Effect.withSpan("web.connectionStorage.readDatabaseValue"));
 }
 
-function writeDatabaseValue(
+function writeDatabaseValueOnConnection(
   database: IDBDatabase,
   storeName: string,
   key: IDBValidKey,
@@ -318,7 +392,11 @@ function writeDatabaseValue(
   }).pipe(Effect.withSpan("web.connectionStorage.writeDatabaseValue"));
 }
 
-function removeDatabaseValue(database: IDBDatabase, storeName: string, key: IDBValidKey) {
+function removeDatabaseValueOnConnection(
+  database: IDBDatabase,
+  storeName: string,
+  key: IDBValidKey,
+) {
   return Effect.callback<void, ConnectionTransientError>((resume) => {
     let settled = false;
     let transaction: IDBTransaction | null = null;
@@ -366,7 +444,11 @@ function removeDatabaseValue(database: IDBDatabase, storeName: string, key: IDBV
   }).pipe(Effect.withSpan("web.connectionStorage.removeDatabaseValue"));
 }
 
-function removeDatabaseValuesInRange(database: IDBDatabase, storeName: string, range: IDBKeyRange) {
+function removeDatabaseValuesInRangeOnConnection(
+  database: IDBDatabase,
+  storeName: string,
+  range: IDBKeyRange,
+) {
   return Effect.callback<void, ConnectionTransientError>((resume) => {
     let settled = false;
     let transaction: IDBTransaction | null = null;
@@ -409,8 +491,12 @@ function removeDatabaseValuesInRange(database: IDBDatabase, storeName: string, r
         if (cursor === null) {
           return;
         }
-        cursor.delete();
-        cursor.continue();
+        try {
+          cursor.delete();
+          cursor.continue();
+        } catch (cause) {
+          settle(Effect.fail(catalogError("remove", cause)));
+        }
       });
     } catch (cause) {
       settle(Effect.fail(catalogError("remove", cause)));
@@ -427,9 +513,40 @@ function removeDatabaseValuesInRange(database: IDBDatabase, storeName: string, r
   }).pipe(Effect.withSpan("web.connectionStorage.removeDatabaseValuesInRange"));
 }
 
+function readDatabaseValue(database: DatabaseHandle, storeName: string, key: IDBValidKey) {
+  return withDatabase(database, (opened) => readDatabaseValueOnConnection(opened, storeName, key));
+}
+
+function writeDatabaseValue(
+  database: DatabaseHandle,
+  storeName: string,
+  key: IDBValidKey,
+  value: unknown,
+) {
+  return withDatabase(database, (opened) =>
+    writeDatabaseValueOnConnection(opened, storeName, key, value),
+  );
+}
+
+function removeDatabaseValue(database: DatabaseHandle, storeName: string, key: IDBValidKey) {
+  return withDatabase(database, (opened) =>
+    removeDatabaseValueOnConnection(opened, storeName, key),
+  );
+}
+
+function removeDatabaseValuesInRange(
+  database: DatabaseHandle,
+  storeName: string,
+  range: IDBKeyRange,
+) {
+  return withDatabase(database, (opened) =>
+    removeDatabaseValuesInRangeOnConnection(opened, storeName, range),
+  );
+}
+
 const discardCorruptCacheValue = Effect.fn("web.connectionStorage.discardCorruptCacheValue")(
   function* (
-    database: IDBDatabase,
+    database: DatabaseHandle,
     storeName: string,
     key: IDBValidKey,
     cacheName: string,
@@ -479,7 +596,7 @@ export interface CatalogBackend {
   readonly quarantine?: (raw: string) => Effect.Effect<void, ConnectionTransientError>;
 }
 
-export function makeCatalogBackend(database: IDBDatabase): CatalogBackend {
+export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
   const bridge = window.desktopBridge;
   if (bridge?.getConnectionCatalog !== undefined && bridge.setConnectionCatalog !== undefined) {
     return {
@@ -685,10 +802,11 @@ export function makeBrowserGitHubRoutingPermissions(
   });
 }
 
-export const connectionStorageLayer = Layer.effectContext(
+export const layer = Layer.effectContext(
   Effect.gen(function* () {
-    const database = yield* Effect.acquireRelease(openDatabase(), (database) =>
-      Effect.sync(() => database.close()),
+    const { handle: database } = yield* Effect.acquireRelease(
+      makeDatabaseHandle(),
+      (owned) => owned.close,
     );
     const catalog = yield* makeCatalogStore(makeCatalogBackend(database));
     const githubRoutingPermissions = makeBrowserGitHubRoutingPermissions();

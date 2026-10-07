@@ -30,6 +30,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { readFileStringWithinLimit } from "../../boundedFileRead.ts";
+import * as DesktopBackendConfiguration from "../../backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "../../backend/DesktopLocalEnvironmentAuth.ts";
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
@@ -149,6 +150,7 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeIpcMethod({
   ),
   handler: Effect.fn("desktop.ipc.window.getLocalEnvironmentBootstraps")(function* () {
     const pool = yield* DesktopBackendPool.DesktopBackendPool;
+    const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
     const instances = yield* pool.list;
     const bootstraps: DesktopEnvironmentBootstrap[] = [];
     for (const instance of instances) {
@@ -197,9 +199,16 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeIpcMethod({
         runningDistro,
         httpBaseUrl: httpBaseUrl.href,
         wsBaseUrl: toWebSocketBaseUrl(httpBaseUrl),
-        ...(bootstrap.desktopBootstrapToken
-          ? { bootstrapToken: bootstrap.desktopBootstrapToken }
-          : {}),
+        // A backend launched with the desktop secret accepts whichever token
+        // the secret derives for the current window, so hand out that one
+        // rather than the token frozen into its launch config. Every backend
+        // the desktop launches (primary, staged or mounted WSL runtime) is the
+        // server build bundled with this desktop, so it understands the secret.
+        ...(bootstrap.desktopBootstrapSecret
+          ? { bootstrapToken: yield* configuration.currentBootstrapToken }
+          : bootstrap.desktopBootstrapToken
+            ? { bootstrapToken: bootstrap.desktopBootstrapToken }
+            : {}),
       });
     }
     return bootstraps;
