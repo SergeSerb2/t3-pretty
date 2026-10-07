@@ -1,6 +1,6 @@
 # T3 Code
 
-T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, Antigravity) and serves web, desktop, and mobile clients.
+T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity) and serves web, desktop, and mobile clients.
 
 You can think of T3 Code as an open source "bring-your-own-subscription" alternative to apps like Claude Desktop, Codex App, Cursor Glass and Conductor.
 
@@ -48,7 +48,7 @@ We need to be on the same page with terminology. When communicating, use this la
 - **we, us, and maintainers** mean Theo, Julius and the people building T3 Code. These are who you are talking to now.
 - **user** means the person using T3 Code to direct coding agents.
 - **agent** means the coding agent a user runs inside T3 Code. Depending on context, that may also include you.
-- **provider** means the agent runtime or harness T3 Code talks to, such as Codex, Claude, Cursor, or Grok.
+- **provider** means the agent runtime or harness T3 Code talks to, such as Codex, Claude, Cursor, Grok, or OpenCode.
 - **client** means the web, desktop, or mobile UI.
 - **environment** means one running T3 server and the machine, filesystem, provider credentials, and state it owns.
 - **project** means an environment-local workspace record rooted at a directory.
@@ -68,7 +68,7 @@ The most common defect in this repo is a change that works on the path you teste
 
 - **Entry points.** A behavior reachable from the chat view is usually also reachable from Settings, the command palette, and a keybinding. Fixing one is not fixing the feature.
 - **Clients.** Web, desktop (wraps web, adds Electron shell/IPC), and mobile (React Native, separate navigation). Shared logic lives in `packages/client-runtime`
-- **Providers.** Codex, Claude, Cursor, Grok, and Antigravity each have an adapter. Provider-shaped features need a decision per adapter, even if the decision is "not supported here".
+- **Providers.** Codex, Claude, Cursor, Grok, OpenCode, and Antigravity each have an adapter. Provider-shaped features need a decision per adapter, even if the decision is "not supported here".
 - **Agents.** A capability a user can trigger is usually one an agent should reach through MCP tools, and scheduled tasks run the same paths. That only works when it is a service method, not handler code.
 - **Contracts.** Anything crossing the wire is typed in `packages/contracts`. Change the schema and the server, web, mobile, and desktop all follow.
 - **Reverse states.** If you added a way in, add the way out and the way to see it. Snooze needs unsnooze. Close needs reopen. A one-way door is a bug.
@@ -88,17 +88,8 @@ The most common defect in this repo is a change that works on the path you teste
 
 An empty database is a bad test. Seed your worktree's `.t3` with a copy of real data instead of pointing at live state:
 
-- Copy from `~/.t3/userdata` (the developer's real data, the most realistic test set) or `~/.t3/dev`. Worktree state lives at `<worktree>/.t3/userdata`.
-- Snapshot the database with `VACUUM INTO`, which is safe even while a server has the source open and yields one consistent file:
-
-  ```bash
-  mkdir -p .t3/userdata
-  rm -f .t3/userdata/state.sqlite*  # VACUUM INTO refuses to overwrite
-  bun -e "new (require('bun:sqlite').Database)(process.env.HOME + '/.t3/userdata/state.sqlite', { readonly: true }).run(\"VACUUM INTO '.t3/userdata/state.sqlite'\")"
-  ```
-
-  A plain `cp` is only safe when no server has the source open, and must bring the `-wal` and `-shm` siblings along. A live file copy is a corrupt copy.
-
+- Run `vp run migrate-dev-db` with your dev server stopped. It rebuilds `<worktree>/.t3/userdata/statev2.sqlite` from a read-only snapshot of `~/.t3/userdata/statev2.sqlite`, the developer's real data. It keeps recent projects and their stopped threads, and drops scheduled tasks, pending work, and auth sessions, so your dev server never runs the developer's agents. Raise `--projects` and `--threads-per-project` for more data.
+- Refresh `statev2.sqlite`, not `state.sqlite`. The server copies the V1 `state.sqlite` only when `statev2.sqlite` is missing.
 - Bring `secrets` and `settings.json` only if the flow under test needs them.
 - Copy in, never symlink. Data flows one way: into your sandbox, never back out.
 
@@ -108,10 +99,23 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 - Test meaningful logic or observable behavior. Do not render components to static markup to assert props or attributes, or add tests that merely assert callback wiring or mirror the implementation.
 - **Do not run repo-wide checks.** No `vp check`, no `vp run -r test`, no `vp run -r typecheck` unless I ask. CI owns the full suite.
 - Backend behavior changes ship with focused tests for that behavior.
-- The server is event-sourced and its async flows emit typed receipts. Wait on receipts and worker drains, never on sleeps or polling. A test that needs a timeout to pass is wrong.
+- The server is event-sourced, and side effects run after the command commits. In tests, drain the effect worker (`OrchestrationEffectWorkerV2.drain`) or await the specific persisted event or `Deferred` that marks the milestone. Never wait on sleeps or polling. A test that needs a timeout to pass is wrong.
 - Upon request, user-visible frontend changes should get one integrated pass in a real client: `test-t3-app` for web, `test-t3-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers. Ask permission before doing computer use or spinning up browsers.
 
 For authorized mobile verification, a missing or outdated native client is a build step, not a blocker. Run `node scripts/mobile-native-client.ts ensure <ios|android> <device-id>` on the simulator host before starting Metro. It checks the local Expo fingerprint and builds/installs when needed. See `test-t3-mobile` for the full workflow.
+
+## Maintainer fleet updates
+
+For this maintainer's T3 Pretty release and rollout work, updating stale owned environments is part of delivery. The maintainer authorizes these updates over existing SSH connections; do not ask again for each machine. This policy covers T3 Pretty runtimes and dependencies needed for the requested rollout. The owned fleet is the maintainer's current MacBook and the SSH targets `m1-dev`, `sergecode-windows`, `sanas`, and `m1-linux`, plus hosts the maintainer explicitly adds to a rollout. Saved Connections and other SSH aliases are discovery evidence, not authorization to update additional machines. Deduplicate aliases and inspect running versions before making changes.
+
+- Use published artifacts from the fork's Origin `main` release pipeline and the configured updater feed. Follow [fork releases](docs/operations/fork-release.md). Preserve each host's build flavor and channel, confirm the artifact contains the requested change, verify its checksum and applicable signature/notarization, and keep the previous runtime for rollback. Never build or merge source on installed machines, downgrade implicitly, or substitute an upstream release.
+- Update hosts that need it automatically through the supported desktop updater or managed service launcher. Preserve active turns with the supported continuation handoff. If that path is unavailable, stage the verified update and wait for the host to become idle. Do not terminate agents by pattern or interrupt the app controlling the current task with an ad hoc restart. Update one execution host at a time and verify it before proceeding.
+- Preserve credentials, projects, saved connections, and host settings. Operational commands and authenticated settings RPCs on the installed app are authorized; the live-data rule above still forbids directly editing the database or starting a second server against it. Use only ingestion credentials for monitoring on hosts, keep management tokens local, and retain metadata and redacted summaries under the saved monitoring consent.
+- Verify the installed version, backend readiness, client rendering where applicable, and authenticated connectivity after every update. A relay host must register its tunnel again. For a monitoring rollout, verify the collector is ready and real host observations reach the managed destination. A published artifact or green CI alone does not prove fleet activation.
+- If installed-version, readiness, rendering, or relay verification fails after an update, stop further updates and restore the kept runtime through the supported rollback path. Verify the restored host before resuming the rollout. If only monitoring verification fails, stop further updates and repair enrollment or delivery while preserving the healthy runtime; disable a failing collector if necessary. Report the host as not activated until verification passes. Never leave a failed runtime in place and move on.
+- If a host is offline, authentication fails, or its platform artifact is not published, record the exact boundary and continue with reachable hosts. Retry deferred hosts when they reconnect or the artifact becomes available within the rollout; do not weaken authentication or claim completion for an unverified host. Report versions and verification results per environment.
+
+These instructions guide agents when they run; they do not create a background update scheduler.
 
 ## Pull requests
 
@@ -137,15 +141,16 @@ with `gh pr`. Do not retarget `origin` at github.com.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
 - UI changes need before/after images. Motion or timing needs a short video.
 - Upload PR evidence to GitHub. Never commit PR-only screenshots or assets such as `.github/pr-assets/`.
-- One concern per PR. If the description says "also", split it.
+- Start with one PR per request and keep one concern per PR. If a request or description says "also", split it. Outside contributions also follow the [one problem per PR](CONTRIBUTING.md#one-problem) rule.
 - When babysitting: use `origin pr view`, `origin pr checks`, and
   `origin pr comment`. Poll checks and comments newer than the last push,
   verify each bot finding against the source, fix real ones, dismiss false
   positives with a written reason. Stay quiet when nothing is new. Stop when
-  required review and CI checks are green on the latest commit and the PR
-  can merge, then enable auto-merge (or merge). Ignore Buildkite / PR
-  deployment status — another bot monitors those. Do not wait for Buildkite
-  to turn green or treat a red Buildkite run as a finding to fix.
+  required review is complete, all relevant bots and CI checks are green on
+  the latest commit, and the PR can merge; then enable auto-merge (or merge).
+  Ignore Buildkite / PR deployment status — another bot monitors those. Do
+  not wait for Buildkite to turn green or treat a red Buildkite run as a
+  finding to fix.
 
 ## Documentation
 

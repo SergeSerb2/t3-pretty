@@ -110,8 +110,6 @@ function layerHttpClient(
   );
 }
 
-const httpClientLayer = layerHttpClient;
-
 const layerHealthyHttpClient = layerHttpClient((request) =>
   Effect.succeed(responseForRequest(request, 200)),
 );
@@ -755,7 +753,7 @@ describe("DesktopBackendManager", () => {
 
         const instance = yield* makeTestInstance({
           spawnerLayer,
-          httpClientLayer: httpClientLayer((request) =>
+          httpClientLayer: layerHttpClient((request) =>
             Effect.gen(function* () {
               yield* Deferred.succeed(firstRequest, void 0);
               const isServing = yield* Ref.get(serving);

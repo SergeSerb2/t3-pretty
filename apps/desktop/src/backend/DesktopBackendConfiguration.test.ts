@@ -101,9 +101,6 @@ function layerEnvironment(
   );
 }
 
-const serverExposureLayer = layerServerExposure;
-const makeEnvironmentLayer = layerEnvironment;
-
 const restoreEnv = (name: string, value: string | undefined) => {
   if (value === undefined) {
     delete process.env[name];
@@ -322,11 +319,11 @@ describe("DesktopBackendConfiguration", () => {
       }).pipe(
         Effect.provide(
           DesktopBackendConfiguration.layer.pipe(
-            Layer.provideMerge(serverExposureLayer),
+            Layer.provideMerge(layerServerExposure),
             Layer.provideMerge(DesktopAppSettings.layerTest()),
             Layer.provideMerge(DesktopWslEnvironment.layerTest()),
             Layer.provideMerge(DesktopWslServerTree.layerTest()),
-            Layer.provideMerge(makeEnvironmentLayer(baseDir, { platform: "darwin" })),
+            Layer.provideMerge(layerEnvironment(baseDir, { platform: "darwin" })),
           ),
         ),
       );
@@ -371,11 +368,11 @@ describe("DesktopBackendConfiguration", () => {
       }).pipe(
         Effect.provide(
           DesktopBackendConfiguration.layer.pipe(
-            Layer.provideMerge(serverExposureLayer),
+            Layer.provideMerge(layerServerExposure),
             Layer.provideMerge(DesktopAppSettings.layerTest()),
             Layer.provideMerge(DesktopWslEnvironment.layerTest()),
             Layer.provideMerge(DesktopWslServerTree.layerTest()),
-            Layer.provideMerge(makeEnvironmentLayer(baseDir, { platform: "win32" })),
+            Layer.provideMerge(layerEnvironment(baseDir, { platform: "win32" })),
           ),
         ),
       );

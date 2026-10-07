@@ -1313,10 +1313,13 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
 - `apps/server/src/textGeneration/*` — Kept `collectUint8StreamText` / 1 MiB diagnostic caps and Pretty extra operations.
 - Relay worker — Kept home-suggestions API/store and `serveRelayHttpRequestWith` (health-path deadline).
 - Fork workflows under `.github/workflows` remain the Pretty set.
+- `AGENTS.md` — Restored Pretty `migrate-dev-db` / `statev2.sqlite` test-data seeding, effect-worker drain verification, Origin PR babysitting, and the one-concern-per-PR rule (including the CONTRIBUTING one-problem-per-PR link).
+- `AGENTS.md` — Restored the Pretty-only “Maintainer fleet updates” section (owned hosts, published-artifact/updater-only rollout, continuation handoff, rollback, and the ban on building source on installed machines).
 
 ## Parent changes integrated at conflict boundaries
 
 - Preview `adjust` and `clearProfile` commands, server-browser / CDP host path, and `HttpObservability.layer` / `layerRemoteHttpClient` naming.
+- `AGENTS.md` — Added OpenCode to the intro, glossary, and provider-surface list next to Pretty’s Grok mention. Kept 2735’s decider/projector/reactor “How it works” rewrite.
 - Text generation `TextGenerationOperations.fromRunner` extraction and 2735 CLI/runner changes.
 - Relay `layer*` HTTP API names, `traceRelayHttpRequestWith`, and HeldHooks-owned hook endpoint resolution.
 - PlaywrightInjectedRuntime and the unused web preview-automation helper modules were deleted with the parent; WelcomeWizard stays deleted in favor of Trailhead.
@@ -1324,6 +1327,8 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
 ## Parent changes intentionally omitted
 
 - None of the 2735 preview-adjust / clear-profile / server-browser work was omitted. The parent deletion of preview-automation RPCs was not taken: Pretty still hosts automation connections.
+- `AGENTS.md` — Did not take the parent “Split it only when the maintainer asks” PR rule. That conflicts with Pretty’s one-concern-per-PR policy, same as earlier nightlies.
+- `AGENTS.md` — Did not take the parent `VACUUM INTO` / `state.sqlite` test-data recipe. Pretty seeds worktree state with `migrate-dev-db` into `statev2.sqlite`.
 
 ## Post-merge repairs
 
@@ -1339,4 +1344,4 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
 - `server-bundle` failed on stale `Layers/` and `effect/unstable/http` imports after 2735 flattened persistence/provider modules. Pointed `server.ts` / AgentMonitoring / ProjectionAutomation* at the flattened paths and `effect/http`.
 - `mobile-typecheck` needed aliases for 2735 `layer` names (`connectionStorageLayer`, `runtimeContextLayer`, `cryptoLayer`, `relayTestLayer`).
 - Re-applied Pretty environment label/remote URL max-length checks so the existing contract tests still hold, and only split same-machine clones when the checkout root is known so 2735 fork-origin grouping still works.
-
+- Origin review of this compose flagged the dropped fleet-update section and leftover `serverExposureLayer` / `makeEnvironmentLayer` / `httpClientLayer` aliases in desktop backend tests. Restored the policy from Origin `main` and pointed those call sites at `layerServerExposure` / `layerEnvironment` / `layerHttpClient`.
