@@ -190,6 +190,7 @@ describe("cloud environment offline reasons", () => {
     await act(async () => {
       publish({
         environments: new Map([[newMachineId, offlineEntry("tunnel_released")]]),
+        loaded: true,
         refreshing: false,
         offline: false,
         error: Option.none(),

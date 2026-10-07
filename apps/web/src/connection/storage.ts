@@ -5,6 +5,7 @@ import {
   ORCHESTRATION_CACHE_SCHEMA_VERSION,
   StoredOrchestrationShellSnapshot,
   StoredOrchestrationThreadSnapshot,
+  decodeOrDiscardOrchestrationCache,
   putRemoteDpopTokenInCatalog,
   registerConnectionInCatalog,
   removeCatalogValue,
@@ -206,10 +207,24 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
   });
 });
 
-interface DatabaseHandle {
+export interface DatabaseHandle {
   readonly get: Effect.Effect<IDBDatabase, ConnectionTransientError>;
   /** Forget `database` if it is still the shared connection, so the next access reopens. */
   readonly invalidate: (database: IDBDatabase) => Effect.Effect<void>;
+}
+
+function isDatabaseHandle(database: IDBDatabase | DatabaseHandle): database is DatabaseHandle {
+  return typeof (database as DatabaseHandle).invalidate === "function";
+}
+
+/** Shared connection handle, or a raw IDBDatabase from catalog-backend tests. */
+function toDatabaseHandle(database: IDBDatabase | DatabaseHandle): DatabaseHandle {
+  return isDatabaseHandle(database)
+    ? database
+    : {
+        get: Effect.succeed(database),
+        invalidate: () => Effect.void,
+      };
 }
 
 /** Share a connection until the browser closes it; the next access reopens it. */
@@ -596,7 +611,8 @@ export interface CatalogBackend {
   readonly quarantine?: (raw: string) => Effect.Effect<void, ConnectionTransientError>;
 }
 
-export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
+export function makeCatalogBackend(database: IDBDatabase | DatabaseHandle): CatalogBackend {
+  const handle = toDatabaseHandle(database);
   const bridge = window.desktopBridge;
   if (bridge?.getConnectionCatalog !== undefined && bridge.setConnectionCatalog !== undefined) {
     return {
@@ -624,11 +640,11 @@ export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
   }
 
   return {
-    read: readDatabaseValue(database, CATALOG_STORE_NAME, CATALOG_KEY).pipe(
+    read: readDatabaseValue(handle, CATALOG_STORE_NAME, CATALOG_KEY).pipe(
       Effect.map((value) => (typeof value === "string" ? value : null)),
     ),
-    write: (raw) => writeDatabaseValue(database, CATALOG_STORE_NAME, CATALOG_KEY, raw),
-    quarantine: (raw) => writeDatabaseValue(database, CATALOG_STORE_NAME, CORRUPT_CATALOG_KEY, raw),
+    write: (raw) => writeDatabaseValue(handle, CATALOG_STORE_NAME, CATALOG_KEY, raw),
+    quarantine: (raw) => writeDatabaseValue(handle, CATALOG_STORE_NAME, CORRUPT_CATALOG_KEY, raw),
   };
 }
 
@@ -979,27 +995,27 @@ export const layer = Layer.effectContext(
             if (typeof raw !== "string") {
               return Effect.succeedNone;
             }
-            return decodeStoredShellSnapshot(raw).pipe(
-              Effect.flatMap((stored) =>
-                stored.environmentId === environmentId
-                  ? Effect.succeed(Option.some(stored.snapshot))
-                  : discardCorruptCacheValue(
-                      database,
-                      SHELL_STORE_NAME,
-                      environmentId,
-                      "shell snapshot",
-                      "stored environment does not match its key",
-                    ),
-              ),
-              Effect.catch((cause) =>
-                discardCorruptCacheValue(
-                  database,
-                  SHELL_STORE_NAME,
-                  environmentId,
-                  "shell snapshot",
-                  cause,
+            return decodeOrDiscardOrchestrationCache(
+              decodeStoredShellSnapshot(raw).pipe(
+                Effect.flatMap((stored) =>
+                  stored.environmentId === environmentId
+                    ? Effect.succeed(Option.some(stored.snapshot))
+                    : discardCorruptCacheValue(
+                        database,
+                        SHELL_STORE_NAME,
+                        environmentId,
+                        "shell snapshot",
+                        "stored environment does not match its key",
+                      ),
                 ),
               ),
+              discardCorruptCacheValue(
+                database,
+                SHELL_STORE_NAME,
+                environmentId,
+                "shell snapshot",
+                "decode failed",
+              ).pipe(Effect.asVoid),
             );
           }),
           Effect.mapError((cause) => persistenceError("load-shell", cause)),
@@ -1075,27 +1091,27 @@ export const layer = Layer.effectContext(
             if (typeof raw !== "string") {
               return Effect.succeedNone;
             }
-            return decodeStoredThreadSnapshot(raw).pipe(
-              Effect.flatMap((stored) =>
-                stored.environmentId === environmentId && stored.threadId === threadId
-                  ? Effect.succeed(Option.some(stored.snapshot))
-                  : discardCorruptCacheValue(
-                      database,
-                      THREAD_STORE_NAME,
-                      threadCacheKey(environmentId, threadId),
-                      "thread snapshot",
-                      "stored thread identity does not match its key",
-                    ),
-              ),
-              Effect.catch((cause) =>
-                discardCorruptCacheValue(
-                  database,
-                  THREAD_STORE_NAME,
-                  threadCacheKey(environmentId, threadId),
-                  "thread snapshot",
-                  cause,
+            return decodeOrDiscardOrchestrationCache(
+              decodeStoredThreadSnapshot(raw).pipe(
+                Effect.flatMap((stored) =>
+                  stored.environmentId === environmentId && stored.threadId === threadId
+                    ? Effect.succeed(Option.some(stored.snapshot))
+                    : discardCorruptCacheValue(
+                        database,
+                        THREAD_STORE_NAME,
+                        threadCacheKey(environmentId, threadId),
+                        "thread snapshot",
+                        "stored thread identity does not match its key",
+                      ),
                 ),
               ),
+              discardCorruptCacheValue(
+                database,
+                THREAD_STORE_NAME,
+                threadCacheKey(environmentId, threadId),
+                "thread snapshot",
+                "decode failed",
+              ).pipe(Effect.asVoid),
             );
           }),
           Effect.mapError((cause) => persistenceError("load-thread", cause)),
@@ -1224,3 +1240,6 @@ export const layer = Layer.effectContext(
     );
   }),
 );
+
+/** Previous export name; prefer `layer`. */
+export const connectionStorageLayer = layer;

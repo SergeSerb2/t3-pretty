@@ -85,6 +85,6 @@ describe("primary environment HTTP layer", { concurrent: false }, () => {
 
       expect(error.reason._tag).toBe("TransportError");
       expect(fetchMock).not.toHaveBeenCalled();
-    }).pipe(Effect.provide(makePrimaryEnvironmentHttpLayer()));
+    }).pipe(Effect.provide(PrimaryEnvironmentHttpLayer.layerForCurrentOrigin()));
   });
 });

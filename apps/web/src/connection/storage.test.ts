@@ -14,6 +14,7 @@ import * as Stream from "effect/Stream";
 import { afterEach, vi } from "vite-plus/test";
 
 import * as ConnectionStorage from "./storage";
+import { makeCatalogBackend, makeCatalogStore } from "./storage";
 
 const emptyCatalog = {
   schemaVersion: 1,
@@ -60,6 +61,11 @@ function createFakeDatabase() {
   };
 }
 
+const fixedHandle = (database: IDBDatabase): ConnectionStorage.DatabaseHandle => ({
+  get: Effect.succeed(database),
+  invalidate: () => Effect.void,
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -97,11 +103,6 @@ describe("ConnectionStorage.makeCatalogStore", () => {
       expect(yield* Effect.flip(store.read)).toBe(failure);
     }),
   );
-});
-
-const fixedHandle = (database: IDBDatabase) => ({
-  get: Effect.succeed(database),
-  invalidate: () => Effect.void,
 });
 
 describe("ConnectionStorage.makeCatalogBackend", () => {
@@ -447,7 +448,7 @@ describe("browser GitHub routing permissions", () => {
       yield* first.set(entry, "read-write");
       expect(yield* second.get(entry)).toBe("read-write");
       const oldPermissions = Option.getOrThrow(yield* Stream.runHead(first.changes));
-      const staleCatalog = yield* ConnectionStorage.makeCatalogStore({
+      const staleCatalog = yield* makeCatalogStore({
         read: Effect.succeed(
           encodeCatalog({ ...emptyCatalog, githubRoutingPermissions: oldPermissions }),
         ),

@@ -44,6 +44,10 @@ function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpC
   );
 }
 
+export function makePrimaryEnvironmentHttpLayer() {
+  return layerForCurrentOrigin();
+}
+
 export function layerForCurrentOrigin() {
   return Layer.unwrap(
     Effect.sync(() => {
@@ -70,3 +74,4 @@ export function layerForCurrentOrigin() {
 }
 
 export const layer = layerForCurrentOrigin();
+export const primaryEnvironmentHttpLayer = layer;
