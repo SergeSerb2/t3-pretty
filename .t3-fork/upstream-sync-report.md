@@ -1328,4 +1328,5 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
 ## Post-merge repairs
 
 - `shared-typecheck` on the scheduled bot tree failed because auto-merge dropped `previewAutomationHostFocusConcurrencyKey` and renamed HTTP/relay test helpers without updating every call site. This compose keeps both names/behaviors and restores the missing export and RPC surface.
+- `install` failed with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH` because the merge took 2735's lockfile while Pretty's `pnpm-workspace.yaml` `patchedDependencies` set differs. Regenerated `pnpm-lock.yaml` with `pnpm install --lockfile-only --no-frozen-lockfile` (same path as `scripts/fork/run-upstream-sync.sh` `regenerate_lockfile`).
 
