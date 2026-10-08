@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261008.2833003290",
+    date: "2026-10-08",
+    items: [
+      {
+        kind: "fixed",
+        title: "Grok turns finish after Grok kills a background task",
+      },
+      {
+        kind: "fixed",
+        title: "Webhook and browser route-layer provides so packaged backend listens",
+      },
+      {
+        kind: "fixed",
+        title: "Pretty-only snapshot entities and guard sync against drizzle journal drift",
+      },
+      {
+        kind: "fixed",
+        title: "Honor explicit local native build over cloud default [skip ci]",
+      },
+      {
+        kind: "new",
+        title: "Clear response guidance",
+      },
+      {
+        kind: "fixed",
+        title: "Preserve working thread context",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261008.2833003288",
     date: "2026-10-08",
     items: [
