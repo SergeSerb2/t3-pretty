@@ -10,6 +10,7 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { cursorMcpServers, cursorRuntimeAgentPolicy } from "./CursorAdapterV2.ts";
 import { claudeMcpQueryOverrides } from "./ClaudeAdapterV2.ts";
 import { codexThreadRuntimeParams, normalizeCodexUserInputQuestions } from "./CodexAdapterV2.ts";
+import { museSessionMcpConfig } from "./MuseAdapterV2.ts";
 import { buildPiRpcLaunch } from "./piT3McpInjection.ts";
 import { grokAcpSpawnArgs } from "../../provider/acp/GrokAcpSupport.ts";
 import { ProviderAdapterV2RuntimePolicy } from "../ProviderAdapter.ts";
@@ -40,13 +41,20 @@ describe("fork provider workflows on V2", () => {
       const cursor = cursorMcpServers(threadId);
       const claude = claudeMcpQueryOverrides({ threadId, readOnlySandbox: false });
       const codex = codexThreadRuntimeParams({ threadId }).config.mcp_servers;
+      const muse = museSessionMcpConfig(session).mcpServers;
       const expectedNames = session.servers.map((server) => server.name);
       assert.deepEqual(Object.keys(cursor ?? {}), expectedNames);
       assert.deepEqual(Object.keys(claude.mcpServers ?? {}), expectedNames);
       assert.deepEqual(Object.keys((codex ?? {}) as Record<string, unknown>), expectedNames);
+      assert.deepEqual(Object.keys(muse), expectedNames);
       for (const server of session.servers) {
         assert.deepInclude(cursor?.[server.name], { type: "http", url: server.url });
         assert.isTrue((claude.allowedTools ?? []).includes(`mcp__${server.name}__*`));
+        assert.deepInclude(muse[server.name], {
+          transport: "streamableHttp",
+          mode: "optional",
+          url: server.url,
+        });
       }
       const restricted = claudeMcpQueryOverrides({ threadId, readOnlySandbox: true });
       assert.isFalse((restricted.allowedTools ?? []).includes("mcp__t3-code-computer__*"));

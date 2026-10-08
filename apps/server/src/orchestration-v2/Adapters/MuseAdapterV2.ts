@@ -266,6 +266,23 @@ const INFORMATIONAL_NOTIFICATIONS = new Set([
 const TOOLS_WITH_NATIVE_ROWS = new Set(["write_todos", "request_user_input", "workflow"]);
 const responseAnswerSchema = Schema.Union([Schema.String, Schema.Array(Schema.String)]);
 
+/** Session MCP config Muse understands. Maps every granted server; never reads `endpoint`. */
+export function museSessionMcpConfig(mcpSession: McpProviderSession.McpProviderSessionConfig) {
+  return {
+    mcpServers: Object.fromEntries(
+      mcpSession.servers.map((server) => [
+        server.name,
+        {
+          transport: "streamableHttp" as const,
+          mode: "optional" as const,
+          url: server.url,
+          headers: { Authorization: mcpSession.authorizationHeader },
+        },
+      ]),
+    ),
+  };
+}
+
 /** One scoped Muse host owns one native session; the orchestrator owns app runs and queuing. */
 export function makeMuseAdapterV2(options: MuseAdapterV2Options): ProviderAdapterV2Shape {
   const { idAllocator } = options;
@@ -1432,20 +1449,10 @@ export function makeMuseAdapterV2(options: MuseAdapterV2Options): ProviderAdapte
             return yield* protocolError(
               "Update Muse Code to a version that supports session MCP servers",
             );
-          const config = mcpSession
-            ? {
-                mcpServers: {
-                  // Muse defaults to "required", which fails the whole run when T3's
-                  // tools cannot be reached. The agent should still work without them.
-                  "t3-code": {
-                    transport: "streamableHttp",
-                    mode: "optional",
-                    url: mcpSession.endpoint,
-                    headers: { Authorization: mcpSession.authorizationHeader },
-                  },
-                },
-              }
-            : undefined;
+          // Muse defaults each server to "required", which fails the whole run
+          // when T3's tools cannot be reached. The agent should still work
+          // without them.
+          const config = mcpSession ? museSessionMcpConfig(mcpSession) : undefined;
           const startModel = yield* resolveModel(args.modelSelection);
           const result = yield* request(
             requestedId ? "session/resume" : "session/start",

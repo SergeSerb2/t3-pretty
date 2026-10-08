@@ -633,13 +633,13 @@ export const make = Effect.gen(function* () {
       .exists(dir)
       .pipe(Effect.catchCause(() => Effect.succeed(false)));
     if (!exists) return { provider, dir, volumeId, files: null } satisfies ScannedDir;
-    const files = yield* Effect.promise(() =>
+    const listing = yield* Effect.promise(() =>
       listTranscriptFiles(dir, windowStartMs, fileName === undefined ? undefined : { fileName }),
     );
     // A cold parse waits on disk reads, so a few files in flight read
     // close to twice as fast. Results keep walk order.
     const read = yield* Effect.forEach(
-      files,
+      listing.files,
       (file) =>
         readFileRecords(file.path, file.size, file.mtimeMs, provider).pipe(
           Effect.map((result) => ({ path: file.path, ...result })),
@@ -662,7 +662,23 @@ export const make = Effect.gen(function* () {
       }
       return { path, records };
     });
-    return { provider, dir, volumeId, files: parsedFiles } satisfies ScannedDir;
+    return {
+      provider,
+      dir,
+      volumeId,
+      files: parsedFiles,
+      ...(listing.truncated || listing.unreadableDirectories > 0
+        ? {
+            status: "partial" as const,
+            message:
+              listing.truncated && listing.unreadableDirectories > 0
+                ? "Some transcript files were skipped after the scan reached its file or directory limit, and some directories could not be read."
+                : listing.truncated
+                  ? "Some transcript files were skipped after the scan reached its file or directory limit."
+                  : "Some transcript directories could not be read.",
+          }
+        : {}),
+    } satisfies ScannedDir;
   });
 
   /** Fetches what one account cache is missing, then persists it if anything changed. */

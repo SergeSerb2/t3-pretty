@@ -369,4 +369,18 @@ it.layer(NodeServices.layer)("Muse text generation", (it) => {
       expect(generated.branch).toContain("fix-login");
     }),
   );
+
+  it.effect("generates activity headlines through the shared text-generation ops", () =>
+    Effect.gen(function* () {
+      const test = fixture(finish('{"headline":"Fixing the login form"}'));
+      const service = yield* test.make;
+      expect(
+        yield* service.generateActivityHeadline({
+          cwd: titleInput.cwd,
+          summary: "Editing login.ts",
+          modelSelection,
+        }),
+      ).toEqual({ headline: "Fixing the login form" });
+    }),
+  );
 });

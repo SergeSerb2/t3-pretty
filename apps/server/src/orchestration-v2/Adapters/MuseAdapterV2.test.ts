@@ -364,7 +364,10 @@ describe("MuseAdapterV2", () => {
         providerInstanceId: INSTANCE_ID,
         endpoint: "http://127.0.0.1:43210/mcp",
         authorizationHeader: "Bearer thread-scoped-test-token",
+        capabilities: new Set(["preview"]),
+        preview: true,
         browserToolsAvailable: true,
+        servers: [{ name: "t3-code", url: "http://127.0.0.1:43210/mcp" }],
       });
       for (const nativeId of [undefined, "saved-native-session"]) {
         const fake = yield* makeFakeMuse();
@@ -397,7 +400,10 @@ describe("MuseAdapterV2", () => {
         providerInstanceId: INSTANCE_ID,
         endpoint: "http://127.0.0.1:43210/mcp",
         authorizationHeader: "Bearer thread-scoped-test-token",
+        capabilities: new Set([]),
+        preview: false,
         browserToolsAvailable: false,
+        servers: [{ name: "t3-code", url: "http://127.0.0.1:43210/mcp" }],
       });
       const fake = yield* makeFakeMuse();
       const outcome = yield* makeHarness(fake).pipe(Effect.result);

@@ -1441,7 +1441,7 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
 - Pretty `UsageLayerLive` / `ServerSettingsLayerLive` naming; 2819's `CursorUsageReader.layer` is provided on that graph.
 - Pretty `untilTime: UsageTimestamp` on the usage summary input, plus 2819 `awaitRefresh`.
 - Historical `grokBot` display name next to 2819 Muse Code.
-- ChatView direct-annotation send path, `keepFullHistoryOnceRef`, and draft-thread PR linking.
+- ChatView direct-annotation send path, 2819 `keepFullHistory` / `fullHistoryThreadKeys`, and draft-thread PR linking.
 - client-runtime stale-time / force-refresh gate on connected environment queries, now passing 2819's `emit`.
 - Pretty Automatic PR / Automations user-doc links and the Full-access default paragraph.
 - Fork workflows under `.github/workflows` remain the Pretty set.
@@ -1462,3 +1462,7 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
 ## Post-merge repairs
 
 - Wired `hiddenProviders` from `readUsagePagePreferences()` / `updatePreferences` into `useUsage` and `UsageLimitsSection`. The 2819 preference schema and `usage.test.tsx` provider-filter cases landed with the tag.
+- Restored `pendingCount` on the Usage environment filter after the 2819 compose dropped it, and dropped the leftover `keepFullHistoryOnceRef` so ChatView matches 2819's `keepFullHistory` API.
+- `scanTranscriptDir` reads Pretty `TranscriptListing.files` (not the listing object) and marks the source `partial` when the walk is truncated or directories are unreadable.
+- Muse text generation uses `TextGenerationOperations.fromRunner` so Pretty activity headlines, home suggestions, and project-icon denial exist on the new driver.
+- Muse session MCP maps `mcpSession.servers` (Pretty granted toolkits and connected apps) instead of hard-coding one `t3-code` URL from `endpoint`.
