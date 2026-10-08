@@ -1,3 +1,4 @@
+import { createV5StackNavigator as createNativeStackNavigator } from "../../native/createV5StackNavigator";
 import type {
   EnvironmentId,
   ModelSelection,
@@ -16,10 +17,7 @@ import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
 import { usesChatGptSharing } from "@t3tools/shared/usageLimits";
 import { StackActions, useNavigation } from "@react-navigation/native";
-import {
-  createNativeStackNavigator,
-  type NativeStackNavigationProp,
-} from "@react-navigation/native-stack";
+import { type NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
 import { AsyncResult } from "effect/reactivity";
 import {

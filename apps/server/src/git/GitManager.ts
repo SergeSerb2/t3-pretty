@@ -1166,7 +1166,7 @@ export const make = Effect.gen(function* () {
       return Effect.gen(function* () {
         const { headContext, lookup } = yield* resolveLookupHeadContext(cwd, details);
         if (!lookup) {
-          return { latest: null, headContext };
+          return { latest: null, headContext, unpublishedSkip: false as const };
         }
         // Only skip when the branch is untracked as well: anything carrying an
         // upstream keeps the old behaviour.
@@ -1175,10 +1175,12 @@ export const make = Effect.gen(function* () {
           details.upstreamRef === null &&
           (yield* isUnpublishedBranch(cwd, headContext))
         ) {
-          return { latest: null, headContext };
+          // Do not cache the skip: `git push` without `-u` publishes the
+          // remote-tracking ref, and the next status must see it.
+          return { latest: null, headContext, unpublishedSkip: true as const };
         }
         const latest = yield* findLatestPrForHeadContext(cwd, headContext);
-        return { latest, headContext };
+        return { latest, headContext, unpublishedSkip: false as const };
       });
     },
     {
@@ -1186,6 +1188,9 @@ export const make = Effect.gen(function* () {
       timeToLive: (exit, key) => {
         if (Exit.isSuccess(exit)) {
           prLookupFailureStreakByKey.delete(key);
+          if (exit.value.unpublishedSkip) {
+            return Duration.zero;
+          }
           return exit.value.latest?.state === "open"
             ? PR_LOOKUP_CACHE_TTL
             : PR_LOOKUP_NO_OPEN_PR_CACHE_TTL;
@@ -1310,7 +1315,7 @@ export const make = Effect.gen(function* () {
               ? {
                   provider: error.provider,
                   providerOperation: error.operation,
-                  providerCommand: error.command ?? "unknown",
+                  ...(error.command === undefined ? {} : { providerCommand: error.command }),
                   errorDetail: error.detail,
                 }
               : {}),
@@ -2699,29 +2704,46 @@ export const make = Effect.gen(function* () {
       });
 
       const findLocalHeadBranch = Effect.fn("findLocalHeadBranch")(function* (cwd: string) {
-        const result = yield* gitCore.listRefs({ cwd, refresh: true });
-        const localBranch = result.refs.find(
-          (branch) => !branch.isRemote && branch.name === localPullRequestBranch,
-        );
-        if (localBranch) {
-          return localBranch;
-        }
-        if (localPullRequestBranch === pullRequest.headBranch) {
-          return null;
-        }
+        let cursor: number | undefined;
+        let refresh = true;
+        for (;;) {
+          const result = yield* gitCore.listRefs({
+            cwd,
+            refresh,
+            refKind: "local",
+            ...(cursor === undefined ? {} : { cursor }),
+          });
+          refresh = false;
 
-        for (const branch of result.refs) {
-          if (branch.isRemote || branch.name !== pullRequest.headBranch || !branch.worktreePath) {
-            continue;
+          const localBranch = result.refs.find(
+            (branch) => !branch.isRemote && branch.name === localPullRequestBranch,
+          );
+          if (localBranch) {
+            return localBranch;
           }
 
-          const worktreePath = yield* canonicalizeExistingPath(branch.worktreePath);
-          if (worktreePath !== rootWorktreePath) {
-            return branch;
-          }
-        }
+          if (localPullRequestBranch !== pullRequest.headBranch) {
+            for (const branch of result.refs) {
+              if (
+                branch.isRemote ||
+                branch.name !== pullRequest.headBranch ||
+                !branch.worktreePath
+              ) {
+                continue;
+              }
 
-        return null;
+              const worktreePath = yield* canonicalizeExistingPath(branch.worktreePath);
+              if (worktreePath !== rootWorktreePath) {
+                return branch;
+              }
+            }
+          }
+
+          if (result.nextCursor == null) {
+            return null;
+          }
+          cursor = result.nextCursor;
+        }
       });
 
       const existingBranchBeforeFetch = yield* findLocalHeadBranch(input.cwd);

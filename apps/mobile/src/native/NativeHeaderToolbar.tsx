@@ -121,6 +121,10 @@ function convertToolbarChild(child: ReactNode): NativeStackHeaderItem | null {
   }
 
   const typeName = elementTypeName(child);
+  if (typeName === "NativeHeaderToolbarCustom" && isValidElement(child.props.children)) {
+    return { type: "custom", element: child.props.children };
+  }
+
   if (typeName === "NativeHeaderToolbarButton") {
     return {
       type: "button",
@@ -268,6 +272,12 @@ function NativeHeaderToolbarMenuAction(_props: {
 }
 NativeHeaderToolbarMenuAction.displayName = "NativeHeaderToolbarMenuAction";
 
+/** Renders an arbitrary element as a bar item, e.g. a spinner standing in for a button. */
+function NativeHeaderToolbarCustom(_props: { readonly children: ReactElement }) {
+  return null;
+}
+NativeHeaderToolbarCustom.displayName = "NativeHeaderToolbarCustom";
+
 function NativeHeaderToolbarLabel(_props: { readonly children?: ReactNode }) {
   return null;
 }
@@ -289,6 +299,7 @@ NativeHeaderToolbarSearchBarSlot.displayName = "NativeHeaderToolbarSearchBarSlot
 
 export const NativeHeaderToolbar = Object.assign(NativeHeaderToolbarRoot, {
   Button: NativeHeaderToolbarButton,
+  Custom: NativeHeaderToolbarCustom,
   Label: NativeHeaderToolbarLabel,
   Menu: Object.assign(NativeHeaderToolbarMenu, {
     Action: NativeHeaderToolbarMenuAction,

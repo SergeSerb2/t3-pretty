@@ -41,6 +41,7 @@ import { RenderErrorBoundary, RenderFailureView } from "./components/RenderError
 import { shouldHandleAppLink } from "./lib/appLinking";
 import { isBoringMobileTheme } from "./lib/mobileTheme";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
+import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
 import { VoiceInputProvider } from "./features/voice-input/VoiceInputProvider";
 import { GlobalVoiceInputControl } from "./features/voice-input/GlobalVoiceInputControl";
@@ -76,6 +77,8 @@ function SplashScreenCoordinator() {
 }
 
 export default function App() {
+  useUiRuntimeMemoryWarningGc();
+
   return (
     <RenderErrorBoundary
       renderFallback={(fallback) => (

@@ -290,6 +290,8 @@ export function getThreadListV2OrderedSection(input: {
   readonly storageEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly queuedThreadKeys?: ReadonlySet<string>;
 }): EnvironmentThreadShell[] {
+  // An empty set is treated as absent so `?.` skips building the key.
+  const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   const threads = input.threads.filter((thread) => {
     if (thread.archivedAt !== null || thread.lineage.relationshipToParent === "subagent")
       return false;
@@ -303,7 +305,7 @@ export function getThreadListV2OrderedSection(input: {
     if (
       (input.settlementEnvironmentIds?.has(thread.environmentId) ?? true) &&
       thread.settledOverride === "settled" &&
-      input.queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) !== true
+      queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) !== true
     ) {
       return false;
     }
@@ -663,6 +665,8 @@ export function buildThreadListV2ListItems(input: {
   /** Thumbnail for each card row (glass Home only). Absent = no thumbnails. */
   readonly resolveSceneryThumb?: (thread: EnvironmentThreadShell) => string | null;
 }): ThreadListV2ListItem[] {
+  // An empty set is treated as absent so `?.` skips building the key.
+  const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   const threadItems = input.items.map((item): ThreadListV2ListItem => {
     const snoozeWakeLabelText =
       item.snoozed && item.thread.snoozedUntil != null && input.snoozeLabelNow !== undefined
@@ -694,7 +698,7 @@ export function buildThreadListV2ListItems(input: {
       showTrailingDivider: false,
       continuesGroup: false,
       hasQueuedMessages:
-        input.queuedThreadKeys?.has(`${item.thread.environmentId}:${item.thread.id}`) === true,
+        queuedThreadKeys?.has(`${item.thread.environmentId}:${item.thread.id}`) === true,
       canMoveUp: move?.canMoveUp === true,
       canMoveDown: move?.canMoveDown === true,
       sceneryThumbURL:
@@ -785,6 +789,32 @@ export function buildThreadListV2ListItems(input: {
   });
 }
 
+// Streams update a few unsettled rows, so most rebuilds classify the same
+// settled shells in the same order. Shells are immutable and the settled sort
+// reads only their own fields, so an element-identical input has an identical
+// output. One entry keeps memory bounded; callers with different scopes (Home
+// and the split-view sidebar) just recompute.
+let lastSettledInput: ReadonlyArray<EnvironmentThreadShell> = [];
+let lastSettledOutput: ReadonlyArray<EnvironmentThreadShell> = [];
+
+function sortSettledThreadsReusingLast(
+  settled: ReadonlyArray<EnvironmentThreadShell>,
+): ReadonlyArray<EnvironmentThreadShell> {
+  if (settled.length === lastSettledInput.length) {
+    let same = true;
+    for (let index = 0; index < settled.length; index += 1) {
+      if (settled[index] !== lastSettledInput[index]) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return lastSettledOutput;
+  }
+  lastSettledInput = settled;
+  lastSettledOutput = sortSettledThreads(settled);
+  return lastSettledOutput;
+}
+
 /**
  * Partitions visible threads into the active card block (saved order) and
  * the settled recency tail, matching the web v2 list.
@@ -862,6 +892,8 @@ export function buildThreadListV2Items(input: {
   const snoozed: EnvironmentThreadShell[] = [];
   const stored: EnvironmentThreadShell[] = [];
   let nextSnoozeWakeAt: string | null = null;
+  // An empty set is treated as absent so `?.` skips building the key.
+  const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   for (const thread of input.threads) {
     if (thread.archivedAt !== null || thread.lineage.relationshipToParent === "subagent") continue;
     // The server stamps settledOverride for the tail.
@@ -888,7 +920,7 @@ export function buildThreadListV2Items(input: {
     const supportsSnooze = input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true;
     const supportsStorage = input.storageEnvironmentIds?.has(thread.environmentId) ?? true;
     const hasQueuedMessages =
-      input.queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) === true;
+      queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) === true;
     // Storage is the stickiest shelf: it outranks everything except work in
     // motion or waiting on the user, which effectiveStored already excludes.
     if (supportsStorage && effectiveStored(thread, { now }) && !hasQueuedMessages) {
@@ -953,14 +985,18 @@ export function buildThreadListV2Items(input: {
       : orderedStored.filter(
           (thread) => `${thread.environmentId}:${thread.id}` === selectedThreadKey,
         );
-  const orderedSettled = sortSettledThreads(settled);
+  const orderedSettled = sortSettledThreadsReusingLast(settled);
   const settledLimit = input.settledLimit ?? Number.POSITIVE_INFINITY;
-  const pagedSettled =
+  const limitedSettled =
     orderedSettled.length > settledLimit ? orderedSettled.slice(0, settledLimit) : orderedSettled;
-  const selectedSettled = orderedSettled
-    .slice(pagedSettled.length)
-    .find((thread) => `${thread.environmentId}:${thread.id}` === selectedThreadKey);
-  if (selectedSettled !== undefined) pagedSettled.push(selectedSettled);
+  const selectedSettled =
+    selectedThreadKey === null
+      ? undefined
+      : orderedSettled
+          .slice(limitedSettled.length)
+          .find((thread) => `${thread.environmentId}:${thread.id}` === selectedThreadKey);
+  const pagedSettled =
+    selectedSettled === undefined ? limitedSettled : [...limitedSettled, selectedSettled];
   const visibleSettled =
     input.settledShelfExpanded !== false
       ? pagedSettled

@@ -48,15 +48,31 @@ function InspectorContentPane(props: {
   );
 }
 
-export function ThreadInspectorContentStack(props: {
-  // Keep these as nodes, not callback component types: live thread props can
-  // replace a renderer closure without remounting the retained pane beneath it.
-  readonly files: ReactNode;
-  readonly git: ReactNode;
-  readonly mode: ThreadInspectorMode;
-  readonly resetKeys: readonly [string | null, string | null];
-  readonly route?: ReactNode;
-}) {
+export function ThreadInspectorContentStack(
+  props: {
+    readonly mode: ThreadInspectorMode;
+    readonly resetKeys: readonly [string | null, string | null];
+  } & (
+    | {
+        // Retain the fork's node API: live thread updates must not remount
+        // a retained pane by replacing its component type.
+        readonly files: ReactNode;
+        readonly git: ReactNode;
+        readonly route?: ReactNode;
+        readonly renderFiles?: never;
+        readonly renderGit?: never;
+        readonly renderRoute?: never;
+      }
+    | {
+        readonly files?: never;
+        readonly git?: never;
+        readonly route?: never;
+        readonly renderFiles: () => ReactNode;
+        readonly renderGit?: () => ReactNode;
+        readonly renderRoute?: () => ReactNode;
+      }
+  ),
+) {
   const [mountedModes, setMountedModes] = useState<ReadonlySet<ThreadInspectorMode>>(
     () => new Set([props.mode]),
   );
@@ -79,24 +95,43 @@ export function ThreadInspectorContentStack(props: {
         resetKeys={props.resetKeys}
         visible={props.mode === "files"}
       >
-        {props.files}
+        {props.renderFiles ? (
+          <InspectorRenderer render={props.renderFiles} />
+        ) : (
+          props.files
+        )}
       </InspectorContentPane>
-      <InspectorContentPane
-        mounted={mountedModes.has("git") || props.mode === "git"}
-        resetKeys={props.resetKeys}
-        visible={props.mode === "git"}
-      >
-        {props.git}
-      </InspectorContentPane>
-      {props.route !== undefined ? (
+      {props.renderGit !== undefined || "git" in props ? (
+        <InspectorContentPane
+          mounted={mountedModes.has("git") || props.mode === "git"}
+          resetKeys={props.resetKeys}
+          visible={props.mode === "git"}
+        >
+          {props.renderGit ? (
+            <InspectorRenderer render={props.renderGit} />
+          ) : (
+            props.git
+          )}
+        </InspectorContentPane>
+      ) : null}
+      {props.route !== undefined || props.renderRoute !== undefined ? (
         <InspectorContentPane
           mounted={mountedModes.has("route") || props.mode === "route"}
           resetKeys={props.resetKeys}
           visible={props.mode === "route"}
         >
-          {props.route}
+          {props.renderRoute ? (
+            <InspectorRenderer render={props.renderRoute} />
+          ) : (
+            props.route
+          )}
         </InspectorContentPane>
       ) : null}
     </View>
   );
+}
+
+// Render callbacks carry changing route data; they are not component types.
+function InspectorRenderer(props: { readonly render: () => ReactNode }) {
+  return <>{props.render()}</>;
 }

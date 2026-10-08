@@ -1,37 +1,30 @@
 import { NativeStackScreenOptions } from "../../native/StackHeader";
-import type { MenuAction } from "@react-native-menu/menu";
-import { useCallback, useMemo, useRef } from "react";
-import { Platform, Pressable, TextInput, View } from "react-native";
+import { use, useCallback, useRef } from "react";
+import { Platform, View } from "react-native";
 import type { SearchBarCommands } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
-import { TRANSPARENT_NATIVE_HEADERS } from "../../native/native-glass";
+import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
+import {
+  NATIVE_LIQUID_GLASS_SUPPORTED,
+  TRANSPARENT_NATIVE_HEADERS,
+} from "../../native/native-glass";
 
 import { ControlPillMenu } from "../../components/ControlPill";
-import { SymbolView } from "../../components/AppSymbol";
 import { homeListFilterItemsToActions } from "../../components/anchored-menu.logic";
 import { MintGlassButton } from "../../components/MintGlassButton";
-import { CompactBrandTitle } from "../../components/CompactBrandTitle";
-import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import {
   createNativeMailSearchToolbarItem,
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
-import { WorkspaceConnectionTitle } from "./WorkspaceConnectionTitle";
 import { buildHomeListFilterMenu } from "./home-list-filter-menu";
-import { presentHomeListFilterMenu } from "./present-home-list-filter-menu";
+import { createSidebarHeaderItems } from "../threads/sidebar-native-header-items";
 import type { HomeHeaderProps as UpstreamHomeHeaderProps } from "./HomeHeader.types";
 
 export type { HomeHeaderEnvironment } from "./HomeHeader.types";
-
-function checkedMenuState(checked: boolean) {
-  return checked ? ("on" as const) : undefined;
-}
 
 type HomeHeaderProps = UpstreamHomeHeaderProps & {
   /** Null while no connected environment advertises the automations capability. */
@@ -39,242 +32,8 @@ type HomeHeaderProps = UpstreamHomeHeaderProps & {
 };
 
 export function HomeHeader(props: HomeHeaderProps) {
-  if (Platform.OS === "android") {
-    return <AndroidHomeHeader {...props} />;
-  }
-
-  return <IosHomeHeader {...props} />;
-}
-
-function AndroidHomeHeader(props: HomeHeaderProps) {
-  const { materialYouStyleLayoutActive } = useAppearancePreferences();
-  const insets = useSafeAreaInsets();
-  const headerControlClassName =
-    Platform.OS === "android"
-      ? "size-12 items-center justify-center rounded-full bg-subtle"
-      : "size-11 items-center justify-center rounded-full bg-subtle";
-  const clearSearchClassName =
-    Platform.OS === "android"
-      ? "-mr-3 size-12 items-center justify-center"
-      : "size-11 items-center justify-center";
-  // The list uses a fixed creation order, so the filter menu only carries
-  // environment/project filters and the "customized" icon keys off those.
-  const hasCustomListOptions =
-    props.selectedEnvironmentId !== null || props.selectedProjectKey !== null;
-  const menuActions = useMemo<MenuAction[]>(
-    () => [
-      {
-        id: "environment",
-        title: "Environment",
-        subactions: [
-          {
-            id: "environment:all",
-            title: "All environments",
-            state: checkedMenuState(props.selectedEnvironmentId === null),
-          },
-          ...props.environments.map((environment) => ({
-            id: `environment:${environment.environmentId}`,
-            title: environment.label,
-            state: checkedMenuState(props.selectedEnvironmentId === environment.environmentId),
-          })),
-        ],
-      },
-      ...(props.projects.length === 0
-        ? []
-        : ([
-            {
-              id: "project",
-              title: "Project",
-              subactions: [
-                {
-                  id: "project:all",
-                  title: "All projects",
-                  state: checkedMenuState(props.selectedProjectKey === null),
-                },
-                ...props.projects.map((project) => ({
-                  id: `project:${project.key}`,
-                  title: project.label,
-                  state: checkedMenuState(props.selectedProjectKey === project.key),
-                })),
-              ],
-            },
-          ] satisfies MenuAction[])),
-    ],
-    [props.environments, props.projects, props.selectedEnvironmentId, props.selectedProjectKey],
-  );
-  const handleMenuAction = useCallback(
-    (event: { nativeEvent: { event: string } }) => {
-      const id = event.nativeEvent.event;
-      if (id === "environment:all") {
-        props.onEnvironmentChange(null);
-        return;
-      }
-
-      if (id.startsWith("environment:")) {
-        const environmentId = id.slice("environment:".length);
-        const environment = props.environments.find(
-          (candidate) => candidate.environmentId === environmentId,
-        );
-        if (environment) {
-          props.onEnvironmentChange(environment.environmentId);
-        }
-        return;
-      }
-
-      if (id === "project:all") {
-        props.onProjectChange(null);
-        return;
-      }
-
-      if (id.startsWith("project:")) {
-        const projectKey = id.slice("project:".length);
-        if (props.projects.some((project) => project.key === projectKey)) {
-          props.onProjectChange(projectKey);
-        }
-        return;
-      }
-    },
-    [props],
-  );
-
-  return (
-    <>
-      <NativeStackScreenOptions options={{ headerShown: false }} />
-      <View
-        className={
-          materialYouStyleLayoutActive
-            ? "bg-header pb-3"
-            : "border-b border-header-border bg-header pb-3"
-        }
-        style={{
-          paddingHorizontal: HOME_HORIZONTAL_INSET,
-          paddingTop: Math.max(insets.top, 12),
-        }}
-      >
-        <View className="w-full max-w-[720px] self-center gap-3">
-          <View className="flex-row items-center gap-2.5">
-            {/* Brand slot doubles as the connection status surface: while an
-                environment reconnects, the lockup fades to a status label in
-                place (no layout shift in the list below). */}
-            <WorkspaceConnectionTitle
-              grow
-              onPress={props.onOpenEnvironments}
-              brand={<CompactBrandTitle />}
-            />
-
-            <ControlPillMenu
-              actions={menuActions}
-              isAnchoredToRight
-              onPressAction={handleMenuAction}
-            >
-              <Pressable
-                accessibilityLabel="Filter and sort threads"
-                accessibilityRole="button"
-                className={headerControlClassName}
-              >
-                <SymbolView
-                  name={
-                    hasCustomListOptions
-                      ? "line.3.horizontal.decrease.circle.fill"
-                      : "line.3.horizontal.decrease.circle"
-                  }
-                  size={16}
-                  tintColorClassName={"accent-icon"}
-                  type="monochrome"
-                />
-              </Pressable>
-            </ControlPillMenu>
-            {/* Built identically to the filter button so the two circles
-                match exactly (ControlPill sizes via Tailwind classes and
-                resolves to a different box). */}
-            <Pressable
-              accessibilityLabel="Open pull requests"
-              accessibilityRole="button"
-              onPress={props.onOpenPullRequests}
-              className={headerControlClassName}
-            >
-              <SymbolView
-                name="arrow.triangle.pull"
-                size={18}
-                tintColorClassName={"accent-icon"}
-                type="monochrome"
-              />
-            </Pressable>
-            {props.onOpenAutomations === null ? null : (
-              <Pressable
-                accessibilityLabel="Open automations"
-                accessibilityRole="button"
-                onPress={props.onOpenAutomations}
-                className={headerControlClassName}
-              >
-                <SymbolView
-                  name="bolt"
-                  size={18}
-                  tintColorClassName={"accent-icon"}
-                  type="monochrome"
-                />
-              </Pressable>
-            )}
-            <Pressable
-              accessibilityLabel="Open settings"
-              accessibilityRole="button"
-              onPress={props.onOpenSettings}
-              className={headerControlClassName}
-            >
-              <SymbolView
-                name="gearshape"
-                size={18}
-                tintColorClassName={"accent-icon"}
-                type="monochrome"
-              />
-            </Pressable>
-          </View>
-
-          <View
-            className={
-              materialYouStyleLayoutActive
-                ? "min-h-12 flex-row items-center gap-2.5 rounded-full border border-input-border bg-input px-3.5"
-                : "min-h-12 flex-row items-center gap-2.5 rounded-2xl border border-input-border bg-input px-3.5"
-            }
-          >
-            <SymbolView
-              name="magnifyingglass"
-              size={17}
-              tintColorClassName={"accent-foreground-muted"}
-              type="monochrome"
-            />
-            <TextInput
-              accessibilityLabel="Search threads"
-              autoCapitalize="none"
-              onChangeText={props.onSearchQueryChange}
-              placeholder="Search threads"
-              placeholderTextColorClassName="accent-placeholder"
-              className="flex-1 py-2.5 text-base font-sans text-foreground"
-              value={props.searchQuery}
-            />
-            {props.searchQuery.length > 0 ? (
-              <Pressable
-                accessibilityLabel="Clear search"
-                accessibilityRole="button"
-                className={clearSearchClassName}
-                onPress={() => props.onSearchQueryChange("")}
-              >
-                <SymbolView
-                  name="xmark.circle.fill"
-                  size={17}
-                  tintColorClassName={"accent-foreground-muted"}
-                  type="monochrome"
-                />
-              </Pressable>
-            ) : null}
-          </View>
-        </View>
-      </View>
-    </>
-  );
-}
-
-function IosHomeHeader(props: HomeHeaderProps) {
+  const primaryColumn = use(NativePrimaryColumnContext);
+  const iPadSidebar = Platform.OS === "ios" && Platform.isPad && primaryColumn !== null;
   const searchBarRef = useRef<SearchBarCommands>(null);
   const iconColor = useUniwindTheme()["--color-icon"];
   // The list uses a fixed creation order and ignores sort/group options, so
@@ -302,84 +61,116 @@ function IosHomeHeader(props: HomeHeaderProps) {
           // the in-bar search field, so rows would scroll under the field.
           // A thin material frosts both; at rest it is a light glass bar.
           headerBlurEffect: TRANSPARENT_NATIVE_HEADERS ? "systemUltraThinMaterial" : undefined,
-          unstable_headerRightItems: () => [
-            withNativeGlassHeaderItem({
-              accessibilityLabel: "Open pull requests",
-              icon: { name: "arrow.triangle.pull", type: "sfSymbol" } as const,
-              identifier: "home-pull-requests",
-              label: "",
-              onPress: props.onOpenPullRequests,
-              type: "button",
-            }),
-            ...(props.onOpenAutomations === null
-              ? []
+          unstable_headerRightItems: () =>
+            iPadSidebar
+              ? createSidebarHeaderItems({
+                  filterIcon: hasCustomListOptions
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle",
+                  filterMenu,
+                  onOpenPullRequests: props.onOpenPullRequests,
+                  onOpenAutomations: props.onOpenAutomations,
+                  onOpenSettings: props.onOpenSettings,
+                })
               : [
                   withNativeGlassHeaderItem({
-                    accessibilityLabel: "Open automations",
-                    icon: { name: "bolt", type: "sfSymbol" } as const,
-                    identifier: "home-automations",
+                    accessibilityLabel: "Open pull requests",
+                    icon: { name: "arrow.triangle.pull", type: "sfSymbol" } as const,
+                    identifier: "home-pull-requests",
                     label: "",
-                    onPress: props.onOpenAutomations,
+                    onPress: props.onOpenPullRequests,
                     type: "button",
                   }),
-                ]),
-            withNativeGlassHeaderItem({
-              accessibilityLabel: "Open settings",
-              icon: { name: "ellipsis", type: "sfSymbol" } as const,
-              identifier: "home-settings",
-              label: "",
-              onPress: props.onOpenSettings,
-              type: "button",
-            }),
-          ],
-          // The keys below are set per-branch (not `undefined`) so a later
-          // reapply cannot clobber options owned by NativeHeaderToolbar.
-          ...(NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED
-            ? {
-                unstable_headerToolbarItems: () => [
-                  createNativeMailSearchToolbarItem({
-                    composeButtonId: "home-new-task",
-                    composeSystemImageName: "square.and.pencil",
-                    filterButtonId: "home-filter",
-                    filterSystemImageName: hasCustomListOptions
-                      ? "line.3.horizontal.decrease.circle.fill"
-                      : "line.3.horizontal.decrease",
-                    onComposePress: props.onStartNewTask,
-                    onFilterPress: () => presentHomeListFilterMenu(filterMenu, "bottom-start"),
-                    onSearchTextChange: props.onSearchQueryChange,
-                    placeholder: "Search",
-                    searchTextChangeId: "home-search-text",
-                    showsSearchDismissButton: true,
+                  ...(props.onOpenAutomations === null
+                    ? []
+                    : [
+                        withNativeGlassHeaderItem({
+                          accessibilityLabel: "Open automations",
+                          icon: { name: "bolt", type: "sfSymbol" } as const,
+                          identifier: "home-automations",
+                          label: "",
+                          onPress: props.onOpenAutomations,
+                          type: "button",
+                        }),
+                      ]),
+                  withNativeGlassHeaderItem({
+                    accessibilityLabel: "Open settings",
+                    icon: { name: "ellipsis", type: "sfSymbol" } as const,
+                    identifier: "home-settings",
+                    label: "",
+                    onPress: props.onOpenSettings,
+                    type: "button",
                   }),
                 ],
-              }
-            : {
-                // Standard UIKit search; create + sort float in the bottom
-                // corners below. Liquid Glass collapses it to a glass button
-                // beside the header items instead of a stacked field that
-                // pushes the list down; otherwise the field stays stacked
-                // under the title, since iOS 26+ would move it to the bottom
-                // edge over the corner buttons.
+          // The keys below are set per-branch (not `undefined`) so a later
+          // reapply cannot clobber options owned by NativeHeaderToolbar.
+          ...(iPadSidebar
+            ? {
                 headerSearchBarOptions: {
                   ref: searchBarRef,
-                  ...(NATIVE_LIQUID_GLASS_SUPPORTED
-                    ? { allowToolbarIntegration: false, placement: "integratedButton" as const }
-                    : { placement: "stacked" as const }),
                   autoCapitalize: "none" as const,
                   hideNavigationBar: false,
+                  hideWhenScrolling: false,
+                  obscureBackground: false,
+                  placement: "stacked" as const,
+                  allowToolbarIntegration: false,
                   placeholder: "Search",
-                  onCancelButtonPress: () => {
-                    props.onSearchQueryChange("");
-                  },
-                  onChangeText: (event) => {
-                    props.onSearchQueryChange(event.nativeEvent.text);
-                  },
+                  onCancelButtonPress: () => props.onSearchQueryChange(""),
+                  onChangeText: (event) => props.onSearchQueryChange(event.nativeEvent.text),
                 },
-              }),
+                unstable_headerToolbarItems: () => [],
+              }
+            : NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED
+              ? {
+                  headerSearchBarOptions: {
+                    ref: searchBarRef,
+                    autoCapitalize: "none" as const,
+                    onCancelButtonPress: () => props.onSearchQueryChange(""),
+                  },
+                  unstable_headerToolbarItems: () => [
+                    createNativeMailSearchToolbarItem({
+                      composeButtonId: "home-new-task",
+                      composeSystemImageName: "square.and.pencil",
+                      filterMenu,
+                      filterButtonId: "home-filter",
+                      filterSystemImageName: hasCustomListOptions
+                        ? "line.3.horizontal.decrease.circle.fill"
+                        : "line.3.horizontal.decrease",
+                      onComposePress: props.onStartNewTask,
+                      onSearchTextChange: props.onSearchQueryChange,
+                      placeholder: "Search",
+                      searchTextChangeId: "home-search-text",
+                      showsSearchDismissButton: true,
+                    }),
+                  ],
+                }
+              : {
+                  // Standard UIKit search; create + sort float in the bottom
+                  // corners below. Liquid Glass collapses it to a glass button
+                  // beside the header items instead of a stacked field that
+                  // pushes the list down; otherwise the field stays stacked
+                  // under the title, since iOS 26+ would move it to the bottom
+                  // edge over the corner buttons.
+                  headerSearchBarOptions: {
+                    ref: searchBarRef,
+                    ...(NATIVE_LIQUID_GLASS_SUPPORTED
+                      ? { allowToolbarIntegration: false, placement: "integratedButton" as const }
+                      : { placement: "stacked" as const }),
+                    autoCapitalize: "none" as const,
+                    hideNavigationBar: false,
+                    placeholder: "Search",
+                    onCancelButtonPress: () => {
+                      props.onSearchQueryChange("");
+                    },
+                    onChangeText: (event) => {
+                      props.onSearchQueryChange(event.nativeEvent.text);
+                    },
+                  },
+                }),
         }}
       />
 
-      {NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED ? null : (
+      {iPadSidebar || NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED ? null : (
         <HomeCornerButtons
           filterMenu={filterMenu}
           hasCustomListOptions={hasCustomListOptions}

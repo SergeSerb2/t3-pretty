@@ -17,8 +17,8 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
 import * as BitbucketApi from "./BitbucketApi.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as GitHubApi from "./GitHubApi.ts";
-import * as GitHubCli from "./GitHubCli.ts";
 import * as GitLabCli from "./GitLabCli.ts";
 import * as OriginCli from "./OriginCli.ts";
 import * as ForgejoCli from "./ForgejoCli.ts";
@@ -46,7 +46,6 @@ function makeRegistry(input: {
     readonly url: string;
   }>;
   readonly process?: Partial<VcsProcess.VcsProcess["Service"]>;
-  readonly github?: Partial<GitHubCli.GitHubCli["Service"]>;
   readonly githubApi?: Partial<GitHubApi.GitHubApi["Service"]>;
   readonly gitlab?: Partial<GitLabCli.GitLabCli["Service"]>;
   readonly resolve?: VcsDriverRegistry.VcsDriverRegistry["Service"]["resolve"];
@@ -102,8 +101,8 @@ function makeRegistry(input: {
         Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
         Layer.mock(BitbucketApi.BitbucketApi)({}),
         ServerSettings.ServerSettingsService.layerTest(),
-        Layer.mock(GitHubCli.GitHubCli)(input.github ?? {}),
         Layer.mock(GitHubApi.GitHubApi)(input.githubApi ?? {}),
+        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         Layer.mock(GitLabCli.GitLabCli)(input.gitlab ?? {}),
         Layer.mock(OriginCli.OriginCli)({}),
         Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
@@ -339,8 +338,8 @@ it.effect("propagates OriginCli layer construction failures", () =>
               ),
               Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
               Layer.mock(BitbucketApi.BitbucketApi)({}),
-              Layer.mock(GitHubCli.GitHubCli)({}),
               Layer.mock(GitHubApi.GitHubApi)({}),
+              Layer.mock(GitVcsDriver.GitVcsDriver)({}),
               ServerSettings.ServerSettingsService.layerTest(),
               Layer.mock(GitLabCli.GitLabCli)({}),
               Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
@@ -380,8 +379,8 @@ it.effect("propagates ForgejoCli layer construction failures", () =>
               ),
               Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
               Layer.mock(BitbucketApi.BitbucketApi)({}),
-              Layer.mock(GitHubCli.GitHubCli)({}),
               Layer.mock(GitHubApi.GitHubApi)({}),
+              Layer.mock(GitVcsDriver.GitVcsDriver)({}),
               ServerSettings.ServerSettingsService.layerTest(),
               Layer.mock(GitLabCli.GitLabCli)({}),
               Layer.mock(OriginCli.OriginCli)({}),
@@ -420,8 +419,8 @@ it.effect("boots the registry layer when OriginCli.layer is provided", () =>
             NodeServices.layer,
             Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
             Layer.mock(BitbucketApi.BitbucketApi)({}),
-            Layer.mock(GitHubCli.GitHubCli)({}),
             Layer.mock(GitHubApi.GitHubApi)({}),
+            Layer.mock(GitVcsDriver.GitVcsDriver)({}),
             ServerSettings.ServerSettingsService.layerTest(),
             Layer.mock(GitLabCli.GitLabCli)({}),
             Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
@@ -460,8 +459,8 @@ it.effect("boots the registry layer when ForgejoCli.layer is provided", () =>
             FetchHttpClient.layer,
             Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
             Layer.mock(BitbucketApi.BitbucketApi)({}),
-            Layer.mock(GitHubCli.GitHubCli)({}),
             Layer.mock(GitHubApi.GitHubApi)({}),
+            Layer.mock(GitVcsDriver.GitVcsDriver)({}),
             ServerSettings.ServerSettingsService.layerTest(),
             Layer.mock(GitLabCli.GitLabCli)({}),
             Layer.mock(OriginCli.OriginCli)({}),

@@ -400,6 +400,7 @@ export function layerWithRegistry<Error>(
         IdAllocator.layer,
         layerStores,
         layerProviderSessionManagerProvided,
+        ThreadCommandExecutor.layer,
         layerRuntime,
       ),
     ),

@@ -1,3 +1,5 @@
+import { use } from "react";
+import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 import { useNavigation } from "@react-navigation/native";
@@ -8,11 +10,13 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 
 import { EmptyState } from "../../components/EmptyState";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
-import { useProjects, useServerConfigs, useNavigationThreadShells } from "../../state/entities";
+import { useProjects, useServerConfigs } from "../../state/entities";
+import { environmentThreadShells } from "../../state/threads";
 import { usePendingNewTasks } from "../../state/use-pending-new-tasks";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
+import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 import { WorkspaceEmptyDetail } from "../layout/WorkspaceEmptyDetail";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { checkForAppUpdateOnLaunch, startAppUpdateForegroundRecheck } from "../updates/app-updates";
@@ -21,6 +25,7 @@ import { HomeScreen } from "./HomeScreen";
 import { HomeHeader } from "./HomeHeader";
 import { useHomeListOptions } from "./home-list-options";
 import { useStartNewTaskFromHomeScope } from "./useStartNewTaskFromHomeScope";
+import { useAtomValueWhileVisible, useHomeRouteVisible } from "./home-route-visibility";
 import { useHomeThreadSelection } from "./home-thread-navigation";
 import { buildHomeProjectScopes } from "./homeThreadList";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
@@ -32,10 +37,19 @@ import { markThreadOpenStarted } from "../observability/threadPerformance";
 
 export function HomeRouteScreen() {
   const { width: windowWidth } = useWindowDimensions();
+  const nativePrimaryColumn = use(NativePrimaryColumnContext);
+  const columnMetrics = useNativeColumnLayoutMetrics();
+  const headerWidth = nativePrimaryColumn ? (columnMetrics?.width ?? windowWidth) : windowWidth;
   const { layout, panes } = useAdaptiveWorkspaceLayout();
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
-  const threads = useNavigationThreadShells();
+  // Streaming turns rewrite thread shells many times a second. While a Thread
+  // covers Home, rebuilding this list is invisible work.
+  const visible = useHomeRouteVisible();
+  const threads = useAtomValueWhileVisible(
+    environmentThreadShells.navigationThreadShellsAtom,
+    visible,
+  );
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const navigation = useNavigation();
@@ -141,7 +155,7 @@ export function HomeRouteScreen() {
 
   // In split layouts the persistent sidebar IS the thread list — Home becomes
   // an empty detail pane so selecting a thread never transitions layouts.
-  if (layout.usesSplitView) {
+  if (layout.usesSplitView && !nativePrimaryColumn) {
     return (
       <>
         <NativeStackScreenOptions
@@ -211,12 +225,15 @@ export function HomeRouteScreen() {
             shallow-merged. The brand slot also doubles as the connection
             status surface while an environment reconnects. */}
         <NativeStackScreenOptions
-          optionsVersion={`${windowWidth}:${automationsSupported}`}
+          optionsVersion={`${headerWidth}:${automationsSupported}`}
           options={{
             ...getConnectionAwareBrandHeaderOptions({
-              headerWidth: windowWidth,
-              // Pull requests, settings and, when offered, automations.
-              trailingItemCount: automationsSupported ? 3 : 2,
+              headerWidth,
+              // Reserve Pretty pull requests and optional automations alongside parent actions.
+              trailingItemCount:
+                (nativePrimaryColumn && Platform.OS === "ios" && Platform.isPad ? 2 : 1) +
+                1 +
+                (automationsSupported ? 1 : 0),
               onOpenEnvironments: () =>
                 navigation.navigate("SettingsSheet", {
                   screen: "SettingsContent",
