@@ -252,6 +252,7 @@ function HomeTopContentSpacer() {
 function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
   const insets = useSafeAreaInsets();
   const primaryColumn = use(NativePrimaryColumnContext);
+  const sceneryChrome = useSceneryChromeActive();
   if (Platform.OS !== "ios") return <ScrollView {...props} />;
 
   // v5 needs the actual content scroll view registered with its screen controller.
@@ -268,7 +269,12 @@ function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
       <ScrollView
         {...props}
         // UIKit's scroll-edge material needs the scroll view's own surface color.
-        className={cn(props.className, primaryColumn ? "bg-drawer" : "bg-screen")}
+        // With scenery on, an opaque surface would hide the wallpaper behind
+        // the list, and the header's blur material covers the edge instead.
+        className={cn(
+          props.className,
+          sceneryChrome ? "bg-transparent" : primaryColumn ? "bg-drawer" : "bg-screen",
+        )}
         // Use the column's measured inset so UIKit recognizes the resting top.
         // Padding visually clears the bar but leaves the native scroll offset
         // past its edge, activating scroll-edge protection before any scroll.
