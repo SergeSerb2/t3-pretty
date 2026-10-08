@@ -66,6 +66,14 @@ export const MOTION_SETTLE_SPRING = {
   reduceMotion: ReduceMotion.System,
 } as const;
 
+/** Playful release: springs back past rest once, then settles. */
+export const MOTION_POP_SPRING = {
+  damping: 11,
+  stiffness: 340,
+  mass: 0.7,
+  reduceMotion: ReduceMotion.System,
+} as const;
+
 /** Release half of a press highlight: a touch slower than it arrived, like UIKit. */
 export const MOTION_RELEASE_TIMING = {
   duration: 240,
