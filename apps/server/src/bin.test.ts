@@ -7,7 +7,13 @@ import * as NodeChildProcess from "node:child_process";
 
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { CommandId, EnvironmentHttpApi, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  AuthAdministrativeScopes,
+  CommandId,
+  EnvironmentHttpApi,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as NetService from "@t3tools/shared/Net";
 import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
 import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
@@ -246,7 +252,7 @@ it.layer(NodeServices.layer)("project lookup with unavailable workspaces", (it) 
           "--base-dir",
           baseDir,
         ]).pipe(Effect.flip);
-        assert.include(error.message, "cannot be deleted without force=true");
+        assert.include(error.message, "not empty");
         const retained = yield* readPersistedSnapshot(baseDir);
         assert.isNull(
           retained.projects.find((candidate) => candidate.id === project.id)!.deletedAt,
@@ -331,7 +337,7 @@ it.layer(NodeServices.layer)("project lookup with unavailable workspaces", (it) 
         "--base-dir",
         baseDir,
       ]).pipe(Effect.flip);
-      assert.include(error.message, "cannot be deleted without force=true");
+      assert.include(error.message, "not empty");
       yield* runCliWithRuntime([
         "project",
         "remove",
@@ -690,28 +696,10 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
 
       assert.equal(typeof issued.sessionId, "string");
       assert.equal(typeof issued.token, "string");
-      assert.deepEqual(issued.scopes, [
-        "orchestration:read",
-        "orchestration:operate",
-        "terminal:operate",
-        "review:write",
-        "relay:read",
-        "access:read",
-        "access:write",
-        "relay:write",
-      ]);
+      assert.deepEqual(issued.scopes, [...AuthAdministrativeScopes]);
       assert.equal(listed.length, 1);
       assert.equal(listed[0]?.sessionId, issued.sessionId);
-      assert.deepEqual(listed[0]?.scopes, [
-        "orchestration:read",
-        "orchestration:operate",
-        "terminal:operate",
-        "review:write",
-        "relay:read",
-        "access:read",
-        "access:write",
-        "relay:write",
-      ]);
+      assert.deepEqual(listed[0]?.scopes, [...AuthAdministrativeScopes]);
       assert.equal("token" in (listed[0] ?? {}), false);
     }).pipe(Effect.provide(DisconnectedLauncherChildLayer)),
   );

@@ -547,7 +547,9 @@ describe("GitHubSourceControlProvider.getAutomatedReview", () => {
     });
     return Effect.gen(function* () {
       const gh = yield* GitHubSourceControlProvider.make;
-      const result = yield* gh.getAutomatedReview({
+      const getAutomatedReview = gh.getAutomatedReview;
+      assert.ok(getAutomatedReview);
+      const result = yield* getAutomatedReview({
         cwd: "/repo",
         reference: "https://github.com/pingdotgg/t3code/pull/42",
       });
@@ -599,7 +601,9 @@ describe("GitHubSourceControlProvider.getAutomatedReview", () => {
     });
     return Effect.gen(function* () {
       const gh = yield* GitHubSourceControlProvider.make;
-      const result = yield* gh.getAutomatedReview({
+      const getAutomatedReview = gh.getAutomatedReview;
+      assert.ok(getAutomatedReview);
+      const result = yield* getAutomatedReview({
         cwd: "/repo",
         reference: "https://github.com/pingdotgg/t3code/pull/42",
       });

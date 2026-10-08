@@ -1959,7 +1959,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
 
   it.effect("lists without search when the caller already searched the host", () =>
     Effect.gen(function* () {
-      mockedExecute.mockReturnValueOnce(Effect.succeed(output(pullRequests(2, 1))));
+      mockedExecute.mockReturnValueOnce(Effect.succeed(output(listedPullRequests(2, 1))));
       const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
 
       const batch = yield* cli.listPullRequests({

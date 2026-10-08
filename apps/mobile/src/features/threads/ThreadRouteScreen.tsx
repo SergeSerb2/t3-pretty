@@ -809,7 +809,6 @@ function ThreadRouteContent(
           selectedThreadProject,
         )
       : [],
-    terminalSessions: terminalMenuSessions,
     showDirectFileControl: layout.usesSplitView,
     onOpenTerminal: handleOpenTerminal,
     onOpenNewTerminal: handleOpenNewTerminal,

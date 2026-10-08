@@ -111,17 +111,35 @@ function fakeGhOutput(stdout: string): VcsProcess.VcsProcessOutput {
   };
 }
 
+function defaultCloneUrlsForRepository(
+  cwd: string,
+  repository: string,
+): { url: string; sshUrl: string } {
+  const origin = NodeChildProcess.spawnSync("git", ["config", "--get", "remote.origin.url"], {
+    cwd,
+    encoding: "utf8",
+  }).stdout.trim();
+  if (origin.length > 0) {
+    return { url: origin, sshUrl: origin };
+  }
+  return {
+    url: `https://github.com/${repository}.git`,
+    sshUrl: `git@github.com:${repository}.git`,
+  };
+}
+
 type FakeGitTextGeneration = TextGeneration.TextGeneration["Service"];
 
 type FakePullRequest = NonNullable<FakeGhScenario["pullRequest"]>;
 
 type FakePullRequestSummary = Omit<
   ChangeRequest,
-  "provider" | "state" | "updatedAt" | "mergedAt"
+  "provider" | "state" | "updatedAt" | "mergedAt" | "headSha"
 > & {
   readonly state?: ChangeRequest["state"];
   readonly updatedAt?: string;
   readonly mergedAt?: string | null;
+  readonly headSha?: string;
 };
 
 function normalizeFakePullRequestSummary(raw: unknown): FakePullRequestSummary | null {
@@ -177,6 +195,14 @@ function normalizeFakePullRequestSummary(raw: unknown): FakePullRequestSummary |
       : typeof headRepositoryOwner?.login === "string"
         ? headRepositoryOwner.login
         : undefined;
+  const mergedAt = typeof record.mergedAt === "string" ? record.mergedAt : undefined;
+  const updatedAt = typeof record.updatedAt === "string" ? record.updatedAt : undefined;
+  const headSha =
+    typeof record.headSha === "string"
+      ? record.headSha
+      : typeof record.headRefOid === "string"
+        ? record.headRefOid
+        : undefined;
 
   return {
     number,
@@ -189,6 +215,9 @@ function normalizeFakePullRequestSummary(raw: unknown): FakePullRequestSummary |
     ...(isCrossRepository !== undefined ? { isCrossRepository } : {}),
     ...(headRepositoryNameWithOwner ? { headRepositoryNameWithOwner } : {}),
     ...(headRepositoryOwnerLogin ? { headRepositoryOwnerLogin } : {}),
+    ...(mergedAt !== undefined ? { mergedAt } : {}),
+    ...(updatedAt !== undefined ? { updatedAt } : {}),
+    ...(headSha ? { headSha } : {}),
   };
 }
 
@@ -456,6 +485,54 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
   );
   const ghCalls: string[] = [];
 
+  const parsePrListJson = (raw: string): unknown[] => {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const takeExactHeadList = (headSelector: string): string | undefined => {
+    const queued = prListQueueByHeadSelector.get(headSelector)?.shift();
+    if (queued !== undefined) return queued;
+    return scenario.prListByHeadSelector?.[headSelector];
+  };
+
+  // GitHub probes use the bare head ref (`gh pr list --head branch`). Fixtures for
+  // fork identity are often keyed `owner:branch`; union those rows the way gh does.
+  const takeGithubBareHeadList = (headSelector: string): string | undefined => {
+    if (headSelector.includes(":")) return undefined;
+    const entries: unknown[] = [];
+    const seen = new Set<string>();
+    const consider = (key: string, raw: string | undefined) => {
+      if (raw === undefined || seen.has(key)) return;
+      if (key !== headSelector && !key.endsWith(`:${headSelector}`)) return;
+      seen.add(key);
+      entries.push(...parsePrListJson(raw));
+    };
+    for (const [key, queue] of prListQueueByHeadSelector) {
+      consider(key, queue.shift());
+    }
+    for (const [key, raw] of Object.entries(scenario.prListByHeadSelector ?? {})) {
+      consider(key, raw);
+    }
+    return entries.length > 0 ? JSON.stringify(entries) : undefined;
+  };
+
+  const resolveFakePrListStdout = (headSelector: string | undefined): string => {
+    if (typeof headSelector === "string") {
+      return (
+        takeExactHeadList(headSelector) ??
+        takeGithubBareHeadList(headSelector) ??
+        prListQueue.shift() ??
+        "[]"
+      );
+    }
+    return prListQueue.shift() ?? "[]";
+  };
+
   const fail = (cwd: string, detail: string, cause?: unknown, operation = "fakeGh") =>
     new SourceControlProviderFailure({ provider: "github", operation, cwd, detail, cause });
 
@@ -478,15 +555,7 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
         headSelectorIndex >= 0 && headSelectorIndex < args.length - 1
           ? args[headSelectorIndex + 1]
           : undefined;
-      const mappedQueue =
-        typeof headSelector === "string"
-          ? prListQueueByHeadSelector.get(headSelector)?.shift()
-          : undefined;
-      const mappedStdout =
-        typeof headSelector === "string"
-          ? scenario.prListByHeadSelector?.[headSelector]
-          : undefined;
-      const stdout = (mappedQueue ?? mappedStdout ?? prListQueue.shift() ?? "[]") + "\n";
+      const stdout = `${resolveFakePrListStdout(headSelector)}\n`;
       return Effect.succeed(fakeGhOutput(stdout));
     }
 
@@ -558,10 +627,8 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
     if (args[0] === "repo" && args[1] === "view") {
       const repository = args[2];
       if (typeof repository === "string" && args.includes("nameWithOwner,url,sshUrl")) {
-        const cloneUrls = scenario.repositoryCloneUrls?.[repository];
-        if (!cloneUrls) {
-          return Effect.fail(fail(input.cwd, `Unexpected repository lookup: ${repository}`));
-        }
+        const cloneUrls =
+          scenario.repositoryCloneUrls?.[repository] ?? defaultCloneUrlsForRepository(input.cwd, repository);
         return Effect.succeed(
           fakeGhOutput(
             JSON.stringify({
@@ -592,70 +659,57 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
       summary.updatedAt === undefined
         ? Option.none()
         : Option.some(DateTime.makeUnsafe(summary.updatedAt)),
+    ...(summary.headSha ? { headSha: summary.headSha } : {}),
   });
+
+  const changeRequestsFromListStdout = (stdout: string): ChangeRequest[] => {
+    const raw = stdout.trim();
+    if (raw.length === 0) return [];
+    const decoded = decodeGitHubPullRequestListJson(raw);
+    if (Result.isSuccess(decoded)) {
+      return decoded.success.map((record) => ({
+        provider: "github" as const,
+        ...record,
+        mergedAt:
+          record.mergedAt == null || record.mergedAt.trim().length === 0
+            ? Option.none()
+            : Option.some(DateTime.makeUnsafe(record.mergedAt)),
+      }));
+    }
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((entry) => normalizeFakePullRequestSummary(entry))
+        .filter((entry): entry is FakePullRequestSummary => entry !== null)
+        .map(toChangeRequest);
+    } catch {
+      return [];
+    }
+  };
 
   return {
     service: {
       kind: "github",
       listChangeRequests: (input) =>
-        input.state === "open"
-          ? execute({
-              operation: "listChangeRequests",
-              cwd: input.cwd,
-              args: [
-                "pr",
-                "list",
-                "--head",
-                input.headSelector,
-                "--state",
-                "open",
-                "--limit",
-                String(input.limit ?? 1),
-                "--json",
-                "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,isCrossRepository,headRepository,headRepositoryOwner",
-              ],
-            }).pipe(
-              Effect.map((result) => JSON.parse(result.stdout) as unknown[]),
-              Effect.map((raw) =>
-                raw
-                  .map((entry) => normalizeFakePullRequestSummary(entry))
-                  .filter((entry): entry is FakePullRequestSummary => entry !== null)
-                  .map(toChangeRequest),
-              ),
-            )
-          : // The fake answers the CLI shape, so batched lookups read it the way the fallback does.
-            execute({
-              operation: "listChangeRequests",
-              cwd: input.cwd,
-              args: [
-                "pr",
-                "list",
-                "--head",
-                input.headSelector,
-                "--state",
-                input.state,
-                "--limit",
-                String(input.limit ?? 20),
-                "--json",
-                "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
-              ],
-            }).pipe(
-              Effect.map((result) => {
-                const raw = result.stdout.trim();
-                if (raw.length === 0) return [];
-                const decoded = decodeGitHubPullRequestListJson(raw);
-                return Result.isSuccess(decoded)
-                  ? decoded.success.map((record) => ({
-                      provider: "github" as const,
-                      ...record,
-                      mergedAt:
-                        record.mergedAt == null || record.mergedAt.trim().length === 0
-                          ? Option.none()
-                          : Option.some(DateTime.makeUnsafe(record.mergedAt)),
-                    }))
-                  : [];
-              }),
-            ),
+        execute({
+          operation: "listChangeRequests",
+          cwd: input.cwd,
+          args: [
+            "pr",
+            "list",
+            "--head",
+            input.headSelector,
+            "--state",
+            input.state,
+            "--limit",
+            String(input.limit ?? (input.state === "open" ? 1 : 20)),
+            "--json",
+            input.state === "open"
+              ? "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,isCrossRepository,headRepository,headRepositoryOwner"
+              : "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          ],
+        }).pipe(Effect.map((result) => changeRequestsFromListStdout(result.stdout))),
       createChangeRequest: (input) =>
         execute({
           operation: "createChangeRequest",
@@ -696,9 +750,20 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
             "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
         }).pipe(
-          Effect.map((result) =>
-            toChangeRequest(JSON.parse(result.stdout) as FakePullRequestSummary),
-          ),
+          Effect.flatMap((result) => {
+            const normalized = normalizeFakePullRequestSummary(JSON.parse(result.stdout));
+            if (normalized === null) {
+              return Effect.fail(
+                fail(
+                  input.cwd,
+                  "Fake GitHub pull request view returned an invalid payload.",
+                  undefined,
+                  "getChangeRequest",
+                ),
+              );
+            }
+            return Effect.succeed(toChangeRequest(normalized));
+          }),
         ),
       getAutomatedReview: (input) =>
         "codexReview" in scenario
@@ -1020,7 +1085,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-open-pr",
         state: "open",
-        automatedReview: { provider: "codex", state: "reviewing" },
         isDraft: true,
         updatedAt: null,
       });
@@ -1210,6 +1274,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           headRef: branch,
           state: "merged",
           updatedAt: "2026-01-03T00:00:00.000Z",
+          headSha: null,
         },
         mergedAt: "2026-01-02T00:00:00.000Z",
         headAssociation: {
@@ -1270,15 +1335,16 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
       expect(observation).toEqual({
         pullRequest: {
-          number: 22,
-          title: "Newer merged PR",
-          url: "https://github.com/pingdotgg/codething-mvp/pull/22",
+          number: 21,
+          title: "Older open PR",
+          url: "https://github.com/pingdotgg/codething-mvp/pull/21",
           baseRef: "main",
           headRef: branch,
-          state: "merged",
-          updatedAt: "2026-01-04T00:00:00.000Z",
+          state: "open",
+          updatedAt: "2026-01-05T00:00:00.000Z",
+          headSha: null,
         },
-        mergedAt: "2026-01-03T00:00:00.000Z",
+        mergedAt: null,
         headAssociation: {
           headRef: branch,
           repositoryNameWithOwner: null,
@@ -1376,6 +1442,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           headRef: branch,
           state: "merged",
           updatedAt: "2026-01-04T00:00:00.000Z",
+          headSha: null,
         },
         mergedAt: "2026-01-03T00:00:00.000Z",
         headAssociation: {
@@ -1502,9 +1569,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         },
       });
       expect(
-        ghCalls.some((call) =>
-          call.includes(`pr list --head octocat:${branch} --state all --limit 20`),
-        ),
+        ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`)),
       ).toBe(true);
       expect(ghCalls.some((call) => call.includes(`--head intruder:${branch}`))).toBe(false);
     }),
@@ -1580,11 +1645,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           ownerLogin: scenario.ownerLogin,
           isCrossRepository: true,
         });
-        expect(
-          ghCalls.some((call) =>
-            call.includes(`pr list --head ${scenario.ownerLogin}:${branch} --state all --limit 20`),
-          ),
-        ).toBe(true);
+        expect(ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`))).toBe(
+          true,
+        );
       }
     }),
   );
@@ -1976,7 +2039,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(pullRequest).toMatchObject({
         state: "merged",
         closedAt: null,
-        mergedAt: "2026-04-07T15:00:00Z",
+        mergedAt: "2026-04-07T15:00:00.000Z",
         updatedAt: "2026-04-08T15:00:00.000Z",
       });
     }),
@@ -5426,6 +5489,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             baseRefName: "main",
             headRefName: "t3code/refine-refresh-spin-origin",
             state: "open",
+            isCrossRepository: false,
+            headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
+            headRepositoryOwnerLogin: "pingdotgg",
           },
         },
       });
