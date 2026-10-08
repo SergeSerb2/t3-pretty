@@ -308,6 +308,12 @@ class MuseReplayController {
 
   assertComplete(): void {
     if (this.failure !== null) throw this.failure;
+    while (this.transcript.entries[this.cursor]?.type === "runtime_exit") {
+      const entry = this.transcript.entries[this.cursor]!;
+      this.cursor += 1;
+      const host = this.hosts[museReplayEntryHost(entry) - 1];
+      if (host !== undefined && host.open) this.close(host);
+    }
     if (this.cursor !== this.transcript.entries.length || this.held.length > 0) {
       const nextLabel = entryLabel(this.transcript.entries[this.cursor]);
       throw new MuseReplayIncompleteError({
@@ -339,7 +345,9 @@ class MuseReplayController {
       const entry = entries[index]!;
       if (entry.type !== "expect_outbound") return false;
       if (this.consumed.has(index) || museReplayEntryHost(entry) !== host.ordinal) continue;
-      if (!replayValueMatches(withRequestId(entry.frame, actual), actual)) continue;
+      // Same-host outbounds are ordered. A later match must not skip the frame
+      // still sitting at `cursor`.
+      if (!replayValueMatches(withRequestId(entry.frame, actual), actual)) return false;
       const recordedId = clientRequestId(entry.frame);
       const actualId = clientRequestId(actual);
       if (recordedId !== undefined && actualId !== undefined) host.ids.set(recordedId, actualId);

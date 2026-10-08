@@ -150,7 +150,15 @@ function makeRecordingCreateHost(
       stdio: ["pipe", "pipe", "inherit"],
     });
     const exited = new Promise<{ code: number | null; signal: null }>((resolve) =>
-      child.once("exit", (code) => resolve({ code, signal: null })),
+      child.once("exit", (code) => {
+        const label = hostOrdinal === 1 ? undefined : `runtime_exit@h${hostOrdinal}`;
+        entries.push({
+          type: "runtime_exit",
+          status: code === 0 ? "success" : "error",
+          ...(label === undefined ? {} : { label }),
+        });
+        resolve({ code, signal: null });
+      }),
     );
     async function* incoming() {
       let buffer = "";
