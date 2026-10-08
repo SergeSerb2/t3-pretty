@@ -22,55 +22,65 @@ const ACCESSIBLE_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
 });
 
-interface GlanceTone {
+export interface GlanceTone {
   readonly symbol: AppSymbolName;
   readonly orbClassName: string;
   readonly tintClassName: string;
+  /** Solid hue for status dots and pulse rings, readable on light and dark glass. */
+  readonly dot: string;
 }
 
 // Same hues as the card status pills below, so the orb and the cards agree.
-const TONE_BY_BADGE: Record<ThreadListV2Badge, GlanceTone> = {
+export const TONE_BY_BADGE: Record<ThreadListV2Badge, GlanceTone> = {
   approval: {
     symbol: "exclamationmark.circle",
     orbClassName: "bg-adaptive-amber-500-a12-a16",
     tintClassName: "accent-adaptive-amber-700-300",
+    dot: "#F5B83D",
   },
   input: {
     symbol: "text.bubble",
     orbClassName: "bg-adaptive-indigo-500-a12-a16",
     tintClassName: "accent-adaptive-indigo-600-300",
+    dot: "#8B93F8",
   },
   failed: {
     symbol: "exclamationmark.triangle",
     orbClassName: "bg-adaptive-rose-500-a12-a16",
     tintClassName: "accent-adaptive-rose-700-300",
+    dot: "#F47184",
   },
   limited: {
     symbol: "timer",
     orbClassName: "bg-adaptive-amber-500-a12-a16",
     tintClassName: "accent-adaptive-amber-700-300",
+    dot: "#F5B83D",
   },
   working: {
     symbol: "sparkles",
     orbClassName: "bg-adaptive-sky-500-a12-a16",
     tintClassName: "accent-adaptive-sky-700-300",
+    dot: "#4CB8F0",
   },
   monitoring: {
     symbol: "eye",
     orbClassName: "bg-adaptive-zinc-500-a12-a16",
     tintClassName: "accent-foreground",
+    dot: "#A1A1AA",
   },
   done: {
     symbol: "checkmark",
     orbClassName: "bg-adaptive-emerald-500-a12-a16",
     tintClassName: "accent-adaptive-emerald-700-300",
+    dot: "#3FCB8E",
   },
 };
 
-const CAUGHT_UP_TONE: GlanceTone = {
+export const CAUGHT_UP_TONE: GlanceTone = {
   symbol: "sun.max",
   orbClassName: "bg-adaptive-emerald-500-a12-a16",
   tintClassName: "accent-adaptive-emerald-700-300",
+  dot: "#3FCB8E",
 };
 
 /**
@@ -145,7 +155,10 @@ export const HomeGlance = memo(function HomeGlance(props: {
   );
 });
 
-function HomeGlancePhotoCredit(props: { readonly photo: SceneryPhoto }) {
+export function HomeGlancePhotoCredit(props: {
+  readonly photo: SceneryPhoto;
+  readonly className?: string;
+}) {
   const { photo } = props;
   const profileURL =
     photo.photographerProfileURL !== null
@@ -155,7 +168,7 @@ function HomeGlancePhotoCredit(props: { readonly photo: SceneryPhoto }) {
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={`Wallpaper: ${photo.name}. Photo by ${photo.photographerName} on Unsplash.`}
-      className="ml-auto max-w-[60%] shrink flex-row items-center gap-1"
+      className={props.className ?? "ml-auto max-w-[60%] shrink flex-row items-center gap-1"}
       hitSlop={8}
       onPress={() => void Linking.openURL(profileURL).catch(() => undefined)}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}

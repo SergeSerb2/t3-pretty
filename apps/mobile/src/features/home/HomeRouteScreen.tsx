@@ -23,6 +23,7 @@ import { checkForAppUpdateOnLaunch, startAppUpdateForegroundRecheck } from "../u
 import { AndroidHomeFabLayout } from "./AndroidHomeFab";
 import { HomeScreen } from "./HomeScreen";
 import { HomeHeader } from "./HomeHeader";
+import { useHomeTopBarActive } from "./HomeTopBar";
 import { useHomeListOptions } from "./home-list-options";
 import { useStartNewTaskFromHomeScope } from "./useStartNewTaskFromHomeScope";
 import { useAtomValueWhileVisible, useHomeRouteVisible } from "./home-route-visibility";
@@ -54,6 +55,7 @@ export function HomeRouteScreen() {
   const { savedConnectionsById } = useSavedRemoteConnections();
   const navigation = useNavigation();
   const [searchQuery, setSearchQuery] = useState("");
+  const topBarActive = useHomeTopBarActive();
   const handleSelectThread = useHomeThreadSelection();
   // One capable environment is enough to show the entry point; the list screen
   // then picks the environment and explains any that are too old.
@@ -225,7 +227,7 @@ export function HomeRouteScreen() {
             shallow-merged. The brand slot also doubles as the connection
             status surface while an environment reconnects. */}
         <NativeStackScreenOptions
-          optionsVersion={`${headerWidth}:${automationsSupported}`}
+          optionsVersion={`${headerWidth}:${automationsSupported}:${topBarActive}`}
           options={{
             ...getConnectionAwareBrandHeaderOptions({
               headerWidth,
@@ -240,7 +242,8 @@ export function HomeRouteScreen() {
                   params: { screen: "SettingsEnvironments" },
                 }),
             }),
-            headerShown: true,
+            // iPhone Home draws its own one-row bar (HomeTopBar) instead.
+            headerShown: !topBarActive,
           }}
         />
         <HomeHeader
@@ -307,6 +310,14 @@ export function HomeRouteScreen() {
             })
           }
           onSearchQueryChange={setSearchQuery}
+          onOpenPullRequests={() => navigation.navigate("PullRequests")}
+          onOpenAutomations={automationsSupported ? openAutomations : null}
+          onOpenEnvironments={() =>
+            navigation.navigate("SettingsSheet", {
+              screen: "SettingsContent",
+              params: { screen: "SettingsEnvironments" },
+            })
+          }
           onSelectThread={(thread) => {
             // Settled threads are live shells: opening one is plain
             // navigation, and sending a message un-settles server-side.

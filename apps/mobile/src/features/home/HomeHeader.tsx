@@ -23,6 +23,7 @@ import {
 import { buildHomeListFilterMenu } from "./home-list-filter-menu";
 import { createSidebarHeaderItems } from "../threads/sidebar-native-header-items";
 import type { HomeHeaderProps as UpstreamHomeHeaderProps } from "./HomeHeader.types";
+import { useHomeTopBarActive } from "./HomeTopBar";
 
 export type { HomeHeaderEnvironment } from "./HomeHeader.types";
 
@@ -47,6 +48,18 @@ export function HomeHeader(props: HomeHeaderProps) {
   }, []);
   useHardwareKeyboardCommand("focusSearch", focusSearch);
   const filterMenu = buildHomeListFilterMenu(props);
+  const topBarActive = useHomeTopBarActive();
+
+  // HomeTopBar owns search and the header actions; only the corners stay here.
+  if (topBarActive) {
+    return (
+      <HomeCornerButtons
+        filterMenu={filterMenu}
+        hasCustomListOptions={hasCustomListOptions}
+        onStartNewTask={props.onStartNewTask}
+      />
+    );
+  }
 
   return (
     <>

@@ -83,7 +83,8 @@ import {
 import { useThreadListV2ShelfPreferences } from "../threads/use-thread-list-v2-shelf-preferences";
 import { ThreadListGlassContext } from "../threads/thread-list-glass-context";
 import { ANDROID_HOME_FAB_EDGE_GAP } from "./AndroidHomeFab";
-import { HomeGlance } from "./HomeGlance";
+import { HomeGlance, HomeGlancePhotoCredit } from "./HomeGlance";
+import { HomeTopBar, useHomeTopBarActive, useHomeTopBarInset } from "./HomeTopBar";
 import { resolveHomeCardSceneryThumb } from "./home-card-scenery";
 import { summarizeHomeGlance } from "./home-glance";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
@@ -117,6 +118,10 @@ interface HomeScreenProps {
   readonly onProjectChange: (projectKey: string | null) => void;
   readonly onAddConnection: () => void;
   readonly onOpenSettings: () => void;
+  readonly onOpenPullRequests: () => void;
+  /** Null while no connected environment advertises automations. */
+  readonly onOpenAutomations: (() => void) | null;
+  readonly onOpenEnvironments: () => void;
   readonly onStartNewTask: () => void;
   readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
   readonly onArchiveThread: (thread: EnvironmentThreadShell) => void;
@@ -251,6 +256,8 @@ function HomeTopContentSpacer() {
 
 function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
   const insets = useSafeAreaInsets();
+  const topBarInset = useHomeTopBarInset();
+  const topBarActive = useHomeTopBarActive();
   const primaryColumn = use(NativePrimaryColumnContext);
   const sceneryChrome = useSceneryChromeActive();
   if (Platform.OS !== "ios") return <ScrollView {...props} />;
@@ -280,7 +287,9 @@ function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
         // past its edge, activating scroll-edge protection before any scroll.
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
-        contentOffset={props.contentOffset ?? { x: 0, y: -insets.top }}
+        contentOffset={
+          props.contentOffset ?? { x: 0, y: -(topBarActive ? topBarInset : insets.top) }
+        }
       />
     </ScrollViewMarker>
   );
@@ -311,6 +320,10 @@ export function HomeScreen(props: HomeScreenProps) {
   const queuedThreadKeys = useQueuedThreadKeys();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const insets = useSafeAreaInsets();
+  const topBarActive = useHomeTopBarActive();
+  const topBarInset = useHomeTopBarInset();
+  // The list starts below the floating top bar, or below the native header.
+  const iosListTopInset = topBarActive ? topBarInset : insets.top;
   const { fabClearance } = useAndroidControlSizing();
   // UIKit's column safe area already includes its bottom toolbar.
   const iosBottomClearance = Math.max(columnMetrics?.safeArea.bottom ?? insets.bottom, 24);
@@ -1033,6 +1046,19 @@ export function HomeScreen(props: HomeScreenProps) {
     projectCount: props.projects.length,
   });
 
+  const topBar = topBarActive ? (
+    <HomeTopBar
+      date={glanceDate}
+      searchQuery={props.searchQuery}
+      summary={glanceSummary}
+      onOpenAutomations={props.onOpenAutomations}
+      onOpenEnvironments={props.onOpenEnvironments}
+      onOpenPullRequests={props.onOpenPullRequests}
+      onOpenSettings={props.onOpenSettings}
+      onSearchQueryChange={props.onSearchQueryChange}
+    />
+  ) : null;
+
   if (!hasAnyThreads) {
     return (
       <View className={containerClassName}>
@@ -1044,7 +1070,11 @@ export function HomeScreen(props: HomeScreenProps) {
           )}
           style={{
             paddingBottom: Platform.OS === "ios" ? iosListBottomPad : Math.max(insets.bottom, 24),
-            paddingTop: TRANSPARENT_NATIVE_HEADERS ? insets.top + 72 : 0,
+            paddingTop: topBarActive
+              ? topBarInset
+              : TRANSPARENT_NATIVE_HEADERS
+                ? insets.top + 72
+                : 0,
           }}
         >
           <SceneryBackdrop threadKey={null} />
@@ -1074,6 +1104,7 @@ export function HomeScreen(props: HomeScreenProps) {
             ) : null}
           </View>
         </View>
+        {topBar}
       </View>
     );
   }
@@ -1084,7 +1115,7 @@ export function HomeScreen(props: HomeScreenProps) {
   // mobile — the menu is the one filter surface). Glass Home opens on the
   // glance; search results start at the top instead.
   const v2ListHeader =
-    glassRows && !hasSearchQuery && threadListV2Items.length > 0 ? (
+    glassRows && !topBarActive && !hasSearchQuery && threadListV2Items.length > 0 ? (
       <HomeGlance date={glanceDate} photo={dailyPhoto} summary={glanceSummary} />
     ) : (
       listHeader
@@ -1177,47 +1208,59 @@ export function HomeScreen(props: HomeScreenProps) {
               extraData={v2ExtraData}
               ListHeaderComponent={v2ListHeader}
               ListFooterComponent={
-                settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
-                  glassRows ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={showMoreSettled}
-                      className="mx-3 mt-2 items-center border-chrome-glass-border bg-chrome-glass py-3"
-                      style={({ pressed }) => ({
-                        borderCurve: "continuous",
-                        borderRadius: GLASS_CARD_RADIUS,
-                        borderWidth: StyleSheet.hairlineWidth,
-                        opacity: pressed ? 0.6 : 1,
-                      })}
-                    >
-                      <Text className="text-xs font-t3-medium text-foreground-muted">
-                        Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
-                      </Text>
-                    </Pressable>
-                  ) : sceneryChrome ? (
-                    <Pressable
-                      onPress={showMoreSettled}
-                      className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
-                      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-                    >
-                      <Text className="text-xs font-t3-medium text-foreground-muted">
-                        Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
-                      </Text>
-                    </Pressable>
-                  ) : (
-                    <ThreadListV2ShowMoreRow
-                      hiddenCount={threadListV2Layout.hiddenSettledCount}
-                      onPress={showMoreSettled}
-                    />
-                  )
-                ) : null
+                <>
+                  {settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
+                    glassRows ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={showMoreSettled}
+                        className="mx-3 mt-2 items-center border-chrome-glass-border bg-chrome-glass py-3"
+                        style={({ pressed }) => ({
+                          borderCurve: "continuous",
+                          borderRadius: GLASS_CARD_RADIUS,
+                          borderWidth: StyleSheet.hairlineWidth,
+                          opacity: pressed ? 0.6 : 1,
+                        })}
+                      >
+                        <Text className="text-xs font-t3-medium text-foreground-muted">
+                          Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
+                        </Text>
+                      </Pressable>
+                    ) : sceneryChrome ? (
+                      <Pressable
+                        onPress={showMoreSettled}
+                        className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
+                        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                      >
+                        <Text className="text-xs font-t3-medium text-foreground-muted">
+                          Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
+                        </Text>
+                      </Pressable>
+                    ) : (
+                      <ThreadListV2ShowMoreRow
+                        hiddenCount={threadListV2Layout.hiddenSettledCount}
+                        onPress={showMoreSettled}
+                      />
+                    )
+                  ) : null}
+                  {/* The glance card used to credit today's photo; with the
+                      top bar it sits at the end of the list instead. */}
+                  {topBarActive && !hasSearchQuery && dailyPhoto !== null ? (
+                    <View className="mt-5 flex-row justify-center px-8">
+                      <HomeGlancePhotoCredit
+                        className="max-w-full shrink flex-row items-center gap-1"
+                        photo={dailyPhoto}
+                      />
+                    </View>
+                  ) : null}
+                </>
               }
               ListEmptyComponent={v2ListEmpty}
               style={{ flex: 1 }}
               automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
               contentInsetAdjustmentBehavior="never"
-              contentInset={Platform.OS === "ios" ? { top: insets.top } : undefined}
-              contentInsetStartAdjustment={Platform.OS === "ios" ? insets.top : 0}
+              contentInset={Platform.OS === "ios" ? { top: iosListTopInset } : undefined}
+              contentInsetStartAdjustment={Platform.OS === "ios" ? iosListTopInset : 0}
               showsVerticalScrollIndicator={false}
               keyboardDismissMode="on-drag"
               keyboardShouldPersistTaps="handled"
@@ -1235,6 +1278,7 @@ export function HomeScreen(props: HomeScreenProps) {
           </SwipeableScrollGateProvider>
         </ThreadListGlassContext>
       </View>
+      {topBar}
     </View>
   );
 }
