@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261008.2833003299",
+    date: "2026-10-08",
+    items: [
+      {
+        kind: "fixed",
+        title: "Ease the chatbox hover highlight",
+      },
+      {
+        kind: "new",
+        title: "One-row iPhone Home header and cleaner thread cards",
+      },
+      {
+        kind: "new",
+        title: "Flat pastel mint buttons",
+      },
+      {
+        kind: "fixed",
+        title: "Show the Home wallpaper behind the thread list again",
+      },
+      {
+        kind: "fixed",
+        title: "Grok turns finish after Grok kills a background task",
+      },
+      {
+        kind: "fixed",
+        title: "Webhook and browser route-layer provides so packaged backend listens",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261008.2833003296",
     date: "2026-10-08",
     items: [
