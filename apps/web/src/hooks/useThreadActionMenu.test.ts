@@ -38,6 +38,18 @@ vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn(
 vi.mock("react", () => ({
   useCallback: (callback: unknown) => callback,
   useMemo: (factory: () => unknown) => factory(),
+  useState: (init: unknown) => [typeof init === "function" ? (init as () => unknown)() : init, () => {}],
+  useRef: (init: unknown) => ({ current: init }),
+  useEffect: () => {},
+  useLayoutEffect: () => {},
+  createElement: () => null,
+  Fragment: "fragment",
+}));
+vi.mock("./useCopyThreadConversation", () => ({
+  useCopyThreadConversation: () => () => recordEffect("copy-conversation"),
+}));
+vi.mock("../projectTransferStore", () => ({
+  openProjectTransferDialog: () => recordEffect("transfer"),
 }));
 vi.mock("@tanstack/react-router", () => ({
   useRouter: () => ({ navigate: async () => recordEffect("project-settings") }),
