@@ -232,13 +232,16 @@ describe("applyRepairEdits", () => {
 
   it("accepts a ChatView-sized repair and rejects one over MAX_FILE_BYTES", () => {
     assert.equal(MAX_FILE_BYTES, 512 * 1024);
-    const chatViewSized = `UNIQUE${"x".repeat(491 * 1024 - 6)}\n`;
+    const prefix = `// UNIQUE\nexport const pad = "`;
+    const suffix = `";\n`;
+    const targetBytes = 491 * 1024 + 1;
+    const chatViewSized = `${prefix}${"x".repeat(targetBytes - prefix.length - suffix.length)}${suffix}`;
     const updated = applyRepairEdits({
       edits: [{ path: "ChatView.tsx", old_text: "UNIQUE", new_text: "FIXED!" }],
       sources: new Map([["ChatView.tsx", chatViewSized]]),
       editable: new Set(["ChatView.tsx"]),
     });
-    assert.equal(Buffer.byteLength(updated.get("ChatView.tsx"), "utf8"), 491 * 1024 + 1);
+    assert.equal(Buffer.byteLength(updated.get("ChatView.tsx"), "utf8"), targetBytes);
 
     const oversize = `${"x".repeat(MAX_FILE_BYTES + 1)}\n`;
     assert.throws(

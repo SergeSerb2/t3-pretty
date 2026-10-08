@@ -256,7 +256,8 @@ async function enterRemoteAgents() {
     );
   });
   await click("Continue");
-  expect(text(renderer!.root)).toContain("Paired computer");
+  // One selected machine hides the ridge machine label; the agents copy is enough.
+  expect(text(renderer!.root)).toContain("Rope in your agents.");
 }
 
 beforeEach(() => {
