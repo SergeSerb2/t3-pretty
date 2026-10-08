@@ -191,6 +191,7 @@ computer.
 | OpenCode    | Install [OpenCode](https://opencode.ai), then run `opencode auth login`.                                                                                  |
 | Antigravity | Install and sign in with Google from T3 Code's provider settings.                                                                                         |
 | Pi          | Install [Pi](https://pi.dev), then run `pi` once to finish its login or API-key setup.                                                                    |
+| Muse Code   | Install [Muse Code](https://dev.meta.ai/docs/muse-code) on the server, run `muse login`, then enable it in Settings → Providers.                          |
 
 Codex and Claude are on by default. Cursor, Grok Build, and Antigravity are off
 by default. Turn them on in **Settings** → **Providers** using each provider's card when you want
@@ -268,7 +269,8 @@ authenticated shows its status and setup instructions in **Settings**.
 
 For provider-specific setup and accounts, see [Codex](./providers-codex.md),
 [Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
-[Antigravity](./providers-antigravity.md), and [Pi](./providers-pi.md).
+[Antigravity](./providers-antigravity.md), [Pi](./providers-pi.md), and
+[Muse Code](./providers-muse.md).
 
 ## Next steps
 

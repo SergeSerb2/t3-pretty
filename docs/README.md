@@ -33,7 +33,7 @@
 - [Updating T3 Code](./user/updating.md)
 - [Automatic pull requests](./user/auto-pull-requests.md)
 - [Automations](./user/automations.md)
-- Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Pi](./user/providers-pi.md)
+- Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Pi](./user/providers-pi.md) · [Muse Code](./user/providers-muse.md)
 
 Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)
 

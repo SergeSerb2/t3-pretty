@@ -177,6 +177,7 @@ import * as NativeTelemetryClient from "./resourceTelemetry/NativeTelemetryClien
 import * as ResourceAttribution from "./resourceTelemetry/ResourceAttribution.ts";
 import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinary.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
+import * as CursorUsageReader from "./usage/cursorUsageReader.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as StorageInventoryService from "./storage/StorageInventoryService.ts";
 import {
@@ -255,7 +256,10 @@ const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
 );
 
-const UsageLayerLive = UsageService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
+const UsageLayerLive = UsageService.layer.pipe(
+  Layer.provide(ServerSettingsLayerLive),
+  Layer.provide(CursorUsageReader.layer),
+);
 
 const ResourceDiagnosticsLayerLive = Layer.mergeAll(
   HostResources.layer,

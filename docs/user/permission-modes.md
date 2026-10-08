@@ -32,6 +32,9 @@ to you for approval.
 **Full access** allows commands and edits without prompts. The default. The agent runs
 unattended until it finishes or asks a question of its own.
 
+Muse Code offers only **Supervised** and **Full access**. A Muse thread already set to another mode
+runs in **Supervised**.
+
 Grok offers no **Auto-accept edits**. A Grok thread already set to it runs in **Supervised**. Grok
 file-change approvals offer **Allow all edits this session**. Its command approvals have no
 session-wide choice, because Grok would remember that command for the whole project.

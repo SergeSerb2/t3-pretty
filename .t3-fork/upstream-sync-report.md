@@ -1424,3 +1424,41 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
 - `githubQuota` evicts the oldest snapshot past 256 hosts; the former `githubGraphQlBudget` capacity test is ported.
 - Provider tests cover `getAutomatedReview` GraphQL read + pagination (ported from the deleted `GitHubCli.test.ts`).
 - `pnpm-lock.yaml` takes the 2813 parent copy; regeneration follows install, same as `scripts/fork/run-upstream-sync.sh`.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.46-nightly.20261008.2819`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261008.2813`
+- Conflict resolver: manual compose (Cursor Grok 4.6 Cloud Agent). Scheduled Buildkite sync (#3273 on main `df5dd06da`) resolved text conflicts, then failed web typecheck: `UsageLimitsSection` required `hiddenProviders` and the automated repair declined rather than hard-code an empty set. The bot opened report PR #826. This compose supersedes #826.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- Usage coverage notices (`sourceWarnings`, omitted-environment cap, `coverageWarningsOmitted`) and the status-pulse pending glyph on the environment filter.
+- Pretty `overflow-clip` / background chrome on the Usage page shell.
+- GitManager unpublished-branch PR lookup skip (`unpublishedSkip`, zero TTL so a push without `-u` is not cached).
+- Pretty `UsageLayerLive` / `ServerSettingsLayerLive` naming; 2819's `CursorUsageReader.layer` is provided on that graph.
+- Pretty `untilTime: UsageTimestamp` on the usage summary input, plus 2819 `awaitRefresh`.
+- Historical `grokBot` display name next to 2819 Muse Code.
+- ChatView direct-annotation send path, `keepFullHistoryOnceRef`, and draft-thread PR linking.
+- client-runtime stale-time / force-refresh gate on connected environment queries, now passing 2819's `emit`.
+- Pretty Automatic PR / Automations user-doc links and the Full-access default paragraph.
+- Fork workflows under `.github/workflows` remain the Pretty set.
+
+## Parent changes integrated at conflict boundaries
+
+- Usage provider visibility: `usagePagePreferences.hiddenProviders`, `useUsage(..., hiddenProviders)`, `UsageLimitsSection.hiddenProviders`, and the Usage page `UsageProviderFilter`. Preferences are the source of truth; hidden providers are dropped from totals, sessions, limits bars, and Cursor enable prompts.
+- 2819 kept-window / muted-figure loading (`shown`, `usageLoadingState`) so a new range does not blank the last answered usage.
+- Muse Code built-in driver, settings schema, and user docs. OpenCode is restored on the built-in driver list and settings meta (present on 2813/2819; dropped from Pretty during the 2813 compose).
+- UsageService scan refactor: `scanTranscriptDir`, Cursor account cache / `awaitRefresh`, concurrent OpenCode / Antigravity / Cursor sources.
+
+## Parent changes intentionally omitted
+
+- Did not hard-code `hiddenProviders={new Set()}`. That would ignore stored provider-visibility preferences.
+- Did not take the automation cache's fork-only UsagePage blob (it omitted the `hiddenProviders` producer and is what failed #3273).
+- Did not restore WelcomeWizard.
+
+## Post-merge repairs
+
+- Wired `hiddenProviders` from `readUsagePagePreferences()` / `updatePreferences` into `useUsage` and `UsageLimitsSection`. The 2819 preference schema and `usage.test.tsx` provider-filter cases landed with the tag.
