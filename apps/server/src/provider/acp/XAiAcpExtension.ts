@@ -416,7 +416,11 @@ export function extractXAiKilledBackgroundTasks(toolCall: AcpToolCallState): Rea
   const title = titleKey(toolCall);
   const rawInput = unknownRecord(toolCall.data.rawInput);
   const variant = nonEmptyString(rawInput?.variant)?.toLowerCase();
-  if (!title.includes("kill_command_or_subagent") && variant !== "kill") return [];
+  // Released Grok CLIs send `variant: "KillTask"` and a rewritten title such
+  // as "kill 01a107bd"; missing it pins the turn open behind a dead task.
+  if (!title.includes("kill_command_or_subagent") && variant !== "kill" && variant !== "killtask") {
+    return [];
+  }
   if (toolCall.status !== "completed") return [];
   const taskIds: string[] = [];
   const push = (value: unknown) => {

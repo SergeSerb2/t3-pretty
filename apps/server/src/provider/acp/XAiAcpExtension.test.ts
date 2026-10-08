@@ -915,6 +915,23 @@ describe("XAiAcpExtension", () => {
         data: { rawInput: { variant: "kill", task_id: "call-bg-3" } },
       }),
     ).toEqual([]);
+    // Released Grok CLIs: KillTask variant under a rewritten title.
+    expect(
+      extractXAiKilledBackgroundTasks({
+        toolCallId: "call-kill-4",
+        title: "kill 01a107bd",
+        status: "completed",
+        data: {
+          rawInput: { variant: "KillTask", task_id: "01a107bd-b433-7500-a87a-1decd9e84dac" },
+          rawOutput: {
+            type: "KillTask",
+            Result: { task_id: "01a107bd-b433-7500-a87a-1decd9e84dac", outcome: "killed" },
+          },
+        },
+      }),
+    ).toEqual([
+      { taskId: "01a107bd-b433-7500-a87a-1decd9e84dac", status: "completed", appendOutput: "" },
+    ]);
     // In-flight kill calls and unrelated tools contribute nothing.
     expect(
       extractXAiKilledBackgroundTasks({
