@@ -224,6 +224,11 @@ async function click(label: string) {
   await act(async () => target.props.onClick());
 }
 
+/** Skip and import both land on summit; WelcomeWizard used to finish in one click. */
+async function finishSetup(hasLanding = false) {
+  await click(hasLanding ? "Start the first thread" : "Open T3 Pretty");
+}
+
 async function mountImport(remote = false) {
   state.selectedEnvironment = remote ? "remote" : "primary";
   await act(async () => {
@@ -286,6 +291,8 @@ it("keeps scanning, choosing and skipping available to a paired read-only enviro
   await click("Skip import");
   expect(state.createProject).not.toHaveBeenCalled();
   expect(state.importThreads).not.toHaveBeenCalled();
+  expect(state.completeOnboarding).not.toHaveBeenCalled();
+  await finishSetup();
   expect(state.completeOnboarding).toHaveBeenCalledOnce();
   expect(state.onDone).toHaveBeenCalledOnce();
 });
@@ -298,6 +305,7 @@ it("waits for the selected grant and enables import when it arrives", async () =
   await click("Import 2 projects");
   expect(state.createProject).toHaveBeenCalledTimes(2);
   expect(state.importThreads).toHaveBeenCalledTimes(2);
+  await finishSetup(true);
   expect(state.onDone).toHaveBeenCalledWith(expect.objectContaining({ environmentId: primaryId }));
 });
 
@@ -352,6 +360,7 @@ it("rechecks after project creation and can retry its history without recreating
   await click("Import 2 projects");
   expect(state.createProject).toHaveBeenCalledTimes(2);
   expect(state.importThreads).toHaveBeenCalledTimes(2);
+  await finishSetup(true);
   expect(state.onDone).toHaveBeenCalledOnce();
 });
 
@@ -387,6 +396,7 @@ it.each([false, true])(
     await click("Import 2 projects");
     expect(state.createProject).toHaveBeenCalledTimes(existing ? 1 : 2);
     expect(state.importThreads).toHaveBeenCalledTimes(2);
+    await finishSetup(true);
     expect(state.onDone).toHaveBeenCalledOnce();
   },
 );
@@ -406,6 +416,8 @@ it("completes accepted imports when permission is revoked after the final server
   });
   expect(state.createProject).toHaveBeenCalledOnce();
   expect(state.importThreads).toHaveBeenCalledOnce();
+  expect(state.completeOnboarding).not.toHaveBeenCalled();
+  await finishSetup(true);
   expect(state.completeOnboarding).toHaveBeenCalledOnce();
   expect(state.onDone).toHaveBeenCalledOnce();
 });

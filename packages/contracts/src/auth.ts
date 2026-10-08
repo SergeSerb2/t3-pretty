@@ -98,7 +98,6 @@ export const AuthAccessReadScope = "access:read" as const;
 export const AuthAccessWriteScope = "access:write" as const;
 export const AuthRelayReadScope = "relay:read" as const;
 export const AuthRelayWriteScope = "relay:write" as const;
-export const AUTH_ENVIRONMENT_SCOPE_MAX_COUNT = 8;
 export const AUTH_CREDENTIAL_MAX_LENGTH = 16_384;
 export const AUTH_IDENTIFIER_MAX_LENGTH = 256;
 export const AUTH_SUBJECT_MAX_LENGTH = 256;
@@ -133,6 +132,8 @@ export const AuthEnvironmentScope = Schema.Literals([
   AuthRelayWriteScope,
 ]);
 export type AuthEnvironmentScope = typeof AuthEnvironmentScope.Type;
+/** Covers the full Pretty+2787 scope vocabulary; 8 was the pre-2787 list size. */
+export const AUTH_ENVIRONMENT_SCOPE_MAX_COUNT = 32;
 export const AuthEnvironmentScopes = Schema.Array(AuthEnvironmentScope).check(
   Schema.isMaxLength(AUTH_ENVIRONMENT_SCOPE_MAX_COUNT),
 );

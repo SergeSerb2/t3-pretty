@@ -1,8 +1,5 @@
 import { RegistryContext } from "@effect/atom-react";
-import {
-  BearerConnectionTarget,
-  PrimaryConnectionTarget,
-} from "@t3tools/client-runtime/connection";
+import { BearerConnectionTarget } from "@t3tools/client-runtime/connection";
 import {
   AuthTerminalOperateScope,
   DEFAULT_SERVER_SETTINGS,
@@ -61,8 +58,10 @@ vi.mock("../../rpc/atomRegistry", () => ({
   },
 }));
 vi.mock("../../state/environments", () => ({
-  useEnvironments: () => ({ environments: [primaryEnvironment, remoteEnvironment] }),
-  usePrimaryEnvironment: () => primaryEnvironment,
+  // Wizard tests were single-environment. Ridge shows every selected machine, so
+  // keep this suite on the paired remote or the first Install/Sign in is local.
+  useEnvironments: () => ({ environments: [remoteEnvironment] }),
+  usePrimaryEnvironment: () => remoteEnvironment,
 }));
 vi.mock("../../onboarding/useAgentSurveys", () => ({
   useAgentSurveys: (ids: EnvironmentId[]) =>
@@ -176,20 +175,6 @@ import { Trailhead } from "./Trailhead";
 
 const primaryId = EnvironmentId.make("primary");
 const remoteId = EnvironmentId.make("paired-remote");
-const primaryEnvironment = {
-  environmentId: primaryId,
-  label: "This computer",
-  connection: { phase: "connected" },
-  entry: {
-    enabled: true,
-    target: new PrimaryConnectionTarget({
-      environmentId: primaryId,
-      label: "This computer",
-      httpBaseUrl: "http://127.0.0.1:3773",
-      wsBaseUrl: "ws://127.0.0.1:3773",
-    }),
-  },
-} as const;
 const remoteEnvironment = {
   environmentId: remoteId,
   label: "Paired computer",
@@ -344,6 +329,7 @@ describe("welcome agent terminal setup", () => {
     expect(state.close).not.toHaveBeenCalled();
     await click("Continue");
     await click("Skip import");
+    await click("Open T3 Pretty");
     expect(state.complete).toHaveBeenCalledOnce();
     expect(state.done).toHaveBeenCalledExactlyOnceWith(undefined);
   });

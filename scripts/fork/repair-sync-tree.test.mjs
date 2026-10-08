@@ -232,9 +232,9 @@ describe("applyRepairEdits", () => {
 
   it("accepts a ChatView-sized repair and rejects one over MAX_FILE_BYTES", () => {
     assert.equal(MAX_FILE_BYTES, 512 * 1024);
-    const chatViewSized = `${"x".repeat(491 * 1024)}\n`;
+    const chatViewSized = `UNIQUE${"x".repeat(491 * 1024 - 6)}\n`;
     const updated = applyRepairEdits({
-      edits: [{ path: "ChatView.tsx", old_text: "xxxxx", new_text: "yyyyy" }],
+      edits: [{ path: "ChatView.tsx", old_text: "UNIQUE", new_text: "FIXED!" }],
       sources: new Map([["ChatView.tsx", chatViewSized]]),
       editable: new Set(["ChatView.tsx"]),
     });
