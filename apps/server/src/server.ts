@@ -63,7 +63,7 @@ import { layer as AcpRegistryCatalogLive } from "./provider/AcpRegistryCatalog.t
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as ForgejoCli from "./sourceControl/ForgejoCli.ts";
-import * as GitHubCli from "./sourceControl/GitHubCli.ts";
+import * as GitHubApi from "./sourceControl/GitHubApi.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { layer as ProviderInstanceRegistryHydrationLive } from "./provider/ProviderInstanceRegistryHydration.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -592,7 +592,7 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   Layer.provideMerge(ServerSettingsLayerLive),
   // The asset route uses the registry's GitHub credential for private PR media.
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
-  Layer.provideMerge(GitHubCli.layer),
+  Layer.provideMerge(GitHubApi.layerWithDependencies),
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
   Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive, DeviceLayerLive)),

@@ -24,7 +24,7 @@ the next prompt in new and existing threads. Projects can override the environme
 ## Sending while the agent is working
 
 While a turn is running, the composer keeps a send button next to stop, and every provider
-behaves the same way:
+behaves the same way by default:
 
 - **Send now** (the send button, or **Enter** on desktop) steers the running turn: the message
   is delivered into the work in progress as soon as the agent can accept it.
@@ -35,6 +35,9 @@ behaves the same way:
   turn each, in order.
 
 On mobile, type while the agent works and tap send to steer, or long-press send to queue.
+
+For configurable defaults, queue management, and additional shortcuts, see
+[Send while the agent is working](#send-while-the-agent-is-working).
 
 ## Dictate a message
 
@@ -51,6 +54,23 @@ microphone. The Windows and Linux desktop apps do not; those platforms have no
 on-device engine in this app. Web microphone access requires HTTPS or localhost.
 
 On mobile, tap the microphone, then the checkmark to insert on-device speech.
+
+## Formatting
+
+The composer writes Markdown and shows it styled as you type. Markers such as
+`**` stay in the text and show beside the styled words when your cursor is on
+them. Lines starting with `- `, `1. `, `- [ ] `, `> `, `# ` or `---` become lists,
+task lists, quotes, headings and rules; ` ``` ` followed by Enter opens a code
+block. What you typed is what the agent receives, markers and numbering
+included, and `#1234` without a space still looks up a pull request.
+
+Enter sends. In a list or quote, **Shift+Enter** continues it, and Shift+Enter
+on an empty line leaves it; **Tab** nests a list item. In a code block, Enter
+starts a new line at the current indentation, **Tab** and **Shift+Tab** indent
+the selected lines, and a closing ` ``` ` followed by Enter, or two blank lines
+at the end, leave the block. **Backspace** at the start of a code block turns it
+back into plain lines. Choose the language in a code block's corner to change
+it. Very large code blocks are shown without syntax highlighting.
 
 ## Attach files
 

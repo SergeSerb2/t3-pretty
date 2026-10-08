@@ -1383,3 +1383,44 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
 - `packages/client-runtime/src/state/runtime.ts` — dropped the local duplicate `followStreamInEnvironment` (keep the `environmentStreams` import / re-export).
 - `editorPreferences.ts` — exported `resolveAndPersistPreferredEditor` for StorageSettings.
 - Tests: `onError` on file-save coordinators, `changeRequest: null` on `useThreadActionMenu`, `canOperateThread` on ComposerPrimaryActions standalone stop.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.46-nightly.20261008.2813`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261007.2787`
+- Conflict resolver: manual compose (Cursor Grok 4.6 Cloud Agent). Scheduled Buildkite sync (#3267 on main `fe8e09751`) resolved text conflicts, then failed the server typecheck gate from Origin PR #822 (239 errors in 15 `apps/server` files). Automated repair declined, so the bot opened report PR #824. This compose supersedes #824.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- Origin and Forgejo providers stay in `sourceControlProviderCliLayers` (packaged desktop boot).
+- `getAutomatedReview` / Codex review GraphQL pagination stays on the GitHub source-control provider, now calling `fetchGitHubCodexReview` on `GitHubApi` instead of the deleted `GitHubCli` wrapper.
+- `ChangeRequest.mergedAt` remains `Option<DateTime>` at the Pretty contract boundary. Provider mapping converts the parent's `string | null` records.
+- `GITHUB_QUOTA_SNAPSHOT_CAPACITY` (256) is kept on `githubQuota` so a burst of one-off Enterprise hosts cannot retain quota rows forever. The deleted `githubGraphQlBudget` bound moved here.
+- `StorageInventoryLayerLive` stays in the server layer graph.
+- WelcomeWizard stays deleted. Trailhead remains the onboarding surface.
+- Fork workflows under `.github/workflows` remain the Pretty set.
+- Mobile glass / mint-glass / ConnectionSheetButton / Pretty header chrome stay composed onto 2813's v5 native stack, layout metrics, and ThreadHeader extraction.
+
+## Parent changes integrated at conflict boundaries
+
+- 2813 deleted `GitHubCli` / `GitHubCli.test.ts` and `githubGraphQlBudget` / `githubGraphQlBudget.test.ts`. The live transport is `GitHubApi.layerWithDependencies` (credentials + quota + rate-limit pause).
+- `GitHubPullRequestCli` rename to `GitHubPullRequestApi` is complete, including leftover test identifiers.
+- Mobile `react-native-screens` is the committed v5 tarball (`apps/mobile/deps/react-native-screens-5.0.0-t3.7.tgz`). The unused `patches/react-native-screens@4.28.0.patch` is deleted: 2813 no longer depends on 4.28.0, and the v5 archive already owns Android glass setters and `hidesSharedBackground`. `onlyBuiltDependencies` still lists `react-native-screens@4.28.0` because 2813 left that leftover.
+- 2813 snapshot-window index migration is registered as Pretty migration ID 74 (`060_ThreadSnapshotWindowIndexes.ts`), after Pretty-only ledger identities.
+- Cache-applied compositions for the other conflicted files from `automation/sync-resolution-cache` (2813 window), plus hand-composed mobile Home/Connections/ThreadRoute screens.
+
+## Parent changes intentionally omitted
+
+- Did not keep `GitHubCli` as a wrapper. 2787 did that while 2813 still had a CLI-shaped service; 2813 removes the module. Pretty Codex review and Origin/Forgejo layers are preserved on the new API service.
+- Did not retain `patches/react-native-screens@4.28.0.patch`. The automation's fork-side fallback would have kept an unreferenced 4.28.0 patch after the v5 migration.
+- Did not restore WelcomeWizard.
+
+## Post-merge repairs
+
+- Server typecheck on the scheduled bot tree failed because the resolver kept `GitHubCli` (and leftover `GitHubPullRequestCli` names) after 2813 deleted the module, while tests and `layerWithDependencies` expected `GitHubApi` / `GitHubQuota`. This compose deletes the CLI module, provides `GitHubApi.layerWithDependencies` from `sourceControlProviderCliLayers`, `server.ts`, `ws.ts`, evaluate-thread-titles, and the PR registry, and ports Codex onto `githubCodexReview.fetchGitHubCodexReview`.
+- GitManager test fakes map `mergedAt` strings onto `Option<DateTime>` and implement `getAutomatedReview`.
+- `githubQuota` evicts the oldest snapshot past 256 hosts; the former `githubGraphQlBudget` capacity test is ported.
+- Provider tests cover `getAutomatedReview` GraphQL read + pagination (ported from the deleted `GitHubCli.test.ts`).
+- `pnpm-lock.yaml` takes the 2813 parent copy; regeneration follows install, same as `scripts/fork/run-upstream-sync.sh`.

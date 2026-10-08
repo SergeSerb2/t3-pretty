@@ -15,7 +15,7 @@ import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
 import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
 import * as BitbucketApi from "./BitbucketApi.ts";
 import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
-import * as GitHubCli from "./GitHubCli.ts";
+import * as GitHubApi from "./GitHubApi.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
 import * as GitLabCli from "./GitLabCli.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
@@ -328,7 +328,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
 export const sourceControlProviderCliLayers = Layer.mergeAll(
   AzureDevOpsCli.layer,
   BitbucketApi.layer,
-  GitHubCli.layer,
+  GitHubApi.layerWithDependencies,
   GitLabCli.layer,
   OriginCli.layer,
   ForgejoCli.layer,

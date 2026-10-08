@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef } from "react";
 
 import { EnvironmentProject, EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { executeAtomQuery, type AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
@@ -47,7 +47,8 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
   const createRef = useAtomCommand(vcsEnvironment.createRef, { reportFailure: false });
   const createWorktree = useAtomCommand(vcsEnvironment.createWorktree, { reportFailure: false });
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
-  const { selectedThread, selectedThreadProject } = useThreadSelection();
+  const { selectedThread, selectedThreadProject, selectedEnvironmentRuntime } =
+    useThreadSelection();
   const canWriteSourceControl = useEnvironmentScope(
     selectedThread?.environmentId ?? null,
     AuthSourceControlWriteScope,
@@ -149,12 +150,38 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
     [refreshStatus, selectedThread, selectedThreadCwd, selectedThreadProject],
   );
 
+  // Shell updates replace the selected thread object many times per second while a
+  // turn streams, so key the refresh on primitives. The server publishes status after
+  // each turn finishes; this only seeds status when the selection or cwd changes, and
+  // again on reconnect because the server's cached status can miss changes made while
+  // the app was away.
+  const selectedEnvironmentId = selectedThread?.environmentId ?? null;
+  const selectedThreadId = selectedThread?.id ?? null;
+  const hasSelectedThreadProject = selectedThreadProject !== null;
+  const isEnvironmentConnected = selectedEnvironmentRuntime?.connectionState === "connected";
+  const refreshOnSelection = useEffectEvent(() => {
+    void refreshSelectedThreadGitStatus({ quiet: true });
+  });
   useEffect(() => {
-    if (!loadInitialState || !selectedThread || !selectedThreadProject) {
+    if (
+      !loadInitialState ||
+      selectedEnvironmentId === null ||
+      selectedThreadId === null ||
+      !hasSelectedThreadProject ||
+      selectedThreadCwd === null ||
+      !isEnvironmentConnected
+    ) {
       return;
     }
-    void refreshSelectedThreadGitStatus({ quiet: true });
-  }, [loadInitialState, refreshSelectedThreadGitStatus, selectedThread, selectedThreadProject]);
+    refreshOnSelection();
+  }, [
+    loadInitialState,
+    selectedEnvironmentId,
+    selectedThreadId,
+    hasSelectedThreadProject,
+    selectedThreadCwd,
+    isEnvironmentConnected,
+  ]);
 
   const turnCompleteRefreshRef = useRef<{
     threadId: EnvironmentThreadShell["id"] | null;
