@@ -837,6 +837,12 @@ validate_sync_tree_once() {
   run_validation_step desktop-typecheck \
     "The merged sync tree failed the desktop typecheck." \
     vp run --filter @t3tools/desktop typecheck || return 1
+  # The server bundle strips types. Unused @effect-diagnostics / @ts-expect-error
+  # directives and merge-time type drift are silent in build:bundle and were
+  # not a PR gate, so they accumulated on main.
+  run_validation_step server-typecheck \
+    "The merged sync tree failed the server typecheck." \
+    vp run --filter t3 typecheck || return 1
   run_validation_step server-bundle \
     "The merged sync tree failed the bundled server build." \
     vp run --filter t3 build:bundle || return 1

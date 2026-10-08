@@ -114,7 +114,7 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    cannot repaint a landed sync as failed. Parent CI is
    disabled on this fork, so sync does not wait on Check, Test, Mobile Native Static Analysis, or
    Release Smoke. Instead the job validates the merged tree itself before pushing: frozen install,
-   contracts/client-runtime/web/desktop/relay/mobile typechecks, the web lint error gate, the production
+   contracts/client-runtime/web/desktop/server/relay/mobile typechecks, the web lint error gate, the production
    web build, the bundled server build, and the production iOS bundle. A merge whose text conflicts
    all resolved can still fail here, because parent hunks that landed clean call APIs the fork
    changed (a new parent test fixture that builds `EnvironmentRegistry.of({...})` without the
@@ -320,7 +320,7 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | hosted `macos-large` (M4 12 vCPU)                                             |
 | Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                                            |
 | Updater-feed upload (R2/S3) | m1-dev                                | 5 min (3 min just to install Vite+)         | hosted `macos-large` DMG (`origin-forge upload-assets` is S3, not Origin CLI) |
-| Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | `windows-release` (`publish-mobile-release.sh`)                                 |
+| Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | `windows-release` (`publish-mobile-release.sh`)                               |
 | Relay production deploy     | m1-dev                                | queued behind releases                      | self-hosted `macos-release` (`deploy-relay-ci.sh`)                            |
 | GitHub mirror               | m1-dev                                | seconds                                     | self-hosted `macos-release` (`mirror-github.sh`)                              |
 

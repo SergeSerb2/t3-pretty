@@ -3147,6 +3147,7 @@ ${">".repeat(7)} theirs
     const webLint = script.indexOf("vp lint apps/web/src", validationStart);
     const webSceneryUnit = script.indexOf("run-web-scenery-unit.sh", validationStart);
     const webBuild = script.indexOf("vp run --filter @t3tools/web build", validationStart);
+    const serverTypecheck = script.indexOf("vp run --filter t3 typecheck", validationStart);
     const relayTypecheck = script.indexOf(
       "vp run --filter t3code-relay typecheck",
       validationStart,
@@ -3159,10 +3160,12 @@ ${">".repeat(7)} theirs
     assert.isAbove(webLint, webTypecheck);
     assert.isAbove(webSceneryUnit, webLint);
     assert.isAbove(webBuild, webSceneryUnit);
-    assert.isAbove(relayTypecheck, webBuild);
+    assert.isAbove(serverTypecheck, webBuild);
+    assert.isAbove(relayTypecheck, serverTypecheck);
     assert.isAbove(relayMigrations, relayTypecheck);
     assert.include(script, "failed the web lint error gate");
     assert.include(script, "failed the scenery motion unit contract");
+    assert.include(script, "failed the server typecheck");
     assert.include(script, "would regenerate already-applied Relay Postgres SQL");
   });
 

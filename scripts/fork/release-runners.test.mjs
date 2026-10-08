@@ -297,6 +297,10 @@ ${setup}
     );
     const reviewStep = pipeline.slice(
       pipeline.indexOf(":mag: Origin PR Review"),
+      pipeline.indexOf(":mag: Desktop listen contract"),
+    );
+    const serverTypecheckStep = pipeline.slice(
+      pipeline.indexOf(":ts: Server typecheck"),
       pipeline.indexOf(":white_check_mark: Origin PR comments resolved"),
     );
     const commentsStep = pipeline.slice(
@@ -334,6 +338,8 @@ ${setup}
     assert.include(syncStep, "os: macos");
     assert.include(reviewStep, "queue: macos-release");
     assert.notInclude(reviewStep, "os: macos");
+    assert.include(serverTypecheckStep, "queue: macos-release");
+    assert.include(serverTypecheckStep, "os: macos");
     assert.include(commentsStep, "queue: macos-release");
     assert.include(pipeline, "macos-release + os=macos in pipeline settings");
     assert.notInclude(pipeline, "windows-release in pipeline settings");
@@ -866,7 +872,13 @@ describe("macos review-only pre-command hook", () => {
     assert.equal(run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "ios-mobile" }).status, 0);
     assert.equal(run({ T3_PRETTY_REVIEW_ONLY: "1" }).status, 0);
     assert.equal(run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "" }).status, 0);
-    for (const key of ["android-mobile", "upstream-sync", "deploy-relay", "publish-cli"]) {
+    for (const key of [
+      "android-mobile",
+      "upstream-sync",
+      "deploy-relay",
+      "publish-cli",
+      "server-typecheck",
+    ]) {
       const blocked = run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: key });
       assert.equal(blocked.status, 1, key);
     }

@@ -532,7 +532,6 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       const { output } = yield* captureStdout(
         runConnectCli(["connect", "status", "--base-dir", baseDir, "--json"]),
       );
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - CLI JSON output is decoded as a presentation DTO.
       const status = JSON.parse(output) as {
         readonly desired: boolean;
         readonly authenticated: boolean;
@@ -577,7 +576,6 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       NodeFS.mkdirSync(secretsDir, { recursive: true });
       NodeFS.writeFileSync(
         NodePath.join(secretsDir, "cloud-cli-oauth-token.bin"),
-        // @effect-diagnostics-next-line preferSchemaOverJson:off - Test fixture matches the persisted CLI token representation.
         JSON.stringify({
           accessToken: "access-token",
           refreshToken: "refresh-token",
@@ -591,7 +589,6 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       const status = yield* captureStdout(
         runConnectCli(["connect", "status", "--base-dir", baseDir, "--json"]),
       );
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - CLI JSON output is decoded as a presentation DTO.
       const decoded = JSON.parse(status.output) as {
         readonly desired: boolean;
         readonly authenticated: boolean;
@@ -647,7 +644,6 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       const createdOutput = yield* captureStdout(
         runCli(["auth", "pairing", "create", "--base-dir", baseDir, "--json"]),
       );
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const created = JSON.parse(createdOutput.output) as {
         readonly id: string;
         readonly credential: string;
@@ -655,7 +651,6 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       const listedOutput = yield* captureStdout(
         runCli(["auth", "pairing", "list", "--base-dir", baseDir, "--json"]),
       );
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const listed = JSON.parse(listedOutput.output) as ReadonlyArray<{
         readonly id: string;
         readonly credential?: string;
@@ -679,7 +674,6 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       const issuedOutput = yield* captureStdout(
         runCli(["auth", "session", "issue", "--base-dir", baseDir, "--json"]),
       );
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const issued = JSON.parse(issuedOutput.output) as {
         readonly sessionId: string;
         readonly token: string;
@@ -688,7 +682,6 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       const listedOutput = yield* captureStdout(
         runCli(["auth", "session", "list", "--base-dir", baseDir, "--json"]),
       );
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const listed = JSON.parse(listedOutput.output) as ReadonlyArray<{
         readonly sessionId: string;
         readonly token?: string;

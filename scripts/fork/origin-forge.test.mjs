@@ -633,6 +633,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(sceneryUnit, "--project unit");
     assert.include(sceneryUnit, 'cd "$ROOT/apps/web"');
     assert.notInclude(sceneryUnit, "sceneryDomContract.test.ts");
+    assert.include(syncScript, "run_validation_step server-typecheck");
+    assert.include(syncScript, "--filter t3 typecheck");
     assert.include(syncScript, "--filter t3 build:bundle");
     assert.include(syncScript, "--filter t3code-relay typecheck");
     assert.include(syncScript, "run-relay-migrations-unit.sh");
@@ -804,10 +806,16 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(linuxStep.slice(0, 900), "queue: linux-small");
     const reviewStep = pipeline.slice(
       pipeline.indexOf(":mag: Origin PR Review"),
+      pipeline.indexOf(":mag: Desktop listen contract"),
+    );
+    const serverTypecheckStep = pipeline.slice(
+      pipeline.indexOf(":ts: Server typecheck"),
       pipeline.indexOf(":white_check_mark: Origin PR comments resolved"),
     );
     assert.include(reviewStep, "queue: macos-release");
     assert.notInclude(reviewStep, "os: macos");
+    assert.include(serverTypecheckStep, "queue: macos-release");
+    assert.include(serverTypecheckStep, "os: macos");
     assert.include(pipeline, "github-actions#v0.13.0");
     assert.include(pipeline, 'source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"');
     assert.notInclude(pipeline, 'version: "0.35.1"');

@@ -47,9 +47,7 @@ layer("OriginPullRequestCli.layer", (it) => {
         updatedAt: "2026-08-28T00:00:00Z",
       };
       mockedExecute
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         .mockReturnValueOnce(Effect.succeed(output(JSON.stringify([row]))))
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         .mockReturnValueOnce(Effect.succeed(output(JSON.stringify(row))));
 
       const cli = yield* OriginPullRequestCli.OriginPullRequestCli;
