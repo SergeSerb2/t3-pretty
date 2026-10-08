@@ -5,6 +5,8 @@
  * elements live in the renderer; we only attach listeners and forward state
  * here). Single layer-scoped browser session partition.
  */
+// @effect-diagnostics nodeBuiltinImport:off - evaluation object-group keys are
+// minted at the Electron debugger boundary with node:crypto.
 import * as NodeCrypto from "node:crypto";
 import {
   DesktopPreviewRecordingInputSchema,
@@ -35,8 +37,10 @@ import type {
   PreviewAutomationTypeInput,
   PreviewAutomationStatus,
   PreviewAutomationWaitForInput,
+  PreviewForwardedShortcut,
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { matchesKeybindingShortcut } from "@t3tools/shared/keybindings";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import {
   BrowserWindow,
@@ -70,11 +74,12 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
-import { PREVIEW_PICTURE_IN_PICTURE_FRAME_CHANNEL } from "../ipc/channels.ts";
+import { MENU_ACTION_CHANNEL, PREVIEW_PICTURE_IN_PICTURE_FRAME_CHANNEL } from "../ipc/channels.ts";
 import * as DesktopBrowserHost from "./DesktopBrowserHost.ts";
 import * as BrowserSession from "./BrowserSession.ts";
 import {
   ANNOTATION_CAPTURED_CHANNEL,
+  ANNOTATION_SEND_ENABLED_CHANNEL,
   ANNOTATION_THEME_CHANNEL,
   CANCEL_PICK_CHANNEL,
   ELEMENT_PICKED_CHANNEL,
@@ -1108,7 +1113,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     Effect.succeed(playwrightInjectedRuntimeInstallExpression),
   );
 
+  let forwardedShortcuts: ReadonlyArray<PreviewForwardedShortcut> = [];
   const annotationThemeRef = yield* Ref.make(DEFAULT_ANNOTATION_THEME);
+  const annotationSendEnabled = new Map<string, boolean>();
   const mainWindowRef = yield* Ref.make<Option.Option<BrowserWindow>>(Option.none());
   const tabsRef = yield* SynchronizedRef.make<ReadonlyMap<string, PreviewTabState>>(new Map());
   const attachedRef = yield* Ref.make<ReadonlyMap<number, ManagedListeners>>(new Map());
@@ -2600,6 +2607,38 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     };
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
       syncMenuShortcuts(wc, input);
+      const host = wc.hostWebContents;
+      const forwarded =
+        input.type === "keyDown" &&
+        !input.isComposing &&
+        host &&
+        !host.isDestroyed() &&
+        webContents.getFocusedWebContents() === wc &&
+        !(
+          hostPlatform !== "darwin" &&
+          input.control &&
+          input.alt &&
+          /^(?:[^a-zA-Z0-9]|Dead)$/u.test(input.key)
+        ) &&
+        forwardedShortcuts.find(({ shortcut }) =>
+          matchesKeybindingShortcut(
+            {
+              key: input.key,
+              code: input.code,
+              metaKey: input.meta,
+              ctrlKey: input.control,
+              shiftKey: input.shift,
+              altKey: input.alt,
+            },
+            shortcut,
+            hostPlatform === "darwin" ? "MacIntel" : hostPlatform,
+          ),
+        );
+      if (forwarded && host) {
+        event.preventDefault();
+        if (!input.isAutoRepeat) host.send(MENU_ACTION_CHANNEL, forwarded.command);
+        return;
+      }
       if (isPreviewRefreshShortcut(input)) {
         event.preventDefault();
         runFork(
@@ -2758,6 +2797,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const closeTabUnlocked = Effect.fn("PreviewManager.closeTabUnlocked")(function* (tabId: string) {
     if (!(yield* SynchronizedRef.get(tabsRef)).has(tabId)) return;
     clearPendingRecording(tabId);
+    annotationSendEnabled.delete(tabId);
     yield* Effect.all(
       [
         cancelPickElement(tabId),
@@ -2859,9 +2899,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       // changed. Only push its zoom back down — Chromium may have just handed
       // this guest the app window's zoom level.
       yield* assertTabZoom(tabId);
-      yield* attempt({ operation: "registerWebview.sendTheme", tabId, webContentsId }, () =>
-        wc.send(ANNOTATION_THEME_CHANNEL, annotationTheme),
-      );
+      yield* attempt({ operation: "registerWebview.sendTheme", tabId, webContentsId }, () => {
+        wc.send(ANNOTATION_THEME_CHANNEL, annotationTheme);
+        wc.send(ANNOTATION_SEND_ENABLED_CHANNEL, annotationSendEnabled.get(tabId) === true);
+      });
       return;
     }
     const replacedWebContentsId =
@@ -2968,9 +3009,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     // syncTabAudible's ownership check, so re-read and reconcile through the
     // same path the event uses.
     yield* syncTabAudible(tabId, wc, yield* readAudible);
-    yield* attempt({ operation: "registerWebview.sendTheme", tabId, webContentsId }, () =>
-      wc.send(ANNOTATION_THEME_CHANNEL, annotationTheme),
-    );
+    yield* attempt({ operation: "registerWebview.sendTheme", tabId, webContentsId }, () => {
+      wc.send(ANNOTATION_THEME_CHANNEL, annotationTheme);
+      wc.send(ANNOTATION_SEND_ENABLED_CHANNEL, annotationSendEnabled.get(tabId) === true);
+    });
     const latestNavStatus = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.navStatus;
     if (
       pendingUrl &&
@@ -3185,6 +3227,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
+  const setAnnotationSendEnabled = Effect.fn("PreviewManager.setAnnotationSendEnabled")(function* (
+    tabId: string,
+    enabled: boolean,
+  ) {
+    const wc = yield* requireWebContents(tabId);
+    yield* attempt({ operation: "setAnnotationSendEnabled", tabId, webContentsId: wc.id }, () => {
+      annotationSendEnabled.set(tabId, enabled);
+      wc.send(ANNOTATION_SEND_ENABLED_CHANNEL, enabled);
+    });
+  });
+
   const pickElement = Effect.fn("PreviewManager.pickElement")(function* (tabId: string) {
     const wc = yield* requireWebContents(tabId);
     yield* cancelPickElement(tabId);
@@ -3262,7 +3315,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             return;
           }
           const cropRect = normalizeCaptureRect(args[1]);
-          const submission = args[2] === "send" ? "send" : "attach";
+          const submission =
+            args[2] === "send" && annotationSendEnabled.get(tabId) === true ? "send" : "attach";
           runFork(
             captureAnnotationScreenshot(tabId, wc, cropRect).pipe(
               // The renderer cannot tell a dropped crop from a comment-only
@@ -3321,7 +3375,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             wc.once("destroyed", onDestroyed);
             wc.on("did-start-navigation", onNavigated);
             if (!wc.isFocused()) wc.focus();
-            wc.send(START_PICK_CHANNEL, annotationTheme);
+            wc.send(START_PICK_CHANNEL, annotationTheme, annotationSendEnabled.get(tabId) === true);
           });
         });
         runFork(
@@ -5435,9 +5489,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     revealArtifact,
     saveRecording,
     setAnnotationTheme,
+    setAnnotationSendEnabled,
     setAudioMuted,
     setColorScheme,
     setMainWindow,
+    setForwardedShortcuts: (shortcuts: ReadonlyArray<PreviewForwardedShortcut>) =>
+      Effect.sync(() => {
+        forwardedShortcuts = shortcuts;
+      }),
     startRecording,
     closePictureInPicture,
     stopRecording,
@@ -5749,6 +5808,9 @@ export class PreviewManager extends Context.Service<
   PreviewManager,
   {
     readonly setMainWindow: (window: BrowserWindow) => Effect.Effect<void, PreviewManagerError>;
+    readonly setForwardedShortcuts: (
+      shortcuts: ReadonlyArray<PreviewForwardedShortcut>,
+    ) => Effect.Effect<void>;
     readonly getBrowserSession: (
       scope?: string,
       persistent?: boolean,
@@ -5802,6 +5864,10 @@ export class PreviewManager extends Context.Service<
     ) => Effect.Effect<string, PreviewManagerError>;
     readonly setAnnotationTheme: (
       theme: DesktopPreviewAnnotationTheme,
+    ) => Effect.Effect<void, PreviewManagerError>;
+    readonly setAnnotationSendEnabled: (
+      tabId: string,
+      enabled: boolean,
     ) => Effect.Effect<void, PreviewManagerError>;
     readonly pickElement: (
       tabId: string,
@@ -5890,6 +5956,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
 
   return PreviewManager.of({
     setMainWindow: operations.setMainWindow,
+    setForwardedShortcuts: operations.setForwardedShortcuts,
     getBrowserSession: Effect.fn("PreviewManager.getBrowserSession")(
       function* (scope, persistent, namespace) {
         const session = yield* browserSession
@@ -5950,6 +6017,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
       },
     ),
     setAnnotationTheme: operations.setAnnotationTheme,
+    setAnnotationSendEnabled: operations.setAnnotationSendEnabled,
     pickElement: operations.pickElement,
     cancelPickElement: operations.cancelPickElement,
     captureScreenshot: operations.captureScreenshot,

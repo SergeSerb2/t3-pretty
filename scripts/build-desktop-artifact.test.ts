@@ -871,6 +871,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         { name: "T3 Pretty", schemes: ["t3code", "t3code-dev"] },
       ]);
       assert.equal(linux.npmRebuild, false);
+      assert.deepStrictEqual(linux.toolsets, { appimage: "1.0.3" });
+      assert.notProperty(mac, "toolsets");
+      assert.notProperty(win, "toolsets");
       assert.deepStrictEqual(mac.files, [...DESKTOP_FILE_EXCLUSIONS, ...MAC_FILE_EXCLUSIONS]);
       assert.deepStrictEqual(linux.files, [...DESKTOP_FILE_EXCLUSIONS, ...LINUX_FILE_EXCLUSIONS]);
       assert.deepStrictEqual(win.files, DESKTOP_FILE_EXCLUSIONS);

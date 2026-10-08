@@ -421,3 +421,4 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(ServerSecretStore, make);
+export const makeServerSecretStoreLayer = () => layer;

@@ -83,7 +83,7 @@ export function useSidebarProjectFolders() {
     const servers = environments.flatMap((environment) =>
       environment.serverConfig == null ? [] : [environment.serverConfig.settings],
     );
-    if (!shouldLiftProjectFolderSettings({ client, servers })) return;
+    if (!shouldLiftProjectFolderSettings({ local: client, servers })) return;
     const key = JSON.stringify(projectFolderSettingsPatch(client));
     if (liftedKey.current === key) return;
     liftedKey.current = key;

@@ -17,9 +17,10 @@ import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as SqlClient from "effect/sql/SqlClient";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
-import { ProjectionAutomationRepositoryLive } from "../persistence/Layers/ProjectionAutomations.ts";
-import { ProjectionAutomationRunRepositoryLive } from "../persistence/Layers/ProjectionAutomationRuns.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
+import { ProjectionAutomationRepositoryLive } from "../persistence/ProjectionAutomations.ts";
+import { ProjectionAutomationRunRepositoryLive } from "../persistence/ProjectionAutomationRuns.ts";
 import { ProjectService } from "../project/ProjectService.ts";
 import * as AutomationStore from "./AutomationStore.ts";
 

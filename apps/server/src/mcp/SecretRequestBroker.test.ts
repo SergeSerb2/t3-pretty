@@ -26,7 +26,8 @@ import * as Stream from "effect/Stream";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
 import { fixtureProjection } from "../testUtils/V2ProjectionFixture.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";

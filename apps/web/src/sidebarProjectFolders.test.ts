@@ -214,15 +214,15 @@ describe("shared folder settings", () => {
       folders: stored.sidebarProjectFolders,
       assignments: stored.sidebarProjectFolderAssignments,
     };
-    expect(shouldLiftProjectFolderSettings({ client, servers: [] })).toBe(false);
+    expect(shouldLiftProjectFolderSettings({ local: client, servers: [] })).toBe(false);
     expect(
       shouldLiftProjectFolderSettings({
-        client,
+        local: client,
         servers: [{ sidebarProjectFolders: [], sidebarProjectFolderAssignments: {} }],
       }),
     ).toBe(true);
-    expect(shouldLiftProjectFolderSettings({ client, servers: [stored] })).toBe(false);
-    expect(shouldLiftProjectFolderSettings({ client: empty, servers: [stored] })).toBe(false);
+    expect(shouldLiftProjectFolderSettings({ local: client, servers: [stored] })).toBe(false);
+    expect(shouldLiftProjectFolderSettings({ local: empty, servers: [stored] })).toBe(false);
   });
 });
 

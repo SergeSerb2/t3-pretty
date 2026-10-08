@@ -1040,7 +1040,7 @@ export function ThreadRowLeadingStatus({
       gitCwd !== null
       ? vcsEnvironment.status({
           environmentId: thread.environmentId,
-          input: { cwd: gitCwd },
+          input: { cwd: gitCwd, includeRemote: false },
         })
       : null,
   );

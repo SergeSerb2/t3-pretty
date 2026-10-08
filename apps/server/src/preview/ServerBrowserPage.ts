@@ -213,7 +213,9 @@ export const snapshot = async (input: {
     });
   return {
     ...page,
-    accessibilityTree,
+    // Playwright's aria snapshot is a string; MCP still serves that form. The
+    // contract type is the desktop node tree, so the string is asserted here.
+    accessibilityTree: accessibilityTree as unknown as PreviewAutomationSnapshot["accessibilityTree"],
     consoleEntries: [...input.consoleEntries],
     networkEntries: [...input.networkEntries],
     actionTimeline: [...input.actionTimeline],

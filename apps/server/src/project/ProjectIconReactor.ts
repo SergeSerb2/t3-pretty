@@ -25,10 +25,10 @@ import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import * as Mime from "effect/http/Mime";
-import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
+import { OrchestrationEventStore } from "../persistence/OrchestrationEventStore.ts";
 import { ProjectService } from "./ProjectService.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
-import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import { forkParked } from "../serverActivation.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { TextGeneration } from "../textGeneration/TextGeneration.ts";

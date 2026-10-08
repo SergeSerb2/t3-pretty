@@ -7,6 +7,7 @@ import {
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import {
+  AuthOrchestrationOperateScope,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
@@ -39,6 +40,7 @@ import {
   recordPendingThreadCreationOutcome,
 } from "./pending-thread-creation";
 import { serverEnvironment } from "./server";
+import { readEnvironmentScope, useEnvironmentsWithScope } from "./session";
 import {
   confirmThreadOutboxMessageQueued,
   threadOutboxManager,
@@ -224,6 +226,9 @@ export async function prepareQueuedMessageAttachments(
   | { readonly status: "abandoned" }
 > {
   if (!(await confirmThreadOutboxMessageQueued(queuedMessage))) {
+    return { status: "abandoned" };
+  }
+  if (!readEnvironmentScope(queuedMessage.environmentId, AuthOrchestrationOperateScope)) {
     return { status: "abandoned" };
   }
   const revision = threadOutboxRevision(queuedMessage.messageId);
@@ -695,6 +700,10 @@ export function useThreadOutboxDrain(): void {
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
   const { connectedEnvironments } = useRemoteConnectionStatus();
+  const operableEnvironments = useEnvironmentsWithScope(
+    connectedEnvironments,
+    AuthOrchestrationOperateScope,
+  );
   const [retryTick, setRetryTick] = useState(0);
   const retryAttemptRef = useRef(new Map<MessageId, number>());
   const retryNotBeforeRef = useRef(new Map<MessageId, number>());
@@ -822,6 +831,9 @@ export function useThreadOutboxDrain(): void {
 
   const sendQueuedMessage = useCallback(
     async (queuedMessage: QueuedThreadMessage, thread: EnvironmentThreadShell) => {
+      const hasAccess = () =>
+        readEnvironmentScope(queuedMessage.environmentId, AuthOrchestrationOperateScope);
+      if (!hasAccess()) return true;
       const serverConfig = appAtomRegistry.get(
         serverEnvironment.configValueAtom(queuedMessage.environmentId),
       );
@@ -836,6 +848,7 @@ export function useThreadOutboxDrain(): void {
       const { reportFailure } = makeDeliveryHelpers(queuedMessage);
 
       if (settings.runtimeMode !== thread.runtimeMode) {
+        if (!hasAccess()) return true;
         const runtimeResult = await setThreadRuntimeMode({
           environmentId: queuedMessage.environmentId,
           input: {
@@ -852,6 +865,7 @@ export function useThreadOutboxDrain(): void {
       }
 
       if (settings.interactionMode !== thread.interactionMode) {
+        if (!hasAccess()) return true;
         const interactionResult = await setThreadInteractionMode({
           environmentId: queuedMessage.environmentId,
           input: {
@@ -870,6 +884,7 @@ export function useThreadOutboxDrain(): void {
       let prepared: PreparedTurnAttachments;
       let persistedMessage: QueuedThreadMessage;
       let deliveryRevision: number;
+      if (!hasAccess()) return true;
       try {
         const preparedResult = await prepareQueuedMessageAttachments(
           queuedMessage,
@@ -889,6 +904,7 @@ export function useThreadOutboxDrain(): void {
           return true;
         }
       } catch (error) {
+        if (!hasAccess()) return true;
         logThreadOutboxUploadFailure(queuedMessage, error);
         if (!shouldRetryThreadOutboxDelivery(error)) {
           return restoreQueuedMessage(
@@ -916,6 +932,7 @@ export function useThreadOutboxDrain(): void {
         settings,
         currentConfig.providers,
       );
+      if (!hasAccess()) return true;
       const deliveryResult = await startTurn({
         environmentId: queuedMessage.environmentId,
         input: {
@@ -950,6 +967,7 @@ export function useThreadOutboxDrain(): void {
           dispatchMode: queuedMessage.dispatchMode ?? "start",
         },
       });
+      if (AsyncResult.isFailure(deliveryResult) && !hasAccess()) return true;
       const failure = reportFailure(deliveryResult, "start-turn");
       if (failure?.action === "retry") {
         return false;
@@ -980,6 +998,9 @@ export function useThreadOutboxDrain(): void {
       creation: QueuedThreadCreation,
       projectCwd: string,
     ) => {
+      const hasAccess = () =>
+        readEnvironmentScope(queuedMessage.environmentId, AuthOrchestrationOperateScope);
+      if (!hasAccess()) return true;
       const modelSelection = queuedMessage.modelSelection;
       if (modelSelection === undefined) {
         return false;
@@ -1025,6 +1046,7 @@ export function useThreadOutboxDrain(): void {
           return true;
         }
       } catch (error) {
+        if (!hasAccess()) return true;
         logThreadOutboxUploadFailure(queuedMessage, error);
         if (!shouldRetryThreadOutboxDelivery(error)) {
           return restoreQueuedMessage(
@@ -1052,6 +1074,7 @@ export function useThreadOutboxDrain(): void {
         settings,
         currentConfig.providers,
       );
+      if (!hasAccess()) return true;
       const deliveryResult = await startTurn({
         environmentId: queuedMessage.environmentId,
         input: buildProjectThreadStartTurnInput({
@@ -1083,6 +1106,7 @@ export function useThreadOutboxDrain(): void {
         }),
       });
       const { reportFailure } = makeDeliveryHelpers(queuedMessage);
+      if (AsyncResult.isFailure(deliveryResult) && !hasAccess()) return true;
       const failure = reportFailure(deliveryResult, "start-turn");
       if (failure?.action === "retry") {
         return false;
@@ -1218,6 +1242,9 @@ export function useThreadOutboxDrain(): void {
         environmentConnected: environment?.connectionState === "connected",
         threadBusy: threadRuntimeIsActive(thread?.runtime),
       });
+      if (deliveryAction === "send" && !operableEnvironments.has(nextQueuedMessage.environmentId)) {
+        continue;
+      }
       // The delivery action resolves first; capability checks apply only to
       // a message that will send. Checking earlier would restore a
       // creation whose startTurn already made the thread as a duplicate draft
@@ -1376,6 +1403,7 @@ export function useThreadOutboxDrain(): void {
     connectedEnvironments,
     dispatchingQueuedMessageId,
     editingQueuedMessageIds,
+    operableEnvironments,
     projects,
     queuedMessagesByThreadKey,
     retryTick,

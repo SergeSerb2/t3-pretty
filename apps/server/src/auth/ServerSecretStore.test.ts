@@ -17,6 +17,7 @@ const layerServerConfig = () =>
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-secret-store-test-" });
 
 const layerServerSecretStore = () => Layer.provide(ServerSecretStore.layer, layerServerConfig());
+const makeServerSecretStoreLayer = layerServerSecretStore;
 
 const makeServerSecretStoreWithConfigLayer = () => {
   const configLayer = layerServerConfig();

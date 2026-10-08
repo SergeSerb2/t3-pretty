@@ -16,6 +16,7 @@ import {
   type SecretRequestAnswerInput,
   type ThreadId,
 } from "@t3tools/contracts";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no createHmac.
 import * as NodeCrypto from "node:crypto";
 
 import * as Clock from "effect/Clock";
@@ -64,6 +65,8 @@ const encodeStored = Schema.encodeEffect(StoredSecret);
 const decodeStored = Schema.decodeUnknownOption(StoredSecret);
 
 const isSecretRequestError = Schema.is(SecretRequestError);
+const fail = (reason: SecretRequestError["reason"], cause?: unknown) =>
+  new SecretRequestError(cause === undefined ? { reason } : { reason, cause });
 
 export class SecretRequests extends Context.Service<
   SecretRequests,

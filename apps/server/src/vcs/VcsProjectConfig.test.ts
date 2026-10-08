@@ -12,6 +12,7 @@ const layerTest = VcsProjectConfig.layer.pipe(
   Layer.provide(NodeServices.layer),
   Layer.provideMerge(NodeServices.layer),
 );
+const TestLayer = layerTest;
 
 describe("VcsProjectConfig", () => {
   it.layer(layerTest)("uses an explicit requested VCS kind before config", (it) => {
@@ -42,7 +43,6 @@ describe("VcsProjectConfig", () => {
         yield* fileSystem.makeDirectory(nested, { recursive: true });
         yield* fileSystem.writeFileString(
           path.join(configDir, "vcs.json"),
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
           JSON.stringify({ vcs: { kind: "jj" } }),
         );
 
@@ -72,7 +72,6 @@ describe("VcsProjectConfig", () => {
         yield* fileSystem.makeDirectory(configDir, { recursive: true });
         yield* fileSystem.writeFileString(
           path.join(configDir, "vcs.json"),
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
           JSON.stringify({ vcs: { kind: "jj" } }),
         );
 

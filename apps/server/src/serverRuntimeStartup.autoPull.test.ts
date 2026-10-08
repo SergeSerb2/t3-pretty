@@ -32,6 +32,7 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import * as SqlitePersistence from "./persistence/Sqlite.ts";
 
 it.effect("parks automatic pull until activation without delaying command readiness", () =>
   Effect.scoped(
@@ -166,6 +167,7 @@ it.effect("parks automatic pull until activation without delaying command readin
         NodeCrypto.layer,
         Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
         Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+        SqlitePersistence.layerMemory.pipe(Layer.orDie),
         Layer.mock(HttpServer.HttpServer)({
           address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
         }),

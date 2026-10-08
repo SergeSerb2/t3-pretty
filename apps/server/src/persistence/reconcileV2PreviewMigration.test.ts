@@ -70,10 +70,15 @@ describe("T3 Pretty migration history", () => {
         [],
       );
       yield* sql`DROP VIEW scheduled_task_webhook_relay_deliveries`;
+      const mcpAppModelContextMigrations = migrationManifest.filter(
+        ([, name]) => name === "McpAppModelContext",
+      );
+      assert.strictEqual(mcpAppModelContextMigrations.length, 1);
       assert.deepStrictEqual(yield* runMigrations(), [
         [70, "ScheduledTaskWebhooks"],
         [71, "WebhookRelayDeliveries"],
         [72, "WebhookDispatchOutbox"],
+        ...mcpAppModelContextMigrations,
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),

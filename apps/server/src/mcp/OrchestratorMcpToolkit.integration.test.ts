@@ -75,7 +75,8 @@ import * as ProviderRegistryMock from "../provider/testUtils/providerRegistryMoc
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
@@ -769,6 +770,20 @@ describe("orchestrator MCP toolkit", () => {
             const invoke = (name: string, args: Record<string, unknown>) =>
               invokeAs(invocation, name, args);
 
+            const refusedSettle = yield* invoke("t3_thread_organize", { action: "settle" });
+            expect(refusedSettle.isError).toBe(true);
+            expect(refusedSettle.structuredContent).toBeUndefined();
+            expect(declaredFailure(refusedSettle)).toEqual({
+              _tag: "OrchestratorMcpFailure",
+              code: "orchestration_error",
+              message: `Thread ${parentThreadId} has active or blocked work and cannot be settled.`,
+            });
+            const afterRefusedSettle = yield* orchestrator.getThreadProjection(parentThreadId);
+            expect(afterRefusedSettle.thread.settledOverride).not.toBe("settled");
+            expect(afterRefusedSettle.runs.find((run) => run.id === parentRun?.id)?.status).toBe(
+              "running",
+            );
+
             const pinned = yield* invoke("t3_thread_organize", { action: "pin" });
             expect(pinned.isError).toBe(false);
             expect(pinned.structuredContent).toHaveProperty("sequence");
@@ -779,6 +794,20 @@ describe("orchestrator MCP toolkit", () => {
             if (parentRun === undefined || parentRun.rootNodeId === null) {
               return yield* Effect.die(new Error("Parent run missing."));
             }
+            for (const name of ["t3_queue_edit", "t3_queue_cancel"]) {
+              const refusedQueueMutation = yield* invoke(name, {
+                queuedRunId: parentRun.id,
+                ...(name === "t3_queue_edit" ? { text: "Keep the active turn." } : {}),
+              });
+              expect(refusedQueueMutation.isError).toBe(true);
+              expect(refusedQueueMutation.structuredContent).toBeUndefined();
+              expect(declaredFailure(refusedQueueMutation)).toEqual({
+                _tag: "OrchestratorMcpFailure",
+                code: "orchestration_error",
+                message: `Run ${parentRun.id} is not queued.`,
+              });
+            }
+
             let parentRootNodeId = parentRun.rootNodeId;
             const queueAutomaticCompletion = (suffix: string, taskText: string) =>
               Effect.gen(function* () {
@@ -2202,6 +2231,44 @@ describe("orchestrator MCP toolkit", () => {
             yield* orchestrator.dispatch({
               type: "thread.unsettle",
               commandId: CommandId.make("command:mcp-empty:unsettle"),
+              threadId: emptyThread.threadId,
+              reason: "user",
+            });
+
+            expect(metadataRead.thread).toMatchObject({ snoozed: false, snoozedUntil: null });
+            expect(metadataRead.thread.link).toBe(
+              `[Metadata-managed thread](t3-thread://v1/environment%3Amcp-orchestrator/${encodeURIComponent(emptyThread.threadId)})`,
+            );
+            yield* orchestrator.dispatch({
+              type: "thread.snooze",
+              commandId: CommandId.make("command:mcp-empty:snooze"),
+              threadId: emptyThread.threadId,
+              snoozedUntil: "2099-01-01T00:00:00.000Z",
+            });
+            const snoozedListCall = yield* invoke("t3_thread_list", { snoozed: true, limit: 100 });
+            const snoozedList = yield* decodeThreadListResult(
+              snoozedListCall.structuredContent,
+            ).pipe(Effect.orDie);
+            expect(snoozedList.threads.map((thread) => thread.threadId)).toEqual([
+              emptyThread.threadId,
+            ]);
+            expect(snoozedList.threads[0]).toMatchObject({
+              snoozed: true,
+              snoozedUntil: "2099-01-01T00:00:00.000Z",
+            });
+            const snoozedReadCall = yield* invoke("t3_thread_read", {
+              threadId: emptyThread.threadId,
+            });
+            const snoozedRead = yield* decodeThreadReadResult(
+              snoozedReadCall.structuredContent,
+            ).pipe(Effect.orDie);
+            expect(snoozedRead.thread).toMatchObject({
+              snoozed: true,
+              snoozedUntil: "2099-01-01T00:00:00.000Z",
+            });
+            yield* orchestrator.dispatch({
+              type: "thread.unsnooze",
+              commandId: CommandId.make("command:mcp-empty:unsnooze"),
               threadId: emptyThread.threadId,
               reason: "user",
             });

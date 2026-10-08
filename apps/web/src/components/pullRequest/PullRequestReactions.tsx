@@ -1,3 +1,4 @@
+import { useAtomCommand } from "~/state/use-atom-command";
 import type {
   EnvironmentId,
   PullRequestReaction,
@@ -9,7 +10,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { pullRequestEnvironment } from "~/state/pullRequests";
-import { useAtomCommand } from "~/state/use-atom-command";
 
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { toastManager } from "../ui/toast";
@@ -69,7 +69,9 @@ export function PullRequestReactionBar({
   const activeTargetKeyRef = useRef(targetKey);
   const mountedRef = useRef(false);
   activeTargetKeyRef.current = targetKey;
-  const setReaction = useAtomCommand(pullRequestEnvironment.setReaction, { reportFailure: false });
+  const setReaction = useAtomCommand(pullRequestEnvironment.setReaction, {
+    reportFailure: false,
+  });
 
   useEffect(() => {
     mountedRef.current = true;

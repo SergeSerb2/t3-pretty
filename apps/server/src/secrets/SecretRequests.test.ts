@@ -22,7 +22,8 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "./SecretRequests.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
 
 const threadId = ThreadId.make("thread-orchestrator");
 const turnItemId = TurnItemId.make("turn-item:secret-request:1");

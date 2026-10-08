@@ -243,6 +243,10 @@
       "types": "./src/assistantCitations.ts",
       "import": "./src/assistantCitations.ts"
     },
+    "./threadLinks": {
+      "types": "./src/threadLinks.ts",
+      "import": "./src/threadLinks.ts"
+    },
     "./composerContextReferences": {
       "types": "./src/composerContextReferences.ts",
       "import": "./src/composerContextReferences.ts"
@@ -470,6 +474,10 @@
     "./skillTool": {
       "types": "./src/skillTool.ts",
       "import": "./src/skillTool.ts"
+    },
+    "./mcpApp": {
+      "types": "./src/mcpApp.ts",
+      "import": "./src/mcpApp.ts"
     }
   },
   "scripts": {

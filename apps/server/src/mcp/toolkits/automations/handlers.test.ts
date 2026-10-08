@@ -158,7 +158,7 @@ it.effect("refuses an external automation caller before reading a thread or disp
       scope: {
         ...makeScope(new Set(["automations"])),
         thread: undefined,
-        client: { sessionId: "external", label: "External", runtimeModeCeiling: "full-access" },
+        client: { sessionId: "external", label: "External", access: "full-access" },
       },
     });
     const error = yield* harness.run(

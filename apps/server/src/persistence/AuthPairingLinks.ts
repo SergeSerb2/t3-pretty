@@ -169,7 +169,7 @@ export const make = Effect.gen(function* () {
     Request: ConsumeAuthPairingLinkInput,
     Result: AuthPairingLinkRawDbRow,
     execute: ({ credential, proofKeyThumbprint, requestedScopes, consumedAt, now }) => {
-      const requestedScopesJson = JSON.stringify(requestedScopes);
+      const requestedScopesJson = JSON.stringify(requestedScopes ?? []);
       return sql`
         UPDATE auth_pairing_links
         SET consumed_at = ${consumedAt}

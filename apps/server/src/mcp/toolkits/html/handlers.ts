@@ -5,6 +5,7 @@ import * as ProjectService from "../../../project/ProjectService.ts";
 
 import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import { readCaller, readMutationCaller, unavailable, type Caller } from "../../threadAccess.ts";
 import { HtmlPreviewToolkit, HtmlRenderToolkit, type HtmlToolkit } from "./tools.ts";
 
@@ -34,14 +35,10 @@ const imageRootsFor = Effect.fn("html.imageRootsFor")(function* ({ caller }: Cal
 });
 
 const handlers = {
-  html_preview: (input) =>
+  // The headless browser runs on the host and can open local files, so only
+  // agents T3 launched, which already work on this machine, get it.
+  html_preview: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
-      // The headless browser runs on the host and can open local files, so
-      // only agents T3 launched, which already work on this machine, get it.
-      yield* McpInvocationContext.requireThreadScope(
-        yield* McpInvocationContext.McpInvocationContext,
-        "html_preview",
-      );
       const htmlRender = yield* HtmlRender.HtmlRender;
       const imageRoots = yield* imageRootsFor(yield* readCaller());
       const { png, ...preview } = yield* htmlRender
@@ -57,12 +54,14 @@ const handlers = {
         },
       };
     }),
-  html_render: (input) =>
+  ),
+  // The page is stored in the calling thread, so it needs that thread's live run.
+  html_render: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       // The page is stored in the calling thread, so it needs that thread's
       // live run, like any other write.
       const caller = yield* readMutationCaller();
-      const { scope } = caller;
+      const scope = yield* McpInvocationContext.McpInvocationContext;
       const imageRoots = yield* imageRootsFor(caller);
       const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "html_render");
       const htmlRender = yield* HtmlRender.HtmlRender;
@@ -75,12 +74,13 @@ const handlers = {
           "Shown to the reader above your reply. Don't mention or describe the page; reply with only what it doesn't already say.",
       };
     }),
-} satisfies Parameters<typeof HtmlToolkit.toLayer>[0];
+  ),
+} satisfies McpToolAccess.Handlers<typeof HtmlToolkit.tools>;
 
-export const layerPreview = HtmlPreviewToolkit.toLayer({
+export const layerPreview = McpToolAccess.toLayer(HtmlPreviewToolkit, {
   html_preview: handlers.html_preview,
 });
 
-export const layerRender = HtmlRenderToolkit.toLayer({
+export const layerRender = McpToolAccess.toLayer(HtmlRenderToolkit, {
   html_render: handlers.html_render,
 });

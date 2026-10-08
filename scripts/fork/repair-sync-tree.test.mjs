@@ -11,6 +11,7 @@ import {
   extractDiagnosticTargets,
   formatRepairReportSection,
   loadRepairTargetFiles,
+  MAX_FILE_BYTES,
   MAX_TARGET_FILES,
 } from "./repair-sync-tree.mjs";
 
@@ -227,6 +228,31 @@ describe("applyRepairEdits", () => {
       /not syntactically valid/u,
     );
     assert.throws(() => applyRepairEdits({ edits: [], sources: sources(), editable }), /no edits/u);
+  });
+
+  it("accepts a ChatView-sized repair and rejects one over MAX_FILE_BYTES", () => {
+    assert.equal(MAX_FILE_BYTES, 512 * 1024);
+    const prefix = `// UNIQUE\nexport const pad = "`;
+    const suffix = `";\n`;
+    const targetBytes = 491 * 1024 + 1;
+    const chatViewSized = `${prefix}${"x".repeat(targetBytes - prefix.length - suffix.length)}${suffix}`;
+    const updated = applyRepairEdits({
+      edits: [{ path: "ChatView.tsx", old_text: "UNIQUE", new_text: "FIXED!" }],
+      sources: new Map([["ChatView.tsx", chatViewSized]]),
+      editable: new Set(["ChatView.tsx"]),
+    });
+    assert.equal(Buffer.byteLength(updated.get("ChatView.tsx"), "utf8"), targetBytes);
+
+    const oversize = `OVERSIZE_UNIQUE${"x".repeat(MAX_FILE_BYTES + 1 - 15)}\n`;
+    assert.throws(
+      () =>
+        applyRepairEdits({
+          edits: [{ path: "big.ts", old_text: "OVERSIZE_UNIQUE", new_text: "OVERSIZE_FIXED!" }],
+          sources: new Map([["big.ts", oversize]]),
+          editable: new Set(["big.ts"]),
+        }),
+      /exceeded the .*byte repaired file limit/u,
+    );
   });
 
   it("keeps a suppression the original text already carried", () => {

@@ -16,7 +16,8 @@ import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
 import { ServerConfig } from "../config.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";

@@ -10,7 +10,6 @@ import {
   Wakeups,
 } from "@t3tools/client-runtime/connection";
 import { managedRelayAccountChanges, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
-import { AuthStandardClientScopes } from "@t3tools/contracts";
 import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -281,7 +280,6 @@ const capabilitiesLayer = Layer.effectContext(
         ClientCapabilities.ClientPresentation,
         ClientCapabilities.ClientPresentation.of({
           metadata: authClientMetadata(Constants.expoConfig?.version),
-          scopes: AuthStandardClientScopes,
         }),
       ),
       Context.add(

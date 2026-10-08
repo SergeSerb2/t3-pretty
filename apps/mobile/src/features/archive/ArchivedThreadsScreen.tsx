@@ -4,6 +4,7 @@ import type {
 } from "@t3tools/client-runtime/state/shell";
 import { LegendList } from "@legendapp/list/react-native";
 import {
+  AuthOrchestrationOperateScope,
   type EnvironmentId,
   type EnvironmentMachineKind,
   resolveEnvironmentMachineKind,
@@ -32,6 +33,7 @@ import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
 import { relativeTime } from "../../lib/time";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useServerConfigs } from "../../state/entities";
+import { useEnvironmentScope } from "../../state/session";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import type { ArchivedThreadGroup, ArchivedThreadSortOrder } from "./archivedThreadList";
@@ -204,10 +206,95 @@ function ArchivedThreadRow(props: {
     borderBottomLeftRadius: props.isLast ? radius : 0,
     borderBottomRightRadius: props.isLast ? radius : 0,
   };
+  const canOperateThread = useEnvironmentScope(
+    props.thread.environmentId,
+    AuthOrchestrationOperateScope,
+  );
   const timestamp = relativeTime(props.thread.archivedAt ?? props.thread.updatedAt);
   const subtitle = [props.environmentLabel, props.thread.branch].filter((part): part is string =>
     Boolean(part),
   );
+  const rowContent = (
+    <View
+      className={
+        glass
+          ? "flex-row items-center gap-3 bg-chrome-glass px-4 py-3"
+          : `flex-row items-center gap-3 bg-grouped-card px-4 py-3 ${props.isLast ? "" : "border-b border-separator"}`
+      }
+    >
+      <View className="h-[34px] w-[34px] items-center justify-center rounded-[11px] bg-subtle">
+        <SymbolView
+          name="archivebox.fill"
+          size={15}
+          tintColorClassName="accent-icon-subtle"
+          type="monochrome"
+        />
+      </View>
+
+      <View className="min-w-0 flex-1 gap-1">
+        <View className="flex-row items-center gap-2">
+          <Text
+            className="min-w-0 flex-1 text-base font-t3-bold leading-snug text-foreground"
+            numberOfLines={1}
+          >
+            {props.thread.title}
+          </Text>
+          <Text className="min-w-[30px] text-right text-xs tabular-nums text-foreground-tertiary">
+            {timestamp}
+          </Text>
+        </View>
+        {subtitle.length > 0 ? (
+          <View className="flex-row items-center gap-1.5">
+            <SymbolView
+              name="arrow.triangle.branch"
+              size={10}
+              tintColorClassName="accent-icon-subtle"
+              type="monochrome"
+            />
+            <Text
+              className="min-w-0 flex-1 font-mono text-2xs text-foreground-tertiary"
+              numberOfLines={1}
+            >
+              {subtitle.join(" · ")}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+  // Keep the group's rounded corners on both interactive and read-only rows.
+  const containerStyle = {
+    ...corners,
+    borderCurve: glass ? ("continuous" as const) : undefined,
+    overflow: "hidden" as const,
+  };
+  // On glass the group outline stays put while the row slides, as on
+  // Home; its bottom edge doubles as the separator between rows.
+  const outlineStyle = glass
+    ? {
+        bottom: 0,
+        left: 0,
+        position: "absolute" as const,
+        right: 0,
+        top: 0,
+        ...corners,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderColor: theme["--color-chrome-glass-border"],
+        borderCurve: "continuous" as const,
+        borderLeftWidth: StyleSheet.hairlineWidth,
+        borderRightWidth: StyleSheet.hairlineWidth,
+        borderTopWidth: props.isFirst ? StyleSheet.hairlineWidth : 0,
+      }
+    : undefined;
+  if (!canOperateThread) {
+    return (
+      <View style={containerStyle}>
+        {rowContent}
+        {outlineStyle ? <View pointerEvents="none" style={outlineStyle} /> : null}
+      </View>
+    );
+  }
+
   return (
     <ThreadSwipeable
       resetKey={`${props.thread.environmentId}:${props.thread.id}`}
@@ -216,33 +303,8 @@ function ArchivedThreadRow(props: {
       // edge: a translucent container under a translucent row doubles the glass.
       backgroundColor={glass ? "transparent" : cardColor}
       actionsBackgroundColor={glass ? theme["--color-chrome-glass"] : undefined}
-      // Round + clip the swipeable container so the group's corners stay
-      // rounded while rows swipe.
-      containerStyle={{
-        ...corners,
-        borderCurve: glass ? "continuous" : undefined,
-        overflow: "hidden",
-      }}
-      // On glass the group outline stays put while the row slides, as on
-      // Home; its bottom edge doubles as the separator between rows.
-      outlineStyle={
-        glass
-          ? {
-              bottom: 0,
-              left: 0,
-              position: "absolute",
-              right: 0,
-              top: 0,
-              ...corners,
-              borderBottomWidth: StyleSheet.hairlineWidth,
-              borderColor: theme["--color-chrome-glass-border"],
-              borderCurve: "continuous",
-              borderLeftWidth: StyleSheet.hairlineWidth,
-              borderRightWidth: StyleSheet.hairlineWidth,
-              borderTopWidth: props.isFirst ? StyleSheet.hairlineWidth : 0,
-            }
-          : undefined
-      }
+      containerStyle={containerStyle}
+      outlineStyle={outlineStyle}
       fullSwipeWidth={windowWidth - 32}
       onDelete={props.onDelete}
       onSwipeableClose={props.onSwipeableClose}
@@ -256,54 +318,7 @@ function ArchivedThreadRow(props: {
       simultaneousWith={props.simultaneousSwipeGesture}
       threadTitle={props.thread.title}
     >
-      {() => (
-        <View
-          className={
-            glass
-              ? "flex-row items-center gap-3 bg-chrome-glass px-4 py-3"
-              : `flex-row items-center gap-3 bg-grouped-card px-4 py-3 ${props.isLast ? "" : "border-b border-separator"}`
-          }
-        >
-          <View className="h-[34px] w-[34px] items-center justify-center rounded-[11px] bg-subtle">
-            <SymbolView
-              name="archivebox.fill"
-              size={15}
-              tintColorClassName="accent-icon-subtle"
-              type="monochrome"
-            />
-          </View>
-
-          <View className="min-w-0 flex-1 gap-1">
-            <View className="flex-row items-center gap-2">
-              <Text
-                className="min-w-0 flex-1 text-base font-t3-bold leading-snug text-foreground"
-                numberOfLines={1}
-              >
-                {props.thread.title}
-              </Text>
-              <Text className="min-w-[30px] text-right text-xs tabular-nums text-foreground-tertiary">
-                {timestamp}
-              </Text>
-            </View>
-            {subtitle.length > 0 ? (
-              <View className="flex-row items-center gap-1.5">
-                <SymbolView
-                  name="arrow.triangle.branch"
-                  size={10}
-                  tintColorClassName="accent-icon-subtle"
-                  type="monochrome"
-                />
-                <Text
-                  className="min-w-0 flex-1 font-mono text-2xs text-foreground-tertiary"
-                  numberOfLines={1}
-                >
-                  {subtitle.join(" · ")}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-      )}
+      {() => rowContent}
     </ThreadSwipeable>
   );
 }

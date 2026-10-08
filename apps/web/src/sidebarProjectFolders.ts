@@ -81,10 +81,10 @@ export function resolveProjectFolderSettings(
 
 /** Client-only folders should be written once every loaded server is still empty. */
 export function shouldLiftProjectFolderSettings(input: {
-  readonly client: SidebarProjectFolderSettings;
+  readonly local: SidebarProjectFolderSettings;
   readonly servers: readonly ProjectFolderSettingsSource[];
 }): boolean {
-  if (!projectFolderSettingsHaveEntries(input.client)) return false;
+  if (!projectFolderSettingsHaveEntries(input.local)) return false;
   const loaded = input.servers.filter((server) => server != null);
   return (
     loaded.length > 0 &&

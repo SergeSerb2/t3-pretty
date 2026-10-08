@@ -184,6 +184,8 @@ function makeRegistry(
   };
 }
 
+export const makeLayer = layerFromAdapters;
+
 export function layerFromAdapters(
   adapters: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Shape>,
 ): Layer.Layer<ProviderAdapterRegistryV2> {

@@ -4,12 +4,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
-import { SqlitePersistenceMemory } from "./Sqlite.ts";
+import * as SqlitePersistence from "./Sqlite.ts";
+const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
 import {
   ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS,
+  OrchestrationCommandReceiptRepository,
   OrchestrationCommandReceiptRepositoryLive,
 } from "./OrchestrationCommandReceipts.ts";
-import { OrchestrationCommandReceiptRepository } from "../Services/OrchestrationCommandReceipts.ts";
 
 const receiptsLayer = it.layer(
   OrchestrationCommandReceiptRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),

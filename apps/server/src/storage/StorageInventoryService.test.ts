@@ -16,7 +16,8 @@ import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
 
 import * as ServerConfig from "../config.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { transferProjection } from "../project/ProjectTransfer.testkit.ts";

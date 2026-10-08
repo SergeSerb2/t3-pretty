@@ -1,7 +1,7 @@
 import { assert, it } from "@effect/vitest";
-import { applyToProjection, threadShellFromProjection } from "../../orchestration-v2/ProjectionStore.ts";
+import { applyToProjection, threadShellFromProjection } from "../orchestration-v2/ProjectionStore.ts";
 import { EventId, type OrchestrationV2Run } from "@t3tools/contracts";
-import { fixtureProjection, fixtureRun, fixtureNow } from "../../testUtils/V2ProjectionFixture.ts";
+import { fixtureProjection, fixtureRun, fixtureNow } from "../testUtils/V2ProjectionFixture.ts";
 
 it("completes a stale run while preserving a newer active run and prior completed run", () => {
   const projection = { ...fixtureProjection(), runs: [] as OrchestrationV2Run[] };

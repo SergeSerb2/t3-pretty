@@ -62,3 +62,4 @@ export const layer = HttpApiBuilder.group(
       );
   }),
 );
+export const projectHttpApiLayer = layer;

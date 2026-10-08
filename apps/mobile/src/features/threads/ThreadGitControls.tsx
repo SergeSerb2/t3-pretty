@@ -1,6 +1,7 @@
 import { createNativeHeaderMenu } from "../../components/nativeHeaderMenu.ios";
 import type { ScreenHeaderMenu } from "../../components/ScreenHeader.types";
 import {
+  AuthSourceControlWriteScope,
   EnvironmentId,
   type GitRunStackedActionResult,
   type ProjectScript,
@@ -19,6 +20,7 @@ import { Alert } from "react-native";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { presentActionListMenu } from "../../components/AppMenuHost";
 import { useCallback, useMemo, useRef } from "react";
+import { useEnvironmentScope } from "../../state/session";
 import { useOpenNativePullRequest } from "../pull-requests/useOpenNativePullRequest";
 import {
   resolveThreadHeaderPrPresentation,
@@ -108,8 +110,12 @@ type ThreadGitControlsProps = ThreadGitMenuProps & {
   };
   readonly showActionControls?: boolean;
   readonly canOpenFiles: boolean;
+  readonly canOpenTerminal?: boolean;
+  readonly canOperateTerminal?: boolean;
   readonly projectScripts?: ReadonlyArray<ProjectScript>;
   readonly onOpenTerminal?: (terminalId?: string | null) => void;
+  readonly onOpenNewTerminal?: () => void;
+  readonly onRunProjectScript?: (script: ProjectScript) => Promise<void> | void;
   readonly settlementSupported: boolean;
   readonly snoozeSupported: boolean;
   readonly settled: boolean;
@@ -204,6 +210,10 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   const navigation = useNavigation();
   const actionPendingRef = useRef(false);
   const environmentId = props.environmentId;
+  const canWriteSourceControl = useEnvironmentScope(
+    environmentId ? EnvironmentId.make(String(environmentId)) : null,
+    AuthSourceControlWriteScope,
+  );
   const threadId = props.threadId;
   const { gitStatus, gitOperationLabel, onPull, onRunAction } = props;
 
@@ -213,18 +223,24 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const isDefaultRef = gitStatus?.isDefaultRef ?? false;
 
-  const quickAction = useMemo(
-    () =>
-      isRepo
-        ? resolveQuickAction(gitStatus, busy, isDefaultRef, hasPrimaryRemote)
-        : {
-            label: "Git unavailable",
-            disabled: true,
-            kind: "show_hint" as const,
-            hint: "This workspace is not a git repository.",
-          },
-    [busy, gitStatus, hasPrimaryRemote, isDefaultRef, isRepo],
-  );
+  const quickAction = useMemo(() => {
+    if (!isRepo) {
+      return {
+        label: "Git unavailable",
+        disabled: true,
+        kind: "show_hint" as const,
+        hint: "This workspace is not a git repository.",
+      };
+    }
+    const action = resolveQuickAction(gitStatus, busy, isDefaultRef, hasPrimaryRemote);
+    return !canWriteSourceControl && (action.kind === "run_pull" || action.kind === "run_action")
+      ? {
+          ...action,
+          disabled: true,
+          hint: "This connection cannot change source control.",
+        }
+      : action;
+  }, [busy, canWriteSourceControl, gitStatus, hasPrimaryRemote, isDefaultRef, isRepo]);
 
   const quickActionHint = quickAction.disabled
     ? (quickAction.hint ?? "This action is unavailable.")
@@ -253,6 +269,7 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
 
   const runActionWithPrompt = useCallback(
     async (input: GitActionRequestInput) => {
+      if (!canWriteSourceControl) return;
       const confirmableAction =
         input.action === "push" ||
         input.action === "create_pr" ||
@@ -281,7 +298,7 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
 
       await onRunAction(input);
     },
-    [environmentId, gitStatus, isDefaultRef, onRunAction, navigation, threadId],
+    [canWriteSourceControl, environmentId, gitStatus, isDefaultRef, onRunAction, navigation, threadId],
   );
 
   const runQuickAction = useCallback(async () => {
@@ -504,8 +521,6 @@ export function useThreadDetailHeaderActionItems(
       props.canOpenFiles,
       props.gitStatus,
       props.onMergeBack,
-      props.onOpenTerminal,
-      props.projectScripts,
     ],
   );
 }

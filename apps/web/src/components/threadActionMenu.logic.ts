@@ -77,6 +77,7 @@ export function buildDraftActionMenuItems(options: {
 }
 
 export interface ThreadActionMenuState {
+  readonly canOperate: boolean;
   readonly branch: string | null;
   /**
    * Project scoping for the thread list. Null on surfaces with no scoped
@@ -138,6 +139,25 @@ function joinGroups(
     items.push(...group);
   }
   return items;
+}
+
+/** Local navigation, read markers, and copying remain available to read-only clients. */
+export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
+  return ![
+    "new-thread-on-branch",
+    "filter-by-project",
+    "project-settings",
+    "mark-unread",
+    "copy",
+    "copy-conversation",
+    "copy-path",
+    "copy-branch",
+    "copy-thread-id",
+    // Group separators are presentation, not operations.
+    "sep-after-lifecycle",
+    "sep-after-edit",
+    "sep-before-danger",
+  ].includes(action);
 }
 
 /**
@@ -306,5 +326,18 @@ export function buildThreadActionMenuItems(
     { id: "delete", label: "Delete", destructive: true, icon: "trash" },
   ];
 
-  return joinGroups([lifecycle, edit, [copy, projectSettings], danger]);
+  const items = joinGroups([lifecycle, edit, [copy, projectSettings], danger]);
+  return state.canOperate
+    ? items
+    : items.map((item) =>
+        threadActionRequiresOperate(item.id)
+          ? {
+              ...item,
+              disabled: true,
+              ...(item.children
+                ? { children: item.children.map((child) => ({ ...child, disabled: true })) }
+                : {}),
+            }
+          : item,
+      );
 }
