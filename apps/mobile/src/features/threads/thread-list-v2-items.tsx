@@ -40,7 +40,14 @@ import {
 } from "react";
 import { Alert, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import Animated, {
+  FadeInDown,
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+  ZoomIn,
+} from "react-native-reanimated";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
 import { SymbolView } from "../../components/AppSymbol";
@@ -49,6 +56,7 @@ import { ControlPillMenu } from "../../components/ControlPill";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { ProviderIcon, ProviderInstanceIcon } from "../../components/ProviderIcon";
+import { PulseRing } from "../../components/PulseRing";
 import { StatusPill, type StatusTone } from "../../components/StatusPill";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
@@ -66,6 +74,7 @@ import {
   threadDepartureHasLanded,
 } from "../home/thread-departure-store";
 import { MOTION_TIMING } from "../../lib/motion";
+import { TONE_BY_BADGE } from "../home/HomeGlance";
 import { THREAD_RENAME_MENU_ACTION } from "./thread-rename";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
 import {
@@ -1454,8 +1463,144 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     </>
   );
 
+  // Glass Home card: title first, one quiet meta line, and the status as a
+  // colored dot beside the time. Working threads pulse.
+  const metaClassName = selected
+    ? selectedThreadRowColors.mutedForegroundClassName
+    : rowAppearance.mutedForegroundClassName;
+  const glassCardContent = (
+    <>
+      <View className="flex-row items-start gap-2">
+        <ThreadActiveSubagentCount color={subagentColor} count={thread.activeSubagentCount} />
+        <Text
+          className={cn(
+            "min-w-0 flex-1 text-[15px] font-t3-semibold leading-5 tracking-tight",
+            selected
+              ? selectedThreadRowColors.foregroundClassName
+              : rowAppearance.foregroundClassName,
+          )}
+          numberOfLines={2}
+        >
+          {thread.title}
+        </Text>
+        <View className="h-5 flex-row items-center gap-1.5">
+          {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
+          {pinnedRow ? (
+            <SymbolView
+              name="pin"
+              size={10}
+              tintColorClassName={rowAppearance.mutedIconTintClassName}
+              type="monochrome"
+            />
+          ) : null}
+          {badge !== null ? <CardStatusDot badge={badge} identity={rowIdentity} /> : null}
+          <Text className={cn("text-xs tabular-nums", rowAppearance.tertiaryForegroundClassName)}>
+            {timeLabel}
+          </Text>
+        </View>
+      </View>
+      {props.searchMatch ? (
+        <View className="mt-1">
+          <ThreadSearchMatchExcerpt
+            sidebar={false}
+            match={props.searchMatch}
+            query={props.searchQuery ?? ""}
+            selected={selected}
+          />
+        </View>
+      ) : null}
+      <View className="mt-1 h-4 flex-row items-center gap-1.5">
+        {nestToggle}
+        {collapsedNestMeta}
+        {(status === "failed" || status === "limited") && thread.runtime?.lastError ? (
+          <Text
+            className={cn(
+              "min-w-0 flex-1 text-xs",
+              status === "limited" ? "text-warning-foreground" : "text-danger-foreground",
+            )}
+            numberOfLines={1}
+          >
+            {thread.runtime.lastError}
+          </Text>
+        ) : (
+          <Text className={cn("min-w-0 flex-1 text-xs", metaClassName)} numberOfLines={1}>
+            {props.projectTitle ?? props.project?.title ?? ""}
+            {thread.branch ? (
+              <>
+                <Text className="text-foreground-tertiary">{"  /  "}</Text>
+                <Text
+                  className={cn("text-[11px]", metaClassName)}
+                  style={{ fontFamily: MONO_FONT }}
+                >
+                  {thread.branch}
+                </Text>
+              </>
+            ) : null}
+            {props.environmentLabel ? (
+              <Text className={rowAppearance.tertiaryForegroundClassName}>
+                {"  ·  "}
+                {props.environmentLabel}
+              </Text>
+            ) : null}
+          </Text>
+        )}
+        {props.storageSupported && thread.storedAt != null ? (
+          <SymbolView
+            accessibilityLabel="Stored"
+            name="tray.full"
+            size={11}
+            tintColorClassName={rowAppearance.mutedIconTintClassName}
+            type="monochrome"
+          />
+        ) : null}
+        {pr ? (
+          <View
+            className="flex-row items-center gap-0.5"
+            accessibilityLabel={pr.accessibilityLabel}
+          >
+            <SymbolView
+              name={pr.kind === "stack" ? "square.3.layers.3d" : "arrow.triangle.pull"}
+              size={11}
+              tintColorClassName={
+                pr.state === null || pr.isDraft
+                  ? rowAppearance.mutedIconTintClassName
+                  : pr.state === "open"
+                    ? "accent-adaptive-emerald-600-400"
+                    : pr.state === "closed"
+                      ? "accent-adaptive-rose-600-400"
+                      : "accent-adaptive-violet-600-400"
+              }
+            />
+            <Text className={cn("text-xs", pr.textClassName)} style={{ fontFamily: MONO_FONT }}>
+              {pr.label}
+            </Text>
+          </View>
+        ) : null}
+        {providerInstance ? (
+          <View className="flex-row items-center opacity-80">
+            {providerDrivers.slice(0, -1).map((driver, index) => (
+              <View key={`${driver}:${index}`} className="-mr-1 opacity-30">
+                <ProviderIcon provider={driver} size={11} />
+              </View>
+            ))}
+            <ProviderInstanceIcon
+              iconUrl={providerIconUrl}
+              provider={providerInstance.driverKind}
+              size={13}
+              displayName={providerInstance.displayName}
+              accentColor={providerInstance.accentColor}
+              showBadge={providerInstance.showBadge}
+              surfaceColor={rowAppearance.providerIconSurfaceColor}
+            />
+          </View>
+        ) : null}
+      </View>
+    </>
+  );
+
   const rowAccessibilityLabel = [
     thread.title,
+    glassCard ? statusLabel?.label : null,
     (thread.activeSubagentCount ?? 0) > 0
       ? `${thread.activeSubagentCount} ${thread.activeSubagentCount === 1 ? "subagent" : "subagents"} working`
       : null,
@@ -1471,6 +1616,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         interactionClassName={rowAppearance.interactionClassName}
         interactionOpacity={rowAppearance.interactionOpacity}
         className={rowAppearance.className}
+        pressScale={glassCard ? 0.975 : undefined}
         accessibilityHint={swipeAccessibilityHint}
         accessibilityLabel={rowAccessibilityLabel}
         accessibilityRole="button"
@@ -1493,7 +1639,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           <View>
             {glassCard ? (
               <View
-                className="flex-row items-start gap-3 px-4 py-3"
+                className="flex-row items-center gap-3 py-3 pl-3 pr-3.5"
                 style={props.nest === "child" ? { paddingLeft: 36 } : undefined}
               >
                 <ThreadCardTile
@@ -1501,7 +1647,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                   photoURL={props.sceneryThumbURL ?? null}
                   project={props.project}
                 />
-                <View className="min-w-0 flex-1">{cardContent}</View>
+                <View className="min-w-0 flex-1">{glassCardContent}</View>
               </View>
             ) : (
               <View
@@ -1560,7 +1706,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               <ThreadActiveSubagentCount color={subagentColor} count={thread.activeSubagentCount} />
               <Text
                 className={cn(
-                  "min-w-0 flex-1 text-base",
+                  "min-w-0 flex-1",
+                  groupedRow ? "text-[15px]" : "text-base",
                   selected
                     ? selectedThreadRowColors.foregroundClassName
                     : rowAppearance.mutedForegroundClassName,
@@ -1582,14 +1729,15 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
           <Text
             className={cn(
-              "text-sm tabular-nums",
+              groupedRow ? "text-xs" : "text-sm",
+              "tabular-nums",
               selected
                 ? selectedThreadRowColors.mutedForegroundClassName
                 : snoozedRow
                   ? rowAppearance.mutedForegroundClassName
                   : rowAppearance.tertiaryForegroundClassName,
             )}
-            style={{ fontFamily: MONO_FONT }}
+            style={groupedRow ? undefined : { fontFamily: MONO_FONT }}
           >
             {snoozedRow && props.snoozeWakeLabelText !== undefined
               ? props.snoozeWakeLabelText
@@ -1610,9 +1758,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       </RowPressable>
     );
 
-  if (!canOperateThread) return rowContent(() => {});
+  if (!canOperateThread) {
+    return glassCard ? <CardEntrance>{rowContent(() => {})}</CardEntrance> : rowContent(() => {});
+  }
 
-  return (
+  const row = (
     <RowArrival
       identity={rowIdentity}
       snoozed={snoozedRow}
@@ -1677,7 +1827,77 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       </ThreadSwipeable>
     </RowArrival>
   );
+  return glassCard ? <CardEntrance>{row}</CardEntrance> : row;
 });
+
+// Cards that mount while Home first fills cascade in one after another.
+// Later mounts (recycled cells, new threads mid-session) skip it, so scrolling
+// never replays the cascade.
+const CARD_ENTRANCE_WINDOW_MS = 900;
+const CARD_ENTRANCE_STAGGER_MS = 45;
+const CARD_ENTRANCE_MAX_STEPS = 9;
+let cardEntranceWindowStart: number | null = null;
+let cardEntranceCount = 0;
+
+function nextCardEntranceDelay(): number | null {
+  const now = Date.now();
+  cardEntranceWindowStart ??= now;
+  if (now - cardEntranceWindowStart > CARD_ENTRANCE_WINDOW_MS) return null;
+  return Math.min(cardEntranceCount++, CARD_ENTRANCE_MAX_STEPS) * CARD_ENTRANCE_STAGGER_MS;
+}
+
+function CardEntrance(props: { readonly children: ReactNode }) {
+  const [delay] = useState(nextCardEntranceDelay);
+  return (
+    <Animated.View
+      entering={
+        delay === null
+          ? undefined
+          : FadeInDown.springify()
+              .damping(16)
+              .stiffness(170)
+              .delay(delay)
+              .reduceMotion(ReduceMotion.System)
+      }
+    >
+      {props.children}
+    </Animated.View>
+  );
+}
+
+// The dot pops in when a thread changes state; a recycled cell taking over a
+// different thread shows its dot without the pop.
+const statusDotEnter = ZoomIn.springify()
+  .damping(8)
+  .stiffness(300)
+  .reduceMotion(ReduceMotion.System);
+const CARD_STATUS_DOT_SIZE = 7;
+
+function CardStatusDot(props: { readonly badge: ThreadListV2Badge; readonly identity: string }) {
+  const tone = TONE_BY_BADGE[props.badge];
+  const [boundIdentity, setBoundIdentity] = useState(props.identity);
+  const animate = boundIdentity === props.identity;
+  if (!animate) setBoundIdentity(props.identity);
+  return (
+    <Animated.View
+      key={props.badge}
+      entering={animate ? statusDotEnter : undefined}
+      style={{ height: CARD_STATUS_DOT_SIZE, width: CARD_STATUS_DOT_SIZE }}
+    >
+      {props.badge === "working" ? (
+        <PulseRing color={tone.dot} radius={CARD_STATUS_DOT_SIZE / 2} />
+      ) : null}
+      <View
+        style={{
+          backgroundColor: tone.dot,
+          borderRadius: CARD_STATUS_DOT_SIZE / 2,
+          height: CARD_STATUS_DOT_SIZE,
+          width: CARD_STATUS_DOT_SIZE,
+        }}
+      />
+    </Animated.View>
+  );
+}
 
 /**
  * Fades a row in where a settle or snooze landed it (or back in place when

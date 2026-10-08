@@ -7,8 +7,8 @@ import { StyleSheet, View } from "react-native";
 import { SymbolView } from "../../components/AppSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 
-const TILE_SIZE = 44;
-const BADGE_SIZE = 20;
+const TILE_SIZE = 40;
+const BADGE_SIZE = 18;
 
 /**
  * Leading tile of a glass Home card. A thread with scenery shows that photo,
