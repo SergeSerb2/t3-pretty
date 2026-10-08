@@ -88,6 +88,8 @@ const layerManagement = Layer.unwrap(
         projections.getThreadSnapshotWindow(id, options).pipe(Effect.orDie),
       getThreadShell: (id) => projections.getThreadShell(id).pipe(Effect.orDie),
       getShellSnapshot: (options) => projections.getShellSnapshot(options).pipe(Effect.orDie),
+      // Nested on purpose: the outer effect is the SQL read, the inner is decode
+      // after commit. `map(orDie)` dies the decode; do not flatten.
       readShellSnapshot: (options) =>
         projections.readShellSnapshot(options).pipe(Effect.map(Effect.orDie), Effect.orDie),
       streamStoredEventsFrom: (input) =>

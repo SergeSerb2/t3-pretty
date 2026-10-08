@@ -4504,6 +4504,8 @@ export function makeAcpAdapterV2(
                   },
                 });
               }
+              // This branch returns before the notification handler's trailing rearm.
+              yield* rearmDeferredFinalize(context);
               return;
             }
             const isDisplayableAssistantUpdate =
