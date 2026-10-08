@@ -12,8 +12,11 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 import * as Path from "effect/Path";
+import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 import {
   GitActionProgressEvent,
   GitActionProgressPhase,
@@ -35,6 +38,7 @@ import {
   type SourceControlProviderKind,
   type SourceControlWritingStyleSettings,
   type ThreadId,
+  type ThreadPullRequestKey,
   type VcsCreateWorktreeInput,
   type VcsCreateWorktreeResult,
 } from "@t3tools/contracts";
@@ -55,6 +59,11 @@ import {
   isSshRemoteUrl,
   type ChangeRequestTerminology,
 } from "@t3tools/shared/sourceControl";
+import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import {
+  normalizeThreadPullRequestKey,
+  threadPullRequestKeyOf,
+} from "@t3tools/shared/threadPullRequests";
 
 import { GitManagerError, GitPullRequestMaterializationError } from "@t3tools/contracts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
@@ -160,6 +169,15 @@ export class GitManager extends Context.Service<
       input: GitRunStackedActionInput,
       options?: GitRunStackedActionOptions,
     ) => Effect.Effect<GitRunStackedActionResult, GitManagerServiceError>;
+    /**
+     * Pull requests a branch PR lookup saw in a new state (merged, closed, reopened), so thread
+     * links can catch up before the next sync sweep. Best effort.
+     */
+    readonly subscribePullRequestStateChanges: Effect.Effect<
+      Stream.Stream<ThreadPullRequestKey>,
+      never,
+      Scope.Scope
+    >;
   }
 >()("t3/git/GitManager") {}
 
@@ -201,6 +219,51 @@ export function prLookupFailureTtl(consecutiveFailures: number): Duration.Durati
   const exponent = Math.max(0, consecutiveFailures - 1);
   const backoffMs = Duration.toMillis(PR_LOOKUP_FAILURE_BASE_TTL) * Math.pow(2, exponent);
   return Duration.min(Duration.millis(backoffMs), PR_LOOKUP_FAILURE_MAX_TTL);
+}
+
+type PullRequestLookupState = "open" | "closed" | "merged";
+
+/**
+ * Last state a branch PR lookup published for `id`. Unseen ids count as open
+ * so only a first terminal read announces. Open rows evict first; a terminal
+ * row that must leave becomes a tombstone so a later identical read does not
+ * look like open → merged.
+ */
+export function rememberPullRequestLookupState(
+  states: Map<string, PullRequestLookupState>,
+  evictedTerminal: Map<string, PullRequestLookupState>,
+  id: string,
+  state: PullRequestLookupState,
+  capacity = PR_LOOKUP_CACHE_CAPACITY,
+): PullRequestLookupState {
+  const previous = states.get(id) ?? evictedTerminal.get(id) ?? "open";
+  states.delete(id);
+  evictedTerminal.delete(id);
+  if (states.size >= capacity) {
+    let evictedOpen = false;
+    for (const [cachedId, cachedState] of states) {
+      if (cachedState !== "open") continue;
+      states.delete(cachedId);
+      evictedOpen = true;
+      break;
+    }
+    if (!evictedOpen) {
+      const oldest = states.keys().next().value;
+      if (oldest !== undefined) {
+        const oldestState = states.get(oldest);
+        states.delete(oldest);
+        if (oldestState !== undefined && oldestState !== "open") {
+          evictedTerminal.set(oldest, oldestState);
+          if (evictedTerminal.size > capacity) {
+            const drop = evictedTerminal.keys().next().value;
+            if (drop !== undefined) evictedTerminal.delete(drop);
+          }
+        }
+      }
+    }
+  }
+  states.set(id, state);
+  return previous;
 }
 type StripProgressContext<T> = T extends any ? Omit<T, "actionId" | "cwd" | "action"> : never;
 type GitActionProgressPayload = StripProgressContext<GitActionProgressEvent>;
@@ -1146,6 +1209,25 @@ export const make = Effect.gen(function* () {
     prLookupFailureStreakByKey.set(key, streak);
     return prLookupFailureTtl(streak);
   };
+  // The last state a branch PR lookup read per pull request. The thread details panel shows
+  // this lookup, so a merge it sees must reach the thread's link and settlement right away.
+  const pullRequestStateChanges = yield* PubSub.sliding<ThreadPullRequestKey>(64);
+  const lookupStates = new Map<string, PullRequestInfo["state"]>();
+  const evictedTerminalLookupStates = new Map<string, PullRequestInfo["state"]>();
+  const noteLookupState = (pr: PullRequestInfo) =>
+    Effect.suspend(() => {
+      const parsed = parseChangeRequestUrl(pr.url);
+      if (parsed === null || parsed.number !== pr.number) return Effect.void;
+      const key = normalizeThreadPullRequestKey(parsed);
+      const id = threadPullRequestKeyOf(key);
+      const previous = rememberPullRequestLookupState(
+        lookupStates,
+        evictedTerminalLookupStates,
+        id,
+        pr.state,
+      );
+      return previous === pr.state ? Effect.void : PubSub.publish(pullRequestStateChanges, key);
+    });
   const prLookupCache = yield* Cache.makeWith(
     (key: string) => {
       const [
@@ -1180,6 +1262,7 @@ export const make = Effect.gen(function* () {
           return { latest: null, headContext, unpublishedSkip: true as const };
         }
         const latest = yield* findLatestPrForHeadContext(cwd, headContext);
+        if (latest !== null) yield* noteLookupState(latest);
         return { latest, headContext, unpublishedSkip: false as const };
       });
     },
@@ -3080,6 +3163,9 @@ export const make = Effect.gen(function* () {
     resolvePullRequest,
     preparePullRequestThread,
     runStackedAction,
+    subscribePullRequestStateChanges: PubSub.subscribe(pullRequestStateChanges).pipe(
+      Effect.map((subscription) => Stream.fromSubscription(subscription)),
+    ),
   });
 });
 
