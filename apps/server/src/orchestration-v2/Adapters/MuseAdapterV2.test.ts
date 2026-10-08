@@ -43,6 +43,7 @@ import {
 } from "../ProviderAdapter.ts";
 import type { ProviderContinuationRequest } from "../ProviderContinuationRequests.ts";
 import { makeMuseAdapterV2, type MuseAdapterV2Options } from "./MuseAdapterV2.ts";
+import { museReplayEntryHost } from "./MuseAdapterV2.testkit.ts";
 
 const testLayer = Layer.mergeAll(
   NodeServices.layer,
@@ -352,6 +353,14 @@ const approval = (turnId: string) => ({
 });
 
 describe("MuseAdapterV2", () => {
+  it("closes the stamped Muse host on runtime_exit, not the newest host", () => {
+    assert.strictEqual(museReplayEntryHost({ type: "runtime_exit", status: "success" }), 1);
+    assert.strictEqual(
+      museReplayEntryHost({ type: "runtime_exit", status: "success", label: "runtime_exit@h2" }),
+      2,
+    );
+  });
+
   it.effect("connects the thread's MCP credential on native start and resume", () =>
     Effect.gen(function* () {
       yield* Effect.addFinalizer(() =>

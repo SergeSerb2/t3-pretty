@@ -8,7 +8,8 @@
  * wrote to Muse's stdin and `emit_inbound` is one line Muse wrote to stdout.
  * Every host begins with a synthetic `host_start` outbound record carrying its
  * `muse serve` arguments; records of the Nth host (N > 1) carry an `@hN` label
- * suffix. The SDK numbers its requests, so a recorded request id is rebound to
+ * suffix, including `runtime_exit@hN` so an early host exit does not close a
+ * later host. The SDK numbers its requests, so a recorded request id is rebound to
  * the id the replaying connection sent. Command and session ids come from the
  * SDK's minter, so replay mints the ids the recording minted, in order.
  * `<any>` in an outbound frame matches any value.
@@ -142,8 +143,8 @@ function startsTurn(entry: ProviderReplayEntryType): boolean {
   return method === "turn/start" || method === "session/compact" || method === "host_start";
 }
 
-function entryHost(entry: ProviderReplayEntryType): number {
-  const label = entry.type === "runtime_exit" ? undefined : entry.label;
+export function museReplayEntryHost(entry: ProviderReplayEntryType): number {
+  const label = entry.label;
   const match = label === undefined ? null : /@h(\d+)$/u.exec(label);
   return match === null ? 1 : Number(match[1]);
 }
@@ -279,7 +280,7 @@ class MuseReplayController {
       const pending = entry.type === "expect_outbound" && !this.consumed.has(index);
       possible =
         pending &&
-        entryHost(entry) === host.ordinal &&
+        museReplayEntryHost(entry) === host.ordinal &&
         replayValueMatches(withRequestId(entry.frame, actual), actual);
       if (!possible && pending && startsTurn(entry)) break;
     }
@@ -337,7 +338,7 @@ class MuseReplayController {
     for (let index = this.cursor; index < entries.length; index += 1) {
       const entry = entries[index]!;
       if (entry.type !== "expect_outbound") return false;
-      if (this.consumed.has(index) || entryHost(entry) !== host.ordinal) continue;
+      if (this.consumed.has(index) || museReplayEntryHost(entry) !== host.ordinal) continue;
       if (!replayValueMatches(withRequestId(entry.frame, actual), actual)) continue;
       const recordedId = clientRequestId(entry.frame);
       const actualId = clientRequestId(actual);
@@ -354,15 +355,15 @@ class MuseReplayController {
     while (this.failure === null) {
       const entry = this.transcript.entries[this.cursor];
       if (entry?.type === "runtime_exit") {
-        // Muse exited on its own in the recording: end the newest host.
+        // Muse exited on its own in the recording: end that host, not the newest.
         this.cursor += 1;
         emitted = true;
-        const host = this.hosts.at(-1);
+        const host = this.hosts[museReplayEntryHost(entry) - 1];
         if (host !== undefined) this.close(host);
         continue;
       }
       if (entry?.type !== "emit_inbound") return emitted;
-      const host = this.hosts[entryHost(entry) - 1];
+      const host = this.hosts[museReplayEntryHost(entry) - 1];
       if (host === undefined) return emitted;
       this.cursor += 1;
       emitted = true;

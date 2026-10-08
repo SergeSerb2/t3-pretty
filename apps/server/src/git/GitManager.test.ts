@@ -2568,6 +2568,39 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     expect(Duration.toMillis(GitManager.prLookupFailureTtl(20))).toBe(900_000);
   });
 
+  it("does not re-announce an evicted terminal PR lookup as open-to-merged", () => {
+    const states = new Map<string, "open" | "closed" | "merged">();
+    const evicted = new Map<string, "open" | "closed" | "merged">();
+    expect(GitManager.rememberPullRequestLookupState(states, evicted, "merged-pr", "merged", 2)).toBe(
+      "open",
+    );
+    expect(GitManager.rememberPullRequestLookupState(states, evicted, "open-a", "open", 2)).toBe(
+      "open",
+    );
+    expect(GitManager.rememberPullRequestLookupState(states, evicted, "open-b", "open", 2)).toBe(
+      "open",
+    );
+    expect(GitManager.rememberPullRequestLookupState(states, evicted, "open-c", "open", 2)).toBe(
+      "open",
+    );
+    expect(states.has("merged-pr")).toBe(true);
+    expect(
+      GitManager.rememberPullRequestLookupState(states, evicted, "merged-pr", "merged", 2),
+    ).toBe("merged");
+    expect(
+      GitManager.rememberPullRequestLookupState(states, evicted, "closed-pr", "closed", 2),
+    ).toBe("open");
+    expect(
+      GitManager.rememberPullRequestLookupState(states, evicted, "extra-open", "open", 2),
+    ).toBe("open");
+    expect(
+      GitManager.rememberPullRequestLookupState(states, evicted, "closed-pr", "closed", 2),
+    ).toBe("closed");
+    expect(
+      GitManager.rememberPullRequestLookupState(states, evicted, "merged-pr", "merged", 2),
+    ).toBe("merged");
+  });
+
   it.each([
     [
       "https://github.example.com/team/repository/pull/42?tab=files",

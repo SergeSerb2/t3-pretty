@@ -829,6 +829,7 @@ describe("orchestration V2 contracts", () => {
         {
           type: "runtime_exit",
           status: "success",
+          label: "runtime_exit@h2",
         },
       ],
     });

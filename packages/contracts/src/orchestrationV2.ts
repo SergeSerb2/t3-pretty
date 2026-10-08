@@ -3718,6 +3718,8 @@ export const ProviderReplayEntry = Schema.Union([
     type: Schema.Literal("runtime_exit"),
     status: Schema.Literals(["success", "error", "cancelled"]),
     error: Schema.optional(Schema.Unknown),
+    /** Host ordinal suffix (`runtime_exit@h2`); omitted for the first host. */
+    label: Schema.optional(TrimmedNonEmptyString),
   }),
 ]);
 export type ProviderReplayEntry = typeof ProviderReplayEntry.Type;

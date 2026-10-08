@@ -220,6 +220,51 @@ export function prLookupFailureTtl(consecutiveFailures: number): Duration.Durati
   const backoffMs = Duration.toMillis(PR_LOOKUP_FAILURE_BASE_TTL) * Math.pow(2, exponent);
   return Duration.min(Duration.millis(backoffMs), PR_LOOKUP_FAILURE_MAX_TTL);
 }
+
+type PullRequestLookupState = "open" | "closed" | "merged";
+
+/**
+ * Last state a branch PR lookup published for `id`. Unseen ids count as open
+ * so only a first terminal read announces. Open rows evict first; a terminal
+ * row that must leave becomes a tombstone so a later identical read does not
+ * look like open → merged.
+ */
+export function rememberPullRequestLookupState(
+  states: Map<string, PullRequestLookupState>,
+  evictedTerminal: Map<string, PullRequestLookupState>,
+  id: string,
+  state: PullRequestLookupState,
+  capacity = PR_LOOKUP_CACHE_CAPACITY,
+): PullRequestLookupState {
+  const previous = states.get(id) ?? evictedTerminal.get(id) ?? "open";
+  states.delete(id);
+  evictedTerminal.delete(id);
+  if (states.size >= capacity) {
+    let evictedOpen = false;
+    for (const [cachedId, cachedState] of states) {
+      if (cachedState !== "open") continue;
+      states.delete(cachedId);
+      evictedOpen = true;
+      break;
+    }
+    if (!evictedOpen) {
+      const oldest = states.keys().next().value;
+      if (oldest !== undefined) {
+        const oldestState = states.get(oldest);
+        states.delete(oldest);
+        if (oldestState !== undefined && oldestState !== "open") {
+          evictedTerminal.set(oldest, oldestState);
+          if (evictedTerminal.size > capacity) {
+            const drop = evictedTerminal.keys().next().value;
+            if (drop !== undefined) evictedTerminal.delete(drop);
+          }
+        }
+      }
+    }
+  }
+  states.set(id, state);
+  return previous;
+}
 type StripProgressContext<T> = T extends any ? Omit<T, "actionId" | "cwd" | "action"> : never;
 type GitActionProgressPayload = StripProgressContext<GitActionProgressEvent>;
 type GitActionProgressEmitter = (event: GitActionProgressPayload) => Effect.Effect<void, never>;
@@ -1168,20 +1213,19 @@ export const make = Effect.gen(function* () {
   // this lookup, so a merge it sees must reach the thread's link and settlement right away.
   const pullRequestStateChanges = yield* PubSub.sliding<ThreadPullRequestKey>(64);
   const lookupStates = new Map<string, PullRequestInfo["state"]>();
+  const evictedTerminalLookupStates = new Map<string, PullRequestInfo["state"]>();
   const noteLookupState = (pr: PullRequestInfo) =>
     Effect.suspend(() => {
       const parsed = parseChangeRequestUrl(pr.url);
       if (parsed === null || parsed.number !== pr.number) return Effect.void;
       const key = normalizeThreadPullRequestKey(parsed);
       const id = threadPullRequestKeyOf(key);
-      // An unseen pull request counts as open, so only a terminal first read announces.
-      const previous = lookupStates.get(id) ?? "open";
-      lookupStates.delete(id);
-      if (lookupStates.size >= PR_LOOKUP_CACHE_CAPACITY) {
-        const oldest = lookupStates.keys().next().value;
-        if (oldest !== undefined) lookupStates.delete(oldest);
-      }
-      lookupStates.set(id, pr.state);
+      const previous = rememberPullRequestLookupState(
+        lookupStates,
+        evictedTerminalLookupStates,
+        id,
+        pr.state,
+      );
       return previous === pr.state ? Effect.void : PubSub.publish(pullRequestStateChanges, key);
     });
   const prLookupCache = yield* Cache.makeWith(
