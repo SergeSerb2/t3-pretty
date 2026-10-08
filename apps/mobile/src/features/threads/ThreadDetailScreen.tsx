@@ -30,7 +30,7 @@ import type {
 import {
   appendCodexArtifactTemplateUsePrompt,
   type CodexArtifactTemplate,
-} from "@t3tools/client-runtime/codex-artifact-templates";
+} from "@t3tools/shared/codexArtifactTemplates";
 import type { ThreadUserInputQuestion } from "@t3tools/client-runtime/state/thread-requests";
 import {
   presentPendingBackgroundWork,
@@ -1315,7 +1315,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                       // The questionnaire replaces the composer, so it must pad
                       // the home indicator the composer normally covers.
                       style={
-                        activeUserInputRequestId !== null || props.activePendingSecretRequest !== null
+                        activeUserInputRequestId !== null ||
+                        props.activePendingSecretRequest !== null
                           ? { paddingBottom: composerBottomInset }
                           : undefined
                       }

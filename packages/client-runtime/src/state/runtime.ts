@@ -80,6 +80,7 @@ interface EnvironmentSubscriptionAtomOptions<Input, A, E, R> {
   readonly sensitiveInput?: boolean;
   readonly label: string;
   readonly subscribe: (input: Input) => Stream.Stream<A, E, R>;
+  readonly completeWhen?: (value: A) => boolean;
   readonly idleTtlMs?: number;
   /**
    * Finite command streams do not resubscribe on their own. When true, a
@@ -834,7 +835,9 @@ export function createEnvironmentSubscriptionAtomFamily<R, ER, Input, A, E>(
     const streamAtom =
       rpcGenerationAtom === null
         ? runtime.atom(
-            followStreamInEnvironment(target.environmentId, options.subscribe(target.input)),
+            followStreamInEnvironment(target.environmentId, options.subscribe(target.input)).pipe(
+              options.completeWhen ? Stream.takeUntil(options.completeWhen) : (stream) => stream,
+            ),
           )
         : runtime.atom((get) => {
             const generation = Option.getOrNull(
@@ -843,7 +846,12 @@ export function createEnvironmentSubscriptionAtomFamily<R, ER, Input, A, E>(
             if (generation === null) {
               return Stream.never;
             }
-            return followStreamInEnvironment(target.environmentId, options.subscribe(target.input));
+            return followStreamInEnvironment(
+              target.environmentId,
+              options.subscribe(target.input),
+            ).pipe(
+              options.completeWhen ? Stream.takeUntil(options.completeWhen) : (stream) => stream,
+            );
           });
     return streamAtom.pipe(
       Atom.setIdleTTL(options.idleTtlMs ?? 5 * 60_000),
@@ -931,6 +939,7 @@ export function createEnvironmentRpcSubscriptionAtomFamily<
     readonly label: string;
     readonly tag: TTag;
     readonly idleTtlMs?: number;
+    readonly completeWhen?: (value: B) => boolean;
     readonly transform?: (
       stream: Stream.Stream<
         EnvironmentRpcStreamValue<TTag>,
@@ -946,6 +955,7 @@ export function createEnvironmentRpcSubscriptionAtomFamily<
 ) {
   return createEnvironmentSubscriptionAtomFamily(runtime, {
     label: options.label,
+    ...(options.completeWhen === undefined ? {} : { completeWhen: options.completeWhen }),
     ...(options.idleTtlMs === undefined ? {} : { idleTtlMs: options.idleTtlMs }),
     subscribe: (input: EnvironmentRpcInput<TTag>) => {
       const stream = subscribe(options.tag, input);
