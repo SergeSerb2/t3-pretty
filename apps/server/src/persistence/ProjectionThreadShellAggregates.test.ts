@@ -1,7 +1,7 @@
 import { RuntimeRequestId, PlanId, type OrchestrationV2RuntimeRequest, type OrchestrationV2ThreadProjection } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
-import { threadShellFromProjection } from "../../orchestration-v2/ProjectionStore.ts";
-import { fixtureProjection, fixtureRun, fixtureNow } from "../../testUtils/V2ProjectionFixture.ts";
+import { threadShellFromProjection } from "../orchestration-v2/ProjectionStore.ts";
+import { fixtureProjection, fixtureRun, fixtureNow } from "../testUtils/V2ProjectionFixture.ts";
 
 describe("V2 thread shell aggregates retained from the fork", () => {
   for (const kind of ["command", "user_input"] as const) {

@@ -65,6 +65,8 @@ const encodeStored = Schema.encodeEffect(StoredSecret);
 const decodeStored = Schema.decodeUnknownOption(StoredSecret);
 
 const isSecretRequestError = Schema.is(SecretRequestError);
+const fail = (reason: SecretRequestError["reason"], cause?: unknown) =>
+  new SecretRequestError(cause === undefined ? { reason } : { reason, cause });
 
 export class SecretRequests extends Context.Service<
   SecretRequests,

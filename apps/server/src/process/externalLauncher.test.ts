@@ -102,6 +102,7 @@ const layerTest = (input: {
     ConfigProvider.layer(ConfigProvider.fromEnv({ env: input.env ?? {} })),
   );
 };
+const testLayer = layerTest;
 
 it.effect("launches the default browser through the platform command", () => {
   let spawned: ChildProcess.StandardCommand | undefined;

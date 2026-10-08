@@ -128,6 +128,7 @@ const layerTest = Layer.mergeAll(
   NativeAppIconResolver.layer.pipe(Layer.provide(layerConfig)),
   ServerSecretStore.layer.pipe(Layer.provide(layerConfig)),
 ).pipe(Layer.provideMerge(NodeServices.layer));
+const testLayer = layerTest;
 
 describe("AssetAccess", () => {
   it.effect("loads private media immediately after login with the GitHub credential", () => {

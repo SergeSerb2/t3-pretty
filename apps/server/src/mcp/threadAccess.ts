@@ -132,6 +132,12 @@ export function assertLiveCaller({ caller, scope }: Caller) {
     : Effect.void;
 }
 
+export const readMutationCaller = Effect.fn("mcp.readMutationCaller")(function* () {
+  const context = yield* readCaller();
+  yield* assertLiveCaller(context);
+  return context;
+});
+
 /**
  * Actions that change the environment itself (projects, preferences) need full
  * access: a thread caller in full-access/default mode, or a client approved

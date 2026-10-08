@@ -20,6 +20,18 @@ import {
   type OrchestrationCommandReceiptRepositoryError,
 } from "./Errors.ts";
 
+export const ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS = 8_192;
+
+function boundReceiptError(error: string | null): string | null {
+  if (error === null || error.length <= ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS) {
+    return error;
+  }
+  const truncated = error.slice(0, ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS);
+  const last = truncated.charCodeAt(truncated.length - 1);
+  // String.slice is UTF-16; drop a dangling high surrogate so SQLite/JSON stay well-formed.
+  return last >= 0xd800 && last <= 0xdbff ? truncated.slice(0, -1) : truncated;
+}
+
 export const OrchestrationCommandReceipt = Schema.Struct({
   commandId: CommandId,
   aggregateKind: Schema.Literals(["project", "thread"]),
@@ -65,6 +77,11 @@ export class OrchestrationCommandReceiptRepository extends Context.Service<
       Option.Option<OrchestrationCommandReceipt>,
       OrchestrationCommandReceiptRepositoryError
     >;
+
+    readonly pruneAcceptedBefore: (input: {
+      readonly acceptedBefore: string;
+      readonly limit: number;
+    }) => Effect.Effect<number, OrchestrationCommandReceiptRepositoryError>;
   }
 >()("t3/persistence/OrchestrationCommandReceipts/OrchestrationCommandReceiptRepository") {}
 
@@ -104,6 +121,10 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
           result_sequence = excluded.result_sequence,
           status = excluded.status,
           error = excluded.error
+        WHERE NOT (
+          orchestration_command_receipts.status = 'accepted'
+          AND excluded.status = 'rejected'
+        )
       `,
   });
 
@@ -127,7 +148,7 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
   });
 
   const upsert: OrchestrationCommandReceiptRepository["Service"]["upsert"] = (receipt) =>
-    upsertReceiptRow(receipt).pipe(
+    upsertReceiptRow({ ...receipt, error: boundReceiptError(receipt.error) }).pipe(
       Effect.mapError(toPersistenceSqlError("OrchestrationCommandReceiptRepository.upsert:query")),
     );
 
@@ -173,10 +194,26 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
       ),
     );
 
+  const pruneAcceptedBefore: OrchestrationCommandReceiptRepository["Service"]["pruneAcceptedBefore"] =
+    (input) =>
+      sql<{ readonly command_id: string }>`
+      DELETE FROM orchestration_command_receipts WHERE command_id IN (
+        SELECT command_id FROM orchestration_command_receipts
+        WHERE accepted_at < ${input.acceptedBefore}
+        ORDER BY accepted_at, command_id LIMIT ${input.limit}
+      ) RETURNING command_id
+    `.pipe(
+        Effect.map((rows) => rows.length),
+        Effect.mapError(
+          toPersistenceSqlError("OrchestrationCommandReceiptRepository.pruneAcceptedBefore:query"),
+        ),
+      );
+
   return {
     insertIfAbsent,
     upsert,
     getByCommandId,
+    pruneAcceptedBefore,
   } satisfies OrchestrationCommandReceiptRepository["Service"];
 });
 
@@ -184,3 +221,4 @@ export const layer = Layer.effect(
   OrchestrationCommandReceiptRepository,
   makeOrchestrationCommandReceiptRepository,
 );
+export const OrchestrationCommandReceiptRepositoryLive = layer;

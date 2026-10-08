@@ -16,13 +16,13 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
-import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
-import { ServerConfig } from "../../config.ts";
-import { ServerSettingsService } from "../../serverSettings.ts";
-import { BUILT_IN_DRIVERS } from "../builtInDrivers.ts";
-import * as ModelManifest from "../ModelManifest.ts";
+import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
+import { ServerConfig } from "../config.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
+import { BUILT_IN_DRIVERS } from "./builtInDrivers.ts";
+import * as ModelManifest from "./ModelManifest.ts";
 import { NoOpProviderEventLoggers, ProviderEventLoggers } from "./ProviderEventLoggers.ts";
-import { makeProviderInstanceRegistry } from "./ProviderInstanceRegistryLive.ts";
+import { makeProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
 
 const TestHttpClientLive = Layer.succeed(
   HttpClient.HttpClient,

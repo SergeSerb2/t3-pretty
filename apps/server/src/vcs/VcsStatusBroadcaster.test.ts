@@ -275,7 +275,7 @@ describe("VcsStatusBroadcaster", () => {
       assert.deepStrictEqual(yield* broadcaster.peekStatus({ cwd: "/repo" }), baseStatus);
       assert.equal(state.localStatusCalls, 1);
       assert.equal(state.remoteStatusCalls, 1);
-    }).pipe(Effect.provide(makeTestLayer(state)));
+    }).pipe(Effect.provide(layerTestFor(state)));
   });
 
   it.effect("refreshes a loaded cwd without reusing a previous branch's PR", () => {

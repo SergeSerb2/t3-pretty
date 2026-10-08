@@ -12,6 +12,7 @@ const layerTest = VcsProjectConfig.layer.pipe(
   Layer.provide(NodeServices.layer),
   Layer.provideMerge(NodeServices.layer),
 );
+const TestLayer = layerTest;
 
 describe("VcsProjectConfig", () => {
   it.layer(layerTest)("uses an explicit requested VCS kind before config", (it) => {

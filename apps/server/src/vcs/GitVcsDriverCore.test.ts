@@ -50,6 +50,8 @@ const layerTest = GitVcsDriver.layer.pipe(
   Layer.provide(layerServerConfig),
   Layer.provideMerge(NodeServices.layer),
 );
+const ServerConfigLayer = layerServerConfig;
+const TestLayer = layerTest;
 
 const makeNonRepositoryHandle = () =>
   ChildProcessSpawner.makeHandle({

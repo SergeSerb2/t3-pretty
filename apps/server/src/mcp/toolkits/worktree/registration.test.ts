@@ -1,6 +1,6 @@
 import { SecretRequestBroker } from "../../SecretRequestBroker.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
-import * as ProjectionStore from "../../../orchestration-v2/ProjectionStore.ts";
+import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as DeviceService from "../../../device/DeviceService.ts";
 import * as ServerConfig from "../../../config.ts";
 import { expect, it } from "@effect/vitest";

@@ -58,6 +58,9 @@ const layerSessionStore = (
     Layer.provide(layerServerEnvironment(environmentId)),
     Layer.provide(layerServerConfig(overrides)),
   );
+const makeSessionStoreLayer = layerSessionStore;
+const makeServerConfigLayer = layerServerConfig;
+const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
 
 const relaySessionInput = {
   subject: "managed-relay-bootstrap",

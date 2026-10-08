@@ -287,6 +287,7 @@ export const make = Effect.gen(function* () {
 });
 
 export const layerIdentity = Layer.effect(ServerEnvironmentIdentity, makeIdentity);
+export const identityLayer = layerIdentity;
 
 /**
  * ServerEnvironment is acquired from persisted filesystem and host-process

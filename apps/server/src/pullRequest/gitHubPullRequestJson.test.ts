@@ -515,7 +515,7 @@ describe("pull request detail decoding", () => {
         }),
       ),
     );
-    expect(activity.comments.map((comment) => [comment.id, comment.reactions])).toEqual([
+    expect(activity.remarks.map((comment) => [comment.id, comment.reactions])).toEqual([
       ["r1", [{ content: "eyes", count: 1, actors: [], viewerHasReacted: false }]],
       ["c1", [{ content: "hooray", count: 3, actors: [], viewerHasReacted: false }]],
     ]);

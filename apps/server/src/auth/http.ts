@@ -258,6 +258,7 @@ export const layerAuthenticatedAuth = Layer.effect(
       }).pipe(Effect.catchTags({ EnvironmentAuthInvalidError: appendDpopChallengeOnUnauthorized }));
   }),
 );
+export const environmentAuthenticatedAuthLayer = layerAuthenticatedAuth;
 
 export const layer = HttpApiBuilder.group(
   EnvironmentHttpApi,

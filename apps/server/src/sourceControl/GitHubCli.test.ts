@@ -682,28 +682,28 @@ const codexReviewPage = (input: {
   });
 
 describe("getCodexReview", () => {
-  it.effect("reads public Codex review activity through GitHub GraphQL", () =>
-    Effect.gen(function* () {
-      const queries: GitHubApi.GitHubGraphQlInput[] = [];
-      const { layer } = harness({
-        remotes: remotesOutput(["origin", "git@github.com:pingdotgg/t3code.git"]),
-        api: {
-          graphql: (input) => {
-            queries.push(input);
-            return Effect.succeed(
-              codexReviewPage({
-                reactions: [
-                  {
-                    content: "EYES",
-                    createdAt: "2026-08-10T05:31:00Z",
-                    user: { login: "chatgpt-codex-connector[bot]" },
-                  },
-                ],
-              }),
-            );
-          },
+  it.effect("reads public Codex review activity through GitHub GraphQL", () => {
+    const queries: GitHubApi.GitHubGraphQlInput[] = [];
+    const { layer } = harness({
+      remotes: remotesOutput(["origin", "git@github.com:pingdotgg/t3code.git"]),
+      api: {
+        graphql: (input) => {
+          queries.push(input);
+          return Effect.succeed(
+            codexReviewPage({
+              reactions: [
+                {
+                  content: "EYES",
+                  createdAt: "2026-08-10T05:31:00Z",
+                  user: { login: "chatgpt-codex-connector[bot]" },
+                },
+              ],
+            }),
+          );
         },
-      });
+      },
+    });
+    return Effect.gen(function* () {
       const gh = yield* GitHubCli.GitHubCli;
       const result = yield* gh.getCodexReview({
         cwd: "/repo",
@@ -721,43 +721,43 @@ describe("getCodexReview", () => {
         includeReactions: true,
         includeReviews: true,
       });
-    }).pipe(Effect.provide(layer)),
-  );
+    }).pipe(Effect.provide(layer));
+  });
 
-  it.effect("paginates all public activity before reporting Codex state", () =>
-    Effect.gen(function* () {
-      const queries: GitHubApi.GitHubGraphQlInput[] = [];
-      const { layer } = harness({
-        remotes: remotesOutput(["origin", "git@github.com:pingdotgg/t3code.git"]),
-        api: {
-          graphql: (input) => {
-            queries.push(input);
-            return Effect.succeed(
-              queries.length === 1
-                ? codexReviewPage({
-                    reactionsHasNextPage: true,
-                    reactionsCursor: "reaction-100",
-                    reactions: [
-                      {
-                        content: "THUMBS_UP",
-                        createdAt: "2026-08-10T05:31:00Z",
-                        user: { login: "another-reviewer" },
-                      },
-                    ],
-                  })
-                : codexReviewPage({
-                    reactions: [
-                      {
-                        content: "THUMBS_UP",
-                        createdAt: "2026-08-10T05:38:00Z",
-                        user: { login: "chatgpt-codex-connector[bot]" },
-                      },
-                    ],
-                  }),
-            );
-          },
+  it.effect("paginates all public activity before reporting Codex state", () => {
+    const queries: GitHubApi.GitHubGraphQlInput[] = [];
+    const { layer } = harness({
+      remotes: remotesOutput(["origin", "git@github.com:pingdotgg/t3code.git"]),
+      api: {
+        graphql: (input) => {
+          queries.push(input);
+          return Effect.succeed(
+            queries.length === 1
+              ? codexReviewPage({
+                  reactionsHasNextPage: true,
+                  reactionsCursor: "reaction-100",
+                  reactions: [
+                    {
+                      content: "THUMBS_UP",
+                      createdAt: "2026-08-10T05:31:00Z",
+                      user: { login: "another-reviewer" },
+                    },
+                  ],
+                })
+              : codexReviewPage({
+                  reactions: [
+                    {
+                      content: "THUMBS_UP",
+                      createdAt: "2026-08-10T05:38:00Z",
+                      user: { login: "chatgpt-codex-connector[bot]" },
+                    },
+                  ],
+                }),
+          );
         },
-      });
+      },
+    });
+    return Effect.gen(function* () {
       const gh = yield* GitHubCli.GitHubCli;
       const result = yield* gh.getCodexReview({
         cwd: "/repo",
@@ -775,6 +775,6 @@ describe("getCodexReview", () => {
         includeReviews: false,
         reactionsCursor: "reaction-100",
       });
-    }).pipe(Effect.provide(layer)),
-  );
+    }).pipe(Effect.provide(layer));
+  });
 });

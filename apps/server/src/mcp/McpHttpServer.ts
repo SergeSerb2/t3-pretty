@@ -915,7 +915,7 @@ export const layerDeviceToolkit = Layer.mergeAll(
   layerDeviceScreenshotRegistration,
 );
 
-const layerMcpTransport = (
+const layerMcpTransportAt = (
   path: HttpRouter.PathInput,
   capability?: McpInvocationContext.McpCapability,
 ) =>
@@ -925,6 +925,7 @@ const layerMcpTransport = (
     path,
     protocols: [McpProtocol.v2025_06_18],
   }).pipe(Layer.provide(mcpAuthMiddlewareLive(capability)));
+export const layerMcpTransport = layerMcpTransportAt("/mcp");
 
 // The base server carries toolkits every credential can use (pull requests,
 // API key requests) beside capability-gated ones, so the transport admits any
@@ -942,18 +943,18 @@ const PreviewMcpServerLive = Layer.mergeAll(
   SecretsToolkitRegistrationLive,
   layerDeviceToolkit,
   layerHtmlToolkit,
-).pipe(Layer.provide(layerMcpTransport("/mcp")));
+).pipe(Layer.provide(layerMcpTransportAt("/mcp")));
 
 // `McpServer.toolkit` and `layerHttp` both build on the static `McpServer.layer`, so a
 // memoized build gives every endpoint one tool registry, and `/mcp` would list these
 // tools to credentials that cannot call them. Fresh builds keep each registry apart.
 const ComputerUseMcpServerLive = ComputerUseToolkitRegistrationLive.pipe(
-  Layer.provide(layerMcpTransport("/mcp/computer-use", "computer-use")),
+  Layer.provide(layerMcpTransportAt("/mcp/computer-use", "computer-use")),
   Layer.fresh,
 );
 
 const AutomationsMcpServerLive = AutomationsToolkitRegistrationLive.pipe(
-  Layer.provide(layerMcpTransport("/mcp/automations", "automations")),
+  Layer.provide(layerMcpTransportAt("/mcp/automations", "automations")),
   Layer.fresh,
 );
 

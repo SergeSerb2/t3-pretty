@@ -83,6 +83,7 @@ export const layerMemory = Layer.provideMerge(
   layerSetup,
   NodeSqliteClient.layer({ filename: ":memory:" }),
 );
+export const SqlitePersistenceMemory = layerMemory;
 
 export const layerConfig = Layer.unwrap(
   Effect.gen(function* () {

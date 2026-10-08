@@ -12,6 +12,7 @@ import {
   type AuthCreatePairingCredentialInput,
   type AuthEnvironmentScope,
   type AuthMcpClientAccess,
+  type RuntimeMode,
   type AuthPairingLink,
   type AuthPairingCredentialResult,
   type AuthSessionId,
@@ -91,6 +92,17 @@ export interface McpClientSession {
   readonly label: string;
   readonly access: AuthMcpClientAccess;
 }
+
+const resolveMcpClientAccess = (ceiling: RuntimeMode | undefined): AuthMcpClientAccess => {
+  switch (ceiling) {
+    case undefined:
+      return "approval-required";
+    case "yolo":
+      return "full-access";
+    default:
+      return ceiling;
+  }
+};
 
 export interface AuthenticatedSession {
   readonly sessionId: AuthSessionId;
@@ -1293,7 +1305,7 @@ export const make = Effect.gen(function* () {
               sessionId: session.sessionId,
               label: session.client.label ?? "MCP client",
               access: session.scopes.includes(AuthOrchestrationOperateScope)
-                ? (session.runtimeModeCeiling ?? "approval-required")
+                ? resolveMcpClientAccess(session.runtimeModeCeiling)
                 : "read-only",
             } satisfies McpClientSession)
           : Effect.fail(

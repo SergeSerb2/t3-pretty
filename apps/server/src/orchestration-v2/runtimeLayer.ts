@@ -339,6 +339,7 @@ export const layer = Layer.mergeAll(
   layerProjectionMaintenanceProvided,
   layerLegacyV1ThreadImporterProvided,
 );
+export const ProjectServiceLayerLive = layerProjectService;
 
 export const layerProduction = Layer.mergeAll(
   // Custom application reactors and transports consume these same persisted stores.

@@ -73,6 +73,9 @@ const layerPairingGrantStoreTest = (
     Layer.provide(layerServerConfig()),
   );
 
+const makePairingGrantStoreLayer = layerPairingGrantStore;
+const makePairingGrantStoreTestLayer = layerPairingGrantStoreTest;
+
 it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
   it.effect("issues pairing tokens in a short manual-entry format", () =>
     Effect.gen(function* () {

@@ -49,6 +49,7 @@ import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
+import type * as Scope from "effect/Scope";
 
 import * as ModelManifest from "./ModelManifest.ts";
 import { applyProviderCompatibility } from "./providerCompatibility.ts";
@@ -144,6 +145,11 @@ export class ProviderRegistry extends Context.Service<
      * change. The array contains the full current state.
      */
     readonly streamChanges: Stream.Stream<ReadonlyArray<ServerProvider>>;
+    readonly subscribeChanges?: Effect.Effect<
+      Stream.Stream<ReadonlyArray<ServerProvider>>,
+      never,
+      Scope.Scope
+    >;
   }
 >()("t3/provider/ProviderRegistry") {}
 

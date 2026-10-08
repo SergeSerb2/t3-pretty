@@ -1,11 +1,17 @@
 import { ORCHESTRATION_V2_WS_METHODS, WS_METHODS, type WsRpcGroup } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Metric from "effect/Metric";
 import * as References from "effect/References";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
+import * as Stream from "effect/Stream";
 
-import { rpcRequestDuration, rpcRequestsTotal, withMetrics } from "./Metrics.ts";
+import { outcomeFromExit } from "./Attributes.ts";
+import { metricAttributes, rpcRequestDuration, rpcRequestsTotal, withMetrics } from "./Metrics.ts";
 
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
@@ -244,3 +250,113 @@ export const rpcInstrumentationLayer = Layer.succeed(RpcInstrumentation)((effect
     }),
   );
 });
+
+function shouldTraceRpc(method: string): boolean {
+  return !RPC_METHODS_WITH_TRACING_DISABLED.has(method);
+}
+
+const rpcSpanAttributes = (
+  method: string,
+  traceAttributes?: Readonly<Record<string, unknown>>,
+): Record<string, unknown> => ({
+  ...DEFAULT_RPC_SPAN_ATTRIBUTES,
+  "rpc.method": method,
+  ...traceAttributes,
+});
+
+const withRpcEffectTracing = <A, E, R>(
+  method: string,
+  effect: Effect.Effect<A, E, R>,
+  traceAttributes?: Readonly<Record<string, unknown>>,
+): Effect.Effect<A, E, R> =>
+  shouldTraceRpc(method)
+    ? effect.pipe(
+        Effect.withSpan(`${RPC_SPAN_PREFIX}.${method}`, {
+          attributes: rpcSpanAttributes(method, traceAttributes),
+        }),
+      )
+    : effect.pipe(Effect.provideService(References.TracerEnabled, false));
+
+const withRpcStreamTracing = <A, E, R>(
+  method: string,
+  stream: Stream.Stream<A, E, R>,
+  traceAttributes?: Readonly<Record<string, unknown>>,
+): Stream.Stream<A, E, R> =>
+  shouldTraceRpc(method)
+    ? stream.pipe(
+        Stream.withSpan(`${RPC_SPAN_PREFIX}.${method}`, {
+          attributes: rpcSpanAttributes(method, traceAttributes),
+        }),
+      )
+    : stream.pipe(Stream.provideService(References.TracerEnabled, false));
+
+const recordRpcStreamMetrics = <E>(
+  method: string,
+  startedAt: bigint,
+  exit: Exit.Exit<unknown, E>,
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    yield* Metric.update(
+      Metric.withAttributes(rpcRequestDuration, metricAttributes({ method })),
+      Duration.nanos((yield* Clock.monotonicTimeNanos) - startedAt),
+    );
+    yield* Metric.update(
+      Metric.withAttributes(
+        rpcRequestsTotal,
+        metricAttributes({
+          method,
+          outcome: outcomeFromExit(exit),
+        }),
+      ),
+      1,
+    );
+  });
+
+/** Pretty ws.ts still wraps individual handlers; 2787 also records via middleware. */
+export const observeRpcEffect = <A, E, R>(
+  method: string,
+  effect: Effect.Effect<A, E, R>,
+  traceAttributes?: Readonly<Record<string, unknown>>,
+): Effect.Effect<A, E, R> => {
+  const instrumented = effect.pipe(
+    withMetrics({
+      counter: rpcRequestsTotal,
+      timer: rpcRequestDuration,
+      attributes: { method },
+    }),
+  );
+  return withRpcEffectTracing(method, instrumented, traceAttributes);
+};
+
+export const observeRpcStream = <A, E, R>(
+  method: string,
+  stream: Stream.Stream<A, E, R>,
+  traceAttributes?: Readonly<Record<string, unknown>>,
+): Stream.Stream<A, E, R> => {
+  const instrumented = Stream.unwrap(
+    Effect.gen(function* () {
+      const startedAt = yield* Clock.monotonicTimeNanos;
+      return stream.pipe(Stream.onExit((exit) => recordRpcStreamMetrics(method, startedAt, exit)));
+    }),
+  );
+  return withRpcStreamTracing(method, instrumented, traceAttributes);
+};
+
+export const observeRpcStreamEffect = <A, StreamError, StreamContext, EffectError, EffectContext>(
+  method: string,
+  effect: Effect.Effect<Stream.Stream<A, StreamError, StreamContext>, EffectError, EffectContext>,
+  traceAttributes?: Readonly<Record<string, unknown>>,
+): Stream.Stream<A, StreamError | EffectError, StreamContext | EffectContext> => {
+  const instrumented = Stream.unwrap(
+    Effect.gen(function* () {
+      const startedAt = yield* Clock.monotonicTimeNanos;
+      const stream = yield* effect.pipe(
+        Effect.onError((cause) => recordRpcStreamMetrics(method, startedAt, Exit.failCause(cause))),
+      );
+      return stream.pipe(
+        Stream.onExit((streamExit) => recordRpcStreamMetrics(method, startedAt, streamExit)),
+      );
+    }),
+  );
+  return withRpcStreamTracing(method, instrumented, traceAttributes);
+};

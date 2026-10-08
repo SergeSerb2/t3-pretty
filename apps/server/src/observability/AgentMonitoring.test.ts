@@ -31,9 +31,10 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import { OrchestrationEventStoreLive } from "../persistence/Layers/OrchestrationEventStore.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
-import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
+import { OrchestrationEventStoreLive } from "../persistence/OrchestrationEventStore.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
+import { OrchestrationEventStore } from "../persistence/OrchestrationEventStore.ts";
 import * as AgentMonitoring from "./AgentMonitoring.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Exporter from "./AgentMonitoringExporter.ts";

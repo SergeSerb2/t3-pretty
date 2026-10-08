@@ -20,7 +20,7 @@ it.effect("refuses thread-owned capabilities for an external MCP client", () =>
       client: {
         sessionId: "external-client",
         label: "External client",
-        runtimeModeCeiling: "full-access",
+        access: "full-access",
       },
       capabilities: new Set(["preview", "device", "secrets"]),
       issuedAt: 1,
