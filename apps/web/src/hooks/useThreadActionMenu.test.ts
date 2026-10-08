@@ -5,9 +5,7 @@ import {
   type ContextMenuItem,
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
-import { createElement } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { ThreadActionMenuId } from "../components/threadActionMenu.logic";
 
@@ -37,11 +35,9 @@ function recordEffect(action: string) {
 }
 
 vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn() }));
-vi.mock("./useCopyThreadConversation", () => ({
-  useCopyThreadConversation: () => () => recordEffect("copy-conversation"),
-}));
-vi.mock("../projectTransferStore", () => ({
-  openProjectTransferDialog: () => recordEffect("transfer"),
+vi.mock("react", () => ({
+  useCallback: (callback: unknown) => callback,
+  useMemo: (factory: () => unknown) => factory(),
 }));
 vi.mock("@tanstack/react-router", () => ({
   useRouter: () => ({ navigate: async () => recordEffect("project-settings") }),
@@ -155,33 +151,19 @@ const target = {
   threadId: ThreadId.make("thread"),
 };
 const position = { x: 10, y: 20 };
-let renderer: ReactTestRenderer | undefined;
-
-const createMenu = () => {
-  let menu!: ReturnType<typeof useThreadActionMenu>;
-  function Probe() {
-    menu = useThreadActionMenu({
-      threadRef: target,
-      projectCwd: "/project",
-      changeRequest: null,
-      onStartRename: () => recordEffect("rename"),
-    });
-    return null;
-  }
-  renderer = create(createElement(Probe));
-  return menu;
-};
+const createMenu = () =>
+  useThreadActionMenu({
+    threadRef: target,
+    projectCwd: "/project",
+    changeRequest: null,
+    onStartRename: () => recordEffect("rename"),
+  });
 
 beforeEach(() => {
   state.granted = new Set(["primary"]);
   state.effects = [];
   state.completed = deferred<void>();
   state.show.mockReset().mockResolvedValue(null);
-});
-
-afterEach(() => {
-  renderer?.unmount();
-  renderer = undefined;
 });
 
 describe("thread menu permissions", () => {
