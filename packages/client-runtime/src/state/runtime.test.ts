@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "@effect/vitest";
 import { EnvironmentId, type EnvironmentId as EnvironmentIdType } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -380,13 +381,11 @@ describe("finite environment subscription lifecycle", () => {
             ),
           ).pipe(Stream.ensuring(Deferred.succeed(closed, undefined)));
           // Following a registered environment normally remains open for replacements.
-          const environmentRegistry = EnvironmentRegistry.EnvironmentRegistry.of({
+          const environmentRegistry = EnvironmentRegistry.of({
             followStream: (_environmentId: EnvironmentId, source: typeof stream) =>
               Stream.concat(source, Stream.never),
-          } as unknown as EnvironmentRegistry.EnvironmentRegistry["Service"]);
-          const runtime = Atom.runtime(
-            Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
-          );
+          } as unknown as EnvironmentRegistry["Service"]);
+          const runtime = Atom.runtime(Layer.succeed(EnvironmentRegistry, environmentRegistry));
           const family = createEnvironmentSubscriptionAtomFamily(runtime, {
             label: "test.finite-subscription",
             subscribe: () => stream,
