@@ -48,6 +48,7 @@ const layerTest = Layer.mergeAll(
     { databaseLayer: layerDatabase, runEffectWorker: false },
   ),
 );
+const testLayer = layerTest;
 
 it.effect(
   "dispatches metadata, queue resume and request controls without hydrating unrelated history",

@@ -5,6 +5,8 @@
  * elements live in the renderer; we only attach listeners and forward state
  * here). Single layer-scoped browser session partition.
  */
+// @effect-diagnostics nodeBuiltinImport:off - evaluation object-group keys are
+// minted at the Electron debugger boundary with node:crypto.
 import * as NodeCrypto from "node:crypto";
 import {
   DesktopPreviewRecordingInputSchema,

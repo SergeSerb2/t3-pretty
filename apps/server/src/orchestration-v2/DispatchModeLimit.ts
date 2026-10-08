@@ -37,6 +37,7 @@ const runtimeModeRank: Record<RuntimeMode, number> = {
   "auto-accept-edits": 1,
   auto: 2,
   "full-access": 3,
+  yolo: 4,
 };
 const interactionModeRank: Record<ProviderInteractionMode, number> = { plan: 0, default: 1 };
 

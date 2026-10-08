@@ -716,7 +716,7 @@ it.effect(
         Effect.provide(
           Layer.merge(
             settingsLayer,
-            makeTestLayer({ state, idleTimeoutMs: 30_000, serverSettingsLayer: settingsLayer }),
+            layerTest({ state, idleTimeoutMs: 30_000, serverSettingsLayer: settingsLayer }),
           ),
         ),
       );

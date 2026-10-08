@@ -2741,6 +2741,9 @@ describe("OpenCode2 adapter", () => {
         endpoint: "http://127.0.0.1:3773/mcp",
         authorizationHeader: "Bearer thread-credential",
         browserToolsAvailable: false,
+        capabilities: new Set([]),
+        preview: false,
+        servers: [{ name: "t3-code", url: "http://127.0.0.1:3773/mcp" }],
       });
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => McpProviderSession.clearMcpProviderSession(child)),

@@ -3341,7 +3341,12 @@ export const WS_RPC_SERVER_OPTIONS = {
   disableFatalDefects: true,
 } as const;
 
-export const layer = Layer.unwrap(
+type WithoutInferredAny<T> = [0] extends [1 & T] ? never : T;
+
+// Pretty's extra RPCs plus 2787's RpcInstrumentation middleware make
+// Layer.Services infer `any`. Seal that so CLI/server typecheck can see a
+// real requirements channel; runtime wiring is unchanged.
+const layerWsRoute = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const secretRequestBroker = yield* SecretRequestBroker.SecretRequestBroker;
@@ -3449,3 +3454,9 @@ export const layer = Layer.unwrap(
     );
   }),
 );
+
+export const layer = layerWsRoute as Layer.Layer<
+  WithoutInferredAny<Layer.Success<typeof layerWsRoute>>,
+  WithoutInferredAny<Layer.Error<typeof layerWsRoute>>,
+  WithoutInferredAny<Layer.Services<typeof layerWsRoute>>
+>;
