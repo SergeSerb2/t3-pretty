@@ -106,6 +106,7 @@ const WSL_FORWARDED_ENV_NAMES = [
   "SENTRY_DSN",
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
+  "T3CODE_TELEMETRY_ENABLED",
   // Otherwise the WSL server keeps exporting to endpoints from the bootstrap.
   "T3CODE_OTEL_SDK_DISABLED",
   "OTEL_SDK_DISABLED",

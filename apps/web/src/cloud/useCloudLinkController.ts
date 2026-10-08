@@ -1,5 +1,6 @@
 import { useAuth } from "@clerk/react";
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
+import { EnvironmentId, AuthRelayReadScope, AuthRelayWriteScope } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -12,6 +13,7 @@ import { toastManager } from "../components/ui/toast";
 import { useCopyTraceId } from "../hooks/useCopyTraceId";
 import { useRelayEnvironmentDiscovery } from "../state/environments";
 import { relayEnvironmentDiscovery } from "../state/relay";
+import { readEnvironmentScope } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
 import { isRelayEnvironmentMissing } from "./connectMesh";
 import { isCloudLinkOnConfiguredRelayForAccount } from "./linkEnvironment";
@@ -20,7 +22,7 @@ import {
   unlinkPrimaryEnvironment as unlinkPrimaryEnvironmentAtom,
   updatePrimaryEnvironmentPreferences as updatePrimaryEnvironmentPreferencesAtom,
 } from "./linkEnvironmentAtoms";
-import { usePrimaryCloudLinkState } from "./primaryCloudLinkState";
+import { readCachedPrimaryCloudLinkState, usePrimaryCloudLinkState } from "./primaryCloudLinkState";
 import { resolveCloudPublicConfig, resolveRelayClerkTokenOptions } from "./publicConfig";
 
 export interface CloudLinkDesiredState {
@@ -118,8 +120,31 @@ export function useCloudLinkController() {
       reportUpdateFailure(new Error("Local environment is not ready yet."));
       return false;
     }
-    const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
+    const environmentId = EnvironmentId.make(target.environmentId);
+    const canManageLink = () => {
+      if (
+        !readEnvironmentScope(environmentId, AuthRelayReadScope) ||
+        !readEnvironmentScope(environmentId, AuthRelayWriteScope)
+      ) {
+        reportUpdateFailure(
+          new Error("This connection needs permission to view and manage T3 Connect settings."),
+        );
+        return false;
+      }
+      return true;
+    };
+    const readLinkState = () => {
+      const state = readCachedPrimaryCloudLinkState(target);
+      if (state === null) {
+        reportUpdateFailure(new Error("Wait until the current T3 Connect settings can be read."));
+      }
+      return state;
+    };
+    if (!canManageLink()) return false;
     const wantsLink = desired.managedTunnel || desired.publish;
+    if (wantsLink && readLinkState() === null) return false;
+    const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
+    if (!canManageLink()) return false;
 
     // A failure after this point may follow a partially applied mutation (e.g.
     // the link succeeded but the preference update did not), so every exit —
@@ -140,6 +165,8 @@ export function useCloudLinkController() {
         return false;
       }
     } else {
+      const currentLinkState = readLinkState();
+      if (currentLinkState === null) return false;
       if (tokenResult._tag === "Failure") {
         reportUpdateFailure(squashAtomCommandFailure(tokenResult));
         return false;
@@ -151,11 +178,19 @@ export function useCloudLinkController() {
         );
         return false;
       }
+      const currentLinked = isCloudLinkOnConfiguredRelayForAccount(
+        currentLinkState,
+        resolveCloudPublicConfig().relayUrl,
+        isSignedIn ? userId : null,
+      );
+      const currentManagedTunnel = currentLinkState.managedTunnelActive ?? currentLinkState.linked;
+      const currentRelayMembershipMissing =
+        currentLinked && isRelayEnvironmentMissing(relayDiscovery, target.environmentId);
       // Forks and self-hosted builds can change relay deployments while a host
       // still has a durable link to the previous one. Remove that local link
       // first so the new relay can install its account, issuer, credential, and
       // tunnel as one coherent configuration.
-      if (storedLinked && !linked) {
+      if (currentLinkState.linked && !currentLinked) {
         const unlinkResult = await unlinkPrimaryEnvironment({ target, clerkToken });
         if (unlinkResult._tag === "Failure") {
           if (!isAtomCommandInterrupted(unlinkResult)) {
@@ -166,9 +201,9 @@ export function useCloudLinkController() {
         }
       }
       if (
-        !linked ||
-        relayMembershipMissing ||
-        storedManagedTunnelActive !== desired.managedTunnel
+        !currentLinked ||
+        currentRelayMembershipMissing ||
+        currentManagedTunnel !== desired.managedTunnel
       ) {
         const linkResult = await linkPrimaryEnvironment({
           target,
@@ -182,6 +217,10 @@ export function useCloudLinkController() {
           primaryCloudLinkState.refresh();
           return false;
         }
+      }
+      if (!canManageLink() || readLinkState() === null) {
+        primaryCloudLinkState.refresh();
+        return false;
       }
       const prefResult = await updatePrimaryEnvironmentPreferences({
         target,

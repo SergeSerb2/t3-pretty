@@ -87,6 +87,7 @@ import Migration0069 from "./Migrations/069_AutomationCommandReceipts.ts";
 import Migration0070 from "./Migrations/057_ScheduledTaskWebhooks.ts";
 import Migration0071 from "./Migrations/058_WebhookRelayDeliveries.ts";
 import Migration0068 from "./Migrations/056_RemoveRedundantProjectionIndexes.ts";
+import Migration0073 from "./Migrations/059_McpAppModelContext.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -173,6 +174,7 @@ export const migrationEntries = [
   [70, "ScheduledTaskWebhooks", Migration0070],
   [71, "WebhookRelayDeliveries", Migration0071],
   [72, "WebhookDispatchOutbox", MigrationWebhookDispatchOutbox],
+  [73, "McpAppModelContext", Migration0073],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

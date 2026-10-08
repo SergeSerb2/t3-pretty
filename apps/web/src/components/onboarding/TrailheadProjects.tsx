@@ -4,6 +4,7 @@ import type {
   ProjectId,
   ScopedProjectRef,
 } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { CommandId, ProviderDriverKind } from "@t3tools/contracts";
@@ -25,6 +26,7 @@ import { agentSessionImport } from "../../state/agentSessions";
 import { readProjects } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { projectEnvironment } from "../../state/projects";
+import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { formatRelativeTime } from "../../timestampFormat";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -106,6 +108,17 @@ export function TrailheadProjects({
     [selectedPaths, recent],
   );
   const selected = candidates.filter((candidate) => selectedKeys.has(candidate.key));
+  const selectedEnvironments = useMemo(
+    () => selected.map((candidate) => ({ environmentId: candidate.environmentId })),
+    [selected],
+  );
+  const permittedImportEnvironments = useEnvironmentsWithScope(
+    selectedEnvironments,
+    AuthOrchestrationOperateScope,
+  );
+  const importDenied =
+    selected.length > 0 &&
+    selected.some((candidate) => !permittedImportEnvironments.has(candidate.environmentId));
   const isScanning =
     scans.every((scan) => scan.data === null) && scans.some((scan) => scan.isPending);
 
@@ -137,6 +150,10 @@ export function TrailheadProjects({
         importGeneration !== importGenerationRef.current ||
         importedProjects !== importedProjectsRef.current
       ) {
+        return;
+      }
+      if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) {
+        setIsImporting(false);
         return;
       }
       if (importedProjects.has(candidate.key)) continue;
@@ -176,6 +193,11 @@ export function TrailheadProjects({
           }
           continue;
         }
+      }
+
+      if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) {
+        setIsImporting(false);
+        return;
       }
 
       const threadImportResult = await importThreads({
@@ -324,6 +346,11 @@ export function TrailheadProjects({
         )}
       </TrailheadCardBody>
       <TrailheadCardFooter>
+        {importDenied ? (
+          <p className="mr-auto text-xs text-muted-foreground" role="status">
+            This connection cannot import projects or thread history.
+          </p>
+        ) : null}
         <Button
           variant="ghost-muted"
           disabled={isImporting}
@@ -334,7 +361,7 @@ export function TrailheadProjects({
         <Button
           size="lg"
           autoFocus
-          disabled={isImporting || selected.length === 0}
+          disabled={isImporting || selected.length === 0 || importDenied}
           onClick={() => void runImport(selected)}
         >
           {isImporting

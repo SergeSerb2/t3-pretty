@@ -1,3 +1,4 @@
+import { AuthPreviewOperateScope } from "@t3tools/contracts";
 import { Outlet, createFileRoute, redirect, useParams } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo, useRef } from "react";
@@ -9,6 +10,7 @@ import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
+import { useEnvironmentScope } from "../state/session";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
@@ -40,6 +42,10 @@ function ChatRouteGlobalShortcuts() {
     routeThreadRef,
     scopedProjectRef,
   } = useHandleNewThread();
+  const canOperatePreview = useEnvironmentScope(
+    routeThreadRef?.environmentId ?? null,
+    AuthPreviewOperateScope,
+  );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const isMobile = useIsMobile();
   const legacySidebarEnabled = useLegacySidebarEnabled();
@@ -174,7 +180,7 @@ function ChatRouteGlobalShortcuts() {
       if (command === "preview.toggle") {
         event.preventDefault();
         event.stopPropagation();
-        if (!routeThreadRef) return;
+        if (!routeThreadRef || (!canOperatePreview && !previewOpen)) return;
         if (!isPreviewSupportedInRuntime()) {
           toastManager.add(
             stackedThreadToast({
@@ -201,6 +207,7 @@ function ChatRouteGlobalShortcuts() {
       ) {
         event.preventDefault();
         event.stopPropagation();
+        if (!canOperatePreview) return;
         const action =
           command === "preview.refresh"
             ? "refresh"
@@ -223,6 +230,7 @@ function ChatRouteGlobalShortcuts() {
     activeDraftThread,
     activeThread,
     clearSelection,
+    canOperatePreview,
     handleNewThread,
     keybindings,
     defaultProjectRef,

@@ -52,6 +52,7 @@ export function GitBranchesSheet(props: GitBranchesSheetProps) {
   const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
+  const { canChangeThreadBranch } = gitActions;
 
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
@@ -84,19 +85,26 @@ export function GitBranchesSheet(props: GitBranchesSheetProps) {
   }, []);
 
   const runAndDismiss = useCallback(
-    async (action: () => Promise<boolean>, onSuccess?: () => void) => {
-      if (actionPendingRef.current || busy) return;
+    async (action: () => Promise<unknown>, onSuccess?: () => void) => {
+      if (!canChangeThreadBranch || actionPendingRef.current || busy) return;
       actionPendingRef.current = true;
       try {
-        const succeeded = await action();
-        if (!succeeded || !mountedRef.current || !navigation.isFocused()) return;
+        const result = await action();
+        if (
+          result === null ||
+          result === false ||
+          !mountedRef.current ||
+          !navigation.isFocused()
+        ) {
+          return;
+        }
         onSuccess?.();
         navigation.goBack();
       } finally {
         actionPendingRef.current = false;
       }
     },
-    [busy, navigation],
+    [busy, canChangeThreadBranch, navigation],
   );
 
   const disabledExistingBranches = useMemo(() => {
@@ -111,7 +119,7 @@ export function GitBranchesSheet(props: GitBranchesSheetProps) {
 
   const renderBranch = useCallback(
     ({ item: branch }: { item: (typeof availableBranches)[number] }) => {
-      const disabled = disabledExistingBranches.has(branch.name);
+      const disabled = !canChangeThreadBranch || disabledExistingBranches.has(branch.name);
       const subtitle = branch.worktreePath
         ? branch.worktreePath === currentWorktreePath
           ? "Checked out in this thread"
@@ -244,7 +252,7 @@ export function GitBranchesSheet(props: GitBranchesSheetProps) {
         }
         data={availableBranches}
         estimatedItemSize={64}
-        extraData={`${busy ? "busy" : "idle"}:${currentWorktreePath ?? ""}:${glass}`}
+        extraData={`${busy ? "busy" : "idle"}:${currentWorktreePath ?? ""}:${glass}:${canChangeThreadBranch}`}
         keyExtractor={(branch) => branch.name}
         ListHeaderComponent={
           <View className={Platform.OS === "android" ? "gap-2" : "gap-4"}>

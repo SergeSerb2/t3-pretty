@@ -359,7 +359,6 @@ export const make = Effect.gen(function* () {
         httpBaseUrl: connected.endpoint.httpBaseUrl,
         credential: connected.credential,
         dpopProof: bootstrapProof,
-        scopes: presentation.scopes,
         clientMetadata: presentation.metadata,
       }).pipe(
         Effect.mapError(mapRemoteDpopEnvironmentError),

@@ -8,6 +8,7 @@ import {
 
 const baseState: ThreadActionMenuState = {
   surface: "sidebar",
+  canOperate: true,
   branch: null,
   projectFilter: null,
   isPinned: false,
@@ -78,6 +79,62 @@ describe("buildThreadActionMenuItems", () => {
       "archive",
       "delete",
     ]);
+  });
+
+  it.each([false, true])(
+    "disables both header lifecycle directions without permission (reversed: %s)",
+    (reversed) => {
+      const items = buildThreadActionMenuItems({
+        ...baseState,
+        surface: "header",
+        canOperate: false,
+        isPinned: reversed,
+        isSettled: reversed,
+        isSnoozed: reversed,
+      });
+      const expected = reversed
+        ? [
+            "unpin",
+            "unsettle",
+            "unsnooze",
+            "rename",
+            "regenerate-title",
+            "auto-settle",
+            "archive",
+            "delete",
+          ]
+        : [
+            "pin",
+            "settle",
+            "snooze",
+            "rename",
+            "regenerate-title",
+            "auto-settle",
+            "archive",
+            "delete",
+          ];
+      expect(items.filter((item) => item.disabled).map((item) => item.id)).toEqual(expected);
+      expect(
+        items.find((item) => item.id === "snooze")?.children?.every((child) => child.disabled) ??
+          true,
+      ).toBe(true);
+    },
+  );
+
+  it("preserves local actions and restores mutations after a grant", () => {
+    const denied = buildThreadActionMenuItems({ ...baseState, canOperate: false, branch: "main" });
+    expect(
+      denied.filter((item) => item.separator !== true && !item.disabled).map((item) => item.id),
+    ).toEqual([
+      "new-thread-on-branch",
+      "mark-unread",
+      "copy",
+      "project-settings",
+    ]);
+    for (const surface of ["sidebar", "header"] as const) {
+      const allowed = buildThreadActionMenuItems({ ...baseState, surface, canOperate: true });
+      expect(allowed.every((item) => !item.disabled)).toBe(true);
+    }
   });
 
   it("hides lifecycle items when the environment lacks the capabilities", () => {

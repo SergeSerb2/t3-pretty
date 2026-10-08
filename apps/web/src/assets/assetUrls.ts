@@ -11,6 +11,7 @@ import { AsyncResult } from "effect/reactivity";
 import { useCallback, useMemo } from "react";
 
 import { assetEnvironment, localMediaEnvironment } from "~/state/assets";
+import { useFilesystemReadAccess } from "~/state/filesystem";
 import { usePreparedConnection } from "~/state/session";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
@@ -45,13 +46,20 @@ export function useAssetUrlState(
   environmentId: EnvironmentId | null,
   resource: AssetResource | null,
 ): AssetUrlState {
+  const fileAccess = useFilesystemReadAccess(environmentId);
+  const canReadResource =
+    fileAccess.canReadFiles ||
+    (resource?._tag !== "workspace-file" &&
+      resource?._tag !== "media-file" &&
+      resource?._tag !== "draft-workspace-file");
   const preparedConnection = usePreparedConnection(environmentId);
   const localMedia = useAtomValue(localMediaEnvironment);
   const result = useAtomValue(
-    environmentId === null || resource === null
+    !canReadResource || environmentId === null || resource === null
       ? EMPTY_ASSET_URL_ATOM
       : assetEnvironment.createUrl({ environmentId, input: { resource } }),
   );
+  if (!canReadResource) return { _tag: fileAccess.isPending ? "Loading" : "Failure" };
   return assetUrlStateFromResult(
     result,
     preparedConnection._tag === "Some" ? preparedConnection.value.httpBaseUrl : null,
@@ -86,25 +94,44 @@ export function useAssetUrls(
   const preparedConnection = usePreparedConnection(environmentId);
   const localMedia = useAtomValue(localMediaEnvironment);
   const allowedHttpBaseUrl = localMedia?.httpBaseUrl;
+  const { canReadFiles } = useFilesystemReadAccess(environmentId);
+  const allowedResources = useMemo(
+    () =>
+      canReadFiles
+        ? resources
+        : resources.filter(
+            (resource) =>
+              resource._tag !== "workspace-file" &&
+              resource._tag !== "media-file" &&
+              resource._tag !== "draft-workspace-file",
+          ),
+    [canReadFiles, resources],
+  );
   const results = useAtomValue(
     assetEnvironment.createUrls({
       environmentId,
-      resources,
+      resources: allowedResources,
     }),
   );
-  return useMemo(
-    () =>
-      preparedConnection._tag === "None"
-        ? resources.map(() => null)
-        : results.map((result) =>
-            AsyncResult.isSuccess(result)
-              ? resolveAssetUrl(
-                  preparedConnection.value.httpBaseUrl,
-                  result.value.relativeUrl,
-                  allowedHttpBaseUrl,
-                )
-              : null,
-          ),
-    [allowedHttpBaseUrl, preparedConnection, resources, results],
-  );
+  return useMemo(() => {
+    if (preparedConnection._tag === "None") return resources.map(() => null);
+    let resultIndex = 0;
+    return resources.map((resource) => {
+      if (
+        !canReadFiles &&
+        (resource._tag === "workspace-file" ||
+          resource._tag === "media-file" ||
+          resource._tag === "draft-workspace-file")
+      )
+        return null;
+      const result = results[resultIndex++];
+      return result && AsyncResult.isSuccess(result)
+        ? resolveAssetUrl(
+            preparedConnection.value.httpBaseUrl,
+            result.value.relativeUrl,
+            allowedHttpBaseUrl,
+          )
+        : null;
+    });
+  }, [allowedHttpBaseUrl, canReadFiles, preparedConnection, resources, results]);
 }

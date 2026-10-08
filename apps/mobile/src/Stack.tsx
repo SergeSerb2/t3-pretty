@@ -60,6 +60,7 @@ import { ThreadAgentsSheet } from "./features/threads/ThreadAgentsSheet";
 import { ThreadQueueSheet } from "./features/threads/ThreadQueueControl";
 import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";
 import { ThreadRenameSheet } from "./features/threads/ThreadRenameSheet";
+import { McpAppFullscreenScreen } from "./features/threads/McpAppFullscreenScreen";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
 import { HomeRouteScreen } from "./features/home/HomeRouteScreen";
@@ -862,6 +863,15 @@ const RootStackConfig = createNativeStackNavigator({
       screen: ThreadFileScreen,
       linking: `${THREAD_LINKING_PREFIX}/files/:path*`,
       options: SOLID_HEADER_OPTIONS,
+    }),
+    ThreadMcpApp: createNativeStackScreen({
+      screen: McpAppFullscreenScreen,
+      linking: `${THREAD_LINKING_PREFIX}/apps/:itemId`,
+      options: {
+        presentation: "fullScreenModal",
+        headerShown: false,
+        gestureEnabled: false,
+      },
     }),
     ThreadAttachment: createNativeStackScreen({
       screen: AttachmentFileScreen,

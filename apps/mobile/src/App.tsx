@@ -1,4 +1,5 @@
 import { AgentMonitoringEnrollmentCoordinator } from "./state/agentMonitoring";
+import { PermissionUpdateNotice } from "./components/PermissionUpdateNotice";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo } from "react";
@@ -119,6 +120,7 @@ function AppContent() {
       <SplashScreenCoordinator />
       <AgentMonitoringEnrollmentCoordinator />
       <SubscriptionUsageCoordinator />
+      <PermissionUpdateNotice />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>
           <SafeAreaProvider>

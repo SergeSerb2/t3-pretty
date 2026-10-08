@@ -28,6 +28,7 @@
 - [Remote access](./user/remote-access.md)
 - [T3 Connect mesh](./user/remote-access.md#t3-connect)
 - [Move a thread between environments](./user/remote-access.md#move-a-thread-to-another-environment)
+- [Outside agents (MCP)](./user/outside-agents.md)
 - [Running in the background](./user/background-service.md)
 - [Updating T3 Code](./user/updating.md)
 - [Automatic pull requests](./user/auto-pull-requests.md)

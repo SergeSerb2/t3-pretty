@@ -34,6 +34,7 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   const gitActions = useSelectedThreadGitActions();
   const actionPendingRef = useRef(false);
   const glass = useGlassChromeActive();
+  const { canWriteSourceControl, canChangeThreadBranch } = gitActions;
 
   const params = props.route.params;
 
@@ -61,7 +62,7 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   );
 
   const continuePendingAction = useCallback(async () => {
-    if (!confirmAction || actionPendingRef.current) return;
+    if (!canWriteSourceControl || !confirmAction || actionPendingRef.current) return;
     actionPendingRef.current = true;
     navigation.dispatch(StackActions.replace("Thread", { environmentId, threadId }));
     try {
@@ -73,10 +74,18 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
     } finally {
       actionPendingRef.current = false;
     }
-  }, [confirmAction, environmentId, gitActions, params, navigation, threadId]);
+  }, [
+    canWriteSourceControl,
+    confirmAction,
+    environmentId,
+    gitActions,
+    params,
+    navigation,
+    threadId,
+  ]);
 
   const movePendingActionToFeatureBranch = useCallback(async () => {
-    if (!confirmAction || actionPendingRef.current) return;
+    if (!canChangeThreadBranch || !confirmAction || actionPendingRef.current) return;
     actionPendingRef.current = true;
     navigation.dispatch(StackActions.replace("Thread", { environmentId, threadId }));
 
@@ -103,7 +112,16 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
     } finally {
       actionPendingRef.current = false;
     }
-  }, [confirmAction, gitActions, includesCommit, params, navigation, environmentId, threadId]);
+  }, [
+    canChangeThreadBranch,
+    confirmAction,
+    gitActions,
+    includesCommit,
+    params,
+    navigation,
+    environmentId,
+    threadId,
+  ]);
 
   return (
     <View
@@ -168,11 +186,13 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
             <SheetActionButton
               icon="arrow.right.circle"
               label={copy?.continueLabel ?? "Continue"}
+              disabled={!canWriteSourceControl}
               onPress={() => void continuePendingAction()}
             />
             <SheetActionButton
               icon="arrow.branch"
               label="Feature branch & continue"
+              disabled={!canChangeThreadBranch}
               tone="primary"
               onPress={() => void movePendingActionToFeatureBranch()}
             />

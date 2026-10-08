@@ -244,6 +244,7 @@ Full docs live in [docs/](./docs). There is no separate docs site.
 - [Organizing threads](./docs/user/thread-sidebar.md)
 - [Skills](./docs/user/skills.md) · [Apps](./docs/user/apps.md) · [Subagents](./docs/user/subagents.md)
 - [Remote access](./docs/user/remote-access.md) · [Surge Connect](./docs/user/remote-access.md#surge-connect)
+- [Connect Claude Code, Codex, ChatGPT and other agents over MCP](./docs/user/outside-agents.md)
 - [Source control](./docs/user/source-control.md) · [Automatic pull requests](./docs/user/auto-pull-requests.md)
 - [Provider handoff](./docs/user/provider-handoff.md)
 - [Usage](./docs/user/usage.md) · [Storage](./docs/user/storage.md)

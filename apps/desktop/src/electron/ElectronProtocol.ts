@@ -4,11 +4,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as NodePath from "node:path";
 import * as Option from "effect/Option";
-import * as NodeTimersPromises from "node:timers/promises";
 import * as NodeURL from "node:url";
 import * as Mime from "effect/http/Mime";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
@@ -224,7 +224,14 @@ async function handleRendererRequest(
     input.targetOrigin !== undefined &&
     (input.clientDistDir === undefined || !isRead || isApiPath)
   ) {
-    return proxyRequest(request, input.targetOrigin, contentSecurityPolicy);
+    // Reject with net.fetch's own error, as an unproxied fetch would.
+    return Effect.runPromise(
+      proxyRequest(request, input.targetOrigin, contentSecurityPolicy).pipe(
+        Effect.catchTags({
+          ElectronProtocolFetchError: (error) => Effect.die(error.cause),
+        }),
+      ),
+    );
   }
   if (input.clientDistDir !== undefined && isRead && !isApiPath) {
     return serveClientDistFile(input.clientDistDir, requestUrl.pathname, contentSecurityPolicy);
@@ -270,11 +277,37 @@ const registerDesktopSchemePrivileges = Effect.sync(registerDesktopSchemePrivile
 
 export const layerSchemePrivileges = Layer.effectDiscard(registerDesktopSchemePrivileges);
 
-async function proxyRequest(
+class ElectronProtocolFetchError extends Schema.TaggedError<ElectronProtocolFetchError>()(
+  "ElectronProtocolFetchError",
+  { cause: Schema.Defect() },
+) {}
+
+const netFetch = (url: string, init: RequestInit) =>
+  Effect.tryPromise({
+    try: () => {
+      init.signal?.throwIfAborted();
+      return Electron.net.fetch(url, init);
+    },
+    catch: (cause) => new ElectronProtocolFetchError({ cause }),
+  });
+
+// The dev renderer target can briefly refuse connections while Vite restarts:
+// retry idempotent requests after 50ms, then 150ms, and keep the last failure.
+const fetchWithTransientRetry = (url: string, init: RequestInit) =>
+  netFetch(url, init).pipe(
+    // Defects bypass retry, preserving cancellation and the original fetch error.
+    Effect.catchTags({
+      ElectronProtocolFetchError: (error) =>
+        init.signal?.aborted ? Effect.die(error.cause) : Effect.fail(error),
+    }),
+    Effect.retry({ schedule: Schedule.exponential("50 millis", 3), times: 2 }),
+  );
+
+const proxyRequest = Effect.fn("desktop.protocol.proxyRequest")(function* (
   request: Request,
   targetOrigin: URL,
   contentSecurityPolicy: string,
-): Promise<Response> {
+) {
   const requestUrl = new URL(request.url);
   const targetUrl = resolveProxyTargetUrl(requestUrl, targetOrigin);
   const headers = new Headers(request.headers);
@@ -307,10 +340,10 @@ async function proxyRequest(
   }
   const response =
     request.method === "GET" || request.method === "HEAD"
-      ? await fetchWithTransientRetry(targetUrl.toString(), init)
-      : await Electron.net.fetch(targetUrl.toString(), init);
+      ? yield* fetchWithTransientRetry(targetUrl.toString(), init)
+      : yield* netFetch(targetUrl.toString(), init);
   return withContentSecurityPolicy(response, contentSecurityPolicy);
-}
+});
 
 export function resolveProxyTargetUrl(requestUrl: URL, targetOrigin: URL): URL {
   const targetUrl = new URL(targetOrigin);
@@ -321,28 +354,6 @@ export function resolveProxyTargetUrl(requestUrl: URL, targetOrigin: URL): URL {
   targetUrl.search = requestUrl.search;
   targetUrl.hash = "";
   return targetUrl;
-}
-
-const TRANSIENT_FETCH_RETRY_DELAYS_MS = [0, 50, 150] as const;
-
-async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<Response> {
-  let lastError: unknown;
-
-  for (const delayMs of TRANSIENT_FETCH_RETRY_DELAYS_MS) {
-    init.signal?.throwIfAborted();
-    if (delayMs > 0) {
-      await NodeTimersPromises.setTimeout(delayMs);
-    }
-
-    try {
-      return await Electron.net.fetch(url, init);
-    } catch (error) {
-      if (init.signal?.aborted) throw error;
-      lastError = error;
-    }
-  }
-
-  throw lastError;
 }
 
 /** @public Service construction is part of the canonical Effect module API. */

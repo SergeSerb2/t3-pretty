@@ -1346,3 +1346,40 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
 - Re-applied Pretty environment label/remote URL max-length checks so the existing contract tests still hold, and only split same-machine clones when the checkout root is known so 2735 fork-origin grouping still works.
 - Origin review of this compose flagged the dropped fleet-update section and leftover `serverExposureLayer` / `makeEnvironmentLayer` / `httpClientLayer` aliases in desktop backend tests. Restored the policy from Origin `main` and pointed those call sites at `layerServerExposure` / `layerEnvironment` / `layerHttpClient`.
 - Pretty’s Windows stdin-delivery test still asserted a 48-hex static token after 2735 switched bootstrap to a 32-byte secret plus a rotating HMAC token. Kept the Pretty delivery assertions and applied the 2735 secret/token contract.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.46-nightly.20261007.2787`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261006.2735`
+- Conflict resolver: manual compose (Cursor Grok 4.6 Cloud Agent). Scheduled Buildkite sync (#3249 checkpoint, #3250 blocked) opened Origin PR #820. The automation's resolution cache was reused for 112 conflicted files; five remaining conflicts plus the WelcomeWizard modify/delete were composed by hand.
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/auth/PairingGrantStore.ts` — Kept all-requested-scopes consumption (`every()`, always pass `requestedScopes`). A rejected request must not consume a one-time pairing link. `AuthPairingLinks.consumeAvailable` already uses `NOT EXISTS` / `json_each` all-scopes SQL.
+- `apps/mobile/src/features/threads/ThreadGitControls.tsx` — Kept Pretty's PR / Snooze / Settle header. Accepted 2787 `AuthSourceControlWriteScope` gating and the `canOperateTerminal` / `canOpenTerminal` caller contract. Terminal operate remains in `ThreadTerminalRouteScreen` / Android header, not restored as a Pretty header item.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Kept Pretty `getCodexReview` (GraphQL + pagination) on top of 2787's `GitHubApi` rewrite. Re-exported `PinnedGitHubCredential` / `AllowGitHubReserve`. Error classes expose `detail` for `GitHubSourceControlProvider`.
+- `apps/server/src/mcp/McpHttpServer.ts` — One `threads` binding per registrar. Kept Pretty body-size helpers, capability middleware, `HtmlProjectService` provides, `toolkitRegistration` for orchestrator/device, `McpServer.toolkit` for ComputerUse/Automations/Secrets, and split `/mcp`, `/mcp/computer-use`, `/mcp/automations` transports.
+- WelcomeWizard stays deleted. Upstream's new wizard import/terminal coverage was retargeted at Trailhead (`Trailhead.import.test.tsx`, `Trailhead.terminal.test.tsx`) with Pretty labels and operate-scope gating on `TrailheadProjects` / `TrailheadAgents`.
+- Desktop listen-contract provides (`ServerBrowser`, `WebhookRoute` / `RelayDeliveryProof`) and Pretty-only drizzle snapshot entities were left in place (#818 / #819).
+
+## Parent changes integrated at conflict boundaries
+
+- 2787 OAuth MCP unauthorized challenge (`resource_metadata`, `invalid_token` only when a token was presented; no OAuth offer for provider-session tokens).
+- 2787 `GitHubApi` rewrite of `GitHubCli` (REST/GraphQL through the API service; `fromGitHubApiError` mapping).
+- Mobile git-control write-scope disablement for pull/push/commit.
+- Cache-applied compositions for the other conflicted files (112 entries from `automation/sync-resolution-cache`).
+
+## Parent changes intentionally omitted
+
+- Did not restore WelcomeWizard. Pretty's Trailhead is the onboarding surface.
+- Did not put 2787's terminal menu back into the iOS thread git header. Pretty's header is Settle / Snooze / PR; terminal authorization stays on the terminal route and Android header.
+
+## Post-merge repairs
+
+- `ChatView.tsx` exceeded the 256 KiB repair skip, so `PreviewSessionSync` / `useEnvironmentSupportsServerBrowser` were wired by hand. Raised `scripts/fork/repair-sync-tree.mjs` `MAX_FILE_BYTES` to 512 KiB.
+- `Sidebar.tsx` — imported `useAtomCommand`.
+- `packages/client-runtime/src/state/runtime.ts` — dropped the local duplicate `followStreamInEnvironment` (keep the `environmentStreams` import / re-export).
+- `editorPreferences.ts` — exported `resolveAndPersistPreferredEditor` for StorageSettings.
+- Tests: `onError` on file-save coordinators, `changeRequest: null` on `useThreadActionMenu`, `canOperateThread` on ComposerPrimaryActions standalone stop.

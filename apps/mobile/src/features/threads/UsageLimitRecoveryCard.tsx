@@ -72,7 +72,7 @@ export function UsageLimitRecoveryCard({
     <ComposerStackCard
       entering={enterFadeDown}
       exiting={exitFade}
-      className="mx-3 mb-2 gap-2 rounded-xl border border-warning-foreground/25 bg-background p-3"
+      className="mx-3 mb-2 gap-2 rounded-xl border border-warning-foreground/25 bg-screen p-3"
       glassClassName="mx-3 mb-2 gap-2 p-3"
     >
       <Text className="text-sm text-warning-foreground">

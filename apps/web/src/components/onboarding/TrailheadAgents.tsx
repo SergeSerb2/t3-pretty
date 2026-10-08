@@ -6,7 +6,12 @@ import type {
   ServerProvider,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { defaultInstanceIdForDriver, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
+import {
+  AuthTerminalOperateScope,
+  defaultInstanceIdForDriver,
+  ProviderDriverKind,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { ArrowRightIcon, CheckIcon, TerminalIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,6 +26,7 @@ import {
   selectOnboardingProvidersByDriver,
 } from "../../onboarding/providerReadiness.logic";
 import { useEnvironments } from "../../state/environments";
+import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { serverEnvironment } from "../../state/server";
 import { terminalEnvironment } from "../../state/terminal";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -105,6 +111,7 @@ function ConnectedAgentsStep({
     reportFailure: false,
   });
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const [terminalSession, setTerminalSession] = useState<AgentTerminalSession | null>(null);
   const [addingAccount, setAddingAccount] = useState(false);
   const [createdAccount, setCreatedAccount] = useState<{
@@ -149,6 +156,11 @@ function ConnectedAgentsStep({
           {machineLabel}
         </h2>
       ) : null}
+      {canOperateTerminal ? null : (
+        <p className="mb-2 text-xs text-muted-foreground" role="status">
+          This connection cannot control terminals.
+        </p>
+      )}
       <div className="space-y-1.5">
         {primaryAgents.map(({ driver, provider, instanceId }) =>
           driver === "codex" && serverConfig !== null ? (
@@ -162,8 +174,14 @@ function ConnectedAgentsStep({
                 setCreatedAccount((account) => (account ? { ...account, autoStart: false } : null))
               }
               terminalOpen={terminalSession?.driver === driver}
+              terminalAvailable={canOperateTerminal}
               onOpenTerminal={() => {
-                if (provider === undefined) return;
+                if (
+                  provider === undefined ||
+                  !readEnvironmentScope(environmentId, AuthTerminalOperateScope)
+                ) {
+                  return;
+                }
                 setTerminalSession({
                   environmentId,
                   driver,
@@ -189,9 +207,15 @@ function ConnectedAgentsStep({
               driver={driver}
               provider={provider}
               terminalOpen={terminalSession?.driver === driver}
-              terminalAvailable={serverConfig !== null}
+              terminalAvailable={serverConfig !== null && canOperateTerminal}
               onOpenTerminal={() => {
-                if (provider === undefined || serverConfig === null) return;
+                if (
+                  provider === undefined ||
+                  serverConfig === null ||
+                  !readEnvironmentScope(environmentId, AuthTerminalOperateScope)
+                ) {
+                  return;
+                }
                 setTerminalSession({
                   environmentId,
                   driver,
@@ -254,12 +278,14 @@ function OnboardingCodexSetup({
   provider,
   serverConfig,
   terminalOpen,
+  terminalAvailable,
   onOpenTerminal,
 }: {
   readonly environmentId: EnvironmentId;
   readonly provider: ServerProvider | undefined;
   readonly serverConfig: ServerConfig;
   readonly terminalOpen: boolean;
+  readonly terminalAvailable: boolean;
   readonly onOpenTerminal: () => void;
   readonly createdAccount: {
     instanceId: ProviderInstanceId;
@@ -315,7 +341,7 @@ function OnboardingCodexSetup({
       driver="codex"
       provider={provider}
       terminalOpen={terminalOpen}
-      terminalAvailable
+      terminalAvailable={terminalAvailable}
       onOpenTerminal={onOpenTerminal}
     />
   ) : (

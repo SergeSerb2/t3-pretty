@@ -46,7 +46,8 @@ const MODEL_DEADLINE_EPOCH_MS = Number(process.env.SYNC_MODEL_DEADLINE_EPOCH_MS 
 const MODEL_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_PROVIDER_AVAILABILITY_ATTEMPTS = 8;
 const MAX_LOG_BYTES = 48 * 1024;
-const MAX_FILE_BYTES = 256 * 1024;
+// ChatView.tsx is ~491 KiB; 256 KiB skipped it and left typecheck errors unfixed.
+export const MAX_FILE_BYTES = 512 * 1024;
 const MAX_PROMPT_BYTES = 600_000;
 const MAX_MODEL_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_MODEL_ERROR_BYTES = 64 * 1024;
