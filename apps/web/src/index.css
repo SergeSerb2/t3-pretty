@@ -2024,13 +2024,16 @@ html[data-window-inactive]
      the pointer down into the strip instead of cutting off at the composer
      lip. A wider halo (::after) sits under the core. Its scale follows
      --composer-hover-settle (tight while the hand is still moving, full once
-     the pointer rests) and transitions independently of the per-frame
-     `translate`, so tracking stays instant. Enter and exit timing come from
-     the shell's --composer-* hover vars.
+     the pointer rests). The first position on entry is instant; later samples
+     ease both layers toward each new position over 160ms, trailing the hand
+     slightly and catching up when it stops. The compositor
+     finishes that motion without further pointer samples or a running JS loop.
+     Enter and exit timing come from the shell's --composer-* hover vars.
      Each gradient keeps a full-range alpha ramp and applies its faintness as
      post-render opacity, avoiding the visible steps in a 2.5–6% ramp. */
   @media (hover: hover) and (pointer: fine) {
     .chat-composer-specular {
+      --spec-follow-t: 0ms;
       position: absolute;
       z-index: 0;
       inset: 0;
@@ -2040,6 +2043,10 @@ html[data-window-inactive]
       opacity: 0;
       transition: opacity calc(var(--composer-light-t) * var(--composer-hover-k))
         var(--composer-hover-ease) var(--composer-light-delay);
+    }
+
+    .chat-composer-specular[data-specular-tracking] {
+      --spec-follow-t: 160ms;
     }
 
     [data-slot="composer-shell"][data-with-context] .chat-composer-specular {
@@ -2093,8 +2100,10 @@ html[data-window-inactive]
       translate: var(--spec-x, -160px) var(--spec-y, -160px);
       scale: 0.97;
       will-change: translate;
-      transition: scale calc(var(--composer-light-t) * var(--composer-hover-k))
-        var(--composer-hover-ease) var(--composer-light-delay);
+      transition:
+        translate var(--spec-follow-t) ease-out,
+        scale calc(var(--composer-light-t) * var(--composer-hover-k)) var(--composer-hover-ease)
+          var(--composer-light-delay);
 
       @variant dark {
         background: radial-gradient(circle closest-side, white, transparent);
@@ -2115,8 +2124,10 @@ html[data-window-inactive]
       translate: var(--spec-x, -560px) var(--spec-y, -560px);
       scale: calc(0.93 + 0.07 * var(--composer-hover-settle, 0));
       will-change: translate;
-      transition: scale calc(var(--composer-bloom-t) * var(--composer-hover-k))
-        var(--composer-hover-ease) var(--composer-bloom-delay, 0ms);
+      transition:
+        translate var(--spec-follow-t) ease-out,
+        scale calc(var(--composer-bloom-t) * var(--composer-hover-k)) var(--composer-hover-ease)
+          var(--composer-bloom-delay, 0ms);
 
       @variant dark {
         background: radial-gradient(circle closest-side, white, transparent);

@@ -36,6 +36,7 @@ export function ComposerSpecular() {
     const host = layer?.parentElement;
     if (!layer || !host) return;
     let frame = 0;
+    let positioned = false;
     let x = 0;
     let y = 0;
     let decayTimer = 0;
@@ -131,6 +132,8 @@ export function ComposerSpecular() {
       // The bucket written on the way in can hide a same-bucket change.
       // Force this cross by clearing the cache for the phase we are entering.
       if (entered) {
+        positioned = false;
+        layer.removeAttribute("data-specular-tracking");
         writtenIn = "";
         writeScale("enter", sample.speed, sample.approachSpeed);
         writeSettle(composerHoverSettle(sample.speed));
@@ -157,8 +160,14 @@ export function ComposerSpecular() {
         frame = 0;
         if (!motionEnabled()) return;
         const rect = host.getBoundingClientRect();
+        // Place the glow instantly on entry. Later samples can ease from
+        // that painted position instead of sweeping in from the fallback.
+        if (positioned && !layer.hasAttribute("data-specular-tracking")) {
+          layer.setAttribute("data-specular-tracking", "");
+        }
         layer.style.setProperty("--spec-x", `${x - rect.left}px`);
         layer.style.setProperty("--spec-y", `${y - rect.top}px`);
+        positioned = true;
       });
     };
     document.addEventListener("pointermove", sampleVelocity, { passive: true, capture: true });
@@ -173,6 +182,7 @@ export function ComposerSpecular() {
       window.clearTimeout(decayTimer);
       clearSettleTimer();
       if (frame !== 0) cancelAnimationFrame(frame);
+      layer.removeAttribute("data-specular-tracking");
     };
   }, []);
 
