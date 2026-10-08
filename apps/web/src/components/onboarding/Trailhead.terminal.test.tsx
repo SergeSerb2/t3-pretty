@@ -477,13 +477,18 @@ describe("welcome agent terminal setup", () => {
     state.write.mockReturnValueOnce(writing.promise);
     await enterRemoteAgents();
     await click("Install");
-    await click("Back");
+    const back = renderer!.root
+      .findAllByType("button")
+      .find((node) => node.props["aria-label"] === "Back to Base camp");
+    expect(back).toBeDefined();
+    expect(back!.props.disabled).not.toBe(true);
+    await act(async () => back!.props.onClick());
     expect(state.close).not.toHaveBeenCalled();
     await act(async () => {
       setAccess(remoteId, false);
       writing.resolve(AsyncResult.success(undefined));
     });
     expect(state.close).not.toHaveBeenCalled();
-    expect(text(renderer!.root)).toContain("Connect your computers");
+    expect(text(renderer!.root)).toContain("Let’s see what you brought.");
   });
 });

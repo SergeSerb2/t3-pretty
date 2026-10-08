@@ -243,11 +243,11 @@ describe("applyRepairEdits", () => {
     });
     assert.equal(Buffer.byteLength(updated.get("ChatView.tsx"), "utf8"), targetBytes);
 
-    const oversize = `${"x".repeat(MAX_FILE_BYTES + 1)}\n`;
+    const oversize = `OVERSIZE_UNIQUE${"x".repeat(MAX_FILE_BYTES + 1 - 15)}\n`;
     assert.throws(
       () =>
         applyRepairEdits({
-          edits: [{ path: "big.ts", old_text: "xxxxx", new_text: "yyyyy" }],
+          edits: [{ path: "big.ts", old_text: "OVERSIZE_UNIQUE", new_text: "OVERSIZE_FIXED!" }],
           sources: new Map([["big.ts", oversize]]),
           editable: new Set(["big.ts"]),
         }),
