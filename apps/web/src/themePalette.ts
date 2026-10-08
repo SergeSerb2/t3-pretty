@@ -8,7 +8,7 @@ import {
   GROVE_THEME,
   IRIS_THEME,
   OCEAN_THEME,
-  T3_CHAT_THEME,
+  T3_CHAT_THEME as SHARED_T3_CHAT_THEME,
   T3_CODE_LIGHT_THEME_COLORS,
   T3_CODE_DARK_THEME_COLORS,
   RESERVED_THEME_IDS,
@@ -401,6 +401,10 @@ const T3_CHAT_LIGHT_COLORS: ThemeColors = {
   // dark plum pair here also leaked the dark palette into T3 Pretty's diffs.
   codeBackground: "#f5ecf9",
   codeForeground: "#673c8b",
+  searchMatchBackground: "#f1c4e6",
+  searchMatchForeground: "#77347c",
+  searchMatchActiveBackground: "#db2777",
+  searchMatchActiveForeground: "#ffffff",
   // The live sidebar is transparent over T3 Chat's outer shell. Use that
   // rendered shell color rather than its unused, darker sidebar token.
   sidebar: "#f2e1f4",
@@ -471,6 +475,10 @@ const T3_CHAT_DARK_COLORS: ThemeColors = {
   // continuous with the themed canvas instead of dropping to near-black.
   codeBackground: "#1f1a24",
   codeForeground: "#d8c3ef",
+  searchMatchBackground: "#463753",
+  searchMatchForeground: "#f8f1f5",
+  searchMatchActiveBackground: "#a3004c",
+  searchMatchActiveForeground: "#fbd0e8",
   // The live sidebar starts from #131314, then gains its hue from a pink
   // gradient/noise stack. This pre-grain base lands on the same #1a131a
   // visible shell color after our surface-grain layer is composited.
@@ -490,6 +498,15 @@ const T3_CHAT_DARK_COLORS: ThemeColors = {
   terminalSelection: "#362d3d",
   terminalScrollbar: "#302029",
   terminalScrollbarHover: "#423a45",
+};
+
+const T3_CHAT_THEME: ThemeDefinition = {
+  ...SHARED_T3_CHAT_THEME,
+  colors: T3_CHAT_LIGHT_COLORS,
+  variants: {
+    ...SHARED_T3_CHAT_THEME.variants,
+    dark: T3_CHAT_DARK_COLORS,
+  },
 };
 
 /**
@@ -1251,7 +1268,9 @@ export function updateThemeColorFamily(
   }
 }
 
-const BUILT_IN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = BUILT_IN_THEMES;
+const BUILT_IN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = BUILT_IN_THEMES.map((theme) =>
+  theme.id === T3_CHAT_THEME.id ? T3_CHAT_THEME : theme,
+);
 
 export function getThemeDefinition(theme: ThemePreference): ThemeDefinition | null {
   const themeId = themeIdFromPreference(theme);

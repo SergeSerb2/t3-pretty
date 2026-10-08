@@ -1,7 +1,7 @@
 import { skillMentionMatchesName } from "@t3tools/shared/skillTool";
 import { Children, cloneElement, isValidElement, type ReactNode } from "react";
 import type { ServerProviderSkill } from "@t3tools/contracts";
-import { formatProviderSkillDisplayName } from "@t3tools/client-runtime/providerSkills";
+import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 
 import { SKILL_CHIP_ICON_SVG } from "../composerInlineChip";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
