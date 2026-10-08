@@ -1328,6 +1328,10 @@ function UsageEnvironmentFilter({
     : selectedEnvironments.length === 1
       ? selectedEnvironments[0]!.label
       : `${selectedEnvironments.length} environments`;
+  const pendingCount = selectedEnvironments.filter(
+    (environment) =>
+      environment.error === null && (environment.isPending || environment.summary === null),
+  ).length;
   const hasIssue =
     selectedEnvironments.some((environment) => environment.error !== null) ||
     contractMismatches.length > 0;

@@ -9043,7 +9043,6 @@ export default function ChatView(props: ChatViewProps) {
     const directAnnotation = options?.annotation
       ? { annotation: options.annotation, image: options.image ?? null }
       : undefined;
-    const keepFullHistory = keepFullHistoryOnceRef.current;
     // Typed out in full rather than picked from the menu. Attachments or contexts
     // mean the user is sending a prompt, so those go through as usual.
     if (
