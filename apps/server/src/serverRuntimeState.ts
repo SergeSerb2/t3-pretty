@@ -1,10 +1,13 @@
 import * as DateTime from "effect/DateTime";
+import { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import { writeFileStringAtomically } from "./atomicWrite.ts";
+import { readTextWithinLimit } from "./boundedFileRead.ts";
 import type * as ServerConfig from "./config.ts";
 import { formatHostForUrl, isWildcardHost } from "./startupAccess.ts";
 
@@ -18,10 +21,16 @@ export const PersistedServerRuntimeState = Schema.Struct({
   // Dev is single-origin: browsers must pair through this URL, not `origin`.
   devUrl: Schema.optional(Schema.String),
   startedAt: Schema.String,
+  /**
+   * Set when the boot-service launcher supervises this server. Lets a CLI
+   * tell a service-managed server apart from one started by hand, which is
+   * the difference between "restart the service" and "stop your terminal".
+   */
+  serviceManaged: Schema.optional(Schema.Boolean),
 });
 export type PersistedServerRuntimeState = typeof PersistedServerRuntimeState.Type;
 
-export class ServerRuntimeStateError extends Schema.TaggedErrorClass<ServerRuntimeStateError>()(
+export class ServerRuntimeStateError extends Schema.TaggedError<ServerRuntimeStateError>()(
   "ServerRuntimeStateError",
   {
     operation: Schema.Literals(["persist", "read", "decode", "clear"]),
@@ -37,6 +46,7 @@ export class ServerRuntimeStateError extends Schema.TaggedErrorClass<ServerRunti
 const decodePersistedServerRuntimeState = Schema.decodeUnknownEffect(
   Schema.fromJsonString(PersistedServerRuntimeState),
 );
+const SERVER_RUNTIME_STATE_MAX_BYTES = 64 * 1024;
 
 const runtimeOriginForConfig = (
   config: Pick<ServerConfig.ServerConfig["Service"], "host">,
@@ -50,6 +60,7 @@ const runtimeOriginForConfig = (
 export const makePersistedServerRuntimeState = (input: {
   readonly config: Pick<ServerConfig.ServerConfig["Service"], "host" | "devUrl">;
   readonly port: number;
+  readonly serviceManaged?: boolean;
 }): Effect.Effect<PersistedServerRuntimeState> =>
   Effect.map(DateTime.now, (now) => ({
     version: 1,
@@ -59,6 +70,7 @@ export const makePersistedServerRuntimeState = (input: {
     origin: runtimeOriginForConfig(input.config, input.port),
     ...(input.config.devUrl ? { devUrl: input.config.devUrl.toString() } : {}),
     startedAt: DateTime.formatIso(now),
+    ...(input.serviceManaged ? { serviceManaged: true } : {}),
   }));
 
 export const persistServerRuntimeState = (input: {
@@ -104,12 +116,45 @@ export const clearPersistedServerRuntimeState = (path: string) =>
     );
   });
 
+/**
+ * Report whether the pid recorded in a persisted runtime state is still
+ * running. Signal 0 delivers nothing; it only reports whether the pid exists.
+ * EPERM means it exists but belongs to another user, which still counts as
+ * alive.
+ */
+export const isProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "EPERM";
+  }
+};
+
+/** A reused PID alone is not evidence that the recorded T3 server still owns its origin. */
+export const isRecordedServerResponding = (state: PersistedServerRuntimeState) =>
+  Effect.gen(function* () {
+    const url = yield* Effect.try(() => new URL("/.well-known/t3/environment", state.origin));
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return false;
+    const client = yield* HttpClient.HttpClient;
+    const response = yield* client.execute(HttpClientRequest.get(url.toString()));
+    yield* HttpClientResponse.filterStatusOk(response).pipe(
+      Effect.flatMap(HttpClientResponse.schemaBodyJson(ExecutionEnvironmentDescriptor)),
+    );
+    return true;
+  }).pipe(
+    Effect.timeoutOrElse({ duration: 2_500, orElse: () => Effect.succeed(false) }),
+    Effect.orElseSucceed(() => false),
+    Effect.provide(FetchHttpClient.layer),
+  );
+
 export const readPersistedServerRuntimeState = (path: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const raw = yield* fs.readFileString(path).pipe(
-      Effect.matchEffect({
-        onFailure: (cause) =>
+    const raw = yield* readTextWithinLimit(fs, path, SERVER_RUNTIME_STATE_MAX_BYTES).pipe(
+      Effect.map(Option.some),
+      Effect.catchTags({
+        PlatformError: (cause) =>
           cause.reason._tag === "NotFound"
             ? Effect.succeed(Option.none<string>())
             : Effect.fail(
@@ -119,7 +164,14 @@ export const readPersistedServerRuntimeState = (path: string) =>
                   cause,
                 }),
               ),
-        onSuccess: (contents) => Effect.succeed(Option.some(contents)),
+        FileSizeLimitExceededError: (cause) =>
+          Effect.fail(
+            new ServerRuntimeStateError({
+              operation: "read",
+              statePath: path,
+              cause,
+            }),
+          ),
       }),
     );
     if (Option.isNone(raw)) {

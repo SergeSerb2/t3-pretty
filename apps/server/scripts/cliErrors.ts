@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-export class ServerCliCommandExitError extends Schema.TaggedErrorClass<ServerCliCommandExitError>()(
+export class ServerCliCommandExitError extends Schema.TaggedError<ServerCliCommandExitError>()(
   "ServerCliCommandExitError",
   {
     command: Schema.String,
@@ -14,7 +14,7 @@ export class ServerCliCommandExitError extends Schema.TaggedErrorClass<ServerCli
   }
 }
 
-export class ServerCliPublishIconSourceMissingError extends Schema.TaggedErrorClass<ServerCliPublishIconSourceMissingError>()(
+export class ServerCliPublishIconSourceMissingError extends Schema.TaggedError<ServerCliPublishIconSourceMissingError>()(
   "ServerCliPublishIconSourceMissingError",
   {
     sourcePath: Schema.String,
@@ -25,7 +25,7 @@ export class ServerCliPublishIconSourceMissingError extends Schema.TaggedErrorCl
   }
 }
 
-export class ServerCliPublishIconTargetMissingError extends Schema.TaggedErrorClass<ServerCliPublishIconTargetMissingError>()(
+export class ServerCliPublishIconTargetMissingError extends Schema.TaggedError<ServerCliPublishIconTargetMissingError>()(
   "ServerCliPublishIconTargetMissingError",
   {
     targetPath: Schema.String,
@@ -36,7 +36,7 @@ export class ServerCliPublishIconTargetMissingError extends Schema.TaggedErrorCl
   }
 }
 
-export class ServerCliDevelopmentIconSourceMissingError extends Schema.TaggedErrorClass<ServerCliDevelopmentIconSourceMissingError>()(
+export class ServerCliDevelopmentIconSourceMissingError extends Schema.TaggedError<ServerCliDevelopmentIconSourceMissingError>()(
   "ServerCliDevelopmentIconSourceMissingError",
   {
     sourcePath: Schema.String,
@@ -47,7 +47,7 @@ export class ServerCliDevelopmentIconSourceMissingError extends Schema.TaggedErr
   }
 }
 
-export class ServerCliDevelopmentIconTargetMissingError extends Schema.TaggedErrorClass<ServerCliDevelopmentIconTargetMissingError>()(
+export class ServerCliDevelopmentIconTargetMissingError extends Schema.TaggedError<ServerCliDevelopmentIconTargetMissingError>()(
   "ServerCliDevelopmentIconTargetMissingError",
   {
     targetPath: Schema.String,
@@ -58,7 +58,7 @@ export class ServerCliDevelopmentIconTargetMissingError extends Schema.TaggedErr
   }
 }
 
-export class ServerCliBuildAssetMissingError extends Schema.TaggedErrorClass<ServerCliBuildAssetMissingError>()(
+export class ServerCliBuildAssetMissingError extends Schema.TaggedError<ServerCliBuildAssetMissingError>()(
   "ServerCliBuildAssetMissingError",
   {
     assetPath: Schema.String,
@@ -66,5 +66,17 @@ export class ServerCliBuildAssetMissingError extends Schema.TaggedErrorClass<Ser
 ) {
   override get message(): string {
     return `Missing build asset: ${this.assetPath}. Run the build subcommand first.`;
+  }
+}
+
+export class ServerCliExecutableImportError extends Schema.TaggedError<ServerCliExecutableImportError>()(
+  "ServerCliExecutableImportError",
+  {
+    bundlePath: Schema.String,
+    specifiers: Schema.Array(Schema.String),
+  },
+) {
+  override get message(): string {
+    return `${this.bundlePath} imports file-backed packages that a single-executable cannot resolve: ${this.specifiers.join(", ")}. Load them through createRequire instead.`;
   }
 }

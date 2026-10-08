@@ -2,14 +2,19 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-The connection runtime is shared by web and mobile. It owns connectivity,
-authentication, retries, transport lifetime, cached environment data, and
-environment-scoped operations.
+The connection runtime in `packages/client-runtime` is shared by web, the
+desktop renderer, and mobile. It owns connectivity, authentication, retries,
+transport lifetime, cached environment data, and environment-scoped operations.
+Platform layers supply storage, credentials, network signals, and application
+lifecycle events; React views consume the runtime.
 
-Web and mobile mount this runtime once at the application root and compose it
-identically: `apps/web/src/connection/runtime.ts` and
+Web, the desktop renderer, and mobile mount this runtime once at the application
+root. The web and mobile entry points compose it identically:
+`apps/web/src/connection/runtime.ts` and
 `apps/mobile/src/connection/runtime.ts` differ only in the platform layer they
-supply. There is no legacy connection owner or supported mixed mode.
+supply. There is no legacy connection owner or supported mixed mode. Keeping
+ownership here prevents competing reconnect loops when several views need the
+same environment.
 
 ## Composition
 
@@ -33,7 +38,8 @@ The registry creates one environment-scoped supervisor per environment.
 supervisor when the catalog entry is unchanged, and closes and recreates the
 scope when it changed. `createServiceScope` builds an `EnvironmentSupervisor`
 bound to a closeable scope and connects it; `run` and `runStream` execute caller
-effects with that supervisor provided.
+effects with that supervisor provided. Cloud-account changes apply only to relay
+registrations and do not discard directly paired environments.
 
 `EnvironmentSupervisor` owns desired state, retry scheduling, and the active
 session scope. React components do not create connections, transports, retry
@@ -41,27 +47,32 @@ loops, or RPC clients.
 
 ## Connection State
 
-The supervisor is the only retry owner.
+The supervisor is the only retry owner. Resolving an endpoint and opening an RPC
+session remain single attempts.
 
 1. A persisted or platform registration marks an environment as desired.
-2. If the device is offline, the supervisor releases the active session and
-   waits for a signal without consuming retry attempts or running a timer.
+2. If the device is offline while no session is established, the supervisor
+   waits for a signal without consuming retry attempts or running a timer. The
+   long mobile-resume recovery described below may still start a fresh attempt
+   because the platform's network report can be stale.
 3. When online, it asks the driver for one prepared connection and one RPC
    session.
-4. Transient failures retry forever with exponential backoff that grows to a
-   five-minute cap (`RETRY_DELAYS_MS`). The long tail keeps a permanently
-   offline environment at a few hundred connection attempts per day instead of
-   several thousand, which matters for relay targets where every attempt is a
-   billed relay Worker request. A connection stable for 30 seconds resets
-   accumulated backoff, and when such a connection drops the first reconnect
-   starts immediately instead of sleeping the first rung (a suspended phone
-   whose socket an idle proxy closed, a laptop waking up); only a failure of
-   that immediate attempt walks the ladder.
+4. Transient failures retry forever with jittered exponential backoff whose
+   nominal delay grows to a five-minute cap (`RETRY_DELAYS_MS`). Jitter prevents
+   every client of a restarted server from reconnecting in the same second. The
+   long tail keeps a permanently unreachable environment at a few hundred
+   connection attempts per day instead of several thousand, which matters for
+   relay targets where every attempt is a billed relay Worker request. Only a
+   connection stable for 30 seconds resets accumulated backoff, and when such a
+   connection drops the first reconnect starts immediately instead of sleeping
+   the first rung (a suspended phone whose socket an idle proxy closed, a laptop
+   waking up); only a failure of that immediate attempt walks the ladder.
 5. Authentication or configuration failures remain blocked until an external
    wakeup changes the relevant input.
 6. An involuntary session close keeps the registration and cache, then retries.
 7. Explicit removal closes the session and deletes the registration,
-   credentials, shell cache, and thread cache.
+   credentials, shell cache, and thread cache. It also runs
+   `EnvironmentOwnedDataCleanup` for platform-owned state such as drafts.
 
 ### Wakeups
 
@@ -71,9 +82,10 @@ Wakeup handling differs by phase, in [supervisor.ts][supervisor]:
   plain application activation. Restarting an in-flight attempt because the app
   came to the foreground would only delay it. The exception is
   `application-active-reconnect`, which mobile emits after a meaningful
-  background suspension; it interrupts establishment and resets the retry
-  ladder, because the OS may have silently killed the socket underneath the
-  attempt.
+  background suspension; it interrupts establishment, resets the retry ladder,
+  and may start the fresh attempt even while the platform reports offline,
+  because the OS may have silently killed the socket and the report may be
+  stale.
 - Credential changes interrupt establishment only for relay targets, where a new
   credential changes what is being established.
 - Explicit disconnect, explicit retry, and going offline interrupt establishment
@@ -81,17 +93,21 @@ Wakeup handling differs by phase, in [supervisor.ts][supervisor]:
 - While waiting out backoff, application activation resets the retry ladder so a
   foregrounded app reconnects immediately instead of serving the remaining
   delay.
-- Once connected, `monitorConnectedLease` handles every activation by probing
-  the existing session (`lease.session.probe`, with a shorter timeout for the
-  mobile reasons) rather than reconnecting; a healthy session survives
-  foregrounding. `application-active-reconnect`, which mobile emits after a
-  longer background stint, additionally opens a replacement lease in parallel
-  with the probe (make-before-break): a healthy probe cancels the replacement,
-  while a dead transport (probe failure or timeout, or the peer's buffered
-  close arriving on resume) swaps to the replacement the moment it is ready —
-  without waiting out the probe timeout and without a backoff sleep. The old
-  lease is unpublished as soon as it is known dead so the UI reports the
-  reconnect honestly.
+- Once connected, `monitorConnectedLease` handles ordinary application
+  activation, an explicit retry, and an offline report by probing the existing
+  session (`lease.session.probe`, with a shorter timeout for the mobile reasons)
+  rather than reconnecting. Only a failed probe reconnects, so a healthy session
+  survives foregrounding and an incorrect offline report, including one for a
+  reachable loopback server.
+- `application-active-reconnect`, which mobile emits after a longer background
+  stint, additionally starts a replacement lease at once, in parallel with the
+  probe, even while the platform reports offline (make-before-break). A healthy
+  probe cancels the replacement, while a dead transport (probe failure or
+  timeout, or the peer's buffered close arriving on resume) swaps to the
+  replacement the moment it is ready — without holding a dead socket in
+  `Resuming` until the probe timeout and without a backoff sleep. The old lease
+  is unpublished as soon as it is known dead so the UI reports the reconnect
+  honestly.
 - Foreground wakeups never rebuild subscriptions on a surviving session: the
   server keeps streaming into a healthy socket while the app is suspended, so
   there is nothing to catch up on. Only a replaced session re-handshakes, from
@@ -105,6 +121,21 @@ the initial config RPC succeeds, proving that the server is responsive. Shell
 and thread synchronization are independent data states. A healthy RPC transport
 with a failed shell subscription is shown as connected with a synchronization
 error, not as a reconnect that is not actually scheduled.
+
+## HTTP Authorization
+
+RPC sessions authenticate at socket upgrade, while HTTP requests resolve current
+credentials from the
+[authorization service](../../packages/client-runtime/src/authorization/service.ts).
+Refreshing HTTP authorization does not replace a healthy socket: doing so would
+interrupt conversations and change the transport generation without a transport
+failure. Credential expiry does not close the socket, and refresh failure belongs
+to the HTTP operation.
+
+Session listings retain unrevoked connected sessions after credential expiry so
+an open connection does not disappear from connection management. This does not
+extend the credential's lifetime. New HTTP requests and socket upgrades still
+require valid credentials.
 
 ## Data Boundary
 
@@ -120,12 +151,24 @@ Finite requests, durable subscriptions, and commands are separate APIs:
   `retryExpectedFailureAfter` is set, sleeps and resubscribes on the **same**
   session. A healthy transport is never torn down for a domain failure.
 - Mutations resolve the current environment runtime at execution time.
+  Reconnection does not automatically replay them; retry and idempotency rules
+  belong to the operation.
 - Shell and thread snapshots are available while offline.
 - Sync status is explicit and independent per domain. Shell status is `empty`,
   `cached`, `synchronizing`, or `live`, with a separate `error` field; there is
   no `failed` status. Thread status adds `deleted`.
 - Cached shell and thread projections are never allowed to overwrite newer live
   data during a fast reconnect.
+- [Thread detail](../../packages/client-runtime/src/state/threads.ts) separates
+  subscription lifetime from cache lifetime. Mounted consumers share one live
+  stream, which stops when the last consumer unmounts; hidden mounted routes
+  still count. A registry-local cache retains state and its replay cursor for
+  five idle minutes so back navigation can resume without another snapshot
+  download.
+- Thread detail state and its cursor are retained together only after an update
+  finishes. Cancellation must not advance the cached cursor beyond the applied
+  data, and an old scope must not overwrite its successor's cache. Reuse
+  preserves pagination data while clearing canceled loading state.
 - Domain atom factories route effects through the environment registry and
   resolve the current scoped service at execution time. Project and thread
   commands are Atom factories under `src/state`
@@ -136,6 +179,15 @@ Finite requests, durable subscriptions, and commands are separate APIs:
 
 The Promise bridge exists only at the React/Atom boundary. Runtime and business
 logic remain Effect-native.
+
+The desktop app adds one consumer: a
+[keep-alive](../../apps/web/src/state/threads.ts) mounts every thread whose
+session is starting or running, in each enabled environment. Opening a running
+thread then needs no replay. The shell and detail streams are independent, so
+the shell can report a stop before the detail loads or catches up. A stopped
+thread stays mounted until its own stream is live and shows the stop, and the
+stream then closes and saves the settled state.
+Web and mobile do not keep threads alive.
 
 ## Platform Layers
 
@@ -153,6 +205,19 @@ Platform layers adapt operating-system capabilities. They do not implement
 connection policy. `EnvironmentOwnedDataCleanup` is part of this contract: on
 removal the registry clears its cache and calls the platform implementation, so
 web clears composer drafts and mobile clears drafts plus the thread outbox.
+
+Mobile cloud sign-out first saves relay drafts and queued messages in the local
+composer store under the owning account. These saved copies retain attachment
+files during cleanup and remain outside the active composer and upload queue.
+Signing back into that account restores them before relay credentials activate.
+Directly paired environments keep their drafts and outbox when cloud sign-out runs.
+
+Mobile composer attachments upload over HTTP while their environment is connected,
+with at most three concurrent transfers. Drafts retain local image data or an owned
+file URI alongside the pending upload ID. Sending verifies and reuses that ID, or
+uploads the local bytes again if it expired. Disconnecting cancels active transfers
+without discarding drafts; reconnecting resumes preparation. Older servers without
+attachment-upload support continue to receive inline images.
 
 ## Source Boundaries
 
@@ -179,7 +244,7 @@ Core state-machine tests use `@effect/vitest` and deterministic service layers.
 Required coverage includes:
 
 - offline startup and online wakeup;
-- forever retry with the 16-second cap;
+- forever retry with the five-minute cap;
 - explicit retry interrupting backoff;
 - authentication wakeups;
 - involuntary close and reconnect;

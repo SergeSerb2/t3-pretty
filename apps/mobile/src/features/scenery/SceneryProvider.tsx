@@ -22,9 +22,22 @@ import {
 } from "react";
 
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
+import { Platform } from "react-native";
+
+import {
+  resolveSharedSceneryPhotoSet,
+  shouldPublishLocalSceneryPhotoSet,
+} from "@t3tools/client-runtime/state/scenery-sync";
+import {
+  filterSharedServerPatch,
+  supportsSharedSettingsSync,
+} from "@t3tools/client-runtime/state/shared-settings";
 
 import { isBoringMobileTheme } from "../../lib/mobileTheme";
+import { useEnvironments } from "../../state/environments";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 import type { MobileSceneryPreferences } from "../../persistence/mobile-preferences";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -67,6 +80,8 @@ function resolveScenery(raw: MobileSceneryPreferences | null | undefined): Resol
 
 interface SceneryContextValue extends ResolvedScenery {
   readonly isReady: boolean;
+  /** iOS Reduce Transparency, read once here rather than per consumer. */
+  readonly reduceTransparency: boolean;
   /** Assigned photo for a thread key, or the deterministic hash fallback. */
   readonly photoForThreadKey: (threadKey: string) => SceneryPhoto | null;
   /** Today's featured photo for the no-thread home screen. */
@@ -80,8 +95,13 @@ interface SceneryContextValue extends ResolvedScenery {
 }
 
 const SceneryContext = createContext<SceneryContextValue | null>(null);
+/** Whether translucent chrome may float over the photo. Its own context so
+    list rows reading it skip the photo-assignment and preference churn of
+    the full scenery value. */
+const SceneryChromeContext = createContext(false);
 
 const EMPTY_SEEDS: ReadonlyArray<SceneryPhoto> = [];
+let liftedSceneryPhotoSet: string | null = null;
 
 /** Backoff for a failed/empty extra-set import before the pool blanks. */
 const SEED_RETRY_DELAYS_MS: ReadonlyArray<number> = [500, 2000];
@@ -98,6 +118,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     [preferencesResult],
   );
   const isReady = AsyncResult.isSuccess(preferencesResult) && !preferencesResult.waiting;
+  const reduceTransparency = useReduceTransparency();
 
   // Writes read through a ref so a same-tick burst of first-sight assignments
   // (e.g. restoring a back stack) cannot drop each other while the optimistic
@@ -237,6 +258,67 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     (value: number) => persistScenery({ translucency: clampTranslucency(value) }),
     [persistScenery],
   );
+  const { environments } = useEnvironments();
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    label: "scenery photo set sync",
+    reportFailure: false,
+  });
+  const publishPhotoSet = useCallback(
+    (nextPhotoSetId: PhotoSetId) => {
+      liftedSceneryPhotoSet = nextPhotoSetId;
+      for (const environment of environments) {
+        if (!supportsSharedSettingsSync(environment)) continue;
+        const patch = filterSharedServerPatch(
+          { sceneryPhotoSet: nextPhotoSetId },
+          environment.serverConfig?.environment.capabilities,
+        );
+        if (patch.sceneryPhotoSet === undefined) continue;
+        void updateSettings({
+          environmentId: environment.environmentId,
+          input: { patch },
+        });
+      }
+    },
+    [environments, updateSettings],
+  );
+
+  useEffect(() => {
+    if (!isReady) return;
+    const localPhotoSetId = sceneryRef.current.photoSetId;
+    const sharedPhotoSetId = resolveSharedSceneryPhotoSet({
+      primaryEnvironmentId: null,
+      sources: environments.map((environment) => ({
+        environmentId: environment.environmentId,
+        syncEligible: supportsSharedSettingsSync(environment),
+        sceneryPhotoSet: environment.serverConfig?.settings.sceneryPhotoSet,
+      })),
+    });
+    if (sharedPhotoSetId !== null) {
+      const shared = parsePhotoSetId(sharedPhotoSetId);
+      if (shared !== localPhotoSetId) {
+        persistScenery({ photoSetId: shared });
+      }
+      return;
+    }
+    const canPublish = environments.some(
+      (environment) =>
+        supportsSharedSettingsSync(environment) &&
+        environment.serverConfig?.environment.capabilities.sceneryPhotoSet === true,
+    );
+    if (
+      !canPublish ||
+      !shouldPublishLocalSceneryPhotoSet({
+        sharedPhotoSetId,
+        localPhotoSetId,
+        defaultPhotoSetId: DEFAULT_PHOTO_SET_ID,
+      }) ||
+      liftedSceneryPhotoSet === localPhotoSetId
+    ) {
+      return;
+    }
+    publishPhotoSet(localPhotoSetId);
+  }, [environments, isReady, persistScenery, publishPhotoSet]);
+
   const setPhotoSetId = useCallback(
     (value: PhotoSetId) => {
       const next = parsePhotoSetId(value);
@@ -244,14 +326,16 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
         return;
       }
       persistScenery({ photoSetId: next });
+      publishPhotoSet(next);
     },
-    [persistScenery],
+    [persistScenery, publishPhotoSet],
   );
 
   const value = useMemo(
     (): SceneryContextValue => ({
       ...scenery,
       isReady,
+      reduceTransparency,
       photoForThreadKey,
       dailyPhoto,
       ensureThreadAssignment,
@@ -263,6 +347,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     [
       scenery,
       isReady,
+      reduceTransparency,
       photoForThreadKey,
       dailyPhoto,
       ensureThreadAssignment,
@@ -273,7 +358,13 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     ],
   );
 
-  return <SceneryContext.Provider value={value}>{props.children}</SceneryContext.Provider>;
+  return (
+    <SceneryContext.Provider value={value}>
+      <SceneryChromeContext value={scenery.enabled && !reduceTransparency}>
+        {props.children}
+      </SceneryChromeContext>
+    </SceneryContext.Provider>
+  );
 }
 
 export function useScenery(): SceneryContextValue {
@@ -294,10 +385,17 @@ function useSceneryPhotosAllowed(): boolean {
  * Reduce Transparency, Boring mode, and a disabled engine keep the opaque plates.
  */
 export function useSceneryChromeActive(): boolean {
-  const context = use(SceneryContext);
-  const reduceTransparency = useReduceTransparency();
+  const chrome = use(SceneryChromeContext);
   const photosAllowed = useSceneryPhotosAllowed();
-  return context !== null && context.enabled && photosAllowed && !reduceTransparency;
+  return chrome && photosAllowed;
+}
+
+/**
+ * True when iOS surfaces float as frosted glass over the scenery photo.
+ * Android keeps its tonal Material surfaces.
+ */
+export function useGlassChromeActive(): boolean {
+  return useSceneryChromeActive() && Platform.OS === "ios";
 }
 
 /** Photo bound to a thread key, assigning one on first sight. */

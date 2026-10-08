@@ -4,12 +4,8 @@ import * as Output from "alchemy/Output";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Tracer from "effect/Tracer";
-import { OtlpExporter, OtlpSerialization, OtlpTracer } from "effect/unstable/observability";
 
 import { relayResourceNameForStage } from "./deploymentConfig.ts";
 
@@ -75,55 +71,92 @@ export const withSpanAttributes =
       Effect.andThen(effect.pipe(Effect.annotateSpans(attributes))),
     );
 
-const appendEncodedAttributes = (
-  attributes: Record<string, unknown>,
-  prefix: string,
-  value: unknown,
-): void => {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint" ||
-    Array.isArray(value)
-  ) {
-    attributes[prefix] = value;
-    return;
-  }
-  if (typeof value !== "object") {
-    return;
-  }
-  for (const [key, child] of Object.entries(value)) {
-    appendEncodedAttributes(attributes, `${prefix}.${key}`, child);
-  }
-};
+export const RELAY_SCHEMA_ERROR_ATTRIBUTE_MAX_COUNT = 32;
+export const RELAY_SCHEMA_ERROR_ATTRIBUTE_STRING_MAX_LENGTH = 1_024;
+export const RELAY_SCHEMA_ERROR_ATTRIBUTE_ARRAY_MAX_COUNT = 16;
 
-const schemaErrorAttributes = (error: unknown): Record<string, unknown> | undefined => {
+type RelayTraceAttributeScalar = string | number | boolean | bigint;
+
+function boundedTraceAttribute(
+  value: unknown,
+): RelayTraceAttributeScalar | ReadonlyArray<RelayTraceAttributeScalar> | undefined {
+  if (typeof value === "string") {
+    return value.slice(0, RELAY_SCHEMA_ERROR_ATTRIBUTE_STRING_MAX_LENGTH);
+  }
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return value;
+  }
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const bounded: RelayTraceAttributeScalar[] = [];
+  let elementType: "string" | "number" | "boolean" | "bigint" | undefined;
+  for (const item of value.slice(0, RELAY_SCHEMA_ERROR_ATTRIBUTE_ARRAY_MAX_COUNT)) {
+    const itemType = typeof item;
+    if (
+      (itemType !== "string" &&
+        itemType !== "number" &&
+        itemType !== "boolean" &&
+        itemType !== "bigint") ||
+      (elementType !== undefined && itemType !== elementType)
+    ) {
+      return undefined;
+    }
+    elementType = itemType;
+    bounded.push(
+      itemType === "string"
+        ? (item as string).slice(0, RELAY_SCHEMA_ERROR_ATTRIBUTE_STRING_MAX_LENGTH)
+        : (item as number | boolean | bigint),
+    );
+  }
+  return bounded;
+}
+
+export const schemaErrorAttributes = (error: unknown): Record<string, unknown> | undefined => {
   if (typeof error !== "object" || error === null) {
     return undefined;
   }
-  const constructor = error.constructor;
-  if (!Schema.isSchema(constructor)) {
+
+  let constructor: unknown;
+  try {
+    constructor = Object.getPrototypeOf(error)?.constructor;
+  } catch {
     return undefined;
   }
-  const encoded = Schema.encodeUnknownOption(constructor as unknown as Schema.Encoder<unknown>)(
-    error,
-  );
-  if (Option.isNone(encoded) || typeof encoded.value !== "object" || encoded.value === null) {
+  if (!Schema.isSchema(constructor) || !("fields" in constructor)) {
     return undefined;
   }
-  const tag = Reflect.get(encoded.value, "_tag");
+
+  const fields = constructor.fields;
+  if (typeof fields !== "object" || fields === null) {
+    return undefined;
+  }
+  const tag = Object.getOwnPropertyDescriptor(error, "_tag")?.value;
   if (typeof tag !== "string") {
     return undefined;
   }
 
   const attributes: Record<string, unknown> = {
-    "error.type": tag,
+    "error.type": tag.slice(0, RELAY_SCHEMA_ERROR_ATTRIBUTE_STRING_MAX_LENGTH),
   };
-  for (const [key, value] of Object.entries(encoded.value)) {
-    if (key !== "_tag") {
-      appendEncodedAttributes(attributes, `error.${key}`, value);
+  let attributeCount = 1;
+  for (const key of Object.keys(fields)) {
+    if (
+      attributeCount >= RELAY_SCHEMA_ERROR_ATTRIBUTE_MAX_COUNT ||
+      key === "_tag" ||
+      key === "cause"
+    ) {
+      continue;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(error, key);
+    if (!descriptor || !("value" in descriptor)) {
+      continue;
+    }
+    const value = boundedTraceAttribute(descriptor.value);
+    if (value !== undefined) {
+      attributes[`error.${key}`] = value;
+      attributeCount += 1;
     }
   }
   return attributes;
@@ -212,26 +245,14 @@ const withSchemaErrorAttributes = (delegate: Tracer.Tracer): Tracer.Tracer =>
     ...(delegate.context ? { context: delegate.context } : {}),
   });
 
-export const makeRelayTraceLayer = (input: {
-  readonly tracesEndpoint: string;
-  readonly tracesDatasetName: string;
-  readonly ingestToken: Redacted.Redacted<string>;
-}) =>
-  Layer.effect(
-    Tracer.Tracer,
-    OtlpTracer.make({
-      url: input.tracesEndpoint,
-      resource: {
-        serviceName: "t3-code-relay-worker",
-        attributes: {
-          "service.runtime": "cloudflare-worker",
-          "service.component": "relay",
-        },
-      },
-      headers: {
-        Authorization: `Bearer ${Redacted.value(input.ingestToken)}`,
-        "X-Axiom-Dataset": input.tracesDatasetName,
-      },
-      exportInterval: "1 second",
-    }).pipe(Effect.map(withSchemaErrorAttributes)),
-  ).pipe(Layer.provideMerge(OtlpExporter.layerFlusher), Layer.provide(OtlpSerialization.layerJson));
+/**
+ * Adds a failed span's schema error fields (`error.type`, `error.<field>`) to
+ * the span, on whichever tracer is current. Provide it around the work whose
+ * spans should carry them; the Worker's telemetry still owns export.
+ */
+export const withSchemaErrorSpanAttributes = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  Effect.flatMap(Effect.tracer, (tracer) =>
+    effect.pipe(Effect.withTracer(withSchemaErrorAttributes(tracer))),
+  );

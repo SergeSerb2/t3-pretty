@@ -1,16 +1,17 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no createPrivateKey.
 import * as NodeCrypto from "node:crypto";
 
 import { p256 } from "@noble/curves/nist";
 import { sha256 } from "@noble/hashes/sha2";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Redacted from "effect/Redacted";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import type { ApnsCredentials } from "../Config.ts";
 
-export class ApnsJwtEncodingError extends Schema.TaggedErrorClass<ApnsJwtEncodingError>()(
+export class ApnsJwtEncodingError extends Schema.TaggedError<ApnsJwtEncodingError>()(
   "ApnsJwtEncodingError",
   {
     component: Schema.Literals(["header", "payload"]),
@@ -25,7 +26,7 @@ export class ApnsJwtEncodingError extends Schema.TaggedErrorClass<ApnsJwtEncodin
   }
 }
 
-export class ApnsJwtSigningError extends Schema.TaggedErrorClass<ApnsJwtSigningError>()(
+export class ApnsJwtSigningError extends Schema.TaggedError<ApnsJwtSigningError>()(
   "ApnsJwtSigningError",
   {
     teamId: Schema.String,
@@ -95,8 +96,8 @@ export const makeApnsJwt = Effect.fn("relay.apns.make_jwt")(function* (input: Ap
   );
 
   const privateKey = Redacted.value(input.privateKey);
-  const header = Encoding.encodeBase64Url(headerJson);
-  const payload = Encoding.encodeBase64Url(payloadJson);
+  const header = Base64Url.encode(headerJson);
+  const payload = Base64Url.encode(payloadJson);
   const signingInput = `${header}.${payload}`;
 
   return yield* Effect.try({
@@ -110,7 +111,7 @@ export const makeApnsJwt = Effect.fn("relay.apns.make_jwt")(function* (input: Ap
       const signature = p256
         .sign(sha256(new TextEncoder().encode(signingInput)), scalar, { prehash: false })
         .toCompactRawBytes();
-      return `${signingInput}.${Encoding.encodeBase64Url(signature)}`;
+      return `${signingInput}.${Base64Url.encode(signature)}`;
     },
     catch: (cause) =>
       new ApnsJwtSigningError({
@@ -123,12 +124,46 @@ export const makeApnsJwt = Effect.fn("relay.apns.make_jwt")(function* (input: Ap
 });
 
 // PEM parsing is pure and the key set is static per deployment; memoize the
-// extracted P-256 scalar so signing never re-parses the PKCS8 document.
+// extracted P-256 scalar so signing never re-parses the PKCS8 document. Keep a
+// small rotation window rather than retaining every historical private key for
+// the lifetime of a warm worker isolate.
+export const APNS_SIGNING_SCALAR_CACHE_MAX_ENTRIES = 8;
 const signingScalarCache = new Map<string, Uint8Array>();
 
+export function __resetApnsSigningScalarCacheForTest(): void {
+  for (const scalar of signingScalarCache.values()) {
+    scalar.fill(0);
+  }
+  signingScalarCache.clear();
+}
+
+export function __apnsSigningScalarCacheSizeForTest(): number {
+  return signingScalarCache.size;
+}
+
+function privateKeyFingerprint(privateKeyPem: string): string {
+  return NodeCrypto.createHash("sha256").update(privateKeyPem).digest("hex");
+}
+
+function cacheSigningScalar(cacheKey: string, scalar: Uint8Array): void {
+  signingScalarCache.delete(cacheKey);
+  signingScalarCache.set(cacheKey, scalar);
+  while (signingScalarCache.size > APNS_SIGNING_SCALAR_CACHE_MAX_ENTRIES) {
+    const oldestKey = signingScalarCache.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    const evicted = signingScalarCache.get(oldestKey);
+    signingScalarCache.delete(oldestKey);
+    evicted?.fill(0);
+  }
+}
+
 function apnsSigningScalar(privateKeyPem: string): Uint8Array {
-  const cached = signingScalarCache.get(privateKeyPem);
+  const cacheKey = privateKeyFingerprint(privateKeyPem);
+  const cached = signingScalarCache.get(cacheKey);
   if (cached) {
+    cacheSigningScalar(cacheKey, cached);
     return cached;
   }
   const jwk = NodeCrypto.createPrivateKey(privateKeyPem.replace(/\\n/g, "\n")).export({
@@ -138,10 +173,10 @@ function apnsSigningScalar(privateKeyPem: string): Uint8Array {
     throw new Error("APNs signing key is not a P-256 private key.");
   }
   const scalar = Result.getOrThrowWith(
-    Encoding.decodeBase64Url(jwk.d),
+    Base64Url.decode(jwk.d),
     () => new Error("APNs signing key scalar is not valid base64url."),
   );
-  signingScalarCache.set(privateKeyPem, scalar);
+  cacheSigningScalar(cacheKey, scalar);
   return scalar;
 }
 
@@ -152,9 +187,6 @@ export function apnsProviderTokenCacheKey(input: {
   readonly keyId: string;
   readonly privateKey: ApnsCredentials["privateKey"];
 }): string {
-  const keyFingerprint = NodeCrypto.createHash("sha256")
-    .update(Redacted.value(input.privateKey))
-    .digest("hex")
-    .slice(0, 16);
+  const keyFingerprint = privateKeyFingerprint(Redacted.value(input.privateKey));
   return `${input.teamId}:${input.keyId}:${keyFingerprint}`;
 }

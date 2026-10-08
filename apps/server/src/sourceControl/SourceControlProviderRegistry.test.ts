@@ -1,21 +1,27 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
+import { FetchHttpClient } from "effect/http";
 import { VcsRepositoryDetectionError } from "@t3tools/contracts";
 
+import * as ServerSettings from "../serverSettings.ts";
 import * as ServerConfig from "../config.ts";
 import type * as VcsDriver from "../vcs/VcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
 import * as BitbucketApi from "./BitbucketApi.ts";
-import * as GitHubCli from "./GitHubCli.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as GitHubApi from "./GitHubApi.ts";
 import * as GitLabCli from "./GitLabCli.ts";
 import * as OriginCli from "./OriginCli.ts";
+import * as ForgejoCli from "./ForgejoCli.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
@@ -40,6 +46,8 @@ function makeRegistry(input: {
     readonly url: string;
   }>;
   readonly process?: Partial<VcsProcess.VcsProcess["Service"]>;
+  readonly githubApi?: Partial<GitHubApi.GitHubApi["Service"]>;
+  readonly gitlab?: Partial<GitLabCli.GitLabCli["Service"]>;
   readonly resolve?: VcsDriverRegistry.VcsDriverRegistry["Service"]["resolve"];
 }) {
   const driver = {
@@ -58,7 +66,7 @@ function makeRegistry(input: {
       }),
   } satisfies Partial<VcsDriver.VcsDriver["Service"]>;
 
-  const registryLayer = Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+  const layerRegistry = Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
     get: () => Effect.succeed(driver as unknown as VcsDriver.VcsDriver["Service"]),
     resolve:
       input.resolve ??
@@ -79,7 +87,7 @@ function makeRegistry(input: {
         })),
   });
 
-  const processLayer = Layer.mock(VcsProcess.VcsProcess)({
+  const layerProcess = Layer.mock(VcsProcess.VcsProcess)({
     run: () => Effect.succeed(processOutput("")),
     ...input.process,
   });
@@ -87,13 +95,17 @@ function makeRegistry(input: {
   return SourceControlProviderRegistry.make.pipe(
     Effect.provide(
       Layer.mergeAll(
-        registryLayer,
-        processLayer,
+        NodeServices.layer,
+        layerRegistry,
+        layerProcess,
         Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
         Layer.mock(BitbucketApi.BitbucketApi)({}),
-        Layer.mock(GitHubCli.GitHubCli)({}),
-        Layer.mock(GitLabCli.GitLabCli)({}),
+        ServerSettings.ServerSettingsService.layerTest(),
+        Layer.mock(GitHubApi.GitHubApi)(input.githubApi ?? {}),
+        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+        Layer.mock(GitLabCli.GitLabCli)(input.gitlab ?? {}),
         Layer.mock(OriginCli.OriginCli)({}),
+        Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
         ServerConfig.layerTest(process.cwd(), {
           prefix: "t3-source-control-registry-test-",
         }).pipe(Layer.provide(NodeServices.layer)),
@@ -312,6 +324,171 @@ it.effect("routes Azure DevOps remotes to the Azure DevOps provider", () =>
   }),
 );
 
+it.effect("propagates OriginCli layer construction failures", () =>
+  Effect.gen(function* () {
+    const exit = yield* SourceControlProviderRegistry.SourceControlProviderRegistry.pipe(
+      Effect.provide(
+        SourceControlProviderRegistry.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              NodeServices.layer,
+              Layer.effect(
+                OriginCli.OriginCli,
+                Effect.die(new Error("Service not found: t3/sourceControl/OriginCli")),
+              ),
+              Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
+              Layer.mock(BitbucketApi.BitbucketApi)({}),
+              Layer.mock(GitHubApi.GitHubApi)({}),
+              Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+              ServerSettings.ServerSettingsService.layerTest(),
+              Layer.mock(GitLabCli.GitLabCli)({}),
+              Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
+              Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+              Layer.mock(VcsProcess.VcsProcess)({
+                run: () => Effect.succeed(processOutput("")),
+              }),
+              ServerConfig.layerTest(process.cwd(), {
+                prefix: "t3-source-control-registry-missing-origin-",
+              }).pipe(Layer.provide(NodeServices.layer)),
+            ),
+          ),
+        ),
+      ),
+      Effect.exit,
+    );
+
+    assert.isTrue(Exit.isFailure(exit));
+    if (!Exit.isFailure(exit)) {
+      return;
+    }
+    assert.match(Cause.pretty(exit.cause), /Service not found: t3\/sourceControl\/OriginCli/);
+  }),
+);
+
+it.effect("propagates ForgejoCli layer construction failures", () =>
+  Effect.gen(function* () {
+    const exit = yield* SourceControlProviderRegistry.SourceControlProviderRegistry.pipe(
+      Effect.provide(
+        SourceControlProviderRegistry.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              NodeServices.layer,
+              Layer.effect(
+                ForgejoCli.ForgejoCli,
+                Effect.die(new Error("Service not found: t3/sourceControl/ForgejoCli")),
+              ),
+              Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
+              Layer.mock(BitbucketApi.BitbucketApi)({}),
+              Layer.mock(GitHubApi.GitHubApi)({}),
+              Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+              ServerSettings.ServerSettingsService.layerTest(),
+              Layer.mock(GitLabCli.GitLabCli)({}),
+              Layer.mock(OriginCli.OriginCli)({}),
+              Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+              Layer.mock(VcsProcess.VcsProcess)({
+                run: () => Effect.succeed(processOutput("")),
+              }),
+              ServerConfig.layerTest(process.cwd(), {
+                prefix: "t3-source-control-registry-missing-forgejo-",
+              }).pipe(Layer.provide(NodeServices.layer)),
+            ),
+          ),
+        ),
+      ),
+      Effect.exit,
+    );
+
+    assert.isTrue(Exit.isFailure(exit));
+    if (!Exit.isFailure(exit)) {
+      return;
+    }
+    assert.match(Cause.pretty(exit.cause), /Service not found: t3\/sourceControl\/ForgejoCli/);
+  }),
+);
+
+it.effect("boots the registry layer when OriginCli.layer is provided", () =>
+  Effect.gen(function* () {
+    const registry = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+    const origin = yield* registry.get("origin");
+    assert.strictEqual(origin.kind, "origin");
+  }).pipe(
+    Effect.provide(
+      SourceControlProviderRegistry.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            NodeServices.layer,
+            Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
+            Layer.mock(BitbucketApi.BitbucketApi)({}),
+            Layer.mock(GitHubApi.GitHubApi)({}),
+            Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+            ServerSettings.ServerSettingsService.layerTest(),
+            Layer.mock(GitLabCli.GitLabCli)({}),
+            Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
+            OriginCli.layer.pipe(
+              Layer.provide(
+                Layer.mock(VcsProcess.VcsProcess)({
+                  run: () => Effect.succeed(processOutput("")),
+                }),
+              ),
+            ),
+            Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+            Layer.mock(VcsProcess.VcsProcess)({
+              run: () => Effect.succeed(processOutput("")),
+            }),
+            ServerConfig.layerTest(process.cwd(), {
+              prefix: "t3-source-control-registry-origin-boot-",
+            }).pipe(Layer.provide(NodeServices.layer)),
+          ),
+        ),
+      ),
+    ),
+  ),
+);
+
+it.effect("boots the registry layer when ForgejoCli.layer is provided", () =>
+  Effect.gen(function* () {
+    const registry = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+    const forgejo = yield* registry.get("forgejo");
+    assert.strictEqual(forgejo.kind, "forgejo");
+  }).pipe(
+    Effect.provide(
+      SourceControlProviderRegistry.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            NodeServices.layer,
+            FetchHttpClient.layer,
+            Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
+            Layer.mock(BitbucketApi.BitbucketApi)({}),
+            Layer.mock(GitHubApi.GitHubApi)({}),
+            Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+            ServerSettings.ServerSettingsService.layerTest(),
+            Layer.mock(GitLabCli.GitLabCli)({}),
+            Layer.mock(OriginCli.OriginCli)({}),
+            ForgejoCli.layer.pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  FetchHttpClient.layer,
+                  NodeServices.layer,
+                  Layer.mock(VcsProcess.VcsProcess)({
+                    run: () => Effect.succeed(processOutput("")),
+                  }),
+                ),
+              ),
+            ),
+            Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+            Layer.mock(VcsProcess.VcsProcess)({
+              run: () => Effect.succeed(processOutput("")),
+            }),
+            ServerConfig.layerTest(process.cwd(), {
+              prefix: "t3-source-control-registry-forgejo-boot-",
+            }).pipe(Layer.provide(NodeServices.layer)),
+          ),
+        ),
+      ),
+    ),
+  ),
+);
+
 it.effect("falls back to a non-origin remote when origin is not configured", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry({
@@ -322,4 +499,57 @@ it.effect("falls back to a non-origin remote when origin is not configured", () 
 
     assert.strictEqual(provider.kind, "azure-devops");
   }),
+);
+
+it.effect(
+  "routes linked subjects by URL independently of the checkout and skips unsupported links",
+  () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        remotes: [{ name: "origin", url: "https://github.com/unrelated/checkout.git" }],
+        githubApi: {
+          rest: () =>
+            Effect.succeed({
+              status: 200,
+              headers: {},
+              body: JSON.stringify({ title: "GitHub issue", body: null }),
+              truncated: false,
+              invalidUtf8: false,
+            }),
+        },
+        gitlab: {
+          execute: () =>
+            Effect.succeed(
+              processOutput(JSON.stringify({ title: "GitLab MR", description: "Nested project" })),
+            ),
+        },
+      });
+      for (const [url, expected] of [
+        ["https://github.com/team/project/issues/1", { title: "GitHub issue", body: null }],
+        [
+          "https://gitlab.com/team/sub/project/-/merge_requests/2",
+          { title: "GitLab MR", body: "Nested project" },
+        ],
+      ] as const) {
+        const lookup = registry.resolveLink({ cwd: "/unrelated", url: new URL(url) });
+        assert.ok(lookup);
+        assert.deepStrictEqual(yield* lookup, expected);
+      }
+      for (const url of [
+        "https://example.test/team/project/issues/1",
+        "https://github.attacker.test/team/project/issues/1",
+        "https://gitlab.attacker.test/team/project/-/issues/1",
+        "https://github.com/team/project",
+        "https://codeberg.org/team/project/issues/1",
+        "https://bitbucket.org/team/project/pull-requests/1",
+        "https://dev.azure.com/org/project/_git/repo/pullrequest/1",
+        "http://github.com/team/project/issues/1",
+        "https://user:secret@github.com/team/project/issues/1",
+      ]) {
+        assert.strictEqual(
+          registry.resolveLink({ cwd: "/unrelated", url: new URL(url) }),
+          undefined,
+        );
+      }
+    }).pipe(Effect.scoped),
 );

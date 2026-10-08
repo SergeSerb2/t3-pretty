@@ -8,7 +8,7 @@ import * as Path from "effect/Path";
 
 import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
 
-const TestLayer = Layer.empty.pipe(
+const layerTest = Layer.empty.pipe(
   Layer.provideMerge(T3ProjectFileLoader.layer),
   Layer.provideMerge(NodeServices.layer),
 );
@@ -26,7 +26,7 @@ const writeProjectFile = Effect.fn("writeProjectFile")(function* (cwd: string, c
   yield* fileSystem.writeFileString(path.join(cwd, "t3.json"), contents).pipe(Effect.orDie);
 });
 
-it.layer(TestLayer)("T3ProjectFileLoader", (it) => {
+it.layer(layerTest)("T3ProjectFileLoader", (it) => {
   describe("load", () => {
     it.effect("loads and decodes a valid t3.json", () =>
       Effect.gen(function* () {
@@ -79,6 +79,18 @@ it.layer(TestLayer)("T3ProjectFileLoader", (it) => {
         const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
         const cwd = yield* makeTempDir;
         yield* writeProjectFile(cwd, '{ "scripts": [{ "name": "Dev" }] }');
+
+        const loaded = yield* loader.load(cwd);
+
+        expect(Option.isNone(loaded)).toBe(true);
+      }),
+    );
+
+    it.effect("returns none without loading an oversized project file", () =>
+      Effect.gen(function* () {
+        const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+        const cwd = yield* makeTempDir;
+        yield* writeProjectFile(cwd, `{ "iconPath": "assets/logo.svg" }${" ".repeat(1024 * 1024)}`);
 
         const loaded = yield* loader.load(cwd);
 

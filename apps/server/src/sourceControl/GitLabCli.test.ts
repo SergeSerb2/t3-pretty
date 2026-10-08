@@ -1,9 +1,9 @@
-import { assert, it, afterEach, expect, vi } from "@effect/vitest";
+import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
+import { assert, it, afterEach, expect, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import { VcsProcessExitError } from "@t3tools/contracts";
 
@@ -41,14 +41,14 @@ layer("GitLabCli.layer", (it) => {
       mockedRun.mockReturnValueOnce(
         Effect.succeed(
           processOutput(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               iid: 42,
               title: "Add MR thread creation",
               web_url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
               target_branch: "main",
               source_branch: "feature/mr-threads",
-              state: "opened",
+              state: "closed",
+              closed_at: "2026-08-23T10:00:00Z",
               source_project_id: 101,
               target_project_id: 100,
               source_project: {
@@ -73,7 +73,8 @@ layer("GitLabCli.layer", (it) => {
         url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
         baseRefName: "main",
         headRefName: "feature/mr-threads",
-        state: "open",
+        state: "closed",
+        closedAt: "2026-08-23T10:00:00Z",
         isCrossRepository: true,
         headRepositoryNameWithOwner: "octocat/t3code",
         headRepositoryOwnerLogin: "octocat",
@@ -93,7 +94,6 @@ layer("GitLabCli.layer", (it) => {
       mockedRun.mockReturnValueOnce(
         Effect.succeed(
           processOutput(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 iid: 0,
@@ -109,7 +109,7 @@ layer("GitLabCli.layer", (it) => {
                 target_branch: " main ",
                 source_branch: " feature/mr-list ",
                 state: "merged",
-                merged_at: "2026-01-03T00:00:00.000Z",
+                merged_at: "2026-08-23T11:00:00Z",
               },
             ]),
           ),
@@ -133,7 +133,8 @@ layer("GitLabCli.layer", (it) => {
           baseRefName: "main",
           headRefName: "feature/mr-list",
           state: "merged",
-          mergedAt: Option.some(DateTime.makeUnsafe("2026-01-03T00:00:00.000Z")),
+          closedAt: null,
+          mergedAt: Option.some(DateTime.makeUnsafe("2026-08-23T11:00:00Z")),
         },
       ]);
       expect(mockedRun).toHaveBeenCalledWith(
@@ -161,7 +162,6 @@ layer("GitLabCli.layer", (it) => {
       mockedRun.mockReturnValueOnce(
         Effect.succeed(
           processOutput(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               path_with_namespace: "octocat/t3code",
               web_url: "https://gitlab.com/octocat/t3code",
@@ -228,18 +228,10 @@ layer("GitLabCli.layer", (it) => {
     Effect.gen(function* () {
       mockedRun
 
+        .mockReturnValueOnce(Effect.succeed(processOutput(JSON.stringify({ id: 1234 }))))
         .mockReturnValueOnce(
           Effect.succeed(
             processOutput(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
-              JSON.stringify({ id: 1234 }),
-            ),
-          ),
-        )
-        .mockReturnValueOnce(
-          Effect.succeed(
-            processOutput(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify({
                 path_with_namespace: "octocat/t3code",
                 web_url: "https://gitlab.com/octocat/t3code",

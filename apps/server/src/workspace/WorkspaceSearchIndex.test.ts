@@ -17,6 +17,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("maps UTF-8 byte ranges without allocating a second copy of the line", () => {
+  expect(WorkspaceSearchIndex.mapContentMatchRanges("héllo wörld", [[7, 13]])).toEqual([
+    { start: 6, end: 11 },
+  ]);
+});
+
+it("retains and remaps the matching window from an oversized source line", () => {
+  const prefix = "a".repeat(70_000);
+  const line = `${prefix}needle${"b".repeat(70_000)}`;
+  const bounded = WorkspaceSearchIndex.boundContentMatchLine(
+    line,
+    [{ start: prefix.length, end: prefix.length + "needle".length }],
+    64 * 1024,
+  );
+
+  expect(bounded.lineContent).toHaveLength(64 * 1024);
+  expect(
+    bounded.lineContent.slice(bounded.matchRanges[0]!.start, bounded.matchRanges[0]!.end),
+  ).toBe("needle");
+  expect(bounded.truncated).toBe(true);
+});
+
 function fileItem(relativePath: string): FileItem {
   return {
     relativePath,
@@ -138,6 +160,74 @@ it.effect("preserves a full-index warmup timeout as a structured error", () =>
       timeout: "15 seconds",
     });
   }),
+);
+
+it.effect("returns partial path results when the initial scan times out", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const mixedSearch = vi.fn(() => ({
+        ok: true as const,
+        value: {
+          items: [
+            {
+              type: "directory" as const,
+              item: { relativePath: "src", fileName: "src", fileCount: 1 },
+            },
+            { type: "file" as const, item: fileItem("src/index.ts") },
+          ],
+          scores: [],
+          totalMatched: 2,
+          totalFiles: 1,
+        },
+      }));
+      let scanning = true;
+      const finder = {
+        destroy: vi.fn(),
+        isScanning: vi.fn(() => scanning),
+        waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: false })),
+        mixedSearch,
+      } as unknown as FileFinder;
+      vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
+
+      const searchIndex = yield* WorkspaceSearchIndex.make("/workspace/project", "paths");
+      const list = yield* searchIndex.list();
+      const search = yield* searchIndex.search("src", 10);
+      scanning = true;
+      mixedSearch.mockImplementationOnce(() => {
+        scanning = false;
+        return {
+          ok: true as const,
+          value: {
+            items: [
+              {
+                type: "directory" as const,
+                item: { relativePath: "src", fileName: "src", fileCount: 1 },
+              },
+              { type: "file" as const, item: fileItem("src/index.ts") },
+            ],
+            scores: [],
+            totalMatched: 2,
+            totalFiles: 1,
+          },
+        };
+      });
+      const searchCompletingDuringQuery = yield* searchIndex.search("src", 10);
+      scanning = false;
+      const completedSearch = yield* searchIndex.search("src", 10);
+
+      expect(list).toEqual({
+        entries: [
+          { kind: "directory", path: "src" },
+          { kind: "file", path: "src/index.ts" },
+        ],
+        truncated: true,
+      });
+      expect(search.truncated).toBe(true);
+      expect(searchCompletingDuringQuery.truncated).toBe(true);
+      expect(completedSearch.truncated).toBe(false);
+      expect(mixedSearch).toHaveBeenCalledTimes(4);
+    }),
+  ),
 );
 
 it.effect("preserves FileFinder destroy failures as structured defects", () =>

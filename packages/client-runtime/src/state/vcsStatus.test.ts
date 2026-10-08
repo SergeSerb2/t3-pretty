@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { shouldRefreshGitStatusAfterTurnComplete } from "./vcsStatus.ts";
+import { shouldRefreshGitStatusAfterTurnComplete } from "./vcs.ts";
 
 describe("shouldRefreshGitStatusAfterTurnComplete", () => {
   it("does not refresh on first observation of a thread", () => {

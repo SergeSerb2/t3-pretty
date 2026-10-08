@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   completeConfirmDialogClose,
+  isConfirmDialogActive,
+  MAX_QUEUED_CONFIRMATIONS,
   readConfirmDialogState,
   registerConfirmDialogHost,
   requestConfirmDialog,
@@ -40,6 +42,8 @@ describe("confirm dialog coordinator", () => {
 
     respondToConfirmDialog(true);
     await expect(confirmation).resolves.toBe(true);
+    // Still on screen while it closes, so nothing may cover it yet.
+    expect(isConfirmDialogActive()).toBe(true);
     expect(readConfirmDialogState()).toEqual({
       status: "closing",
       message: "Delete this thread?",
@@ -48,6 +52,7 @@ describe("confirm dialog coordinator", () => {
 
     completeConfirmDialogClose();
     expect(readConfirmDialogState()).toEqual({ status: "idle" });
+    expect(isConfirmDialogActive()).toBe(false);
     unregister();
   });
 
@@ -87,6 +92,21 @@ describe("confirm dialog coordinator", () => {
 
     await expect(Promise.all([active, queued])).resolves.toEqual([false, false]);
     expect(readConfirmDialogState()).toEqual({ status: "idle" });
+  });
+
+  it("declines confirmation requests beyond the bounded queue", async () => {
+    const unregister = registerConfirmDialogHost();
+    const active = requireConfirmation(requestConfirmDialog("Active"));
+    const queued = Array.from({ length: MAX_QUEUED_CONFIRMATIONS }, (_, index) =>
+      requireConfirmation(requestConfirmDialog(`Queued ${index}`)),
+    );
+    const overflow = requireConfirmation(requestConfirmDialog("Overflow"));
+
+    await expect(overflow).resolves.toBe(false);
+    unregister();
+    await expect(Promise.all([active, ...queued])).resolves.toEqual(
+      Array.from({ length: MAX_QUEUED_CONFIRMATIONS + 1 }, () => false),
+    );
   });
 
   it("ignores responses after the active dialog has been closed", () => {

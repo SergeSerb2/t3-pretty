@@ -1,0 +1,138 @@
+import { CommandId, ThreadId } from "@t3tools/contracts";
+import { assert, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+
+import * as SqlitePersistence from "./Sqlite.ts";
+const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
+import {
+  ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS,
+  OrchestrationCommandReceiptRepository,
+  OrchestrationCommandReceiptRepositoryLive,
+} from "./OrchestrationCommandReceipts.ts";
+
+const receiptsLayer = it.layer(
+  OrchestrationCommandReceiptRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+);
+
+receiptsLayer("OrchestrationCommandReceiptRepository", (it) => {
+  it.effect("bounds persisted rejection diagnostics", () =>
+    Effect.gen(function* () {
+      const receipts = yield* OrchestrationCommandReceiptRepository;
+      const commandId = CommandId.make("cmd-bounded-error");
+      yield* receipts.upsert({
+        commandId,
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        commandType: "thread.metadata.update",
+        acceptedAt: "2026-02-01T00:00:00.000Z",
+        resultSequence: 1,
+        status: "rejected",
+        error: "x".repeat(ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS + 1_000),
+      });
+
+      const stored = yield* receipts.getByCommandId({ commandId });
+      assert.equal(stored._tag, "Some");
+      if (stored._tag === "Some") {
+        assert.equal(stored.value.error?.length, ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS);
+      }
+    }),
+  );
+
+  it.effect("does not overwrite an accepted receipt with a later rejection", () =>
+    Effect.gen(function* () {
+      const receipts = yield* OrchestrationCommandReceiptRepository;
+      const commandId = CommandId.make("cmd-accepted-sticky");
+      const threadId = ThreadId.make("thread-1");
+      yield* receipts.upsert({
+        commandId,
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        commandType: "thread.metadata.update",
+        acceptedAt: "2026-02-01T00:00:00.000Z",
+        resultSequence: 12,
+        status: "accepted",
+        error: null,
+      });
+      yield* receipts.upsert({
+        commandId,
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        commandType: "thread.metadata.update",
+        acceptedAt: "2026-02-01T00:00:01.000Z",
+        resultSequence: 12,
+        status: "rejected",
+        error: "stale rejection after accept",
+      });
+
+      const stored = yield* receipts.getByCommandId({ commandId });
+      assert.equal(stored._tag, "Some");
+      if (stored._tag === "Some") {
+        assert.equal(stored.value.status, "accepted");
+        assert.equal(stored.value.resultSequence, 12);
+        assert.equal(stored.value.error, null);
+      }
+    }),
+  );
+
+  it.effect("does not split a surrogate pair when bounding rejection diagnostics", () =>
+    Effect.gen(function* () {
+      const receipts = yield* OrchestrationCommandReceiptRepository;
+      const commandId = CommandId.make("cmd-surrogate-error");
+      yield* receipts.upsert({
+        commandId,
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        commandType: "thread.metadata.update",
+        acceptedAt: "2026-02-01T00:00:00.000Z",
+        resultSequence: 1,
+        status: "rejected",
+        error: `${"x".repeat(ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS - 1)}😀`,
+      });
+
+      const stored = yield* receipts.getByCommandId({ commandId });
+      assert.equal(stored._tag, "Some");
+      if (stored._tag === "Some") {
+        assert.equal(
+          stored.value.error,
+          "x".repeat(ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS - 1),
+        );
+        assert.equal(stored.value.error?.includes("\uD83D"), false);
+      }
+    }),
+  );
+
+  it.effect("prunes old receipts in bounded batches and keeps recent ones", () =>
+    Effect.gen(function* () {
+      const receipts = yield* OrchestrationCommandReceiptRepository;
+      const receipt = (commandId: string, acceptedAt: string) =>
+        receipts.upsert({
+          commandId: CommandId.make(commandId),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-1"),
+        commandType: "thread.metadata.update",
+          acceptedAt,
+          resultSequence: 1,
+          status: "accepted",
+          error: null,
+        });
+
+      yield* receipt("cmd-old-1", "2026-01-01T00:00:00.000Z");
+      yield* receipt("cmd-old-2", "2026-01-02T00:00:00.000Z");
+      yield* receipt("cmd-recent", "2026-01-10T00:00:00.000Z");
+
+      const acceptedBefore = "2026-01-05T00:00:00.000Z";
+      assert.equal(yield* receipts.pruneAcceptedBefore({ acceptedBefore, limit: 1 }), 1);
+      assert.equal(yield* receipts.pruneAcceptedBefore({ acceptedBefore, limit: 1 }), 1);
+      assert.equal(yield* receipts.pruneAcceptedBefore({ acceptedBefore, limit: 1 }), 0);
+
+      assert.isTrue(
+        Option.isNone(yield* receipts.getByCommandId({ commandId: CommandId.make("cmd-old-1") })),
+      );
+      assert.isTrue(
+        Option.isSome(yield* receipts.getByCommandId({ commandId: CommandId.make("cmd-recent") })),
+      );
+    }),
+  );
+});

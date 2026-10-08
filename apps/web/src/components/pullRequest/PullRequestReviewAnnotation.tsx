@@ -10,20 +10,18 @@ import type {
   PullRequestThreadComment,
 } from "@t3tools/contracts";
 import { parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
-import {
-  CheckCircle2Icon,
-  CircleIcon,
-  MessageSquareIcon,
-  PencilIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { MessageSquareIcon, Trash2Icon } from "lucide-react";
+import { Circle, CircleCheck } from "lucide";
 import { useEffect, useRef, useState } from "react";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { cn } from "~/lib/utils";
 
 import { Button } from "../ui/button";
+import { MorphIcon } from "~/components/MorphIcon";
 import { FixFindingButton } from "./FixFindingButton";
+import { PullRequestEditButton } from "./PullRequestEditButton";
 import { Textarea } from "../ui/textarea";
+import { toastManager } from "../ui/toast";
 import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import {
   editPullRequestThreadComment,
@@ -144,20 +142,30 @@ export function ReviewThreadCard({
 }) {
   // A resolved thread is finished work, so it opens collapsed and stays one line until asked for.
   const [expanded, setExpanded] = useState(!thread.isResolved);
+  const mountedRef = useRef(false);
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const savingEditRef = useRef(false);
   const sendingRef = useRef(false);
   const [loadedPage, setLoadedPage] = useState<
     (PullRequestThreadCommentsResult & { readonly threadId: string }) | null
   >(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
   const currentPage = loadedPage?.threadId === thread.id ? loadedPage : null;
   const comments = mergePullRequestThreadComments(thread.comments, currentPage?.comments ?? []);
   const nextCommentsCursor =
     currentPage === null ? (thread.nextCommentsCursor ?? null) : currentPage.nextCursor;
   const commentCount = thread.commentCount ?? comments.length;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // The host (or this page) marked it resolved after the card mounted: collapse it the same way
   // a first render of a resolved conversation would, rather than leaving the remarks open as if
@@ -167,20 +175,33 @@ export function ReviewThreadCard({
   }, [thread.isResolved]);
 
   const saveEdit = async (commentId: string, body: string) => {
-    if (savingEdit) return;
+    if (savingEditRef.current) return;
+    savingEditRef.current = true;
     setSavingEdit(true);
-    const saved = await onEditComment(commentId, body);
-    setSavingEdit(false);
-    if (saved) {
-      setLoadedPage((previous) =>
-        previous?.threadId === thread.id
-          ? {
-              ...previous,
-              comments: editPullRequestThreadComment(previous.comments, commentId, body),
-            }
-          : previous,
-      );
-      setEditingId(null);
+    try {
+      const saved = await onEditComment(commentId, body);
+      if (!mountedRef.current) return;
+      if (saved) {
+        setLoadedPage((previous) =>
+          previous?.threadId === thread.id
+            ? {
+                ...previous,
+                comments: editPullRequestThreadComment(previous.comments, commentId, body),
+              }
+            : previous,
+        );
+        setEditingId(null);
+      }
+    } catch (error) {
+      if (!mountedRef.current) return;
+      toastManager.add({
+        type: "error",
+        title: "The comment could not be saved",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
+    } finally {
+      savingEditRef.current = false;
+      if (mountedRef.current) setSavingEdit(false);
     }
   };
 
@@ -191,7 +212,9 @@ export function ReviewThreadCard({
     // Cleared only once the host has it. Otherwise a failed reply leaves an error toast and an
     // empty box, and the words have to be written again.
     try {
-      if (await onReply(trimmed)) {
+      const sent = await onReply(trimmed);
+      if (!mountedRef.current) return;
+      if (sent) {
         // The mutation returns no comment. Keep what the reader loaded and reopen its cursor so
         // the new reply remains reachable without spending requests until they ask to load it.
         setLoadedPage((previous) =>
@@ -205,15 +228,24 @@ export function ReviewThreadCard({
         setReply("");
         setReplying(false);
       }
+    } catch (error) {
+      if (!mountedRef.current) return;
+      toastManager.add({
+        type: "error",
+        title: "Reply could not be posted",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
     } finally {
       sendingRef.current = false;
     }
   };
   const loadMore = async () => {
-    if (nextCommentsCursor === null || loadingMore) return;
+    if (nextCommentsCursor === null || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
       const page = await onLoadMore(nextCommentsCursor);
+      if (!mountedRef.current) return;
       if (page === null) return;
       setLoadedPage((previous) => ({
         threadId: thread.id,
@@ -223,8 +255,16 @@ export function ReviewThreadCard({
         ),
         nextCursor: page.nextCursor,
       }));
+    } catch (error) {
+      if (!mountedRef.current) return;
+      toastManager.add({
+        type: "error",
+        title: "More comments could not be loaded",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
     } finally {
-      setLoadingMore(false);
+      loadingMoreRef.current = false;
+      if (mountedRef.current) setLoadingMore(false);
     }
   };
 
@@ -235,11 +275,10 @@ export function ReviewThreadCard({
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {thread.isResolved ? (
-          <CheckCircle2Icon className="size-3.5 text-emerald-600 dark:text-emerald-500" />
-        ) : (
-          <CircleIcon className="size-3.5" />
-        )}
+        <MorphIcon
+          className={cn("size-3.5", thread.isResolved && "text-success-foreground")}
+          icon={thread.isResolved ? CircleCheck : Circle}
+        />
         <button
           type="button"
           className="hover:text-foreground"
@@ -282,15 +321,25 @@ export function ReviewThreadCard({
               const grokFinding = parseGrokReviewFinding(comment.body);
               return (
                 <article key={comment.id} className="group min-w-0">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <PullRequestActorLabel actor={comment.author} className="text-foreground" />
                     <span>{formatRelativeTimeLabel(comment.createdAt)}</span>
+                    <PullRequestReactionBar
+                      className="ml-auto justify-end"
+                      reactions={comment.reactions ?? []}
+                      canReact={canReact}
+                      subjectId={comment.id}
+                      environmentId={environmentId}
+                      reference={reference}
+                      onRefresh={onReacted}
+                    />
                   </div>
                   {editingId === comment.id ? (
                     <PullRequestMarkdownEditor
                       className="mt-1"
                       value={comment.body}
                       cwd={workspaceRoot}
+                      environmentId={environmentId}
                       label="Edit comment"
                       saving={savingEdit}
                       onSave={(body) => void saveEdit(comment.id, body)}
@@ -309,31 +358,18 @@ export function ReviewThreadCard({
                             className="text-sm"
                             text={grokFinding?.body ?? comment.body}
                             cwd={workspaceRoot}
+                            environmentId={environmentId}
                           />
                         ) : null}
                       </div>
                       {canEditComment(comment) ? (
-                        <Button
-                          size="icon-xs"
-                          variant="ghost"
-                          className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+                        <PullRequestEditButton
                           aria-label="Edit comment"
                           onClick={() => setEditingId(comment.id)}
-                        >
-                          <PencilIcon className="size-3" />
-                        </Button>
+                        />
                       ) : null}
                     </div>
                   )}
-                  <PullRequestReactionBar
-                    className="mt-1.5"
-                    reactions={comment.reactions ?? []}
-                    canReact={canReact}
-                    subjectId={comment.id}
-                    environmentId={environmentId}
-                    reference={reference}
-                    onRefresh={onReacted}
-                  />
                 </article>
               );
             })}
@@ -343,7 +379,6 @@ export function ReviewThreadCard({
               <Button
                 size="xs"
                 variant="ghost"
-                className="px-1"
                 disabled={loadingMore}
                 onClick={() => void loadMore()}
               >
@@ -383,12 +418,7 @@ export function ReviewThreadCard({
                 </div>
               </div>
             ) : (
-              <Button
-                size="xs"
-                variant="ghost"
-                className="mt-2 px-1"
-                onClick={() => setReplying(true)}
-              >
+              <Button size="xs" variant="ghost" className="mt-2" onClick={() => setReplying(true)}>
                 Reply
               </Button>
             )

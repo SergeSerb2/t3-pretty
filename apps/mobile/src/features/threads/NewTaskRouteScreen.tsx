@@ -1,4 +1,6 @@
-import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
+import { MaterialListRow } from "../../components/MaterialListRow";
+import { ScreenHeader } from "../../components/ScreenHeader";
+import { LegendList } from "@legendapp/list/react-native";
 import {
   StackActions,
   useIsFocused,
@@ -6,25 +8,40 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
+import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { useEffect, useRef } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, View } from "react-native";
+import { EnvironmentId } from "@t3tools/contracts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { cn } from "../../lib/cn";
-
-import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
+import { MaterialScreenContent } from "../../components/MaterialScreenContent";
+import { MaterialButton } from "../../components/MaterialButton";
 import { AppText as Text } from "../../components/AppText";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
-import { useProjects } from "../../state/entities";
+import { useProjects, useServerConfigs } from "../../state/entities";
+import { projectEnvironment } from "../../state/projects";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import type { WorkspaceState } from "../../state/workspaceModel";
 import { useWorkspaceState } from "../../state/workspace";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
 import { useNewTaskFlow } from "./new-task-flow-provider";
-import { getProjectScopeSelectionTarget } from "./new-task-project-selection";
+import { filterProjectScopes, getProjectScopeSelectionTarget } from "./new-task-project-selection";
+import { RowPressable } from "../../components/RowPressable";
+import { SheetSurface } from "../../components/SheetSurface";
+import { GroupedCard } from "../scenery/GroupedCard";
+import { GLASS_CARD_CLASS_NAME, glassCardStyle } from "../scenery/glassStyles";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
 type NewTaskRouteParams = {
+  readonly environmentId?: string;
   readonly incomingShareId?: string | string[];
 };
 
@@ -83,16 +100,66 @@ export function deriveProjectEmptyState(catalogState: WorkspaceState): {
   };
 }
 
+function NewTaskHeader(props: {
+  readonly title: string;
+  readonly subtitle: string | null;
+  readonly canAddProject: boolean;
+  readonly searchText: string;
+  readonly onSearchTextChange: (text: string) => void;
+}) {
+  const navigation = useNavigation();
+  const { layout } = useAdaptiveWorkspaceLayout();
+  return (
+    <ScreenHeader
+      title={props.title}
+      subtitle={props.subtitle ?? undefined}
+      sidebar={false}
+      backInSplitView={
+        Platform.OS === "ios"
+          ? {
+              accessibilityLabel: "Close new task",
+              icon: "xmark",
+            }
+          : {
+              accessibilityLabel: "Go back",
+              icon: "chevron.left",
+            }
+      }
+      options={{ headerBackVisible: Platform.OS !== "ios" && !layout.usesSplitView }}
+      hideBottomBorder
+      onBack={() => navigation.goBack()}
+      actions={
+        props.canAddProject
+          ? [
+              {
+                accessibilityLabel: "Add project",
+                icon: "plus",
+                onPress: () => navigation.dispatch(StackActions.push("AddProject")),
+              },
+            ]
+          : []
+      }
+      search={{
+        value: props.searchText,
+        onChangeText: props.onSearchTextChange,
+        placeholder: "Search projects",
+      }}
+    />
+  );
+}
+
 export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRouteParams | undefined>) {
   const projects = useProjects();
-  const { projectScopes, selectedEnvironmentId, setProject } = useNewTaskFlow();
+  const [searchText, setSearchText] = useState("");
+  const { projectScopes, selectedEnvironmentId: flowEnvironmentId, setProject } = useNewTaskFlow();
+  const machineFilter = route.params?.environmentId;
+  const selectedEnvironmentId = machineFilter
+    ? EnvironmentId.make(machineFilter)
+    : flowEnvironmentId;
   const { state: catalogState } = useWorkspaceState();
   const navigation = useNavigation();
   const isFocused = useIsFocused();
-  const { layout } = useAdaptiveWorkspaceLayout();
   const insets = useSafeAreaInsets();
-  const chevronColor = useThemeColor("--color-chevron");
-  const accentColor = useThemeColor("--color-icon-muted");
   const { getShare, releaseShareReservation } = useIncomingShare();
   const routeShareId = Array.isArray(route.params?.incomingShareId)
     ? route.params.incomingShareId[0]
@@ -102,11 +169,23 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     ? incomingShare.attachments.length === 0
       ? "Choose a project for what you shared"
       : incomingShare.attachments.length === 1
-        ? "Choose a project for the image you shared"
-        : `Choose a project for the ${incomingShare.attachments.length} images you shared`
+        ? `Choose a project for the ${incomingShare.attachments[0]?.type === "image" ? "image" : "file"} you shared`
+        : `Choose a project for the ${incomingShare.attachments.length} ${incomingShare.attachments.every((attachment) => attachment.type === "image") ? "images" : "files"} you shared`
     : null;
   const screenTitle = incomingShare ? "Start a task" : "Choose project";
   const projectEmptyState = deriveProjectEmptyState(catalogState);
+  const serverConfigs = useServerConfigs();
+  // Scratch projects are reached through the No project row, never as rows
+  // of their own.
+  const listScopes = projectScopes.filter(
+    (scope) =>
+      (!machineFilter ||
+        scope.projects.some((project) => project.environmentId === machineFilter)) &&
+      !scope.projects.every((project) =>
+        isScratchProject(project, serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot),
+      ),
+  );
+  const visibleScopes = filterProjectScopes(listScopes, searchText);
   const resumedDestinationKeyRef = useRef<string | null>(null);
   const reservedDestinationProject = incomingShare?.destination
     ? (projects.find(
@@ -115,37 +194,178 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
           project.id === incomingShare.destination?.projectId,
       ) ?? null)
     : null;
+  const { connectedEnvironments } = useRemoteConnectionStatus();
+  const openScratch = useAtomCommand(projectEnvironment.openScratch, {
+    reportFailure: false,
+  });
+  // Threads without a project need a connected environment that offers them.
+  // The row starts on the selected environment when it has one, otherwise the
+  // first that does; the draft page's machine picker moves it from there.
+  const scratchEnvironments = connectedEnvironments.filter(
+    (environment) =>
+      availableScratchWorkspaceRoot(
+        environment.connectionState,
+        serverConfigs.get(environment.environmentId),
+      ) !== null,
+  );
+  const scratchEnvironment =
+    scratchEnvironments.find(
+      (environment) => environment.environmentId === selectedEnvironmentId,
+    ) ??
+    scratchEnvironments[0] ??
+    null;
+  const canStartScratch = scratchEnvironment !== null && reservedDestinationProject === null;
+  const scratchStartInFlightRef = useRef(false);
 
-  async function selectProject(project: EnvironmentProject): Promise<void> {
-    if (incomingShare?.destination && !reservedDestinationProject) {
-      try {
-        await releaseShareReservation(incomingShare.id, incomingShare.destination);
-      } catch (error) {
-        Alert.alert(
-          "Could not change project",
-          error instanceof Error
-            ? error.message
-            : "The shared content reservation could not be updated.",
-        );
+  const selectProject = useCallback(
+    async (project: EnvironmentProject): Promise<void> => {
+      if (incomingShare?.destination && !reservedDestinationProject) {
+        try {
+          await releaseShareReservation(incomingShare.id, incomingShare.destination);
+        } catch (error) {
+          Alert.alert(
+            "Could not change project",
+            error instanceof Error
+              ? error.message
+              : "The shared content reservation could not be updated.",
+          );
+          return;
+        }
+      }
+      const state = navigation.getState();
+      const previousRoute = state?.routes[state.index - 1];
+      if (previousRoute?.name === "NewTaskDraft") {
+        setProject(project);
+        navigation.goBack();
         return;
       }
-    }
-    const state = navigation.getState();
-    const previousRoute = state?.routes[state.index - 1];
-    if (previousRoute?.name === "NewTaskDraft") {
-      setProject(project);
-      navigation.goBack();
-      return;
-    }
 
-    navigation.dispatch(
-      StackActions.push("NewTaskDraft", {
-        environmentId: project.environmentId,
-        projectId: project.id,
-        title: project.title,
-        incomingShareId: incomingShare?.id,
-      }),
-    );
+      navigation.dispatch(
+        StackActions.push("NewTaskDraft", {
+          environmentId: project.environmentId,
+          projectId: project.id,
+          title: project.title,
+          incomingShareId: incomingShare?.id,
+          ...(machineFilter ? { environmentSelection: "manual" } : {}),
+        }),
+      );
+    },
+    [
+      incomingShare,
+      navigation,
+      releaseShareReservation,
+      reservedDestinationProject,
+      setProject,
+      machineFilter,
+    ],
+  );
+
+  const glass = useGlassChromeActive();
+  const renderProjectScope = useCallback(
+    ({ item: scope, index }: { item: (typeof projectScopes)[number]; index: number }) => {
+      const hasMultipleProjects = scope.projects.length > 1;
+      const selectionTarget = getProjectScopeSelectionTarget(scope, selectedEnvironmentId);
+      const subtitle = hasMultipleProjects
+        ? `${scope.projects.length} workspaces`
+        : selectionTarget.workspaceRoot;
+      const pressProps = {
+        accessibilityLabel: `${scope.title}, ${subtitle}`,
+        accessibilityRole: "button",
+        accessibilityState: { disabled: reservedDestinationProject !== null },
+        disabled: reservedDestinationProject !== null,
+        onPress: () => void selectProject(selectionTarget),
+      } as const;
+      const content = (
+        <>
+          <View className="h-7 w-7 items-center justify-center">
+            <ProjectFavicon
+              environmentId={scope.representative.environmentId}
+              faviconPath={scope.representative.faviconPath}
+              projectIcon={scope.representative.projectIcon}
+              size={20}
+              projectTitle={scope.title}
+              workspaceRoot={scope.representative.workspaceRoot}
+            />
+          </View>
+          <View className="min-w-0 flex-1">
+            <Text className="text-base leading-snug font-t3-bold">{scope.title}</Text>
+            <Text
+              className="text-xs leading-snug text-foreground-muted"
+              ellipsizeMode="middle"
+              numberOfLines={1}
+            >
+              {subtitle}
+            </Text>
+          </View>
+          <SymbolView
+            name="chevron.right"
+            size={14}
+            tintColorClassName="accent-icon-subtle"
+            type="monochrome"
+          />
+        </>
+      );
+      if (glass) {
+        // One translucent layer per row: the row is its slice of the card and
+        // its press highlight stays transparent until touched.
+        return (
+          <View
+            className={GLASS_CARD_CLASS_NAME}
+            style={glassCardStyle(index === 0, index === visibleScopes.length - 1)}
+          >
+            {index > 0 ? (
+              <View className="absolute left-0 right-0 top-0 h-px bg-border-subtle" />
+            ) : null}
+            <RowPressable
+              {...pressProps}
+              className="flex-row items-center gap-3 px-4 py-3.5"
+              interactionClassName="bg-foreground/[0.06]"
+            >
+              {content}
+            </RowPressable>
+          </View>
+        );
+      }
+      return (
+        <View
+          className={cn(
+            "overflow-hidden bg-card",
+            index === 0 && "rounded-t-[24px]",
+            index === visibleScopes.length - 1 && "rounded-b-[24px]",
+            index > 0 && "border-t border-border-subtle",
+          )}
+        >
+          <Pressable {...pressProps} className="flex-row items-center gap-3 px-4 py-3.5 bg-card">
+            {content}
+          </Pressable>
+        </View>
+      );
+    },
+    [glass, visibleScopes.length, reservedDestinationProject, selectProject, selectedEnvironmentId],
+  );
+
+  async function startScratch(): Promise<void> {
+    if (!scratchEnvironment || scratchStartInFlightRef.current) return;
+    const environmentId = scratchEnvironment.environmentId;
+    scratchStartInFlightRef.current = true;
+    try {
+      const result = await openScratch({ environmentId, input: {} });
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          Alert.alert(
+            "Could not start without a project",
+            error instanceof Error
+              ? error.message
+              : "The folder for threads without a project could not be created.",
+          );
+        }
+        return;
+      }
+      await selectProject(result.value);
+    } finally {
+      scratchStartInFlightRef.current = false;
+    }
   }
 
   useEffect(() => {
@@ -178,147 +398,237 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     );
   }, [incomingShare, isFocused, navigation, reservedDestinationProject]);
 
-  return (
-    <View collapsable={false} className="flex-1 bg-sheet">
-      {Platform.OS === "android" ? (
-        <>
-          {/* Android renders its own in-screen header instead of the native bar. */}
-          <NativeStackScreenOptions options={{ headerShown: false }} />
-          <AndroidScreenHeader
-            title={screenTitle}
-            subtitle={incomingShareSubtitle}
-            onBack={layout.usesSplitView ? () => navigation.goBack() : undefined}
-            actions={
-              catalogState.hasReadyEnvironment
-                ? [
-                    {
-                      accessibilityLabel: "Add project",
-                      icon: "plus",
-                      onPress: () => navigation.dispatch(StackActions.push("AddProject")),
-                    },
-                  ]
-                : []
-            }
-          />
-        </>
-      ) : (
-        <>
-          <NativeStackScreenOptions
-            options={{
-              title: screenTitle,
-              unstable_headerSubtitle: incomingShareSubtitle ?? undefined,
-            }}
-          />
-          <NativeHeaderToolbar placement="right">
-            {layout.usesSplitView ? (
-              <NativeHeaderToolbar.Button
-                accessibilityLabel="Close new task"
-                icon="xmark"
-                onPress={() => navigation.goBack()}
-                separateBackground
-              />
-            ) : null}
-            {catalogState.hasReadyEnvironment ? (
-              <NativeHeaderToolbar.Button
-                accessibilityLabel="Add project"
-                icon="plus"
-                onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
-                separateBackground
-              />
-            ) : null}
-          </NativeHeaderToolbar>
-        </>
-      )}
+  const noProjectRowContent = (
+    <>
+      <View className="h-7 w-7 items-center justify-center">
+        <SymbolView
+          name="text.bubble"
+          size={18}
+          tintColorClassName="accent-icon-muted"
+          type="monochrome"
+        />
+      </View>
+      <View className="min-w-0 flex-1">
+        <Text className="text-base font-t3-bold leading-snug">No project</Text>
+        <Text className="text-xs leading-snug text-foreground-muted" numberOfLines={1}>
+          Start a task without a project
+        </Text>
+      </View>
+      <SymbolView
+        name="chevron.right"
+        size={14}
+        tintColorClassName="accent-chevron"
+        type="monochrome"
+      />
+    </>
+  );
 
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        showsVerticalScrollIndicator={false}
-        className="flex-1"
-        contentContainerStyle={{
-          gap: 12,
-          paddingBottom: Math.max(insets.bottom, 18) + 18,
-          paddingHorizontal: 20,
-          paddingTop: 8,
-        }}
-      >
-        {projectScopes.length === 0 ? (
-          <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-card px-6 py-8">
-            {projectEmptyState.loading ? <ActivityIndicator color={accentColor} /> : null}
-            <Text className="text-center text-lg font-t3-bold text-foreground">
-              {projectEmptyState.title}
-            </Text>
-            <Text className="text-center text-sm leading-normal text-foreground-muted">
-              {projectEmptyState.detail}
-            </Text>
-            {!catalogState.hasReadyEnvironment ? (
-              <Pressable
-                className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-                onPress={() => navigation.navigate("ConnectionsNew")}
-              >
-                <Text className="text-sm font-t3-bold text-primary-foreground">
-                  Add environment
-                </Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-                onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
-              >
-                <Text className="text-sm font-t3-bold text-primary-foreground">
-                  Add new project
-                </Text>
-              </Pressable>
-            )}
-          </View>
-        ) : (
-          <View collapsable={false} className="overflow-hidden rounded-[24px] bg-card">
-            {projectScopes.map((scope, scopeIndex) => {
-              const hasMultipleProjects = scope.projects.length > 1;
-              const selectionTarget = getProjectScopeSelectionTarget(scope, selectedEnvironmentId);
-              return (
-                <View
-                  key={scope.key}
-                  className={cn(scopeIndex > 0 && "border-t border-border-subtle")}
-                >
-                  <Pressable
-                    disabled={reservedDestinationProject !== null}
-                    onPress={() => void selectProject(selectionTarget)}
-                    className="flex-row items-center gap-3 bg-card px-4 py-3.5"
+  return (
+    <SheetSurface>
+      <NewTaskHeader
+        title={screenTitle}
+        subtitle={incomingShareSubtitle}
+        canAddProject={catalogState.hasReadyEnvironment}
+        searchText={searchText}
+        onSearchTextChange={setSearchText}
+      />
+
+      <MaterialScreenContent>
+        <LegendList
+          contentInsetAdjustmentBehavior="automatic"
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          className="flex-1"
+          contentContainerStyle={{
+            paddingBottom: Math.max(insets.bottom, 18) + 18,
+            paddingHorizontal: Platform.OS === "android" ? 16 : 20,
+            paddingTop: Platform.OS === "android" ? 16 : 8,
+            ...(Platform.OS === "android" && visibleScopes.length === 0
+              ? { flexGrow: 1, justifyContent: "center" as const }
+              : {}),
+          }}
+          data={visibleScopes}
+          estimatedItemSize={56}
+          extraData={`${selectedEnvironmentId ?? ""}:${reservedDestinationProject?.environmentId ?? ""}:${reservedDestinationProject?.id ?? ""}:${glass}`}
+          keyExtractor={(scope) => scope.key}
+          ListHeaderComponent={
+            <>
+              {canStartScratch && listScopes.length > 0 ? (
+                Platform.OS === "android" ? (
+                  <View
+                    collapsable={false}
+                    className="overflow-hidden rounded-[28px] bg-grouped-card"
                   >
-                    <View className="h-7 w-7 items-center justify-center">
-                      <ProjectFavicon
-                        environmentId={scope.representative.environmentId}
-                        faviconPath={scope.representative.faviconPath}
-                        size={20}
-                        projectTitle={scope.title}
-                        workspaceRoot={scope.representative.workspaceRoot}
-                      />
-                    </View>
-                    <View className="min-w-0 flex-1">
-                      <Text className="text-base leading-snug font-t3-bold">{scope.title}</Text>
-                      <Text
-                        className="text-xs leading-snug text-foreground-muted"
-                        ellipsizeMode="middle"
-                        numberOfLines={1}
-                      >
-                        {hasMultipleProjects
-                          ? `${scope.projects.length} workspaces`
-                          : selectionTarget.workspaceRoot}
-                      </Text>
-                    </View>
-                    <SymbolView
-                      name="chevron.right"
-                      size={14}
-                      tintColor={chevronColor}
-                      type="monochrome"
+                    <MaterialListRow
+                      className="bg-grouped-card"
+                      title="No project"
+                      subtitle="Start a task without a project"
+                      onPress={() => void startScratch()}
+                      leading={
+                        <SymbolView
+                          name="text.bubble"
+                          size={22}
+                          tintColorClassName="accent-icon-muted"
+                          type="monochrome"
+                        />
+                      }
                     />
+                  </View>
+                ) : glass ? (
+                  <GroupedCard collapsable={false} className="mb-3">
+                    <RowPressable
+                      accessibilityRole="button"
+                      accessibilityLabel="No project"
+                      onPress={() => void startScratch()}
+                      className="flex-row items-center gap-3 px-4 py-3.5"
+                      interactionClassName="bg-foreground/[0.06]"
+                    >
+                      {noProjectRowContent}
+                    </RowPressable>
+                  </GroupedCard>
+                ) : (
+                  <View
+                    collapsable={false}
+                    className="overflow-hidden rounded-[24px] bg-grouped-card"
+                  >
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="No project"
+                      onPress={() => void startScratch()}
+                      className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
+                    >
+                      {noProjectRowContent}
+                    </Pressable>
+                  </View>
+                )
+              ) : null}
+            </>
+          }
+          ListEmptyComponent={
+            listScopes.length === 0 ? (
+              <View
+                collapsable={false}
+                className={cn(
+                  "items-center gap-3 px-6 py-8",
+                  Platform.OS !== "android" &&
+                    (glass ? GLASS_CARD_CLASS_NAME : "rounded-[24px] bg-grouped-card"),
+                )}
+                style={glass ? glassCardStyle() : undefined}
+              >
+                {projectEmptyState.loading ? (
+                  <ActivityIndicator colorClassName="accent-icon-muted" />
+                ) : null}
+                <Text className="text-center text-lg font-t3-bold text-foreground">
+                  {projectEmptyState.title}
+                </Text>
+                <Text className="text-center text-sm leading-normal text-foreground-muted">
+                  {projectEmptyState.detail}
+                </Text>
+                {Platform.OS === "android" ? (
+                  <>
+                    <MaterialButton
+                      label={
+                        catalogState.hasReadyEnvironment ? "Add new project" : "Add environment"
+                      }
+                      tone="primary"
+                      onPress={() =>
+                        catalogState.hasReadyEnvironment
+                          ? navigation.dispatch(StackActions.push("AddProject"))
+                          : navigation.navigate("ConnectionsNew")
+                      }
+                    />
+                    {canStartScratch ? (
+                      <MaterialButton
+                        label="Start without a project"
+                        tone="secondary"
+                        onPress={() => void startScratch()}
+                      />
+                    ) : null}
+                  </>
+                ) : !catalogState.hasReadyEnvironment ? (
+                  <Pressable
+                    className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
+                    onPress={() => navigation.navigate("ConnectionsNew")}
+                  >
+                    <Text className="text-sm font-t3-bold text-primary-foreground">
+                      Add environment
+                    </Text>
                   </Pressable>
-                </View>
+                ) : (
+                  <>
+                    <Pressable
+                      className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
+                      onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
+                    >
+                      <Text className="text-sm font-t3-bold text-primary-foreground">
+                        Add new project
+                      </Text>
+                    </Pressable>
+                    {canStartScratch ? (
+                      <Pressable
+                        className="rounded-full bg-subtle px-4 py-2.5 active:opacity-70"
+                        onPress={() => void startScratch()}
+                      >
+                        <Text className="text-sm font-t3-bold text-foreground">
+                          Start without a project
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </>
+                )}
+              </View>
+            ) : visibleScopes.length === 0 ? (
+              <View className="items-center gap-2 px-6 py-8">
+                <Text className="text-center text-lg font-t3-bold text-foreground">
+                  No matching projects
+                </Text>
+                <Text className="text-center text-sm leading-normal text-foreground-muted">
+                  Try a different project name or workspace path.
+                </Text>
+              </View>
+            ) : null
+          }
+          recycleItems
+          renderItem={({
+            item: scope,
+            index,
+          }: {
+            item: (typeof visibleScopes)[number];
+            index: number;
+          }) => {
+            const hasMultipleProjects = scope.projects.length > 1;
+            const selectionTarget = getProjectScopeSelectionTarget(scope, selectedEnvironmentId);
+            if (Platform.OS === "android") {
+              return (
+                <MaterialListRow
+                  className="bg-grouped-card"
+                  key={scope.key}
+                  title={scope.title}
+                  subtitle={
+                    hasMultipleProjects
+                      ? `${scope.projects.length} workspaces`
+                      : selectionTarget.workspaceRoot
+                  }
+                  disabled={reservedDestinationProject !== null}
+                  onPress={() => void selectProject(selectionTarget)}
+                  leading={
+                    <ProjectFavicon
+                      environmentId={scope.representative.environmentId}
+                      faviconPath={scope.representative.faviconPath}
+                      projectIcon={scope.representative.projectIcon}
+                      size={24}
+                      projectTitle={scope.title}
+                      workspaceRoot={scope.representative.workspaceRoot}
+                    />
+                  }
+                />
               );
-            })}
-          </View>
-        )}
-      </ScrollView>
-    </View>
+            }
+            return renderProjectScope({ item: scope, index });
+          }}
+        />
+      </MaterialScreenContent>
+    </SheetSurface>
   );
 }

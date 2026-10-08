@@ -1,11 +1,12 @@
 import { it } from "@effect/vitest";
 import { HostProcessHostname } from "@t3tools/shared/hostProcess";
+import { REMOTE_OPEN_TARGET_HOST_MAX_LENGTH } from "@t3tools/contracts";
 import * as NetService from "@t3tools/shared/Net";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { describe, expect } from "vite-plus/test";
 
 import * as RemoteOpenTargets from "./RemoteOpenTargets.ts";
@@ -17,13 +18,13 @@ const TAILSCALE_STATUS_JSON = JSON.stringify({
 });
 
 /** Spawner whose `tailscale status --json` exits with the given output. */
-const spawnerLayer = (input: { readonly exitCode: number; readonly stdout: string }) =>
+const layerSpawner = (input: { readonly exitCode: number; readonly stdout: string }) =>
   Layer.succeed(
     ChildProcessSpawner.ChildProcessSpawner,
     ChildProcessSpawner.make(() =>
       Effect.succeed(
         ChildProcessSpawner.makeHandle({
-          pid: ChildProcessSpawner.ProcessId(1),
+          pid: ChildProcessSpawner.ProcessId(42_424),
           exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(input.exitCode)),
           isRunning: Effect.succeed(false),
           kill: () => Effect.void,
@@ -39,7 +40,7 @@ const spawnerLayer = (input: { readonly exitCode: number; readonly stdout: strin
     ),
   );
 
-const netLayer = (input: { readonly ipv4: boolean; readonly ipv6: boolean }) =>
+const layerNet = (input: { readonly ipv4: boolean; readonly ipv6: boolean }) =>
   Layer.succeed(NetService.NetService, {
     canListenOnHost: () => Effect.succeed(true),
     isPortAvailableOnLoopback: () => Effect.succeed(true),
@@ -57,7 +58,7 @@ const resolveTargets = (input: {
     Effect.provideService(HostProcessHostname, input.hostname),
     Effect.provide(
       RemoteOpenTargets.layer.pipe(
-        Layer.provide(Layer.mergeAll(netLayer(input.sshd), spawnerLayer(input.tailscale))),
+        Layer.provide(Layer.mergeAll(layerNet(input.sshd), layerSpawner(input.tailscale))),
       ),
     ),
   );
@@ -121,6 +122,17 @@ describe("RemoteOpenTargets", () => {
         hostname: "bb-1.example.com",
       });
       expect(targets).toEqual([{ kind: "mdns", host: "bb-1.local" }]);
+    }),
+  );
+
+  it.effect("omits hostnames that cannot fit the remote-open contract", () =>
+    Effect.gen(function* () {
+      const targets = yield* resolveTargets({
+        sshd: { ipv4: true, ipv6: true },
+        tailscale: TAILSCALE_DOWN,
+        hostname: "x".repeat(REMOTE_OPEN_TARGET_HOST_MAX_LENGTH),
+      });
+      expect(targets).toEqual([]);
     }),
   );
 });

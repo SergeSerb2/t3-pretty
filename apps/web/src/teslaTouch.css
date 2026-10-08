@@ -1,0 +1,329 @@
+/* Tesla passenger browser: 15–18" landscape touchscreen, no hover. The thread
+   list stays docked beside the conversation. `data-tesla-touch` is stamped
+   from teslaTouchUi.ts when the UA matches or the user forces Car display on. */
+
+html[data-tesla-touch] {
+  -webkit-tap-highlight-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  touch-action: manipulation;
+  --app-scrollbar-width: 14px;
+  --chat-max-width: min(62rem, 100%);
+  --command-content-inset: 1.25rem;
+  --command-shell-inset: 0.75rem;
+  --control-radius: 0.9rem;
+  --floating-content-inset: 1rem;
+  --sidebar-content-inset: 0.85rem;
+  --sidebar-control-gap: 0.75rem;
+  --sidebar-row-content-inset: 1rem;
+  --tesla-touch-target: 3.5rem;
+  --workspace-gutter: 1.25rem;
+  --workspace-titlebar-control-size: 2.75rem;
+  --workspace-topbar-height: 72px;
+  scrollbar-width: auto;
+}
+
+html[data-tesla-touch][data-chat-width] {
+  --chat-max-width: min(62rem, 100%);
+}
+
+html[data-tesla-touch] [data-slot="button"],
+html[data-tesla-touch] [data-slot="toggle"],
+html[data-tesla-touch] [data-slot="select-trigger"],
+html[data-tesla-touch] [data-slot="sidebar-menu-button"],
+html[data-tesla-touch] [data-slot="sidebar-menu-action"],
+html[data-tesla-touch] [data-slot="sidebar-menu-sub-button"],
+html[data-tesla-touch] [data-slot="command-item"],
+html[data-tesla-touch] [data-slot="menu-item"] {
+  min-height: var(--tesla-touch-target);
+  font-size: 1rem;
+}
+
+html[data-tesla-touch] [data-slot="sidebar-menu-button"] {
+  height: auto;
+  padding-block: 0.7rem;
+}
+
+html[data-tesla-touch] [data-slot="sidebar-menu"] {
+  gap: 0.4rem;
+}
+
+html[data-tesla-touch] [data-slot="sidebar-trigger"] {
+  width: var(--tesla-touch-target);
+  height: var(--tesla-touch-target);
+}
+
+html[data-tesla-touch] [data-slot="composer-shell"] {
+  max-width: min(56rem, calc(100% - 1.5rem));
+}
+
+html[data-tesla-touch] [data-slot="composer-host"] button[type="submit"] {
+  width: var(--tesla-touch-target);
+  height: var(--tesla-touch-target);
+}
+
+/* Model, access, branch, and attach sit on tooltip triggers or short
+   desktop chips. A finger needs the control itself, not a hover hit area. */
+html[data-tesla-touch] [data-slot="composer-shell"] button,
+html[data-tesla-touch] [data-slot="composer-shell"] [data-slot="tooltip-trigger"],
+html[data-tesla-touch] [data-slot="composer-shell"] [data-slot="select-trigger"],
+html[data-tesla-touch] [data-slot="composer-shell"] [data-slot="menu-trigger"],
+html[data-tesla-touch] [data-chat-header] button,
+html[data-tesla-touch] [data-chat-header] [data-slot="tooltip-trigger"],
+html[data-tesla-touch] [data-chat-header] [data-slot="toggle"] {
+  min-width: 2.75rem !important;
+  min-height: 2.75rem !important;
+  font-size: 1rem;
+}
+
+html[data-tesla-touch] [data-slot="toast-close"],
+html[data-tesla-touch] [data-slot="toast-action"] {
+  min-width: 2.75rem !important;
+  min-height: 2.75rem !important;
+}
+
+html[data-tesla-touch] [data-assistant-meta="overlay"] {
+  height: auto;
+  min-height: var(--tesla-touch-target);
+  overflow: visible;
+  pointer-events: auto;
+  opacity: 1;
+}
+
+html[data-tesla-touch] [data-slot="command-item"] {
+  padding-block: 0.7rem;
+}
+
+/* Tesla firmware can report (hover: hover) and (pointer: fine), so
+   pointer-coarse: and hover-gated opacity never apply. The Tailwind class
+   names stay in the DOM; freeze those controls in their hover-visible state. */
+html[data-tesla-touch] [class*="pointer-coarse:opacity-100"],
+html[data-tesla-touch] [class*="opacity-0"][class*="hover:opacity-100"],
+html[data-tesla-touch] [class*="opacity-0"][class*="group-hover/"][class*=":opacity-100"] {
+  opacity: 1;
+}
+
+html[data-tesla-touch] [class*="pointer-coarse:pointer-events-auto"],
+html[data-tesla-touch] [class*="pointer-events-none"][class*="hover:pointer-events-auto"],
+html[data-tesla-touch] [class*="pointer-events-none"][class*="group-hover:pointer-events-auto"],
+html[data-tesla-touch]
+  [class*="pointer-events-none"][class*="group-hover/"][class*=":pointer-events-auto"] {
+  pointer-events: auto;
+}
+
+html[data-tesla-touch] [class*="opacity-0"][class*="group-hover:static"],
+html[data-tesla-touch] [class*="opacity-0"][class*="group-hover/"][class*=":static"] {
+  position: static;
+}
+
+/* Thread rows stay a reading list. Settle and snooze are hover controls
+   on a desk. A finger uses the long-press menu instead, and Discard stays. */
+html[data-tesla-touch] [data-thread-item] [aria-label="Snooze thread"],
+html[data-tesla-touch] [data-thread-item] [aria-label="Settle thread"] {
+  display: none;
+}
+
+html[data-tesla-touch]
+  [data-thread-item]
+  [class*="opacity-0"][class*="group-hover/"][class*=":opacity-100"] {
+  opacity: 0;
+}
+
+html[data-tesla-touch]
+  [data-thread-item]
+  [class*="pointer-events-none"][class*="group-hover/"][class*=":pointer-events-auto"] {
+  pointer-events: none;
+}
+
+/* The dock is the car's home. It stays on screen, including below the
+   desktop breakpoint, and the collapse toggle and resize rail stay out of
+   the way of a finger. */
+html[data-tesla-touch] [data-slot="sidebar"].peer {
+  display: block;
+}
+
+html[data-tesla-touch] [data-slot="sidebar-container"] {
+  display: flex;
+}
+
+html[data-tesla-touch] [data-sidebar="trigger"],
+html[data-tesla-touch] [data-sidebar="rail"],
+html[data-tesla-touch] [data-sidebar-control] {
+  display: none;
+}
+
+html[data-tesla-touch] [data-sidebar-brand] {
+  display: flex;
+  height: 2.5rem;
+}
+
+html[data-tesla-touch] [data-sidebar-brand] img {
+  width: 2.45rem;
+  height: 1.75rem;
+}
+
+html[data-tesla-touch] [data-sidebar-brand-word] {
+  font-size: 1.125rem;
+}
+
+html[data-tesla-touch] nav[aria-label="Projects"] {
+  width: 5.75rem;
+  gap: 0.55rem;
+  padding-block: 0.75rem;
+}
+
+html[data-tesla-touch] nav[aria-label="Projects"] [data-slot="sidebar-menu-button"] {
+  width: 4.25rem !important;
+  height: 4.25rem !important;
+  min-width: 4.25rem !important;
+  min-height: 4.25rem !important;
+  border-radius: 1rem;
+}
+
+html[data-tesla-touch] nav[aria-label="Projects"] [data-slot="sidebar-menu-button"] svg,
+html[data-tesla-touch] nav[aria-label="Projects"] [data-slot="sidebar-menu-button"] img {
+  width: 1.75rem !important;
+  height: 1.75rem !important;
+}
+
+/* Settings, pull requests, and usage are tooltip triggers. The trigger slot
+   replaces the menu-button slot, so the icon size above never reaches them. */
+html[data-tesla-touch] nav[aria-label="Projects"] [data-slot="tooltip-trigger"] {
+  width: 4.25rem !important;
+  height: 4.25rem !important;
+  min-width: 4.25rem !important;
+  min-height: 4.25rem !important;
+  border-radius: 1rem;
+}
+
+html[data-tesla-touch] nav[aria-label="Projects"] [data-slot="tooltip-trigger"] svg {
+  width: 1.75rem !important;
+  height: 1.75rem !important;
+}
+
+html[data-tesla-touch] .rail-folder-tray {
+  width: 4.25rem;
+}
+
+html[data-tesla-touch] nav[aria-label="Projects"] button[aria-label^="New thread in"] {
+  display: none;
+}
+
+html[data-tesla-touch] [data-thread-item] {
+  contain-intrinsic-size: auto 92px;
+  padding-block: 0.2rem;
+}
+
+html[data-tesla-touch] [data-testid="sidebar-row-card"],
+html[data-tesla-touch] [data-testid="sidebar-row-slim"],
+html[data-tesla-touch] [data-testid="sidebar-draft-row"] {
+  min-height: 4.75rem;
+  border-radius: 1rem;
+}
+
+html[data-tesla-touch] [data-testid="sidebar-row-card"]:active,
+html[data-tesla-touch] [data-testid="sidebar-row-slim"]:active,
+html[data-tesla-touch] [data-testid="sidebar-draft-row"]:active,
+html[data-tesla-touch] [data-tesla-new-thread]:active,
+html[data-tesla-touch] [data-tesla-search]:active {
+  transform: scale(0.98);
+}
+
+html[data-tesla-touch] [data-testid="sidebar-row-card"] > div,
+html[data-tesla-touch] [data-testid="sidebar-draft-row"] > div {
+  height: auto;
+  min-height: 4.5rem;
+  padding: 0.9rem 1rem;
+}
+
+html[data-tesla-touch] [data-testid="sidebar-row-slim"] {
+  height: auto;
+  padding: 0.85rem 1rem;
+}
+
+html[data-tesla-touch] [data-testid="sidebar-row-card"] .text-sm,
+html[data-tesla-touch] [data-testid="sidebar-row-slim"] .text-sm,
+html[data-tesla-touch] [data-testid="sidebar-draft-row"] .text-sm {
+  font-size: 1.25rem;
+  line-height: 1.35;
+}
+
+html[data-tesla-touch] [data-testid="sidebar-row-card"] .text-xs,
+html[data-tesla-touch] [data-testid="sidebar-row-slim"] .text-xs,
+html[data-tesla-touch] [data-testid="sidebar-draft-row"] .text-xs {
+  font-size: 0.95rem;
+}
+
+html[data-tesla-touch] [data-testid="sidebar-row-card"][aria-current="page"],
+html[data-tesla-touch] [data-testid="sidebar-row-slim"][aria-current="page"],
+html[data-tesla-touch] [data-testid="sidebar-draft-row"][aria-current="page"] {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--primary) 72%, transparent);
+}
+
+html[data-tesla-touch] [data-sidebar="sidebar"] [data-testid$="-header"] {
+  height: auto;
+  min-height: 3rem;
+}
+
+html[data-tesla-touch] [data-sidebar="sidebar"] [data-testid$="-header"] button {
+  min-height: 3rem;
+  font-size: 1rem;
+}
+
+html[data-tesla-touch] [data-testid="sidebar-draft-row"] button[aria-label="Discard draft"] {
+  width: 2.75rem;
+  height: 2.75rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+html[data-tesla-touch] [data-testid="sidebar-draft-row"] button[aria-label="Discard draft"] svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+html[data-tesla-touch] [data-chat-header] h2 {
+  font-size: 1.25rem;
+}
+
+/* Terminal and right-panel toggles sit in the workspace title bar, outside
+   the chat header, and keep the desktop icon width unless this names them. */
+html[data-tesla-touch] [data-workspace-titlebar-controls] [data-slot="toggle"] {
+  width: 3rem !important;
+  min-width: 3rem !important;
+  height: 3rem !important;
+  min-height: 3rem !important;
+}
+
+html[data-tesla-touch] [data-workspace-titlebar-controls] [data-slot="toggle"] svg {
+  width: 1.35rem !important;
+  height: 1.35rem !important;
+}
+
+html[data-tesla-touch] [data-chat-header] button {
+  min-height: 2.75rem;
+}
+
+html[data-tesla-touch] .chat-markdown,
+html[data-tesla-touch] [data-user-message-body] {
+  font-size: 1.125rem;
+  line-height: 1.6;
+}
+
+html[data-tesla-touch] [data-chat-composer-overlay="true"][data-composer-placement="docked"] {
+  padding-inline: 0.5rem;
+  padding-bottom: 0.85rem;
+}
+
+html[data-tesla-touch] [data-testid="composer-editor"] {
+  height: auto;
+  min-height: 3.5rem;
+  max-height: 9rem;
+  padding-block: 0.85rem;
+  font-size: 1.25rem;
+  line-height: 1.45;
+}
+
+html[data-tesla-touch] [data-slot="sheet-popup"][aria-label="Right panel"] {
+  width: min(48vw, 40rem);
+  max-width: 40rem;
+  min-width: min(24rem, 88vw);
+}

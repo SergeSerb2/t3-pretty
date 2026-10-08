@@ -18,6 +18,7 @@
  */
 import {
   CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS,
+  DISCOVERED_LOCAL_SERVERS_MAX_ITEMS,
   PREVIEW_URL_MAX_LENGTH,
   ThreadId,
   type DiscoveredLocalServer,
@@ -36,7 +37,7 @@ import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
-import { FetchHttpClient, HttpClient } from "effect/unstable/http";
+import { FetchHttpClient, HttpClient } from "effect/http";
 
 import * as ProcessRunner from "../processRunner.ts";
 
@@ -179,7 +180,9 @@ const projectWebProbeSnapshot = (
     const key = localServerKey(server.host, server.port);
     if (!visibleByServer.has(key)) visibleByServer.set(key, server);
   }
-  return [...visibleByServer.values()].toSorted((left, right) => left.port - right.port);
+  return [...visibleByServer.values()]
+    .toSorted((left, right) => left.port - right.port)
+    .slice(0, DISCOVERED_LOCAL_SERVERS_MAX_ITEMS);
 };
 
 const parseLsofOutput = (
@@ -218,6 +221,7 @@ const parseLsofOutput = (
         pid,
         terminal: pid === null ? null : (terminalByProcessId.get(pid) ?? null),
       });
+      if (seen.size >= DISCOVERED_LOCAL_SERVERS_MAX_ITEMS) break;
     }
   }
 
@@ -261,6 +265,7 @@ const parseWindowsListenerOutput = (
       pid: normalizedPid,
       terminal: normalizedPid === null ? null : (terminalByProcessId.get(normalizedPid) ?? null),
     });
+    if (seen.size >= DISCOVERED_LOCAL_SERVERS_MAX_ITEMS) break;
   }
   return [...seen.values()].toSorted((left, right) => left.port - right.port);
 };
@@ -289,6 +294,7 @@ const serversEqual = (
   return true;
 };
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* PortDiscoveryMake() {
   const net = yield* Net.NetService;
   const processRunner = yield* ProcessRunner.ProcessRunner;
@@ -549,7 +555,6 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
 
   const pollTick = Effect.fn("PortDiscovery.pollTick")(
     function* () {
-      if ((yield* Ref.get(stateRef)).retainCount <= 0) return;
       const configuredUrls = [
         ...new Set(
           [...(yield* Ref.get(stateRef)).listeners.values()].flatMap(
@@ -578,9 +583,12 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     ),
   );
 
-  // Single layer-scoped polling fiber. Ticks are no-ops when no client is
-  // currently retained, so the cost is one Ref.get every POLL_INTERVAL.
-  yield* Effect.forkScoped(pollTick().pipe(Effect.repeat(Schedule.spaced(POLL_INTERVAL))));
+  // Single layer-scoped polling fiber. Ticks skip the scan and its span when no
+  // client is currently retained, so the cost is one Ref.get every POLL_INTERVAL.
+  const pollIfRetained = Ref.get(stateRef).pipe(
+    Effect.flatMap((state) => (state.retainCount > 0 ? pollTick() : Effect.void)),
+  );
+  yield* Effect.forkScoped(pollIfRetained.pipe(Effect.repeat(Schedule.spaced(POLL_INTERVAL))));
 
   const acquireRetention = Effect.fn("PortDiscovery.retain")(function* () {
     const wasIdle = yield* Ref.modify(stateRef, (state) => [

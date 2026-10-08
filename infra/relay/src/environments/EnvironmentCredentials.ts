@@ -2,17 +2,17 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { and, eq, exists, isNull, ne, notExists } from "drizzle-orm";
+import { and, eq, exists, isNull, lt, ne, notExists } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import * as RelayDb from "../db.ts";
 import { relayEnvironmentCredentials, relayEnvironmentLinks } from "../persistence/schema.ts";
 
-export class EnvironmentCredentialCreatePersistenceError extends Schema.TaggedErrorClass<EnvironmentCredentialCreatePersistenceError>()(
+export class EnvironmentCredentialCreatePersistenceError extends Schema.TaggedError<EnvironmentCredentialCreatePersistenceError>()(
   "EnvironmentCredentialCreatePersistenceError",
   {
     stage: Schema.Literals([
@@ -31,7 +31,7 @@ export class EnvironmentCredentialCreatePersistenceError extends Schema.TaggedEr
   }
 }
 
-export class EnvironmentCredentialAuthenticatePersistenceError extends Schema.TaggedErrorClass<EnvironmentCredentialAuthenticatePersistenceError>()(
+export class EnvironmentCredentialAuthenticatePersistenceError extends Schema.TaggedError<EnvironmentCredentialAuthenticatePersistenceError>()(
   "EnvironmentCredentialAuthenticatePersistenceError",
   {
     stage: Schema.Literals(["hash-token", "lookup-credential"]),
@@ -43,7 +43,7 @@ export class EnvironmentCredentialAuthenticatePersistenceError extends Schema.Ta
   }
 }
 
-export class EnvironmentCredentialRevokePersistenceError extends Schema.TaggedErrorClass<EnvironmentCredentialRevokePersistenceError>()(
+export class EnvironmentCredentialRevokePersistenceError extends Schema.TaggedError<EnvironmentCredentialRevokePersistenceError>()(
   "EnvironmentCredentialRevokePersistenceError",
   {
     environmentId: Schema.String,
@@ -52,6 +52,18 @@ export class EnvironmentCredentialRevokePersistenceError extends Schema.TaggedEr
 ) {
   override get message(): string {
     return `Failed to revoke credentials for environment '${this.environmentId}'`;
+  }
+}
+
+export class EnvironmentCredentialPrunePersistenceError extends Schema.TaggedError<EnvironmentCredentialPrunePersistenceError>()(
+  "EnvironmentCredentialPrunePersistenceError",
+  {
+    revokedBefore: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to prune environment credentials revoked before '${this.revokedBefore}'`;
   }
 }
 
@@ -81,13 +93,29 @@ export class EnvironmentCredentials extends Context.Service<
   }
 >()("t3code-relay/environments/EnvironmentCredentials") {}
 
+export const pruneRevokedBefore = Effect.fn("relay.environment_credentials.prune_revoked_before")(
+  function* (input: { readonly revokedBefore: string }) {
+    const db = yield* RelayDb.RelayDb;
+    yield* db
+      .delete(relayEnvironmentCredentials)
+      .where(lt(relayEnvironmentCredentials.revokedAt, input.revokedBefore))
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new EnvironmentCredentialPrunePersistenceError({
+              revokedBefore: input.revokedBefore,
+              cause,
+            }),
+        ),
+      );
+  },
+);
+
 const make = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;
   const crypto = yield* Crypto.Crypto;
   const hashToken = (token: string) =>
-    crypto
-      .digest("SHA-256", new TextEncoder().encode(token))
-      .pipe(Effect.map(Encoding.encodeBase64Url));
+    crypto.digest("SHA-256", new TextEncoder().encode(token)).pipe(Effect.map(Base64Url.encode));
   const randomTokenPart = (segments: number) =>
     Effect.map(Effect.all(Array.from({ length: segments }, () => crypto.randomUUIDv4)), (values) =>
       values.join("").replaceAll("-", ""),

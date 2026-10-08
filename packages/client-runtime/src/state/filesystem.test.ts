@@ -1,11 +1,155 @@
+import { EnvironmentId } from "@t3tools/contracts";
+import * as Layer from "effect/Layer";
+import { Atom } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
+import { AuthFilesystemReadScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
 
+import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
+  createFilesystemEnvironmentAtoms,
+  FILESYSTEM_BROWSE_IDLE_TTL_MS,
   filterFilesystemBrowseEntries,
   getFilesystemBrowsePath,
+  resolveFilesystemReadAccess,
 } from "./filesystem.ts";
+
+describe("filesystem environment atoms", () => {
+  it("releases superseded browse queries on a typeahead-sized idle window", () => {
+    const runtime = Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+      EnvironmentRegistry,
+      never
+    >;
+    const atoms = createFilesystemEnvironmentAtoms(runtime);
+
+    expect(
+      atoms.browse({
+        environmentId: EnvironmentId.make("environment-1"),
+        input: { partialPath: "/repo/src", cwd: "/repo" },
+      }).idleTTL,
+    ).toBe(FILESYSTEM_BROWSE_IDLE_TTL_MS);
+  });
+});
+
+/** A server that already splits scopes; it never falls back to a parent grant. */
+const SPLIT_SCOPES_SERVER = { serverUpdateScope: "environment:maintain" } as const;
+
+describe("filesystem read access", () => {
+  it("waits for the initial catalog before declaring a missing environment disconnected", () => {
+    expect(
+      resolveFilesystemReadAccess({
+        isCatalogReady: false,
+        connection: null,
+        session: null,
+        sessionError: null,
+      }),
+    ).toEqual({ canReadFiles: false, isPending: true, error: null });
+  });
+
+  it("stops waiting when the loaded catalog has no matching environment", () => {
+    expect(
+      resolveFilesystemReadAccess({
+        isCatalogReady: true,
+        connection: null,
+        session: null,
+        sessionError: null,
+      }),
+    ).toEqual({
+      canReadFiles: false,
+      isPending: false,
+      error: "This environment is not connected.",
+    });
+  });
+
+  it.each(["available", "offline", "error"] as const)(
+    "stops waiting for an unresolved session when the connection is %s",
+    (phase) => {
+      expect(
+        resolveFilesystemReadAccess({
+          isCatalogReady: true,
+          connection: { phase, error: null },
+          session: null,
+          sessionError: null,
+        }),
+      ).toEqual({
+        canReadFiles: false,
+        isPending: false,
+        error: "This environment is not connected.",
+      });
+    },
+  );
+
+  it.each(["connected", "connecting", "reconnecting"] as const)(
+    "waits for the session check while %s",
+    (phase) => {
+      expect(
+        resolveFilesystemReadAccess({
+          isCatalogReady: true,
+          connection: { phase, error: null },
+          session: null,
+          sessionError: null,
+        }),
+      ).toEqual({ canReadFiles: false, isPending: true, error: null });
+    },
+  );
+
+  it("reports the transport failure when the session cannot be checked", () => {
+    expect(
+      resolveFilesystemReadAccess({
+        isCatalogReady: true,
+        connection: { phase: "error", error: "The relay is unavailable." },
+        session: null,
+        sessionError: null,
+      }),
+    ).toEqual({ canReadFiles: false, isPending: false, error: "The relay is unavailable." });
+  });
+
+  it.each([false, true])(
+    "preserves a cached file grant offline with catalog ready=%s",
+    (isCatalogReady) => {
+      const input = {
+        isCatalogReady,
+        connection: { phase: "offline", error: null },
+        session: { authenticated: true, scopes: [AuthFilesystemReadScope] },
+        sessionError: null,
+      } as const;
+      expect(resolveFilesystemReadAccess(input)).toEqual({
+        canReadFiles: true,
+        isPending: false,
+        error: null,
+      });
+      expect(
+        resolveFilesystemReadAccess({ ...input, sessionError: "The session has expired." }),
+      ).toEqual({ canReadFiles: false, isPending: false, error: "The session has expired." });
+    },
+  );
+
+  it.each([
+    { authenticated: true, scopes: [AuthOrchestrationReadScope], auth: SPLIT_SCOPES_SERVER },
+    { authenticated: false, scopes: [AuthFilesystemReadScope], auth: SPLIT_SCOPES_SERVER },
+  ] as const)("does not infer file access from an ungranted session", (session) => {
+    expect(
+      resolveFilesystemReadAccess({
+        isCatalogReady: true,
+        connection: { phase: "connected", error: null },
+        session,
+        sessionError: null,
+      }),
+    ).toEqual({ canReadFiles: false, isPending: false, error: null });
+  });
+
+  it("falls back to the orchestration grant on a server that predates filesystem:read", () => {
+    expect(
+      resolveFilesystemReadAccess({
+        isCatalogReady: true,
+        connection: { phase: "connected", error: null },
+        session: { authenticated: true, scopes: [AuthOrchestrationReadScope], auth: {} },
+        sessionError: null,
+      }),
+    ).toEqual({ canReadFiles: true, isPending: false, error: null });
+  });
+});
 
 describe("filesystem browse model", () => {
   it("derives the browse target and navigation state", () => {

@@ -1,16 +1,24 @@
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+  type AtomCommandResult,
+} from "@t3tools/client-runtime/state/runtime";
 
 export interface FileSaveCoordinatorOptions<A, E> {
   readonly debounceMs: number;
+  readonly canPersist?: () => boolean;
   readonly persist: (contents: string) => Promise<AtomCommandResult<A, E>>;
   readonly onPendingChange: (pending: boolean) => void;
-  readonly onConfirmed: (contents: string) => void;
+  /** Return false when another editor has newer unsaved contents. */
+  readonly onConfirmed: (contents: string) => boolean | void;
+  readonly onError: (error: unknown) => void;
 }
 
 export class FileSaveCoordinator<A = unknown, E = unknown> {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private latestContents = "";
   private latestRevision = 0;
+  private confirmedRevision = 0;
   private lastChangeAt = 0;
   private saving = false;
   private disposed = false;
@@ -18,6 +26,7 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   constructor(private readonly options: FileSaveCoordinatorOptions<A, E>) {}
 
   change(contents: string): void {
+    if (this.disposed) return;
     this.latestContents = contents;
     this.latestRevision += 1;
     this.lastChangeAt = Date.now();
@@ -46,20 +55,36 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   }
 
   private async persistLatest(): Promise<void> {
-    if (this.saving || this.latestRevision === 0) return;
+    if (this.saving || this.latestRevision === this.confirmedRevision) return;
+    if (this.options.canPersist?.() === false) {
+      return;
+    }
 
     this.saving = true;
     const contents = this.latestContents;
     const revision = this.latestRevision;
-    const result = await this.options.persist(contents);
-    const succeeded = result._tag === "Success";
-    if (succeeded) {
-      this.options.onConfirmed(contents);
+    let confirmed = false;
+    let failed = false;
+    let failure: unknown;
+    try {
+      const result = await this.options.persist(contents);
+      if (result._tag === "Success") {
+        this.confirmedRevision = revision;
+        confirmed = this.options.onConfirmed(contents) !== false;
+      } else if (!isAtomCommandInterrupted(result)) {
+        failed = true;
+        failure = squashAtomCommandFailure(result);
+      }
+    } catch (error) {
+      failed = true;
+      failure = error;
+    } finally {
+      this.saving = false;
     }
 
-    this.saving = false;
+    if (failed) this.options.onError(failure);
     if (revision === this.latestRevision) {
-      if (succeeded) this.options.onPendingChange(false);
+      if (confirmed) this.options.onPendingChange(false);
       return;
     }
 

@@ -1,4 +1,6 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
@@ -8,10 +10,12 @@ import {
   DEFAULT_CLI_PROXY_API_URL,
   DEFAULT_MODEL,
   alreadyReviewed,
+  callGrokReview,
   cliProxyApiKey,
   cliProxyApiUrl,
   formatIssueBody,
   formatReviewBody,
+  grokModel,
   parseReviewResponse,
   prNumberFromEvent,
   resolveExplicitPr,
@@ -25,6 +29,51 @@ import {
 const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 
 describe("Origin Grok PR review", () => {
+  it("requests Grok 4.7 Fast by default while preserving a configured override", async () => {
+    const previousModel = process.env.CLI_PROXY_REVIEW_MODEL;
+    const previousFetch = globalThis.fetch;
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url, ...JSON.parse(init.body) });
+      return new Response(
+        JSON.stringify({ output_text: JSON.stringify({ summary: "Looks safe.", issues: [] }) }),
+      );
+    };
+    try {
+      delete process.env.CLI_PROXY_REVIEW_MODEL;
+      await callGrokReview({ prompt: "Review this diff", apiKey: "clip_test" });
+      assert.equal(requests[0].model, "grok-4.7-build-fast");
+      assert.equal(requests[0].url, `${DEFAULT_CLI_PROXY_API_URL}/responses`);
+      process.env.CLI_PROXY_REVIEW_MODEL = " grok-custom ";
+      assert.equal(grokModel(), "grok-custom");
+      await callGrokReview({ prompt: "Review this diff", apiKey: "clip_test" });
+      assert.equal(requests[1].model, "grok-custom");
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousModel === undefined) delete process.env.CLI_PROXY_REVIEW_MODEL;
+      else process.env.CLI_PROXY_REVIEW_MODEL = previousModel;
+    }
+  });
+
+  it("preserves the upstream upgrade requirement when the proxy rejects an outdated client", async () => {
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          error:
+            "Your Grok CLI version (0.2.120) is outdated. Please update to version 1.0.13 or later.",
+        }),
+        { status: 426 },
+      );
+    try {
+      await expect(
+        callGrokReview({ prompt: "Review this diff", apiKey: "clip_test" }),
+      ).rejects.toThrow(/426: .*0\.2\.120.*1\.0\.13/);
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  });
+
   it("skips main and automation branches unless forced", () => {
     assert.match(shouldSkipBranch(""), /No Origin pull request/);
     assert.match(shouldSkipBranch("main"), /main/);
@@ -172,7 +221,7 @@ here you go
       url: "https://cursor.com/codebase/serbinenko/t3-pretty/pull/44",
     });
     assert.include(body, reviewMarker("deadbeef"));
-    assert.include(body, "Grok 4.6 review");
+    assert.include(body, "Grok review");
     assert.include(body, "1 bug(s)");
     assert.include(body, "origin pr thread resolve");
     assert.notInclude(body, "### bug — Non-monotonic versions");
@@ -181,7 +230,7 @@ here you go
 });
 
 describe("Origin Grok review workflow wiring", () => {
-  it("runs Origin PR review from macos-release with Grok 4.6", () => {
+  it("runs Origin PR review from self-hosted macos-release with Grok 4.7 Fast", () => {
     const reviewCi = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
@@ -196,22 +245,147 @@ describe("Origin Grok review workflow wiring", () => {
     );
     assert.notInclude(trusted, "refs/remotes/origin/main");
     assert.notInclude(trusted, "fetch --deepen=");
-    assert.include(trusted, "refs/t3-pretty/origin-main");
+    assert.include(trusted, '"+refs/heads/main:${main_ref}"');
+    assert.include(trusted, "originCommandEnvironment");
+    assert.include(trusted, "CURSOR_API_KEY");
+    assert.include(trusted, "ORIGIN_TOKEN");
+    assert.include(trusted, 'pass_origin_command_env "${DIR}/origin-forge.mjs"');
+    assert.notInclude(trusted, 'cp "${ROOT}/scripts/fork/origin-forge.mjs"');
+    assert.notInclude(
+      trusted,
+      'grep -q "originCommandEnvironment" "${ROOT}/scripts/fork/origin-forge.mjs"',
+    );
+    const updateIndex = trusted.indexOf("origin update");
+    assert.isAbove(updateIndex, trusted.indexOf("export GIT_TERMINAL_PROMPT=0"));
+    assert.isBelow(updateIndex, trusted.indexOf('ROOT="'));
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
     assert.include(reviewStep.slice(0, 1200), "queue: macos-release");
     assert.include(reviewStep, "automation");
     assert.notInclude(reviewStep, "build.pull_request");
     assert.include(reviewStep, "briefly waits for the PR");
     assert.include(reviewCi, "review-origin-pr.mjs");
-    assert.include(reviewCi, "grok-4.6");
+    assert.include(reviewCi, "grok-4.7-build-fast");
     assert.include(reviewCi, "CLI_PROXY_API_KEY");
     assert.include(reviewCi, "cli-proxy-api-production-1615.up.railway.app");
     assert.include(reviewCi, "origin-forge.mjs");
     assert.include(reviewCi, "brew install node");
+    assert.include(reviewCi, "HOMEBREW_NO_ASK=1");
     assert.notInclude(reviewCi, "/Users/m1-dev/");
     assert.notInclude(reviewCi, "XAI_API_KEY");
     assert.notInclude(reviewCi, "api.x.ai");
     assert.notInclude(reviewCi, "gh api");
     assert.notInclude(reviewCi, "gh pr");
+  });
+
+  it("injects Origin API keys into main's runOrigin without copying this checkout's origin-forge", () => {
+    const trusted = NodeFS.readFileSync(
+      NodePath.resolve(here, "run-trusted-origin-pr-ci.sh"),
+      "utf8",
+    );
+    const python = trusted.split("<<'PY'\n")[1]?.split("\nPY\n")[0];
+    assert.ok(python, "trusted wrapper must ship a python injector");
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-origin-env-"));
+    const file = NodePath.join(dir, "origin-forge.mjs");
+    try {
+      NodeFS.writeFileSync(
+        file,
+        [
+          "export function runOrigin(args, options = {}) {",
+          "  return runCommand(originBin(), args, {",
+          "    ...options,",
+          "    env: { ...originInstallerEnvironment(), ...options.env },",
+          "    inheritEnv: false,",
+          "  });",
+          "}",
+          "",
+          "export function installOriginCli() {",
+          '  runCommand("sh", ["-c", "curl | sh"], {',
+          "    inheritEnv: false,",
+          "    env: originInstallerEnvironment(),",
+          "  });",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      const result = NodeChildProcess.spawnSync("python3", ["-", file], {
+        encoding: "utf8",
+        input: python,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const patched = NodeFS.readFileSync(file, "utf8");
+      assert.include(patched, "CURSOR_API_KEY");
+      assert.include(patched, "ORIGIN_TOKEN");
+      assert.include(patched, "env: originInstallerEnvironment()");
+      assert.notInclude(patched.split("export function installOriginCli")[1], "CURSOR_API_KEY");
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("captures an upstream diff larger than the default 32 MiB without changing its content", () => {
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-review-large-diff-"));
+    const bytes = 33 * 1024 * 1024;
+    try {
+      const bin = NodePath.join(dir, ".local", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(bin, "origin"),
+        '#!/usr/bin/env node\nconst fs = require("node:fs"); const chunk = "x".repeat(1024 * 1024); for (let i = 0; i < 33; i++) fs.writeSync(1, chunk);\n',
+        { mode: 0o755 },
+      );
+      const moduleUrl = NodeURL.pathToFileURL(NodePath.resolve(here, "review-origin-pr.mjs"));
+      const result = NodeChildProcess.spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `import { pullRequestDiff } from ${JSON.stringify(moduleUrl.href)}; const diff = pullRequestDiff(807); if (diff.length !== ${bytes} || diff[0] !== "x" || diff.at(-1) !== "x") process.exit(1); console.log(diff.length);`,
+        ],
+        { encoding: "utf8", env: { HOME: dir, PATH: process.env.PATH } },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout.trim(), String(bytes));
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("patches only main's trusted diff capture, is idempotent, and rejects an unknown diff call", () => {
+    const wrapper = NodeFS.readFileSync(
+      NodePath.resolve(here, "run-trusted-origin-pr-ci.sh"),
+      "utf8",
+    );
+    const python = wrapper.split("<<'PY'\n")[2]?.split("\nPY\n")[0];
+    assert.ok(python, "trusted diff capture patch must exist");
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-review-trusted-diff-"));
+    const file = NodePath.join(dir, "review-origin-pr.mjs");
+    const original = [
+      "export function pullRequestDiff(target, { repo } = {}) {",
+      '  return runOrigin(["pr", "diff", String(target), ...originRepoFlag(repo), "--patch"]);',
+      "}",
+      "",
+      "function unrelated() { return runOrigin(['pr', 'view']); }",
+    ].join("\n");
+    try {
+      NodeFS.writeFileSync(file, original);
+      const patch = () =>
+        NodeChildProcess.spawnSync("python3", ["-", file], { encoding: "utf8", input: python });
+      assert.equal(patch().status, 0);
+      const changed = NodeFS.readFileSync(file, "utf8");
+      assert.include(changed, "maxBuffer: 128 * 1024 * 1024");
+      assert.equal(
+        changed.split("function unrelated()")[1],
+        original.split("function unrelated()")[1],
+      );
+      assert.equal(patch().status, 0);
+      assert.equal(NodeFS.readFileSync(file, "utf8"), changed);
+      const unknown = original.replace('"--patch"', '"--unknown-diff-option"');
+      NodeFS.writeFileSync(file, unknown);
+      assert.notEqual(patch().status, 0);
+      assert.equal(NodeFS.readFileSync(file, "utf8"), unknown);
+      assert.notInclude(wrapper, 'cp "${ROOT}/scripts/fork/review-origin-pr.mjs"');
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

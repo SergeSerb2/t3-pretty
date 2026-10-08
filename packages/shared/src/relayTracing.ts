@@ -5,8 +5,8 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Tracer from "effect/Tracer";
-import type { HttpClient } from "effect/unstable/http";
-import { OtlpSerialization, OtlpTracer } from "effect/unstable/observability";
+import type { HttpClient } from "effect/http";
+import { OtlpSerialization, OtlpTracer } from "effect/observability";
 
 export interface RelayClientTracingConfig {
   readonly tracesUrl: string;
@@ -22,6 +22,12 @@ export interface RelayClientTracingResource {
   readonly component?: string;
 }
 
+const TRACE_ERROR_MESSAGE_MAX_LENGTH = 4_096;
+const TRACE_ERROR_NAME_MAX_LENGTH = 128;
+const TRACE_ERROR_STACK_MAX_LENGTH = 64 * 1_024;
+const TRACE_ERROR_CAUSE_MAX_DEPTH = 16;
+const TRACE_EXIT_REASON_LIMIT = 64;
+
 export class RelayClientTracer extends Context.Reference(
   "@t3tools/shared/relayTracing/RelayClientTracer",
   {
@@ -29,6 +35,19 @@ export class RelayClientTracer extends Context.Reference(
   },
 ) {}
 
+/**
+ * The tracer that was active before relay tracing took over, so work nested
+ * inside a relay span can return to it.
+ */
+class LocalTracer extends Context.Reference("@t3tools/shared/relayTracing/LocalTracer", {
+  defaultValue: () => Option.none<Tracer.Tracer>(),
+}) {}
+
+/**
+ * Exports every span `effect` creates through the product tracer. Use it only
+ * around T3 Connect work; wrap local work inside it with
+ * {@link withLocalTracing} so it stays off the product tracer.
+ */
 export const withRelayClientTracing = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
@@ -36,13 +55,70 @@ export const withRelayClientTracing = <A, E, R>(
     Effect.flatMap(
       Option.match({
         onNone: () => effect,
-        onSome: (tracer) => effect.pipe(Effect.provideService(Tracer.Tracer, tracer)),
+        onSome: (tracer) =>
+          Tracer.Tracer.pipe(
+            Effect.flatMap((local) =>
+              effect.pipe(
+                Effect.provideService(Tracer.Tracer, tracer),
+                Effect.provideService(LocalTracer, Option.some(local)),
+              ),
+            ),
+          ),
       }),
     ),
   );
 
-function cleanTraceStack(error: Error): string {
-  const stack = error.stack ?? `${error.name}: ${error.message}`;
+/**
+ * Runs `effect` on the tracer that was active outside relay tracing. Its spans
+ * stay in the local trace and are never exported, so a relay span can time the
+ * work without shipping what the user's machine did to answer it.
+ */
+export const withLocalTracing = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  LocalTracer.pipe(
+    Effect.flatMap(
+      Option.match({
+        onNone: () => effect,
+        onSome: (local) => effect.pipe(Effect.provideService(Tracer.Tracer, local)),
+      }),
+    ),
+  );
+
+function readProperty(value: object, key: PropertyKey): unknown {
+  try {
+    return Reflect.get(value, key);
+  } catch {
+    return undefined;
+  }
+}
+
+function boundedString(value: unknown, maxLength: number): string | undefined {
+  return typeof value === "string" ? value.slice(0, maxLength) : undefined;
+}
+
+function fallbackTraceMessage(value: unknown): string {
+  if (value === null) return "null";
+  switch (typeof value) {
+    case "string":
+      return value.slice(0, TRACE_ERROR_MESSAGE_MAX_LENGTH);
+    case "boolean":
+    case "number":
+    case "bigint":
+    case "undefined":
+      return String(value);
+    case "symbol":
+      return value.description?.slice(0, TRACE_ERROR_MESSAGE_MAX_LENGTH) ?? "symbol";
+    case "function":
+      return "function";
+    case "object":
+      return "object";
+  }
+  return "unknown";
+}
+
+function cleanTraceStack(value: object, name: string, message: string): string {
+  const stack =
+    boundedString(readProperty(value, "stack"), TRACE_ERROR_STACK_MAX_LENGTH) ??
+    `${name}: ${message}`;
   const lines = stack.split("\n");
   const effectFrameIndex = lines.findIndex(
     (line, index) => index > 0 && /(?:Generator\.next|~effect\/Effect)/.test(line),
@@ -50,39 +126,42 @@ function cleanTraceStack(error: Error): string {
   return effectFrameIndex < 0 ? stack : lines.slice(0, effectFrameIndex).join("\n");
 }
 
-function traceSafeError(value: unknown, seen = new WeakSet<object>()): Error {
+function traceSafeError(value: unknown, seen = new WeakSet<object>(), depth = 0): Error {
+  const record = typeof value === "object" && value !== null ? value : undefined;
   const message =
-    value instanceof Error
-      ? value.message
-      : typeof value === "object" &&
-          value !== null &&
-          "message" in value &&
-          typeof value.message === "string"
-        ? value.message
-        : String(value);
+    boundedString(
+      record === undefined ? undefined : readProperty(record, "message"),
+      TRACE_ERROR_MESSAGE_MAX_LENGTH,
+    ) ?? fallbackTraceMessage(value);
+  const name =
+    boundedString(
+      record === undefined ? undefined : readProperty(record, "name"),
+      TRACE_ERROR_NAME_MAX_LENGTH,
+    ) ?? "Error";
 
   let cause: Error | undefined;
-  if (typeof value === "object" && value !== null && !seen.has(value)) {
-    seen.add(value);
-    if ("cause" in value && value.cause !== undefined) {
-      cause = traceSafeError(value.cause, seen);
+  if (record !== undefined && !seen.has(record)) {
+    seen.add(record);
+    const causeValue = readProperty(record, "cause");
+    if (causeValue !== undefined) {
+      cause =
+        depth < TRACE_ERROR_CAUSE_MAX_DEPTH
+          ? traceSafeError(causeValue, seen, depth + 1)
+          : new Error(`Additional cause omitted after ${TRACE_ERROR_CAUSE_MAX_DEPTH} levels.`);
     }
   }
 
   const error = new Error(message, cause ? { cause } : undefined);
-  if (value instanceof Error) {
-    error.name = value.name;
-    error.stack = cleanTraceStack(value);
-  } else if (
-    typeof value === "object" &&
-    value !== null &&
-    "name" in value &&
-    typeof value.name === "string"
-  ) {
-    error.name = value.name;
+  error.name = name;
+  if (record !== undefined) {
+    error.stack = cleanTraceStack(record, name, message);
   }
   if (cause) {
-    error.stack = `${error.stack ?? `${error.name}: ${error.message}`}\nCaused by: ${cause.stack ?? `${cause.name}: ${cause.message}`}`;
+    error.stack =
+      `${error.stack ?? `${error.name}: ${error.message}`}\nCaused by: ${cause.stack ?? `${cause.name}: ${cause.message}`}`.slice(
+        0,
+        TRACE_ERROR_STACK_MAX_LENGTH,
+      );
   }
   return error;
 }
@@ -91,19 +170,27 @@ function traceSafeExit(exit: Exit.Exit<unknown, unknown>): Exit.Exit<unknown, un
   if (Exit.isSuccess(exit)) {
     return exit;
   }
-  return Exit.failCause(
-    Cause.fromReasons(
-      exit.cause.reasons.map((reason) => {
-        if (Cause.isFailReason(reason)) {
-          return Cause.makeFailReason(traceSafeError(reason.error));
-        }
-        if (Cause.isDieReason(reason)) {
-          return Cause.makeDieReason(traceSafeError(reason.defect));
-        }
-        return reason;
-      }),
-    ),
-  );
+  const reasons: Array<Cause.Reason<unknown>> = [];
+  const retainedCount = Math.min(exit.cause.reasons.length, TRACE_EXIT_REASON_LIMIT);
+  for (let index = 0; index < retainedCount; index += 1) {
+    const reason = exit.cause.reasons[index];
+    if (reason === undefined) continue;
+    if (Cause.isFailReason(reason)) {
+      reasons.push(Cause.makeFailReason(traceSafeError(reason.error)));
+    } else if (Cause.isDieReason(reason)) {
+      reasons.push(Cause.makeDieReason(traceSafeError(reason.defect)));
+    } else {
+      reasons.push(reason);
+    }
+  }
+  if (exit.cause.reasons.length > retainedCount) {
+    reasons.push(
+      Cause.makeDieReason(
+        new Error(`${exit.cause.reasons.length - retainedCount} additional reasons omitted.`),
+      ),
+    );
+  }
+  return Exit.failCause(Cause.fromReasons(reasons));
 }
 
 function nonInterferingTracer(delegate: Tracer.Tracer): Tracer.Tracer {
@@ -124,7 +211,7 @@ function nonInterferingTracer(delegate: Tracer.Tracer): Tracer.Tracer {
   });
 }
 
-export function makeRelayClientTracingLayer(
+export function layer(
   config: RelayClientTracingConfig | null,
   resource: RelayClientTracingResource,
 ): Layer.Layer<never, never, HttpClient.HttpClient> {
@@ -132,7 +219,7 @@ export function makeRelayClientTracingLayer(
     return Layer.succeed(RelayClientTracer, Option.none());
   }
 
-  const tracerLayer = OtlpTracer.layer({
+  const layerTracer = OtlpTracer.layer({
     url: config.tracesUrl,
     headers: {
       Authorization: `Bearer ${config.tracesToken}`,
@@ -142,6 +229,7 @@ export function makeRelayClientTracingLayer(
       serviceName: resource.serviceName,
       serviceVersion: resource.serviceVersion,
       attributes: {
+        "service.namespace": "t3code",
         "service.runtime": resource.runtime,
         "service.component": resource.component ?? "relay-client",
         "t3.client.surface": resource.client,
@@ -151,6 +239,6 @@ export function makeRelayClientTracingLayer(
 
   return Layer.effect(
     RelayClientTracer,
-    Tracer.Tracer.pipe(Effect.map(nonInterferingTracer), Effect.map(Option.some)),
-  ).pipe(Layer.provide(tracerLayer));
+    Tracer.Tracer.pipe(Effect.map(nonInterferingTracer), Effect.asSome),
+  ).pipe(Layer.provide(layerTracer));
 }

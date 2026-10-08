@@ -1,6 +1,6 @@
 import { WS_METHODS } from "@t3tools/contracts";
 import type * as Crypto from "effect/Crypto";
-import type { Atom } from "effect/unstable/reactivity";
+import type { Atom } from "effect/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
@@ -8,6 +8,8 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
 } from "./runtime.ts";
+
+export const AGENT_INSTRUCTION_CONTENT_IDLE_TTL_MS = 60_000;
 
 /**
  * Atoms for the agent-instruction markdown files (`AGENTS.md`, `CLAUDE.md`,
@@ -29,7 +31,7 @@ export function createAgentInstructionAtoms<R, E>(
       label: "environment-data:agent-instructions:read",
       tag: WS_METHODS.agentInstructionsRead,
       staleTimeMs: 30_000,
-      idleTtlMs: 5 * 60_000,
+      idleTtlMs: AGENT_INSTRUCTION_CONTENT_IDLE_TTL_MS,
     }),
     write: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:agent-instructions:write",

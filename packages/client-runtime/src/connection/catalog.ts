@@ -1,9 +1,14 @@
-import { DesktopSshEnvironmentTargetSchema, EnvironmentId } from "@t3tools/contracts";
+import { DesktopSshEnvironmentTargetSchema } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import {
   BearerConnectionTarget,
+  ConnectionEnvironmentId,
+  ConnectionId,
+  ConnectionLabel,
+  ConnectionSecret,
+  ConnectionUrl,
   PrimaryConnectionTarget,
   RelayConnectionTarget,
   SshConnectionTarget,
@@ -11,17 +16,28 @@ import {
 } from "./model.ts";
 
 const ConnectionProfileBase = {
-  connectionId: Schema.String,
-  environmentId: EnvironmentId,
-  label: Schema.String,
+  connectionId: ConnectionId,
+  environmentId: ConnectionEnvironmentId,
+  label: ConnectionLabel,
 };
 
 export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnectionProfile>()(
   "BearerConnectionProfile",
   {
     ...ConnectionProfileBase,
-    httpBaseUrl: Schema.String,
-    wsBaseUrl: Schema.String,
+    httpBaseUrl: ConnectionUrl,
+    wsBaseUrl: ConnectionUrl,
+    /**
+     * Set on a route the server reported while this client was connected,
+     * rather than one the user paired. Learned routes are replaced when the
+     * server reports a different address, for example after a DHCP change.
+     */
+    learned: Schema.optionalKey(Schema.Literal(true)),
+    /**
+     * "t3-connect" when the route authenticates with the environment's T3
+     * Connect credential instead of a stored bearer token.
+     */
+    authorization: Schema.optionalKey(Schema.Literal("t3-connect")),
   },
 ) {}
 
@@ -36,15 +52,33 @@ export class SshConnectionProfile extends Schema.TaggedClass<SshConnectionProfil
 export const ConnectionProfile = Schema.Union([BearerConnectionProfile, SshConnectionProfile]);
 export type ConnectionProfile = typeof ConnectionProfile.Type;
 
+/** One way to reach an environment: T3 Connect, a direct URL, or SSH. */
+export interface ConnectionRoute {
+  readonly target: ConnectionTarget;
+  readonly profile: Option.Option<ConnectionProfile>;
+}
+
+/**
+ * A saved environment. `target` and `profile` are its preferred route;
+ * `alternateRoutes` holds the others in preference order. Read them together
+ * with `connectionRoutes`.
+ */
 export interface ConnectionCatalogEntry {
   readonly target: ConnectionTarget;
   readonly profile: Option.Option<ConnectionProfile>;
+  readonly alternateRoutes?: ReadonlyArray<ConnectionRoute>;
+  /** False when the user switched the environment off: saved, but never connects. */
+  readonly enabled: boolean;
+  /** Discovery rejection stays visible while the saved connection is switched off. */
+  readonly unsupportedReason?: string;
+  /** The rejection came from an outdated host, which can still be updated remotely. */
+  readonly serverUpdateRequired?: boolean;
 }
 
 export class BearerConnectionCredential extends Schema.TaggedClass<BearerConnectionCredential>()(
   "BearerConnectionCredential",
   {
-    token: Schema.String,
+    token: ConnectionSecret,
   },
 ) {}
 
@@ -104,12 +138,6 @@ export const PlatformConnectionRegistration = Schema.Union([
 ]);
 export type PlatformConnectionRegistration = typeof PlatformConnectionRegistration.Type;
 
-export function connectionRegistrationTarget(
-  registration: ConnectionRegistration | PrimaryConnectionRegistration,
-): ConnectionTarget {
-  return registration.target;
-}
-
 export function connectionRegistrationCatalogEntry(
   registration: ConnectionRegistration | PrimaryConnectionRegistration,
 ): ConnectionCatalogEntry {
@@ -119,12 +147,14 @@ export function connectionRegistrationCatalogEntry(
       return {
         target: registration.target,
         profile: Option.none(),
+        enabled: true,
       };
     case "BearerConnectionRegistration":
     case "SshConnectionRegistration":
       return {
         target: registration.target,
         profile: Option.some(registration.profile),
+        enabled: true,
       };
   }
 }

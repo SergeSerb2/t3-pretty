@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no generateKeyPairSync.
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -38,7 +39,7 @@ const keyPairEncodeError = (cause: unknown): ServerSecretStore.SecretStoreEncode
 const keyPairConcurrentReadError = (): ServerSecretStore.SecretStoreConcurrentReadError =>
   new ServerSecretStore.SecretStoreConcurrentReadError({ resource: KEY_PAIR_RESOURCE });
 
-const readEnvironmentKeyPair = Effect.fn("readEnvironmentKeyPair")(function* (
+export const readEnvironmentKeyPair = Effect.fn("readEnvironmentKeyPair")(function* (
   secrets: ServerSecretStore.ServerSecretStore["Service"],
 ) {
   const encoded = yield* secrets.get(CLOUD_LINK_KEY_PAIR);

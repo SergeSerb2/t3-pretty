@@ -5,6 +5,7 @@ import {
   type EnvironmentRpcSubscriptionObservation,
 } from "@t3tools/client-runtime/rpc";
 import {
+  CLIENT_ACTIVITY_CLIENT_ID_MAX_LENGTH,
   type BackgroundScope,
   type ClientActivityReportInput,
   type EnvironmentId,
@@ -23,6 +24,8 @@ import { randomUUID } from "./utils";
 
 const CLIENT_ID_STORAGE_KEY = "t3.backgroundActivity.clientId";
 const REPORT_INTERVAL_MS = 25_000;
+const REPORT_REQUEST_TIMEOUT_MS = 10_000;
+const REPORT_CONCURRENCY = 4;
 const LEASE_TTL_MS = 45_000;
 const RECENT_INTERACTION_WINDOW_MS = LEASE_TTL_MS;
 const BASELINE_SCOPES: ReadonlyArray<BackgroundScope> = [{ type: "provider-status" }];
@@ -61,10 +64,19 @@ function stableScopeKey(environmentId: EnvironmentId, scope: BackgroundScope): s
   }
 }
 
+export function isStoredBackgroundActivityClientId(value: string | null): value is string {
+  return (
+    value !== null &&
+    value.length > 0 &&
+    value.length <= CLIENT_ACTIVITY_CLIENT_ID_MAX_LENGTH &&
+    value.trim() === value
+  );
+}
+
 function getClientId(): string {
   try {
     const existing = window.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
-    if (existing) return existing;
+    if (isStoredBackgroundActivityClientId(existing)) return existing;
     const next = randomUUID();
     window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, next);
     return next;
@@ -118,7 +130,8 @@ function scopeForSubscription(
   if (observation.method !== WS_METHODS.subscribeVcsStatus) {
     return null;
   }
-  const input = observation.input as { readonly cwd?: unknown };
+  const input = observation.input as { readonly cwd?: unknown; readonly includeRemote?: unknown };
+  if (input.includeRemote === false) return null;
   return typeof input.cwd === "string" ? { type: "vcs-status", cwd: input.cwd } : null;
 }
 
@@ -164,20 +177,20 @@ export function retainedBackgroundScopes(
   ).filter((scope): scope is BackgroundScope => scope !== null);
 }
 
-export const backgroundActivityObserverLayer = Layer.succeed(
+export const layerObserver = Layer.succeed(
   EnvironmentRpcSubscriptionObserver,
   EnvironmentRpcSubscriptionObserver.of({
     observe: observeBackgroundActivitySubscription,
   }),
 );
 
-export const backgroundActivityReporterLayer = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     if (typeof window === "undefined" || typeof document === "undefined") {
       return;
     }
 
-    const registry = yield* EnvironmentRegistry;
+    const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
     const clock = yield* Clock.Clock;
     const reportRequests = yield* Queue.sliding<void>(1);
     const requestReport = () => Queue.offerUnsafe(reportRequests, undefined);
@@ -206,8 +219,8 @@ export const backgroundActivityReporterLayer = Layer.effectDiscard(
                 createActivityReport(environmentId, lastInteractionAtMs, observedAtMs),
               ),
             )
-            .pipe(Effect.ignore),
-        { concurrency: "unbounded", discard: true },
+            .pipe(Effect.timeout(REPORT_REQUEST_TIMEOUT_MS), Effect.ignore),
+        { concurrency: REPORT_CONCURRENCY, discard: true },
       );
     }).pipe(Effect.withSpan("web.backgroundActivity.report"));
 

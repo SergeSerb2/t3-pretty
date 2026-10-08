@@ -1,13 +1,14 @@
-import { EnvironmentId, type OrchestrationShellSnapshot } from "@t3tools/contracts";
+import { EnvironmentId, type OrchestrationV2ArchivedShellSnapshot } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import * as Schema from "effect/Schema";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 export interface ArchivedSnapshotEntry {
   readonly environmentId: EnvironmentId;
-  readonly snapshot: OrchestrationShellSnapshot;
+  readonly snapshot: OrchestrationV2ArchivedShellSnapshot;
 }
 
 export interface ArchivedThreadSnapshotsState {
@@ -16,31 +17,30 @@ export interface ArchivedThreadSnapshotsState {
   readonly isLoading: boolean;
 }
 
-const ARCHIVED_THREADS_ENVIRONMENT_KEY_SEPARATOR = "\u001f";
 const environmentIdOrder = Order.String as Order.Order<EnvironmentId>;
+const ArchivedThreadsEnvironmentKey = Schema.fromJsonString(Schema.Array(EnvironmentId));
+const decodeArchivedThreadsEnvironmentKey = Schema.decodeUnknownOption(
+  ArchivedThreadsEnvironmentKey,
+);
 
 export function makeArchivedThreadsEnvironmentKey(
   environmentIds: ReadonlyArray<EnvironmentId>,
 ): string {
-  return pipe(environmentIds, Arr.sort(environmentIdOrder), (sortedEnvironmentIds) =>
-    sortedEnvironmentIds.join(ARCHIVED_THREADS_ENVIRONMENT_KEY_SEPARATOR),
+  return pipe(
+    Array.from(new Set(environmentIds)),
+    Arr.sort(environmentIdOrder),
+    (sortedEnvironmentIds) => JSON.stringify(sortedEnvironmentIds),
   );
 }
 
 export function parseArchivedThreadsEnvironmentKey(key: string): ReadonlyArray<EnvironmentId> {
-  if (key.length === 0) {
-    return [];
-  }
-  return pipe(
-    key.split(ARCHIVED_THREADS_ENVIRONMENT_KEY_SEPARATOR),
-    Arr.map((environmentId) => EnvironmentId.make(environmentId)),
-  );
+  return Option.getOrElse(decodeArchivedThreadsEnvironmentKey(key), () => []);
 }
 
 export function createArchivedThreadSnapshotsAtomFamily<E>(options: {
   readonly getSnapshotAtom: (
     environmentId: EnvironmentId,
-  ) => Atom.Atom<AsyncResult.AsyncResult<OrchestrationShellSnapshot, E>>;
+  ) => Atom.Atom<AsyncResult.AsyncResult<OrchestrationV2ArchivedShellSnapshot, E>>;
   readonly labelPrefix: string;
 }) {
   return Atom.family((environmentKey: string) =>

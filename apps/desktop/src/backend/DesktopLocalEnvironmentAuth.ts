@@ -1,17 +1,46 @@
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
-import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import type { RemoteEnvironmentRequestError } from "@t3tools/client-runtime/rpc";
+import {
+  DESKTOP_LOCAL_BEARER_EXCHANGE_RETRY_TIMEOUT_MS,
+  DESKTOP_LOCAL_BEARER_READY_TIMEOUT_MS,
+  PRIMARY_LOCAL_ENVIRONMENT_ID,
+} from "@t3tools/contracts";
+import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClient from "effect/http/HttpClient";
 
 import * as DesktopBackendPool from "./DesktopBackendPool.ts";
 
-export class DesktopLocalEnvironmentAuthBackendNotConfiguredError extends Schema.TaggedErrorClass<DesktopLocalEnvironmentAuthBackendNotConfiguredError>()(
+// The window opens (and the renderer asks for this token) before the child
+// backend accepts HTTP. A single failed POST /oauth/token used to reject the
+// IPC invoke with a nested Effect error; Electron often fails to clone that
+// rejection, so the renderer promise never settles and #boot-shell stays up
+// even after "backend ready". Wait for the primary latch, then retry the
+// remaining listen race. Cause is a string so a late failure still serializes.
+export const LOCAL_ENVIRONMENT_AUTH_READY_TIMEOUT = Duration.millis(
+  DESKTOP_LOCAL_BEARER_READY_TIMEOUT_MS,
+);
+export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT = Duration.millis(
+  DESKTOP_LOCAL_BEARER_EXCHANGE_RETRY_TIMEOUT_MS,
+);
+export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_SPACING = Duration.millis(200);
+export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_TIMEOUT_MS = 2_000;
+
+// Only transient loopback failures are retryable; rejected credentials and other
+// server errors are final.
+const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([502, 503, 504]);
+
+export class DesktopLocalEnvironmentAuthBackendNotConfiguredError extends Schema.TaggedError<DesktopLocalEnvironmentAuthBackendNotConfiguredError>()(
   "DesktopLocalEnvironmentAuthBackendNotConfiguredError",
   {},
 ) {
@@ -20,9 +49,9 @@ export class DesktopLocalEnvironmentAuthBackendNotConfiguredError extends Schema
   }
 }
 
-export class DesktopLocalEnvironmentAuthSessionBootstrapError extends Schema.TaggedErrorClass<DesktopLocalEnvironmentAuthSessionBootstrapError>()(
+export class DesktopLocalEnvironmentAuthSessionBootstrapError extends Schema.TaggedError<DesktopLocalEnvironmentAuthSessionBootstrapError>()(
   "DesktopLocalEnvironmentAuthSessionBootstrapError",
-  { cause: Schema.Defect() },
+  { cause: Schema.String },
 ) {
   override get message(): string {
     return "Failed to create the local desktop bearer session.";
@@ -42,6 +71,32 @@ export class DesktopLocalEnvironmentAuth extends Context.Service<
   }
 >()("@t3tools/desktop/backend/DesktopLocalEnvironmentAuth") {}
 
+const isRetryableLocalBearerBootstrapError = (error: RemoteEnvironmentRequestError): boolean => {
+  switch (error._tag) {
+    case "RemoteEnvironmentAuthFetchError":
+    case "RemoteEnvironmentAuthTimeoutError":
+      return true;
+    case "RemoteEnvironmentAuthUndeclaredStatusError":
+      return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status);
+    default:
+      return false;
+  }
+};
+
+const describeLocalBearerBootstrapCause = (cause: unknown): string => {
+  if (cause instanceof Error && cause.message.length > 0) {
+    return cause.message;
+  }
+  if (typeof cause === "object" && cause !== null && "message" in cause) {
+    const message = cause.message;
+    if (typeof message === "string" && message.length > 0) {
+      return message;
+    }
+  }
+  return "Failed to create the local desktop bearer session.";
+};
+
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const httpClient = yield* HttpClient.HttpClient;
@@ -59,14 +114,37 @@ export const make = Effect.gen(function* () {
         const instances = yield* pool.list;
         const primary = instances.find((instance) => instance.id === PRIMARY_LOCAL_ENVIRONMENT_ID);
         const configOption = primary === undefined ? Option.none() : yield* primary.currentConfig;
-        if (Option.isNone(configOption)) {
+        if (Option.isNone(configOption) || primary === undefined) {
           return yield* new DesktopLocalEnvironmentAuthBackendNotConfiguredError();
         }
         const config = configOption.value;
-        const credential = config.bootstrap.desktopBootstrapToken;
+        // A backend launched with the desktop secret accepts the current
+        // window's token, not the one frozen into its launch config; this
+        // exchange can run long after launch (e.g. after a suspend).
+        const secret = config.bootstrap.desktopBootstrapSecret;
+        const credential =
+          secret === undefined
+            ? config.bootstrap.desktopBootstrapToken
+            : currentDesktopBootstrapToken(secret, yield* Clock.currentTimeMillis);
         if (!credential) {
           return yield* new DesktopLocalEnvironmentAuthBackendNotConfiguredError();
         }
+
+        const ready = yield* primary.waitForReady(LOCAL_ENVIRONMENT_AUTH_READY_TIMEOUT).pipe(
+          Effect.catchCause((cause) =>
+            Effect.fail(
+              new DesktopLocalEnvironmentAuthSessionBootstrapError({
+                cause: describeLocalBearerBootstrapCause(Cause.squash(cause)),
+              }),
+            ),
+          ),
+        );
+        if (!ready) {
+          return yield* new DesktopLocalEnvironmentAuthSessionBootstrapError({
+            cause: "Timed out waiting for the local backend to become ready.",
+          });
+        }
+
         const session = yield* bootstrapRemoteBearerSession({
           httpBaseUrl: config.httpBaseUrl.href,
           credential,
@@ -74,13 +152,31 @@ export const make = Effect.gen(function* () {
             label: "T3 Pretty Desktop",
             deviceType: "desktop",
           },
+          timeoutMs: LOCAL_ENVIRONMENT_AUTH_EXCHANGE_TIMEOUT_MS,
         }).pipe(
           Effect.provideService(HttpClient.HttpClient, httpClient),
+          Effect.retry({
+            while: isRetryableLocalBearerBootstrapError,
+            schedule: Schedule.spaced(LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_SPACING),
+          }),
+          // Bounds the attempts and any request still in flight at the deadline.
+          Effect.timeoutOption(LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT),
           Effect.mapError(
             (cause) =>
               new DesktopLocalEnvironmentAuthSessionBootstrapError({
-                cause,
+                cause: describeLocalBearerBootstrapCause(cause),
               }),
+          ),
+          Effect.flatMap((option) =>
+            Option.match(option, {
+              onNone: () =>
+                Effect.fail(
+                  new DesktopLocalEnvironmentAuthSessionBootstrapError({
+                    cause: "Timed out waiting for the local backend bearer session.",
+                  }),
+                ),
+              onSome: Effect.succeed,
+            }),
           ),
         );
         yield* Ref.set(tokenRef, Option.some(session.access_token));

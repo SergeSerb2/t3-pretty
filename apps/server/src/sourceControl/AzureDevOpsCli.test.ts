@@ -1,12 +1,12 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, afterEach, describe, expect, vi } from "@effect/vitest";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 import { VcsProcessExitError, VcsProcessSpawnError } from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -22,13 +22,13 @@ const processOutput = (stdout: string): VcsProcess.VcsProcessOutput => ({
 
 const mockRun = vi.fn<VcsProcess.VcsProcess["Service"]["run"]>();
 
-const supportLayer = Layer.mergeAll(
+const layerSupport = Layer.mergeAll(
   Layer.mock(VcsProcess.VcsProcess)({
     run: mockRun,
   }),
   NodeServices.layer,
 );
-const layer = Layer.mergeAll(AzureDevOpsCli.layer.pipe(Layer.provide(supportLayer)), supportLayer);
+const layer = Layer.mergeAll(AzureDevOpsCli.layer.pipe(Layer.provide(layerSupport)), layerSupport);
 
 afterEach(() => {
   mockRun.mockReset();
@@ -40,7 +40,6 @@ describe("AzureDevOpsCli.layer", () => {
       mockRun.mockReturnValueOnce(
         Effect.succeed(
           processOutput(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               pullRequestId: 42,
               title: "Add Azure provider",
@@ -98,7 +97,6 @@ describe("AzureDevOpsCli.layer", () => {
       mockRun.mockReturnValueOnce(
         Effect.succeed(
           processOutput(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               pullRequestId: 863,
               title: "Fix Azure link",
@@ -135,7 +133,6 @@ describe("AzureDevOpsCli.layer", () => {
       mockRun.mockReturnValueOnce(
         Effect.succeed(
           processOutput(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 pullRequestId: 7,
@@ -164,10 +161,11 @@ describe("AzureDevOpsCli.layer", () => {
       });
 
       assert.strictEqual(result[0]?.state, "merged");
-      assert.deepStrictEqual(
+      assert.deepEqual(
         result[0]?.mergedAt,
         Option.some(DateTime.makeUnsafe("2026-01-03T00:00:00.000Z")),
       );
+      assert.strictEqual(result[0]?.closedAt, null);
       expect(mockRun).toHaveBeenCalledWith({
         operation: "AzureDevOpsCli.execute",
         command: "az",
@@ -198,7 +196,6 @@ describe("AzureDevOpsCli.layer", () => {
       mockRun.mockReturnValueOnce(
         Effect.succeed(
           processOutput(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               name: "repo",
               webUrl: "https://dev.azure.com/acme/project/_git/repo",
@@ -231,7 +228,6 @@ describe("AzureDevOpsCli.layer", () => {
       mockRun.mockReturnValueOnce(
         Effect.succeed(
           processOutput(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               name: "repo",
               webUrl: "https://dev.azure.com/acme/project/_git/repo",
@@ -333,6 +329,28 @@ describe("AzureDevOpsCli.layer", () => {
         ],
         cwd: "/repo",
         timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("forwards explicit output limits to the process boundary", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+
+      const az = yield* AzureDevOpsCli.AzureDevOpsCli;
+      yield* az.execute({
+        cwd: "/repo",
+        args: ["repos", "pr", "list"],
+        maxOutputBytes: 16 * 1024 * 1024,
+      });
+
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "AzureDevOpsCli.execute",
+        command: "az",
+        args: ["repos", "pr", "list"],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+        maxOutputBytes: 16 * 1024 * 1024,
       });
     }).pipe(Effect.provide(layer)),
   );

@@ -1,3 +1,4 @@
+import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Duration from "effect/Duration";
@@ -8,12 +9,14 @@ import * as Result from "effect/Result";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import {
   baseSshArgs,
+  collectProcessOutput,
   getLastNonEmptyOutputLine,
   parseSshResolveOutput,
+  remoteStateKey,
   resolveRemoteT3CliPackageSpec,
   runSshCommand,
 } from "./command.ts";
@@ -65,6 +68,17 @@ const makeNeverFinishingProcess = () => {
 };
 
 describe("ssh command", () => {
+  it.effect("keeps draining while retaining only the configured output tail", () =>
+    Effect.gen(function* () {
+      const output = yield* collectProcessOutput(
+        Stream.make(encoder.encode("abcdef"), encoder.encode("ghij")),
+        6,
+      );
+
+      assert.equal(output, "[earlier output truncated]\nefghij");
+    }),
+  );
+
   it.effect("parses resolved ssh config output into a target", () =>
     Effect.sync(() => {
       assert.deepEqual(
@@ -106,21 +120,21 @@ describe("ssh command", () => {
           appVersion: "0.0.17",
           updateChannel: "latest",
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.17.tgz",
+        forkCliTarballUrl("0.0.17"),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
           appVersion: "0.0.17-nightly.20260415.44",
           updateChannel: "nightly",
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.17-nightly.20260415.44.tgz",
+        forkCliTarballUrl("0.0.17-nightly.20260415.44"),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
           appVersion: "0.0.33-nightly.20260809.1042000012",
           updateChannel: "nightly",
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.33-nightly.20260809.1042000012.tgz",
+        forkCliTarballUrl("0.0.33-nightly.20260809.1042000012"),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
@@ -128,7 +142,7 @@ describe("ssh command", () => {
           updateChannel: "nightly",
           isDevelopment: true,
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz",
+        forkCliTarballUrl(),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
@@ -136,9 +150,33 @@ describe("ssh command", () => {
           updateChannel: "latest",
           isDevelopment: true,
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz",
+        forkCliTarballUrl(),
       );
     }),
+  );
+
+  // Remote servers store state under this key, so it must not change across releases.
+  it.effect("derives a stable remote state key", () =>
+    Effect.gen(function* () {
+      assert.equal(
+        yield* remoteStateKey({
+          alias: "devbox",
+          hostname: "devbox.example.com",
+          username: "julius",
+          port: 2222,
+        }),
+        "711bc738002d72fd",
+      );
+      assert.equal(
+        yield* remoteStateKey({
+          alias: "fixture",
+          hostname: "fixture",
+          username: null,
+          port: null,
+        }),
+        "326264c4f08c8a0c",
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("reads the last non-empty ssh output line", () =>
@@ -156,8 +194,8 @@ describe("ssh command", () => {
     const spawner = ChildProcessSpawner.make(() =>
       Effect.succeed(makeFailedProcess({ stdout: "Pairing token creation failed\n" })),
     );
-    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
-    const processLayer = Layer.mergeAll(NodeServices.layer, spawnerLayer);
+    const layerSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const layerProcess = Layer.mergeAll(NodeServices.layer, layerSpawner);
 
     return Effect.gen(function* () {
       const result = yield* Effect.result(
@@ -179,15 +217,15 @@ describe("ssh command", () => {
         assert.equal(result.failure.stdout, "Pairing token creation failed\n");
         assert.equal(result.failure.stderr, "");
       }
-    }).pipe(Effect.provide(processLayer));
+    }).pipe(Effect.provide(layerProcess));
   });
 
   it.effect("redacts credentials from stdout in non-zero command failures", () => {
     const spawner = ChildProcessSpawner.make(() =>
       Effect.succeed(makeFailedProcess({ stdout: '{"credential":"pairing-secret"}\n' })),
     );
-    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
-    const processLayer = Layer.mergeAll(NodeServices.layer, spawnerLayer);
+    const layerSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const layerProcess = Layer.mergeAll(NodeServices.layer, layerSpawner);
 
     return Effect.gen(function* () {
       const result = yield* Effect.result(
@@ -208,13 +246,44 @@ describe("ssh command", () => {
         assert.equal(result.failure.message, '{"credential":"[redacted]"}');
         assert.equal(result.failure.stdout, '{"credential":"[redacted]"}\n');
       }
+    }).pipe(Effect.provide(layerProcess));
+  });
+
+  it.effect("redacts credentials from stderr in non-zero command failures", () => {
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.succeed(
+        makeFailedProcess({ stdout: "", stderr: '{"bearerToken":"remote-secret"}\n' }),
+      ),
+    );
+    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const processLayer = Layer.mergeAll(NodeServices.layer, spawnerLayer);
+
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(
+        runSshCommand(
+          {
+            alias: "devbox",
+            hostname: "devbox.example.com",
+            username: "julius",
+            port: 2222,
+          },
+          { remoteCommandArgs: ["sh", "-s"] },
+        ),
+      );
+
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, SshCommandError);
+        assert.equal(result.failure.message, '{"bearerToken":"[redacted]"}');
+        assert.equal(result.failure.stderr, '{"bearerToken":"[redacted]"}\n');
+      }
     }).pipe(Effect.provide(processLayer));
   });
 
   it.effect("fails commands that never finish", () => {
     const spawner = ChildProcessSpawner.make(() => Effect.succeed(makeNeverFinishingProcess()));
-    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
-    const processLayer = Layer.mergeAll(NodeServices.layer, spawnerLayer, TestClock.layer());
+    const layerSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const layerProcess = Layer.mergeAll(NodeServices.layer, layerSpawner, TestClock.layer());
 
     return Effect.gen(function* () {
       const fiber = yield* Effect.forkChild(
@@ -239,6 +308,6 @@ describe("ssh command", () => {
       if (Result.isFailure(result)) {
         assert.include(result.failure.message, "SSH command timed out after 1ms.");
       }
-    }).pipe(Effect.provide(processLayer));
+    }).pipe(Effect.provide(layerProcess));
   });
 });

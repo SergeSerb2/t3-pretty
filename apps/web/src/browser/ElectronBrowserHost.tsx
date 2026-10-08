@@ -1,14 +1,18 @@
 "use client";
 
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { FILL_PREVIEW_VIEWPORT } from "@t3tools/contracts";
-import { useEffect, useMemo, useRef } from "react";
+import { AuthPreviewOperateScope, FILL_PREVIEW_VIEWPORT } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { type ComponentProps, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
+
+import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 
 import { isElectron } from "~/env";
 import { useTheme } from "~/hooks/useTheme";
 import { useActivePreviewSessions } from "~/previewStateStore";
 import { usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
+import { useEnvironmentScope } from "~/state/session";
 
 import { readPreviewAnnotationTheme } from "./annotationTheme";
 import { useBrowserPointerStore } from "./browserPointerStore";
@@ -20,32 +24,41 @@ import {
   resolveResidentPreviewThreads,
   useAutomatingPreviewThreads,
 } from "./previewGuestResidency";
+import { rendersServerTabNatively } from "./previewRuntime";
 import { previewRuntimeTabId } from "./previewRuntimeTabId";
 
 export function ElectronBrowserHost() {
   const { resolvedTheme } = useTheme();
   const previewByThreadKey = useActivePreviewSessions();
+  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   const sessions = useMemo(
     () =>
       Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
         const threadRef = parseScopedThreadKey(threadKey);
+        // Server tabs of other environments stream; this desktop's own server tabs render here.
         return threadRef
-          ? Object.values(previewState.sessions).map((snapshot) => ({
-              threadKey,
-              threadRef,
-              snapshot,
-              runtimeTabId: previewRuntimeTabId(
+          ? Object.values(previewState.sessions)
+              .filter(
+                (snapshot) =>
+                  snapshot.runtime !== "server" ||
+                  rendersServerTabNatively(threadRef.environmentId, primaryEnvironmentId, snapshot),
+              )
+              .map((snapshot) => ({
+                threadKey,
                 threadRef,
-                previewState.serverEpoch,
-                snapshot.tabId,
-              ),
-              pictureInPicture:
-                previewState.desktopByTabId[snapshot.tabId]?.pictureInPicture ?? false,
-              zoomFactor: previewState.desktopByTabId[snapshot.tabId]?.zoomFactor ?? 1,
-            }))
+                snapshot,
+                runtimeTabId: previewRuntimeTabId(
+                  threadRef,
+                  previewState.serverEpoch,
+                  snapshot.tabId,
+                ),
+                pictureInPicture:
+                  previewState.desktopByTabId[snapshot.tabId]?.pictureInPicture ?? false,
+                zoomFactor: previewState.desktopByTabId[snapshot.tabId]?.zoomFactor ?? 1,
+              }))
           : [];
       }),
-    [previewByThreadKey],
+    [previewByThreadKey, primaryEnvironmentId],
   );
 
   const visibleRuntimeTabIds = useBrowserSurfaceStore(
@@ -60,14 +73,19 @@ export function ElectronBrowserHost() {
   );
   const automatingThreadKeys = useAutomatingPreviewThreads();
   const lastPinnedAt = useRef(new Map<string, number>()).current;
+  const previousRuntimeTabIdsRef = useRef(new Set<string>());
 
   const { resident, pinnedKeys } = useMemo(() => {
     const visible = new Set(visibleRuntimeTabIds);
     const miniPlayers = new Set(miniPlayerThreadKeys);
     const threadKeys: string[] = [];
+    const knownThreadKeys = new Set<string>();
     const pinned = new Set<string>();
     for (const session of sessions) {
-      if (!threadKeys.includes(session.threadKey)) threadKeys.push(session.threadKey);
+      if (!knownThreadKeys.has(session.threadKey)) {
+        knownThreadKeys.add(session.threadKey);
+        threadKeys.push(session.threadKey);
+      }
       if (
         visible.has(session.runtimeTabId) ||
         session.pictureInPicture ||
@@ -91,8 +109,22 @@ export function ElectronBrowserHost() {
 
   useEffect(() => {
     const now = Date.now();
+    const activeThreadKeys = new Set(sessions.map((session) => session.threadKey));
+    for (const threadKey of lastPinnedAt.keys()) {
+      if (!activeThreadKeys.has(threadKey)) lastPinnedAt.delete(threadKey);
+    }
     for (const threadKey of pinnedKeys) lastPinnedAt.set(threadKey, now);
-  }, [lastPinnedAt, pinnedKeys]);
+  }, [lastPinnedAt, pinnedKeys, sessions]);
+
+  useEffect(() => {
+    const currentRuntimeTabIds = new Set(sessions.map((session) => session.runtimeTabId));
+    for (const runtimeTabId of previousRuntimeTabIdsRef.current) {
+      if (currentRuntimeTabIds.has(runtimeTabId)) continue;
+      useBrowserSurfaceStore.getState().remove(runtimeTabId);
+      useBrowserPointerStore.getState().clear(runtimeTabId);
+    }
+    previousRuntimeTabIdsRef.current = currentRuntimeTabIds;
+  }, [sessions]);
 
   useEffect(() => {
     const preview = window.desktopBridge?.preview;
@@ -138,23 +170,44 @@ export function ElectronBrowserHost() {
   if (!isElectron) return null;
   return (
     <div className="contents" data-electron-browser-host>
-      {sessions.map(({ threadKey, threadRef, snapshot, runtimeTabId, zoomFactor }) => {
-        // Dormant threads keep their server-side session; the guest is rebuilt
-        // from the tab's last URL when the thread is used again.
-        if (!resident.has(threadKey)) return null;
-        const url = snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
-        return (
-          <HostedBrowserWebview
-            key={runtimeTabId}
-            threadRef={threadRef}
-            tabId={snapshot.tabId}
-            runtimeTabId={runtimeTabId}
-            initialUrl={url}
-            viewport={snapshot.viewport ?? FILL_PREVIEW_VIEWPORT}
-            zoomFactor={zoomFactor}
-          />
-        );
-      })}
+      {sessions.map(
+        ({ threadKey, threadRef, snapshot, runtimeTabId, pictureInPicture, zoomFactor }) => {
+          // Dormant threads keep their server-side session; the guest is rebuilt
+          // from the tab's last URL when the thread is used again.
+          if (!resident.has(threadKey)) return null;
+          const url = snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
+          return (
+            <AuthorizedBrowserWebview
+              key={runtimeTabId}
+              threadRef={threadRef}
+              tabId={snapshot.tabId}
+              runtimeTabId={runtimeTabId}
+              initialUrl={url}
+              viewport={snapshot.viewport ?? FILL_PREVIEW_VIEWPORT}
+              pictureInPicture={pictureInPicture}
+              profileId={snapshot.profileId}
+              zoomFactor={zoomFactor}
+              serverDriven={snapshot.runtime === "server"}
+              {...(snapshot.runtime === "server"
+                ? {
+                    serverRendering: {
+                      colorScheme: snapshot.colorScheme ?? "system",
+                      zoomFactor: snapshot.zoomFactor ?? 1,
+                    },
+                  }
+                : {})}
+            />
+          );
+        },
+      )}
     </div>
   );
+}
+
+function AuthorizedBrowserWebview(props: ComponentProps<typeof HostedBrowserWebview>) {
+  const canOperatePreview = useEnvironmentScope(
+    props.threadRef.environmentId,
+    AuthPreviewOperateScope,
+  );
+  return canOperatePreview ? <HostedBrowserWebview {...props} /> : null;
 }

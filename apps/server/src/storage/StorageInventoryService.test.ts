@@ -1,35 +1,34 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ProjectId,
+  EventId,
   ProviderInstanceId,
   StoragePathNotManagedError,
   ThreadId,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import * as ServerConfig from "../config.ts";
-import { ProjectionProjectRepositoryLive } from "../persistence/Layers/ProjectionProjects.ts";
-import { ProjectionThreadRepositoryLive } from "../persistence/Layers/ProjectionThreads.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
-import { ProjectionProjectRepository } from "../persistence/Services/ProjectionProjects.ts";
-import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import { transferProjection } from "../project/ProjectTransfer.testkit.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as StorageInventoryService from "./StorageInventoryService.ts";
 
-const StorageLayer = StorageInventoryService.layer.pipe(
-  Layer.provideMerge(
-    ProjectionProjectRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
-  ),
-  Layer.provideMerge(
-    ProjectionThreadRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
-  ),
+const StoresLayer = Layer.mergeAll(ProjectStore.layer, ProjectionStore.layer).pipe(
   Layer.provideMerge(SqlitePersistenceMemory),
+);
+const StorageLayer = StorageInventoryService.layer.pipe(
+  Layer.provideMerge(StoresLayer),
   Layer.provide(
     Layer.mock(VcsProcess.VcsProcess)({
       run: () =>
@@ -43,19 +42,64 @@ const StorageLayer = StorageInventoryService.layer.pipe(
     }),
   ),
 );
-
-const TestLayer = Layer.empty.pipe(
-  Layer.provideMerge(StorageLayer),
-  Layer.provideMerge(
-    ProjectionProjectRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
-  ),
-  Layer.provideMerge(
-    ProjectionThreadRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
-  ),
-  Layer.provideMerge(SqlitePersistenceMemory),
+const TestLayer = StorageLayer.pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-storage-inventory-" })),
   Layer.provideMerge(NodeServices.layer),
 );
+
+const addProject = Effect.fn("addStorageProject")(function* (workspaceRoot: string) {
+  const projects = yield* ProjectStore.ProjectStoreV2;
+  const projectId = ProjectId.make("project-1");
+  yield* projects.apply({
+    sequence: 1,
+    eventId: EventId.make("storage-project-created"),
+    aggregateKind: "project",
+    aggregateId: projectId,
+    occurredAt: "2026-03-24T00:00:00.000Z",
+    commandId: null,
+    causationEventId: null,
+    correlationId: null,
+    metadata: {},
+    type: "project.created",
+    payload: {
+      projectId,
+      title: "App",
+      workspaceRoot,
+      defaultModelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+      scripts: [],
+      createdAt: "2026-03-24T00:00:00.000Z",
+      updatedAt: "2026-03-24T00:00:00.000Z",
+    },
+  });
+});
+const addThread = Effect.fn("addStorageThread")(function* (
+  id: string,
+  title: string,
+  branch: string,
+  worktreePath: string,
+) {
+  const threads = yield* ProjectionStore.ProjectionStoreV2;
+  const threadId = ThreadId.make(id);
+  const now = DateTime.makeUnsafe("2026-03-24T00:00:00.000Z");
+  yield* threads.apply({
+    id: EventId.make(`storage-created:${id}`),
+    type: "thread.created",
+    threadId,
+    occurredAt: now,
+    payload: {
+      ...transferProjection(threadId).thread,
+      projectId: ProjectId.make("project-1"),
+      title,
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+      branch,
+      worktreePath,
+      createdAt: now,
+      updatedAt: now,
+      settledOverride: "settled",
+      settledAt: now,
+    },
+  });
+});
 
 const writeCheckout = Effect.fn("writeCheckout")(function* (target: string, contents: string) {
   const fileSystem = yield* FileSystem.FileSystem;
@@ -71,8 +115,6 @@ it.layer(TestLayer, { excludeTestServices: true })("StorageInventoryService", (i
       Effect.gen(function* () {
         const config = yield* ServerConfig.ServerConfig;
         const path = yield* Path.Path;
-        const projects = yield* ProjectionProjectRepository;
-        const threads = yield* ProjectionThreadRepository;
         const storage = yield* StorageInventoryService.StorageInventoryService;
 
         const featurePath = path.join(config.worktreesDir, "app", "feature");
@@ -82,48 +124,8 @@ it.layer(TestLayer, { excludeTestServices: true })("StorageInventoryService", (i
         yield* writeCheckout(orphanPath, "leftover\n");
         yield* writeCheckout(projectCheckout, "project\n");
 
-        yield* projects.upsert({
-          projectId: ProjectId.make("project-1"),
-          title: "App",
-          workspaceRoot: projectCheckout,
-          defaultModelSelection: {
-            instanceId: ProviderInstanceId.make("codex"),
-            model: "gpt-5.4",
-          },
-          defaultThreadEnvMode: null,
-          scripts: [],
-          createdAt: "2026-03-24T00:00:00.000Z",
-          updatedAt: "2026-03-24T00:00:00.000Z",
-          deletedAt: null,
-        });
-        yield* threads.upsert({
-          threadId: ThreadId.make("thread-1"),
-          projectId: ProjectId.make("project-1"),
-          title: "Feature",
-          modelSelection: {
-            instanceId: ProviderInstanceId.make("codex"),
-            model: "gpt-5.4",
-          },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: "feature",
-          worktreePath: featurePath,
-          enabledSkillIds: [],
-          latestTurnId: null,
-          createdAt: "2026-03-24T00:00:00.000Z",
-          updatedAt: "2026-03-24T00:00:00.000Z",
-          archivedAt: null,
-          settledOverride: "settled",
-          settledAt: "2026-03-24T00:00:00.000Z",
-          snoozedUntil: null,
-          snoozedAt: null,
-          pinnedAt: null,
-          latestUserMessageAt: null,
-          pendingApprovalCount: 0,
-          pendingUserInputCount: 0,
-          hasActionableProposedPlan: 0,
-          deletedAt: null,
-        });
+        yield* addProject(projectCheckout);
+        yield* addThread("thread-1", "Feature", "feature", featurePath);
 
         const inventory = yield* storage.getInventory();
         expect(inventory.activeWorktrees.map((entry) => entry.threadId)).toEqual(["thread-1"]);
@@ -145,8 +147,6 @@ it.layer(TestLayer, { excludeTestServices: true })("StorageInventoryService", (i
       Effect.gen(function* () {
         const config = yield* ServerConfig.ServerConfig;
         const path = yield* Path.Path;
-        const projects = yield* ProjectionProjectRepository;
-        const threads = yield* ProjectionThreadRepository;
         const storage = yield* StorageInventoryService.StorageInventoryService;
 
         const featurePath = path.join(config.worktreesDir, "app", "feature");
@@ -158,76 +158,9 @@ it.layer(TestLayer, { excludeTestServices: true })("StorageInventoryService", (i
         yield* writeCheckout(orphanPath, "leftover\n");
         yield* writeCheckout(projectCheckout, "project\n");
 
-        yield* projects.upsert({
-          projectId: ProjectId.make("project-1"),
-          title: "App",
-          workspaceRoot: projectCheckout,
-          defaultModelSelection: {
-            instanceId: ProviderInstanceId.make("codex"),
-            model: "gpt-5.4",
-          },
-          defaultThreadEnvMode: null,
-          scripts: [],
-          createdAt: "2026-03-24T00:00:00.000Z",
-          updatedAt: "2026-03-24T00:00:00.000Z",
-          deletedAt: null,
-        });
-        yield* threads.upsert({
-          threadId: ThreadId.make("thread-1"),
-          projectId: ProjectId.make("project-1"),
-          title: "Feature",
-          modelSelection: {
-            instanceId: ProviderInstanceId.make("codex"),
-            model: "gpt-5.4",
-          },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: "feature",
-          worktreePath: featurePath,
-          enabledSkillIds: [],
-          latestTurnId: null,
-          createdAt: "2026-03-24T00:00:00.000Z",
-          updatedAt: "2026-03-24T00:00:00.000Z",
-          archivedAt: null,
-          settledOverride: "settled",
-          settledAt: "2026-03-24T00:00:00.000Z",
-          snoozedUntil: null,
-          snoozedAt: null,
-          pinnedAt: null,
-          latestUserMessageAt: null,
-          pendingApprovalCount: 0,
-          pendingUserInputCount: 0,
-          hasActionableProposedPlan: 0,
-          deletedAt: null,
-        });
-        yield* threads.upsert({
-          threadId: ThreadId.make("thread-2"),
-          projectId: ProjectId.make("project-1"),
-          title: "Second",
-          modelSelection: {
-            instanceId: ProviderInstanceId.make("codex"),
-            model: "gpt-5.4",
-          },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: "second",
-          worktreePath: secondPath,
-          enabledSkillIds: [],
-          latestTurnId: null,
-          createdAt: "2026-03-24T00:00:00.000Z",
-          updatedAt: "2026-03-24T00:00:00.000Z",
-          archivedAt: null,
-          settledOverride: "settled",
-          settledAt: "2026-03-24T00:00:00.000Z",
-          snoozedUntil: null,
-          snoozedAt: null,
-          pinnedAt: null,
-          latestUserMessageAt: null,
-          pendingApprovalCount: 0,
-          pendingUserInputCount: 0,
-          hasActionableProposedPlan: 0,
-          deletedAt: null,
-        });
+        yield* addProject(projectCheckout);
+        yield* addThread("thread-1", "Feature", "feature", featurePath);
+        yield* addThread("thread-2", "Second", "second", secondPath);
 
         const snapshots = yield* Stream.runCollect(storage.streamInventory());
         expect(snapshots.length).toBeGreaterThan(1);
@@ -272,6 +205,25 @@ it.layer(TestLayer, { excludeTestServices: true })("StorageInventoryService", (i
         const removed = yield* storage.removeOrphan({ path: orphanPath });
         expect(removed).toEqual({ removed: true });
         expect(yield* fileSystem.exists(orphanPath)).toBe(false);
+      }),
+    );
+
+    it.effect("refuses a descendant reached through a symlinked directory", () =>
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const storage = yield* StorageInventoryService.StorageInventoryService;
+        const outsidePath = path.join(config.baseDir, "outside", "stale");
+        const linkedParent = path.join(config.worktreesDir, "linked-outside");
+        yield* writeCheckout(outsidePath, "must-survive\n");
+        yield* fileSystem.makeDirectory(config.worktreesDir, { recursive: true });
+        yield* fileSystem.symlink(path.dirname(outsidePath), linkedParent);
+
+        const requested = path.join(linkedParent, "stale");
+        const error = yield* storage.removeOrphan({ path: requested }).pipe(Effect.flip);
+        expect(error).toBeInstanceOf(StoragePathNotManagedError);
+        expect(yield* fileSystem.exists(outsidePath)).toBe(true);
       }),
     );
   });

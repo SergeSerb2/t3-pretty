@@ -16,6 +16,7 @@ import {
   RelayEnvironmentConnectNotAuthorizedReason,
   type RelayEnvironmentConnectResponse,
   type RelayEnvironmentStatusResponse,
+  type RelayManagedEndpoint,
 } from "@t3tools/contracts/relay";
 import {
   normalizeRelayIssuer,
@@ -35,10 +36,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientError from "effect/unstable/http/HttpClientError";
+import * as Stream from "effect/Stream";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientError from "effect/http/HttpClientError";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import * as EnvironmentLinks from "./EnvironmentLinks.ts";
 import * as ManagedEndpointAllocations from "./ManagedEndpointAllocations.ts";
@@ -68,7 +72,7 @@ function environmentConnectNotAuthorizedReasonMessage(
   }
 }
 
-export class EnvironmentConnectNotAuthorized extends Schema.TaggedErrorClass<EnvironmentConnectNotAuthorized>()(
+export class EnvironmentConnectNotAuthorized extends Schema.TaggedError<EnvironmentConnectNotAuthorized>()(
   "EnvironmentConnectNotAuthorized",
   {
     environmentId: Schema.String,
@@ -81,7 +85,7 @@ export class EnvironmentConnectNotAuthorized extends Schema.TaggedErrorClass<Env
   }
 }
 
-export class EnvironmentMintRequestFailed extends Schema.TaggedErrorClass<EnvironmentMintRequestFailed>()(
+export class EnvironmentMintRequestFailed extends Schema.TaggedError<EnvironmentMintRequestFailed>()(
   "EnvironmentMintRequestFailed",
   {
     environmentId: Schema.String,
@@ -94,7 +98,7 @@ export class EnvironmentMintRequestFailed extends Schema.TaggedErrorClass<Enviro
   }
 }
 
-export class EnvironmentMintRequestTimedOut extends Schema.TaggedErrorClass<EnvironmentMintRequestTimedOut>()(
+export class EnvironmentMintRequestTimedOut extends Schema.TaggedError<EnvironmentMintRequestTimedOut>()(
   "EnvironmentMintRequestTimedOut",
   {
     environmentId: Schema.String,
@@ -106,7 +110,7 @@ export class EnvironmentMintRequestTimedOut extends Schema.TaggedErrorClass<Envi
   }
 }
 
-export class EnvironmentMintResponseInvalid extends Schema.TaggedErrorClass<EnvironmentMintResponseInvalid>()(
+export class EnvironmentMintResponseInvalid extends Schema.TaggedError<EnvironmentMintResponseInvalid>()(
   "EnvironmentMintResponseInvalid",
   {
     environmentId: Schema.String,
@@ -126,8 +130,94 @@ export type EnvironmentConnectorError =
   | EnvironmentLinks.EnvironmentLinkLookupPersistenceError
   | ManagedEndpointAllocations.ManagedEndpointAllocationPersistenceError;
 
-export const ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS = 10_000;
+// Leave enough room for the relay's outer 9s request deadline to encode the
+// operation-specific offline/timeout response instead of pre-empting it with a
+// generic 504.
+export const ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS = 8_000;
+export const ENVIRONMENT_RESPONSE_MAX_BYTES = 64 * 1024;
 const ENVIRONMENT_HEALTH_CLOCK_SKEW_MILLIS = 60 * 1_000;
+
+interface BoundedEnvironmentResponseChunk {
+  readonly bytes: Uint8Array;
+  readonly truncated: boolean;
+}
+
+function environmentResponseTooLarge(
+  response: HttpClientResponse.HttpClientResponse,
+): HttpClientError.HttpClientError {
+  return new HttpClientError.HttpClientError({
+    reason: new HttpClientError.DecodeError({
+      request: response.request,
+      response,
+      description: `response exceeded ${ENVIRONMENT_RESPONSE_MAX_BYTES} bytes`,
+    }),
+  });
+}
+
+const releaseEnvironmentResponse = (
+  response: HttpClientResponse.HttpClientResponse,
+): Effect.Effect<void> => response.stream.pipe(Stream.take(1), Stream.runDrain, Effect.ignore);
+
+export const boundEnvironmentResponse = Effect.fnUntraced(function* (
+  response: HttpClientResponse.HttpClientResponse,
+) {
+  const declaredLength = Number(response.headers["content-length"]);
+  if (Number.isFinite(declaredLength) && declaredLength > ENVIRONMENT_RESPONSE_MAX_BYTES) {
+    yield* releaseEnvironmentResponse(response);
+    return yield* environmentResponseTooLarge(response);
+  }
+
+  const collected = yield* response.stream.pipe(
+    Stream.mapAccum(
+      () => 0,
+      (totalBytes, chunk): readonly [number, ReadonlyArray<BoundedEnvironmentResponseChunk>] => {
+        const remaining = Math.max(0, ENVIRONMENT_RESPONSE_MAX_BYTES - totalBytes);
+        const truncated = chunk.byteLength > remaining;
+        const bytes = truncated ? chunk.slice(0, remaining) : chunk;
+        return [totalBytes + bytes.byteLength, [{ bytes, truncated }]];
+      },
+    ),
+    Stream.takeUntil((chunk) => chunk.truncated),
+    Stream.runFold(
+      () => ({ chunks: [] as Uint8Array[], bytes: 0, truncated: false }),
+      (state, chunk) => {
+        if (chunk.bytes.byteLength > 0) {
+          state.chunks.push(chunk.bytes);
+        }
+        return {
+          chunks: state.chunks,
+          bytes: state.bytes + chunk.bytes.byteLength,
+          truncated: state.truncated || chunk.truncated,
+        };
+      },
+    ),
+  );
+  if (collected.truncated) {
+    return yield* environmentResponseTooLarge(response);
+  }
+
+  const bytes = new Uint8Array(collected.bytes);
+  let offset = 0;
+  for (const chunk of collected.chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(response.headers)) {
+    if (value !== undefined) headers.set(name, value);
+  }
+  const body =
+    bytes.byteLength === 0 ||
+    response.status === 204 ||
+    response.status === 205 ||
+    response.status === 304
+      ? null
+      : bytes;
+  return HttpClientResponse.fromWeb(
+    response.request,
+    new Response(body, { status: response.status, headers }),
+  );
+});
 
 export class EnvironmentConnector extends Context.Service<
   EnvironmentConnector,
@@ -161,6 +251,16 @@ const isEnvironmentHealthError = Schema.is(
   ]),
 );
 
+/**
+ * Cleanup deleted this environment's tunnel and nothing has recorded a new
+ * one, so the host is unreachable until it updates and requests recovery.
+ */
+function offlineReasonFor(
+  allocation: ManagedEndpointAllocations.ManagedEndpointAllocation | null,
+): { readonly offlineReason?: "tunnel_released" } {
+  return allocation?.tunnelReleasedAt ? { offlineReason: "tunnel_released" } : {};
+}
+
 function environmentHealthRequestFailureMessage(cause: unknown): string {
   return isEnvironmentHealthError(cause)
     ? `Managed endpoint health request failed: ${cause.message}`
@@ -185,7 +285,7 @@ const currentTraceId = Effect.currentSpan.pipe(
   Effect.orElseSucceed(() => "unavailable"),
 );
 
-const withoutRedirects = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+export const withoutRedirects = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }));
 
 const verifyWithEnvironmentKeys = Effect.fnUntraced(function* <A, E>(input: {
@@ -288,6 +388,92 @@ function verifyEnvironmentHealthResponse(input: {
   );
 }
 
+export interface ManagedEndpointValidationFailure {
+  readonly reason: Exclude<
+    RelayEnvironmentConnectNotAuthorizedReason,
+    "client_proof_key_thumbprint_missing" | "environment_link_not_found"
+  >;
+  /** Diagnostic span attributes; never contains secrets. */
+  readonly attributes?: Record<string, string | boolean>;
+}
+
+/**
+ * Checks that a link's relay-managed endpoint is backed by a ready allocation
+ * on the configured base domain and still matches what the link recorded.
+ */
+export function validateManagedEndpoint(input: {
+  readonly link: EnvironmentLinks.RelayLinkedEnvironmentRecord;
+  readonly allocation: ManagedEndpointAllocations.ManagedEndpointAllocation | null;
+  readonly baseDomain: string | undefined;
+}): Result.Result<RelayManagedEndpoint, ManagedEndpointValidationFailure> {
+  const { link, allocation, baseDomain } = input;
+  if (link.endpoint.providerKind !== "cloudflare_tunnel") {
+    return Result.fail({
+      reason: "endpoint_provider_not_managed",
+      attributes: { "relay.authorization.endpoint_provider_kind": link.endpoint.providerKind },
+    });
+  }
+  if (!allocation) {
+    return Result.fail({ reason: "managed_endpoint_allocation_not_found" });
+  }
+  const allocationAttributes = {
+    "relay.authorization.allocation_hostname": allocation.hostname,
+    "relay.authorization.allocation_has_ready_at": allocation.readyAt !== null,
+    "relay.authorization.allocation_has_tunnel_id": allocation.tunnelId !== null,
+    "relay.authorization.allocation_has_dns_record_id": allocation.dnsRecordId !== null,
+  };
+  if (!baseDomain) {
+    return Result.fail({
+      reason: "managed_endpoint_base_domain_not_configured",
+      attributes: allocationAttributes,
+    });
+  }
+  if (
+    allocation.readyAt === null ||
+    allocation.tunnelId === null ||
+    allocation.dnsRecordId === null
+  ) {
+    return Result.fail({
+      reason: "managed_endpoint_allocation_not_ready",
+      attributes: allocationAttributes,
+    });
+  }
+  if (!isManagedEndpointHostname(allocation.hostname, baseDomain)) {
+    return Result.fail({
+      reason: "managed_endpoint_hostname_invalid",
+      attributes: {
+        ...allocationAttributes,
+        "relay.authorization.managed_endpoint_base_domain": baseDomain,
+      },
+    });
+  }
+  const endpoint = ManagedEndpointAllocations.resolveReadyManagedEndpoint({
+    allocation,
+    baseDomain,
+  });
+  if (
+    endpoint === null ||
+    endpoint.httpBaseUrl !== link.endpoint.httpBaseUrl ||
+    endpoint.wsBaseUrl !== link.endpoint.wsBaseUrl
+  ) {
+    return Result.fail({
+      reason: "managed_endpoint_mismatch",
+      attributes: {
+        ...allocationAttributes,
+        "relay.authorization.linked_http_base_url": link.endpoint.httpBaseUrl,
+        "relay.authorization.linked_ws_base_url": link.endpoint.wsBaseUrl,
+        ...(endpoint
+          ? {
+              "relay.authorization.resolved_http_base_url": endpoint.httpBaseUrl,
+              "relay.authorization.resolved_ws_base_url": endpoint.wsBaseUrl,
+            }
+          : {}),
+      },
+    });
+  }
+  return Result.succeed(endpoint);
+}
+
 const make = Effect.gen(function* () {
   const links = yield* EnvironmentLinks.EnvironmentLinks;
   const allocations = yield* ManagedEndpointAllocations.ManagedEndpointAllocations;
@@ -295,9 +481,13 @@ const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const crypto = yield* Crypto.Crypto;
   const relayIssuer = normalizeRelayIssuer(settings.relayIssuer);
+  const boundedHttpClient = HttpClient.transformResponse(
+    httpClient,
+    Effect.flatMap(boundEnvironmentResponse),
+  );
   const makeEnvironmentClient = (httpBaseUrl: string) =>
     makeEnvironmentHttpApiClient(httpBaseUrl).pipe(
-      Effect.provideService(HttpClient.HttpClient, httpClient),
+      Effect.provideService(HttpClient.HttpClient, boundedHttpClient),
     );
   const resolveManagedEndpoint = Effect.fn("relay.environment_connector.resolve_managed_endpoint")(
     function* (input: {
@@ -305,89 +495,22 @@ const make = Effect.gen(function* () {
       readonly link: EnvironmentLinks.RelayLinkedEnvironmentRecord;
       readonly allocation: ManagedEndpointAllocations.ManagedEndpointAllocation | null;
     }) {
-      if (input.link.endpoint.providerKind !== "cloudflare_tunnel") {
-        yield* Effect.annotateCurrentSpan({
-          "relay.authorization.endpoint_provider_kind": input.link.endpoint.providerKind,
-        });
-        return yield* new EnvironmentConnectNotAuthorized({
-          environmentId: input.link.environmentId,
-          operation: input.operation,
-          reason: "endpoint_provider_not_managed",
-        });
-      }
-      if (!input.allocation) {
-        return yield* new EnvironmentConnectNotAuthorized({
-          environmentId: input.link.environmentId,
-          operation: input.operation,
-          reason: "managed_endpoint_allocation_not_found",
-        });
-      }
-      const allocationAttributes = {
-        "relay.authorization.allocation_hostname": input.allocation.hostname,
-        "relay.authorization.allocation_has_ready_at": input.allocation.readyAt !== null,
-        "relay.authorization.allocation_has_tunnel_id": input.allocation.tunnelId !== null,
-        "relay.authorization.allocation_has_dns_record_id": input.allocation.dnsRecordId !== null,
-      } as const;
-      if (!settings.managedEndpointBaseDomain) {
-        yield* Effect.annotateCurrentSpan(allocationAttributes);
-        return yield* new EnvironmentConnectNotAuthorized({
-          environmentId: input.link.environmentId,
-          operation: input.operation,
-          reason: "managed_endpoint_base_domain_not_configured",
-        });
-      }
-      if (
-        input.allocation.readyAt === null ||
-        input.allocation.tunnelId === null ||
-        input.allocation.dnsRecordId === null
-      ) {
-        yield* Effect.annotateCurrentSpan(allocationAttributes);
-        return yield* new EnvironmentConnectNotAuthorized({
-          environmentId: input.link.environmentId,
-          operation: input.operation,
-          reason: "managed_endpoint_allocation_not_ready",
-        });
-      }
-      if (
-        !isManagedEndpointHostname(input.allocation.hostname, settings.managedEndpointBaseDomain)
-      ) {
-        yield* Effect.annotateCurrentSpan({
-          ...allocationAttributes,
-          "relay.authorization.managed_endpoint_base_domain": settings.managedEndpointBaseDomain,
-        });
-        return yield* new EnvironmentConnectNotAuthorized({
-          environmentId: input.link.environmentId,
-          operation: input.operation,
-          reason: "managed_endpoint_hostname_invalid",
-        });
-      }
-      const endpoint = ManagedEndpointAllocations.resolveReadyManagedEndpoint({
+      const result = validateManagedEndpoint({
+        link: input.link,
         allocation: input.allocation,
         baseDomain: settings.managedEndpointBaseDomain,
       });
-      if (
-        endpoint === null ||
-        endpoint.httpBaseUrl !== input.link.endpoint.httpBaseUrl ||
-        endpoint.wsBaseUrl !== input.link.endpoint.wsBaseUrl
-      ) {
-        yield* Effect.annotateCurrentSpan({
-          ...allocationAttributes,
-          "relay.authorization.linked_http_base_url": input.link.endpoint.httpBaseUrl,
-          "relay.authorization.linked_ws_base_url": input.link.endpoint.wsBaseUrl,
-          ...(endpoint
-            ? {
-                "relay.authorization.resolved_http_base_url": endpoint.httpBaseUrl,
-                "relay.authorization.resolved_ws_base_url": endpoint.wsBaseUrl,
-              }
-            : {}),
-        });
-        return yield* new EnvironmentConnectNotAuthorized({
-          environmentId: input.link.environmentId,
-          operation: input.operation,
-          reason: "managed_endpoint_mismatch",
-        });
+      if (Result.isSuccess(result)) {
+        return result.success;
       }
-      return endpoint;
+      if (result.failure.attributes) {
+        yield* Effect.annotateCurrentSpan(result.failure.attributes);
+      }
+      return yield* new EnvironmentConnectNotAuthorized({
+        environmentId: input.link.environmentId,
+        operation: input.operation,
+        reason: result.failure.reason,
+      });
     },
   );
 
@@ -489,6 +612,7 @@ const make = Effect.gen(function* () {
           status: "offline" as const,
           checkedAt,
           error: "Managed endpoint health request timed out.",
+          ...offlineReasonFor(allocation),
           traceId,
         };
       }
@@ -511,6 +635,7 @@ const make = Effect.gen(function* () {
           status: "offline" as const,
           checkedAt,
           error: environmentHealthRequestFailureMessage(responseOption.value.cause),
+          ...offlineReasonFor(allocation),
           traceId,
         };
       }

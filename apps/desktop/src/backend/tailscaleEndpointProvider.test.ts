@@ -1,8 +1,8 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { HttpClient } from "effect/unstable/http";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { HttpClient } from "effect/http";
+import { ChildProcessSpawner } from "effect/process";
 
 import {
   parseTailscaleMagicDnsName,
@@ -93,6 +93,28 @@ describe("tailscale endpoint provider", () => {
           description: "MagicDNS hostname. Configure Tailscale Serve for HTTPS access.",
         },
       ]);
+    }).pipe(Effect.provide(unusedTailscaleExternalServicesLayer)),
+  );
+
+  it.effect("resolves Tailscale IPs when the interface family is numeric", () =>
+    Effect.gen(function* () {
+      const endpoints = yield* resolveTailscaleAdvertisedEndpoints({
+        port: 3773,
+        networkInterfaces: {
+          tailscale0: [
+            {
+              address: "100.100.100.100",
+              family: 4,
+              internal: false,
+            },
+          ],
+        },
+        statusJson: null,
+      });
+      assert.deepEqual(
+        endpoints.map((endpoint) => endpoint.httpBaseUrl),
+        ["http://100.100.100.100:3773/"],
+      );
     }).pipe(Effect.provide(unusedTailscaleExternalServicesLayer)),
   );
 

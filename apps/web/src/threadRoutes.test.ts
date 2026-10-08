@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { ThreadId } from "@t3tools/contracts";
+import { ENTITY_ID_MAX_LENGTH, ThreadId } from "@t3tools/contracts";
 import { DraftId } from "./composerDraftStore";
 
 import {
@@ -10,6 +10,7 @@ import {
   resolveThreadRouteRenderState,
   resolveThreadRouteRef,
   resolveThreadRouteTarget,
+  shouldRedirectMissingThreadRoute,
 } from "./threadRoutes";
 
 describe("threadRoutes", () => {
@@ -35,6 +36,20 @@ describe("threadRoutes", () => {
 
     expect(resolveThreadRouteRef({ environmentId: "env-1" })).toBeNull();
     expect(resolveThreadRouteRef({ threadId: "thread-1" })).toBeNull();
+  });
+
+  it("rejects non-canonical and oversized external route ids", () => {
+    expect(resolveThreadRouteRef({ environmentId: " env-1", threadId: "thread-1" })).toBeNull();
+    expect(resolveThreadRouteRef({ environmentId: "env-1", threadId: " " })).toBeNull();
+    expect(
+      resolveThreadRouteRef({
+        environmentId: "env-1",
+        threadId: "t".repeat(ENTITY_ID_MAX_LENGTH + 1),
+      }),
+    ).toBeNull();
+    expect(
+      resolveThreadRouteTarget({ draftId: "d".repeat(ENTITY_ID_MAX_LENGTH * 2 + 2) }),
+    ).toBeNull();
   });
 
   it("builds canonical draft route params from a draft id", () => {
@@ -94,34 +109,31 @@ describe("threadRoutes", () => {
     ).toBeNull();
   });
 
-  it("keeps shell-only server threads in the loading state", () => {
+  it("renders authoritative server-thread shells when bootstrap is complete", () => {
     expect(
       resolveThreadRouteRenderState({
         bootstrapComplete: true,
-        serverThreadShellExists: true,
-        serverThreadDetailExists: false,
-        serverThreadDetailDeleted: false,
+        serverThreadExists: true,
+        serverThreadDeleted: false,
         draftThreadExists: false,
       }),
-    ).toBe("loading");
+    ).toBe("ready");
   });
 
-  it("renders server details and local drafts when they are ready", () => {
+  it("renders server threads and local drafts when they are ready", () => {
     expect(
       resolveThreadRouteRenderState({
         bootstrapComplete: true,
-        serverThreadShellExists: true,
-        serverThreadDetailExists: true,
-        serverThreadDetailDeleted: false,
+        serverThreadExists: true,
+        serverThreadDeleted: false,
         draftThreadExists: false,
       }),
     ).toBe("ready");
     expect(
       resolveThreadRouteRenderState({
         bootstrapComplete: true,
-        serverThreadShellExists: false,
-        serverThreadDetailExists: false,
-        serverThreadDetailDeleted: false,
+        serverThreadExists: false,
+        serverThreadDeleted: false,
         draftThreadExists: true,
       }),
     ).toBe("ready");
@@ -131,30 +143,27 @@ describe("threadRoutes", () => {
     expect(
       resolveThreadRouteRenderState({
         bootstrapComplete: false,
-        serverThreadShellExists: false,
-        serverThreadDetailExists: false,
-        serverThreadDetailDeleted: false,
+        serverThreadExists: false,
+        serverThreadDeleted: false,
         draftThreadExists: false,
       }),
     ).toBe("loading");
     expect(
       resolveThreadRouteRenderState({
         bootstrapComplete: true,
-        serverThreadShellExists: false,
-        serverThreadDetailExists: false,
-        serverThreadDetailDeleted: false,
+        serverThreadExists: false,
+        serverThreadDeleted: false,
         draftThreadExists: false,
       }),
     ).toBe("missing");
   });
 
-  it("redirects deleted shell-only threads", () => {
+  it("redirects deleted server threads", () => {
     expect(
       resolveThreadRouteRenderState({
         bootstrapComplete: true,
-        serverThreadShellExists: true,
-        serverThreadDetailExists: false,
-        serverThreadDetailDeleted: true,
+        serverThreadExists: true,
+        serverThreadDeleted: true,
         draftThreadExists: false,
       }),
     ).toBe("missing");

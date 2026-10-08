@@ -1,6 +1,6 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import Constants from "expo-constants";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
 
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
@@ -89,6 +89,7 @@ export function WhatsNewHost() {
       open={open}
       releases={presentation.releases}
       announceUpdate={presentation.announceUpdate}
+      currentVersion={currentVersion}
       onClose={handleClose}
     />
   );

@@ -1,27 +1,31 @@
 import type { PullRequestReviewVerdict } from "@t3tools/contracts";
-import { EnvironmentId } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { AsyncResult } from "effect/unstable/reactivity";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { AsyncResult } from "effect/reactivity";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { SheetSurface } from "../../components/SheetSurface";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { PullRequestPrimaryButton } from "./PullRequestActionChip";
 import { pullRequestEnvironment } from "../../state/pullRequests";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import {
   readableFailure,
   resolveReviewSheetVerdicts,
   reviewRequiresBody,
 } from "./pullRequestDetail.logic";
-import { type PullRequestCommentRouteParams } from "./pullRequestNavigation";
+import {
+  normalizePullRequestRouteThreadId,
+  resolvePullRequestRouteEnvironmentId,
+  type PullRequestCommentRouteParams,
+} from "./pullRequestNavigation";
 import { useResolvedPullRequestReference } from "./useResolvedPullRequestReference";
 
 const VERDICT_LABELS: Record<PullRequestReviewVerdict, string> = {
@@ -38,11 +42,11 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const isAndroid = Platform.OS === "android";
-  const primaryColor = useThemeColor("--color-primary");
-  const environmentId = EnvironmentId.make(props.route.params.environmentId);
+  const glass = useGlassChromeActive();
+  const environmentId = resolvePullRequestRouteEnvironmentId(props.route.params.environmentId);
   const reference = useResolvedPullRequestReference(props.route.params);
   const mode = props.route.params.mode;
-  const threadId = props.route.params.threadId;
+  const threadId = normalizePullRequestRouteThreadId(props.route.params.threadId);
   const [body, setBody] = useState("");
   const verdicts = useMemo(
     () => resolveReviewSheetVerdicts(props.route.params.verdicts),
@@ -50,6 +54,8 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
   );
   const [verdict, setVerdict] = useState<PullRequestReviewVerdict>(verdicts[0] ?? "comment");
   const [pending, setPending] = useState(false);
+  const pendingRef = useRef(false);
+  const mountedRef = useRef(true);
   const comment = useAtomCommand(pullRequestEnvironment.comment, { reportFailure: false });
   const submitReview = useAtomCommand(pullRequestEnvironment.submitReview, {
     reportFailure: false,
@@ -66,14 +72,22 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
     (mode === "review"
       ? !reviewRequiresBody(verdict) || body.trim().length > 0
       : body.trim().length > 0) &&
-    (mode !== "reply" || (threadId !== undefined && threadId.length > 0));
+    (mode !== "reply" || threadId !== null);
 
   useEffect(() => {
     if (!verdicts.includes(verdict)) setVerdict(verdicts[0] ?? "comment");
   }, [verdict, verdicts]);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const submit = useCallback(async () => {
-    if (reference === null || !canSubmit) return;
+    if (reference === null || !canSubmit || pendingRef.current) return;
+    pendingRef.current = true;
     setPending(true);
     try {
       const result =
@@ -92,14 +106,16 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
                 input: { ...reference, body },
               });
       if (AsyncResult.isFailure(result)) {
-        Alert.alert(
-          "Could not post",
-          readableFailure(squashAtomCommandFailure(result), "The host refused this remark."),
-        );
+        if (mountedRef.current && navigation.isFocused()) {
+          Alert.alert(
+            "Could not post",
+            readableFailure(squashAtomCommandFailure(result), "The host refused this remark."),
+          );
+        }
         return;
       }
       const invalidateResult = await invalidate({ environmentId, input: { reference } });
-      if (AsyncResult.isFailure(invalidateResult)) {
+      if (AsyncResult.isFailure(invalidateResult) && mountedRef.current && navigation.isFocused()) {
         Alert.alert(
           "Posted, but this page may look stale",
           readableFailure(
@@ -108,9 +124,10 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
           ),
         );
       }
-      navigation.goBack();
+      if (mountedRef.current && navigation.isFocused()) navigation.goBack();
     } finally {
-      setPending(false);
+      pendingRef.current = false;
+      if (mountedRef.current) setPending(false);
     }
   }, [
     body,
@@ -128,96 +145,104 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
   ]);
 
   return (
-    <KeyboardAvoidingView behavior="padding" className="flex-1 bg-sheet">
-      {isAndroid ? (
-        <AndroidSheetHeader title={title} onBack={() => navigation.goBack()} />
-      ) : (
-        <NativeStackScreenOptions
-          optionsVersion={[canSubmit, pending, title]}
-          options={{
-            title,
-            headerRight: () => (
-              <Pressable
-                disabled={!canSubmit}
-                hitSlop={8}
-                onPress={() => void submit()}
-                style={({ pressed }) => ({ opacity: !canSubmit ? 0.45 : pressed ? 0.7 : 1 })}
-                className="min-h-9 min-w-14 flex-row items-center justify-end gap-1.5"
-              >
-                {pending ? <ActivityIndicator color={String(primaryColor)} size="small" /> : null}
-                <Text
-                  className={cn(
-                    "text-base font-t3-bold",
-                    canSubmit ? "text-primary" : "text-foreground-muted",
-                  )}
-                >
-                  {pending ? "Sending…" : "Send"}
-                </Text>
-              </Pressable>
-            ),
-          }}
-        />
-      )}
-      <View className="flex-1 px-4 pt-3" style={{ paddingBottom: Math.max(insets.bottom, 12) }}>
-        {mode === "review" ? (
-          <View className="mb-3 flex-row flex-wrap gap-2">
-            {verdicts.map((option) => {
-              const selected = verdict === option;
-              return (
+    <SheetSurface>
+      <KeyboardAvoidingView behavior="padding" className="flex-1">
+        {isAndroid ? (
+          <AndroidSheetHeader title={title} onBack={() => navigation.goBack()} />
+        ) : (
+          <NativeStackScreenOptions
+            optionsVersion={[canSubmit, pending, title]}
+            options={{
+              title,
+              headerRight: () => (
                 <Pressable
-                  key={option}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => setVerdict(option)}
-                  style={({ pressed }) => ({ opacity: pressed && !selected ? 0.72 : 1 })}
-                  className={cn(
-                    "min-h-9 items-center justify-center rounded-full px-3.5",
-                    selected ? "bg-primary" : "bg-subtle",
-                  )}
+                  disabled={!canSubmit}
+                  hitSlop={8}
+                  onPress={() => void submit()}
+                  style={({ pressed }) => ({ opacity: !canSubmit ? 0.45 : pressed ? 0.7 : 1 })}
+                  className="min-h-9 min-w-14 flex-row items-center justify-end gap-1.5"
                 >
+                  {pending ? (
+                    <ActivityIndicator colorClassName="accent-primary" size="small" />
+                  ) : null}
                   <Text
                     className={cn(
-                      "text-xs font-t3-bold",
-                      selected ? "text-primary-foreground" : "text-foreground",
+                      "text-base font-t3-bold",
+                      canSubmit ? "text-primary" : "text-foreground-muted",
                     )}
                   >
-                    {VERDICT_LABELS[option]}
+                    {pending ? "Sending…" : "Send"}
                   </Text>
                 </Pressable>
-              );
-            })}
-          </View>
-        ) : null}
-        <TextInput
-          accessibilityLabel={title}
-          autoFocus
-          maxLength={COMMENT_BODY_MAX_LENGTH}
-          multiline
-          onChangeText={setBody}
-          placeholder={
-            mode === "review"
-              ? reviewRequiresBody(verdict)
-                ? "Leave a review summary"
-                : "Leave a review summary (optional)"
-              : mode === "reply"
-                ? "Reply to this conversation"
-                : "Write a comment"
-          }
-          placeholderTextColorClassName="accent-placeholder"
-          className="min-h-40 flex-1 text-base font-sans text-foreground"
-          value={body}
-        />
-        {isAndroid ? (
-          <View className="mt-3">
-            <PullRequestPrimaryButton
-              disabled={!canSubmit}
-              label={pending ? "Sending…" : "Send"}
-              loading={pending}
-              onPress={() => void submit()}
-            />
-          </View>
-        ) : null}
-      </View>
-    </KeyboardAvoidingView>
+              ),
+            }}
+          />
+        )}
+        <View className="flex-1 px-4 pt-3" style={{ paddingBottom: Math.max(insets.bottom, 12) }}>
+          {mode === "review" ? (
+            <View className="mb-3 flex-row flex-wrap gap-2">
+              {verdicts.map((option) => {
+                const selected = verdict === option;
+                return (
+                  <Pressable
+                    key={option}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    onPress={() => setVerdict(option)}
+                    style={({ pressed }) => ({ opacity: pressed && !selected ? 0.72 : 1 })}
+                    className={cn(
+                      "min-h-9 items-center justify-center rounded-full px-3.5",
+                      selected ? "bg-primary" : "bg-subtle",
+                    )}
+                  >
+                    <Text
+                      className={cn(
+                        "text-xs font-t3-bold",
+                        selected ? "text-primary-foreground" : "text-foreground",
+                      )}
+                    >
+                      {VERDICT_LABELS[option]}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+          <TextInput
+            accessibilityLabel={title}
+            autoFocus
+            maxLength={COMMENT_BODY_MAX_LENGTH}
+            multiline
+            onChangeText={setBody}
+            placeholder={
+              mode === "review"
+                ? reviewRequiresBody(verdict)
+                  ? "Leave a review summary"
+                  : "Leave a review summary (optional)"
+                : mode === "reply"
+                  ? "Reply to this conversation"
+                  : "Write a comment"
+            }
+            placeholderTextColorClassName="accent-placeholder"
+            className={cn(
+              "min-h-40 flex-1 text-base font-sans text-foreground",
+              glass &&
+                "rounded-[14px] border-continuous border-[0.5px] border-chrome-glass-border bg-foreground/5 px-3.5 py-3",
+            )}
+            value={body}
+          />
+          {isAndroid ? (
+            <View className="mt-3">
+              <PullRequestPrimaryButton
+                disabled={!canSubmit}
+                label={pending ? "Sending…" : "Send"}
+                loading={pending}
+                onPress={() => void submit()}
+              />
+            </View>
+          ) : null}
+        </View>
+      </KeyboardAvoidingView>
+    </SheetSurface>
   );
 }

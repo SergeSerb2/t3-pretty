@@ -1,6 +1,7 @@
 import { cn } from "../../lib/utils";
 import { PHOTO_SETS, type PhotoSetId } from "../../scenery/photoSets";
 import { usePhotoSetStore } from "../../scenery/photoSetStore";
+import { usePublishSceneryPhotoSet } from "../../scenery/useSyncedSceneryPhotoSet";
 import { isBoringChatTheme } from "../../scenery/productTheme";
 import { WORLD_SCENERY_THEME, WORLD_SCENERY_THEME_ID } from "../../scenery/worldSceneryTheme";
 import {
@@ -169,6 +170,7 @@ export function ThemeLibrary({
   const boring = isBoringChatTheme(theme);
   const photoSetId = usePhotoSetStore((state) => state.photoSetId);
   const setPhotoSetId = usePhotoSetStore((state) => state.setPhotoSetId);
+  const publishPhotoSet = usePublishSceneryPhotoSet();
   const schemeTheme = boring ? T3_CHAT_THEME : photoSetTheme(photoSetId);
 
   const setMode = (mode: ThemeMode) => {
@@ -179,6 +181,7 @@ export function ThemeLibrary({
 
   const selectPhotoSet = (next: PhotoSetId) => {
     setPhotoSetId(next);
+    publishPhotoSet(next);
     if (!setTheme(WORLD_SCENERY_THEME_ID)) {
       notifyAppearanceSaveFailure();
     }
@@ -230,9 +233,16 @@ export function ThemeLibrary({
       </div>
 
       <div className="space-y-3">
-        <h3 className="px-3 text-sm font-medium tracking-[-0.005em] text-foreground sm:px-4">
-          Color scheme
-        </h3>
+        <div className="space-y-1 px-3 sm:px-4">
+          <h3 className="text-sm font-medium tracking-[-0.005em] text-foreground">
+            {searchableSetting("color-scheme").title}
+          </h3>
+          <p className="text-[13px] leading-[1.45] text-muted-foreground/80">
+            {boring
+              ? "Light and Dark stay put. System follows your device."
+              : "Every thread sits on its photo in this scheme. Light and Dark stay put whatever the landscape looks like; System follows your device."}
+          </p>
+        </div>
         <div
           aria-label="Appearance mode"
           className="mx-auto grid w-full max-w-[56rem] grid-cols-3 gap-3 px-3 sm:px-4"

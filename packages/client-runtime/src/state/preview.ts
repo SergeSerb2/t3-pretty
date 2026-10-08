@@ -1,5 +1,5 @@
 import { WS_METHODS } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
@@ -8,6 +8,8 @@ import {
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
+
+export const PREVIEW_STATE_IDLE_TTL_MS = 60_000;
 
 export const previewAutomationHostFocusConcurrencyKey = (value: {
   readonly environmentId: string;
@@ -33,10 +35,12 @@ export function createPreviewEnvironmentAtoms<R, E>(
       label: "environment-data:preview:list",
       tag: WS_METHODS.previewList,
       staleTimeMs: 5_000,
+      idleTtlMs: PREVIEW_STATE_IDLE_TTL_MS,
     }),
     events: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:preview:events",
       tag: WS_METHODS.subscribePreviewEvents,
+      idleTtlMs: PREVIEW_STATE_IDLE_TTL_MS,
     }),
     discoveredServers: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:preview:discovered-servers",
@@ -71,6 +75,12 @@ export function createPreviewEnvironmentAtoms<R, E>(
       scheduler: lifecycleScheduler,
       concurrency: lifecycleConcurrency,
     }),
+    adjust: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:preview:adjust",
+      tag: WS_METHODS.previewAdjust,
+      scheduler: lifecycleScheduler,
+      concurrency: lifecycleConcurrency,
+    }),
     refresh: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:preview:refresh",
       tag: WS_METHODS.previewRefresh,
@@ -82,6 +92,10 @@ export function createPreviewEnvironmentAtoms<R, E>(
       tag: WS_METHODS.previewClose,
       scheduler: lifecycleScheduler,
       concurrency: lifecycleConcurrency,
+    }),
+    clearProfile: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:preview:clear-profile",
+      tag: WS_METHODS.previewClearProfile,
     }),
     reportStatus: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:preview:report-status",

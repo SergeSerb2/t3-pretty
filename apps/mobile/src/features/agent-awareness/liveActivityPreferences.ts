@@ -1,8 +1,11 @@
 import * as Effect from "effect/Effect";
+import type { EnvironmentId } from "@t3tools/contracts";
 
 import type { SavedRemoteConnection } from "../../lib/connection";
 import { linkEnvironmentToCloudWithPreference } from "../cloud/linkEnvironment";
 import { updateAgentAwarenessRegistrationPreferences } from "./remoteRegistration";
+
+const LIVE_ACTIVITY_ENVIRONMENT_UPDATE_CONCURRENCY = 4;
 
 export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEnabled")(
   function* (input: {
@@ -10,10 +13,25 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
     readonly previousEnabled: boolean;
     readonly clerkToken: string | null;
     readonly connections: ReadonlyArray<SavedRemoteConnection>;
+    readonly canConfigureEnvironment: (environmentId: EnvironmentId) => boolean;
   }) {
     const linkedConnections = input.connections.filter(
       (connection) => connection.bearerToken !== null,
     );
+
+    const updateEnvironmentPreference = Effect.fn("updateEnvironmentPreference")(function* (
+      connection: SavedRemoteConnection,
+      enabled: boolean,
+      clerkToken: string,
+    ) {
+      if (!input.canConfigureEnvironment(connection.environmentId)) return;
+
+      yield* linkEnvironmentToCloudWithPreference({
+        clerkToken,
+        connection,
+        liveActivitiesEnabled: enabled,
+      });
+    });
 
     const updateRelayPreference = Effect.fn("updateRelayPreference")(function* (enabled: boolean) {
       yield* updateAgentAwarenessRegistrationPreferences({
@@ -25,13 +43,8 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
 
       yield* Effect.forEach(
         linkedConnections,
-        (connection) =>
-          linkEnvironmentToCloudWithPreference({
-            clerkToken,
-            connection,
-            liveActivitiesEnabled: enabled,
-          }),
-        { concurrency: "unbounded" },
+        (connection) => updateEnvironmentPreference(connection, enabled, clerkToken),
+        { concurrency: LIVE_ACTIVITY_ENVIRONMENT_UPDATE_CONCURRENCY },
       );
     });
 
@@ -50,11 +63,7 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
       yield* Effect.forEach(
         linkedConnections,
         (connection) =>
-          linkEnvironmentToCloudWithPreference({
-            clerkToken,
-            connection,
-            liveActivitiesEnabled: input.previousEnabled,
-          }).pipe(
+          updateEnvironmentPreference(connection, input.previousEnabled, clerkToken).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning(
                 `Could not restore Live Activity preference for environment ${connection.environmentId}.`,
@@ -62,7 +71,7 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
               ),
             ),
           ),
-        { concurrency: "unbounded" },
+        { concurrency: LIVE_ACTIVITY_ENVIRONMENT_UPDATE_CONCURRENCY },
       );
     });
 

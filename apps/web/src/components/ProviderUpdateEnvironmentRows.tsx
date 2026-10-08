@@ -1,6 +1,10 @@
 import { CheckIcon } from "lucide-react";
-import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
-import type { EnvironmentId, ServerProvider } from "@t3tools/contracts";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AuthProvidersManageScope,
+  type EnvironmentId,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -9,6 +13,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { serverEnvironment } from "~/state/server";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useLocalEnvironmentUpdateGroups } from "./ProviderUpdateLaunchNotification.environments";
 import {
@@ -115,10 +120,11 @@ function EnvironmentUpdateRow({
   readonly status: ProviderUpdateRowStatus;
   readonly onUpdate: () => void;
 }) {
+  const canManageProviders = useEnvironmentScope(group.environmentId, AuthProvidersManageScope);
   let trailing: ReactNode;
   switch (status.kind) {
     case "loading":
-      trailing = <Spinner className="size-4 text-muted-foreground" />;
+      trailing = <Spinner size="md" tone="muted" />;
       break;
     case "success":
       trailing = <CheckIcon aria-hidden="true" className="size-4 text-success" />;
@@ -126,14 +132,14 @@ function EnvironmentUpdateRow({
     case "failed":
     case "unchanged":
       trailing = (
-        <Button size="xs" variant="outline" onClick={onUpdate}>
+        <Button size="xs" variant="outline" disabled={!canManageProviders} onClick={onUpdate}>
           Retry
         </Button>
       );
       break;
     default:
       trailing = (
-        <Button size="xs" onClick={onUpdate}>
+        <Button size="xs" variant="outline" disabled={!canManageProviders} onClick={onUpdate}>
           Update
         </Button>
       );
@@ -145,6 +151,11 @@ function EnvironmentUpdateRow({
       <div className="flex min-w-0 flex-col">
         <span className="truncate font-medium text-foreground">{group.label}</span>
         <span className={cn("truncate text-xs", rowToneClass(status.kind))}>{status.text}</span>
+        {!canManageProviders ? (
+          <span className="text-xs text-muted-foreground">
+            This connection cannot manage provider accounts.
+          </span>
+        ) : null}
       </div>
       <div className="shrink-0">{trailing}</div>
     </div>
@@ -187,6 +198,20 @@ export function ProviderUpdateEnvironmentRows({
   // current and skips every state write when it finally resolves, instead of
   // clobbering the newer attempt's spinner/result/error or its in-flight guard.
   const requestVersionRef = useRef<Map<EnvironmentId, number>>(new Map());
+  const expiryTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      for (const timeoutId of expiryTimeoutsRef.current) {
+        clearTimeout(timeoutId);
+      }
+      expiryTimeoutsRef.current.clear();
+      inFlightEnvironmentsRef.current.clear();
+    };
+  }, []);
 
   const [pendingEnvironments, setPendingEnvironments] = useState<ReadonlySet<EnvironmentId>>(
     () => new Set(),
@@ -211,6 +236,7 @@ export function ProviderUpdateEnvironmentRows({
 
   const handleUpdate = useCallback(
     async (environmentId: EnvironmentId) => {
+      if (!readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
       const group = groupByEnvironment.get(environmentId);
       if (!group || group.candidates.length === 0) {
         return;
@@ -222,7 +248,7 @@ export function ProviderUpdateEnvironmentRows({
       const requestVersion = (requestVersionRef.current.get(environmentId) ?? 0) + 1;
       requestVersionRef.current.set(environmentId, requestVersion);
       const isCurrentRequest = () =>
-        requestVersionRef.current.get(environmentId) === requestVersion;
+        mountedRef.current && requestVersionRef.current.get(environmentId) === requestVersion;
       onInteract?.();
       const providerCount = group.candidates.length;
       const targets = group.candidates.map((candidate) => ({
@@ -249,6 +275,7 @@ export function ProviderUpdateEnvironmentRows({
       });
 
       const expiry = setTimeout(() => {
+        expiryTimeoutsRef.current.delete(expiry);
         // A newer attempt may have superseded this one; if so, leave its state
         // untouched.
         if (!isCurrentRequest()) {
@@ -264,6 +291,7 @@ export function ProviderUpdateEnvironmentRows({
           new Map(previous).set(environmentId, "Update timed out — try again."),
         );
       }, PENDING_EXPIRY_MS);
+      expiryTimeoutsRef.current.add(expiry);
       try {
         // Dispatch each candidate's update to this environment's own backend and
         // normalize every settled outcome into the multi-backend reducer shape.
@@ -347,6 +375,7 @@ export function ProviderUpdateEnvironmentRows({
         }
       } finally {
         clearTimeout(expiry);
+        expiryTimeoutsRef.current.delete(expiry);
         // Only the current attempt owns the shared spinner and in-flight guard;
         // a superseded attempt resolving late must not clear a newer one's.
         if (isCurrentRequest()) {

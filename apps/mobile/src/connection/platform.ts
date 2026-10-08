@@ -1,11 +1,7 @@
 import {
-  ClientPresentation,
-  CloudSession,
-  EnvironmentOwnedDataCleanup,
+  ClientCapabilities,
   PlatformConnectionSource,
-  PrimaryEnvironmentAuth,
-  RelayDeviceIdentity,
-  SshEnvironmentGateway,
+  Persistence,
 } from "@t3tools/client-runtime/platform";
 import {
   ConnectionBlockedError,
@@ -14,9 +10,9 @@ import {
   Wakeups,
 } from "@t3tools/client-runtime/connection";
 import { managedRelayAccountChanges, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
-import { AuthStandardClientScopes } from "@t3tools/contracts";
 import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -30,10 +26,14 @@ import { authClientMetadata } from "../lib/authClientMetadata";
 import * as Runtime from "../lib/runtime";
 import * as MobileStorage from "../persistence/mobile-storage";
 import { appAtomRegistry } from "../state/atom-registry";
-import { clearThreadOutboxEnvironment } from "../state/thread-outbox";
+import { clearThreadOutboxEnvironment } from "../state/thread-outbox-removal";
 import { clearComposerDraftsEnvironment } from "../state/use-composer-drafts";
+import { clearThreadComposerErrorsForEnvironment } from "../state/thread-composer-error";
 import { mobileApplicationActiveWakeup } from "./app-state-wakeups";
 import { connectionStorageLayer } from "./storage";
+
+const MOBILE_NATIVE_OPERATION_TIMEOUT_MS = 10_000;
+const MOBILE_ENVIRONMENT_CLEANUP_TIMEOUT_MS = 30_000;
 
 function networkStatus(state: Network.NetworkState): "unknown" | "offline" | "online" {
   if (state.isConnected === false) {
@@ -45,21 +45,26 @@ function networkStatus(state: Network.NetworkState): "unknown" | "offline" | "on
   return "unknown";
 }
 
+const readNetworkStatus = Effect.tryPromise({
+  try: () => Network.getNetworkStateAsync(),
+  catch: () => undefined,
+}).pipe(
+  Effect.map(networkStatus),
+  Effect.orElseSucceed(() => "unknown" as const),
+  Effect.timeoutOption(Duration.millis(MOBILE_NATIVE_OPERATION_TIMEOUT_MS)),
+  Effect.map(Option.getOrElse(() => "unknown" as const)),
+);
+
 const connectivityLayer = Connectivity.layer({
-  status: Effect.tryPromise({
-    try: () => Network.getNetworkStateAsync(),
-    catch: () => undefined,
-  }).pipe(
-    Effect.match({
-      onFailure: () => "unknown" as const,
-      onSuccess: networkStatus,
-    }),
-  ),
+  status: readNetworkStatus,
   changes: Stream.callback((queue) =>
     Effect.acquireRelease(
       Effect.sync(() => {
         let active = true;
+        let networkRevision = 0;
+        let foregroundProbe: Promise<void> | null = null;
         const networkSubscription = Network.addNetworkStateListener((state) => {
+          networkRevision += 1;
           Queue.offerUnsafe(queue, networkStatus(state));
         });
         // Re-query on resume so a network that came back while JS was
@@ -68,21 +73,41 @@ const connectivityLayer = Connectivity.layer({
         // only ever restores connectivity; genuine loss still arrives through
         // the persistent listener above.
         const appStateSubscription = AppState.addEventListener("change", (state) => {
-          if (state !== "active") {
+          if (state !== "active" || foregroundProbe !== null) {
             return;
           }
-          void Network.getNetworkStateAsync()
+          const revisionAtStart = networkRevision;
+          let timeout: ReturnType<typeof setTimeout> | null = null;
+          const probe = Promise.race([
+            Network.getNetworkStateAsync(),
+            new Promise<never>((_resolve, reject) => {
+              timeout = setTimeout(
+                () => reject(new Error("Mobile foreground network probe timed out.")),
+                MOBILE_NATIVE_OPERATION_TIMEOUT_MS,
+              );
+            }),
+          ])
             .then((current) => {
               const status = networkStatus(current);
               if (active && status !== "offline") {
                 Queue.offerUnsafe(queue, status);
               }
             })
-            .catch(() => undefined);
+            .catch(() => undefined)
+            .finally(() => {
+              if (timeout !== null) {
+                clearTimeout(timeout);
+              }
+              if (foregroundProbe === probe) {
+                foregroundProbe = null;
+              }
+            });
+          foregroundProbe = probe;
         });
         return {
           close: () => {
             active = false;
+            foregroundProbe = null;
             networkSubscription.remove();
             appStateSubscription.remove();
           },
@@ -93,33 +118,79 @@ const connectivityLayer = Connectivity.layer({
   ),
 });
 
+/**
+ * Wakes connections when the device moves between networks while staying
+ * online, such as Wi-Fi to cellular. Connectivity only reports online or
+ * offline, so leaving home on cellular would otherwise go unnoticed until the
+ * LAN socket times out.
+ */
+const networkPathChanges = Stream.callback<"network-changed">((queue) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      let active = true;
+      let previous: Network.NetworkStateType | undefined;
+      const record = (state: Network.NetworkState) => {
+        const type = state.isConnected === true ? state.type : undefined;
+        if (previous !== undefined && type !== undefined && type !== previous) {
+          Queue.offerUnsafe(queue, "network-changed");
+        }
+        previous = type ?? previous;
+      };
+      // The listener reports changes only, so seed the current type; without
+      // it the first Wi-Fi to cellular move would go unnoticed.
+      void Network.getNetworkStateAsync()
+        .then((state) => {
+          if (active && previous === undefined && state.isConnected === true) {
+            previous = state.type;
+          }
+        })
+        .catch(() => undefined);
+      const subscription = Network.addNetworkStateListener(record);
+      return {
+        remove: () => {
+          active = false;
+          subscription.remove();
+        },
+      };
+    }),
+    (subscription) => Effect.sync(() => subscription.remove()),
+  ).pipe(Effect.asVoid),
+);
+
 const wakeupsLayer = Wakeups.layer({
-  changes: Stream.merge(
-    Stream.callback<"application-active-probe" | "application-active-reconnect">((queue) =>
-      Effect.acquireRelease(
-        Effect.sync(() => {
-          let backgroundedAtMs = AppState.currentState === "background" ? Date.now() : null;
-          return AppState.addEventListener("change", (state) => {
-            if (state === "background") {
-              backgroundedAtMs = Date.now();
-              return;
-            }
-            // Only a stint in the background can hurt a socket. An
-            // inactive→active blip (Control Center, notification shade, a
-            // permission sheet) never suspended the process, so it wakes
-            // nothing.
-            if (state === "active" && backgroundedAtMs !== null) {
-              Queue.offerUnsafe(queue, mobileApplicationActiveWakeup(backgroundedAtMs, Date.now()));
-              backgroundedAtMs = null;
-            }
-          });
-        }),
-        (subscription) => Effect.sync(() => subscription.remove()),
-      ).pipe(Effect.asVoid),
-    ),
-    managedRelayAccountChanges(appAtomRegistry).pipe(
-      Stream.map(() => "credentials-changed" as const),
-    ),
+  changes: Stream.mergeAll(
+    [
+      Stream.callback<"application-active-probe" | "application-active-reconnect">((queue) =>
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            let backgroundedAtMs = AppState.currentState === "background" ? Date.now() : null;
+            return AppState.addEventListener("change", (state) => {
+              if (state === "background") {
+                backgroundedAtMs = Date.now();
+                return;
+              }
+              // Only a stint in the background can hurt a socket. An
+              // inactive→active blip (Control Center, notification shade, a
+              // permission sheet) never suspended the process, so it wakes
+              // nothing.
+              if (state === "active" && backgroundedAtMs !== null) {
+                Queue.offerUnsafe(
+                  queue,
+                  mobileApplicationActiveWakeup(backgroundedAtMs, Date.now()),
+                );
+                backgroundedAtMs = null;
+              }
+            });
+          }),
+          (subscription) => Effect.sync(() => subscription.remove()),
+        ).pipe(Effect.asVoid),
+      ),
+      managedRelayAccountChanges(appAtomRegistry).pipe(
+        Stream.map(() => "credentials-changed" as const),
+      ),
+      networkPathChanges,
+    ],
+    { concurrency: "unbounded" },
   ),
 });
 
@@ -127,8 +198,11 @@ const capabilitiesLayer = Layer.effectContext(
   Effect.gen(function* () {
     const storage = yield* MobileStorage.MobileStorage;
     return Context.make(
-      CloudSession,
-      CloudSession.of({
+      ClientCapabilities.CloudSession,
+      ClientCapabilities.CloudSession.of({
+        identity: Effect.sync(() =>
+          Option.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)),
+        ),
         clerkToken: Effect.gen(function* () {
           const session = appAtomRegistry.get(managedRelaySessionAtom);
           if (session === null) {
@@ -145,6 +219,19 @@ const capabilitiesLayer = Layer.effectContext(
                   detail: error.message,
                 }),
             ),
+            Effect.timeoutOption(Duration.millis(MOBILE_NATIVE_OPERATION_TIMEOUT_MS)),
+            Effect.flatMap(
+              Option.match({
+                onNone: () =>
+                  Effect.fail(
+                    new ConnectionTransientError({
+                      reason: "network",
+                      detail: `Obtaining the ${SURGE_CONNECT_NAME} session timed out.`,
+                    }),
+                  ),
+                onSome: Effect.succeed,
+              }),
+            ),
           );
           if (token === null) {
             return yield* new ConnectionBlockedError({
@@ -157,12 +244,14 @@ const capabilitiesLayer = Layer.effectContext(
       }),
     ).pipe(
       Context.add(
-        PrimaryEnvironmentAuth,
-        PrimaryEnvironmentAuth.of({ bearerToken: Effect.succeed(Option.none()) }),
+        ClientCapabilities.PrimaryEnvironmentAuth,
+        ClientCapabilities.PrimaryEnvironmentAuth.of({
+          bearerToken: Effect.succeed(Option.none()),
+        }),
       ),
       Context.add(
-        RelayDeviceIdentity,
-        RelayDeviceIdentity.of({
+        ClientCapabilities.RelayDeviceIdentity,
+        ClientCapabilities.RelayDeviceIdentity.of({
           deviceId: storage.loadOrCreateAgentAwarenessDeviceId.pipe(
             Effect.mapError(
               (cause) =>
@@ -171,20 +260,31 @@ const capabilitiesLayer = Layer.effectContext(
                   detail: `Could not load the mobile device identity: ${String(cause)}`,
                 }),
             ),
-            Effect.map(Option.some),
+            Effect.timeoutOption(Duration.millis(MOBILE_NATIVE_OPERATION_TIMEOUT_MS)),
+            Effect.flatMap(
+              Option.match({
+                onNone: () =>
+                  Effect.fail(
+                    new ConnectionTransientError({
+                      reason: "remote-unavailable",
+                      detail: "Loading the mobile device identity timed out.",
+                    }),
+                  ),
+                onSome: (deviceId) => Effect.succeed(Option.some(deviceId)),
+              }),
+            ),
           ),
         }),
       ),
       Context.add(
-        ClientPresentation,
-        ClientPresentation.of({
+        ClientCapabilities.ClientPresentation,
+        ClientCapabilities.ClientPresentation.of({
           metadata: authClientMetadata(Constants.expoConfig?.version),
-          scopes: AuthStandardClientScopes,
         }),
       ),
       Context.add(
-        SshEnvironmentGateway,
-        SshEnvironmentGateway.of({
+        ClientCapabilities.SshEnvironmentGateway,
+        ClientCapabilities.SshEnvironmentGateway.of({
           provision: () =>
             Effect.fail(
               new ConnectionBlockedError({
@@ -207,8 +307,8 @@ const capabilitiesLayer = Layer.effectContext(
 );
 
 const platformConnectionSourceLayer = Layer.succeed(
-  PlatformConnectionSource,
-  PlatformConnectionSource.of({
+  PlatformConnectionSource.PlatformConnectionSource,
+  PlatformConnectionSource.PlatformConnectionSource.of({
     registrations: Stream.empty,
   }),
 );
@@ -220,23 +320,57 @@ const providedCapabilitiesLayer = capabilitiesLayer.pipe(
   Layer.provide(Runtime.runtimeContextLayer),
 );
 
+function cleanupEnvironmentResource(
+  environmentId: string,
+  resource: string,
+  cleanup: () => Promise<void>,
+) {
+  return Effect.tryPromise({
+    try: cleanup,
+    catch: (cause) => cause,
+  }).pipe(
+    Effect.timeoutOption(Duration.millis(MOBILE_ENVIRONMENT_CLEANUP_TIMEOUT_MS)),
+    Effect.flatMap(
+      Option.match({
+        onNone: () =>
+          Effect.logWarning("Mobile environment-owned data cleanup timed out.", {
+            environmentId,
+            resource,
+          }),
+        onSome: Effect.succeed,
+      }),
+    ),
+    Effect.catch((cause) =>
+      Effect.logWarning("Could not clear mobile environment-owned data.", {
+        environmentId,
+        resource,
+        cause,
+      }),
+    ),
+  );
+}
+
 const environmentOwnedDataCleanupLayer = Layer.succeed(
-  EnvironmentOwnedDataCleanup,
-  EnvironmentOwnedDataCleanup.of({
+  Persistence.EnvironmentOwnedDataCleanup,
+  Persistence.EnvironmentOwnedDataCleanup.of({
     clear: (environmentId) =>
       Effect.all(
         [
-          Effect.promise(() => clearThreadOutboxEnvironment(environmentId)),
-          Effect.promise(() => clearComposerDraftsEnvironment(environmentId)),
+          cleanupEnvironmentResource(environmentId, "thread outbox", () =>
+            clearThreadOutboxEnvironment(environmentId),
+          ),
+          cleanupEnvironmentResource(environmentId, "composer drafts", () =>
+            clearComposerDraftsEnvironment(environmentId),
+          ),
+          cleanupEnvironmentResource(
+            environmentId,
+            "thread composer errors",
+            async () => {
+              clearThreadComposerErrorsForEnvironment(environmentId);
+            },
+          ),
         ],
         { concurrency: "unbounded", discard: true },
-      ).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("Could not clear mobile environment-owned data.", {
-            environmentId,
-            cause,
-          }),
-        ),
       ),
   }),
 );
@@ -263,3 +397,6 @@ export const connectionPlatformLayer: Layer.Layer<
   platformConnectionSourceLayer,
   environmentOwnedDataCleanupLayer,
 );
+
+/** 2735 export name; Pretty still uses `connectionPlatformLayer`. */
+export const layer = connectionPlatformLayer;

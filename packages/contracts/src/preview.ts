@@ -9,17 +9,41 @@
  * @module Preview
  */
 import * as Schema from "effect/Schema";
-import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  ENTITY_ID_MAX_LENGTH,
+  IsoDateTime,
+  NonNegativeInt,
+  PositiveInt,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
+import { BrowserProfileId } from "./browserProfile.ts";
+
+export const DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER = "__t3DesktopPreviewRecordingCapture";
 
 export const PREVIEW_URL_MAX_LENGTH = 2_048;
+export const PREVIEW_TITLE_MAX_LENGTH = 512;
+export const PREVIEW_DIAGNOSTIC_MAX_LENGTH = 8_000;
+export const PREVIEW_SERVER_EPOCH_MAX_LENGTH = 128;
+export const PREVIEW_HOST_MAX_LENGTH = 1_024;
+export const PREVIEW_PROCESS_NAME_MAX_LENGTH = 512;
+export const PREVIEW_TERMINAL_ID_MAX_LENGTH = 128;
 export const CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS = 32;
+export const PREVIEW_SESSIONS_MAX_PER_THREAD = 256;
+export const PREVIEW_SESSIONS_MAX_TOTAL = 4_096;
+export const DISCOVERED_LOCAL_SERVERS_MAX_ITEMS = 512;
 
 const Url = TrimmedNonEmptyString.check(Schema.isMaxLength(PREVIEW_URL_MAX_LENGTH));
 
 export const ConfiguredLocalServerUrls = Schema.Array(Url).check(
   Schema.isMaxLength(CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS),
 );
-const Title = Schema.String.check(Schema.isMaxLength(512));
+const Title = Schema.String.check(Schema.isMaxLength(PREVIEW_TITLE_MAX_LENGTH));
+const Diagnostic = Schema.String.check(Schema.isMaxLength(PREVIEW_DIAGNOSTIC_MAX_LENGTH));
+const PreviewServerEpoch = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PREVIEW_SERVER_EPOCH_MAX_LENGTH),
+);
+const PreviewThreadId = TrimmedNonEmptyString.check(Schema.isMaxLength(ENTITY_ID_MAX_LENGTH));
 
 export const PreviewTabId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
 export type PreviewTabId = typeof PreviewTabId.Type;
@@ -52,10 +76,13 @@ export type PreviewViewportSize = typeof PreviewViewportSize.Type;
  * fixed size while fill mode follows a narrow panel. Keep measurement
  * validation separate from the stricter user-selectable size constraints.
  */
+const PreviewRenderedViewportDimension = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: PREVIEW_VIEWPORT_MAX_DIMENSION }),
+);
 export const PreviewRenderedViewportSize = Schema.Struct({
-  width: Schema.Int.check(Schema.isGreaterThan(0)),
-  height: Schema.Int.check(Schema.isGreaterThan(0)),
-});
+  width: PreviewRenderedViewportDimension,
+  height: PreviewRenderedViewportDimension,
+}).check(viewportAreaFilter);
 export type PreviewRenderedViewportSize = typeof PreviewRenderedViewportSize.Type;
 
 export const PREVIEW_VIEWPORT_PRESET_IDS = [
@@ -156,20 +183,60 @@ export const PreviewNavStatus = Schema.Union([
     url: Url,
     title: Title,
     code: Schema.Int,
-    description: Schema.String,
+    description: Diagnostic,
   }),
 ]);
 export type PreviewNavStatus = typeof PreviewNavStatus.Type;
 
+/**
+ * Where a tab's page runs. `desktop` is an Electron <webview> owned by one
+ * desktop client; `server` is headless Chromium owned by the environment
+ * server, viewed by any client through `/api/preview-stream` and driven by
+ * agents with no client attached. Absent means `desktop`.
+ */
+export const PreviewRuntime = Schema.Literals(["desktop", "server"]);
+export type PreviewRuntime = typeof PreviewRuntime.Type;
+
+/**
+ * Host setup the server's browser is missing, sent as JSON in the reason when
+ * the preview stream closes with code 4503. Fixing it needs the host's
+ * operator, so viewers stop retrying and show `command`, the one line that
+ * fixes it. Close reasons are capped at 123 bytes, which this fits.
+ */
+export const PreviewStreamHostSetup = Schema.Struct({
+  need: Schema.Literals(["sandbox", "libraries"]),
+  /** For example `sudo npx t3 browser setup`, matching how the server was launched. */
+  command: Schema.String,
+});
+export type PreviewStreamHostSetup = typeof PreviewStreamHostSetup.Type;
+export const PREVIEW_STREAM_HOST_SETUP_CLOSE_CODE = 4503;
+
 export const PreviewSessionSnapshot = Schema.Struct({
-  threadId: TrimmedNonEmptyString,
+  threadId: PreviewThreadId,
   tabId: PreviewTabId,
   navStatus: PreviewNavStatus,
   canGoBack: Schema.Boolean,
   canGoForward: Schema.Boolean,
   /** Missing snapshots from older servers are treated as fill-panel mode. */
   viewport: Schema.optional(PreviewViewportSetting),
-  updatedAt: Schema.String,
+  /** Server tabs only; the desktop keeps its own tabs' appearance. Absent means `system`. */
+  colorScheme: Schema.optional(PreviewAppearancePreference),
+  /** Server tabs only. Absent means 1. */
+  zoomFactor: Schema.optional(PreviewZoomFactor),
+  /**
+   * Browser profile the tab's Chromium partition is derived from. Fixed at
+   * open: Electron only honours a `<webview>`'s partition before attach, so
+   * switching would require tearing the guest down and losing page state.
+   */
+  profileId: Schema.optional(BrowserProfileId),
+  runtime: Schema.optional(PreviewRuntime),
+  /** Authenticated provider session owning an isolated server tab. */
+  automationOwner: Schema.optional(Schema.String),
+  /** An agent opened this tab and asked to show it, so viewers float it. */
+  reveal: Schema.optional(Schema.Boolean),
+  /** A fresh presentation request, including whether it overrides automatic-floating settings. */
+  revealRequest: Schema.optional(Schema.Struct({ id: Schema.String, force: Schema.Boolean })),
+  updatedAt: IsoDateTime,
 });
 export type PreviewSessionSnapshot = typeof PreviewSessionSnapshot.Type;
 
@@ -184,6 +251,12 @@ export const PreviewOpenInput = Schema.Struct({
    * later (which the user would see as a visible reflow).
    */
   viewport: Schema.optional(PreviewViewportSetting),
+  /** Omit to open under the client's configured default profile. */
+  profileId: Schema.optional(BrowserProfileId),
+  /** Omit for a desktop tab. `server` requires the `serverBrowser` capability. */
+  runtime: Schema.optional(PreviewRuntime),
+  /** Set by agent opens that should float for viewers; see the snapshot field. */
+  reveal: Schema.optional(Schema.Boolean),
 });
 export type PreviewOpenInput = typeof PreviewOpenInput.Type;
 
@@ -217,11 +290,32 @@ export const PreviewResizeInput = Schema.Struct({
 });
 export type PreviewResizeInput = typeof PreviewResizeInput.Type;
 
+/**
+ * Changes how a server tab renders, or clears its profile's site data, for any
+ * client. Unlike page input, these need no control of the tab.
+ */
+export const PreviewAdjustInput = Schema.Struct({
+  threadId: ThreadId,
+  tabId: PreviewTabId,
+  colorScheme: Schema.optional(PreviewAppearancePreference),
+  zoomFactor: Schema.optional(PreviewZoomFactor),
+  /** Reloads the page past its cache, as Chrome's Shift+Reload does. */
+  hardReload: Schema.optional(Schema.Boolean),
+  /** Clears the tab's profile's cookies or HTTP cache; its other storage stays. */
+  clear: Schema.optional(Schema.Literals(["cookies", "cache"])),
+});
+export type PreviewAdjustInput = typeof PreviewAdjustInput.Type;
+
 export const PreviewCloseInput = Schema.Struct({
   threadId: ThreadId,
   tabId: Schema.optional(PreviewTabId),
 });
 export type PreviewCloseInput = typeof PreviewCloseInput.Type;
+
+export const PreviewClearProfileInput = Schema.Struct({
+  profileId: BrowserProfileId,
+});
+export type PreviewClearProfileInput = typeof PreviewClearProfileInput.Type;
 
 export const PreviewListInput = Schema.Struct({
   threadId: ThreadId,
@@ -229,20 +323,22 @@ export const PreviewListInput = Schema.Struct({
 export type PreviewListInput = typeof PreviewListInput.Type;
 
 export const PreviewListResult = Schema.Struct({
-  sessions: Schema.Array(PreviewSessionSnapshot),
+  sessions: Schema.Array(PreviewSessionSnapshot).check(
+    Schema.isMaxLength(PREVIEW_SESSIONS_MAX_PER_THREAD),
+  ),
   /** Identifies the current server process so revision resets are safe. */
-  serverEpoch: TrimmedNonEmptyString,
+  serverEpoch: PreviewServerEpoch,
   /** Monotonic server state revision used to reject stale list responses. */
   revision: NonNegativeInt,
 });
 export type PreviewListResult = typeof PreviewListResult.Type;
 
 const PreviewEventBaseSchema = Schema.Struct({
-  threadId: TrimmedNonEmptyString,
+  threadId: PreviewThreadId,
   tabId: PreviewTabId,
-  createdAt: Schema.String,
+  createdAt: IsoDateTime,
   /** Identifies the server process that emitted this event. */
-  serverEpoch: TrimmedNonEmptyString,
+  serverEpoch: PreviewServerEpoch,
   /** Monotonic server state revision shared with PreviewListResult. */
   revision: PositiveInt,
 });
@@ -263,6 +359,13 @@ const PreviewResizedEvent = Schema.Struct({
   ...PreviewEventBaseSchema.fields,
   type: Schema.Literal("resized"),
   snapshot: PreviewSessionSnapshot,
+  /** A one-off action for the server's browser, such as a hard reload. */
+  request: Schema.optional(
+    Schema.Struct({
+      hardReload: Schema.optional(Schema.Boolean),
+      clear: Schema.optional(Schema.Literals(["cookies", "cache"])),
+    }),
+  ),
 });
 
 const PreviewFailedEvent = Schema.Struct({
@@ -271,7 +374,7 @@ const PreviewFailedEvent = Schema.Struct({
   url: Url,
   title: Title,
   code: Schema.Int,
-  description: Schema.String,
+  description: Diagnostic,
 });
 
 const PreviewClosedEvent = Schema.Struct({
@@ -293,32 +396,36 @@ export type PreviewEvent = typeof PreviewEvent.Type;
  * "Local" recommendations in the empty-state of the preview panel.
  */
 export const DiscoveredLocalServer = Schema.Struct({
-  host: TrimmedNonEmptyString,
+  host: TrimmedNonEmptyString.check(Schema.isMaxLength(PREVIEW_HOST_MAX_LENGTH)),
   port: Schema.Int.check(Schema.isGreaterThan(0)).check(Schema.isLessThan(65536)),
   url: Url,
-  processName: Schema.NullOr(TrimmedNonEmptyString),
+  processName: Schema.NullOr(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(PREVIEW_PROCESS_NAME_MAX_LENGTH)),
+  ),
   pid: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
   terminal: Schema.NullOr(
     Schema.Struct({
       threadId: ThreadId,
-      terminalId: TrimmedNonEmptyString,
+      terminalId: TrimmedNonEmptyString.check(Schema.isMaxLength(PREVIEW_TERMINAL_ID_MAX_LENGTH)),
     }),
   ),
 });
 export type DiscoveredLocalServer = typeof DiscoveredLocalServer.Type;
 
 export const DiscoveredLocalServerList = Schema.Struct({
-  servers: Schema.Array(DiscoveredLocalServer),
-  scannedAt: Schema.String,
+  servers: Schema.Array(DiscoveredLocalServer).check(
+    Schema.isMaxLength(DISCOVERED_LOCAL_SERVERS_MAX_ITEMS),
+  ),
+  scannedAt: IsoDateTime,
   configuredUrlProbing: Schema.optional(Schema.Literal(true)),
 });
 export type DiscoveredLocalServerList = typeof DiscoveredLocalServerList.Type;
 
-export class PreviewSessionLookupError extends Schema.TaggedErrorClass<PreviewSessionLookupError>()(
+export class PreviewSessionLookupError extends Schema.TaggedError<PreviewSessionLookupError>()(
   "PreviewSessionLookupError",
   {
-    threadId: Schema.String,
-    tabId: Schema.String,
+    threadId: PreviewThreadId,
+    tabId: PreviewTabId,
   },
 ) {
   override get message() {
@@ -326,12 +433,12 @@ export class PreviewSessionLookupError extends Schema.TaggedErrorClass<PreviewSe
   }
 }
 
-export class PreviewInvalidUrlError extends Schema.TaggedErrorClass<PreviewInvalidUrlError>()(
+export class PreviewInvalidUrlError extends Schema.TaggedError<PreviewInvalidUrlError>()(
   "PreviewInvalidUrlError",
   {
     inputLength: Schema.Number,
     reason: Schema.Literals(["empty", "parse", "unsupported-protocol", "unexpected"]),
-    protocol: Schema.optional(Schema.String),
+    protocol: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
     cause: Schema.Defect(),
   },
 ) {
@@ -341,5 +448,40 @@ export class PreviewInvalidUrlError extends Schema.TaggedErrorClass<PreviewInval
   }
 }
 
-export const PreviewError = Schema.Union([PreviewSessionLookupError, PreviewInvalidUrlError]);
+export class PreviewSessionLimitError extends Schema.TaggedError<PreviewSessionLimitError>()(
+  "PreviewSessionLimitError",
+  {
+    scope: Schema.Literals(["thread", "server"]),
+    limit: PositiveInt,
+  },
+) {
+  override get message() {
+    return `Cannot open another preview tab because the ${this.scope} limit of ${this.limit} was reached.`;
+  }
+}
+
+export class PreviewControlRequiredError extends Schema.TaggedError<PreviewControlRequiredError>()(
+  "PreviewControlRequiredError",
+  { tabId: Schema.String },
+) {
+  override get message() {
+    return "Take control of the server browser and use its viewer controls.";
+  }
+}
+
+export class PreviewClearProfileError extends Schema.TaggedError<PreviewClearProfileError>()(
+  "PreviewClearProfileError",
+  { profileId: Schema.String, cause: Schema.Defect() },
+) {
+  override get message() {
+    return "The environment could not delete this browser profile's data.";
+  }
+}
+
+export const PreviewError = Schema.Union([
+  PreviewSessionLookupError,
+  PreviewInvalidUrlError,
+  PreviewSessionLimitError,
+  PreviewControlRequiredError,
+]);
 export type PreviewError = typeof PreviewError.Type;

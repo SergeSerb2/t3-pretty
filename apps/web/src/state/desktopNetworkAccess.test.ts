@@ -1,7 +1,7 @@
 import type { AdvertisedEndpoint, DesktopServerExposureState } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
-import { AtomRegistry } from "effect/unstable/reactivity";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import { AtomRegistry } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { createDesktopNetworkAccessStateAtom } from "./desktopNetworkAccess";
@@ -83,5 +83,34 @@ describe("desktopNetworkAccessState", () => {
       }),
     );
     registry.dispose();
+  });
+
+  it("fails a desktop bridge read that never settles", async () => {
+    vi.useFakeTimers();
+    const never = new Promise<never>(() => undefined);
+    const atom = createDesktopNetworkAccessStateAtom(
+      () => ({
+        getAdvertisedEndpoints: () => never,
+        getServerExposureState: () => never,
+      }),
+      { requestTimeoutMs: 5 },
+    );
+    const registry = AtomRegistry.make();
+    registry.mount(atom);
+
+    try {
+      await vi.advanceTimersByTimeAsync(6);
+      const result = registry.get(atom);
+      expect(AsyncResult.isFailure(result)).toBe(true);
+      if (!AsyncResult.isFailure(result)) throw new Error("Expected network access load to fail.");
+      expect(Cause.squash(result.cause)).toEqual(
+        expect.objectContaining({
+          cause: expect.objectContaining({ message: "Desktop network read timed out after 5ms." }),
+        }),
+      );
+    } finally {
+      registry.dispose();
+      vi.useRealTimers();
+    }
   });
 });

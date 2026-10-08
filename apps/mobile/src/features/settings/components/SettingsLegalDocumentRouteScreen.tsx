@@ -1,34 +1,48 @@
 import { type NavigationProp, type ParamListBase, useNavigation } from "@react-navigation/native";
 import { useCallback, useLayoutEffect, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, View } from "react-native";
+import { ActivityIndicator, Linking, Platform, Pressable, View } from "react-native";
 import { WebView } from "react-native-webview";
 
 import { AppText as Text } from "../../../components/AppText";
 import { LoadingStrip } from "../../../components/LoadingStrip";
 import { SymbolView } from "../../../components/AppSymbol";
-import { useThemeColor } from "../../../lib/useThemeColor";
+import { MintGlassButton } from "../../../components/MintGlassButton";
+import { mintGlassCustomItem } from "../../../native/mintGlassHeaderItems";
 import { isLegalDocumentUrl, LEGAL_URL } from "../lib/legal-document-url";
 
-export function SettingsLegalDocumentCloseHeaderButton() {
-  const navigation = useNavigation();
-  const iconColor = useThemeColor("--color-icon");
-
+function LegalHeaderButton(props: {
+  readonly accessibilityLabel: string;
+  readonly icon: "xmark" | "safari";
+  readonly onPress: () => void;
+}) {
+  if (Platform.OS === "ios") return <MintGlassButton {...props} />;
   return (
     <Pressable
-      accessibilityLabel="Close legal document"
+      accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"
       hitSlop={12}
-      onPress={() => navigation.goBack()}
+      onPress={props.onPress}
       className="p-2 active:opacity-60"
     >
       <SymbolView
-        name="xmark"
+        name={props.icon}
         size={18}
-        tintColor={iconColor}
+        tintColorClassName={"accent-icon"}
         type="monochrome"
-        weight="semibold"
       />
     </Pressable>
+  );
+}
+
+export function SettingsLegalDocumentCloseHeaderButton() {
+  const navigation = useNavigation();
+
+  return (
+    <LegalHeaderButton
+      accessibilityLabel="Close legal document"
+      icon="xmark"
+      onPress={() => navigation.goBack()}
+    />
   );
 }
 
@@ -37,25 +51,14 @@ export function SettingsLegalDocumentExternalHeaderButton({
 }: {
   readonly externalUrl?: string;
 }) {
-  const iconColor = useThemeColor("--color-icon");
   const safeExternalUrl = isLegalDocumentUrl(externalUrl) ? externalUrl : LEGAL_URL;
 
   return (
-    <Pressable
+    <LegalHeaderButton
       accessibilityLabel="Open legal documents in external browser"
-      accessibilityRole="button"
-      hitSlop={12}
+      icon="safari"
       onPress={() => void Linking.openURL(safeExternalUrl).catch(() => undefined)}
-      className="p-2 active:opacity-60"
-    >
-      <SymbolView
-        name="safari"
-        size={19}
-        tintColor={iconColor}
-        type="monochrome"
-        weight="regular"
-      />
-    </Pressable>
+    />
   );
 }
 
@@ -69,7 +72,6 @@ export function SettingsLegalDocumentRouteScreen({
   documentUrl,
 }: SettingsLegalDocumentRouteScreenProps) {
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
-  const iconColor = useThemeColor("--color-icon");
   const [reloadKey, setReloadKey] = useState(0);
   const [loadProgress, setLoadProgress] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -82,6 +84,9 @@ export function SettingsLegalDocumentRouteScreen({
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: renderExternalHeaderButton,
+      ...(Platform.OS === "ios"
+        ? { unstable_headerRightItems: () => [mintGlassCustomItem(renderExternalHeaderButton())] }
+        : {}),
     });
   }, [navigation, renderExternalHeaderButton]);
 
@@ -94,7 +99,7 @@ export function SettingsLegalDocumentRouteScreen({
         <SymbolView
           name="exclamationmark.triangle"
           size={32}
-          tintColor={iconColor}
+          tintColorClassName={"accent-icon"}
           type="monochrome"
           weight="regular"
         />

@@ -4,31 +4,57 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
-import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import {
+  isRichTextBoldShortcut,
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+} from "../keybindings";
+import { isEditableFocused } from "../lib/editableFocus";
+import { isPreviewFocused } from "../lib/previewFocus";
+import { isTerminalFocused } from "../lib/terminalFocus";
+import { isModelPickerOpen } from "../modelPickerVisibility";
+import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
+import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { resolveThreadRouteRef } from "../threadRoutes";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
+import { useTeslaTouchUi } from "../teslaTouchUi";
+import {
+  hideMacosWindowButtonsThenReleaseInset,
+  MACOS_TRAFFIC_LIGHT_REVEAL_DELAY_MS,
+  shouldReserveMacosTrafficLights,
+  shouldShowMacosWindowButtons,
+} from "../workspaceTitlebar";
+import {
+  PanelAnimationSuppressionProvider,
+  usePanelAnimationSettings,
+  usePanelNavigationSuppression,
+} from "../panelAnimations";
+import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
-import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
-import {
-  resolveSidebarStageFocusRingOffsetClass,
-  useSidebarStageBackdropVariant,
-} from "./SidebarStageBackdrop";
+import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
+import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
 import {
+  clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarCssWidth,
   resolveThreadSidebarMaximumWidth,
+  resolveThreadSidebarMinimumWidth,
   THREAD_MAIN_CONTENT_MIN_WIDTH,
   THREAD_SIDEBAR_DEFAULT_WIDTH,
   THREAD_SIDEBAR_MIN_WIDTH,
@@ -43,9 +69,37 @@ import {
   useSidebarVisibility,
   type SidebarResizableOptions,
 } from "./ui/sidebar";
+import {
+  SIDEBAR_PEEK_ANIMATION_MS,
+  SIDEBAR_PEEK_EASE,
+  useSidebarPeekPointerBinding,
+} from "./ui/sidebarPeek";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
+function SidebarPeekNavigationGuard() {
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const { retainPeekIfHovered } = useSidebar();
+  const retainRef = useRef(retainPeekIfHovered);
+  retainRef.current = retainPeekIfHovered;
+
+  useLayoutEffect(() => {
+    // Thread switches replace the row under the cursor and synthesize a leave
+    // while the pointer is still in the hover surface. Re-assert before paint,
+    // and once more after the browser has dispatched that leave.
+    retainRef.current();
+    let timer = 0;
+    const frame = window.requestAnimationFrame(() => {
+      retainRef.current();
+      timer = window.setTimeout(() => retainRef.current(), 0);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [pathname]);
+
+  return null;
+}
 
 function readInitialThreadSidebarWidth(): number {
   try {
@@ -58,15 +112,102 @@ function readInitialThreadSidebarWidth(): number {
   }
 }
 
-function SidebarControl() {
+function SidebarControl({
+  isMacosDesktop,
+  isWindowFullscreen,
+}: {
+  isMacosDesktop: boolean;
+  isWindowFullscreen: boolean;
+}) {
+  const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const { toggleSidebar } = useSidebar();
+  const {
+    isMobile,
+    open,
+    peeking,
+    toggleSidebar,
+    onPeekPointerEnter,
+    onPeekPointerLeave,
+    onPeekPointerHold,
+  } = useSidebar();
+  const peekPointer = useSidebarPeekPointerBinding(
+    onPeekPointerEnter,
+    onPeekPointerLeave,
+    onPeekPointerHold,
+  );
   const isSidebarVisible = useSidebarVisibility();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const stageBackdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
   );
-  const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle");
+  const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle", {
+    context: { usagePageOpen },
+  });
+  const trafficLights = {
+    isMacosDesktop,
+    isMobile,
+    sidebarOpen: open,
+    sidebarPeeking: peeking,
+  };
+  const reserveTrafficLights = shouldReserveMacosTrafficLights({
+    ...trafficLights,
+    isFullscreen: isWindowFullscreen,
+  });
+  const showWindowButtons = shouldShowMacosWindowButtons(trafficLights);
+  const windowButtonVisibilityQueue = useRef(Promise.resolve());
+  const sendWindowButtonVisibility = (visible: boolean) => {
+    const setVisibility = window.desktopBridge?.setWindowButtonVisibility;
+    if (typeof setVisibility !== "function") return Promise.resolve();
+    const next = windowButtonVisibilityQueue.current.then(() => setVisibility(visible));
+    windowButtonVisibilityQueue.current = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
+
+  useLayoutEffect(() => {
+    if (!isMacosDesktop) {
+      document.documentElement.removeAttribute("data-macos-traffic-lights");
+      return;
+    }
+
+    const root = document.documentElement;
+    let cancelled = false;
+    let revealTimer = 0;
+
+    if (!showWindowButtons) {
+      void hideMacosWindowButtonsThenReleaseInset({
+        hide: () => sendWindowButtonVisibility(false),
+        releaseInset: () => {
+          if (!cancelled) root.removeAttribute("data-macos-traffic-lights");
+        },
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    root.toggleAttribute("data-macos-traffic-lights", reserveTrafficLights);
+    const delay = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? 0
+      : MACOS_TRAFFIC_LIGHT_REVEAL_DELAY_MS;
+    revealTimer = window.setTimeout(() => {
+      void sendWindowButtonVisibility(true);
+    }, delay);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(revealTimer);
+    };
+  }, [isMacosDesktop, reserveTrafficLights, showWindowButtons]);
+
+  useLayoutEffect(
+    () => () => {
+      document.documentElement.removeAttribute("data-macos-traffic-lights");
+      void sendWindowButtonVisibility(true);
+    },
+    [],
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -77,7 +218,20 @@ function SidebarControl() {
       ) {
         return;
       }
-      if (resolveShortcutCommand(event, keybindings) !== "sidebar.toggle") return;
+      if (
+        isRichTextBoldShortcut(event) &&
+        event.target instanceof HTMLElement &&
+        event.target.closest('[data-composer-rich-text="true"]')
+      ) {
+        // The rich-text composer claims Mod+B for bold; the toggle stays
+        // available everywhere else, including the plain-text composer.
+        return;
+      }
+      if (
+        resolveShortcutCommand(event, keybindings, { context: { usagePageOpen } }) !==
+        "sidebar.toggle"
+      )
+        return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -87,28 +241,34 @@ function SidebarControl() {
     // Capture before focused editors consume commands such as Mod+B for rich-text formatting.
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [keybindings, toggleSidebar]);
+  }, [keybindings, toggleSidebar, usagePageOpen]);
 
   return (
     // The right-side layout controls carry mr-px (border compensation inside
     // the panel), so the trigger mirrors it: both clusters sit one extra pixel
     // off their edge and the titlebar reads symmetric.
     <div
-      className="pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center"
+      className="pointer-events-auto fixed left-[calc(env(safe-area-inset-left)+0.75rem)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center [-webkit-app-region:no-drag]"
       data-sidebar-control=""
+      style={
+        {
+          "--sidebar-peek-duration": `${SIDEBAR_PEEK_ANIMATION_MS}ms`,
+          "--sidebar-peek-ease": SIDEBAR_PEEK_EASE,
+        } as CSSProperties
+      }
+      onPointerEnter={peekPointer.onPointerEnter}
+      onPointerLeave={peekPointer.onPointerLeave}
     >
       <Tooltip>
         <TooltipTrigger
           render={
             <SidebarTrigger
+              // Over the stage artwork the trigger is a control on imagery, like the media
+              // viewer's arrows; that variant positions itself, so the layout is reset here.
+              variant={isSidebarVisible && stageBackdropVariant ? "media-navigation" : "ghost"}
               className={cn(
                 "pointer-events-auto",
-                isSidebarVisible &&
-                  stageBackdropVariant &&
-                  "focus-visible:ring-white/90 [&_svg]:stroke-white/90! [&_svg]:opacity-100! [&_svg]:hover:stroke-white! [:hover,[data-pressed]]:bg-white/15",
-                isSidebarVisible &&
-                  stageBackdropVariant &&
-                  resolveSidebarStageFocusRingOffsetClass(stageBackdropVariant),
+                isSidebarVisible && stageBackdropVariant && "relative top-auto translate-y-0",
               )}
               aria-label="Toggle main sidebar"
             />
@@ -120,6 +280,56 @@ function SidebarControl() {
       </Tooltip>
     </div>
   );
+}
+
+// Moves through the app's route history like a browser's back/forward buttons.
+function NavigationHistoryShortcuts() {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const routeThreadRef = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteRef(params),
+  });
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest("[data-keybinding-capture]")
+      ) {
+        return;
+      }
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: {
+          terminalFocus: isTerminalFocused(),
+          terminalOpen: routeThreadRef
+            ? selectThreadTerminalUiState(
+                useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+                routeThreadRef,
+              ).terminalOpen
+            : false,
+          previewFocus: isPreviewFocused(),
+          previewOpen: routeThreadRef
+            ? selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, routeThreadRef) ===
+              "preview"
+            : false,
+          editableFocus: isEditableFocused(event.target),
+          modelPickerOpen: isModelPickerOpen(),
+        },
+      });
+      if (command !== "navigation.back" && command !== "navigation.forward") return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (command === "navigation.back") window.history.back();
+      else window.history.forward();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [keybindings, routeThreadRef]);
+
+  return null;
 }
 
 // Settings swaps the thread sidebar out of the tree. Keep the lightweight
@@ -136,27 +346,37 @@ const LegacyThreadSidebar = lazy(() => import("./LegacySidebar"));
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
+  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
+    usePanelAnimationSettings();
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.
+  // Seeds server-side visited tracking from this browser's localStorage the
+  useThreadVisitedMigration();
   const pathname = useLocation({ select: (location) => location.pathname });
+  const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
+  const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
+  const teslaTouch = useTeslaTouchUi();
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
-  // Stable options object: the drag limits resolve against the live window at
-  // drag time, so no viewport subscription is needed here and the rail never
-  // sees a stale cap.
+  const [brandWidth, setBrandWidth] = useState(0);
+  const sidebarMinimumWidth = resolveThreadSidebarMinimumWidth(brandWidth);
+  // Resolve viewport limits at drag time so the rail follows the live window
+  // without a viewport subscription. Brand measurement can still raise the
+  // minimum, so refresh the options when that floor changes.
   const sidebarResizable = useMemo<SidebarResizableOptions>(
     () => ({
-      getCssWidth: resolveThreadSidebarCssWidth,
-      maxWidth: () => resolveThreadSidebarMaximumWidth(window.innerWidth),
-      minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+      getCssWidth: (width) =>
+        `max(${sidebarMinimumWidth}px, ${resolveThreadSidebarCssWidth(width)})`,
+      maxWidth: () => resolveThreadSidebarMaximumWidth(window.innerWidth, sidebarMinimumWidth),
+      minWidth: sidebarMinimumWidth,
       shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
         nextWidth <= currentWidth ||
         wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
       storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
       onResize: setSidebarWidth,
     }),
-    [],
+    [sidebarMinimumWidth],
   );
   const resetSidebarWidth = () => {
     try {
@@ -173,10 +393,11 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       : false;
   });
   const sidebarProviderStyle = {
-    "--sidebar-width": resolveThreadSidebarCssWidth(sidebarWidth),
-    ...(isMacosDesktop && !isWindowFullscreen
-      ? { "--workspace-controls-left": MACOS_TRAFFIC_LIGHTS_LEFT_INSET }
-      : {}),
+    "--sidebar-width": teslaTouch
+      ? "min(34rem, max(20rem, 40vw))"
+      : `max(${sidebarMinimumWidth}px, ${resolveThreadSidebarCssWidth(sidebarWidth)})`,
+    ...(teslaTouch ? { "--sidebar-width-icon": "5.75rem" } : {}),
+    "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
   } as CSSProperties;
 
   useEffect(() => {
@@ -199,8 +420,9 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // Window chrome state lands on <html> as plain attributes rather than React
   // state: only CSS reads it, so a re-render of the whole app would be pure
   // waste. `data-window-inactive` follows the AppKit convention of dimming an
-  // unfocused window; `data-window-interacting` lets expensive effects (glass
-  // blur) drop out for the duration of a drag or resize.
+  // unfocused window; `data-window-interacting` lets dialog/composer glass
+  // drop out for a drag or resize. `will-move` without `moved` can leave that
+  // flag stuck, so drop it if the main process never sends false.
   useEffect(() => {
     const bridge = window.desktopBridge;
     if (!bridge) return;
@@ -209,11 +431,19 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     const unsubscribeActive = onWindowActiveStateChange?.((active) => {
       root.toggleAttribute("data-window-inactive", !active);
     });
+    let interactingClearTimer = 0;
     const unsubscribeInteracting = onWindowInteractingChange?.((interacting) => {
+      window.clearTimeout(interactingClearTimer);
       root.toggleAttribute("data-window-interacting", interacting);
+      if (interacting) {
+        interactingClearTimer = window.setTimeout(() => {
+          root.removeAttribute("data-window-interacting");
+        }, 800);
+      }
     });
 
     return () => {
+      window.clearTimeout(interactingClearTimer);
       unsubscribeActive?.();
       unsubscribeInteracting?.();
       root.removeAttribute("data-window-inactive");
@@ -242,31 +472,44 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   }, [navigate, pathname]);
 
   return (
-    <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={sidebarProviderStyle}>
-      <ProjectProjectionRetention />
-      <Sidebar
-        side="left"
-        collapsible="offcanvas"
-        data-app-sidebar=""
-        className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
-        resizable={sidebarResizable}
+    <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
+      <SidebarProvider
+        className="h-dvh! min-h-0!"
+        data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
+        defaultOpen
+        style={sidebarProviderStyle}
       >
-        {isOnSettings ? (
-          <>
-            <SidebarChromeHeader isElectron={isElectron} />
-            <SettingsSidebarNav pathname={pathname} />
-          </>
-        ) : legacySidebarEnabled ? (
-          <Suspense fallback={null}>
-            <LegacyThreadSidebar />
-          </Suspense>
-        ) : (
-          <ThreadSidebar />
-        )}
-        <SidebarRail onDoubleClick={resetSidebarWidth} />
-      </Sidebar>
-      {children}
-      <SidebarControl />
-    </SidebarProvider>
+        <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />
+        <ProjectProjectionRetention />
+        <SidebarPeekNavigationGuard />
+        <Sidebar
+          side="left"
+          collapsible="icon"
+          data-app-sidebar=""
+          className="workspace-sidebar-glass group-data-[side=left]:border-r-0 text-sidebar-foreground"
+          role="navigation"
+          aria-label={isOnSettings ? "Settings" : "Threads"}
+          resizable={teslaTouch ? false : { ...sidebarResizable, minWidth: sidebarMinimumWidth }}
+        >
+          {isOnSettings ? (
+            <>
+              <SidebarChromeHeader isElectron={isElectron} />
+              <SettingsSidebarNav pathname={pathname} />
+            </>
+          ) : legacySidebarEnabled ? (
+            <Suspense fallback={null}>
+              <LegacyThreadSidebar />
+            </Suspense>
+          ) : (
+            <ThreadSidebar />
+          )}
+          <SidebarRail onDoubleClick={resetSidebarWidth} />
+        </Sidebar>
+        {children}
+        <SidebarControl isMacosDesktop={isMacosDesktop} isWindowFullscreen={isWindowFullscreen} />
+        <NavigationHistoryShortcuts />
+        <MainAppLocationTracker />
+      </SidebarProvider>
+    </PanelAnimationSuppressionProvider>
   );
 }

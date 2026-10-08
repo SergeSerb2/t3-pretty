@@ -15,12 +15,13 @@ vi.mock("../SidebarStageBackdrop", () => ({
   useSidebarStageBackdropVariant: (enabled = true) => (enabled ? stageArtworkState.variant : null),
 }));
 
-import { ComposerPrimaryActions, formatPendingPrimaryActionLabel } from "./ComposerPrimaryActions";
+import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 
 function renderPendingActions(isRunning: boolean) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
+      canOperateThread: true,
       pendingAction: {
         questionIndex: 0,
         isLastQuestion: true,
@@ -29,6 +30,7 @@ function renderPendingActions(isRunning: boolean) {
         isComplete: true,
       },
       isRunning,
+      canInterrupt: isRunning,
       showPlanFollowUpPrompt: false,
       promptHasText: false,
       isSendBusy: false,
@@ -48,8 +50,10 @@ function renderStandaloneStop(isInterrupting = false) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
+      canOperateThread: true,
       pendingAction: null,
       isRunning: true,
+      canInterrupt: true,
       showPlanFollowUpPrompt: false,
       promptHasText: false,
       isSendBusy: false,
@@ -66,34 +70,14 @@ function renderStandaloneStop(isInterrupting = false) {
   );
 }
 
-function renderRunningActions(withQueueMenu: boolean, hasSendableContent: boolean) {
-  return renderToStaticMarkup(
-    createElement(ComposerPrimaryActions, {
-      compact: true,
-      pendingAction: null,
-      isRunning: true,
-      showPlanFollowUpPrompt: false,
-      promptHasText: hasSendableContent,
-      isSendBusy: false,
-      sendDisabledReason: null,
-      isConnecting: false,
-      isEnvironmentUnavailable: false,
-      isPreparingWorktree: false,
-      hasSendableContent,
-      ...(withQueueMenu ? { onQueueSend: () => {} } : {}),
-      onPreviousPendingQuestion: () => {},
-      onInterrupt: () => {},
-      onImplementPlanInNewThread: () => {},
-    }),
-  );
-}
-
 function renderSendButton(sendDisabledReason: string | null = null) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
+      canOperateThread: true,
       pendingAction: null,
       isRunning: false,
+      canInterrupt: false,
       showPlanFollowUpPrompt: false,
       promptHasText: true,
       isSendBusy: false,
@@ -112,96 +96,6 @@ function renderSendButton(sendDisabledReason: string | null = null) {
 afterEach(() => {
   stageArtworkState.mode = "none";
   stageArtworkState.variant = null;
-});
-
-describe("formatPendingPrimaryActionLabel", () => {
-  it("returns 'Submitting...' while responding", () => {
-    expect(
-      formatPendingPrimaryActionLabel({
-        compact: false,
-        isLastQuestion: false,
-        isResponding: true,
-        questionIndex: 0,
-      }),
-    ).toBe("Submitting...");
-  });
-
-  it("returns 'Submitting...' while responding regardless of other flags", () => {
-    expect(
-      formatPendingPrimaryActionLabel({
-        compact: true,
-        isLastQuestion: true,
-        isResponding: true,
-        questionIndex: 3,
-      }),
-    ).toBe("Submitting...");
-  });
-
-  it("returns 'Submit' in compact mode on the last question", () => {
-    expect(
-      formatPendingPrimaryActionLabel({
-        compact: true,
-        isLastQuestion: true,
-        isResponding: false,
-        questionIndex: 0,
-      }),
-    ).toBe("Submit");
-  });
-
-  it("returns 'Next' in compact mode when not the last question", () => {
-    expect(
-      formatPendingPrimaryActionLabel({
-        compact: true,
-        isLastQuestion: false,
-        isResponding: false,
-        questionIndex: 1,
-      }),
-    ).toBe("Next");
-  });
-
-  it("returns 'Next question' when not the last question", () => {
-    expect(
-      formatPendingPrimaryActionLabel({
-        compact: false,
-        isLastQuestion: false,
-        isResponding: false,
-        questionIndex: 0,
-      }),
-    ).toBe("Next question");
-  });
-
-  it("returns singular 'Submit answer' on the last question when it is the only question", () => {
-    expect(
-      formatPendingPrimaryActionLabel({
-        compact: false,
-        isLastQuestion: true,
-        isResponding: false,
-        questionIndex: 0,
-      }),
-    ).toBe("Submit answer");
-  });
-
-  it("returns plural 'Submit answers' on the last question when there are multiple questions", () => {
-    expect(
-      formatPendingPrimaryActionLabel({
-        compact: false,
-        isLastQuestion: true,
-        isResponding: false,
-        questionIndex: 1,
-      }),
-    ).toBe("Submit answers");
-  });
-
-  it("returns plural 'Submit answers' for higher question indices", () => {
-    expect(
-      formatPendingPrimaryActionLabel({
-        compact: false,
-        isLastQuestion: true,
-        isResponding: false,
-        questionIndex: 5,
-      }),
-    ).toBe("Submit answers");
-  });
 });
 
 describe("ComposerPrimaryActions", () => {
@@ -253,30 +147,5 @@ describe("ComposerPrimaryActions", () => {
 
     expect(markup).not.toContain("stage-nightly");
     expect(markup).toContain("bg-message-action text-message-action-foreground");
-  });
-
-  it("renders send-now alongside stop while running", () => {
-    const markup = renderRunningActions(false, true);
-
-    expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).toContain('aria-label="Send now"');
-    expect(markup).toContain('type="submit"');
-    expect(markup).toContain("size-9 sm:size-8");
-    expect(markup).not.toContain('aria-label="Send options"');
-  });
-
-  it("renders the queue menu next to send-now while running when queueing is available", () => {
-    const markup = renderRunningActions(true, true);
-
-    expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).toContain('aria-label="Send now"');
-    expect(markup).toContain('aria-label="Send options"');
-  });
-
-  it("keeps stop as the only action while running with an empty composer", () => {
-    const markup = renderRunningActions(true, false);
-
-    expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).not.toContain('aria-label="Send now"');
   });
 });

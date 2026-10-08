@@ -1,16 +1,16 @@
+import { createV5StackNavigator as createNativeStackNavigator } from "../../native/createV5StackNavigator";
 import { NavigationContainer, NavigationIndependentTree } from "@react-navigation/native";
-import {
-  createNativeStackNavigator,
-  type NativeStackNavigationOptions,
-} from "@react-navigation/native-stack";
+import { type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import type { ReactNode } from "react";
 import { Platform } from "react-native";
 
 import { getCompactBrandHeaderOptions } from "../../components/CompactBrandTitle";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import {
+  NATIVE_LIQUID_GLASS_SUPPORTED,
+  TRANSPARENT_NATIVE_HEADERS,
+} from "../../native/native-glass";
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { useMobileNavigationTheme } from "../../lib/useMobileNavigationTheme";
-import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
 const SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
@@ -29,13 +29,16 @@ type SidebarScreenOptions = NativeStackNavigationOptions & {
  */
 const SIDEBAR_SCREEN_OPTIONS: SidebarScreenOptions = {
   contentStyle: { backgroundColor: "transparent" },
+  // Same as Home: the scroll-edge effect never covers the in-bar search
+  // field, so a thin material frosts the whole bar over the scenery.
+  headerBlurEffect: TRANSPARENT_NATIVE_HEADERS ? "systemUltraThinMaterial" : undefined,
   headerLargeTitle: false,
   headerShadowVisible: false,
   headerShown: true,
-  headerStyle: NATIVE_LIQUID_GLASS_SUPPORTED ? { backgroundColor: "transparent" } : undefined,
+  headerStyle: TRANSPARENT_NATIVE_HEADERS ? { backgroundColor: "transparent" } : undefined,
   ...getCompactBrandHeaderOptions({ fontSize: 18, fontWeight: "800" }),
-  headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
-  scrollEdgeEffects: NATIVE_LIQUID_GLASS_SUPPORTED ? SCROLL_EDGE_EFFECTS : undefined,
+  headerTransparent: TRANSPARENT_NATIVE_HEADERS,
+  scrollEdgeEffects: TRANSPARENT_NATIVE_HEADERS ? SCROLL_EDGE_EFFECTS : undefined,
   unstable_navigationItemStyle: NATIVE_LIQUID_GLASS_SUPPORTED ? "editor" : undefined,
 };
 
@@ -53,8 +56,7 @@ const SidebarStack = createNativeStackNavigator();
  * navigation hooks used for header configuration inside the pane.
  */
 export function SidebarNavigationShell(props: { readonly children: ReactNode }) {
-  const { themeAppearance } = useAppearancePreferences();
-  const navigationTheme = useMobileNavigationTheme(themeAppearance);
+  const navigationTheme = useMobileNavigationTheme("sidebar");
 
   return (
     <NavigationIndependentTree>

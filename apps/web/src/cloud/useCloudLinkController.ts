@@ -1,5 +1,6 @@
 import { useAuth } from "@clerk/react";
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
+import { EnvironmentId, AuthRelayReadScope, AuthRelayWriteScope } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -9,20 +10,26 @@ import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/con
 import { useState } from "react";
 
 import { toastManager } from "../components/ui/toast";
+import { useCopyTraceId } from "../hooks/useCopyTraceId";
+import { useRelayEnvironmentDiscovery } from "../state/environments";
 import { relayEnvironmentDiscovery } from "../state/relay";
+import { readEnvironmentScope } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
+import { isRelayEnvironmentMissing } from "./connectMesh";
 import { isCloudLinkOnConfiguredRelayForAccount } from "./linkEnvironment";
 import {
   linkPrimaryEnvironment as linkPrimaryEnvironmentAtom,
   unlinkPrimaryEnvironment as unlinkPrimaryEnvironmentAtom,
   updatePrimaryEnvironmentPreferences as updatePrimaryEnvironmentPreferencesAtom,
 } from "./linkEnvironmentAtoms";
-import { usePrimaryCloudLinkState } from "./primaryCloudLinkState";
+import { readCachedPrimaryCloudLinkState, usePrimaryCloudLinkState } from "./primaryCloudLinkState";
 import { resolveCloudPublicConfig, resolveRelayClerkTokenOptions } from "./publicConfig";
 
 export interface CloudLinkDesiredState {
   readonly managedTunnel: boolean;
   readonly publish: boolean;
+  /** Omit to leave the webhook-hold setting as it is. */
+  readonly holdWebhooksWhileOffline?: boolean;
 }
 
 /**
@@ -36,6 +43,7 @@ export interface CloudLinkDesiredState {
  */
 export function useCloudLinkController() {
   const { getToken, isSignedIn, userId } = useAuth();
+  const copyTraceId = useCopyTraceId();
   const refreshRelayEnvironments = useAtomCommand(relayEnvironmentDiscovery.refresh, {
     reportFailure: false,
   });
@@ -50,6 +58,7 @@ export function useCloudLinkController() {
     { reportFailure: false },
   );
   const primaryCloudLinkState = usePrimaryCloudLinkState();
+  const relayDiscovery = useRelayEnvironmentDiscovery();
   const [operationError, setOperationError] = useState<string | null>(null);
 
   const reportUpdateFailure = (cause: unknown) => {
@@ -70,7 +79,7 @@ export function useCloudLinkController() {
         ? {
             secondaryActionProps: {
               children: "Copy trace ID",
-              onClick: () => void navigator.clipboard?.writeText(traceId),
+              onClick: () => copyTraceId(traceId),
             },
           }
         : undefined,
@@ -91,8 +100,18 @@ export function useCloudLinkController() {
   const storedManagedTunnelActive =
     storedLinkState?.managedTunnelActive ?? storedLinkState?.linked ?? false;
   const storedPublishAgentActivity = storedLinkState?.publishAgentActivity ?? false;
-  const managedTunnelActive = linked && storedManagedTunnelActive;
-  const publishAgentActivity = linked && storedPublishAgentActivity;
+  // A relay-side deregistration can leave the environment's local link files
+  // intact. Once the current account list is authoritative, do not present
+  // that stale local state as reachable; the next explicit enable/connect
+  // action will re-link it below.
+  const relayMembershipMissing =
+    linked &&
+    isRelayEnvironmentMissing(relayDiscovery, primaryCloudLinkState.target?.environmentId ?? null);
+  const activeLink = linked && !relayMembershipMissing;
+  const managedTunnelActive = activeLink && storedManagedTunnelActive;
+  const publishAgentActivity = activeLink && storedPublishAgentActivity;
+  const holdWebhooksWhileOffline =
+    activeLink && (storedLinkState?.holdWebhooksWhileOffline ?? false);
 
   const reconcileCloudState = async (desired: CloudLinkDesiredState): Promise<boolean> => {
     setOperationError(null);
@@ -101,8 +120,31 @@ export function useCloudLinkController() {
       reportUpdateFailure(new Error("Local environment is not ready yet."));
       return false;
     }
-    const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
+    const environmentId = EnvironmentId.make(target.environmentId);
+    const canManageLink = () => {
+      if (
+        !readEnvironmentScope(environmentId, AuthRelayReadScope) ||
+        !readEnvironmentScope(environmentId, AuthRelayWriteScope)
+      ) {
+        reportUpdateFailure(
+          new Error("This connection needs permission to view and manage T3 Connect settings."),
+        );
+        return false;
+      }
+      return true;
+    };
+    const readLinkState = () => {
+      const state = readCachedPrimaryCloudLinkState(target);
+      if (state === null) {
+        reportUpdateFailure(new Error("Wait until the current T3 Connect settings can be read."));
+      }
+      return state;
+    };
+    if (!canManageLink()) return false;
     const wantsLink = desired.managedTunnel || desired.publish;
+    if (wantsLink && readLinkState() === null) return false;
+    const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
+    if (!canManageLink()) return false;
 
     // A failure after this point may follow a partially applied mutation (e.g.
     // the link succeeded but the preference update did not), so every exit —
@@ -123,6 +165,8 @@ export function useCloudLinkController() {
         return false;
       }
     } else {
+      const currentLinkState = readLinkState();
+      if (currentLinkState === null) return false;
       if (tokenResult._tag === "Failure") {
         reportUpdateFailure(squashAtomCommandFailure(tokenResult));
         return false;
@@ -134,11 +178,19 @@ export function useCloudLinkController() {
         );
         return false;
       }
+      const currentLinked = isCloudLinkOnConfiguredRelayForAccount(
+        currentLinkState,
+        resolveCloudPublicConfig().relayUrl,
+        isSignedIn ? userId : null,
+      );
+      const currentManagedTunnel = currentLinkState.managedTunnelActive ?? currentLinkState.linked;
+      const currentRelayMembershipMissing =
+        currentLinked && isRelayEnvironmentMissing(relayDiscovery, target.environmentId);
       // Forks and self-hosted builds can change relay deployments while a host
       // still has a durable link to the previous one. Remove that local link
       // first so the new relay can install its account, issuer, credential, and
       // tunnel as one coherent configuration.
-      if (storedLinked && !linked) {
+      if (currentLinkState.linked && !currentLinked) {
         const unlinkResult = await unlinkPrimaryEnvironment({ target, clerkToken });
         if (unlinkResult._tag === "Failure") {
           if (!isAtomCommandInterrupted(unlinkResult)) {
@@ -148,7 +200,11 @@ export function useCloudLinkController() {
           return false;
         }
       }
-      if (!linked || storedManagedTunnelActive !== desired.managedTunnel) {
+      if (
+        !currentLinked ||
+        currentRelayMembershipMissing ||
+        currentManagedTunnel !== desired.managedTunnel
+      ) {
         const linkResult = await linkPrimaryEnvironment({
           target,
           clerkToken,
@@ -162,9 +218,16 @@ export function useCloudLinkController() {
           return false;
         }
       }
+      if (!canManageLink() || readLinkState() === null) {
+        primaryCloudLinkState.refresh();
+        return false;
+      }
       const prefResult = await updatePrimaryEnvironmentPreferences({
         target,
         publishAgentActivity: desired.publish,
+        ...(desired.holdWebhooksWhileOffline === undefined
+          ? {}
+          : { holdWebhooksWhileOffline: desired.holdWebhooksWhileOffline }),
       });
       if (prefResult._tag === "Failure") {
         if (!isAtomCommandInterrupted(prefResult)) {
@@ -191,8 +254,10 @@ export function useCloudLinkController() {
     storedManagedTunnelActive,
     storedPublishAgentActivity,
     linked,
+    relayMembershipMissing,
     managedTunnelActive,
     publishAgentActivity,
+    holdWebhooksWhileOffline,
     operationError,
     reconcileCloudState,
   };

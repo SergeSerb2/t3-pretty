@@ -1,56 +1,25 @@
 import { useAtomValue } from "@effect/atom-react";
-import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
+import {
+  type AssetUrlState,
+  assetUrlStateFromResult,
+  EMPTY_ASSET_URL_ATOM,
+  resolveAssetUrl,
+} from "@t3tools/client-runtime/state/assets";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
-import { AsyncResult } from "effect/unstable/reactivity";
-import { useMemo } from "react";
+import { AsyncResult } from "effect/reactivity";
+import { useCallback, useMemo } from "react";
 
-import { assetEnvironment } from "~/state/assets";
+import { assetEnvironment, localMediaEnvironment } from "~/state/assets";
+import { useFilesystemReadAccess } from "~/state/filesystem";
 import { usePreparedConnection } from "~/state/session";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
-export { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
-
-export type AssetUrlState =
-  | { readonly _tag: "Loading" }
-  | { readonly _tag: "Failure" }
-  | { readonly _tag: "Success"; readonly url: string; readonly sourcePath?: string };
-
-export function useAssetUrlState(
-  environmentId: EnvironmentId,
-  resource: AssetResource,
-): AssetUrlState {
-  const preparedConnection = usePreparedConnection(environmentId);
-  const result = useAtomValue(
-    assetEnvironment.createUrl({
-      environmentId,
-      input: { resource },
-    }),
-  );
-  if (result._tag === "Failure") {
-    return { _tag: "Failure" };
-  }
-  if (preparedConnection._tag === "None" || result._tag !== "Success") {
-    return { _tag: "Loading" };
-  }
-  const url = resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl);
-  return url === null
-    ? { _tag: "Failure" }
-    : {
-        _tag: "Success",
-        url,
-        ...(result.value.sourcePath !== undefined ? { sourcePath: result.value.sourcePath } : {}),
-      };
-}
-
-export function useAssetUrl(environmentId: EnvironmentId, resource: AssetResource): string | null {
-  const result = useAssetUrlState(environmentId, resource);
-  if (result._tag !== "Success") {
-    return null;
-  }
-  return result.url;
-}
+export { resolveAssetUrl, type AssetUrlState } from "@t3tools/client-runtime/state/assets";
 
 /**
- * Resources the collection atom can key. Empty attachment ids fail
+ * Returns whether the resource can be submitted to `createUrl`. False for
+ * empty-id attachments, which crash before hitting the RPC due to the
  * `AssetResource` decode, which throws `InvalidAssetCollectionKeyError`
  * during render.
  */
@@ -73,27 +42,96 @@ export function alignQueryableAssetUrls<T>(
   });
 }
 
+export function useAssetUrlState(
+  environmentId: EnvironmentId | null,
+  resource: AssetResource | null,
+): AssetUrlState {
+  const fileAccess = useFilesystemReadAccess(environmentId);
+  const canReadResource =
+    fileAccess.canReadFiles ||
+    (resource?._tag !== "workspace-file" &&
+      resource?._tag !== "media-file" &&
+      resource?._tag !== "draft-workspace-file");
+  const preparedConnection = usePreparedConnection(environmentId);
+  const localMedia = useAtomValue(localMediaEnvironment);
+  const result = useAtomValue(
+    !canReadResource || environmentId === null || resource === null
+      ? EMPTY_ASSET_URL_ATOM
+      : assetEnvironment.createUrl({ environmentId, input: { resource } }),
+  );
+  if (!canReadResource) return { _tag: fileAccess.isPending ? "Loading" : "Failure" };
+  return assetUrlStateFromResult(
+    result,
+    preparedConnection._tag === "Some" ? preparedConnection.value.httpBaseUrl : null,
+    localMedia?.httpBaseUrl,
+  );
+}
+
+export function useAssetUrlRefresh(
+  environmentId: EnvironmentId | null,
+  resource: AssetResource | null,
+): () => Promise<string | null> {
+  const connection = usePreparedConnection(environmentId);
+  const httpBaseUrl = connection._tag === "Some" ? connection.value.httpBaseUrl : null;
+  const localMedia = useAtomValue(localMediaEnvironment);
+  const allowedHttpBaseUrl = localMedia?.httpBaseUrl;
+  const refresh = useAtomQueryRunner(assetEnvironment.createUrl, {
+    reportFailure: false,
+    refresh: true,
+  });
+  return useCallback(async () => {
+    if (environmentId === null || resource === null || httpBaseUrl === null) return null;
+    const result = await refresh({ environmentId, input: { resource } });
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    return resolveAssetUrl(httpBaseUrl, result.value.relativeUrl, allowedHttpBaseUrl);
+  }, [environmentId, resource, refresh, httpBaseUrl, allowedHttpBaseUrl]);
+}
+
 export function useAssetUrls(
   environmentId: EnvironmentId,
   resources: ReadonlyArray<AssetResource>,
 ): ReadonlyArray<string | null> {
   const preparedConnection = usePreparedConnection(environmentId);
-  const queryableResources = resources.filter(isQueryableAssetResource);
+  const localMedia = useAtomValue(localMediaEnvironment);
+  const allowedHttpBaseUrl = localMedia?.httpBaseUrl;
+  const { canReadFiles } = useFilesystemReadAccess(environmentId);
+  const allowedResources = useMemo(
+    () =>
+      canReadFiles
+        ? resources
+        : resources.filter(
+            (resource) =>
+              resource._tag !== "workspace-file" &&
+              resource._tag !== "media-file" &&
+              resource._tag !== "draft-workspace-file",
+          ),
+    [canReadFiles, resources],
+  );
   const results = useAtomValue(
     assetEnvironment.createUrls({
       environmentId,
-      resources: queryableResources,
+      resources: allowedResources,
     }),
   );
   return useMemo(() => {
-    if (preparedConnection._tag === "None") {
-      return resources.map(() => null);
-    }
-    const queryableUrls = results.map((result) =>
-      AsyncResult.isSuccess(result)
-        ? resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl)
-        : null,
-    );
-    return alignQueryableAssetUrls(resources, queryableUrls);
-  }, [preparedConnection, resources, results]);
+    if (preparedConnection._tag === "None") return resources.map(() => null);
+    let resultIndex = 0;
+    return resources.map((resource) => {
+      if (
+        !canReadFiles &&
+        (resource._tag === "workspace-file" ||
+          resource._tag === "media-file" ||
+          resource._tag === "draft-workspace-file")
+      )
+        return null;
+      const result = results[resultIndex++];
+      return result && AsyncResult.isSuccess(result)
+        ? resolveAssetUrl(
+            preparedConnection.value.httpBaseUrl,
+            result.value.relativeUrl,
+            allowedHttpBaseUrl,
+          )
+        : null;
+    });
+  }, [allowedHttpBaseUrl, canReadFiles, preparedConnection, resources, results]);
 }

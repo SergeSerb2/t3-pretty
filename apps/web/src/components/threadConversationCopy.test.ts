@@ -1,6 +1,6 @@
 import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/threads";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -14,6 +14,8 @@ vi.mock("../state/entities", () => ({ readThreadDetail }));
 vi.mock("../state/threads", () => ({
   environmentThreads: { stateAtom },
 }));
+
+import { CREATE_PULL_REQUEST_MESSAGE_SUFFIX } from "@t3tools/shared/createPullRequestPrompt";
 
 import { formatThreadConversation, loadThreadConversationText } from "./threadConversationCopy";
 
@@ -37,12 +39,48 @@ describe("formatThreadConversation", () => {
     ).toBe("Thread\n\nAssistant:\nhello");
   });
 
+  it("hides auto-PR instructions from copied user turns", () => {
+    expect(
+      formatThreadConversation("Thread", [
+        {
+          role: "user",
+          text: `please add steer/queue capabilities${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`,
+        },
+        { role: "assistant", text: "On it." },
+      ]),
+    ).toBe("Thread\n\nUser:\nplease add steer/queue capabilities\n\nAssistant:\nOn it.");
+  });
+
   it("returns an empty string when there is nothing to copy", () => {
     expect(formatThreadConversation("   ", [])).toBe("");
   });
 });
 
 describe("loadThreadConversationText", () => {
+  it("copies already cached V2 visible conversation items", async () => {
+    readThreadDetail.mockReturnValue({
+      projection: {
+        visibleTurnItems: [
+          {
+            item: {
+              type: "user_message",
+              text: `Please fix copy${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`,
+            },
+          },
+          { item: { type: "reasoning", text: "hidden reasoning" } },
+          { item: { type: "tool", text: "tool output" } },
+          { item: { type: "assistant_message", text: "Done." } },
+        ],
+      },
+    });
+    await expect(
+      loadThreadConversationText(
+        { environmentId: "env-1" as never, threadId: "thread-1" as never },
+        "Copy test",
+      ),
+    ).resolves.toBe("Copy test\n\nUser:\nPlease fix copy\n\nAssistant:\nDone.");
+  });
+
   it("rejects when thread state stays empty past the timeout", async () => {
     readThreadDetail.mockReturnValue(null);
     stateAtom.mockReturnValue(Atom.make(AsyncResult.success(EMPTY_ENVIRONMENT_THREAD_STATE)));
@@ -115,9 +153,10 @@ describe("loadThreadConversationText", () => {
     readThreadDetail.mockReturnValue(null);
     const live = AsyncResult.success({
       data: Option.some({
-        messages: [
-          { role: "user" as const, text: "Copy is broken" },
-          { role: "assistant" as const, text: "I'll fix the flyout." },
+        visibleTurnItems: [
+          { item: { type: "user_message", text: "Copy is broken" } },
+          { item: { type: "reasoning", text: "hidden reasoning" } },
+          { item: { type: "assistant_message", text: "I'll fix the flyout." } },
         ],
       }),
       status: "live" as const,

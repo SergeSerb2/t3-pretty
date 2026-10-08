@@ -1,8 +1,9 @@
-import { BlurTargetView } from "expo-blur";
+import { AgentMonitoringEnrollmentCoordinator } from "./state/agentMonitoring";
+import { PermissionUpdateNotice } from "./components/PermissionUpdateNotice";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo } from "react";
-import { StatusBar } from "react-native";
+import { StatusBar, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -20,6 +21,7 @@ const SCENERY_NAV_LIGHT = {
 };
 
 import { RegistryContext } from "@effect/atom-react";
+import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";
 import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { AppMenuHost } from "./components/AppMenuHost";
 import { WhatsNewHost } from "./features/whats-new/WhatsNewHost";
@@ -35,10 +37,15 @@ import { SceneryProvider } from "./features/scenery/SceneryProvider";
 import { RootStack } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
 import { OverlayPortalHost } from "./components/OverlayPortal";
-import { appBlurTargetRef } from "./lib/appBlurTarget";
+import { RenderErrorBoundary, RenderFailureView } from "./components/RenderErrorBoundary";
+import { shouldHandleAppLink } from "./lib/appLinking";
 import { isBoringMobileTheme } from "./lib/mobileTheme";
-import { useThemeColor } from "./lib/useThemeColor";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
+import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
+import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
+import { VoiceInputProvider } from "./features/voice-input/VoiceInputProvider";
+import { GlobalVoiceInputControl } from "./features/voice-input/GlobalVoiceInputControl";
+import { MintGlassMotion } from "./components/MintGlassButton";
 
 import "../global.css";
 
@@ -52,14 +59,9 @@ void SplashScreen.preventAutoHideAsync().catch(() => {
 
 const appLinking = {
   prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
-  // The Expo dev client launches the app via
-  // <scheme>://expo-development-client/?url=<packager> — that URL addresses
-  // the launcher, not app navigation. Without this filter it falls through
-  // to the NotFound wildcard route on every dev launch.
-  // expo-sharing uses a private lifecycle URL only to wake the app. The
-  // persisted share inbox below owns navigation once the payload is durable.
-  filter: (url: string) =>
-    !url.includes("expo-development-client") && !url.includes("://expo-sharing"),
+  // Keep the compact thread list available beneath a directly opened thread.
+  config: { initialRouteName: "Home" },
+  filter: shouldHandleAppLink,
 };
 
 const Navigation = createStaticNavigation(RootStack);
@@ -75,23 +77,31 @@ function SplashScreenCoordinator() {
 }
 
 export default function App() {
+  useUiRuntimeMemoryWarningGc();
+
   return (
-    <RegistryContext.Provider value={appAtomRegistry}>
-      <CloudAuthProvider>
-        <AppearancePreferencesProvider>
-          <SceneryProvider>
-            <AppContent />
-          </SceneryProvider>
-        </AppearancePreferencesProvider>
-      </CloudAuthProvider>
-    </RegistryContext.Provider>
+    <RenderErrorBoundary
+      renderFallback={(fallback) => (
+        <RenderFailureView {...fallback} title="T3 Pretty couldn't finish starting" />
+      )}
+    >
+      <RegistryContext.Provider value={appAtomRegistry}>
+        <CloudAuthProvider>
+          <AppearancePreferencesProvider>
+            <SceneryProvider>
+              <AppContent />
+              <MintGlassMotion />
+            </SceneryProvider>
+          </AppearancePreferencesProvider>
+        </CloudAuthProvider>
+      </RegistryContext.Provider>
+    </RenderErrorBoundary>
   );
 }
 
 function AppContent() {
   const { themeAppearance, themeId } = useAppearancePreferences();
-  const statusBarBg = useThemeColor("--color-status-bar");
-  const baseNavigationTheme = useMobileNavigationTheme(themeAppearance);
+  const baseNavigationTheme = useMobileNavigationTheme();
   const sceneryNavigationTheme = themeAppearance === "dark" ? SCENERY_NAV_DARK : SCENERY_NAV_LIGHT;
   const navigationTheme = useMemo(() => {
     if (isBoringMobileTheme(themeId)) {
@@ -111,32 +121,33 @@ function AppContent() {
   return (
     <>
       <SplashScreenCoordinator />
+      <AgentMonitoringEnrollmentCoordinator />
+      <SubscriptionUsageCoordinator />
+      <PermissionUpdateNotice />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>
           <SafeAreaProvider>
-            <StatusBar
-              barStyle={themeAppearance === "dark" ? "light-content" : "dark-content"}
-              backgroundColor={statusBarBg}
-              translucent
-            />
-            {/* The navigation theme drives the NATIVE header appearance: native-stack
+            <VoiceInputProvider>
+              <StatusBar barStyle={themeAppearance === "dark" ? "light-content" : "dark-content"} />
+              {/* The navigation theme drives the NATIVE header appearance: native-stack
                 forwards `dark` as the nav bar's overrideUserInterfaceStyle. Without
                 this, React Navigation defaults to its light theme and every native
                 header (glass buttons, title, materials) is forced light even when
                 the system is in dark mode. */}
-            {/* Blur target for Android dropdown backdrops — see appBlurTarget.ts. */}
-            <BlurTargetView ref={appBlurTargetRef} style={{ flex: 1 }}>
-              <IncomingShareProvider>
-                <LocalLiveActivitySync />
-                <Navigation linking={appLinking} theme={navigationTheme} />
-              </IncomingShareProvider>
-              <ConfirmDialogHost />
-              <WhatsNewHost />
-              <AppMenuHost />
-            </BlurTargetView>
-            {/* Anchored-menu overlays render here — in-window, so the
+              <GlobalVoiceInputControl>
+                <IncomingShareProvider>
+                  <LocalLiveActivitySync />
+                  <Navigation linking={appLinking} theme={navigationTheme} />
+                </IncomingShareProvider>
+                <ConfirmDialogHost />
+                <WhatsNewHost />
+                <AppMenuHost />
+                <ThreadArrangementHost />
+              </GlobalVoiceInputControl>
+              {/* Anchored-menu overlays render here — in-window, so the
                 keyboard stays up while a dropdown is open. */}
-            <OverlayPortalHost />
+              <OverlayPortalHost />
+            </VoiceInputProvider>
           </SafeAreaProvider>
         </KeyboardProvider>
       </GestureHandlerRootView>

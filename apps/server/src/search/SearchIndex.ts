@@ -16,14 +16,16 @@
  * @module SearchIndex
  */
 import { MessageId, ThreadId } from "@t3tools/contracts";
-import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import {
-  isPersistenceError,
+  PersistenceSqlError,
+  PersistenceDecodeError,
   toPersistenceSqlError,
   type ProjectionRepositoryError,
 } from "../persistence/Errors.ts";
@@ -55,6 +57,8 @@ export interface SearchIndexShape {
    * without replaying the event log (bootstrap replay is capped, then a live
    * event advances every projector cursor and skips the rest).
    */
+  readonly bootstrapIfNeeded: Effect.Effect<void, ProjectionRepositoryError>;
+
   readonly backfillFromProjection: () => Effect.Effect<void, ProjectionRepositoryError>;
 
   /**
@@ -71,6 +75,8 @@ export interface SearchIndexShape {
 export class SearchIndex extends Context.Service<SearchIndex, SearchIndexShape>()(
   "t3/search/SearchIndex",
 ) {}
+
+const isPersistenceError = Schema.is(Schema.Union([PersistenceSqlError, PersistenceDecodeError]));
 
 interface MessageRow {
   readonly messageId: string;
@@ -166,15 +172,15 @@ const makeSearchIndex = Effect.gen(function* () {
           messageId: message.messageId,
           threadId: message.threadId,
           role: "user",
-          text: stripCreatePullRequestSuffix(message.text),
+          text: stripHiddenInstructionSuffixes(message.text),
           createdAt: message.createdAt,
         });
         return;
       }
       if (message.role === "assistant") {
         const canonicalRows = yield* sql`
-          SELECT 1 AS one FROM projection_turns
-          WHERE assistant_message_id = ${message.messageId}
+          SELECT 1 AS one FROM orchestration_v2_projection_turn_items
+          WHERE type = 'assistant_message' AND json_extract(payload_json, '$.messageId') = ${message.messageId}
           LIMIT 1
         `;
         if (canonicalRows.length === 0) {
@@ -200,11 +206,11 @@ const makeSearchIndex = Effect.gen(function* () {
           messages.message_id AS "messageId",
           messages.thread_id AS "threadId",
           messages.role,
-          messages.text,
-          messages.is_streaming AS "isStreaming",
+          json_extract(messages.payload_json, '$.text') AS text,
+          messages.streaming AS "isStreaming",
           messages.created_at AS "createdAt"
-        FROM projection_thread_messages AS messages
-        INNER JOIN projection_threads AS threads
+        FROM orchestration_v2_projection_messages AS messages
+        INNER JOIN orchestration_v2_projection_threads AS threads
           ON threads.thread_id = messages.thread_id
         INNER JOIN projection_projects AS projects
           ON projects.project_id = threads.project_id
@@ -212,6 +218,7 @@ const makeSearchIndex = Effect.gen(function* () {
           AND threads.deleted_at IS NULL
           AND threads.archived_at IS NULL
           AND projects.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs AS run WHERE run.run_id = messages.run_id AND run.status = 'rolled_back')
         LIMIT 1
       `;
       const message = rows[0];
@@ -235,11 +242,11 @@ const makeSearchIndex = Effect.gen(function* () {
           messages.message_id AS "messageId",
           messages.thread_id AS "threadId",
           messages.role,
-          messages.text,
-          messages.is_streaming AS "isStreaming",
+          json_extract(messages.payload_json, '$.text') AS text,
+          messages.streaming AS "isStreaming",
           messages.created_at AS "createdAt"
-        FROM projection_thread_messages AS messages
-        INNER JOIN projection_threads AS threads
+        FROM orchestration_v2_projection_messages AS messages
+        INNER JOIN orchestration_v2_projection_threads AS threads
           ON threads.thread_id = messages.thread_id
         INNER JOIN projection_projects AS projects
           ON projects.project_id = threads.project_id
@@ -247,6 +254,7 @@ const makeSearchIndex = Effect.gen(function* () {
           AND threads.deleted_at IS NULL
           AND threads.archived_at IS NULL
           AND projects.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs AS run WHERE run.run_id = messages.run_id AND run.status = 'rolled_back')
       `;
       const presentIds = new Set(messageRows.map((row) => row.messageId));
       const indexedRows = yield* sql<{ readonly messageId: string }>`
@@ -269,7 +277,7 @@ const makeSearchIndex = Effect.gen(function* () {
   const backfillFromProjection: SearchIndexShape["backfillFromProjection"] = () =>
     Effect.gen(function* () {
       const messageThreadRows = yield* sql<{ readonly threadId: string }>`
-        SELECT DISTINCT thread_id AS "threadId" FROM projection_thread_messages
+        SELECT DISTINCT thread_id AS "threadId" FROM orchestration_v2_projection_messages
       `;
       const indexedThreadRows = yield* sql<{ readonly threadId: string }>`
         SELECT DISTINCT thread_id AS "threadId" FROM search_index_docs
@@ -317,10 +325,21 @@ const makeSearchIndex = Effect.gen(function* () {
       ),
     );
 
+  const bootstrapIfNeeded = Effect.gen(function* () {
+    const done =
+      yield* sql`SELECT 1 FROM projection_state WHERE projector = 'projection.search-index-v2' LIMIT 1`;
+    if (done.length > 0) return;
+    yield* backfillFromProjection();
+    yield* sql`INSERT INTO projection_state (projector, last_applied_sequence, updated_at)
+      VALUES ('projection.search-index-v2', 0, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ON CONFLICT(projector) DO NOTHING`;
+  }).pipe(Effect.mapError(toPersistenceSqlError("SearchIndex.bootstrap:query")));
+
   return {
     reindexMessage,
     reindexThread,
     backfillFromProjection,
+    bootstrapIfNeeded,
     reindexCanonicalAssistants,
   } satisfies SearchIndexShape;
 });

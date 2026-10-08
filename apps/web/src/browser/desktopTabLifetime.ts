@@ -31,23 +31,43 @@ const enqueueDesktopTabOperation = (
   return pending;
 };
 
+/**
+ * Runs a call against a desktop tab after the tab's create and earlier calls,
+ * so a setting sent while the tab is being created still lands on it.
+ */
+export function withDesktopTab(tabId: string, operation: () => Promise<void>): void {
+  void enqueueDesktopTabOperation(tabId, operation).catch(() => undefined);
+}
+
 export interface AcquiredDesktopTab {
   readonly ready: Promise<void>;
   readonly release: () => void;
 }
 
-export function acquireDesktopTab(tabId: string): AcquiredDesktopTab {
-  const current =
-    leases.get(tabId) ??
-    ({
+/** `serverTab` names the server tab this desktop tab renders, so the server can drive it. */
+export function acquireDesktopTab(
+  tabId: string,
+  serverTab?: { readonly threadId: string; readonly tabId: string },
+): AcquiredDesktopTab {
+  let current = leases.get(tabId);
+  if (!current) {
+    current = {
       references: 0,
       closeTimer: null,
       // Zoom/appearance defaults travel with creation so the guest never
       // paints a frame at 100%/system before the preference is applied.
       ready: enqueueDesktopTabOperation(tabId, async () =>
-        previewBridge?.createTab(tabId, browserDefaultTabState(await resolveBrowserDefaults())),
+        previewBridge?.createTab(tabId, {
+          ...browserDefaultTabState(await resolveBrowserDefaults()),
+          ...(serverTab === undefined ? {} : { serverTab }),
+        }),
       ),
-    } satisfies DesktopTabLease);
+    } satisfies DesktopTabLease;
+    const created = current;
+    void created.ready.catch(() => {
+      if (leases.get(tabId) === created) leases.delete(tabId);
+    });
+  }
   if (current.closeTimer !== null) window.clearTimeout(current.closeTimer);
   current.references += 1;
   current.closeTimer = null;
@@ -57,7 +77,7 @@ export function acquireDesktopTab(tabId: string): AcquiredDesktopTab {
     ready: current.ready,
     release: () => {
       const lease = leases.get(tabId);
-      if (!lease) return;
+      if (lease !== current) return;
       lease.references = Math.max(0, lease.references - 1);
       if (lease.references > 0) return;
       lease.closeTimer = window.setTimeout(() => {

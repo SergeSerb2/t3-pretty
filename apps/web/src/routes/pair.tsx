@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useLocation, useRouter } from "@tanstack/react-router";
 
 import {
   HostedPairingRouteSurface,
@@ -27,22 +27,29 @@ export const Route = createFileRoute("/pair")({
 });
 
 function PairRouteView() {
+  const router = useRouter();
   const { authGateState } = Route.useRouteContext();
-  const navigate = useNavigate();
+  const location = useLocation();
+  const requestKey = `${location.pathname}\u0000${JSON.stringify(location.search)}\u0000${location.hash}`;
 
   if (!authGateState) {
     return null;
   }
 
   if (authGateState.status === "hosted-pairing") {
-    return <HostedPairingRouteSurface />;
+    return <HostedPairingRouteSurface key={requestKey} />;
   }
 
   return (
     <PairingRouteSurface
+      key={requestKey}
       auth={authGateState.auth}
       onAuthenticated={() => {
-        void navigate({ to: "/", replace: true });
+        // Recreate the primary connection so its WebSocket and cached scopes
+        // use the newly issued cookie after re-pairing.
+        router.history.replace("/");
+        router.history.flush();
+        window.location.reload();
       }}
       {...(authGateState.errorMessage ? { initialErrorMessage: authGateState.errorMessage } : {})}
     />

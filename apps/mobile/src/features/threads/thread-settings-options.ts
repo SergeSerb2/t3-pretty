@@ -43,37 +43,34 @@ export const RUNTIME_MODE_CHOICES: ReadonlyArray<{
   },
 ];
 
-// Kimi runs both full-access modes in the same unrestricted session; they
-// differ only in whether Kimi can stop to ask questions. Listed in ascending
-// order of access: "Yolo" may ask, "Full access" never does.
-const KIMI_RUNTIME_MODE_CHOICES: typeof RUNTIME_MODE_CHOICES = [
-  {
-    mode: "approval-required",
-    label: "Approve actions",
-    shortLabel: "Approve",
-    description: "Ask before commands and file changes.",
-  },
-  {
-    mode: "yolo",
-    label: "Yolo",
-    shortLabel: "Yolo",
-    description: "Allow commands and edits, but may stop to ask questions.",
-  },
-  {
-    mode: "full-access",
-    label: "Full access",
-    shortLabel: "Full",
-    description: "Allow commands and edits without stopping to ask.",
-  },
-];
+export type RuntimeModeChoice = (typeof RUNTIME_MODE_CHOICES)[number];
 
-export function runtimeModeChoicesForProvider(
-  providerDriver: string | null | undefined,
-): typeof RUNTIME_MODE_CHOICES {
-  return providerDriver === "kimi" ? KIMI_RUNTIME_MODE_CHOICES : RUNTIME_MODE_CHOICES;
+export function runtimeModeChoicesForSupportedModes(
+  supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
+) {
+  return supportedRuntimeModes && supportedRuntimeModes.length > 0
+    ? RUNTIME_MODE_CHOICES.filter((choice) => supportedRuntimeModes.includes(choice.mode))
+    : RUNTIME_MODE_CHOICES;
 }
 
-/** Driver of the provider backing the selected model, when it is in the list. */
+export function compatibleRuntimeModeForChoices(
+  runtimeMode: RuntimeMode,
+  choices: ReadonlyArray<{ readonly mode: RuntimeMode }>,
+): RuntimeMode {
+  return choices.some((choice) => choice.mode === runtimeMode)
+    ? runtimeMode
+    : (choices[0]?.mode ?? runtimeMode);
+}
+
+export function selectableChoices(
+  descriptor: Extract<ProviderOptionDescriptor, { type: "select" }>,
+) {
+  const injected = new Set(descriptor.promptInjectedValues ?? []);
+  return descriptor.options.filter(
+    (option) => !injected.has(option.id) && !HIDDEN_EFFORT_OPTION_IDS.has(option.id),
+  );
+}
+
 export function selectedModelProviderDriver(input: {
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
   readonly selectedModel: ModelSelection | null;
@@ -89,13 +86,4 @@ export function selectedModelProviderDriver(input: {
     }
   }
   return null;
-}
-
-export function selectableChoices(
-  descriptor: Extract<ProviderOptionDescriptor, { type: "select" }>,
-) {
-  const injected = new Set(descriptor.promptInjectedValues ?? []);
-  return descriptor.options.filter(
-    (option) => !injected.has(option.id) && !HIDDEN_EFFORT_OPTION_IDS.has(option.id),
-  );
 }
