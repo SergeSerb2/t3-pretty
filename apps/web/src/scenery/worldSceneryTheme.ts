@@ -23,7 +23,7 @@ import {
 export const WORLD_SCENERY_THEME_ID = "world-scenery";
 
 /** Bump when the palette below changes so existing installs pick it up. */
-export const WORLD_SCENERY_THEME_VERSION = 3;
+export const WORLD_SCENERY_THEME_VERSION = 4;
 
 const THEME_VERSION_STORAGE_KEY = "t3code:scenery:theme-version";
 
@@ -77,6 +77,10 @@ const WORLD_SCENERY_DARK_COLORS: ThemeColors = {
   messageActionHover: "#84c49b",
   codeBackground: "#101513",
   codeForeground: "#e8ece8",
+  searchMatchBackground: "#3c5d4b",
+  searchMatchForeground: "#eaf7ee",
+  searchMatchActiveBackground: "#98d2ac",
+  searchMatchActiveForeground: "#07140c",
   sidebar: "#0c100e",
   sidebarForeground: "#f3f6f3",
   sidebarMutedForeground: "#c5cfc8",
@@ -137,6 +141,10 @@ const WORLD_SCENERY_LIGHT_COLORS: ThemeColors = {
   messageActionHover: "#225738",
   codeBackground: "#e8eee9",
   codeForeground: "#161a17",
+  searchMatchBackground: "#e3efe6",
+  searchMatchForeground: "#1c4630",
+  searchMatchActiveBackground: "#27633f",
+  searchMatchActiveForeground: "#ffffff",
   sidebar: "#eef3ef",
   sidebarForeground: "#1d221e",
   sidebarMutedForeground: "#4b524c",

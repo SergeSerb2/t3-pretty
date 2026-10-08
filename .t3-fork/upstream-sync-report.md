@@ -1466,3 +1466,87 @@ The two old-main fork Release failures37430133691 and37432384696 were scheduled 
 - `scanTranscriptDir` reads Pretty `TranscriptListing.files` (not the listing object) and marks the source `partial` when the walk is truncated or directories are unreadable.
 - Muse text generation uses `TextGenerationOperations.fromRunner` so Pretty activity headlines, home suggestions, and project-icon denial exist on the new driver.
 - Muse session MCP maps `mcpSession.servers` (Pretty granted toolkits and connected apps) instead of hard-coding one `t3-code` URL from `endpoint`.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.46-nightly.20261008.2833`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261008.2819`
+- Conflict resolver: `gpt-6.1-sol` with `xhigh` reasoning
+- 1 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/ChatView.tsx` — AgentsPanel and subagent model/runtime conversion imports supporting Pretty's agent-panel UX.
+- `apps/web/src/components/ChatView.tsx` — resolveLiveThreadHeadline import supporting Pretty's live thread headlines.
+- `apps/web/src/components/ChatView.tsx` — Project-script input, creation, command, ID generation, keybinding decoding, and last-invoked-script persistence imports.
+- `apps/web/src/components/ChatView.tsx` — Pretty's TitlebarLayoutControlsDragHole and WorkspacePageHeader imports.
+- `apps/web/src/components/chat/ChatComposer.tsx` — T3 Pretty's composer menu controls retain their Menu, MenuCheckboxItem, MenuPopup, and MenuTrigger dependencies.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Retains ScopedThreadRef, which types the fork's thread command-menu items, without changing or removing that item variant.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Retains the observeVisibleAnimation import supporting T3 Pretty's existing visibility-aware animation consumers.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — dataKey={listIdentityKey} resets virtualization bounds when switching threads, including switches between two nonempty timelines; citation-pin dataVersion refreshes remain independent.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's conditional top fade remains a separately mounted, aria-hidden, pointer-events-none overlay rather than a fade applied to the scrolling list.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The sole mounted list retains citation positioning, remembered-position restoration, live-follow controls, fullscreen and disclosure-settling guards, and reduced-motion-aware working-scroll behavior.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Timeline minimap rendering, preview inputs, manual-navigation notification, and scroll-to-row interaction remain wired to the same list.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Run-specific generated-image paths remain connected from ctx.generatedImagePathsByTurn to ChatMarkdown, preserving Pretty's assistant-image rendering support and existing image-expansion handler.
+- `apps/web/src/components/chat/SkillInlineText.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/proposedPlan.test.ts` — The downloadPlanAsTextFile import supporting fork plan-download tests remains available.
+- `apps/web/src/proposedPlan.test.ts` — The fork-added afterEach hook continues calling vi.unstubAllGlobals(), preventing stubbed globals from leaking between tests.
+- `apps/web/src/terminal/ghostty/core.ts` — T3 Pretty's try/finally protection frees the allocated GhosttySelection on normal completion, exceptions, and upstream's new early-return paths.
+- `apps/web/src/terminal/ghostty/core.ts` — Idempotent, best-effort terminal disposal with individually guarded resource releases, so one cleanup failure does not prevent subsequent cleanup.
+- `apps/web/src/terminal/ghostty/core.ts` — Independent PTY writer detachment and terminal freeing, ensuring a detachment failure does not skip terminal deallocation.
+- `apps/web/src/terminal/ghostty/core.ts` — Cleanup failure accounting and warning, subsequent opaque-slot releases, and final PTY writer state reset remain reachable.
+- `docs/README.md` — Retained the internal Apps (remote MCP connections) documentation entry and its existing destination.
+- `docs/README.md` — Retained the internal Automations documentation entry and its existing destination.
+- `packages/client-runtime/src/state/runtime.ts` — restartOnReconnect subscriptions remain dependent on the target environment's RPC generation, so generation changes rebuild the subscription.
+- `packages/client-runtime/src/state/runtime.ts` — Reconnect-aware subscriptions still wait with Stream.never when no connected generation is available; options.subscribe remains invoked only after that gate passes.
+- `packages/contracts/src/rpc.ts` — Retained AutomationStreamMessage and AutomationClientCommand imports supporting Pretty's automation streaming and client-command contracts.
+- `packages/contracts/src/rpc.ts` — Retained automation run-list and individual run-detail input/result imports.
+- `packages/shared/package.json` — Preserved public exports for appMentions and activityProjection, keeping existing mention and activity-projection helpers accessible to consumers.
+- `packages/shared/package.json` — Preserved createPullRequestPrompt and hiddenInstructionBlocks exports.
+- `packages/shared/package.json` — Preserved automationRunPrompt and automationSchedule exports for the fork's automation features.
+- `packages/shared/package.json` — Preserved nativeResume, editorLaunch, shellCommandFormat, and networkHost exports.
+- `packages/shared/package.json` — Preserved imageTool and serverConfigDigest exports.
+- `packages/shared/package.json` — Preserved changelogPresentation for shared What's New presentation, connectBranding for fork branding, and trailhead for the fork's welcome experience.
+- `packages/shared/package.json` — Preserved threadPullRequestNesting for the fork's PR-based thread organization.
+- `packages/shared/package.json` — Preserved skillFrontmatter and skillTool alongside upstream inlineSkills; no existing skill implementation or entry point was replaced.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/components/ChatView.tsx` — Migration from the inherited ChatCanvas import to ThreadFind, ThreadFindCanvas, and ThreadFindControls.
+- `apps/web/src/components/ChatView.tsx` — THREAD_FIND_BAR_RESERVED_HEIGHT import for upstream thread-find layout.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Migrate proposedPlanTitle from the web-local module to @t3tools/shared/proposedPlanText.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Adds the parent's shared formatProviderSkillDisplayName import for provider-skill display formatting.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Adds ThreadFindTimelineContext, MarkdownFindContext, and useFindRevealRef imports for the parent's timeline and Markdown find integration.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Adds shouldPreserveAssistantLineBreaks from the shared Markdown pipeline for the parent's assistant line-break handling.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Retain MarkdownFindContext around the timeline's row contexts, citation viewport, list, and minimap.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Retain findActive checks that suppress initial end scrolling and visible-content-position maintenance during find.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Retain upstream's onLoad={handleListLoad} wiring rather than reverting to the older onCitationListLoad entry point.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Use the upstream single-list render structure while composing Pretty's virtualization and fade changes into it.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The data-thread-find-text="true" wrapper marks the citation-wrapped assistant markdown as searchable thread text, leaving the author heading, changed-files section, and message metadata outside that scope.
+- `apps/web/src/proposedPlan.test.ts` — Removal of the direct proposedPlanTitle import and its standalone test suite. These were unchanged from BASE, rather than fork additions.
+- `apps/web/src/terminal/ghostty/core.ts` — Successful select-all converts both native grid references to screen points, applies the selection, and returns { start, end } to satisfy the declared return contract.
+- `apps/web/src/terminal/ghostty/core.ts` — Select-all explicitly returns null when the native operation fails or either endpoint cannot be converted, without applying an invalid selection.
+- `apps/web/src/terminal/ghostty/core.ts` — Free the cellQuery buffer using CELL_QUERY.size during disposal, matching the buffer used by the batched cell-query render path and preventing its leak.
+- `docs/README.md` — Added the parent’s Adding a provider documentation entry linking to ./internals/adding-a-provider.md.
+- `packages/client-runtime/src/state/runtime.ts` — Optional completeWhen termination via Stream.takeUntil is applied after followStreamInEnvironment in both ordinary and reconnect-aware subscriptions, honoring the RPC wrapper's forwarded completion predicate.
+- `packages/client-runtime/src/state/runtime.ts` — Subscriptions without completeWhen retain their existing stream behavior; idle TTL and sensitive-input labeling remain unchanged.
+- `packages/contracts/src/rpc.ts` — Added OrchestrationV2SearchThreadInput, OrchestrationV2SearchThreadResult, and OrchestrationV2SearchThreadError imports for the parent's typed orchestration V2 thread-search RPC contracts.
+- `packages/shared/package.json` — Added codexArtifactTemplates, codexFileCitations, and codexMarkdownDirectives exports with their upstream types and import targets.
+- `packages/shared/package.json` — Added markdownGithubAlerts, markdownListIndentation, and markdownPipeline exports.
+- `packages/shared/package.json` — Added proposedPlanText export.
+- `packages/shared/package.json` — Added threadFindText and threadSearch exports.
+- `packages/shared/package.json` — Added markdownLinks and fileLinks exports.
+- `packages/shared/package.json` — Added inlineSkills export without displacing the fork's skill exports.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — THEIRS retains the base's topbar-scroll-fade class directly on the LegendList scroll container; that class placement is not retained.. Reason: It would undo OURS's deliberate move to a separate stationary, noninteractive top-edge overlay. The fade remains available through the fork overlay; only the conflicting class placement is omitted.
+- `apps/web/src/components/chat/SkillInlineText.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: apps/web/src/components/chat/SkillInlineText.tsx was not safe to resolve automatically: Do not apply these candidate edits. OURS deliberately replaced exact-name comparison with skillMentionMatchesName, consistent with the fork's odd-name mention fix. THEIRS moves tokenization and lookup into matchInlineSkills, but its implementation is not supplied, so the candidate replacement may silently regress fork matching. Retaining the old loop is also incoherent in the supplied file because SKILL_TOKEN_REGEX is undeclared and end is undefined. Retry with @t3tools/shared/inlineSkills::matchInlineSkills, @t3tools/shared/skillTool::skillMentionMatchesName, and their relevant tests or original token-regex definition. No behaviors are reported as preserved, integrated, or intentionally omitted because no safe resolution has been established.
+- `shared-typecheck` failed after merging `v0.0.46-nightly.20261008.2833`; repaired with `gpt-6.1-sol`: Restore the missing Deferred import and adapt the parent's new lifecycle test to T3 Pretty's flat EnvironmentRegistry API, addressing the root errors and their cascading type failures. Preserve all test assertions and existing fork behavior without omitting any upstream changes.
+  - edited `packages/client-runtime/src/state/runtime.test.ts`
+- `web-typecheck` failed after merging `v0.0.46-nightly.20261008.2833`; repaired with `gpt-6.1-sol`: Update the skill formatter import and add the required search-highlight roles to all four fork palettes, with a version bump to refresh installed World Scenery themes. Wire T3 Pretty's T3 Chat colors into the exported definition, defaults, and built-in registry while preserving upstream metadata and all other themes.
+  - edited `apps/web/src/components/chat/SkillInlineText.tsx`
+  - edited `apps/web/src/scenery/worldSceneryTheme.ts`
+  - edited `apps/web/src/themePalette.ts`
