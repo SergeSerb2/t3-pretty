@@ -23,6 +23,7 @@
 
 - `apps/server/src/server.ts` — The leftover `AcpRegistryCatalogLive` import from `./provider/AcpRegistryCatalog.ts`. Reason: that module was deleted when ACP Registry moved into `@t3tools/provider-acp-registry`. Keeping the alias would leave an unresolved import. `layerFromHost` is the same catalog plus runtime coordinator, built from `ProviderHost` paths.
 - `packages/client-runtime/src/connection/routes.ts` — Required `allowInsecure: boolean` on every `mergeLearnedRoutes` call. Reason: Pretty's production path must stay HTTPS-only without every caller opting in. The field is optional; omitted/`false` keeps the fork policy.
+- `packages/client-runtime/src/connection/routes.test.ts` — Parent Tailscale-label cases that learned plaintext `http://` addresses and expected them to persist through `connectionRoutes`. Reason: Pretty's catalog filter drops learned HTTP/ws routes. The same kind-based Tailscale labeling is covered with `https://` reports so the no-op third pass can see the kept learned routes.
 
 ## Post-merge repairs
 

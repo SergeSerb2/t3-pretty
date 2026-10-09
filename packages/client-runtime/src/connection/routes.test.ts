@@ -191,13 +191,12 @@ describe("learned routes", () => {
   });
 
   it("labels a learned address Tailscale only while the server reports it as tailnet", () => {
-    const tailscale = { kind: "tailnet", httpBaseUrl: "http://100.101.102.103:3773/" };
-    const mesh = { kind: "lan", httpBaseUrl: "http://100.96.0.1:3773/" };
+    const tailscale = { kind: "tailnet", httpBaseUrl: "https://100.101.102.103:3773/" };
+    const mesh = { kind: "lan", httpBaseUrl: "https://100.96.0.1:3773/" };
     const first = mergeLearnedRoutes({
       entry: relayOnly,
       activeRoute: RELAY,
       reported: [tailscale, mesh],
-      allowInsecure: true,
     })!;
     expect(first.map(connectionRouteLabel)).toEqual(["Tailscale", "VPN", "T3 Connect"]);
 
@@ -206,7 +205,6 @@ describe("learned routes", () => {
       entry: entryWithRoutes(relayOnly, first),
       activeRoute: RELAY,
       reported: [{ ...tailscale, kind: "lan" }, mesh],
-      allowInsecure: true,
     })!;
     expect(ids(corrected)).toEqual(ids(first));
     expect(corrected.map(connectionRouteLabel)).toEqual(["VPN", "VPN", "T3 Connect"]);
@@ -215,7 +213,6 @@ describe("learned routes", () => {
         entry: entryWithRoutes(relayOnly, corrected),
         activeRoute: RELAY,
         reported: [{ ...tailscale, kind: "lan" }, mesh],
-        allowInsecure: true,
       }),
     ).toBeNull();
   });

@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - leftover-import scan of server.ts after the ACP registry package move.
 import * as NodeFS from "node:fs";
 import { describe, expect, it } from "@effect/vitest";
 
