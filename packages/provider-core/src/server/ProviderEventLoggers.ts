@@ -13,6 +13,8 @@ export interface EventNdjsonLogger {
   readonly filePath: string;
   readonly write: (event: unknown, threadId: ThreadId | null) => Effect.Effect<void>;
   readonly close: () => Effect.Effect<void>;
+  /** Keep per-token / cumulative native records (T3CODE_LOG_PROVIDER_EVENTS_VERBOSE). */
+  readonly verbose?: boolean;
 }
 
 export class ProviderEventLoggers extends Context.Service<

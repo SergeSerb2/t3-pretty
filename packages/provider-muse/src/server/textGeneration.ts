@@ -14,6 +14,7 @@ import * as Schema from "effect/Schema";
 
 import { createMuseSdkHost, createMuseSdkHostEffect, type MuseSdkHost } from "./sdk.ts";
 import { museModelCapabilities, resolveMuseReasoningEffort } from "./modelCatalog.ts";
+import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
 import { toJsonSchemaObject } from "@t3tools/provider-core/server/textGenerationUtils";
 

@@ -27,7 +27,6 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/compat";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
-import { makeAcpTerminalHost } from "./AcpTerminalHost.ts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
@@ -1808,17 +1807,6 @@ export const make = (
     ).pipe(Effect.provideService(Scope.Scope, runtimeScope));
 
     const acp = yield* Effect.service(EffectAcpClient.AcpClient).pipe(Effect.provide(acpContext));
-    const advertiseTerminal = options.clientCapabilities?.terminal === true;
-    if (advertiseTerminal) {
-      const terminalHost = yield* makeAcpTerminalHost({ cwd: options.cwd }).pipe(
-        Effect.provideService(Scope.Scope, runtimeScope),
-      );
-      yield* acp.handleCreateTerminal(terminalHost.create);
-      yield* acp.handleTerminalOutput(terminalHost.output);
-      yield* acp.handleTerminalWaitForExit(terminalHost.waitForExit);
-      yield* acp.handleTerminalKill(terminalHost.kill);
-      yield* acp.handleTerminalRelease(terminalHost.release);
-    }
 
     const processSessionUpdate = (notification: EffectAcpSchema.SessionNotification) =>
       handleSessionUpdate({

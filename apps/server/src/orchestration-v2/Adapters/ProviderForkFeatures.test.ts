@@ -7,12 +7,12 @@ import {
 } from "@t3tools/contracts";
 
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
-import { cursorMcpServers, cursorRuntimeAgentPolicy } from "./CursorAdapterV2.ts";
+import { cursorMcpServers, cursorRuntimeAgentPolicy } from "@t3tools/provider-cursor/testing";
 import { claudeMcpQueryOverrides } from "./ClaudeAdapterV2.ts";
 import { codexThreadRuntimeParams, normalizeCodexUserInputQuestions } from "./CodexAdapterV2.ts";
-import { museSessionMcpConfig } from "./MuseAdapterV2.ts";
+import { museSessionMcpConfig } from "@t3tools/provider-muse/testing";
 import { buildPiRpcLaunch } from "@t3tools/provider-pi/server/mcpInjection";
-import { grokAcpSpawnArgs } from "../../provider/acp/GrokAcpSupport.ts";
+import { grokAcpSpawnArgs } from "@t3tools/provider-grok/testing";
 import { ProviderAdapterV2RuntimePolicy } from "@t3tools/provider-core/server/ProviderAdapter";
 import { T3_MCP_SERVERS_ENV } from "@t3tools/provider-pi/server/mcpExtensionSource";
 

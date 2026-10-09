@@ -1,15 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import {
-  EnvironmentId,
-  GrokSettings,
-  ProviderInstanceId,
-  ProviderSessionId,
-  ThreadId,
-} from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, ProviderSessionId, ThreadId } from "@t3tools/contracts";
+import { GrokSettings } from "@t3tools/provider-grok/settings";
 import * as Effect from "effect/Effect";
-import * as Crypto from "effect/Crypto";
-import { ChildProcessSpawner } from "effect/process";
 import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { ProviderAdapterV2RuntimePolicy } from "@t3tools/provider-core/server/ProviderAdapter";
@@ -21,10 +14,11 @@ import { HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
 import { ServerConfig } from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import { cursorMcpServers } from "../orchestration-v2/Adapters/CursorAdapterV2.ts";
-import { makeGrokAdapterV2 } from "../orchestration-v2/Adapters/GrokAdapterV2.ts";
+import { cursorMcpServers } from "@t3tools/provider-cursor/testing";
+import { makeGrokAdapterV2 } from "@t3tools/provider-grok/testing";
 import { ServerSettingsService } from "../serverSettings.ts";
-import { execScriptSource, writeFakeCli } from "../testUtils/fakeCli.ts";
+import { execScriptSource, writeFakeCli } from "@t3tools/provider-testing/fakeCli";
+import { layerTestProviderHost } from "@t3tools/provider-testing/host";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 
@@ -34,6 +28,7 @@ const testLayer = Layer.mergeAll(
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-adapters-" }),
   ServerSettingsService.layerTest(),
   IdAllocator.layer,
+  layerTestProviderHost().pipe(Layer.provide(NodeServices.layer)),
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 it.layer(testLayer)("MCP session adapter contract", (it) => {
@@ -92,16 +87,11 @@ it.layer(testLayer)("MCP session adapter contract", (it) => {
           return;
         }
         const instanceId = ProviderInstanceId.make(provider);
-        const adapter = makeGrokAdapterV2({
+        const adapter = yield* makeGrokAdapterV2({
           instanceId,
           settings: decodeGrokSettings({ binaryPath }),
           environment: {},
           hostPlatform: "darwin",
-          childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
-          crypto: yield* Crypto.Crypto,
-          fileSystem: fs,
-          idAllocator: yield* IdAllocator.IdAllocatorV2,
-          serverConfig: yield* ServerConfig,
           selfInvocation: yield* resolveSelfInvocation(),
         });
         yield* adapter.openSession({

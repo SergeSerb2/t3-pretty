@@ -33,7 +33,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
-import { writeFileStringAtomically } from "../atomicWrite.ts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { ServerSettingsService } from "../serverSettings.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";

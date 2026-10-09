@@ -10,7 +10,7 @@ import { TextGenerationError } from "@t3tools/contracts";
 import type { GrokSettings } from "../settings.ts";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 
-import * as TextGeneration from "./TextGeneration.ts";
+import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
 import { buildProjectIconPrompt } from "@t3tools/provider-core/server/textGenerationPrompts";
 import {
@@ -143,7 +143,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
     );
   };
 
-  const generateProjectIcon: TextGeneration.TextGeneration["Service"]["generateProjectIcon"] =
+  const generateProjectIcon: ProviderTextGeneration["generateProjectIcon"] =
     Effect.fn("GrokTextGeneration.generateProjectIcon")(function* (input) {
       const generated = yield* runGrokJson({
         operation: "generateProjectIcon",

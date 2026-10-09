@@ -4,6 +4,7 @@
  *
  * @module provider-muse/testing
  */
+export { museSessionMcpConfig } from "./server/adapter.ts";
 export {
   makeMuseEnvironment,
   museInitializeParams,
