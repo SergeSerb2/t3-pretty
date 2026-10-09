@@ -37,8 +37,9 @@ const testLayer = Layer.mergeAll(
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 it.layer(testLayer)("MCP session adapter contract", (it) => {
-  for (const provider of ["cursor", "grok"] as const) {
-    it.effect(`${provider} configures V2 sessions with real registry credentials`, () =>
+  it.effect.each(["cursor", "grok"] as const)(
+    "%s configures V2 sessions with real registry credentials",
+    (provider) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -119,6 +120,5 @@ it.layer(testLayer)("MCP session adapter contract", (it) => {
         expect(requests).not.toContain("/computer-use");
         expect(requests).not.toContain("/automations");
       }).pipe(Effect.scoped),
-    );
-  }
+  );
 });

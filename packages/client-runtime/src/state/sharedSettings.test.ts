@@ -225,6 +225,7 @@ describe("pickSharedServerSettings", () => {
       "sidebarAutoSettleOnMerge",
       "sidebarProjectFolderAssignments",
       "sidebarProjectFolders",
+      "snoozeLimitedThreads",
       "sourceControlWritingStyle",
       "textGenerationModelSelection",
     ]);
@@ -236,6 +237,7 @@ describe("pickSharedServerSettings", () => {
         }),
       ).sort(),
     ).toEqual([
+      "autoResumeLimitedThreads",
       "continueThreadsAfterServerUpdate",
       "globalEnvironment",
       "newWorktreesStartFromOrigin",
