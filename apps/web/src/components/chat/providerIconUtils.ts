@@ -1,6 +1,20 @@
+import { createElement } from "react";
+
 import { ProviderDriverKind } from "@t3tools/contracts";
-import { AntigravityIcon, ClaudeAI, CursorIcon, GrokIcon, Icon, OpenAI } from "../Icons";
+import { grokClient } from "@t3tools/provider-grok/client";
+import { AntigravityIcon, ClaudeAI, CursorIcon, Icon, OpenAI } from "../Icons";
 import { PROVIDER_OPTIONS } from "../../session-logic";
+import { ProviderPackageIcon } from "./ProviderPackageIcon";
+
+function grokPackageIcon(): Icon {
+  const icon = grokClient.icon;
+  if (icon === undefined) {
+    throw new Error("provider-grok client is missing its package icon");
+  }
+  return (props) => createElement(ProviderPackageIcon, { icon, ...props });
+}
+
+const GrokIcon = grokPackageIcon();
 
 export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
   [ProviderDriverKind.make("codex")]: OpenAI,

@@ -1,0 +1,165 @@
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
+import { ChildProcessSpawner } from "effect/process";
+import type * as EffectAcpErrors from "effect-acp/errors";
+
+import { TextGenerationError } from "@t3tools/contracts";
+import type { GrokSettings } from "../settings.ts";
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+
+import * as TextGeneration from "./TextGeneration.ts";
+import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
+import { buildProjectIconPrompt } from "@t3tools/provider-core/server/textGenerationPrompts";
+import {
+  appendBoundedTextGenerationOutput,
+  decodeBoundedTextGenerationOutput,
+  makeBoundedTextGenerationOutput,
+} from "@t3tools/provider-core/server/textGenerationUtils";
+import {
+  applyGrokAcpModelSelection,
+  currentGrokModelIdFromSessionSetup,
+  currentGrokReasoningEffortFromSessionSetup,
+  makeGrokAcpRuntime,
+  resolveGrokAcpBaseModelId,
+} from "./acpSupport.ts";
+
+const GROK_TIMEOUT_MS = 180_000;
+
+const isTextGenerationError = Schema.is(TextGenerationError);
+
+export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(function* (
+  grokSettings: GrokSettings,
+  environment: NodeJS.ProcessEnv = process.env,
+) {
+  const crypto = yield* Crypto.Crypto;
+  const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+
+  const runGrokJson: TextGenerationOperations.Runner = (request) => {
+    const { operation, cwd, prompt, modelSelection } = request;
+    return Effect.gen(function* () {
+      const outputRef = yield* Ref.make(makeBoundedTextGenerationOutput());
+      const runtime = yield* makeGrokAcpRuntime({
+        grokSettings,
+        environment,
+        childProcessSpawner: commandSpawner,
+        cwd,
+        clientInfo: { name: "t3-code-git-text", version: "0.0.0" },
+      }).pipe(Effect.provideService(Crypto.Crypto, crypto));
+
+      yield* runtime.handleSessionUpdate((notification) => {
+        const update = notification.update;
+        if (update.sessionUpdate !== "agent_message_chunk") {
+          return Effect.void;
+        }
+        const content = update.content;
+        if (content.type !== "text") {
+          return Effect.void;
+        }
+        return Ref.update(outputRef, (current) =>
+          appendBoundedTextGenerationOutput(current, content.text),
+        );
+      });
+
+      const promptResult = yield* Effect.gen(function* () {
+        const resolvedModel = resolveGrokAcpBaseModelId(modelSelection.model);
+        const started = yield* runtime.start();
+        const requestedReasoningEffort = getModelSelectionStringOptionValue(
+          modelSelection,
+          "reasoningEffort",
+        );
+        yield* applyGrokAcpModelSelection({
+          runtime,
+          currentModelId: currentGrokModelIdFromSessionSetup(started.sessionSetupResult),
+          currentReasoningEffort: currentGrokReasoningEffortFromSessionSetup(
+            started.sessionSetupResult,
+          ),
+          requestedModelId: resolvedModel,
+          requestedReasoningEffort,
+          mapError: (cause) =>
+            new TextGenerationError({
+              operation,
+              detail: "Failed to set Grok ACP base model for text generation.",
+              cause,
+            }),
+        });
+        return yield* runtime.prompt({
+          prompt: [{ type: "text", text: prompt }],
+        });
+      }).pipe(
+        Effect.timeoutOption(GROK_TIMEOUT_MS),
+        Effect.flatMap(
+          Option.match({
+            onNone: () =>
+              Effect.fail(
+                new TextGenerationError({ operation, detail: "Grok ACP request timed out." }),
+              ),
+            onSome: (value) => Effect.succeed(value),
+          }),
+        ),
+        Effect.mapError((cause: EffectAcpErrors.AcpError | TextGenerationError) =>
+          isTextGenerationError(cause)
+            ? cause
+            : new TextGenerationError({
+                operation,
+                detail: "Grok ACP request failed.",
+                cause,
+              }),
+        ),
+      );
+
+      const output = yield* Ref.get(outputRef);
+      if (output.truncated) {
+        return yield* new TextGenerationError({
+          operation,
+          detail: "Grok Agent returned structured output above the one MiB limit.",
+        });
+      }
+      const trimmed = decodeBoundedTextGenerationOutput(output).trim();
+      if (!trimmed) {
+        return yield* new TextGenerationError({
+          operation,
+          detail:
+            promptResult.stopReason === "cancelled"
+              ? "Grok ACP request was cancelled."
+              : "Grok Agent returned empty output.",
+        });
+      }
+
+      return yield* TextGenerationOperations.decodeJsonReply(request, "Grok Agent", trimmed);
+    }).pipe(
+      Effect.mapError((cause) =>
+        isTextGenerationError(cause)
+          ? cause
+          : new TextGenerationError({
+              operation,
+              detail: "Grok ACP text generation failed.",
+              cause,
+            }),
+      ),
+      Effect.scoped,
+    );
+  };
+
+  const generateProjectIcon: TextGeneration.TextGeneration["Service"]["generateProjectIcon"] =
+    Effect.fn("GrokTextGeneration.generateProjectIcon")(function* (input) {
+      const generated = yield* runGrokJson({
+        operation: "generateProjectIcon",
+        cwd: input.cwd,
+        modelSelection: input.modelSelection,
+        ...buildProjectIconPrompt({
+          projectTitle: input.projectTitle,
+          outputPath: input.outputPath,
+        }),
+      });
+      const path = generated.path.trim();
+      return { path: path.length > 0 ? path : input.outputPath };
+    });
+
+  return {
+    ...TextGenerationOperations.fromRunner("GrokTextGeneration", runGrokJson),
+    generateProjectIcon,
+  };
+});

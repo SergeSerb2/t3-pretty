@@ -9,6 +9,9 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import type { ThreadId } from "@t3tools/contracts";
+import type {
+  EventNdjsonLogger as ProviderEventNdjsonLogger,
+} from "@t3tools/provider-core/server/ProviderEventLoggers";
 import { RotatingFileSink } from "@t3tools/shared/logging";
 import { errorTag } from "@t3tools/shared/observability";
 import * as Clock from "effect/Clock";
@@ -81,13 +84,10 @@ const transientAcpSessionUpdates = new Set([
 
 export type EventNdjsonStream = "native" | "canonical" | "orchestration";
 
-export interface EventNdjsonLogger {
-  readonly filePath: string;
-  readonly write: (event: unknown, threadId: ThreadId | null) => Effect.Effect<void>;
-  readonly close: () => Effect.Effect<void>;
+export type EventNdjsonLogger = ProviderEventNdjsonLogger & {
   /** True when per-token / cumulative native records are kept (T3CODE_LOG_PROVIDER_EVENTS_VERBOSE). */
   readonly verbose?: boolean;
-}
+};
 
 export interface EventNdjsonLogStore {
   readonly filePath: string;

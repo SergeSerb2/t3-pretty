@@ -37,6 +37,7 @@ import IconChevronRight from "@tabler/icons-react-native/IconChevronRight";
 import IconChevronUp from "@tabler/icons-react-native/IconChevronUp";
 import IconCircle from "@tabler/icons-react-native/IconCircle";
 import IconCircleCheck from "@tabler/icons-react-native/IconCircleCheck";
+import IconCircleDashed from "@tabler/icons-react-native/IconCircleDashed";
 import IconCircleFilled from "@tabler/icons-react-native/IconCircleFilled";
 import IconCircleHalf2 from "@tabler/icons-react-native/IconCircleHalf2";
 import IconCircleMinus from "@tabler/icons-react-native/IconCircleMinus";
@@ -82,6 +83,7 @@ import IconMicrophone from "@tabler/icons-react-native/IconMicrophone";
 import IconLink from "@tabler/icons-react-native/IconLink";
 import IconListNumbers from "@tabler/icons-react-native/IconListNumbers";
 import IconMenu2 from "@tabler/icons-react-native/IconMenu2";
+import IconMessageCircleQuestion from "@tabler/icons-react-native/IconMessageCircleQuestion";
 import IconMessage from "@tabler/icons-react-native/IconMessage";
 import IconMinus from "@tabler/icons-react-native/IconMinus";
 import IconMoon from "@tabler/icons-react-native/IconMoon";
@@ -107,6 +109,7 @@ import IconStar from "@tabler/icons-react-native/IconStar";
 import IconStarFilled from "@tabler/icons-react-native/IconStarFilled";
 import IconStethoscope from "@tabler/icons-react-native/IconStethoscope";
 import IconSun from "@tabler/icons-react-native/IconSun";
+import IconShieldQuestion from "@tabler/icons-react-native/IconShieldQuestion";
 import IconTarget from "@tabler/icons-react-native/IconTarget";
 import IconTerminal2 from "@tabler/icons-react-native/IconTerminal2";
 import IconTextDecrease from "@tabler/icons-react-native/IconTextDecrease";
@@ -159,6 +162,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "checkmark.circle": IconCircleCheck,
   "checkmark.shield": IconShieldCheck,
   circle: IconCircle,
+  "circle.dashed": IconCircleDashed,
   "circle.fill": IconCircleFilled,
   "circle.lefthalf.filled": IconCircleHalf2,
   clock: IconClock,
@@ -241,6 +245,8 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   terminal: IconTerminal2,
   "text.alignleft": IconAlignLeft,
   "text.bubble": IconMessage,
+  "questionmark.bubble": IconMessageCircleQuestion,
+  "exclamationmark.shield": IconShieldQuestion,
   "text.word.spacing": IconLetterSpacing,
   "textformat.size": IconTypography,
   "textformat.size.larger": IconTextIncrease,

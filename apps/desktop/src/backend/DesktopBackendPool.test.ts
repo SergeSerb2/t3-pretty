@@ -102,6 +102,7 @@ function layerPool(labelRef: Ref.Ref<string>): Layer.Layer<DesktopBackendPool.De
           zoomMain: () => Effect.die("unexpected zoom"),
           setDockAttention: () => Effect.die("unexpected dock attention"),
           setWindowButtonVisibility: () => Effect.die("unexpected window button visibility"),
+          runMainContentsCommand: () => Effect.die("unexpected main contents command"),
           syncAppearance: Effect.void,
         } satisfies DesktopWindow.DesktopWindow["Service"]),
       ),

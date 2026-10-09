@@ -9,7 +9,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import { writeFileStringAtomically } from "../atomicWrite.ts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { readTextWithinLimit } from "../boundedFileRead.ts";
 
 const PROVIDER_STATUS_CACHE_MAX_BYTES = 4 * 1024 * 1024;
