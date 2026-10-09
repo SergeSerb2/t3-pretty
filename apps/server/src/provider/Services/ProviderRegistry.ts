@@ -16,7 +16,7 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import type * as Stream from "effect/Stream";
-import type { ProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
+import type { ProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenance";
 
 export type ProviderMaintenanceActionKind = "update";
 

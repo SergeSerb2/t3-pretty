@@ -34,7 +34,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import { writeFileStringAtomically } from "../atomicWrite.ts";
-import { expandHomePath } from "../pathExpansion.ts";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { ServerSettingsService } from "../serverSettings.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
 import { readFilePrefix } from "../boundedFileRead.ts";

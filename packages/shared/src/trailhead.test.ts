@@ -6,7 +6,7 @@ import {
   trailheadAltitudeAt,
   trailheadRidgePath,
   trailheadRidgeY,
-} from "./trailhead";
+} from "./trailhead.ts";
 
 describe("trailheadRidgeY", () => {
   it("passes through every hand-placed point", () => {

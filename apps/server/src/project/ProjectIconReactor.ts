@@ -27,7 +27,7 @@ import * as Stream from "effect/Stream";
 import * as Mime from "effect/http/Mime";
 import { OrchestrationEventStore } from "../persistence/OrchestrationEventStore.ts";
 import { ProjectService } from "./ProjectService.ts";
-import type { ProviderInstance } from "../provider/ProviderDriver.ts";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import { forkParked } from "../serverActivation.ts";
 import { ServerSettingsService } from "../serverSettings.ts";

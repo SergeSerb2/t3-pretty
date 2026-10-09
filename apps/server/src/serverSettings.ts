@@ -160,6 +160,10 @@ function usageLimitSourceSecretName(sourceId: string): string {
   return `usage-limit-source-${Buffer.from(sourceId, "utf8").toString("base64url")}`;
 }
 
+export function globalEnvironmentSecretName(name: string): string {
+  return `global-env-${Buffer.from(name, "utf8").toString("base64url")}`;
+}
+
 const BITBUCKET_SECRET_NAMES = {
   accessToken: "bitbucket-access-token",
   apiToken: "bitbucket-api-token",
@@ -220,7 +224,14 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
       Object.entries(settings.github.tokens).map(([host, token]) => [host, redactSecret(token)]),
     ),
   };
-  return { ...settings, providerInstances, usageLimitSources, bitbucket, github };
+  return {
+    ...settings,
+    providerInstances,
+    usageLimitSources,
+    globalEnvironment: settings.globalEnvironment.map(redactProviderEnvironmentVariable),
+    bitbucket,
+    github,
+  };
 }
 
 export function applyProviderInstanceMutation(
@@ -973,10 +984,33 @@ const make = Effect.gen(function* () {
           );
         tokens[host] = Option.isSome(secret) ? textDecoder.decode(secret.value) : "";
       }
+      const globalEnvironment: ProviderInstanceEnvironmentVariable[] = [];
+      for (const variable of settings.globalEnvironment) {
+        if (!variable.sensitive || !variable.valueRedacted) {
+          globalEnvironment.push(variable);
+          continue;
+        }
+        const secret = yield* secretStore.get(globalEnvironmentSecretName(variable.name)).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ServerSettingsError({
+                settingsPath,
+                operation: "read-secret",
+                environmentVariable: variable.name,
+                cause,
+              }),
+          ),
+        );
+        globalEnvironment.push({
+          ...variable,
+          value: Option.isSome(secret) ? textDecoder.decode(secret.value) : "",
+        });
+      }
       return {
         ...settings,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
         usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
+        globalEnvironment,
         bitbucket,
         github: { ...settings.github, tokens },
       };
@@ -1120,6 +1154,63 @@ const make = Effect.gen(function* () {
         });
       }
 
+      const globalEnvironment: ProviderInstanceEnvironmentVariable[] = [];
+      const nextGlobalSecretKeys = new Set<string>();
+      for (const variable of next.globalEnvironment) {
+        const secretName = globalEnvironmentSecretName(variable.name);
+        if (!variable.sensitive) {
+          changes.push({
+            kind: "remove",
+            secretName,
+            operation: "remove-secret",
+          });
+          globalEnvironment.push(redactProviderEnvironmentVariable(variable));
+          continue;
+        }
+
+        nextGlobalSecretKeys.add(secretName);
+        const previous = variable.valueRedacted
+          ? current.globalEnvironment.findLast((entry) => entry.name === variable.name)
+          : undefined;
+        const inlineValue =
+          previous?.sensitive && !previous.valueRedacted && previous.value.length > 0
+            ? previous.value
+            : undefined;
+        const value = inlineValue ?? variable.value;
+        if (!variable.valueRedacted || inlineValue !== undefined) {
+          if (value.length > 0) {
+            changes.push({
+              kind: "write",
+              secretName,
+              value: textEncoder.encode(value),
+            });
+            globalEnvironment.push({ ...variable, value: "", valueRedacted: true });
+          } else {
+            changes.push({
+              kind: "remove",
+              secretName,
+              operation: "remove-secret",
+            });
+            const { valueRedacted: _omit, ...rest } = variable;
+            globalEnvironment.push(rest);
+          }
+          continue;
+        }
+
+        globalEnvironment.push(redactProviderEnvironmentVariable(variable));
+      }
+
+      for (const variable of current.globalEnvironment) {
+        if (!variable.sensitive) continue;
+        const secretName = globalEnvironmentSecretName(variable.name);
+        if (nextGlobalSecretKeys.has(secretName)) continue;
+        changes.push({
+          kind: "remove",
+          secretName,
+          operation: "remove-stale-secret",
+        });
+      }
+
       const bitbucket = { ...next.bitbucket };
       for (const field of BITBUCKET_SECRET_FIELDS) {
         let value = bitbucket[field];
@@ -1177,6 +1268,7 @@ const make = Effect.gen(function* () {
           ...next,
           providerInstances: providerInstances as ServerSettings["providerInstances"],
           usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
+          globalEnvironment,
           bitbucket,
           github: { ...next.github, tokens },
         },

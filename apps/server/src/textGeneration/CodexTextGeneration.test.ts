@@ -17,7 +17,7 @@ import * as ServerConfig from "../config.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import { makeCodexTextGeneration } from "./CodexTextGeneration.ts";
 import { writeFakeCli } from "../testUtils/fakeCli.ts";
-import { TEXT_GENERATION_RESULT_MAX_BYTES } from "./TextGenerationUtils.ts";
+import { TEXT_GENERATION_RESULT_MAX_BYTES } from "@t3tools/provider-core/server/textGenerationUtils";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 const DEFAULT_TEST_MODEL_SELECTION = createModelSelection(

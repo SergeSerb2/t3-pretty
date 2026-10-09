@@ -223,7 +223,6 @@ export const make = Effect.gen(function* () {
   const reconcileSemaphore = yield* Semaphore.make(1);
   const restartDelayRef = yield* Ref.make(0);
   const linkStateSemaphore = yield* Semaphore.make(1);
-  const runtimeScope = yield* Effect.scope;
   const installInFlightRef = yield* Ref.make(false);
   const lastInstallFailureAtRef = yield* Ref.make<number | null>(null);
   const prunedRef = yield* Ref.make(false);

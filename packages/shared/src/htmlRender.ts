@@ -1,3 +1,4 @@
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/http/HttpClient";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
@@ -15,6 +16,10 @@ import {
  * its head; clients show it in a sandboxed iframe (web, desktop) or WebView
  * (mobile) and hand it the active theme as CSS custom properties.
  */
+
+export class HtmlRenderLoadError extends Data.TaggedError("HtmlRenderLoadError")<{
+  readonly message: string;
+}> {}
 
 export const HTML_RENDER_TOOL_NAME = "html_render";
 export const HTML_RENDER_MIN_HEIGHT = 80;
@@ -453,13 +458,13 @@ export function loadRestrictedHtmlRender(url: string, signal: AbortSignal): Prom
     Effect.gen(function* () {
       const response = yield* HttpClient.get(url);
       if (response.status < 200 || response.status >= 300)
-        return yield* Effect.fail(new Error("Unable to load HTML render."));
+        return yield* new HtmlRenderLoadError({ message: "Unable to load HTML render." });
       const contentLength = Number(response.headers["content-length"] ?? 0);
       if (contentLength > 25 * 1024 * 1024)
-        return yield* Effect.fail(new Error("HTML render is too large."));
+        return yield* new HtmlRenderLoadError({ message: "HTML render is too large." });
       const document = yield* response.text;
       if (new TextEncoder().encode(document).byteLength > 25 * 1024 * 1024)
-        return yield* Effect.fail(new Error("HTML render is too large."));
+        return yield* new HtmlRenderLoadError({ message: "HTML render is too large." });
       return restrictHtmlRenderResources(document);
     }).pipe(
       Effect.scoped,
