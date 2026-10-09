@@ -29,8 +29,11 @@ describe("project rail folders", () => {
     expect(folderCssSource).not.toContain("scale(0)");
   });
 
-  it("scrolls a long rail without reserving a scrollbar gutter", () => {
+  it("keeps the centered rail scroller from shifting when a scrollbar appears", () => {
     expect(railSource).toContain("rail-project-scroll");
+    expect(railSource).toContain("items-center");
+    expect(railSource).toContain("overflow-y-auto");
+    expect(railSource).toContain("scrollbar-gutter-both");
     expect(folderCssSource).toContain(`.rail-project-scroll::-webkit-scrollbar {
   display: none;
   width: 0;
