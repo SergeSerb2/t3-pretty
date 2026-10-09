@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "./teslaTouch.css";
+@import "./scenery/scenery.css";
+@import "./scenery/motion.css";
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));
@@ -2472,29 +2474,8 @@ html[data-window-inactive]
   background-size: var(--surface-grain-size);
 }
 
-/* Fork-owned scenery and status animation classes defined in separate CSS modules */
-@utility scenery-layer {}
-@utility scenery-layer__group {}
-@utility scenery-layer__gradient {}
-@utility scenery-layer__photo {}
-@utility scenery-layer__photo--outgoing {}
-@utility scenery-layer__photo--current {}
-@utility scenery-layer__wash {}
-@utility scenery-layer__wash--dark {}
-@utility scenery-layer__wash--light {}
-@utility scenery-layer__edges {}
-@utility scenery-layer__edges--dark {}
-@utility scenery-layer__edges--light {}
-@utility scenery-attribution {}
-@utility scenery-attribution__name {}
-@utility scenery-attribution__separator {}
-@utility scenery-attribution__credit {}
-@utility scenery-attribution__prefix {}
-@utility scenery-attribution__photographer {}
-@utility scenery-hero-headline-ghost {}
-@utility animate-status-pulse {
-  animation: status-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
+/* Fork-owned status animation utility */
+@utility animate-status-pulse {}
 
 @keyframes status-pulse {
   0%, 100% {
