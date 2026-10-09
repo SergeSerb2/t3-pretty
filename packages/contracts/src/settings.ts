@@ -12,7 +12,6 @@ import {
   ForwardCompatibleNullable,
   ForwardCompatibleOptional,
   OmittedWhenNull,
-  EnvironmentId,
   ProjectId,
   TrimmedNonEmptyString,
   TrimmedString,
@@ -22,13 +21,12 @@ import { EnvironmentMachineKind, ThreadEnvMode, WorktreeSubmodules } from "./env
 import { KeybindingShortcut } from "./keybindings.ts";
 import {
   CustomModelSetting,
-  DEFAULT_HOME_SUGGESTIONS_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
   ProviderOptionSelections,
 } from "./model.ts";
 import { ModelSelection } from "./modelSelection.ts";
-import { ProjectIconOverride, ProjectScript } from "./project.ts";
+import { ProjectScript } from "./project.ts";
 import { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
 import { BrowserProfile, BrowserProfileId, DEFAULT_BROWSER_PROFILE_ID } from "./browserProfile.ts";
 import {
@@ -41,15 +39,9 @@ import {
 } from "./preview.ts";
 import {
   ProviderInstanceConfig,
-  ProviderInstanceEnvironment,
   ProviderInstanceId,
-  type ProviderDriverKind,
+  ProviderDriverKind,
 } from "./providerInstance.ts";
-import { SkillId, SkillsSettings } from "./skills.ts";
-import { SubagentPolicyChildren, SubagentPolicySettings } from "./subagentPolicy.ts";
-import { AppsSettings } from "./apps.ts";
-import { AutomationsSettings } from "./automations.ts";
-import { DEFAULT_HOME_SUGGESTIONS_TIME, HomeSuggestionsTime } from "./homeSuggestions.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
@@ -79,15 +71,6 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
-
-/** User-made rail folder. Collapse hides its project icons without changing scope. */
-export const SidebarProjectFolder = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  name: TrimmedNonEmptyString,
-  collapsed: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  icon: Schema.optionalKey(ProjectIconOverride),
-});
-export type SidebarProjectFolder = typeof SidebarProjectFolder.Type;
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
 export const SidebarThreadPreviewCount = Schema.Int.check(
@@ -118,39 +101,6 @@ export const GlassOpacity = Schema.Int.check(
 );
 export type GlassOpacity = typeof GlassOpacity.Type;
 const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
-
-/**
- * Fill of the shared sidebar and top bar plate. Kept apart from `glassOpacity`,
- * which still drives menus, dialogs, and the composer. 68% is a step more
- * opaque than the old 42% plate while the surface stays translucent.
- * CSS default: `--workspace-glass-opacity: 68%` in apps/web/src/index.css.
- */
-export const MIN_CHROME_GLASS_OPACITY = 24;
-export const MAX_CHROME_GLASS_OPACITY = 100;
-export const ChromeGlassOpacity = Schema.Int.check(
-  Schema.isBetween({
-    minimum: MIN_CHROME_GLASS_OPACITY,
-    maximum: MAX_CHROME_GLASS_OPACITY,
-  }),
-);
-export type ChromeGlassOpacity = typeof ChromeGlassOpacity.Type;
-const DEFAULT_CHROME_GLASS_OPACITY: ChromeGlassOpacity = 68;
-
-/**
- * Backdrop blur, in CSS pixels, for that same sidebar and top bar plate.
- * 32px is a step more frosted than the old 16px. CSS default:
- * `--workspace-glass-blur: 32px` in apps/web/src/index.css.
- */
-export const MIN_CHROME_GLASS_BLUR = 0;
-export const MAX_CHROME_GLASS_BLUR = 64;
-export const ChromeGlassBlur = Schema.Int.check(
-  Schema.isBetween({
-    minimum: MIN_CHROME_GLASS_BLUR,
-    maximum: MAX_CHROME_GLASS_BLUR,
-  }),
-);
-export type ChromeGlassBlur = typeof ChromeGlassBlur.Type;
-const DEFAULT_CHROME_GLASS_BLUR: ChromeGlassBlur = 32;
 
 export const MIN_APPEARANCE_CONTRAST = 50;
 export const MAX_APPEARANCE_CONTRAST = 200;
@@ -341,33 +291,13 @@ export const LoadBalancingWeights = Schema.Record(
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
 );
 
-export const DEFAULT_LOAD_BALANCING_ENABLED = true;
-
 export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
 
 /** Maximum width of the chat timeline and composer on wide screens. */
 export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
 export type ChatWidth = typeof ChatWidth.Type;
 
-export const AgentMonitoringSettings = Schema.Struct({
-  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  sentryDsn: TrimmedString.check(Schema.isMaxLength(2048)).pipe(
-    Schema.withDecodingDefault(Effect.succeed("")),
-  ),
-});
-export type AgentMonitoringSettings = typeof AgentMonitoringSettings.Type;
-
-export const AgentMonitoringEnrollmentChoice = Schema.Struct({
-  ...AgentMonitoringSettings.fields,
-  excludedEnvironmentIds: Schema.optionalKey(Schema.Array(EnvironmentId)),
-});
-export type AgentMonitoringEnrollmentChoice = typeof AgentMonitoringEnrollmentChoice.Type;
-
 export const ClientSettingsSchema = Schema.Struct({
-  /** Null leaves host enrollment alone; a saved choice also applies after hosts reconnect. */
-  agentMonitoringEnrollment: Schema.NullOr(AgentMonitoringEnrollmentChoice).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
@@ -376,9 +306,7 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
   ),
   chatWidth: ChatWidth.pipe(Schema.withDecodingDefault(Effect.succeed("comfortable" as const))),
-  loadBalancingEnabled: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_LOAD_BALANCING_ENABLED)),
-  ),
+  loadBalancingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   loadBalancingWeights: LoadBalancingWeights.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   appearanceContrast: AppearanceContrast.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_APPEARANCE_CONTRAST)),
@@ -454,12 +382,6 @@ export const ClientSettingsSchema = Schema.Struct({
   glassOpacity: GlassOpacity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_GLASS_OPACITY)),
   ),
-  chromeGlassOpacity: ChromeGlassOpacity.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CHROME_GLASS_OPACITY)),
-  ),
-  chromeGlassBlur: ChromeGlassBlur.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CHROME_GLASS_BLUR)),
-  ),
   fontSizeInterface: InterfaceFontSize.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_INTERFACE_FONT_SIZE)),
   ),
@@ -505,10 +427,6 @@ export const ClientSettingsSchema = Schema.Struct({
       model: TrimmedNonEmptyString,
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  // Composer Skills picker pins. Client-only, like model favorites: the
-  // starred ids float to the top of the ⋯ → Skills submenu and do not
-  // change which skills a thread actually loads.
-  favoriteSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   providerModelPreferences: Schema.Record(
     ProviderInstanceId,
     Schema.Struct({
@@ -537,8 +455,9 @@ export const ClientSettingsSchema = Schema.Struct({
   sendShortcut: Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("enter")),
   ),
-  // A fresh opt-in drops the old queue default from persisted client settings.
-  legacyQueueEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  followUpBehavior: Schema.Literals(["queue", "steer"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("queue")),
+  ),
   proactivePanelsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   showSkillsInSlashMenu: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Legacy sidebar (the original per-project tree). Deliberately a fresh key
@@ -561,14 +480,6 @@ export const ClientSettingsSchema = Schema.Struct({
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
-  ),
-  // Local copy used only until the first shared-settings lift. After that the
-  // server fields are the source of truth across connected environments.
-  sidebarProjectFolders: Schema.Array(SidebarProjectFolder).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
-  sidebarProjectFolderAssignments: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
   ),
   sidebarThreadSortOrder: SidebarThreadSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
@@ -614,7 +525,8 @@ export const UsageModelPriceOverride = Schema.Struct({
 });
 export type UsageModelPriceOverride = typeof UsageModelPriceOverride.Type;
 
-const makeBinaryPathSetting = (fallback: string) =>
+/** A binary path setting that decodes empty input to the provider's default executable. */
+export const makeBinaryPathSetting = (fallback: string) =>
   TrimmedString.pipe(
     Schema.decodeTo(
       Schema.String,
@@ -660,7 +572,8 @@ export type ProviderSettingsOrder<Fields extends Schema.Struct.Fields> = readonl
   string
 >[];
 
-function makeProviderSettingsSchema<const Fields extends Schema.Struct.Fields>(
+/** A provider settings struct whose fields the settings form renders in `order`. */
+export function makeProviderSettingsSchema<const Fields extends Schema.Struct.Fields>(
   fields: Fields,
   options?: {
     readonly order?: ProviderSettingsOrder<Fields> | undefined;
@@ -949,39 +862,6 @@ export const MuseSettings = makeProviderSettingsSchema(
   { order: ["binaryPath"] },
 );
 export type MuseSettings = typeof MuseSettings.Type;
-
-export const PiSettings = makeProviderSettingsSchema(
-  {
-    // Off by default like Cursor and Grok. Users opt in from Settings.
-    enabled: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(false)),
-      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
-    ),
-    binaryPath: makeBinaryPathSetting("pi").pipe(
-      Schema.annotateKey({
-        title: "Binary path",
-        description: "Path to the Pi coding agent binary.",
-        providerSettingsForm: { placeholder: "pi", clearWhenEmpty: "omit" },
-      }),
-    ),
-    launchArgs: TrimmedString.pipe(
-      Schema.withDecodingDefault(Effect.succeed("")),
-      Schema.annotateKey({
-        title: "Launch arguments",
-        description: "Additional CLI arguments passed to pi --mode rpc on session start.",
-        providerSettingsForm: { clearWhenEmpty: "omit" },
-      }),
-    ),
-    customModels: Schema.Array(CustomModelSetting).pipe(
-      Schema.withDecodingDefault(Effect.succeed([])),
-      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
-    ),
-  },
-  {
-    order: ["binaryPath", "launchArgs"],
-  },
-);
-export type PiSettings = typeof PiSettings.Type;
 
 export const AcpRegistryDistributionPreference = Schema.Literals(["auto", "binary", "npx", "uvx"]);
 export type AcpRegistryDistributionPreference = typeof AcpRegistryDistributionPreference.Type;
@@ -1294,7 +1174,6 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "sidebarAutoSettleAfterDays",
   "continueThreadsAfterServerUpdate",
   "responseStreamingMode",
-  "clearAgentResponses",
 ] as const;
 export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTING_KEYS)[number];
 
@@ -1326,7 +1205,6 @@ export const ProjectSettingsOverrides = Schema.Struct({
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
-  clearAgentResponses: Schema.optionalKey(Schema.Boolean),
 } satisfies Record<ProjectScopedServerSettingKey, unknown>);
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
@@ -1382,7 +1260,6 @@ export const ServerSettings = Schema.Struct({
   responseStreamingMode: ResponseStreamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
   ),
-  clearAgentResponses: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Retain the update-era key; recovery now needs an environment-owned opt-in.
   continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
@@ -1402,53 +1279,6 @@ export const ServerSettings = Schema.Struct({
   enableAgentBrowserAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   projectAgentBrowserAccessOverrides: Schema.Record(ProjectId, Schema.Boolean).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
-  ),
-  /**
-   * Whether agents may drive the macOS host (screenshots, mouse, keyboard).
-   * Gates the `computer-use` MCP capability the same way
-   * `enableAgentBrowserAccess` gates the browser: server-authoritative, applied
-   * when the provider session is prepared. The user's own screen is unaffected.
-   */
-  enableComputerUse: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  /**
-   * When on, the server chooses a project icon at project creation (agent mode
-   * only). Icon generation is a provider-specific behavior: typically Claude
-   * uses the user's Grok/Codex subscription and is skipped for other providers.
-   */
-  autoGenerateProjectIcons: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /**
-   * When on, the text generation model rewrites the live activity line of a
-   * running turn into a short human-readable headline ("Updating contract
-   * tests") instead of raw tool summaries and error text. Generation uses the
-   * user's text generation provider subscription.
-   */
-  generateActivityHeadlines: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  /**
-   * The home screen's daily prompt cards. Off stops the schedule; the cards
-   * already generated stay until the next batch replaces them.
-   */
-  homeSuggestionsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  /**
-   * Model that plans the daily cards. It reads a digest of every recent
-   * thread, so it defaults to a stronger model than other generated text.
-   */
-  homeSuggestionsModelSelection: ModelSelection.pipe(
-    Schema.withDecodingDefault(
-      Effect.succeed({
-        instanceId: ProviderInstanceId.make("codex"),
-        model: DEFAULT_HOME_SUGGESTIONS_MODEL,
-        options: [
-          {
-            id: "reasoningEffort",
-            value: DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
-          },
-        ],
-      }),
-    ),
-  ),
-  /** Local time of day the batch regenerates, in the server's timezone. */
-  homeSuggestionsTime: HomeSuggestionsTime.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_HOME_SUGGESTIONS_TIME)),
   ),
   defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   defaultProjectScripts: Schema.Array(ProjectScript).pipe(
@@ -1504,27 +1334,6 @@ export const ServerSettings = Schema.Struct({
   snoozeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  /**
-   * Sidebar rail folders and which projects they hold. Clients that participate
-   * in shared-settings sync write these to every connected environment so a
-   * folder made on one machine appears on the others.
-   */
-  sidebarProjectFolders: Schema.Array(SidebarProjectFolder).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
-  sidebarProjectFolderAssignments: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
-  ),
-  /**
-   * The scenery photo catalog (World Scenery, Night Cities, and the other
-   * sets). Null until a client publishes a choice, so connecting a device
-   * does not overwrite a catalog that was only saved on that device.
-   * Clients that participate in shared-settings sync write this to every
-   * connected environment.
-   */
-  sceneryPhotoSet: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(64))).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
   backgroundActivity: BackgroundActivitySettings,
   // Legacy flat fields retained for old settings files and old clients. New
   // consumers should resolve `backgroundActivity` instead.
@@ -1617,22 +1426,6 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
 
-  // Legacy single-instance-per-driver settings. Continues to be the source
-  // of truth until `providerInstances` (below) lands per-driver migration
-  // shims and the server starts hydrating instances from it. Driver-specific
-  // schemas live here for the duration of the migration; once each driver
-  // owns its config in its own package, this struct shrinks to nothing and
-  // is removed entirely.
-  providers: Schema.Struct({
-    codex: CodexSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    grok: GrokSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    muse: MuseSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    pi: PiSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    antigravity: AntigravitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
   // are `ProviderInstanceConfig` envelopes. The driver-specific config blob
   // is `Schema.Unknown` at this layer so envelopes with unknown drivers
@@ -1641,23 +1434,7 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  /**
-   * Environment variables injected into every agent, terminal, and provider
-   * process on this machine. Sensitive values are stored in the secret store.
-   * Clients that participate in shared-settings sync write this list to every
-   * connected environment so a key set once is available on other machines.
-   */
-  globalEnvironment: ProviderInstanceEnvironment.pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
-  skills: SkillsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  subagentPolicy: SubagentPolicySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  agentMonitoring: AgentMonitoringSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  /** Advanced with saved consent changes, atomically with the enabled setting. */
-  agentMonitoringConsentVersion: Schema.Int.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
-  apps: AppsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  automations: AutomationsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   bitbucket: BitbucketSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   github: GitHubSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // Keyed by a user-chosen id so a source keeps its rows across edits. Entries
@@ -1688,8 +1465,8 @@ export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerS
 /**
  * Read the legacy `enabled` flag embedded in a provider instance config
  * blob. The envelope-level `ProviderInstanceConfig.enabled` is the single
- * flag going forward; this reader exists for legacy `providers.<kind>`
- * blobs and old settings files that still carry the flag in-config.
+ * flag going forward; this reader exists for old settings files that still
+ * carry the flag in-config.
  */
 export const providerInstanceConfigEnabledFlag = (config: unknown): boolean | undefined => {
   if (config === null || typeof config !== "object" || Array.isArray(config)) {
@@ -1700,18 +1477,34 @@ export const providerInstanceConfigEnabledFlag = (config: unknown): boolean | un
 };
 
 /**
- * Default enabled state for a built-in driver when neither the envelope nor
- * the config blob carries a flag. Derived from the driver's settings schema
- * through `DEFAULT_SERVER_SETTINGS`, so the schema's decoding default stays
- * the single source of truth. Unknown (fork) drivers default to enabled.
+ * Built-in drivers that stay off until the user turns them on. Matches the
+ * `enabled` decoding default of each driver's settings schema.
  */
-const defaultEnabledForDriver = (driver: ProviderDriverKind): boolean => {
-  const legacyDefaults = DEFAULT_SERVER_SETTINGS.providers as Record<
-    string,
-    { readonly enabled?: boolean } | undefined
-  >;
-  return legacyDefaults[driver]?.enabled ?? true;
-};
+const DEFAULT_DISABLED_PROVIDER_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set(
+  ["cursor", "grok", "muse", "pi", "opencode", "antigravity"].map((driver) =>
+    ProviderDriverKind.make(driver),
+  ),
+);
+
+/** Built-in drivers whose default instance runs before the user configures it. */
+const DEFAULT_ENABLED_DEFAULT_INSTANCES: ReadonlySet<ProviderInstanceId> = new Set(
+  ["codex", "claudeAgent"].map((instanceId) => ProviderInstanceId.make(instanceId)),
+);
+
+/**
+ * Whether the built-in default instance at `instanceId` is enabled while
+ * settings have no `providerInstances` entry for it. Only Codex and Claude
+ * start on; any other id without an entry has no running instance.
+ */
+export const isUnconfiguredDefaultInstanceEnabled = (instanceId: ProviderInstanceId): boolean =>
+  DEFAULT_ENABLED_DEFAULT_INSTANCES.has(instanceId);
+
+/**
+ * Default enabled state for a driver when neither the envelope nor the config
+ * blob carries a flag. Unknown (fork) drivers default to enabled.
+ */
+const defaultEnabledForDriver = (driver: ProviderDriverKind): boolean =>
+  !DEFAULT_DISABLED_PROVIDER_DRIVERS.has(driver);
 
 /**
  * Resolve whether a configured provider instance is enabled. An explicit
@@ -1784,75 +1577,7 @@ const ModelSelectionPatch = Schema.Struct({
   options: Schema.optionalKey(ProviderOptionSelections),
 });
 
-const CodexSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  homePath: Schema.optionalKey(TrimmedString),
-  shadowHomePath: Schema.optionalKey(TrimmedString),
-  launchArgs: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
-});
-
-const ClaudeSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  homePath: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
-  launchArgs: Schema.optionalKey(TrimmedString),
-  // Validated at the patch boundary so a typo fails the one update with a
-  // schema error instead of a generic whole-settings failure.
-  autoCompactWindow: Schema.optionalKey(
-    TrimmedString.check(Schema.isPattern(CLAUDE_AUTO_COMPACT_WINDOW_PATTERN)),
-  ),
-});
-
-const CursorSettingsPatch = Schema.Struct({
-  binaryPath: Schema.optionalKey(TrimmedString),
-  apiEndpoint: Schema.optionalKey(TrimmedString),
-  enabled: Schema.optionalKey(Schema.Boolean),
-  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
-});
-
-const GrokSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
-});
-
-const AntigravitySettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  authMethod: Schema.optionalKey(AntigravityAuthMethod),
-  apiKey: Schema.optionalKey(TrimmedString),
-  gcpProject: Schema.optionalKey(TrimmedString),
-  gcpLocation: Schema.optionalKey(TrimmedString),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
-});
-
-const MuseSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
-});
-
-const PiSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  launchArgs: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
-});
-
-const OpenCodeSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  serverUrl: Schema.optionalKey(TrimmedString),
-  serverPassword: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
-});
-
 export const ServerSettingsPatch = Schema.Struct({
-  apps: Schema.optionalKey(AppsSettings),
-  automations: Schema.optionalKey(AutomationsSettings),
   worktreeCleanup: Schema.optionalKey(
     Schema.NullOr(
       Schema.Union([
@@ -1882,7 +1607,6 @@ export const ServerSettingsPatch = Schema.Struct({
   worktreesDirectory: Schema.optionalKey(TrimmedString),
   // Server settings
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
-  clearAgentResponses: Schema.optionalKey(Schema.Boolean),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
@@ -1915,13 +1639,6 @@ export const ServerSettingsPatch = Schema.Struct({
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
-  sidebarProjectFolders: Schema.optionalKey(Schema.Array(SidebarProjectFolder)),
-  sidebarProjectFolderAssignments: Schema.optionalKey(
-    Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString),
-  ),
-  sceneryPhotoSet: Schema.optionalKey(
-    Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(64))),
-  ),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
@@ -1961,26 +1678,6 @@ export const ServerSettingsPatch = Schema.Struct({
       otlpLogsUrl: Schema.optionalKey(TrimmedString),
     }),
   ),
-  agentMonitoring: Schema.optionalKey(
-    Schema.Struct({
-      enabled: Schema.optionalKey(Schema.Boolean),
-      sentryDsn: Schema.optionalKey(TrimmedString.check(Schema.isMaxLength(2048))),
-    }),
-  ),
-  skills: Schema.optionalKey(SkillsSettings),
-  subagentPolicy: Schema.optionalKey(
-    Schema.Struct({
-      enabled: Schema.optionalKey(Schema.Boolean),
-      children: Schema.optionalKey(SubagentPolicyChildren),
-    }),
-  ),
-  enableComputerUse: Schema.optionalKey(Schema.Boolean),
-  autoGenerateProjectIcons: Schema.optionalKey(Schema.Boolean),
-  generateActivityHeadlines: Schema.optionalKey(Schema.Boolean),
-  homeSuggestionsEnabled: Schema.optionalKey(Schema.Boolean),
-  // Whole-value replacement, like the source control writer model.
-  homeSuggestionsModelSelection: Schema.optionalKey(ModelSelection),
-  homeSuggestionsTime: Schema.optionalKey(HomeSuggestionsTime),
   /** An empty token clears it; an omitted one keeps what the server has. */
   bitbucket: Schema.optionalKey(
     Schema.Struct({
@@ -1999,24 +1696,11 @@ export const ServerSettingsPatch = Schema.Struct({
       tokens: Schema.optionalKey(Schema.Record(GitHubHost, TrimmedString)),
     }),
   ),
-  providers: Schema.optionalKey(
-    Schema.Struct({
-      codex: Schema.optionalKey(CodexSettingsPatch),
-      claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
-      cursor: Schema.optionalKey(CursorSettingsPatch),
-      grok: Schema.optionalKey(GrokSettingsPatch),
-      muse: Schema.optionalKey(MuseSettingsPatch),
-      pi: Schema.optionalKey(PiSettingsPatch),
-      opencode: Schema.optionalKey(OpenCodeSettingsPatch),
-      antigravity: Schema.optionalKey(AntigravitySettingsPatch),
-    }),
-  ),
   // Whole-map replacement for the new instance config. Patching individual
   // entries is intentionally out of scope: the map is small, and partial
   // patches risk leaving driver-specific config in a half-merged state.
   // The web UI sends a fully-formed map every time it edits this field.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
-  globalEnvironment: Schema.optionalKey(ProviderInstanceEnvironment),
   // Per-entry, unlike `providerInstances`: a client only ever adds or removes
   // one source, and sending the whole map races another edit that has not
   // echoed back yet. `null` removes; the server merges into its current map.
@@ -2056,7 +1740,6 @@ export function requiredScopesForServerSettingsPatch(
 }
 
 export const ClientSettingsPatch = Schema.Struct({
-  agentMonitoringEnrollment: Schema.optionalKey(Schema.NullOr(AgentMonitoringEnrollmentChoice)),
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
@@ -2084,8 +1767,6 @@ export const ClientSettingsPatch = Schema.Struct({
   diffLayout: Schema.optionalKey(DiffLayout),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
-  chromeGlassOpacity: Schema.optionalKey(ChromeGlassOpacity),
-  chromeGlassBlur: Schema.optionalKey(ChromeGlassBlur),
   onboardingCompletedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
   fontSizeInterface: Schema.optionalKey(InterfaceFontSize),
   fontSizePrompt: Schema.optionalKey(PromptFontSize),
@@ -2105,7 +1786,6 @@ export const ClientSettingsPatch = Schema.Struct({
       }),
     ),
   ),
-  favoriteSkillIds: Schema.optionalKey(Schema.Array(SkillId)),
   providerModelPreferences: Schema.optionalKey(
     Schema.Record(
       ProviderInstanceId,
@@ -2127,7 +1807,7 @@ export const ClientSettingsPatch = Schema.Struct({
   composerCollapseOnScroll: Schema.optionalKey(Schema.Boolean),
   composerRichTextEnabled: Schema.optionalKey(Schema.Boolean),
   sendShortcut: Schema.optionalKey(Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"])),
-  legacyQueueEnabled: Schema.optionalKey(Schema.Boolean),
+  followUpBehavior: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
   proactivePanelsEnabled: Schema.optionalKey(Schema.Boolean),
   showSkillsInSlashMenu: Schema.optionalKey(Schema.Boolean),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
@@ -2137,10 +1817,6 @@ export const ClientSettingsPatch = Schema.Struct({
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
   ),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
-  sidebarProjectFolders: Schema.optionalKey(Schema.Array(SidebarProjectFolder)),
-  sidebarProjectFolderAssignments: Schema.optionalKey(
-    Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString),
-  ),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   timestampFormat: Schema.optionalKey(TimestampFormat),

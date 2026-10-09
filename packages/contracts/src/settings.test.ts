@@ -21,22 +21,6 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
-describe("Clear responses settings", () => {
-  it("enables guidance for new and existing settings files", () => {
-    expect(decodeServerSettings({}).clearAgentResponses).toBe(true);
-    expect(DEFAULT_SERVER_SETTINGS.clearAgentResponses).toBe(true);
-  });
-
-  it.each([true, false])("round-trips %s and a project override", (clearAgentResponses) => {
-    const input = {
-      clearAgentResponses,
-      projectSettingsOverrides: { project: { clearAgentResponses } },
-    };
-    expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
-    expect(decodeServerSettingsPatch(input)).toEqual(input);
-  });
-});
-
 describe("ServerSettings response streaming", () => {
   it("defaults to paragraph buffering", () => {
     expect(decodeServerSettings({}).responseStreamingMode).toBe("paragraph");
@@ -224,17 +208,6 @@ describe("custom model settings", () => {
       { slug: "named", name: "Named", capabilities },
     ]);
   });
-
-  it("accepts entries at the settings patch boundary", () => {
-    expect(
-      decodeServerSettingsPatch({
-        providers: { codex: { customModels: [{ slug: "x", capabilities }] } },
-      }).providers?.codex?.customModels,
-    ).toEqual([{ slug: "x", capabilities }]);
-    expect(() =>
-      decodeServerSettingsPatch({ providers: { codex: { customModels: [{ name: "no slug" }] } } }),
-    ).toThrow();
-  });
 });
 
 describe("ClaudeSettings auto-compaction", () => {
@@ -255,15 +228,6 @@ describe("ClaudeSettings auto-compaction", () => {
       expect(() => decodeClaudeSettings({ autoCompactWindow: value })).toThrow();
     },
   );
-
-  it("rejects an unsupported threshold at the settings patch boundary", () => {
-    expect(() =>
-      decodeServerSettingsPatch({ providers: { claudeAgent: { autoCompactWindow: "300k" } } }),
-    ).toThrow();
-    expect(
-      decodeServerSettingsPatch({ providers: { claudeAgent: { autoCompactWindow: "300000" } } }),
-    ).toBeDefined();
-  });
 });
 
 describe("ClientSettings notifications", () => {
@@ -364,9 +328,9 @@ describe("ClientSettings chat width", () => {
 });
 
 describe("ClientSettings load balancing", () => {
-  it("balances automatically when settings are new or omit load balancing", () => {
-    expect(decodeClientSettings({}).loadBalancingEnabled).toBe(true);
-    expect(decodeClientSettings({ loadBalancingWeights: {} }).loadBalancingEnabled).toBe(true);
+  it("requires opt-in when settings are new or omit load balancing", () => {
+    expect(decodeClientSettings({}).loadBalancingEnabled).toBe(false);
+    expect(decodeClientSettings({ loadBalancingWeights: {} }).loadBalancingEnabled).toBe(false);
   });
 
   it.each([true, false])("preserves a saved choice of %s", (loadBalancingEnabled) => {
@@ -559,34 +523,6 @@ describe("ClientSettings recording input overlays", () => {
   });
 });
 
-describe("ClientSettings chrome glass", () => {
-  it("defaults the sidebar and top bar to a more opaque frosted plate", () => {
-    const settings = decodeClientSettings({});
-    expect(settings.chromeGlassOpacity).toBe(68);
-    expect(settings.chromeGlassBlur).toBe(32);
-  });
-
-  it.each([23, 101, 68.5])("rejects an invalid chrome glass opacity: %s", (value) => {
-    expect(() => decodeClientSettings({ chromeGlassOpacity: value })).toThrow();
-    expect(() => decodeClientSettingsPatch({ chromeGlassOpacity: value })).toThrow();
-  });
-
-  it.each([24, 68, 100])("accepts a chrome glass opacity in range: %s", (value) => {
-    expect(decodeClientSettings({ chromeGlassOpacity: value }).chromeGlassOpacity).toBe(value);
-    expect(decodeClientSettingsPatch({ chromeGlassOpacity: value }).chromeGlassOpacity).toBe(value);
-  });
-
-  it.each([-1, 65, 16.5])("rejects an invalid chrome glass blur: %s", (value) => {
-    expect(() => decodeClientSettings({ chromeGlassBlur: value })).toThrow();
-    expect(() => decodeClientSettingsPatch({ chromeGlassBlur: value })).toThrow();
-  });
-
-  it.each([0, 32, 64])("accepts a chrome glass blur in range: %s", (value) => {
-    expect(decodeClientSettings({ chromeGlassBlur: value }).chromeGlassBlur).toBe(value);
-    expect(decodeClientSettingsPatch({ chromeGlassBlur: value }).chromeGlassBlur).toBe(value);
-  });
-});
-
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
     expect(decodeClientSettings({}).glassOpacity).toBe(80);
@@ -688,77 +624,6 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettingsPatch({ confirmThreadUnpin: true }).confirmThreadUnpin).toBe(true);
     expect(() => decodeClientSettingsPatch({ confirmThreadUnpin: "yes" })).toThrow();
   });
-
-  it("defaults project rail folders empty and round-trips a named folder", () => {
-    expect(decodeClientSettings({}).sidebarProjectFolders).toEqual([]);
-    expect(decodeClientSettings({}).sidebarProjectFolderAssignments).toEqual({});
-    const stored = {
-      sidebarProjectFolders: [{ id: "work", name: " Work ", collapsed: true }],
-      sidebarProjectFolderAssignments: { "env:/repo": "work" },
-    };
-    expect(decodeClientSettings(stored).sidebarProjectFolders).toEqual([
-      { id: "work", name: "Work", collapsed: true },
-    ]);
-    expect(
-      decodeClientSettings({
-        sidebarProjectFolders: [
-          {
-            id: "home",
-            name: "Home",
-            collapsed: false,
-            icon: { kind: "emoji", emoji: "🏠" },
-          },
-        ],
-      }).sidebarProjectFolders,
-    ).toEqual([
-      {
-        id: "home",
-        name: "Home",
-        collapsed: false,
-        icon: { kind: "emoji", emoji: "🏠" },
-      },
-    ]);
-    expect(decodeClientSettings(stored).sidebarProjectFolderAssignments).toEqual({
-      "env:/repo": "work",
-    });
-    expect(decodeClientSettingsPatch(stored)).toEqual({
-      sidebarProjectFolders: [{ id: "work", name: "Work", collapsed: true }],
-      sidebarProjectFolderAssignments: { "env:/repo": "work" },
-    });
-  });
-});
-
-describe("ServerSettings scenery photo set", () => {
-  it("stays unset until a client publishes a catalog", () => {
-    expect(decodeServerSettings({}).sceneryPhotoSet).toBeNull();
-    expect(decodeServerSettings({ sceneryPhotoSet: " night-cities " }).sceneryPhotoSet).toBe(
-      "night-cities",
-    );
-    expect(decodeServerSettingsPatch({ sceneryPhotoSet: "deep-forest" })).toEqual({
-      sceneryPhotoSet: "deep-forest",
-    });
-  });
-});
-
-describe("ServerSettings project rail folders", () => {
-  it("defaults empty and round-trips a named folder for shared-settings sync", () => {
-    expect(decodeServerSettings({}).sidebarProjectFolders).toEqual([]);
-    expect(decodeServerSettings({}).sidebarProjectFolderAssignments).toEqual({});
-    const stored = {
-      sidebarProjectFolders: [{ id: "work", name: " Work ", collapsed: true }],
-      sidebarProjectFolderAssignments: { "env:/repo": "work" },
-    };
-    expect(decodeServerSettings(stored).sidebarProjectFolders).toEqual([
-      { id: "work", name: "Work", collapsed: true },
-    ]);
-    expect(decodeServerSettings(stored).sidebarProjectFolderAssignments).toEqual({
-      "env:/repo": "work",
-    });
-    expect(decodeServerSettingsPatch(stored)).toEqual({
-      sidebarProjectFolders: [{ id: "work", name: "Work", collapsed: true }],
-      sidebarProjectFolderAssignments: { "env:/repo": "work" },
-    });
-  });
 });
 
 describe("ClientSettings context window meter", () => {
@@ -784,20 +649,16 @@ describe("ClientSettings send shortcut", () => {
   });
 });
 
-describe("ClientSettings legacy queue", () => {
-  it("defaults off and preserves an explicit legacy opt-in", () => {
-    expect(decodeClientSettings({}).legacyQueueEnabled).toBe(false);
-    expect(decodeClientSettings({ legacyQueueEnabled: true }).legacyQueueEnabled).toBe(true);
-    expect(decodeClientSettingsPatch({ legacyQueueEnabled: true }).legacyQueueEnabled).toBe(true);
-    expect(decodeClientSettingsPatch({ legacyQueueEnabled: false }).legacyQueueEnabled).toBe(false);
-    expect(() => decodeClientSettingsPatch({ legacyQueueEnabled: "queue" })).toThrow();
-  });
-
-  it.each(["queue", "steer"])("retires the old %s preference", (followUpBehavior) => {
-    const decoded = decodeClientSettings({ followUpBehavior });
-    expect(decoded.legacyQueueEnabled).toBe(false);
-    expect(decoded).not.toHaveProperty("followUpBehavior");
-    expect(decodeClientSettingsPatch({ followUpBehavior })).toEqual({});
+describe("ClientSettings follow-up behavior", () => {
+  it("defaults to queue and accepts either behavior", () => {
+    expect(decodeClientSettings({}).followUpBehavior).toBe("queue");
+    for (const followUpBehavior of ["queue", "steer"]) {
+      expect(decodeClientSettings({ followUpBehavior }).followUpBehavior).toBe(followUpBehavior);
+      expect(decodeClientSettingsPatch({ followUpBehavior }).followUpBehavior).toBe(
+        followUpBehavior,
+      );
+    }
+    expect(() => decodeClientSettingsPatch({ followUpBehavior: "invalid" })).toThrow();
   });
 });
 
@@ -864,37 +725,13 @@ describe("ClientSettings pull request merge methods", () => {
 });
 
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
-  it("defaults text generation to Luna at low reasoning effort", () => {
-    expect(DEFAULT_SERVER_SETTINGS.generateActivityHeadlines).toBe(true);
-    expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
-      instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-6-luna",
-      options: [{ id: "reasoningEffort", value: "low" }],
-    });
-  });
-
-  it("defaults home suggestions to a daily 09:00 batch planned by Astra at low effort", () => {
-    expect(DEFAULT_SERVER_SETTINGS.homeSuggestionsEnabled).toBe(true);
-    expect(DEFAULT_SERVER_SETTINGS.homeSuggestionsTime).toBe("09:00");
-    expect(DEFAULT_SERVER_SETTINGS.homeSuggestionsModelSelection).toEqual({
-      instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-6-astra",
-      options: [{ id: "reasoningEffort", value: "low" }],
-    });
-    expect(() => decodeServerSettings({ homeSuggestionsTime: "9am" })).toThrow();
-  });
-
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
-    expect(DEFAULT_SERVER_SETTINGS.globalEnvironment).toEqual([]);
   });
 
   it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {
     const decoded = decodeServerSettings({});
     expect(decoded.providerInstances).toEqual({});
-    // Legacy `providers` struct is still hydrated with its per-driver defaults
-    // so existing call sites keep working through the migration.
-    expect(decoded.providers.codex.enabled).toBe(true);
   });
 
   it("decodes a multi-instance map mixing first-party and fork drivers", () => {
@@ -943,7 +780,6 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 describe("provider enabled defaults", () => {
   it("keeps Muse disabled until a configured instance opts in", () => {
     const muse = ProviderDriverKind.make("muse");
-    expect(decodeServerSettings({}).providers.muse.enabled).toBe(false);
     expect(resolveProviderInstanceEnabled({ driver: muse, config: {} })).toBe(false);
     expect(resolveProviderInstanceEnabled({ driver: muse, enabled: true, config: {} })).toBe(true);
     expect(
@@ -952,26 +788,13 @@ describe("provider enabled defaults", () => {
   });
 
   it("enables only the stable bindings by default", () => {
-    const decoded = decodeServerSettings({});
-    expect(decoded.providers.codex.enabled).toBe(true);
-    expect(decoded.providers.claudeAgent.enabled).toBe(true);
-    expect(decoded.providers.cursor.enabled).toBe(false);
-    expect(decoded.providers.grok.enabled).toBe(false);
-    expect(decoded.providers.opencode.enabled).toBe(false);
-  });
-
-  it("keeps Cursor enabled when an existing user explicitly opted in", () => {
-    const cursor = ProviderDriverKind.make("cursor");
-    const cursorId = ProviderInstanceId.make("cursor");
-    const decoded = decodeServerSettings({
-      providers: { cursor: { enabled: true } },
-      providerInstances: {
-        [cursorId]: { driver: cursor, enabled: true, config: {} },
-      },
-    });
-
-    expect(decoded.providers.cursor.enabled).toBe(true);
-    expect(resolveProviderInstanceEnabled(decoded.providerInstances[cursorId]!)).toBe(true);
+    const enabledByDefault = (driver: string) =>
+      resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make(driver), config: {} });
+    expect(enabledByDefault("codex")).toBe(true);
+    expect(enabledByDefault("claudeAgent")).toBe(true);
+    for (const driver of ["cursor", "grok", "muse", "pi", "opencode", "antigravity"]) {
+      expect(enabledByDefault(driver)).toBe(false);
+    }
   });
 
   it("resolves instance enabled state with explicit false winning", () => {
@@ -1043,44 +866,6 @@ describe("ServerSettings worktree defaults", () => {
   });
 });
 
-describe("ServerSettings Cursor legacy settings", () => {
-  it("preserves V1 Cursor CLI settings when reading and writing shared settings", () => {
-    const decoded = decodeServerSettings({
-      providers: {
-        cursor: {
-          enabled: true,
-          binaryPath: "cursor-agent",
-          apiEndpoint: "http://127.0.0.1:3774",
-        },
-      },
-    });
-
-    expect(decoded.providers.cursor.enabled).toBe(true);
-    expect(encodeServerSettings(decoded).providers?.cursor).toMatchObject({
-      binaryPath: "cursor-agent",
-      apiEndpoint: "http://127.0.0.1:3774",
-    });
-  });
-
-  it("preserves V1 Cursor CLI settings in shared-settings patches", () => {
-    const patch = decodeServerSettingsPatch({
-      providers: {
-        cursor: {
-          enabled: true,
-          binaryPath: "cursor-agent",
-          apiEndpoint: "http://127.0.0.1:3774",
-        },
-      },
-    });
-
-    expect(patch.providers?.cursor?.enabled).toBe(true);
-    expect(patch.providers?.cursor).toMatchObject({
-      binaryPath: "cursor-agent",
-      apiEndpoint: "http://127.0.0.1:3774",
-    });
-  });
-});
-
 describe("ServerSettings.sourceControlWritingStyle", () => {
   it("defaults all style settings for legacy configs", () => {
     const settings = decodeServerSettings({});
@@ -1105,17 +890,6 @@ describe("ServerSettings.sourceControlWritingStyle", () => {
       mode: "custom",
       customInstructions: "Prefer concise wording.",
     });
-  });
-});
-
-describe("ServerSettingsPatch.globalEnvironment", () => {
-  it("accepts a shared environment list", () => {
-    const patch = decodeServerSettingsPatch({
-      globalEnvironment: [{ name: "OPENAI_API_KEY", value: "sk-test", sensitive: true }],
-    });
-    expect(patch.globalEnvironment).toEqual([
-      { name: "OPENAI_API_KEY", value: "sk-test", sensitive: true },
-    ]);
   });
 });
 
@@ -1164,13 +938,6 @@ describe("ServerSettingsPatch string normalization", () => {
       observability: {
         otlpTracesUrl: "  http://localhost:4318/v1/traces  ",
       },
-      providers: {
-        codex: {
-          binaryPath: "  /opt/homebrew/bin/codex  ",
-          homePath: "  ~/.codex  ",
-          launchArgs: "  --strict-config --enable foo  ",
-        },
-      },
       providerInstances: {
         codex_personal: {
           driver: "  codex  ",
@@ -1183,9 +950,6 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(patch.addProjectBaseDirectory).toBe("~/Development");
     expect(patch.textGenerationModelSelection?.model).toBe("gpt-5.4-mini");
     expect(patch.observability?.otlpTracesUrl).toBe("http://localhost:4318/v1/traces");
-    expect(patch.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
-    expect(patch.providers?.codex?.homePath).toBe("~/.codex");
-    expect(patch.providers?.codex?.launchArgs).toBe("--strict-config --enable foo");
     expect(patch.providerInstances?.[ProviderInstanceId.make("codex_personal")]?.driver).toBe(
       "codex",
     );
@@ -1202,19 +966,9 @@ describe("ServerSettingsPatch string normalization", () => {
     const encoded = encodeServerSettings({
       ...defaultSettings,
       addProjectBaseDirectory: "  ~/Development  ",
-      providers: {
-        ...defaultSettings.providers,
-        codex: {
-          ...defaultSettings.providers.codex,
-          binaryPath: "  /opt/homebrew/bin/codex  ",
-          launchArgs: "  --strict-config  ",
-        },
-      },
     });
 
     expect(encoded.addProjectBaseDirectory).toBe("~/Development");
-    expect(encoded.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
-    expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
   });
 });
 
@@ -1275,23 +1029,6 @@ describe("branch naming settings", () => {
       expect(decodeServerSettingsPatch(input)).toEqual(input);
     },
   );
-});
-
-describe("agent monitoring settings", () => {
-  it("leaves existing hosts disabled and accepts partial enable/disable patches", () => {
-    expect(decodeServerSettings({}).agentMonitoring).toEqual({ enabled: false, sentryDsn: "" });
-    expect(decodeServerSettingsPatch({ agentMonitoring: { enabled: false } })).toEqual({
-      agentMonitoring: { enabled: false },
-    });
-    expect(
-      decodeServerSettingsPatch({
-        agentMonitoring: { sentryDsn: " https://public@example.com/1 " },
-      }),
-    ).toEqual({ agentMonitoring: { sentryDsn: "https://public@example.com/1" } });
-    expect(() =>
-      decodeServerSettingsPatch({ agentMonitoring: { sentryDsn: "x".repeat(2049) } }),
-    ).toThrow();
-  });
 });
 
 describe("ServerSettings.removeAgentCreditsOnMerge", () => {

@@ -25,7 +25,7 @@ import { cursorMcpServers } from "../orchestration-v2/Adapters/CursorAdapterV2.t
 import { makeGrokAdapterV2 } from "../orchestration-v2/Adapters/GrokAdapterV2.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { execScriptSource, writeFakeCli } from "../testUtils/fakeCli.ts";
-import * as McpProviderSession from "./McpProviderSession.ts";
+import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);

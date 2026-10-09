@@ -302,8 +302,8 @@ function OnboardingCodexSetup({
   const settings = serverConfig.settings;
   const instance = settings.providerInstances[instanceId] ?? {
     driver: ProviderDriverKind.make("codex"),
-    enabled: settings.providers.codex.enabled,
-    config: createdAccount ? { enabled: true, setupMode: "managed" } : settings.providers.codex,
+    enabled: true,
+    config: createdAccount ? { enabled: true, setupMode: "managed" } : {},
   };
   const mode = readCodexSetupMode(instance.config);
   const existingChosen =

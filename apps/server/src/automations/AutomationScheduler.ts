@@ -18,6 +18,8 @@ import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_SERVER_SETTINGS,
+  defaultInstanceIdForDriver,
+  resolveProviderInstanceEnabled,
   MessageId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -101,10 +103,14 @@ type Job =
 type RunRequestTrigger = Extract<AutomationCommand, { type: "automation.run.request" }>["trigger"];
 
 function fallbackModelSelection(settings: ServerSettings): ModelSelection {
-  const enabled = Object.entries(settings.providers).find(([, provider]) => provider.enabled);
-  const driver = ProviderDriverKind.make(enabled?.[0] ?? "codex");
+  const enabled = Object.entries(settings.providerInstances).find(([, instance]) =>
+    resolveProviderInstanceEnabled(instance),
+  );
+  const driver = enabled?.[1]?.driver ?? ProviderDriverKind.make("codex");
   return {
-    instanceId: ProviderInstanceId.make(driver),
+    instanceId: enabled?.[0]
+      ? ProviderInstanceId.make(enabled[0])
+      : defaultInstanceIdForDriver(driver),
     model: DEFAULT_MODEL_BY_PROVIDER[driver] ?? DEFAULT_MODEL,
   };
 }

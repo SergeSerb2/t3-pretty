@@ -52,7 +52,7 @@ import {
 } from "./ProjectTransferV2.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
-import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
+import { releaseHttpClientResponseBody } from "@t3tools/provider-core/server/releaseHttpClientResponseBody";
 
 export const PROJECT_TRANSFER_UPLOAD_ROUTE_PREFIX = "/api/project-transfers/upload";
 

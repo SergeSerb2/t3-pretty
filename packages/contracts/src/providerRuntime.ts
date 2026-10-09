@@ -558,6 +558,8 @@ export const UserInputQuestion = Schema.Struct({
     Schema.isMaxLength(PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS),
   ),
   allowCustomAnswer: Schema.optional(Schema.Boolean),
+  /** Editable initial text. Answers preserve whitespace and allow an empty string when present. */
+  initialAnswer: Schema.optional(Schema.String),
   multiSelect: Schema.optional(Schema.Boolean).pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
   ),

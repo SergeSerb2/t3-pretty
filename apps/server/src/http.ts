@@ -63,7 +63,7 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 import { loadServerConfigSnapshot } from "./serverConfigSnapshot.ts";
-import { releaseHttpClientResponseBody } from "./stream/releaseHttpClientResponseBody.ts";
+import { releaseHttpClientResponseBody } from "@t3tools/provider-core/server/releaseHttpClientResponseBody";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const OTLP_TRACES_MAX_BODY_BYTES = 4 * 1024 * 1024;

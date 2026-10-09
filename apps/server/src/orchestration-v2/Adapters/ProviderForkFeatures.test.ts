@@ -6,15 +6,15 @@ import {
   PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS,
 } from "@t3tools/contracts";
 
-import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { cursorMcpServers, cursorRuntimeAgentPolicy } from "./CursorAdapterV2.ts";
 import { claudeMcpQueryOverrides } from "./ClaudeAdapterV2.ts";
 import { codexThreadRuntimeParams, normalizeCodexUserInputQuestions } from "./CodexAdapterV2.ts";
 import { museSessionMcpConfig } from "./MuseAdapterV2.ts";
-import { buildPiRpcLaunch } from "./piT3McpInjection.ts";
+import { buildPiRpcLaunch } from "@t3tools/provider-pi/server/mcpInjection";
 import { grokAcpSpawnArgs } from "../../provider/acp/GrokAcpSupport.ts";
-import { ProviderAdapterV2RuntimePolicy } from "../ProviderAdapter.ts";
-import { T3_MCP_SERVERS_ENV } from "./piT3McpExtensionSource.ts";
+import { ProviderAdapterV2RuntimePolicy } from "@t3tools/provider-core/server/ProviderAdapter";
+import { T3_MCP_SERVERS_ENV } from "@t3tools/provider-pi/server/mcpExtensionSource";
 
 const threadId = ThreadId.make("fork-provider-mcp-thread");
 const session: McpProviderSession.McpProviderSessionConfig = {

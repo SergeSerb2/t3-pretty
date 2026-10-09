@@ -36,8 +36,8 @@ import {
   type CloudCliOAuthConfig,
 } from "./publicConfig.ts";
 import { renderLoopbackAuthorizationCompleteHtml } from "./cliAuthHtml.ts";
-import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
-import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
+import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import { releaseHttpClientResponseBody } from "@t3tools/provider-core/server/releaseHttpClientResponseBody";
 
 const CLOUD_CLI_OAUTH_TOKEN_SECRET = "cloud-cli-oauth-token";
 const CLOUD_CLI_OAUTH_CALLBACK_TIMEOUT = Duration.minutes(10);
