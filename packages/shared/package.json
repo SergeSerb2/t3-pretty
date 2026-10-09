@@ -542,6 +542,10 @@
     "./mcpResponsePayloads": {
       "types": "./src/mcpResponsePayloads.ts",
       "import": "./src/mcpResponsePayloads.ts"
+    },
+    "./PtyAdapter": {
+      "types": "./src/PtyAdapter.ts",
+      "import": "./src/PtyAdapter.ts"
     }
   },
   "scripts": {

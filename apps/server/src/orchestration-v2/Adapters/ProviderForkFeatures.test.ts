@@ -49,6 +49,11 @@ describe("fork provider workflows on V2", () => {
       assert.deepEqual(Object.keys(muse), expectedNames);
       for (const server of session.servers) {
         assert.deepInclude(cursor?.[server.name], { type: "http", url: server.url });
+        assert.deepInclude(claude.mcpServers?.[server.name], {
+          type: "http",
+          url: server.url,
+          headers: { Authorization: "${T3_CODE_MCP_AUTHORIZATION}" },
+        });
         assert.isTrue((claude.allowedTools ?? []).includes(`mcp__${server.name}__*`));
         assert.deepInclude(muse[server.name], {
           transport: "streamableHttp",
@@ -56,6 +61,10 @@ describe("fork provider workflows on V2", () => {
           url: server.url,
         });
       }
+      assert.deepEqual(claude.mcpEnvironment, {
+        T3_CODE_MCP_AUTHORIZATION: session.authorizationHeader,
+      });
+      assert.notInclude(JSON.stringify(claude.mcpServers), session.authorizationHeader);
       const restricted = claudeMcpQueryOverrides({ threadId, readOnlySandbox: true });
       assert.isFalse((restricted.allowedTools ?? []).includes("mcp__t3-code-computer__*"));
       assert.isFalse((restricted.allowedTools ?? []).includes("mcp__connected-app__*"));
