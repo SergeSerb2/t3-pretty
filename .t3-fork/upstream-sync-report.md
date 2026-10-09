@@ -1,183 +1,30 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.46-nightly.20261009.2861`
-- Previously integrated parent nightly: `v0.0.46-nightly.20261008.2849`
-- Conflict resolver: `gpt-6.1-sol` with `xhigh` reasoning
-- Cache reused for text conflicts; two leftover files and three rename/delete tests were finished by hand so the merge keeps both Pretty behavior and the parent provider-package move
+- Parent nightly: `v0.0.46-nightly.20261009.2873`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261009.2861`
+- Conflict resolver: manual (scheduled sync Buildkite #3322 declined `apps/server/src/server.ts` as unsafe and then failed frozen install)
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `pnpm-lock.yaml` — fork-only dependency entries are re-derived by lockfile regeneration against the merged package manifests
-- `apps/desktop/src/app/DesktopLifecycle.test.ts` — Retains setDockAttention in both supplied DesktopWindow mocks, preserving lifecycle-test compatibility with Pretty's dock-attention API.
-- `apps/desktop/src/app/DesktopLifecycle.test.ts` — Retains setWindowButtonVisibility in both supplied DesktopWindow mocks, preserving lifecycle-test compatibility with Pretty's macOS traffic-light visibility API.
-- `apps/desktop/src/app/DesktopLifecycle.test.ts` — Leaves T3 Pretty app naming and the existing shutdown, exit, and window-bounds-flush test setup unchanged.
-- `apps/desktop/src/backend/DesktopBackendPool.test.ts` — Retain the setDockAttention test stub supporting T3 Pretty’s dock-attention service contract, including failure on unexpected invocation.
-- `apps/desktop/src/backend/DesktopBackendPool.test.ts` — Retain the setWindowButtonVisibility test stub supporting T3 Pretty’s macOS traffic-light visibility behavior, including failure on unexpected invocation.
-- `apps/desktop/src/preview/Manager.ts` — ExpectedAgentInput retains its PreviewInputSignal and expiration timestamp, preserving the contract used for Pretty's expected-agent-input tracking.
-- `apps/desktop/src/preview/Manager.ts` — Preserved the shared SendCommand contract, including optional CDP sessionId and PreviewManagerError typing, used by automation preparation, control commands, cleanup commands, and evaluation.
-- `apps/desktop/src/preview/Manager.ts` — Preserved the relocated navigation helper and its existing syncState consumer without duplicating the declaration or changing load-failure preservation and back/forward state handling.
-- `apps/desktop/src/window/DesktopApplicationMenu.test.ts` — Retained the setDockAttention mock method, preserving test-service compatibility with T3 Pretty's dock-attention behavior.
-- `apps/desktop/src/window/DesktopApplicationMenu.test.ts` — Retained the setWindowButtonVisibility mock method, preserving test-service compatibility with T3 Pretty's macOS traffic-light visibility behavior.
-- `apps/desktop/src/window/DesktopApplicationMenu.ts` — Manual update checks retain observable feedback for checking, available, downloading, and downloaded states, plus the fallback message, through the existing describePendingUpdate consumer.
-- `apps/desktop/src/window/DesktopApplicationMenu.ts` — Pending-update dialogs retain T3 Pretty branding, downloaded-version precedence, sidebar download/progress guidance, and restart-to-install instructions.
-- `apps/desktop/src/window/DesktopWindow.ts` — Retained setWindowButtonVisibility for hiding macOS traffic lights in the collapsed icon rail and restoring them when the sidebar expands or peeks, with no-op behavior off macOS.
-- `apps/desktop/src/window/DesktopWindow.ts` — Retained setDockAttention for the waiting-thread dock badge and a single informational bounce when the count grows while the window is backgrounded.
-- `apps/desktop/src/window/DesktopWindow.ts` — Retain setWindowButtonVisibility and remembered macOS traffic-light visibility for sidebar collapse, peek, and restoration behavior, including platform and missing/destroyed-window guards.
-- `apps/desktop/src/window/DesktopWindow.ts` — Retain Dock badge updates and clearing, with bounces limited to a growing, seeded backlog while the main window is unfocused.
-- `apps/desktop/src/window/DesktopWindow.ts` — Retain cancellation of an existing Dock bounce before replacing its tracked ID, preserving the ID used for subsequent cancellation.
-- `apps/mobile/src/components/AppSymbol.tsx` — Retains the fork-added IconCircleFilled, IconCircleHalf2, and IconCircleMinus bindings in the mobile AppSymbol component without replacing or renaming them.
-- `apps/mobile/src/components/AppSymbol.tsx` — Maintains individual Tabler icon imports, avoiding eager registration of the entire icon set in Metro.
-- `apps/mobile/src/components/AppSymbol.tsx` — Retain the circle.fill → IconCircleFilled Android mapping for T3 Pretty callers.
-- `apps/mobile/src/components/AppSymbol.tsx` — Retain the circle.lefthalf.filled → IconCircleHalf2 Android mapping, preserving the fork's distinct half-filled circle visual.
-- `apps/mobile/src/components/ProviderIcon.tsx` — The fork-added grokBot provider still renders its dedicated Grok SVG rather than relying on unverified provider-client support or falling through to the unknown-provider icon.
-- `apps/mobile/src/components/ProviderIcon.tsx` — Grok Bot retains its exact SVG paths, light/dark appearance colors, and requested icon size, including when rendered through ProviderInstanceIcon with its existing dimming and account badge.
-- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Kept Pretty's glass Home cards, StatusPill/badge map, stored-shelf glyph, and active-subagent count. The parent's status-icon map targets the older flat-row list Pretty already replaced.
-- `apps/server/package.json` — Retain @sentry/node at ^11.4.0 as a runtime dependency supporting T3 Pretty's fork-specific server observability and opt-in agent monitoring.
-- `apps/server/src/auth/SessionStore.ts` — Retained the fork's subscribeChanges API, including its scoped acquisition of a SessionCredentialChange stream and never-failing Effect contract.
-- `apps/server/src/http.ts` — Retains Pretty's distinction between stricter html_render publication policies, client restrictions for older backend responses, and ordinary HTML previews; none of those policy paths are removed or replaced.
-- `apps/server/src/http.ts` — Preserves ordinary HTML previews' signed sibling resources and sandbox permissions for scripts, forms, and popups, without granting same-origin access or modal dialogs.
-- `apps/server/src/http.ts` — Leaves explicit attachment-download MIME and CSP protections, SVG restrictions, and asset response routing unchanged.
-- `apps/server/src/keybindings.ts` — Retained readTextWithinLimit, preserving T3 Pretty's bounded keybindings-file read integration. The existing 256 KiB configuration limit remains unchanged.
-- `apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.testkit.ts` — After the Cursor package move, the replay harness uses `@t3tools/provider-cursor` imports and `layerTestProviderHost` instead of the deleted local adapter modules and the old ServerConfig helper.
-- `apps/server/src/provider/EventNdjsonLogger.ts` — Retained the readonly optional verbose capability and its T3CODE_LOG_PROVIDER_EVENTS_VERBOSE documentation on the exported server logger type, preserving typed access for fork consumers.
-- `apps/server/src/provider/EventNdjsonLogger.ts` — Left the existing verbose store options and native transient-record filtering definitions unchanged.
-- `apps/server/src/provider/ProviderEventLoggers.ts` — Preserves T3 Pretty's T3CODE_LOG_PROVIDER_EVENTS_VERBOSE configuration, its false default, and its propagation into the shared NDJSON log store, keeping verbose native provider logging available without changing default filtering.
-- `apps/server/src/provider/providerStatusCache.ts` — Retained the readTextWithinLimit import and 4 MiB provider-status cache limit without changing their existing names or wiring.
-- `apps/server/src/server.ts` — Preserves Pretty's import of the ACP registry catalog layer as AcpRegistryCatalogLive, rather than reverting its server layer binding to the BASE namespace import.
-- `apps/server/src/server.ts` — Keep AgentInstructionFiles.layer provided in the runtime dependency graph.
-- `apps/server/src/server.ts` — Keep SkillMarketplace.layer and SkillLibrary.layer provided for Pretty's skill services.
-- `apps/server/src/server.ts` — Keep AppsService.layer provided alongside the existing AppsHttp route registration.
-- `apps/server/src/server.ts` — Retain Pretty's WorkspaceLayerLive instead of reverting to the unchanged base layerWorkspace.
-- `apps/server/src/serverRuntimeState.ts` — Retains the fork-added readTextWithinLimit dependency, leaving the bounded runtime-state reading behavior and existing 64 KiB limit unchanged.
-- `apps/server/src/telemetry/Identify.ts` — Retains the fork-added readTextWithinLimit import used for telemetry identity read hardening, without changing the existing provider identity and anonymous ID size limits.
-- `apps/server/src/textGeneration/CodexTextGeneration.test.ts` — Retain the fork-added TEXT_GENERATION_RESULT_MAX_BYTES import from provider-core, preserving the result-size-limit dependency for Codex text-generation tests.
-- `apps/web/src/AppRoot.tsx` — Keep ContextMenuHost mounted at the application root, preserving T3 Pretty's in-app glass context-menu entry point outside routed content.
-- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Shared requestAnimationFrame-coalesced resize and captured passive scroll handling remains wired to browser-surface updates.
-- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Subscription cleanup still removes global listeners and cancels pending animation-frame work when the last subscriber leaves.
-- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Existing inline-preview resize observation and browser-surface presentation, lease reacquisition, and release behavior remain intact.
-- `apps/web/src/browser/ElectronBrowserHost.tsx` — Retained useShallow for the visible-browser-surface and mini-player thread-key subscriptions shown in the host.
-- `apps/web/src/browser/ElectronBrowserHost.tsx` — Retained usePreviewMiniPlayerStore and useAutomatingPreviewThreads, preserving the dependencies used to pin mini-player and automating preview threads.
-- `apps/web/src/browser/ElectronBrowserHost.tsx` — Retained MAX_RESIDENT_PREVIEW_THREADS, resolveResidentPreviewThreads, and useRef for the fork's residency management and reference-backed bookkeeping.
-- `apps/web/src/components/preview/PreviewView.tsx` — Retains runPreviewControl unchanged, including deferred operation execution, handling of synchronous throws and promise rejections, and the 'Preview action failed' toast with an error message or fallback.
-- `apps/web/src/components/preview/PreviewView.tsx` — Preserve the deliberate bg-card styling for preview load-failure overlays and apply the same fork theming to the new file-not-shown overlay.
-- `apps/web/src/components/preview/PreviewView.tsx` — Keep the existing PreviewUnreachable fallback, including reload and conditional move-to-server actions, for load failures without download metadata.
-- `apps/web/src/components/preview/openPreviewSession.test.ts` — Keep the partial browserDefaults mock: resolveBrowserDefaults asynchronously reads the configured defaults through the real getBrowserDefaults while other module exports remain intact.
-- `apps/web/src/components/preview/openPreviewSession.test.ts` — Preserve existing session/link settings-read failure and retry coverage, including no RPC or state mutation on failure and use of the saved viewport, profile, and thread environment on retry.
-- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Route details remain accessible without an add-route handler. EnvironmentRoutesList receives undefined when onAddRoute is unavailable, preserving T3 Pretty's optional route-creation behavior and avoiding an unconditional callback invocation.
-- `apps/web/src/components/settings/EnvironmentRoutesList.tsx` — The Add route button and its wrapper remain hidden when the optional onAddRoute callback is absent, avoiding an unavailable action. When provided, the callback remains wired to the button.
-- `apps/web/src/hooks/useSettings.ts` — Retains Pretty's exportGlobalEnvironment command for global-environment secret sharing across Surge Connect, including its export-specific label and reportFailure: false configuration.
-- `apps/web/src/hooks/useSettings.ts` — Shared global-environment secrets still use exportGlobalEnvironment and prepareSharedGlobalEnvironmentFanOut before saving to connected environments; later connections do not automatically receive secrets.
-- `apps/web/src/hooks/useSettings.ts` — An unsuccessful secret export still warns the user and excludes globalEnvironment from other targets while retaining the selected environment's write and unrelated shared settings.
-- `apps/web/src/hooks/useSettings.ts` — Each target still receives capability-filtered settings and is authorized against its actual targetPatch, with the existing pending-session allowance preserved.
-- `apps/web/src/hooks/useSettings.ts` — Local server settings and client preferences retain their existing persistence paths; shared-secret preparation remains reachable through the settings updater with its export dependency intact.
-- `apps/web/src/hooks/useThreadActions.ts` — Keep removeDeletedThreadUiState(target) wired to successful deletion of archived or otherwise non-store threads.
-- `apps/web/src/hooks/useThreadActions.ts` — Keep removeDeletedThreadUiState(threadRef) wired to successful deletion of resolved threads, preserving OURS's cleanup refactor rather than replacing it with preview-only cleanup or restoring the separate terminal call.
-- `packages/contracts/src/ipc.ts` — DesktopPreviewPointerEventSchema remains exported with its existing tab-ID validation, move/click/type/press/scroll phases, numeric coordinates, integer sequence, and creation timestamp, matching the existing DesktopPreviewPointerEvent interface.
-- `packages/contracts/src/preview.ts` — Retained the effect/Schema namespace import used by the fork's current schema-validation API.
-- `packages/contracts/src/preview.ts` — Retained ENTITY_ID_MAX_LENGTH for bounded PreviewThreadId validation and the fork-added IsoDateTime dependency.
-- `packages/contracts/src/preview.ts` — LoadFailed descriptions retain T3 Pretty's Diagnostic validation rather than reverting to unrestricted Schema.String, including through PreviewSessionSnapshot and PreviewReportStatusInput.
-- `packages/contracts/src/preview.ts` — Failed-preview event descriptions retain the fork's Diagnostic schema and its validation rather than reverting to Schema.String.
-- `packages/provider-acp/src/server/coreRuntimeEvents.ts` — Retain the local canonicalItemTypeFromAcpToolKind implementation, including classifySkillLoadItemType precedence so skill-loading tools retain their specialized lifecycle classification.
-- `packages/provider-acp/src/server/coreRuntimeEvents.ts` — Preserve the local classifier's existing command-execution, file-change, web-search, and dynamic-tool-call mappings.
-- `packages/provider-core/package.json` — Preserved the fork-added ./server/releaseHttpClientResponseBody package export, keeping its types and import entry points available to consumers.
-- `packages/provider-cursor/src/server/textGeneration.ts` — Retains the fork-added TEXT_GENERATION_RESULT_MAX_BYTES import without changing any existing result-size limiting consumers.
-- `packages/provider-grok/src/server/acpSupport.ts` — Retained ModelCapabilities and ModelSelection imports supporting the fork's Grok model capability and selection integration.
-- `packages/provider-grok/src/server/acpSupport.ts` — Retained the EffectAcpSchema type import from effect-acp/compat.
-- `packages/provider-grok/src/server/acpSupport.ts` — Retained the NodeServices import for the fork's platform-service integration.
-- `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Keep XAiAskUserQuestionRequest imported exactly once through its existing earlier entry, preserving the schema decoder and question/option limit test wiring.
-- `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Preserve all existing Grok extension helper imports and test wiring, including plan handling, rate-limit messaging, prompt completion, subagent updates, and background-task tracking.
-- `packages/provider-muse/src/server/adapter.test.ts` — Retains museReplayEntryHost from ./MuseAdapterV2.testkit.ts, preserving the fork-added helper wiring for replay tests.
-- `packages/provider-muse/src/server/textGeneration.ts` — Retains T3 Pretty's TextGenerationOperations integration instead of reverting to the BASE-style adapter-local prompt and sanitizer dependencies.
-- `packages/provider-muse/src/server/textGeneration.ts` — Preserves OURS's removal of the legacy TextGeneration namespace and standalone-generator imports; the resolution does not alter generation handlers or consumers.
-- `packages/provider-muse/src/server/textGeneration.ts` — Preserved the fork's deliberate removal of the legacy Operation alias, leaving its existing TextGenerationOperations and toJsonSchemaObject integration untouched.
-- `packages/provider-muse/src/server/textGeneration.ts` — Muse remains wired through TextGenerationOperations.fromRunner and its existing runMuseJson runner, rather than reverting to the four manually assembled BASE operations.
-- `packages/provider-muse/src/server/textGeneration.ts` — The factory's complete returned service and inferred type are retained; the satisfies check does not narrow away additional fork operations or change runtime behavior.
+- `apps/server/src/server.ts` — Runtime still provideMerges one ACP registry catalog so search, prepare, status inspection, and turn launch share the same prepared-agent cache. The deleted local `AcpRegistryCatalogLive` alias is not restored.
+- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` — Every granted MCP server (built-in toolkits and connected apps) is still registered on the Claude query, not only `t3-code`.
+- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` — Per-thread agent-device environment still wraps Claude query startup through `withAgentDeviceEnvironment`.
+- `packages/client-runtime/src/connection/routes.ts` — Default learned-route policy stays HTTPS-only. Production `learnRoutes` does not pass `allowInsecure`, so a browser page cannot learn mixed-content HTTP routes. Credential inheritance, route reconciliation, and Tailscale labeling remain unchanged.
 
 ## Parent changes integrated at conflict boundaries
 
-- `pnpm-lock.yaml` — took the parent nightly's generated lockfile wholesale instead of AI-splicing it
-- `apps/desktop/src/app/DesktopLifecycle.test.ts` — Adds the upstream runMainContentsCommand mock to the shared DesktopWindow test layer.
-- `apps/desktop/src/app/DesktopLifecycle.test.ts` — Adds the same API to the inline DesktopWindow mock checked against DesktopWindow.Service, keeping the concurrent-relaunch test compatible with the updated service contract.
-- `apps/desktop/src/backend/DesktopBackendPool.test.ts` — Add the parent’s runMainContentsCommand test stub to the provided DesktopWindow service, including failure on unexpected invocation.
-- `apps/desktop/src/preview/Manager.ts` — Added OpenLinkListener with DesktopPreviewOpenLinkEvent input and an Effect.Effect&lt;void&gt; return type for upstream preview open-link handling.
-- `apps/desktop/src/preview/Manager.ts` — Navigation status now uses WebContents.isLoadingMainFrame() instead of isLoading(), preventing late-loading cross-origin iframes from leaving the preview tab's loading indicator stuck. Retained upstream's explanatory comment.
-- `apps/desktop/src/window/DesktopApplicationMenu.test.ts` — Added runMainContentsCommand to the DesktopWindow test service, recording main-${command} through selectedAction so native menu command routing can be asserted.
-- `apps/desktop/src/window/DesktopApplicationMenu.ts` — Add the parent's runMainContentsCommand Effect helper, preserving its typed command API, tracing name, DesktopWindow service dependency, and delegation to desktopWindow.runMainContentsCommand.
-- `apps/desktop/src/window/DesktopWindow.ts` — Added runMainContentsCommand using the existing MainWindowContentsCommand type for reload, forceReload, and toggleDevTools commands targeting the main window's webContents rather than a focused preview guest.
-- `apps/desktop/src/window/DesktopWindow.ts` — Add runMainContentsCommand for reload, cache-bypassing reload, and DevTools toggling.
-- `apps/desktop/src/window/DesktopWindow.ts` — Target the registered main window rather than the focused window so an OAuth popup is not reloaded during sign-in; retain command tracing and missing/destroyed-window guards.
-- `apps/mobile/src/components/AppSymbol.tsx` — Adds the parent's IconCircleDashed binding using its individual Tabler module import.
-- `apps/mobile/src/components/AppSymbol.tsx` — Add the parent's circle.dashed → IconCircleDashed Android mapping alongside the fork mappings.
-- `apps/mobile/src/components/ProviderIcon.tsx` — Remove the BASE-era hardcoded grok, cursor, and muse icon branches, allowing those providers to use getProviderClient(props.provider)?.icon and the existing package-driven SVG renderer, including theme-specific fills and per-path fill rules.
-- `apps/server/package.json` — Add @t3tools/provider-acp as a workspace runtime dependency.
-- `apps/server/package.json` — Remove the direct @opencode/client, @opencode/protocol, and @opencode/schema dependencies, which OURS had left unchanged from BASE. The existing @t3tools/provider-opencode workspace dependency remains intact.
-- `apps/server/src/auth/SessionStore.ts` — Added the parent's awaitInvalidation(sessionId) API with its void result and SessionCredentialVerificationError contract alongside the fork subscription API.
-- `apps/server/src/http.ts` — Adds allow-downloads to the shared HTML preview CSP so download links and buttons work for HTML served through either the explicit text/html MIME branch or the .html/.htm filename branch, and retains the parent's explanatory comment.
-- `apps/server/src/keybindings.ts` — Migrated writeFileStringAtomically from the server-local module to @t3tools/shared/atomicWrite without changing the imported symbol.
-- `apps/server/src/provider/EventNdjsonLogger.ts` — Adopted the shared EventNdjsonLogger contract from provider-core instead of independently redeclaring filePath, write, and close. The server export now composes that contract with the fork-specific flag.
-- `apps/server/src/provider/ProviderEventLoggers.ts` — Removes the obsolete effect/Context import; the service continues using the ProviderEventLoggers and NoOpProviderEventLoggers implementations imported from provider-core.
-- `apps/server/src/provider/providerStatusCache.ts` — Migrated writeFileStringAtomically from the server-local module to @t3tools/shared/atomicWrite.
-- `apps/server/src/server.ts` — Migrates OpenCodeRuntime to @t3tools/provider-opencode/server/OpenCodeRuntime while retaining its existing namespace binding.
-- `apps/server/src/server.ts` — Migrates OpenCodeServerLedger to @t3tools/provider-opencode/server/OpenCodeServerLedger while retaining its existing namespace binding.
-- `apps/server/src/server.ts` — Construct OpenCodeServerLedger.layer with ServerConfig.stateDir through Layer.unwrap and provide it to the shared OpenCodeRuntime.layer.
-- `apps/server/src/serverRuntimeState.ts` — Migrates runtime-state persistence to @t3tools/shared/atomicWrite while retaining the existing call arguments and ServerRuntimeStateError wrapping.
-- `apps/server/src/telemetry/Identify.ts` — Moves writeFileStringAtomically to the parent’s @t3tools/shared/atomicWrite module while preserving the existing local binding.
-- `apps/server/src/textGeneration/CodexTextGeneration.test.ts` — Migrate writeFakeCli to @t3tools/provider-testing/fakeCli without changing the existing fake Codex CLI construction or argument and stdin checks.
-- `apps/web/src/AppRoot.tsx` — Mount BrowserProfileReporter at the application root alongside ElectronBrowserHost, within the shared AppAtomRegistryProvider.
-- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Observe sidebar-gap elements so opening or closing the sidebar updates browser-surface placement even when the slot itself does not resize. The existing observer cleanup disconnects these additional observations.
-- `apps/web/src/browser/ElectronBrowserHost.tsx` — Integrated the parent's useState import while retaining the shared useRef import.
-- `apps/web/src/browser/ElectronBrowserHost.tsx` — Integrated the parent's previewEnvironment dependency alongside the fork's mini-player dependency.
-- `apps/web/src/browser/ElectronBrowserHost.tsx` — Integrated the parent's openUrlInPreview dependency alongside the fork's preview guest residency helpers.
-- `apps/web/src/components/preview/PreviewView.tsx` — Adds ServerTabFileNotShown, isolating stream-access resolution to the mounted server-tab downloaded-file placeholder.
-- `apps/web/src/components/preview/PreviewView.tsx` — Preserves the placeholder's file name and URL, environment/thread/tab-scoped download URL when access is available, null download URL otherwise, and external-open action with rejection handling.
-- `apps/web/src/components/preview/PreviewView.tsx` — Render ServerTabFileNotShown for LoadFailed navigation states carrying download metadata, passing through the thread reference, snapshot tab ID with its empty-string fallback, URL, and download data.
-- `apps/web/src/components/preview/PreviewView.tsx` — Retain the parent's conditional routing between download-specific failures and ordinary unreachable-page failures.
-- `apps/web/src/components/preview/openPreviewSession.test.ts` — Regression coverage for opening links with the source tab's explicit profile rather than the default.
-- `apps/web/src/components/preview/openPreviewSession.test.ts` — Regression coverage for background opens retaining the current active tab while adding the new session.
-- `apps/web/src/components/preview/openPreviewSession.test.ts` — Regression coverage for preserving user tab selections during an in-flight background open, including selection of the newly opened tab through the right-panel store.
-- `apps/web/src/components/preview/openPreviewSession.test.ts` — Regression coverage for foreground opens activating the new tab.
-- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Render SessionPermissions through the existing Permissions disclosure, using the current environmentId, connection state, and routeContext.
-- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Allow routes and permissions to expand independently, with the permissions panel ID matching the existing button's aria-controls. Existing open/close handlers and reduced-motion-aware disclosure transitions remain unchanged.
-- `apps/web/src/components/settings/EnvironmentRoutesList.tsx` — Apply the parent’s Add route layout change to -ml-1.5 pt-1, removing the previous footer divider and padding.
-- `apps/web/src/hooks/useSettings.ts` — Uses the upstream persist command name, allowing the existing persistServerSettings callback to wrap it without a duplicate declaration or unresolved reference.
-- `apps/web/src/hooks/useSettings.ts` — Disables automatic command failure reporting so the wrapper supplies environment-specific save-failure notifications, suppresses interrupted-command errors, and avoids duplicate generic notifications.
-- `apps/web/src/hooks/useSettings.ts` — Shared-settings writes are collected and persisted concurrently, with one aggregate error notification distinguishing complete failure from partial success and naming failed and successful environments.
-- `apps/web/src/hooks/useSettings.ts` — Interrupted command failures remain excluded from save-error reporting, and underlying command errors retain upstream's formatting and fallback message.
-- `apps/web/src/hooks/useSettings.ts` — When no writes can proceed, permission warnings identify denied environments while retaining older-server and unavailable-primary warnings.
-- `apps/web/src/hooks/useSettings.ts` — The updater includes the direct persist command in its callback dependencies.
-- `apps/web/src/hooks/useThreadActions.ts` — Clear thread preview state after successful deletion in both the non-store and resolved-thread paths.
-- `apps/web/src/hooks/useThreadActions.ts` — Keep preview cleanup behind the mutation's success check, so failed deletions do not clear preview state.
-- `packages/contracts/src/ipc.ts` — Added DesktopPreviewOpenLinkEvent with source tabId, destination url, and the background flag documenting non-focus-taking middle-click/Cmd-click behavior.
-- `packages/contracts/src/preview.ts` — Added BROWSER_PROFILE_MAX_COUNT and BrowserProfile alongside BrowserProfileId, preserving the parent's browser-profile limit and schema dependencies.
-- `packages/contracts/src/preview.ts` — LoadFailed gains optional PreviewFileDownload metadata containing the downloaded file's id and fileName, with the parent's documentation of server-tab download behavior. Existing statuses without download metadata remain valid.
-- `packages/contracts/src/preview.ts` — Failed-preview events gain the optional PreviewFileDownload field, preserving upstream's download metadata contract.
-- `packages/provider-acp/src/server/coreRuntimeEvents.ts` — Update ACP permission-request, plan-update, and tool-call-state type imports to the parent's renamed ./runtimeModel.ts module.
-- `packages/provider-core/package.json` — Added the parent ./server/runtimeInstructions package export with both types and import mappings.
-- `packages/provider-cursor/src/server/textGeneration.ts` — Updates Cursor SDK model selection to the parent's server-local ./sdkModel.ts module.
-- `packages/provider-cursor/src/server/textGeneration.ts` — Updates the CursorAuth type import to the parent's server-local ./auth.ts module, retaining the existing withAccess parameter.
-- `packages/provider-grok/src/server/acpSupport.ts` — Moved GrokSettings typing from @t3tools/contracts to ../settings.ts, retaining the existing binaryPath-based runtime settings declaration.
-- `packages/provider-grok/src/server/acpSupport.ts` — Kept ProviderApprovalOption and ProviderDriverKind available through their existing shared imports without introducing duplicates.
-- `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Use the upstream lowercase ./xaiAcpExtension.ts module path.
-- `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Use the shared @t3tools/provider-acp/server/AcpSessionRuntime module while retaining the existing runtime construction and prompt-completion wrapper.
-- `packages/provider-muse/src/server/adapter.test.ts` — Updates the makeMuseAdapterV2 and MuseAdapterV2Options import to the parent's ./adapter.ts module path.
-- `packages/provider-muse/src/server/textGeneration.ts` — Moves MuseSettings from @t3tools/contracts to the provider-local ../settings.ts module.
-- `packages/provider-muse/src/server/textGeneration.ts` — Uses the relocated ./sdk.ts exports for Muse SDK host creation and typing.
-- `packages/provider-muse/src/server/textGeneration.ts` — Uses the relocated ./modelCatalog.ts exports for model capabilities and reasoning-effort resolution.
-- `packages/provider-muse/src/server/textGeneration.ts` — Apply the parent's ProviderTextGeneration contract to the factory-produced service, adapting the upstream type migration to the fork's shared-operation architecture.
-- `packages/provider-opencode/src/server/OpenCodeRuntime.cliParsers.test.ts` — Restored the parent package tests. Git rename-detection treated the OpenCode package move as a Pretty deletion; OpenCode is a shipped provider and those tests belong with the package.
-- `packages/provider-opencode/src/server/OpenCodeRuntime.permissions.test.ts` — Restored with the parent OpenCode package move.
-- `packages/provider-opencode/src/server/textGeneration.test.ts` — Restored with the parent OpenCode package move.
-- `apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.testkit.ts` — Switched the replay harness to `@t3tools/provider-cursor` and `layerTestProviderHost` after the local adapter modules left the server tree.
-- `apps/web/src/components/chat/providerIconUtils.ts` — Pretty's grok/grokBot icon map now draws `grokClient.icon` from `@t3tools/provider-grok/client`. Upstream #17357 deleted `GrokIcon` from `Icons.tsx` when Grok moved into its provider package.
-- Fork-only leftovers after the provider-package move now import `@t3tools/shared/atomicWrite`, provider `testing` barrels (`cursorMcpServers`, `grokAcpSpawnArgs`, `museSessionMcpConfig`, `makeGrokAdapterV2`), and `ProviderTextGeneration` from provider-core. ACP terminals stay on the parent `clientTerminals` adapter path instead of the deleted in-package `AcpTerminalHost`.
+- `pnpm-lock.yaml` — took the parent nightly's generated lockfile wholesale instead of keeping the broken auto-merge
+- `apps/server/src/server.ts` — Catalog construction uses `@t3tools/provider-acp-registry/server/AcpRegistrySupport` `layerFromHost` provided with `ProviderHostLive.layer`. That is the replacement for the deleted `./provider/AcpRegistryCatalog.ts` named-alias layer. Both the obsolete local import and a second catalog constructor are omitted so provider initialization is not orphaned or duplicated at the server surface.
+- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` — MCP Authorization travels as `${T3_CODE_MCP_AUTHORIZATION}` plus `mcpEnvironment`, so the credential is not written into CLI-visible `mcpServers`.
+- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` — Upstream MCP environment is spread into the Claude query environment before the fork's agent-device wrapper.
+- `packages/client-runtime/src/connection/routes.ts` — `reported` uses the parent's `ReportedEndpoint` (optional `kind` for Tailscale labeling). Optional `allowInsecure` opts into plaintext HTTP learning for callers that pass it; the default remains Pretty's HTTPS-only policy.
 
 ## Parent changes intentionally omitted
 
-- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Parent `STATUS_LABEL_BY_STATUS` icons and `DONE_STATUS_LABEL` on the older flat-row list. Reason: Pretty already presents status with `STATUS_BY_BADGE`, StatusPill, and glass cards. Reintroducing the old icon map would fight that layout.
-- `apps/web/src/components/preview/PreviewView.tsx` — The new download-specific overlay's bg-background styling.. Reason: Use bg-card instead to preserve T3 Pretty's deliberate preview failure-surface theming; the download-specific behavior is fully retained.
-- `apps/web/src/hooks/useSettings.ts` — THEIRS retains the BASE per-target permission check against the original, unfiltered sharedPatch.. Reason: Keep the fork's targetPatch-based check after capability filtering and secret-export fallback. Checking fields that will not be sent could block otherwise authorized writes, regressing the fork's partial fan-out behavior. This is retained parent code, not a newly introduced improvement.
-- `apps/web/src/hooks/useThreadActions.ts` — The standalone clearTerminalUiState(threadRef) line retained by THEIRS from BASE.. Reason: This is unchanged BASE code, not a new parent improvement. OURS deliberately removes this call and invokes removeDeletedThreadUiState(threadRef) earlier in the deletion path. Preserve that fork cleanup structure and add the new parent preview cleanup separately.
-- `packages/provider-acp/src/server/coreRuntimeEvents.ts` — The canonicalItemTypeFromAcpToolKind import from ./runtimeModel.ts.. Reason: It would conflict with the fork's local function of the same name. The supplied context does not establish that the upstream helper preserves the fork's skill-load classification, so the local implementation remains authoritative.
-- `packages/provider-muse/src/server/textGeneration.ts` — Parent's standalone operation builders. Reason: Pretty keeps `TextGenerationOperations.fromRunner` and only needs the `ProviderTextGeneration` type import for the factory `satisfies` check.
-- `packages/provider-muse/src/server/textGeneration.ts` — Restoration of ModelSelection, Git branch sanitizers, prompt builders, and commit/PR/thread-title sanitizer imports present on THEIRS.. Reason: These imports are unchanged from BASE and were deliberately removed by OURS in favor of TextGenerationOperations. They are not reintroduced; this is an import-only omission, not removal of a parent generation implementation.
-- `packages/provider-muse/src/server/textGeneration.ts` — Reintroducing Operation as keyof ProviderTextGeneration.. Reason: OURS removed this alias rather than retaining the base service-based typing. ProviderTextGeneration has no binding in the supplied imports, so restoring the parent alias would introduce an unresolved type into the fork's implementation. Only this type-only hunk is omitted.
+- `apps/server/src/server.ts` — The leftover `AcpRegistryCatalogLive` import from `./provider/AcpRegistryCatalog.ts`. Reason: that module was deleted when ACP Registry moved into `@t3tools/provider-acp-registry`. Keeping the alias would leave an unresolved import. `layerFromHost` is the same catalog plus runtime coordinator, built from `ProviderHost` paths.
+- `packages/client-runtime/src/connection/routes.ts` — Required `allowInsecure: boolean` on every `mergeLearnedRoutes` call. Reason: Pretty's production path must stay HTTPS-only without every caller opting in. The field is optional; omitted/`false` keeps the fork policy.
+- `packages/client-runtime/src/connection/routes.test.ts` — Parent Tailscale-label cases that learned plaintext `http://` addresses and expected them to persist through `connectionRoutes`. Reason: Pretty's catalog filter drops learned HTTP/ws routes. The same kind-based Tailscale labeling is covered with `https://` reports so the no-op third pass can see the kept learned routes.
+
+## Post-merge repairs
+
+- Regenerated `pnpm-lock.yaml` against the merged package manifests after the parent lockfile was taken wholesale. The scheduled sync's auto-merged lockfile was missing `@effect/platform-node@4.0.1` with the Effect 4 patch hash, so `pnpm install --frozen-lockfile` failed (`ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY`).
