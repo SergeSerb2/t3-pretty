@@ -836,6 +836,7 @@ ${">".repeat(7)} theirs
       assert.include(script, "unset NO_COLOR");
       assert.include(script, "refs/heads/automation/upstream-*");
       assert.include(script, "Reusing the previously validated AI resolution on");
+      assert.include(script, 'tag_is_newer_than_current "$candidate_tag"');
       assert.include(script, "credential.https://origin.cursor.com.helper=${helper}");
       assert.include(script, "SYNC_FAIL_REASON");
       assert.include(script, "merging origin/main and retrying once");

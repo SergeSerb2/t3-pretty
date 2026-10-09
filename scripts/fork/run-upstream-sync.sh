@@ -740,6 +740,12 @@ while IFS=$'\t' read -r _sha ref; do
     continue
   git merge-base --is-ancestor "$candidate_tag^{commit}" "origin/$local_name" || continue
   [[ "$(git show "origin/$local_name:.t3-fork/upstream-sync-report.md" 2>/dev/null | sed -n '1p')" == "# T3 Pretty upstream integration report" ]] || continue
+  # A resolution older than the nightly already on this tree is not a
+  # useful merge base: #3311 reused August 1170 after main already had 2833.
+  if [[ -n "$current_tag" ]] && ! tag_is_newer_than_current "$candidate_tag" &&
+    [[ "$candidate_tag" != "$current_tag" ]]; then
+    continue
+  fi
   if ! git merge-base --is-ancestor "$candidate_tag^{commit}" "$latest_tag^{commit}" &&
     same_first_parent_line "$candidate_tag^{commit}" "$latest_tag^{commit}"; then
     continue
