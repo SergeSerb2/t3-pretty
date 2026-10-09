@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261008.2833003310",
+    date: "2026-10-09",
+    items: [
+      {
+        kind: "fixed",
+        title: "Project-rail gutter to unblock nightly 20261008.2849",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock upstream sync v0.0.46-nightly.20261008.2849",
+      },
+      {
+        kind: "fixed",
+        title: "Ease the chatbox hover highlight",
+      },
+      {
+        kind: "new",
+        title: "One-row iPhone Home header and cleaner thread cards",
+      },
+      {
+        kind: "new",
+        title: "Flat pastel mint buttons",
+      },
+      {
+        kind: "fixed",
+        title: "Show the Home wallpaper behind the thread list again",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261008.2833003306",
     date: "2026-10-09",
     items: [
