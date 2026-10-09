@@ -13,8 +13,8 @@ import {
   TextGenerationError,
 } from "@t3tools/contracts";
 
-import * as TextGenerationOperations from "./TextGenerationOperations.ts";
-import { TEXT_GENERATION_RESULT_MAX_BYTES } from "./TextGenerationUtils.ts";
+import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
+import { TEXT_GENERATION_RESULT_MAX_BYTES } from "@t3tools/provider-core/server/textGenerationUtils";
 import { cursorSdkModelSelection } from "../provider/cursorSdkModel.ts";
 import type { CursorAuth } from "../provider/CursorAuth.ts";
 

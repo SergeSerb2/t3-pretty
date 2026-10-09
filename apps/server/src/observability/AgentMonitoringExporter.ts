@@ -14,7 +14,7 @@ import * as OtlpSerialization from "effect/observability/OtlpSerialization";
 import type { TraceData } from "effect/observability/OtlpTracer";
 
 import packageJson from "../../package.json" with { type: "json" };
-import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
+import { releaseHttpClientResponseBody } from "@t3tools/provider-core/server/releaseHttpClientResponseBody";
 import { type AgentObservation } from "./AgentObservation.ts";
 import type { DeliveryReceipt, DeliverySignal } from "./AgentMonitoringJournal.ts";
 

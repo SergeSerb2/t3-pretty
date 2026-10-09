@@ -274,7 +274,7 @@ function InstructionListSkeleton({ rows }: { rows: number }) {
 function InstructionFileIcon({ file }: { file: AgentInstructionFile }) {
   const driverOption = getDriverOption(file.driver);
   if (driverOption !== undefined) {
-    return <ProviderInstanceIcon displayName={driverOption.label} driverKind={driverOption.value} className="size-4.5" />;
+    return <ProviderInstanceIcon displayName={driverOption.label} driverKind={driverOption.driverKind} className="size-4.5" />;
   }
   if (file.fileName.startsWith("CLAUDE")) {
     return <ClaudeAI className="size-4.5" />;

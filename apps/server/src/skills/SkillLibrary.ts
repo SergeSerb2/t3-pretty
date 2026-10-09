@@ -56,7 +56,7 @@ import * as Schema from "effect/Schema";
 
 import { readTextPrefix, readTextWithinLimit } from "../boundedFileRead.ts";
 import * as ServerConfig from "../config.ts";
-import { expandHomePath } from "../pathExpansion.ts";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { ServerSettingsService } from "../serverSettings.ts";
 
 const SKILL_ID_PREFIX = "host:";

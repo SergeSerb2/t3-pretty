@@ -8,248 +8,43 @@ import {
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   TextGenerationError,
 } from "@t3tools/contracts";
-import type {
-  BranchNamingOptions,
-  ChatAttachment,
-  ModelSelection,
-  ProviderInstanceId,
-} from "@t3tools/contracts";
+import type { ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
+import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import type { ProviderInstance } from "../provider/ProviderDriver.ts";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as ThreadTitleLinks from "./ThreadTitleLinks.ts";
-import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
 
-export type TextGenerationProvider = "codex" | "claudeAgent" | "cursor" | "grok";
-
-export interface CommitMessageGenerationInput {
-  cwd: string;
-  branch: string | null;
-  stagedSummary: string;
-  stagedPatch: string;
-  /** When true, the model also returns a semantic branch name for the change. */
-  includeBranch?: boolean;
-  policy?: TextGenerationPolicy | undefined;
-  /** What model and provider to use for generation. */
-  modelSelection: ModelSelection;
-}
-
-export interface CommitMessageGenerationResult {
-  subject: string;
-  body: string;
-  /** Only present when `includeBranch` was set on the input. */
-  branch?: string | undefined;
-}
-
-export interface PrContentGenerationInput {
-  cwd: string;
-  baseBranch: string;
-  headBranch: string;
-  commitSummary: string;
-  diffSummary: string;
-  diffPatch: string;
-  changeRequestTemplate?: string | undefined;
-  policy?: TextGenerationPolicy | undefined;
-  /** What model and provider to use for generation. */
-  modelSelection: ModelSelection;
-}
-
-export interface PrContentGenerationResult {
-  title: string;
-  body: string;
-}
-
-export interface BranchNameGenerationInput {
-  naming?: BranchNamingOptions | undefined;
-  cwd: string;
-  message: string;
-  attachments?: ReadonlyArray<ChatAttachment> | undefined;
-  /** What model and provider to use for generation. */
-  modelSelection: ModelSelection;
-}
-
-export interface BranchNameGenerationResult {
-  branch: string;
-}
-
-export interface ThreadTitleGenerationInput {
-  linkedContext?: string | undefined;
-  cwd: string;
-  message: string;
-  /** Present when replacing an existing title from the current thread history. */
-  previousTitle?: string | undefined;
-  attachments?: ReadonlyArray<ChatAttachment> | undefined;
-  /** What model and provider to use for generation. */
-  modelSelection: ModelSelection;
-}
-
-export interface ThreadTitleGenerationResult {
-  title: string;
-  needsRefinement?: boolean | undefined;
-}
-
-export interface ActivityHeadlineGenerationInput {
-  cwd: string;
-  /** Raw activity summary as ingested from the provider. */
-  summary: string;
-  /** Full command text when the activity is a command run. */
-  command?: string | undefined;
-  /** Tool detail/output excerpt when available. */
-  detail?: string | undefined;
-  /** What model and provider to use for generation. */
-  modelSelection: ModelSelection;
-}
-
-export interface ActivityHeadlineGenerationResult {
-  /** Empty string when the model returned nothing usable. */
-  headline: string;
-}
-
-export interface HomeSuggestionsGenerationInput {
-  cwd: string;
-  /** Digest of projects and recent threads; see `HomeSuggestionsContext.ts`. */
-  context: string;
-  projectCount: number;
-  exploreCount: number;
-  previousTitles: ReadonlyArray<string>;
-  /** What model and provider to use for generation. */
-  modelSelection: ModelSelection;
-}
-
-export interface GeneratedHomeSuggestion {
-  kind: "project" | "explore";
-  /** Project key from the digest; empty for explore cards. */
-  projectKey: string;
-  title: string;
-  summary: string;
-  prompt: string;
-}
-
-export interface HomeSuggestionsGenerationResult {
-  suggestions: ReadonlyArray<GeneratedHomeSuggestion>;
-}
-
-export interface ProjectIconGenerationInput {
-  cwd: string;
-  projectTitle: string;
-  outputPath: string;
-  modelSelection: ModelSelection;
-}
-
-export interface ProjectIconGenerationResult {
-  path: string;
-}
+export type {
+  ActivityHeadlineGenerationInput,
+  ActivityHeadlineGenerationResult,
+  BranchNameGenerationInput,
+  BranchNameGenerationResult,
+  CommitMessageGenerationInput,
+  CommitMessageGenerationResult,
+  GeneratedHomeSuggestion,
+  HomeSuggestionsGenerationInput,
+  HomeSuggestionsGenerationResult,
+  PrContentGenerationInput,
+  PrContentGenerationResult,
+  ProjectIconGenerationInput,
+  ProjectIconGenerationResult,
+  ThreadTitleGenerationInput,
+  ThreadTitleGenerationResult,
+} from "@t3tools/provider-core/server/textGeneration";
+export {
+  unsupportedProjectIconGeneration,
+} from "@t3tools/provider-core/server/textGeneration";
 
 /**
  * TextGeneration - Service tag for commit and change request text generation.
  */
-export class TextGeneration extends Context.Service<
-  TextGeneration,
-  {
-    /**
-     * Generate a commit message from staged change context.
-     */
-    readonly generateCommitMessage: (
-      input: CommitMessageGenerationInput,
-    ) => Effect.Effect<CommitMessageGenerationResult, TextGenerationError>;
+export class TextGeneration extends Context.Service<TextGeneration, ProviderTextGeneration>()(
+  "t3/textGeneration/TextGeneration",
+) {}
 
-    /**
-     * Generate change request title/body from branch and diff context.
-     */
-    readonly generatePrContent: (
-      input: PrContentGenerationInput,
-    ) => Effect.Effect<PrContentGenerationResult, TextGenerationError>;
-
-    /**
-     * Generate a concise branch name from a user message.
-     */
-    readonly generateBranchName: (
-      input: BranchNameGenerationInput,
-    ) => Effect.Effect<BranchNameGenerationResult, TextGenerationError>;
-
-    /** Generate a concise thread title from a first message or thread history. */
-    readonly generateThreadTitle: (
-      input: ThreadTitleGenerationInput,
-    ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
-
-    /** Generate a short live-status headline for a running turn's activity. */
-    readonly generateActivityHeadline: (
-      input: ActivityHeadlineGenerationInput,
-    ) => Effect.Effect<ActivityHeadlineGenerationResult, TextGenerationError>;
-
-    /** Generate the home screen's daily prompt cards from a workspace digest. */
-    readonly generateHomeSuggestions: (
-      input: HomeSuggestionsGenerationInput,
-    ) => Effect.Effect<HomeSuggestionsGenerationResult, TextGenerationError>;
-
-    /** Generate a square project icon and save it to `outputPath`. */
-    readonly generateProjectIcon: (
-      input: ProjectIconGenerationInput,
-    ) => Effect.Effect<ProjectIconGenerationResult, TextGenerationError>;
-  }
->()("t3/textGeneration/TextGeneration") {}
-
-export const unsupportedProjectIconGeneration = (providerLabel: string) =>
-  Effect.fn("unsupportedProjectIconGeneration")(function* (
-    _input: ProjectIconGenerationInput,
-  ): Effect.fn.Return<ProjectIconGenerationResult, TextGenerationError> {
-    return yield* new TextGenerationError({
-      operation: "generateProjectIcon",
-      detail: `${providerLabel} does not generate images.`,
-    });
-  });
-
-/**
- * Text generation for providers that only run conversational agents (Grok
- * Bot). Every operation fails with a clear message so the UI can steer the
- * user to another provider for commit messages and titles.
- */
-export const makeUnsupportedTextGeneration = (providerLabel: string): TextGeneration["Service"] => {
-  const unsupported = (operation: TextGenerationOp) =>
-    Effect.fail(
-      new TextGenerationError({
-        operation,
-        detail: `${providerLabel} does not generate text outside of a thread.`,
-      }),
-    );
-  return {
-    generateCommitMessage: () => unsupported("generateCommitMessage"),
-    generatePrContent: () => unsupported("generatePrContent"),
-    generateBranchName: () => unsupported("generateBranchName"),
-    generateThreadTitle: () => unsupported("generateThreadTitle"),
-    generateActivityHeadline: () => unsupported("generateActivityHeadline"),
-    generateHomeSuggestions: () => unsupported("generateHomeSuggestions"),
-    generateProjectIcon: () => unsupported("generateProjectIcon"),
-  };
-};
-
-type TextGenerationOp =
-  | "generateCommitMessage"
-  | "generatePrContent"
-  | "generateBranchName"
-  | "generateThreadTitle"
-  | "generateActivityHeadline"
-  | "generateHomeSuggestions"
-  | "generateProjectIcon";
-
-const resolveInstance = (
-  registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
-  operation: TextGenerationOp,
-  instanceId: ProviderInstanceId,
-): Effect.Effect<ProviderInstance["textGeneration"], TextGenerationError> =>
-  registry.getInstance(instanceId).pipe(
-    Effect.flatMap((instance) =>
-      instance
-        ? Effect.succeed(instance.textGeneration)
-        : Effect.fail(
-            new TextGenerationError({
-              operation,
-              detail: `No provider instance registered for id '${instanceId}'.`,
-            }),
-          ),
-    ),
-  );
+type TextGenerationOp = keyof ProviderTextGeneration;
 
 /** Auth and missing-instance failures: try another enabled provider. */
 export function isFallbackEligibleTextGenerationError(error: TextGenerationError): boolean {
@@ -285,6 +80,24 @@ const snapshotAllowsTextGeneration = (instance: ProviderInstance): Effect.Effect
         snapshot.auth?.status !== "unauthenticated" && snapshot.supportsTextGeneration !== false,
     ),
     Effect.catchCause(() => Effect.succeed(true)),
+  );
+
+const resolveInstance = (
+  registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
+  operation: TextGenerationOp,
+  instanceId: ProviderInstanceId,
+): Effect.Effect<ProviderInstance["textGeneration"], TextGenerationError> =>
+  registry.getInstance(instanceId).pipe(
+    Effect.flatMap((instance) =>
+      instance
+        ? Effect.succeed(instance.textGeneration)
+        : Effect.fail(
+            new TextGenerationError({
+              operation,
+              detail: `No provider instance registered for id '${instanceId}'.`,
+            }),
+          ),
+    ),
   );
 
 const runWithTextGenerationFallback = <A>(

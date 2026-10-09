@@ -11,8 +11,8 @@ import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
 import { ChildProcessSpawner } from "effect/process";
 import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
-import * as IdAllocator from "../orchestration-v2/IdAllocator.ts";
-import { ProviderAdapterV2RuntimePolicy } from "../orchestration-v2/ProviderAdapter.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import { ProviderAdapterV2RuntimePolicy } from "@t3tools/provider-core/server/ProviderAdapter";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -25,7 +25,7 @@ import { cursorMcpServers } from "../orchestration-v2/Adapters/CursorAdapterV2.t
 import { makeGrokAdapterV2 } from "../orchestration-v2/Adapters/GrokAdapterV2.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { execScriptSource, writeFakeCli } from "../testUtils/fakeCli.ts";
-import * as McpProviderSession from "./McpProviderSession.ts";
+import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
@@ -37,8 +37,9 @@ const testLayer = Layer.mergeAll(
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 it.layer(testLayer)("MCP session adapter contract", (it) => {
-  for (const provider of ["cursor", "grok"] as const) {
-    it.effect(`${provider} configures V2 sessions with real registry credentials`, () =>
+  it.effect.each(["cursor", "grok"] as const)(
+    "%s configures V2 sessions with real registry credentials",
+    (provider) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -119,6 +120,5 @@ it.layer(testLayer)("MCP session adapter contract", (it) => {
         expect(requests).not.toContain("/computer-use");
         expect(requests).not.toContain("/automations");
       }).pipe(Effect.scoped),
-    );
-  }
+  );
 });

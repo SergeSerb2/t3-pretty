@@ -38,7 +38,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { isSafeSegment, SkillLibrary } from "./SkillLibrary.ts";
 import { listTarGzEntries, type TarEntry } from "./Untar.ts";
 import { readFilePrefix, readTextPrefix } from "../boundedFileRead.ts";
-import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
+import { releaseHttpClientResponseBody } from "@t3tools/provider-core/server/releaseHttpClientResponseBody";
 
 /** How long a downloaded listing is served without re-fetching. */
 const LISTING_CACHE_TTL_MS = 6 * 60 * 60 * 1000;

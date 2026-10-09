@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -15,6 +16,37 @@ import * as DesktopClientSettings from "./DesktopClientSettings.ts";
 interface LogRecord {
   readonly message: unknown;
   readonly annotations: Readonly<Record<string, unknown>>;
+}
+
+function memoryFile(contents: string): FileSystem.File {
+  const bytes = new TextEncoder().encode(contents);
+  let offset = 0;
+  return {
+    [FileSystem.FileTypeId]: FileSystem.FileTypeId,
+    stat: Effect.succeed({ size: ByteSize.bytes(bytes.byteLength) } as FileSystem.File.Info),
+    seek: () => Effect.succeed(0n),
+    sync: Effect.void,
+    read: (buffer) =>
+      Effect.sync(() => {
+        const n = Math.min(buffer.byteLength, bytes.byteLength - offset);
+        if (n > 0) {
+          buffer.set(bytes.subarray(offset, offset + n));
+          offset += n;
+        }
+        return n;
+      }),
+    readAlloc: (size) =>
+      Effect.sync(() => {
+        if (offset >= bytes.byteLength) return Option.none();
+        const n = Math.min(size, bytes.byteLength - offset);
+        const chunk = bytes.subarray(offset, offset + n);
+        offset += n;
+        return Option.some(chunk);
+      }),
+    truncate: () => Effect.void,
+    write: (buffer) => Effect.succeed(buffer.length),
+    writeAll: () => Effect.void,
+  };
 }
 
 const baseDir = "/virtual-home";
@@ -80,14 +112,14 @@ describe("DesktopClientSettings diagnostics", () => {
     const permissionError = PlatformError.systemError({
       _tag: "PermissionDenied",
       module: "FileSystem",
-      method: "readFileString",
+      method: "open",
       pathOrDescriptor: `${baseDir}/userdata/client-settings.json`,
     });
 
     return Effect.gen(function* () {
       const result = yield* readWithLogs(
         FileSystem.layerNoop({
-          readFileString: () => Effect.fail(permissionError),
+          open: () => Effect.fail(permissionError),
         }),
       );
 
@@ -110,7 +142,7 @@ describe("DesktopClientSettings diagnostics", () => {
     Effect.gen(function* () {
       const result = yield* readWithLogs(
         FileSystem.layerNoop({
-          readFileString: () => Effect.succeed("{not-json"),
+          open: () => Effect.succeed(memoryFile("{not-json")),
         }),
       );
 

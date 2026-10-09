@@ -196,7 +196,7 @@ describe("DesktopClientSettings", () => {
         const cause = PlatformError.systemError({
           _tag: failure.reason,
           module: "FileSystem",
-          method: "readFileString",
+          method: "open",
           pathOrDescriptor: environment.clientSettingsPath,
         });
         let failRead = true;
@@ -205,10 +205,8 @@ describe("DesktopClientSettings", () => {
             FileSystem.FileSystem,
             FileSystem.FileSystem.of({
               ...fileSystem,
-              readFileString: (path) =>
-                Effect.suspend(() =>
-                  failRead ? Effect.fail(cause) : fileSystem.readFileString(path),
-                ),
+              open: (path, options) =>
+                Effect.suspend(() => (failRead ? Effect.fail(cause) : fileSystem.open(path, options))),
             }),
           ),
         );

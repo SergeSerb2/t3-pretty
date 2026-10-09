@@ -14,7 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { t3ThreadMessageForProvider } from "../provider/T3OrchestrationInstructions.ts";
+import { t3ThreadMessageForProvider } from "@t3tools/provider-core/server/orchestrationInstructions";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 

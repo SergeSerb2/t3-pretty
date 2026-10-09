@@ -10,13 +10,13 @@ import { type GrokSettings, TextGenerationError } from "@t3tools/contracts";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 
 import * as TextGeneration from "./TextGeneration.ts";
-import * as TextGenerationOperations from "./TextGenerationOperations.ts";
-import { buildProjectIconPrompt } from "./TextGenerationPrompts.ts";
+import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
+import { buildProjectIconPrompt } from "@t3tools/provider-core/server/textGenerationPrompts";
 import {
   appendBoundedTextGenerationOutput,
   decodeBoundedTextGenerationOutput,
   makeBoundedTextGenerationOutput,
-} from "./TextGenerationUtils.ts";
+} from "@t3tools/provider-core/server/textGenerationUtils";
 import {
   applyGrokAcpModelSelection,
   currentGrokModelIdFromSessionSetup,

@@ -1,5 +1,5 @@
-import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
-import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
+import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import { releaseHttpClientResponseBody } from "@t3tools/provider-core/server/releaseHttpClientResponseBody";
 import { RelayProtectedError } from "@t3tools/contracts/relay";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

@@ -134,6 +134,19 @@ export const ServerProviderModel = Schema.Struct({
 });
 export type ServerProviderModel = typeof ServerProviderModel.Type;
 
+/**
+ * A model the model manifest announces that the installed provider version is
+ * too old to run. It is never selectable; clients show it so users learn that
+ * updating the provider unlocks it.
+ */
+export const ServerProviderUpdateRequiredModel = Schema.Struct({
+  slug: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString,
+  badge: Schema.optional(Schema.Literal("new")),
+  minVersion: TrimmedNonEmptyString,
+});
+export type ServerProviderUpdateRequiredModel = typeof ServerProviderUpdateRequiredModel.Type;
+
 export const ServerProviderSlashCommandInput = Schema.Struct({
   hint: ServerProviderText,
 });
@@ -327,6 +340,8 @@ export const ServerProvider = Schema.Struct({
   models: Schema.Array(ServerProviderModel).check(
     Schema.isMaxLength(SERVER_PROVIDER_MODELS_MAX_ITEMS),
   ),
+  // Kept apart from `models` so clients that predate it never offer them.
+  updateRequiredModels: Schema.optionalKey(Schema.Array(ServerProviderUpdateRequiredModel)),
   slashCommands: Schema.Array(ServerProviderSlashCommand)
     .check(Schema.isMaxLength(SERVER_PROVIDER_SLASH_COMMANDS_MAX_ITEMS))
     .pipe(Schema.withDecodingDefault(Effect.succeed([]))),

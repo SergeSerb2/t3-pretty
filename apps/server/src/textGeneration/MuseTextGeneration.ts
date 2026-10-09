@@ -18,8 +18,8 @@ import {
   type MuseSdkHost,
 } from "../provider/museSdk.ts";
 import { museModelCapabilities, resolveMuseReasoningEffort } from "../provider/museModelCatalog.ts";
-import * as TextGenerationOperations from "./TextGenerationOperations.ts";
-import { toJsonSchemaObject } from "./TextGenerationUtils.ts";
+import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
+import { toJsonSchemaObject } from "@t3tools/provider-core/server/textGenerationUtils";
 
 const SessionStarted = Schema.Struct({ session: Schema.Struct({ sessionId: Schema.String }) });
 const ItemNotification = Schema.Struct({

@@ -17,15 +17,15 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { type ClaudeSettings, TextGenerationError } from "@t3tools/contracts";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
-import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
-import * as TextGenerationOperations from "./TextGenerationOperations.ts";
+import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
 import {
   normalizeCliError,
   TEXT_GENERATION_DIAGNOSTIC_MAX_BYTES,
   TEXT_GENERATION_RESULT_MAX_BYTES,
   limitTextGenerationErrorDetail,
   toJsonSchemaObject,
-} from "./TextGenerationUtils.ts";
+} from "@t3tools/provider-core/server/textGenerationUtils";
 import {
   getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,

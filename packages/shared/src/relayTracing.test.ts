@@ -106,7 +106,7 @@ describe("withRelayClientTracing", () => {
     const httpClientLayer = FetchHttpClient.layer.pipe(
       Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchFn)),
     );
-    const tracingLayer = makeRelayClientTracingLayer(
+    const tracingLayer = RelayTracing.layer(
       {
         tracesUrl: "https://api.axiom.test/v1/traces",
         tracesDataset: "relay-traces",
