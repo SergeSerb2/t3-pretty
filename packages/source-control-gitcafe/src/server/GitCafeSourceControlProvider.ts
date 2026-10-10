@@ -112,7 +112,7 @@ const PullDetail = Schema.Struct({
     Schema.Struct({ owner: TrimmedNonEmptyString, name: TrimmedNonEmptyString }),
   ),
   closedAt: Schema.NullOr(Schema.String),
-  mergedAt: Schema.NullOr(Schema.String),
+  mergedAt: Schema.OptionFromNullOr(Schema.DateTimeUtcFromString),
 });
 const Pulls = Schema.Struct({ items: Schema.Array(Pull), next: Schema.NullOr(Schema.String) });
 const RepositoryAdmission = Schema.Struct({

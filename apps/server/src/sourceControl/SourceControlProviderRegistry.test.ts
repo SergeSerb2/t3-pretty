@@ -374,6 +374,7 @@ it.effect("propagates OriginCli layer construction failures", () =>
               Layer.mock(GitLabCli.GitLabCli)({}),
               Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
               Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
+              Layer.mock(GitCafeApi.GitCafeApi)({}),
               Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
               Layer.mock(VcsProcess.VcsProcess)({
                 run: () => Effect.succeed(processOutput("")),
@@ -431,6 +432,7 @@ it.effect("propagates ForgejoCli layer construction failures", () =>
               Layer.mock(GitLabCli.GitLabCli)({}),
               Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
               Layer.mock(OriginCli.OriginCli)({}),
+              Layer.mock(GitCafeApi.GitCafeApi)({}),
               Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
               Layer.mock(VcsProcess.VcsProcess)({
                 run: () => Effect.succeed(processOutput("")),
@@ -487,6 +489,7 @@ it.effect("boots the registry layer when OriginCli.layer is provided", () =>
             Layer.mock(GitLabCli.GitLabCli)({}),
             Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
             Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
+            Layer.mock(GitCafeApi.GitCafeApi)({}),
             OriginCli.layer.pipe(
               Layer.provide(
                 Layer.mock(VcsProcess.VcsProcess)({
@@ -543,6 +546,7 @@ it.effect("boots the registry layer when ForgejoCli.layer is provided", () =>
             Layer.mock(GitLabCli.GitLabCli)({}),
             Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
             Layer.mock(OriginCli.OriginCli)({}),
+            Layer.mock(GitCafeApi.GitCafeApi)({}),
             ForgejoCli.layer.pipe(
               Layer.provide(
                 Layer.mergeAll(
