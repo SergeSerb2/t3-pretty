@@ -36,41 +36,36 @@ const session: McpProviderSession.McpProviderSessionConfig = {
 
 describe("fork provider workflows on V2", () => {
   it("keeps every granted toolkit and connected app on SDK and Codex sessions", () => {
-    McpProviderSession.setMcpProviderSession(session);
-    try {
-      const cursor = cursorMcpServers(threadId);
-      const claude = claudeMcpQueryOverrides({ threadId, readOnlySandbox: false });
-      const codex = codexThreadRuntimeParams({ threadId }).config.mcp_servers;
-      const muse = museSessionMcpConfig(session).mcpServers;
-      const expectedNames = session.servers.map((server) => server.name);
-      assert.deepEqual(Object.keys(cursor ?? {}), expectedNames);
-      assert.deepEqual(Object.keys(claude.mcpServers ?? {}), expectedNames);
-      assert.deepEqual(Object.keys((codex ?? {}) as Record<string, unknown>), expectedNames);
-      assert.deepEqual(Object.keys(muse), expectedNames);
-      for (const server of session.servers) {
-        assert.deepInclude(cursor?.[server.name], { type: "http", url: server.url });
-        assert.deepInclude(claude.mcpServers?.[server.name], {
-          type: "http",
-          url: server.url,
-          headers: { Authorization: "${T3_CODE_MCP_AUTHORIZATION}" },
-        });
-        assert.isTrue((claude.allowedTools ?? []).includes(`mcp__${server.name}__*`));
-        assert.deepInclude(muse[server.name], {
-          transport: "streamableHttp",
-          mode: "optional",
-          url: server.url,
-        });
-      }
-      assert.deepEqual(claude.mcpEnvironment, {
-        T3_CODE_MCP_AUTHORIZATION: session.authorizationHeader,
+    const cursor = cursorMcpServers(session);
+    const claude = claudeMcpQueryOverrides({ mcpSession: session, readOnlySandbox: false });
+    const codex = codexThreadRuntimeParams({ mcpSession: session }).config.mcp_servers;
+    const muse = museSessionMcpConfig(session).mcpServers;
+    const expectedNames = session.servers.map((server) => server.name);
+    assert.deepEqual(Object.keys(cursor ?? {}), expectedNames);
+    assert.deepEqual(Object.keys(claude.mcpServers ?? {}), expectedNames);
+    assert.deepEqual(Object.keys((codex ?? {}) as Record<string, unknown>), expectedNames);
+    assert.deepEqual(Object.keys(muse), expectedNames);
+    for (const server of session.servers) {
+      assert.deepInclude(cursor?.[server.name], { type: "http", url: server.url });
+      assert.deepInclude(claude.mcpServers?.[server.name], {
+        type: "http",
+        url: server.url,
+        headers: { Authorization: "${T3_CODE_MCP_AUTHORIZATION}" },
       });
-      assert.notInclude(JSON.stringify(claude.mcpServers), session.authorizationHeader);
-      const restricted = claudeMcpQueryOverrides({ threadId, readOnlySandbox: true });
-      assert.isFalse((restricted.allowedTools ?? []).includes("mcp__t3-code-computer__*"));
-      assert.isFalse((restricted.allowedTools ?? []).includes("mcp__connected-app__*"));
-    } finally {
-      McpProviderSession.clearMcpProviderSession(threadId);
+      assert.isTrue((claude.allowedTools ?? []).includes(`mcp__${server.name}__*`));
+      assert.deepInclude(muse[server.name], {
+        transport: "streamableHttp",
+        mode: "optional",
+        url: server.url,
+      });
     }
+    assert.deepEqual(claude.mcpEnvironment, {
+      T3_CODE_MCP_AUTHORIZATION: session.authorizationHeader,
+    });
+    assert.notInclude(JSON.stringify(claude.mcpServers), session.authorizationHeader);
+    const restricted = claudeMcpQueryOverrides({ mcpSession: session, readOnlySandbox: true });
+    assert.isFalse((restricted.allowedTools ?? []).includes("mcp__t3-code-computer__*"));
+    assert.isFalse((restricted.allowedTools ?? []).includes("mcp__connected-app__*"));
   });
 
   it("passes each granted server to the Pi extension and clears stale inherited entries", () => {

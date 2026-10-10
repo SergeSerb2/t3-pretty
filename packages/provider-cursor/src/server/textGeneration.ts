@@ -2,7 +2,6 @@ import * as NodeOS from "node:os";
 import * as FileSystem from "effect/FileSystem";
 
 import type { AgentOptions, RunResult } from "@cursor/sdk";
-import { Agent } from "./sdk.ts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -14,6 +13,7 @@ import * as TextGenerationOperations from "@t3tools/provider-core/server/textGen
 import { TEXT_GENERATION_RESULT_MAX_BYTES } from "@t3tools/provider-core/server/textGenerationUtils";
 import { cursorSdkModelSelection } from "./sdkModel.ts";
 import type { CursorAuth } from "./auth.ts";
+import * as CursorSdk from "./CursorSdk.ts";
 
 const CURSOR_TIMEOUT_MS = 180_000;
 
@@ -59,6 +59,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
   withAccess?: CursorAuth["withAccess"],
 ) {
   const fs = yield* FileSystem.FileSystem;
+  const { Agent } = yield* CursorSdk.CursorSdk;
   const resolvedEnvironment = environment ?? process.env;
 
   const resolveCursorApiKey = (operation: TextGenerationOperations.Operation) =>

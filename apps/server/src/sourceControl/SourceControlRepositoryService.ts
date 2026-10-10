@@ -1,5 +1,4 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as NodeOS from "node:os";
 import * as NodeFSP from "node:fs/promises";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -24,7 +23,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
-import { expandHomePathWith } from "@t3tools/provider-core/server/pathExpansion";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import {
   parseGitCloneProgressLine,
   type GitCloneProgressLine,
@@ -165,16 +164,6 @@ function selectRemoteUrl(
   }
 }
 
-function expandHomePath(input: string, path: Path.Path): string {
-  if (input === "~") {
-    return NodeOS.homedir();
-  }
-  if (input.startsWith("~/") || input.startsWith("~\\")) {
-    return path.join(NodeOS.homedir(), input.slice(2));
-  }
-  return input;
-}
-
 async function directoryHasEntries(directoryPath: string): Promise<boolean> {
   const directory = await NodeFSP.opendir(directoryPath);
   try {
@@ -235,7 +224,7 @@ export const make = Effect.gen(function* () {
         });
       }
 
-      return path.resolve(expandHomePath(trimmed, path));
+      return path.resolve(expandHomePath(trimmed));
     },
   );
 

@@ -18,8 +18,8 @@ import { cursorMcpServers } from "@t3tools/provider-cursor/testing";
 import { makeGrokAdapterV2 } from "@t3tools/provider-grok/testing";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { execScriptSource, writeFakeCli } from "@t3tools/provider-testing/fakeCli";
-import { layerTestProviderHost } from "@t3tools/provider-testing/host";
-import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
@@ -28,7 +28,8 @@ const testLayer = Layer.mergeAll(
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-adapters-" }),
   ServerSettingsService.layerTest(),
   IdAllocator.layer,
-  layerTestProviderHost().pipe(Layer.provide(NodeServices.layer)),
+  McpProviderSessions.layer,
+  TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 it.layer(testLayer)("MCP session adapter contract", (it) => {
@@ -72,12 +73,13 @@ it.layer(testLayer)("MCP session adapter contract", (it) => {
           providerInstanceId: ProviderInstanceId.make(provider),
           capabilities: new Set(),
         });
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
         yield* Effect.acquireRelease(
-          Effect.sync(() => McpProviderSession.setMcpProviderSession(issued.config)),
-          () => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+          mcpSessions.set(issued.config),
+          () => mcpSessions.clear(threadId),
         );
         if (provider === "cursor") {
-          const servers = cursorMcpServers(threadId);
+          const servers = cursorMcpServers(issued.config);
           expect(servers?.["t3-code"]).toMatchObject({
             type: "http",
             url: issued.config.endpoint,

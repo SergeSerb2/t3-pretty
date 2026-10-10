@@ -9,9 +9,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import type { ThreadId } from "@t3tools/contracts";
-import type {
-  EventNdjsonLogger as ProviderEventNdjsonLogger,
-} from "@t3tools/provider-core/server/ProviderEventLoggers";
+import type * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import { RotatingFileSink } from "@t3tools/shared/logging";
 import { errorTag } from "@t3tools/shared/observability";
 import * as Clock from "effect/Clock";
@@ -23,7 +21,7 @@ import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import { toSafeThreadAttachmentSegment } from "../attachmentStore.ts";
-import type { ResourceAttribution } from "../resourceTelemetry/ResourceAttribution.ts";
+import type * as ResourceAttribution from "../resourceTelemetry/ResourceAttribution.ts";
 
 const MEBIBYTE = 1024 * 1024;
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -84,14 +82,10 @@ const transientAcpSessionUpdates = new Set([
 
 export type EventNdjsonStream = "native" | "canonical" | "orchestration";
 
-export type EventNdjsonLogger = ProviderEventNdjsonLogger & {
-  /** True when per-token / cumulative native records are kept (T3CODE_LOG_PROVIDER_EVENTS_VERBOSE). */
-  readonly verbose?: boolean;
-};
-
+export type EventNdjsonLogger = ProviderEventLoggers.EventNdjsonLogger;
 export interface EventNdjsonLogStore {
   readonly filePath: string;
-  readonly logger: (stream: EventNdjsonStream) => EventNdjsonLogger;
+  readonly logger: (stream: EventNdjsonStream) => ProviderEventLoggers.EventNdjsonLogger;
   readonly close: () => Effect.Effect<void>;
 }
 
@@ -104,7 +98,7 @@ export interface EventNdjsonLogStoreOptions {
   readonly retentionCheckIntervalMs?: number;
   readonly maxBufferedBytes?: number;
   readonly maxBufferedRecords?: number;
-  readonly attribution?: ResourceAttribution["Service"];
+  readonly attribution?: ResourceAttribution.ResourceAttribution["Service"];
   /** Keep per-token deltas and cumulative tool updates in the native stream. Default false. */
   readonly verbose?: boolean;
 }
@@ -152,7 +146,7 @@ interface ResolvedOptions {
   readonly retentionCheckIntervalMs: number;
   readonly maxBufferedBytes: number;
   readonly maxBufferedRecords: number;
-  readonly attribution: ResourceAttribution["Service"] | undefined;
+  readonly attribution: ResourceAttribution.ResourceAttribution["Service"] | undefined;
   readonly verbose: boolean;
 }
 
@@ -802,8 +796,8 @@ export const makeEventNdjsonLogStore = Effect.fnUntraced(function* (
     yield* Scope.close(timerScope, Exit.void);
   });
 
-  const loggerViews = new Map<EventNdjsonStream, EventNdjsonLogger>();
-  const logger = (stream: EventNdjsonStream): EventNdjsonLogger => {
+  const loggerViews = new Map<EventNdjsonStream, ProviderEventLoggers.EventNdjsonLogger>();
+  const logger = (stream: EventNdjsonStream): ProviderEventLoggers.EventNdjsonLogger => {
     const existing = loggerViews.get(stream);
     if (existing) return existing;
 
@@ -869,7 +863,7 @@ export const makeEventNdjsonLogStore = Effect.fnUntraced(function* (
       write,
       close: () => Effect.void,
       verbose: resolved.verbose,
-    } satisfies EventNdjsonLogger;
+    } satisfies ProviderEventLoggers.EventNdjsonLogger;
     loggerViews.set(stream, view);
     return view;
   };
@@ -880,7 +874,7 @@ export const makeEventNdjsonLogStore = Effect.fnUntraced(function* (
 export const makeEventNdjsonLogger = Effect.fnUntraced(function* (
   filePath: string,
   options: EventNdjsonLoggerOptions,
-): Effect.fn.Return<EventNdjsonLogger | undefined> {
+): Effect.fn.Return<ProviderEventLoggers.EventNdjsonLogger | undefined> {
   const store = yield* makeEventNdjsonLogStore(filePath, options).pipe(
     Effect.catch((error) =>
       logWarning(error.message, { error }).pipe(

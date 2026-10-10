@@ -20,7 +20,7 @@ const SqlitePersistenceMemory = SqlitePersistence.layerMemory;
 import { OrchestrationEventStoreLive } from "./persistence/OrchestrationEventStore.ts";
 import { CodexProviderCapabilitiesV2 } from "./orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import type { ProviderAdapterV2Shape } from "@t3tools/provider-core/server/ProviderAdapter";
+import type { ProviderAdapterV2 } from "@t3tools/provider-core/server/ProviderAdapter";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegistry.ts";
@@ -39,7 +39,7 @@ const registry = ProviderAdapterRegistry.makeLayer([
     getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
     planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" as const }),
     openSession: () => Effect.die("Native provider is replaced at the event boundary"),
-  } as ProviderAdapterV2Shape,
+  } as ProviderAdapterV2["Service"],
 ]);
 const database = SqlitePersistenceMemory;
 const runtime = makeOrchestratorV2ReplayLayerWithRegistry(
