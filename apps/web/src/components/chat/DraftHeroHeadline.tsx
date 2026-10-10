@@ -39,6 +39,7 @@ import {
   ComboboxTrigger,
   useComboboxFilter,
 } from "../ui/combobox";
+import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";

@@ -36,3 +36,4 @@
 ## Post-merge repairs
 
 - `mergeLearnedRoutes` no longer auto-learns `http:`/`ws:` routes when `allowInsecure` is true. Saved plaintext routes still stay and can still receive Tailscale labels. This is the Buildkite #3355 publication gate.
+- Restore `Menu` imports on the draft-hero pull-request picker so web typecheck passes. The Combobox project-picker change had dropped them while the Pretty PR-attachment menu still used those components.
