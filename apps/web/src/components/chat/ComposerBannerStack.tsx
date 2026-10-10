@@ -49,7 +49,6 @@ export interface ComposerBannerStackItem {
   // variant is calm (e.g. live update progress). The stack itself ignores it.
   readonly urgent?: boolean;
   readonly priority?: number | string;
-  readonly compact?: boolean;
   readonly icon: ReactNode;
   readonly title: ReactNode;
   readonly description?: ReactNode;
@@ -219,7 +218,7 @@ export function ComposerBannerStack({ className, items, attachedAbove }: Compose
 }
 
 /** Keep full descriptions reachable only when their inline copy is clipped. */
-function NoticeDescription({ children, compact }: { children: ReactNode; compact?: boolean }) {
+function NoticeDescription({ children }: { children: ReactNode }) {
   const descriptionRef = useRef<HTMLSpanElement>(null);
   const detailsRef = useRef<HTMLButtonElement>(null);
   const [showDetails, setShowDetails] = useState(false);
@@ -252,13 +251,10 @@ function NoticeDescription({ children, compact }: { children: ReactNode; compact
   }, []);
 
   return (
-    <span className={compact ? "contents" : "flex min-w-8 flex-1 items-center gap-1"}>
+    <span className="contents">
       <span
         ref={descriptionRef}
-        className={cn(
-          "min-w-0 truncate text-muted-foreground",
-          compact && "shrink-[9999] @max-[400px]:sr-only",
-        )}
+        className="w-0 min-w-0 grow truncate text-muted-foreground @max-[400px]:sr-only"
       >
         {children}
       </span>
@@ -318,17 +314,13 @@ function ComposerBannerStackAlert({
       )}
       data-variant={item.variant}
     >
-      <ComposerBanner.Row layout={item.compact ? "wrap-actions-narrow" : "wrap-actions"}>
+      <ComposerBanner.Row layout="wrap-actions">
         <ComposerBanner.Icon className="h-(--composer-banner-icon-column) self-start">
           {item.icon}
         </ComposerBanner.Icon>
         <ComposerBanner.Content className="whitespace-nowrap">
           <span className="min-w-0 truncate font-medium leading-7 sm:leading-6">{item.title}</span>
-          {item.description ? (
-            <NoticeDescription compact={item.compact ?? false}>
-              {item.description}
-            </NoticeDescription>
-          ) : null}
+          {item.description ? <NoticeDescription>{item.description}</NoticeDescription> : null}
         </ComposerBanner.Content>
         {item.actions || item.onDismiss ? (
           <ComposerBanner.Actions

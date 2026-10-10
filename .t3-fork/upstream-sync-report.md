@@ -1,35 +1,344 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.46-nightly.20261009.2886`
-- Previously integrated parent nightly: `v0.0.46-nightly.20261009.2873`
-- Conflict resolver: manual (scheduled sync Buildkite #3328 resolved the modify/delete, then failed server typecheck; the AI repair declined)
+- Parent nightly: `v0.0.46-nightly.20261010.2908`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261009.2886`
+- Conflict resolver: `gpt-6.1-sol` with `xhigh` reasoning
+- 11 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `packages/provider-core/src/server/mcpSession.ts` — Pretty still describes every granted MCP server (`servers`, typed capabilities, `builtInMcpServers`, `hasBrowserTools` / `hasComputerTools`). Adapters keep mapping that list into each provider dialect.
-- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` — Every granted MCP server is still registered on the Claude query, not only `t3-code`. Agent-device env still wraps query startup. The live session is read from `McpProviderSessions` and passed as `mcpSession`.
-- `packages/provider-acp/src/server/adapter.ts` — The ACP MCP-over-ACP bridge still forwards every granted HTTP server. `AcpMcpContext` carries `sessionServers` from the session config instead of the removed module-level lookup.
-- `apps/server/src/server.ts` — Pretty Apps/Skills layers stay provided. Event-logger construction keeps `T3CODE_LOG_PROVIDER_EVENTS_VERBOSE`.
-- `apps/server/src/provider/EventNdjsonLogger.ts` — Verbose native-record retention stays on the store.
-- `apps/web/src/components/Sidebar.tsx` — Pretty's project-folder sidebar is kept. Upstream #12113 only swapped `FolderIcon` for `ListFilterIcon` on a combobox Pretty no longer uses.
+- `pnpm-lock.yaml` — fork-only dependency entries are re-derived by lockfile regeneration against the merged package manifests
+- `apps/desktop/package.json` — playwright-core remains development-only at version 1.60.0, preserving OURS' removal of its production dependency entry relative to BASE.
+- `apps/desktop/package.json` — T3 Pretty (Alpha) product branding remains unchanged.
+- `apps/desktop/src/app/DesktopApp.ts` — App identity remains configured exactly once, before lifecycle and Clerk registration and before Electron readiness.
+- `apps/desktop/src/app/DesktopApp.ts` — Bootstrap and main-window opening remain before update configuration, preserving the fork's protection against a hung nightly update fetch leaving the app on its splash screen.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.ts` — Retains the T3CODE_BUILD_FLAVOR dependency used by T3 Pretty's pre-ready branding and build-flavor logic.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.ts` — Leaves the pre-ready Windows GPU stability switches unchanged, including disabling the GPU sandbox, GPU process crash limit, and native window occlusion calculation.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.ts` — Linux pre-ready settings resolution continues to use readEarlyDesktopSettings, preserving the 1 MiB size limit, bounded synchronous reads, file-growth detection, and guaranteed file-descriptor cleanup.
+- `apps/desktop/src/electron/ElectronMenu.test.ts` — Retain TestLayer and its existing Effect.provide(TestLayer) consumers, keeping the restored desktop menu test layer connected to the tests.
+- `apps/desktop/src/electron/ElectronMenu.test.ts` — Preserve Linux platform injection and the existing assertions covering empty menus, separator/header filtering, clicked item selection, and dismissal without selection.
+- `apps/desktop/src/electron/ElectronWindow.test.ts` — Preserves the fork's testLayer helper and existing TestLayer = testLayer("linux") wiring, keeping the desktop regression-test setup intact.
+- `apps/desktop/src/preview/AnnotationStyles.generated.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/desktop/src/preview/Manager.ts` — Pretty's automation action timeline retains counter-and-time-based action IDs, running status, and start timestamps, wired to pushAction and subsequent success, failure, or interruption updates.
+- `apps/desktop/src/preview/Manager.ts` — withControlSession retains its serialized execution, human-takeover epoch checks, and cleanup-command path rather than being replaced by unrelated attachment initialization.
+- `apps/desktop/src/preview/Manager.ts` — T3 Pretty's native preview download handler remains installed through getBrowserSession, after the existing server-download placement registration.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — Retains T3 Pretty's electronThemeLayer and locally defined electronWindowLayer wiring rather than reverting to the BASE identifiers.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — Preserves the local window mock's creation tracking, main/focused-window selection, reveal callbacks, broadcasts, and appearance synchronization, along with the surrounding dock badge, bounce, and cancellation test wiring.
+- `apps/desktop/src/window/DesktopWindow.ts` — Preserves all six edit-context-menu helper imports supporting T3 Pretty's menu eligibility, item construction, request IDs, waiter registration, request completion, and command resolution.
+- `apps/mobile/app.config.ts` — Retains UIDesignRequiresCompatibility: true and its documented Liquid Glass crash-mitigation rationale.
+- `apps/mobile/app.config.ts` — Leaves the portrait default and showcase-only iPad orientation override and full-screen requirement unchanged.
+- `apps/mobile/app.config.ts` — Leaves Pretty branding, variant-specific mobile identities, fork-owned OTA configuration, and signing and capability safeguards unchanged.
+- `apps/mobile/src/App.tsx` — LocalLiveActivitySync remains mounted inside IncomingShareProvider, immediately before Navigation, preserving local Live Activity synchronization and its existing provider access.
+- `apps/mobile/src/App.tsx` — WhatsNewHost remains mounted in its existing order after ConfirmDialogHost.
+- `apps/mobile/src/App.tsx` — AppMenuHost remains mounted between WhatsNewHost and ThreadArrangementHost, preserving the fork's app-menu entry point.
+- `apps/mobile/src/App.tsx` — T3 Pretty startup branding, scenery-aware navigation theming, compatible t3code URL schemes, and the surrounding voice-input and overlay hierarchy remain unchanged.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Keep the HomeTopBar-active render path: HomeTopBar owns search and header actions, while HomeHeader renders the custom corner buttons with filter customization and new-task wiring.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Retain the React Native View import and Pretty’s deliberate removal of the legacy NativeHeaderToolbar import.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Retain the UpstreamHomeHeaderProps alias and the fork’s nullable onOpenAutomations prop extension for capability-dependent automation access.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Keep HomeCornerButtons mounted in the fallback branch instead of restoring the base NativeHeaderToolbar, preserving Pretty's mint-glass filter and compose buttons, bottom-corner layout, and safe-area positioning.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Retain the complete filterMenu passed into ControlPillMenu, its action-to-handler dispatch, custom-list-option icon state, and accessible filter control.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Retain the accessible New task corner button and its onStartNewTask callback.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Retain TRANSPARENT_NATIVE_HEADERS, preserving the dependency used by Pretty's transparent iOS Home headers and scenery-under-header behavior.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Keep the existing native column layout metrics and liquid-glass support imports unchanged in meaning.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Retain PR-nest collapse state and its setter, preserving collapse and expansion controls.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Retain the Home focus subscription used by focus-aware updates.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Retain the scenery-chrome subscription supporting Pretty's wallpaper-aware Home presentation.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Retain the glass-chrome subscription supporting Pretty's glass thread rows.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The Home empty state retains Pretty's iOS bottom clearance through iosListBottomPad and the existing Android bottom-padding fallback.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The empty state remains positioned below the active Pretty Home top bar using topBarInset, with TRANSPARENT_NATIVE_HEADERS controlling the fallback top clearance.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — ThreadListGlassContext remains mounted around the list, preserving glass-row theming over the Home scenery.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — AnimatedLegendList retains itemLayoutAnimation={layoutSettle} for settle, wake, reorder, and shelf-toggle transitions, with existing recycling, row equality, touch tracking, and scroll-gate wiring unchanged.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The settled shelf retains its glass and scenery-chrome Show more variants, pressed feedback, glass-button accessibility role, hidden counts, shared showMoreSettled handler, and standard fallback.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — HomeGlancePhotoCredit remains rendered in the footer when the top bar is active, search is inactive, and a daily photo is available; the existing glance/header path is unchanged.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Pretty's iosListTopInset, contentInsetStartAdjustment, iosListBottomPad, and ANDROID_HOME_FAB_EDGE_GAP-based FAB clearance remain intact.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Keep useGlassChromeActive() wired to the branch picker’s existing glass styling, including the worktree toggle card, empty-state background, and retry button.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Preserve the existing branch-selection, worktree-toggle, query, and navigation behavior without changing their handlers.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Retain userBubbleSurface on the rendered user-message bubble, preserving T3 Pretty's custom surface styling instead of reverting to the base flat background color.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Leave existing message-entry animations, hidden-instruction filtering, attachment handling, and review-comment sizing unchanged.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Preserves Pretty's ThreadSettingsControlStack dependency and its deliberate replacement of the legacy ChoiceRow import, while retaining ModelRow.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — T3 Pretty's dedicated model-picker architecture remains reachable through onPressModel, with the options panel retaining its existing option and runtime-mode handlers.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The options panel does not regain unused toolbar-clearance bookkeeping; the separate catalog's clearance code is left untouched.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Pretty’s dedicated, instant-apply model picker retains direct Done/close actions and back navigation without restoring a staged-model commit helper.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The toolbar filter indicator continues to reflect only the legacy-model toggle, matching the filter menu actually rendered by Pretty.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The reversible legacy-model toggle remains available through both the native search-toolbar menu and the fallback iOS bottom menu; existing search handlers and Android navigation remain unchanged.
+- `apps/mobile/src/features/threads/git/GitOverviewSheet.tsx` — Retains the fork-added cn import for class-name composition, leaving the existing T3 Pretty glass-style dependencies and World Scenery gating unchanged.
+- `apps/mobile/src/features/threads/sidebar-native-header-items.ts` — The filter remains a button whose onPress invokes presentHomeListFilterMenu(input.filterMenu, "top-start"), retaining Pretty’s custom menu presentation and glass-header styling.
+- `apps/mobile/src/features/threads/sidebar-native-header-items.ts` — The pull-request manager header entry point remains wired to onOpenPullRequests.
+- `apps/mobile/src/features/threads/sidebar-native-header-items.ts` — The automations header entry point remains wired to onOpenAutomations and hidden when no connected environment advertises the capability.
+- `apps/mobile/src/features/threads/sidebar-native-header-items.ts` — Existing settings access, icons, and accessibility labels remain unchanged.
+- `apps/mobile/src/features/threads/useThreadHeaderOptions.tsx` — Retain the fork's mintGlassBackItem import, preserving access to T3 Pretty's custom mint-glass back-button implementation without replacing it with parent styling or navigation.
+- `apps/mobile/src/native/NativeHeaderToolbar.tsx` — Both left and right header groups continue using mintGlassHeaderItems, preserving T3 Pretty's mint-glass header treatment.
+- `apps/mobile/src/native/NativeHeaderToolbar.tsx` — Bottom placement bypasses the mint-glass transformation and continues rendering through the native UIToolbar path.
+- `apps/mobile/src/native/NativeHeaderToolbar.tsx` — The existing before-paint toolbar ownership updates and placement-specific cleanup remain unchanged.
+- `apps/server/scripts/evaluate-thread-titles.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/cli/app.test.ts` — All four test fixtures retain T3 Pretty's build-flavor-aware default home: .t3-pretty for non-internal builds and .t3 for internal builds.
+- `apps/server/src/cli/app.test.ts` — Desktop-discovery coverage remains connected to the correct Pretty home, including installed-desktop preference and development-desktop discovery when the default socket is absent or T3CODE_HOME is whitespace-only.
+- `apps/server/src/cli/app.test.ts` — Coverage remains intact for explicit-home exclusion of development fallback and for rejecting fallback after failure or invalid responses.
+- `apps/server/src/cli/connect.ts` — Retained SURGE_CONNECT_NAME from the shared connectBranding module, preserving the CLI's access to T3 Pretty's Surge Connect branding.
+- `apps/server/src/cli/service.test.ts` — Preserves forkCliCommand for the service repair and update assertions, including fork-specific CLI command selection and version-targeted updates.
+- `apps/server/src/cli/service.ts` — Preserve forkCliCommand and SURGE_CONNECT_NAME imports for T3 Pretty CLI guidance and Surge Connect branding.
+- `apps/server/src/cli/service.ts` — Leave the existing fork-specific update and service-install command guidance unchanged, including version matching and explicit downgrade instructions.
+- `apps/server/src/cloud/selfUpdate.test.ts` — Preserves forkCliTarballUrl for the self-update tests protecting T3 Pretty's fork-owned CLI tarball update path; the no-mirror harness option remains unchanged.
+- `apps/server/src/cloud/selfUpdate.test.ts` — Release HTTP requests remain captured through releaseHttpClient(order, requests) and exposed by the harness, preserving observable release-source regression coverage.
+- `apps/server/src/cloud/selfUpdate.test.ts` — The harness retains T3CODE_RELEASE_BASE_URL configuration for an explicit override, the default test release URL, and the null/unset case, composed with ServerConfig and the selectable server mode.
+- `apps/server/src/environment/RemoteOpenTargets.test.ts` — Retained REMOTE_OPEN_TARGET_HOST_MAX_LENGTH from @t3tools/contracts for the fork's remote-open host-length test coverage.
+- `apps/server/src/environment/RemoteOpenTargets.ts` — Preserves T3 Pretty’s trimmed, nonempty, maximum-length validation of advertised Tailscale and mDNS host targets by retaining REMOTE_OPEN_TARGET_HOST_MAX_LENGTH.
+- `apps/server/src/environment/ServerEnvironmentLabel.ts` — Retains ENVIRONMENT_LABEL_MAX_LENGTH from the contracts package, keeping normalizeLabel's contract-aligned length limit and protection against truncation leaving a trailing UTF-16 high surrogate.
+- `apps/server/src/mcp/McpHttpServer.ts` — Retain the path-parameterized MCP transport factory and its optional capability-specific authentication middleware.
+- `apps/server/src/mcp/McpHttpServer.ts` — Keep the base /mcp endpoint available to any valid credential, preserving access to pull-request and API-key-request tools alongside per-tool capability checks.
+- `apps/server/src/mcp/McpHttpServer.ts` — Preserve the separately capability-gated /mcp/computer-use and /mcp/automations endpoints, their fresh tool registries, and their inclusion in the final server layer.
+- `apps/server/src/os-jank.ts` — Public T3 Pretty builds continue to default to ~/.t3-pretty, while internal builds continue to default to ~/.t3 through DEFAULT_BASE_DIR_NAME.
+- `apps/server/src/process/externalLauncher.ts` — Retained the fork-added resolveEditorExecutable import supporting editor-launch hardening, including opening the Cursor IDE instead of its agent CLI shim.
+- `apps/server/src/provider/ProviderInstanceRegistry.test.ts` — Preserves the fork-specific CLAUDE_CONTINUATION_GROUP_KEY dependency used by Claude continuation-group registry tests.
+- `apps/server/src/pullRequest/PullRequestProviderRegistry.ts` — Cursor Origin remains a registered pull-request provider, reachable through registry lookup and included in the supported kinds list.
+- `apps/server/src/pullRequest/PullRequestProviderRegistry.ts` — Cursor Origin retains its existing provider factory and both CLI dependency layers, including when the registry is constructed independently.
+- `apps/server/src/server.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Cursor Origin remains wired into the discovery test fixture: the local OriginCli import is retained, and the existing OriginCli.OriginCli registry mock is unchanged.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts` — Preserves the fork-added ./OriginCli.ts import, keeping Cursor Origin available to the source-control registry tests through its existing local implementation.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts` — Preserves OriginCli test-layer provisioning for T3 Pretty's Cursor Origin integration, retaining the existing tests for Origin routing and precedence over leftover GitHub remotes.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/usage/UsageService.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/usage/usageScanCache.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/usage/usageScanCache.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/usage/usageTranscriptReader.test.ts` — Bounded UTF-8 line-reader regression coverage remains wired through readUtf8LinesWithinLimit, including chunk boundaries, CRLF stripping, unterminated lines, oversized-line recovery, and byte-based limits.
+- `apps/server/src/usage/usageTranscriptReader.test.ts` — Transcript-discovery regression coverage remains wired through listTranscriptFiles, including nested directory traversal and conservative file-limit truncation reporting.
+- `apps/server/src/usage/usageTranscripts.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/usage/usageTranscripts.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/workspace/WorkspaceEntries.ts` — Retain FILESYSTEM_BROWSE_MAX_ENTRIES for T3 Pretty's filesystem browsing entry-limit behavior.
+- `apps/server/src/ws.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/ChatView.tsx` — Retains the explicit isServerThread prop and its server-versus-draft distinction in ChatHeader.
+- `apps/web/src/components/ChatView.tsx` — Preserves Pretty’s direct activeProject prop semantics rather than restoring the BASE null normalization.
+- `apps/web/src/components/ChatView.tsx` — Keeps ChatHeader connected to the actual rightPanelOpen state, rather than limiting that signal to inline titlebar ownership.
+- `apps/web/src/components/Sidebar.tsx` — The Woke dismissal button retains T3 Pretty’s explicit text-amber-700 and dark:text-amber-300 colors.
+- `apps/web/src/components/Sidebar.tsx` — Woke status rendering, the dismissal click handler, tooltip, and surrounding thread actions remain unchanged and reachable.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Retains activePendingSecretRequest alongside the unchanged onRespondToSecretRequest callback, preserving T3 Pretty's secure secret/API-key request wiring.
+- `apps/web/src/components/chat/ChatHeader.tsx` — The project breadcrumb retains Pretty’s text-muted-foreground/80 styling, hover treatment, and new-thread entry point.
+- `apps/web/src/components/chat/ChatHeader.tsx` — The inline title-renaming input retains Pretty’s tracking-tight typography and existing commit, cancellation, blur, and keyboard handling.
+- `apps/web/src/components/chat/ChatHeader.tsx` — The surrounding thread-title menu, double-click rename, and animation hooks remain unchanged.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — Retained the optional urgent hint that lets stack assemblers front calm banners, including live update progress, independently of their severity variant.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — Retained number-or-string priority metadata, preserving Pretty's broader ordering contract while still accepting the parent's named priority values.
+- `apps/web/src/components/chat/ComposerSurface.tsx` — Keep the context strip at z-0 without reintroducing isolation, preserving Pretty's backdrop behavior for the scenery photo.
+- `apps/web/src/components/chat/ComposerSurface.tsx` — Retain the fixed 16px bottom corners, explicit seam mask, light and dark shadows, dark border, and dark seam gradients.
+- `apps/web/src/components/chat/ComposerSurface.tsx` — Retain theme-aware color-mix glass backgrounds, blur, and saturation for both attached banners and the clip-path fallback, with the existing group selectors and data-attribute wiring intact.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Retained the fork-added DraftAttachedPullRequest type import supporting draft pull-request attachment handling.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Kept useComposerDraftStore and the surrounding pull-request attachment subscription and branch-restoration state unchanged.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Retain grid-cols-[auto_minmax(0,1fr)_auto], allowing the central content column to shrink and preventing metadata from overlapping the diff stat in narrow pull-request lists.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Pretty’s wireframe-based ThemeChoiceCard layout, accessible selection buttons, labels, click handlers, and existing inset selected-state indicator.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Appearance-aware preview panes: light or dark follows the chosen scheme, system mode shows light on the left and dark on the right, and unavailable preview colors fall back to the first preview.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — World Scenery and all five photo-set palettes, Boring/T3 Chat personalization, photo-set publishing, switching between scenery and Boring, and appearance-save error notifications remain unchanged.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — World Scenery personalization cards remain rendered for every PHOTO_SETS entry, with their labels, IDs, previews, and selected states.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Photo selection remains connected to the photo-set store, usePublishSceneryPhotoSet publication for scenery synchronization, and activation of WORLD_SCENERY_THEME_ID.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Boring remains reachable and restores the original T3 Chat palette without photos; selecting a photo set switches back to World Scenery.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Independent Light, Dark, and System color-scheme controls retain their handlers and previews, including split light/dark System previews and the explanation that thread schemes do not follow the photo.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — T3 Pretty’s settings layout, search anchors, accessible labels and pressed states, selected-card styling, and appearance-save failure notifications remain intact.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — World Scenery personalization cards retain photo-set previews, selected-state rendering, local photo-set updates, scenery-theme activation, and publication through usePublishSceneryPhotoSet for Surge Connect synchronization.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Boring remains selectable to restore the original T3 Chat colors without scenery; selecting a photo set switches back to World Scenery.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — System, Light, and Dark remain reachable with scheme-aware previews, selected-mode rendering, and the fork’s landscape-independent thread color-scheme behavior.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Appearance and theme save-failure notifications, personalization search anchors, accessible card labels, and the fork’s settings layout remain intact.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — CSS-controlled brand movement between the collapsed icon rail and titlebar inset, without reintroducing the left margin removed by the fork.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Pretty logo, full-width fading wordmark, backdrop styling, brand data attributes, and threads-home navigation remain unchanged.
+- `apps/web/src/components/sidebar/SidebarUpdatePill.tsx` — The update button retains rounded-[var(--control-radius)], matching adjacent utility icons across sidebar states and avoiding a shape change during collapsed-sidebar hover peek.
+- `apps/web/src/components/sidebar/SidebarUpdatePill.tsx` — Existing hover styling, update-check spin and settle handlers, reduced-motion gating, and release-notes keyboard interactions remain unchanged and connected.
+- `apps/web/src/components/ui/badge.tsx` — T3 Pretty’s box-shadow, background-color, border-color, and text-color transitions retain their 150 ms ease-out timing in both state-change directions; reduced-motion users receive immediate changes.
+- `apps/web/src/components/ui/badge.tsx` — Existing badge variants, custom code-host label tinting, small-badge typography, responsive icon styling, and coarse-pointer hit targets remain unchanged and reachable through Badge’s existing rendering path.
+- `apps/web/src/components/ui/button.tsx` — Pretty's 150ms ease-out transitions for box shadow, background color, border color, text/icon color, opacity, and scale remain active under normal motion preferences.
+- `apps/web/src/components/ui/button.tsx` — Enabled, non-popup buttons retain the 0.97 active-state press feedback and return to their resting state on release; disabled and aria-haspopup exclusions remain intact. Reduced-motion preferences disable transitions and press scaling.
+- `apps/web/src/components/ui/button.tsx` — Existing Pretty button variants, including glass styling, and the Button render/prop wiring remain unchanged.
+- `apps/web/src/components/ui/checkbox.tsx` — T3 Pretty’s 90% press compression remains reachable through direct checkbox activation and activation of either label or field-label, with disabled checkboxes excluded and normal scale restored on release.
+- `apps/web/src/components/ui/checkbox.tsx` — T3 Pretty’s 150ms ease-out transitions for box shadow, border color, and scale remain intact for normal motion preferences; reduced-motion users receive no animated transitions or press scaling.
+- `apps/web/src/components/ui/input.tsx` — T3 Pretty’s 150 ms ease-out transitions for both box-shadow and border-color, including focus entry and exit.
+- `apps/web/src/components/ui/input.tsx` — Existing themed input styling and focus, validation, disabled, and autofill states remain intact; unstyled, size, monospace, and native/Base UI rendering paths are unchanged.
+- `apps/web/src/components/ui/number-field.tsx` — T3 Pretty's number-field motion polish: box-shadow and border-color transitions with 150ms ease-out timing remain active for ordinary motion preferences. The transitions reverse naturally when focus leaves, and a reduced-motion override disables them without removing focus styling.
+- `apps/web/src/components/ui/radio-group.tsx` — Disabled-aware radio press scaling, including presses on enclosing label and field-label elements, with automatic restoration on release.
+- `apps/web/src/components/ui/radio-group.tsx` — Pretty’s 150ms ease-out transitions for box shadow, border color, and scale, with explicit reduced-motion guards.
+- `apps/web/src/components/ui/radio-group.tsx` — Existing radio geometry, light/dark styling, data-slot selectors, primitive props, and checked-indicator wiring remain intact.
+- `apps/web/src/components/ui/switch.tsx` — T3 Pretty’s 150 ms switch-track transition and custom cubic-bezier easing remain intact.
+- `apps/web/src/components/ui/switch.tsx` — Existing thumb press and checked-state animations remain unchanged.
+- `apps/web/src/components/ui/switch.tsx` — Mixed-state presentation retains the centered thumb, muted track, and conditional aria-checked handling that preserves normal screen-reader state when not mixed.
+- `apps/web/src/components/ui/textarea.tsx` — T3 Pretty's textarea visual polish: box-shadow and border-color transitions with a 150 ms duration and ease-out easing, retained for both entering and leaving visual states.
+- `apps/web/src/components/ui/toggle.tsx` — T3 Pretty's expanded box-shadow, background-color, border-color, color, opacity, and scale transitions retain their 150 ms ease-out timing for users without a reduced-motion preference.
+- `apps/web/src/components/ui/toggle.tsx` — Enabled toggles retain active-press scaling to 0.97 and return to normal size on release; disabled toggles remain excluded. Reduced-motion users receive neither press scaling nor animated transitions.
+- `apps/web/src/components/ui/toggle.tsx` — Existing pill and segmented styling, compact and segmented sizing, hover and pressed-state colors, disabled presentation, and coarse-pointer hit targets remain intact.
+- `packages/contracts/src/orchestrationV2.ts` — Retain the optional nullable storedAt thread timestamp.
+- `packages/contracts/src/orchestrationV2.ts` — Retain scenery and its ThreadSceneryAssignment contract for World Scenery.
+- `packages/contracts/src/orchestrationV2.ts` — Retain enabledSkillIds for per-thread enabled skills.
+- `packages/contracts/src/orchestrationV2.ts` — Retain the optional nullable subagentPolicy and ThreadSubagentPolicy contract.
+- `packages/contracts/src/orchestrationV2.ts` — Retain automationRun and its ThreadAutomationRun metadata contract.
+- `packages/contracts/src/orchestrationV2.ts` — Retain liveHeadline for generated thread activity headlines.
+- `packages/contracts/src/orchestrationV2.ts` — Retain planProgress with its step, completedSteps, and totalSteps fields and existing validation.
+- `packages/contracts/src/orchestrationV2.ts` — Preserved T3 Pretty's storedAt JSON timestamp mapping, including optionality, nullability, and Schema.DateTimeUtcFromString conversion.
+- `packages/provider-core/src/server/instanceEnvironment.ts` — Preserve the exported prependGlobalEnvironment helper, including its undefined/empty-input handling.
+- `packages/provider-core/src/server/instanceEnvironment.ts` — Keep global variables ordered before instance variables so the overlay loop gives instance-specific values precedence.
+- `packages/provider-core/src/server/instanceEnvironment.ts` — Retain the documented contract that the resolved environment list already includes global variables.
+- `packages/provider-grok/src/server/acpSupport.ts` — Retains createModelCapabilities for T3 Pretty's Grok model-capability integration.
+- `packages/provider-grok/src/server/acpSupport.ts` — Retains getModelSelectionStringOptionValue for T3 Pretty's Grok selection-option handling, alongside existing model-slug normalization.
+- `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Preserved node:path and node:url imports used by the visible __dirname and mockAgentPath calculations for the fork's ACP mock-agent test harness.
+- `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Preserved the fork-added NodeServices dependency for provider-runtime tests.
+- `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Preserved all three shared user-input limit constants imported by the fork's question, option, and question-length tests.
+- `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Retained the Node built-in diagnostic exemption for the fork's remaining path and URL imports.
+- `packages/provider-grok/src/server/xaiAcpExtension.ts` — Retain ENTITY_ID_MAX_LENGTH and PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH imports used by the visible Grok entity-ID and user-input-ID validation schemas.
+- `packages/provider-grok/src/server/xaiAcpExtension.ts` — Retain the fork-added runtime user-input limits for question and option counts, question length, and option label and description lengths.
+- `packages/source-control-bitbucket/src/server/BitbucketApi.ts` — Preserves the fork-added releaseHttpClientResponseBody import so existing HTTP response-body cleanup consumers retain their dependency.
+- `packages/source-control-core/src/server/SourceControlProvider.ts` — Preserves the fork-added AutomatedReviewSignal contract import for source-control provider code.
+- `packages/source-control-github/src/server/GitHubSourceControlProvider.ts` — Preserves the fork-added imports for GitHub Codex review fetching, decode-error handling, and pull-request URL parsing, keeping those symbols available to existing consumers in this file.
+- `packages/ssh/src/command.ts` — Retained DesktopUpdateChannel for the fork's update-channel-aware SSH CLI provisioning code.
+- `packages/ssh/src/command.ts` — Retained forkCliTarballUrl from connectBranding, preserving the fork-owned CLI download integration for Surge Connect.
+- `packages/ssh/src/command.ts` — Left direct SSH executable selection unchanged, including ssh.exe on Windows and avoidance of cmd.exe argument re-tokenization.
+- `scripts/build-desktop-artifact.test.ts` — Retains the assertion that Linux packaging disables npmRebuild.
+- `scripts/build-desktop-artifact.test.ts` — Preserves T3 Pretty identity in the macOS protocol assertion while retaining the compatible t3code and t3code-dev schemes.
+- `scripts/build-desktop-artifact.test.ts` — Explicit internal-build selection for macOS passkey signing and the com.sergeserb.t3code signing identity.
+- `scripts/build-desktop-artifact.test.ts` — Regression coverage requiring audio-input entitlements for the internal app while excluding them from the public com.sergeserb.t3pretty app.
+- `scripts/build-desktop-artifact.test.ts` — Standalone dictation entitlement coverage requiring audio input without associated-domain entitlements.
+- `scripts/build-desktop-artifact.test.ts` — Fork-owned application identifiers, including the derived WebAuthn keychain access group in the new tests.
+- `scripts/build-desktop-artifact.test.ts` — Retains the T3 Pretty Internal protocol name and compatibility with both t3code and t3code-dev URL schemes.
+- `scripts/build-desktop-artifact.ts` — Retains the fork-added NodePath namespace import, preserving support for existing path-dependent desktop build logic.
+- `scripts/build-desktop-artifact.ts` — Internal desktop builds retain the macOS audio-input entitlement needed for dictation; public desktop builds continue to omit it from the passkey signing plist.
+- `scripts/build-desktop-artifact.ts` — The separate macOS dictation entitlement renderer remains unchanged for signing flows that skip the passkey profile.
+- `scripts/build-desktop-artifact.ts` — T3 Pretty branding in the macOS screen-capture, microphone, and speech-recognition privacy descriptions.
+- `scripts/build-desktop-artifact.ts` — Microphone and speech-recognition usage descriptions remain restricted to internal builds; public builds do not receive those declarations.
+- `scripts/build-desktop-artifact.ts` — Existing public/internal app identity selection and compatible t3code/t3code-dev URL schemes remain unchanged.
+- `scripts/build-desktop-artifact.ts` — Separate passkey and internal-build dictation entitlement files, preserving microphone access and keeping Associated Domains out of the inherited dictation file.
+- `scripts/build-desktop-artifact.ts` — The app entitlement fallback to the dictation file when passkey signing is unavailable, with the existing inherited-entitlement build configuration retained.
+- `scripts/build-desktop-artifact.ts` — The T3CODE_MACOS_SKIP_PASSKEY_PROFILE escape hatch for fork signing without a passkey provisioning profile; WebAuthn resolution remains gated on configured passkey signing.
+- `scripts/lib/cli-external-packages.test.ts` — Retains explicit regression coverage requiring semver to be bundled as an ordinary CLI runtime dependency.
 
 ## Parent changes integrated at conflict boundaries
 
-- MCP session storage is the new `McpProviderSessions` Effect service. Module-level `set`/`read`/`clear` helpers are gone. Adapters and tests take `mcpSession` or yield the service.
-- `apps/server/src/provider/ProviderEventLoggers.ts` — parent deleted this live wrapper; the layer is inlined in `server.ts` and callers import `@t3tools/provider-core/server/ProviderEventLoggers`.
-- `apps/server/src/sourceControl/SourceControlRepositoryService.ts` — destination `~` expansion uses the shared `expandHomePath` helper; the local duplicate is gone.
-- Codex session event queues are unbounded `ProviderAdapter.ProviderAdapterV2Event` queues.
-- Provider-testing host lives at `@t3tools/provider-testing/TestProviderHost`.
-- `ProviderAdapterV2Shape` is `ProviderAdapterV2["Service"]`.
+- `pnpm-lock.yaml` — took the parent nightly's generated lockfile wholesale instead of AI-splicing it
+- `apps/desktop/package.json` — Added tldts as a production dependency using the upstream catalog reference.
+- `apps/desktop/src/app/DesktopApp.ts` — Configure the already-acquired preview-passkey service after Electron readiness and Linux safe-storage initialization, before menu configuration and bootstrap.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.ts` — Adopts the parent's namespace import from @t3tools/shared/HostProcess, replacing the legacy HostProcessPlatform import from @t3tools/shared/hostProcess.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.ts` — The resolver now accepts an explicit homeDirectory instead of calling NodeOS.homedir(), matching the supplied service’s HostProcess.HomeDirectory dependency and existing argument-bearing call.
+- `apps/desktop/src/electron/ElectronMenu.test.ts` — Replace the obsolete HostProcessPlatform reference with HostProcess.Platform from the existing namespace import.
+- `apps/desktop/src/electron/ElectronWindow.test.ts` — Updates platform dependency injection to HostProcess.Platform, matching the supplied shared HostProcess import and the parent's API migration.
+- `apps/desktop/src/preview/Manager.ts` — The upstream per-attachment detachPasskeys callback initialization is incorporated in attachListeners alongside attachmentId, while retaining the existing attachment scope and favicon-capture state.
+- `apps/desktop/src/preview/Manager.ts` — PreviewPasskeys session handlers are installed through getBrowserSession, preserving upstream passkey initialization before the session is returned.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — Adds the PreviewPasskeys test dependency with the bridge disabled, no-op session-handler installation, and no-op guest attachment and detach cleanup.
+- `apps/desktop/src/window/DesktopWindow.ts` — Adds PASSKEY_BRIDGE_ARGUMENT from ../preview/GuestProtocol.ts for the parent's preview passkey bridge integration.
+- `apps/mobile/app.config.ts` — Adds UISupportedInterfaceOrientations declaring portrait, landscape-left, and landscape-right support in the iOS Info.plist.
+- `apps/mobile/src/App.tsx` — NativeLayoutMetricsProvider now wraps incoming-share navigation, ConfirmDialogHost, and ThreadArrangementHost as upstream requires; the retained fork hosts also receive that context.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Add native-stack navigation imports and useEffect support for the existing transitionEnd subscription, which focuses native search after a sidebar-reveal transition and unsubscribes through effect cleanup.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Add useAdaptiveWorkspaceLayout support for the existing hardware-keyboard search handler, including checking primarySidebarVisible and toggling the hidden primary sidebar before focusing search.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Use sidebarHeader rather than iPadSidebar to gate the fallback controls, matching the sidebar branch used by the surrounding native header options.
+- `apps/mobile/src/features/home/HomeHeader.tsx` — Use usesNativeMailSearchToolbar rather than the raw NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED capability flag, keeping corner-control visibility aligned with the active native mail-search toolbar branch.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Add the parent's useNativeLayoutMetrics import alongside useNativeColumnLayoutMetrics.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Add the parent's useNativeWorkspaceColumnsSupported capability-hook import.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Add useNativeWorkspaceColumnsSupported(), supplying the capability gate already consumed by contentSideInsets to apply native column or screen safe-area metrics only when supported.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The Home empty state now adds contentSideInsets.left and contentSideInsets.right to its existing 32-pixel horizontal padding, with zero fallbacks when insets are unavailable.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Home list content now applies contentSideInsets.left and contentSideInsets.right independently, defaulting each to zero and retaining the additional 8-point padding on each side for the primary column.
+- `apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx` — Replace the static iOS/support-constant toolbar check with useNativeMailSearchToolbar(), retaining the existing toolbar-dependent list padding and empty-state spacing.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Use an 85% user-bubble maximum width for native workspace columns on iOS phones, matching the existing wide-block width rule; retain props.userBubbleMaxWidth on iPad, other platforms, and non-native-column layouts.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Integrates the new useNativeMailSearchToolbar import for the parent's native-mail search toolbar integration.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Replace the static platform/support-constant check with useNativeMailSearchToolbar(), retaining its existing consumers that select the native toolbar or fallback search and filter controls.
+- `apps/mobile/src/features/threads/git/GitOverviewSheet.tsx` — Adds the parent's NativeSheetContent import alongside the fork's styling utility.
+- `apps/mobile/src/features/threads/sidebar-native-header-items.ts` — Added axisBehavior: "horizontalOnly" to the filter header item, using the same button-compatible placement option already present on the settings item.
+- `apps/mobile/src/features/threads/useThreadHeaderOptions.tsx` — Retain the parent's dispatchHardwareKeyboardCommand import for thread-header hardware keyboard command integration.
+- `apps/mobile/src/native/NativeHeaderToolbar.tsx` — Exclude searchBarPlacement items from both header groups using the parent's NativeStackHeaderItem type-narrowing filter.
+- `apps/mobile/src/native/NativeHeaderToolbar.tsx` — Keep search placement items available to the bottom toolbar by filtering only after the bottom-placement branch.
+- `apps/server/src/cli/app.test.ts` — Remove NodeOS.homedir mocking from all four affected tests, retaining their existing Effect-provided HostProcess.HomeDirectory override and scoped desktop fixtures.
+- `apps/server/src/cli/connect.ts` — Adopted the HostProcess namespace import from @t3tools/shared/HostProcess, replacing the unchanged BASE-era HostProcessPlatform import.
+- `apps/server/src/cli/service.test.ts` — Replaces the unchanged legacy HostProcessEnvironment import from @t3tools/shared/hostProcess with the parent's HostProcess namespace import from @t3tools/shared/HostProcess.
+- `apps/server/src/cli/service.ts` — Adopt the upstream @t3tools/shared/HostProcess namespace import in place of the legacy HostProcessPlatform import from the lowercase module path.
+- `apps/server/src/cloud/selfUpdate.test.ts` — Adopts the parent's namespace import from @t3tools/shared/HostProcess in place of the legacy named imports from @t3tools/shared/hostProcess.
+- `apps/server/src/cloud/selfUpdate.test.ts` — Migrate platform and architecture service injection to HostProcess.Platform and HostProcess.Architecture, retaining deterministic linux/x64 test values.
+- `apps/server/src/environment/RemoteOpenTargets.test.ts` — Adopted the @t3tools/shared/HostProcess namespace import, matching the existing HostProcess.Hostname service injection in resolveTargets.
+- `apps/server/src/environment/RemoteOpenTargets.ts` — Adopts the @t3tools/shared/HostProcess namespace import, matching the HostProcess.Hostname lookup already present in resolveTargets and replacing the obsolete lowercase hostProcess import.
+- `apps/server/src/environment/ServerEnvironmentLabel.ts` — Adopts the parent's HostProcess namespace import from the capitalized @t3tools/shared/HostProcess module, replacing the legacy named imports.
+- `apps/server/src/mcp/McpHttpServer.ts` — Enable allowSessionTermination on /mcp through the existing Pretty transport factory; the same support also applies to its computer-use and automations transports.
+- `apps/server/src/os-jank.ts` — Default base-directory resolution now obtains the home directory from HostProcess.HomeDirectory instead of directly calling NodeOS.homedir(), consistent with the surrounding expandHomePath implementation.
+- `apps/server/src/process/externalLauncher.ts` — Adopted the parent's namespace import from @t3tools/shared/HostProcess, replacing the unchanged base-era HostProcessPlatform import.
+- `apps/server/src/provider/ProviderInstanceRegistry.test.ts` — Removes the expandHomePath import from @t3tools/provider-core/server/pathExpansion as upstream does.
+- `apps/server/src/pullRequest/PullRequestProviderRegistry.ts` — PullRequestProviderApi is imported from the shared source-control-core package.
+- `apps/server/src/pullRequest/PullRequestProviderRegistry.ts` — Built-in providers are constructed through BUILT_IN_SOURCE_CONTROL_DRIVERS and each driver's pullRequests implementation instead of a hard-coded provider list.
+- `apps/server/src/pullRequest/PullRequestProviderRegistry.ts` — Drivers without a pull-request implementation are filtered out before registration, preserving unsupported-host lookup behavior.
+- `apps/server/src/pullRequest/PullRequestProviderRegistry.ts` — Built-in provider dependencies are supplied through BuiltInDrivers.layer.
+- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Migrate Azure DevOps, Bitbucket, GitHub, GitLab, and Forgejo CLI/API imports to their @t3tools/source-control-* server packages.
+- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Import the packaged Azure DevOps, Bitbucket, GitHub, and GitLab pull-request clients required by the existing registry fixture mocks.
+- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Migrate ForgejoSourceControlProvider and ForgejoPullRequestProvider imports to the parent Forgejo package.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts` — Migrates GitHub API and credentials, GitLab CLI, and Forgejo CLI imports to their extracted @t3tools/source-control-* server packages.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts` — Adds the separate GitHubPullRequestApi and GitLabPullRequestCli imports, including the GitHub pull-request service used by the supplied test-layer wiring.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts` — Adds the GitLabPullRequestCli mock introduced upstream to the registry test layer alongside the existing GitLabCli mock.
+- `apps/server/src/usage/usageTranscriptReader.test.ts` — Adopt the shared TEST_FORMATS import and remove the direct provider-reader imports removed by upstream; those imports were unchanged between BASE and OURS.
+- `apps/server/src/usage/usageTranscriptReader.test.ts` — Retain the parent's readTranscriptRecords import alongside the fork's additional reader helpers.
+- `apps/server/src/workspace/WorkspaceEntries.ts` — Adopt the @t3tools/shared/HostProcess namespace import, matching the supplied resolveBrowseTarget implementation's HostProcess.Platform lookup and preserving platform-specific path validation.
+- `apps/web/src/components/ChatView.tsx` — Passes the upstream parentThreadLink into ChatHeader.
+- `apps/web/src/components/ChatView.tsx` — Connects ChatHeader’s onOpenThread callback to onOpenRelatedThread for related-thread navigation.
+- `apps/web/src/components/Sidebar.tsx` — Added focus-visible:ring-inset to the Woke dismissal button while retaining the existing focus-ring width and theme color.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Aliases pendingUserInputs to incomingPendingUserInputs so the existing typing guard can inspect incoming request IDs and defer user-input takeover while the user finishes their draft.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Aliases activePendingProgress to incomingPendingProgress so the existing hold logic can temporarily suppress question progress without losing the incoming value or conflicting with the derived local variable.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Added focus-visible:ring-inset to the project breadcrumb button so its keyboard-focus ring stays inside the control.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Added ring-inset to the inline title-renaming input while retaining its existing ring colors and focus treatment.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — Removed the optional compact field from ComposerBannerStackItem, matching the parent change. OURS had left this field unchanged from BASE.
+- `apps/web/src/components/chat/ComposerSurface.tsx` — Replace ps-1 pe-2 with px-2 to give the context strip equal horizontal padding in both LTR and RTL layouts.
+- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Integrated the composerDraftHasUserContent import for upstream draft user-content detection.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Add focus-visible:ring-inset to the row selection button while retaining its existing focus-ring width and theme color.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Inset keyboard-focus ring styling is applied to Pretty’s ThemeChoiceCard rather than only to the replaced legacy ThemeLibraryCard title button.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Replace box-shadow-based keyboard-focus rings with the parent’s solid 2px, ring-colored inset outline. Apply this through ThemeChoiceCard so the fork’s appearance-mode controls receive the fix without restoring obsolete rendering paths.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Added focus-visible:ring-inset to the brand link so its keyboard-focus ring remains visible within the overflow-hidden boundary.
+- `apps/web/src/components/sidebar/SidebarUpdatePill.tsx` — Added focus-visible:ring-inset while retaining the existing two-pixel focus-visible ring.
+- `apps/web/src/components/ui/badge.tsx` — Added focus-visible:ring-inset while retaining the existing ring width, theme color, and offset styling. Shadow transitions remain included in Pretty’s broader transition property list.
+- `apps/web/src/components/ui/button.tsx` — Added focus-visible:ring-inset while retaining the existing focus-ring width, color, and offset classes.
+- `apps/web/src/components/ui/checkbox.tsx` — Replace the previous focus ring and ring offset with the parent’s solid 2px inset focus outline, retaining compatibility with the indicator’s inherited outline and contrasting inner gap.
+- `apps/web/src/components/ui/checkbox.tsx` — Adopt the parent’s invalid-state outline colors, including the focus-visible dark-mode destructive color, while retaining invalid border styling.
+- `apps/web/src/components/ui/checkbox.tsx` — Preserve the parent’s box-shadow transition behavior within Pretty’s broader transition-property list.
+- `apps/web/src/components/ui/input.tsx` — Apply has-focus-visible:ring-inset alongside the existing 3 px focus ring, including invalid focused inputs.
+- `apps/web/src/components/ui/number-field.tsx` — Added focus-within:ring-inset while retaining the existing focus-ring width, invalid-state colors, disabled styling, and Pretty transition behavior.
+- `apps/web/src/components/ui/radio-group.tsx` — Replace the previous focus ring with a solid 2px inward focus outline, matching the existing checked indicator’s inherited outline and contrasting inner gap.
+- `apps/web/src/components/ui/radio-group.tsx` — Use destructive outline colors for invalid focused radios, including the dark-mode override scoped to focus-visible.
+- `apps/web/src/components/ui/switch.tsx` — Added focus-visible:ring-inset to render the keyboard-focus ring inside the switch.
+- `apps/web/src/components/ui/textarea.tsx` — The textarea's focus-visible ring now renders inset via has-focus-visible:ring-inset, retaining its existing width, colors, and invalid-state styling.
+- `apps/web/src/components/ui/toggle.tsx` — Added focus-visible:ring-inset to the toggle's keyboard-focus styling while retaining the existing ring width, color, and offset.
+- `packages/contracts/src/orchestrationV2.ts` — Add optional nullable lastSnoozeWakeAt to OrchestrationV2AppThread, preserving the parent's contract for manual wakes to restart inactivity without changing sidebar sort position. Its optional form remains compatible with older payloads.
+- `packages/contracts/src/orchestrationV2.ts` — Integrated the parent's lastSnoozeWakeAt JSON timestamp mapping with its optional, nullable Schema.DateTimeUtcFromString conversion.
+- `packages/provider-core/src/server/instanceEnvironment.ts` — Adopt the Effect.fn generator implementation of mergeProviderInstanceEnvironment, matching the supplied yield* HostProcess.HomeDirectory body and closing wrapper.
+- `packages/provider-core/src/server/instanceEnvironment.ts` — Retain the surrounding environment overlay behavior: unchanged base environment for empty input, copying before modification, and home-path expansion for CODEX_HOME and CLAUDE_CONFIG_DIR.
+- `packages/provider-grok/src/server/acpSupport.ts` — Migrates the unchanged legacy HostProcessPlatform import to the parent's @t3tools/shared/HostProcess namespace API.
+- `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Removed the node:os import inherited unchanged from BASE, incorporating the parent's import cleanup.
+- `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Removed the obsolete OS-home-directory explanation from the diagnostic directive.
+- `packages/provider-grok/src/server/xaiAcpExtension.ts` — Remove the node:os import and its associated nodeBuiltinImport diagnostic suppression, both unchanged on OURS relative to BASE and removed by THEIRS.
+- `packages/provider-grok/src/server/xaiAcpExtension.ts` — Keep ProviderUserInputAnswers and UserInputQuestion as type-only imports alongside the fork's runtime constants.
+- `packages/source-control-bitbucket/src/server/BitbucketApi.ts` — Moves SourceControlProvider and retryAtFromHeader imports to the shared source-control-core package.
+- `packages/source-control-bitbucket/src/server/BitbucketApi.ts` — Adopts the upstream SourceControlHost import in place of direct ServerSettings, GitVcsDriver, and VcsDriverRegistry imports.
+- `packages/source-control-core/src/server/SourceControlProvider.ts` — Adds the parent's RepositoryIdentity contract import without replacing the fork import.
+- `packages/source-control-github/src/server/GitHubSourceControlProvider.ts` — Migrates SourceControlProvider from the legacy local module to @t3tools/source-control-core/server/SourceControlProvider.
+- `packages/ssh/src/command.ts` — Adopted the @t3tools/shared/HostProcess namespace import, matching the supplied resolveSshCommand consumer's use of HostProcess.Platform.
+- `scripts/build-desktop-artifact.test.ts` — Adds macOS protocol coverage for HTTP and HTTPS registration with the Viewer role, alongside the existing application URL schemes.
+- `scripts/build-desktop-artifact.test.ts` — Adds macOS CFBundleDocumentTypes coverage for HTML and XHTML web pages with the Viewer role and Alternate handler rank, protecting default-browser eligibility.
+- `scripts/build-desktop-artifact.test.ts` — Explicit WebAuthn options for passkey entitlement rendering, including assertions that disabled options omit keychain access groups and browser-passkey entitlements.
+- `scripts/build-desktop-artifact.test.ts` — Provisioning-profile tests rejecting empty entitlements, other-team keychain groups, commented permissions, explicit false permissions, and keys outside the Entitlements dictionary.
+- `scripts/build-desktop-artifact.test.ts` — Positive coverage for a matching-team wildcard keychain group and authorized browser passkeys, including verification of the rendered entitlement XML.
+- `scripts/build-desktop-artifact.test.ts` — Adds the parent test expectation for the Web site URL protocol, registering http and https with the Viewer role on signed macOS passkey builds.
+- `scripts/build-desktop-artifact.ts` — Adds the parent's CommonJS-compatible default Plist import and its explanatory comment.
+- `scripts/build-desktop-artifact.ts` — Render the Touch ID keychain-access group when authorized by the provisioning profile, retaining XML escaping and the existing plist interpolation.
+- `scripts/build-desktop-artifact.ts` — Render the managed browser passkey entitlement only when the provisioning profile authorizes it through webAuthn.browserPasskeys.
+- `scripts/build-desktop-artifact.ts` — macOS HTML and XHTML document registration with Viewer role and Alternate handler rank, complementing the existing HTTP/HTTPS protocol registration so the app can appear under Default web browser.
+- `scripts/build-desktop-artifact.ts` — Read the validated provisioning profile and resolve its supported macOS WebAuthn entitlements.
+- `scripts/build-desktop-artifact.ts` — Log whether Touch ID keychain access and browser passkeys are enabled, and pass the resolved capabilities to the entitlement renderer.
+- `scripts/build-desktop-artifact.ts` — Populate the existing staged-package t3codeWebAuthn metadata consumed by desktop Passkeys.ts from the same capabilities used for signing.
+- `scripts/lib/cli-external-packages.test.ts` — Updates the shared-package bundling test from @t3tools/shared/hostProcess to @t3tools/shared/HostProcess.
 
 ## Parent changes intentionally omitted
 
-- `apps/web/src/components/Sidebar.tsx` — `ListFilterIcon` on the old project-filter combobox. Reason: Pretty already replaced that control with project-folder navigation, so the icon swap has no surface.
-- `packages/provider-core/src/server/mcpSession.ts` — the parent's slimmer `McpProviderSessionConfig` (optional string capabilities, no `servers`). Reason: Pretty's multi-toolkit and connected-app MCP registration needs the typed server list.
-
-## Post-merge repairs
-
-- Port leftover `readMcpProviderSession` / `setMcpProviderSession` call sites onto `McpProviderSessions` and `mcpSession` arguments.
-- Restore Pretty MCP fixture fields (`servers`, `capabilities`, `preview`) on helpers that now construct `McpProviderSessionConfig` values instead of mutating a process-wide map.
-- Provide `McpProviderSessions.layer` on the three Claude adapter tests whose wake harness now requires the service.
-- Rename the leftover `layerTest` call in `DesktopWindow.test.ts` to `makeTestLayer` so desktop typecheck matches the local helper.
+- `apps/desktop/package.json` — THEIRS' playwright-core production dependency entry, which is unchanged from BASE.. Reason: Restoring this entry would undo the fork's explicit removal. The matching playwright-core devDependency remains available.
+- `apps/desktop/src/preview/AnnotationStyles.generated.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLI_PROXY_API_KEY is unavailable, so no model resolution is possible
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The useNativeMailSearchToolbar call and derived bottomToolbarInset declarations added to ThreadSettingsOptions.. Reason: THEIRS refactors bookkeeping that OURS removed relative to BASE. Neither value is consumed by this component's complete render path, so restoring these declarations would add unused locals without implementing any observable toolbar-clearance behavior. The omission is limited to this obsolete options-panel calculation.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The providerFilter contribution to hasCustomCatalogFilter and the providerFilters array retained by THEIRS from BASE.. Reason: OURS deliberately removed these. The supplied screen renders only a legacy-filter menu, so providerFilter should not activate that menu’s indicator. The providerFilters array also has no consumer in this screen.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The commitAndClose callback using session.commitPendingModel(), retained by THEIRS from BASE.. Reason: OURS deliberately removed this staged-commit helper in Pretty’s instant-apply picker. It has no consumer in the supplied screen, whose Done actions close directly; restoring it would reintroduce obsolete pending-commit scaffolding.
+- `apps/mobile/src/features/threads/sidebar-native-header-items.ts` — The parent-side filter item’s type: "menu", inherited unchanged from BASE.. Reason: OURS deliberately changes this control to a button for Pretty’s custom onPress-driven menu presentation. Retaining that fork behavior does not prevent integrating the parent’s new horizontalOnly placement.
+- `apps/server/scripts/evaluate-thread-titles.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLI_PROXY_API_KEY is unavailable, so no model resolution is possible
+- `apps/server/src/cli/app.test.ts` — The parent hunks' unconditional .t3 fixture path for non-internal builds, which is unchanged from BASE.. Reason: That path would target the wrong default home for T3 Pretty. Preserve the fork's .t3-pretty selection while retaining .t3 for internal builds; no new parent change is excluded.
+- `apps/server/src/server.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLI_PROXY_API_KEY is unavailable, so no model resolution is possible
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLI_PROXY_API_KEY is unavailable, so no model resolution is possible
+- `apps/server/src/usage/UsageService.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLI_PROXY_API_KEY is unavailable, so no model resolution is possible
+- `apps/server/src/usage/usageScanCache.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLI_PROXY_API_KEY is unavailable, so no model resolution is possible
+- `apps/server/src/usage/usageScanCache.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLI_PROXY_API_KEY is unavailable, so no model resolution is possible
+- `apps/server/src/usage/usageTranscripts.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLI_PROXY_API_KEY is unavailable, so no model resolution is possible
+- `apps/server/src/usage/usageTranscripts.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLI_PROXY_API_KEY is unavailable, so no model resolution is possible
+- `apps/server/src/ws.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLI_PROXY_API_KEY is unavailable, so no model resolution is possible
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLI_PROXY_API_KEY is unavailable, so no model resolution is possible
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Legacy radial variant root-button focus styling using a solid outline with negative outline offset.. Reason: OURS deliberately replaced the BASE ThemeLibraryCard with wireframe choices. Restoring its radial controls would undo that fork architecture; the compatible inset-focus intent is applied to ThemeChoiceCard instead.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Inset active rings on legacy radial root indicators and inset focus/active rings on expanded radial child variants.. Reason: Those indicators and child variants belong to the component removed by OURS, not Pretty’s current selector. Pretty’s selected choice already has an inset indicator, and its keyboard-focus ring receives the compatible upstream update without restoring the old radial UI.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Move custom-theme-removal checkbox focus outlines inward and add a background-colored inset ring when a checked checkbox is keyboard-focused.. Reason: This is the only THEIRS-versus-BASE change in the conflict. It targets checkboxes in the old import/removal flow that OURS replaced with Pretty’s personalization and color-scheme cards. Those checkboxes no longer exist in this render path; restoring their dialog and obsolete state/handlers would undo the fork’s replacement. Checkbox-specific checked-state styling cannot be transplanted directly onto the supplied ThemeChoiceCard usages.
+- `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Complete removal of the nodeBuiltinImport diagnostic exemption.. Reason: The fork still imports node:path and node:url, and the supplied context shows both are needed to resolve acp-mock-agent.ts. The exemption is retained with a rationale matching those remaining imports.
+- `scripts/build-desktop-artifact.test.ts` — The macOS protocol assertion's parent-branded "T3 Code" display name.. Reason: Replaced only the display name with "T3 Pretty" to preserve fork identity; all protocol schemes and browser-registration assertions are retained.

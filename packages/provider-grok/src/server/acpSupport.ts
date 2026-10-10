@@ -26,7 +26,7 @@ import {
   getModelSelectionStringOptionValue,
   normalizeModelSlug,
 } from "@t3tools/shared/model";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 import { makeXAiPromptCompletionRuntime } from "./xaiAcpExtension.ts";
@@ -243,7 +243,7 @@ export const makeGrokAcpRuntime = (
   ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | Scope.Scope
 > =>
   Effect.gen(function* () {
-    const processGroupPlatform = yield* HostProcessPlatform.pipe(
+    const processGroupPlatform = yield* HostProcess.Platform.pipe(
       Effect.provide(NodeServices.layer),
     );
     const acpContext = yield* Layer.build(

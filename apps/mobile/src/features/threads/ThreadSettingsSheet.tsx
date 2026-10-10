@@ -87,8 +87,8 @@ import {
 import {
   createNativeMailSearchToolbarItem,
   NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET,
-  NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
+import { useNativeMailSearchToolbar } from "../../native/use-native-mail-search-toolbar";
 import { ThreadSettingsControlStack } from "./ThreadSettingsControls";
 import { ModelRow } from "./ThreadSettingsRows";
 import {
@@ -1201,7 +1201,7 @@ function ThreadSettingsModelsScreen() {
   const session = useThreadSettingsSession();
   const presentation = useThreadSettingsPickerPresentation();
   const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
-  const usesNativeMailSearchToolbar = Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
+  const usesNativeMailSearchToolbar = useNativeMailSearchToolbar();
   const hasCustomCatalogFilter = session.showLegacy;
   const filterMenu = useMemo(
     () => ({

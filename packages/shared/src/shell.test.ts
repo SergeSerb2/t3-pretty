@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -342,7 +342,7 @@ effectIt.layer(NodeServices.layer)("isCommandAvailable", (it) => {
       expect(
         yield* isCommandAvailable("definitely-not-installed", {
           env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
-        }).pipe(Effect.provideService(HostProcessPlatform, "win32")),
+        }).pipe(Effect.provideService(HostProcess.Platform, "win32")),
       ).toBe(false);
     }),
   );
@@ -353,7 +353,7 @@ effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
     Effect.gen(function* () {
       const result = yield* resolveCommandPath("definitely-not-installed", {
         env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
-      }).pipe(Effect.provideService(HostProcessPlatform, "win32"), Effect.result);
+      }).pipe(Effect.provideService(HostProcess.Platform, "win32"), Effect.result);
 
       expect(result._tag).toBe("Failure");
     }),
@@ -390,7 +390,7 @@ effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
     Effect.gen(function* () {
       const probed: Array<string> = [];
       const result = yield* resolveCommandPath("definitely-not-installed", { env }).pipe(
-        Effect.provideService(HostProcessPlatform, "win32"),
+        Effect.provideService(HostProcess.Platform, "win32"),
         Effect.provideService(CommandResolutionCache, new Map()),
         Effect.provide(
           FileSystem.layerNoop({
@@ -448,7 +448,7 @@ effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
         const resolved = yield* resolveCommandPath(command, {
           env: { PATH: cwd, PATHEXT: ".CMD" },
         }).pipe(
-          Effect.provideService(HostProcessPlatform, "win32"),
+          Effect.provideService(HostProcess.Platform, "win32"),
           Effect.provideService(CommandResolutionCache, new Map()),
           Effect.provideService(FileSystem.FileSystem, {
             ...fs,
@@ -481,7 +481,7 @@ effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
       yield* TestClock.adjust("30 seconds");
       expect(yield* resolveCommandPath("appeared", options)).toBe(executable);
     }).pipe(
-      Effect.provideService(HostProcessPlatform, "win32"),
+      Effect.provideService(HostProcess.Platform, "win32"),
       Effect.provideService(CommandResolutionCache, new Map()),
     ),
   );
@@ -528,7 +528,7 @@ effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
       );
       expect(probed).toEqual([path.join(first, "cursor.CMD"), path.join(second, "late.EXE")]);
     }).pipe(
-      Effect.provideService(HostProcessPlatform, "win32"),
+      Effect.provideService(HostProcess.Platform, "win32"),
       Effect.provideService(CommandResolutionCache, new Map()),
     ),
   );
@@ -540,7 +540,7 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
       const command = yield* resolveSpawnCommand("node.exe", ["script.js", "hello & goodbye"], {
         env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "win32"),
+        Effect.provideService(HostProcess.Platform, "win32"),
         Effect.provideService(CommandResolutionCache, new Map()),
       );
 
@@ -559,7 +559,7 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
         ["run", "value & calc", "%PATH%", 'quote"value'],
         { env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" } },
       ).pipe(
-        Effect.provideService(HostProcessPlatform, "win32"),
+        Effect.provideService(HostProcess.Platform, "win32"),
         Effect.provideService(CommandResolutionCache, new Map()),
         Effect.provideService(
           SpawnExecutableResolution,
@@ -586,9 +586,9 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
         env: { CODEX_HOME: "C:\\Users\\tester\\.codex" },
         extendEnv: true,
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "win32"),
+        Effect.provideService(HostProcess.Platform, "win32"),
         Effect.provideService(CommandResolutionCache, new Map()),
-        Effect.provideService(HostProcessEnvironment, {
+        Effect.provideService(HostProcess.Environment, {
           PATH: "C:\\Users\\tester\\AppData\\Roaming\\npm",
           PATHEXT: ".COM;.EXE;.BAT;.CMD",
         }),
@@ -615,7 +615,7 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
       };
       const resolve = (command: string, path: string, resolver = scan) =>
         resolveSpawnCommand(command, [], { env: { PATH: path, PATHEXT: ".EXE" } }).pipe(
-          Effect.provideService(HostProcessPlatform, "win32"),
+          Effect.provideService(HostProcess.Platform, "win32"),
           Effect.provideService(SpawnExecutableResolution, resolver),
         );
 
@@ -655,7 +655,7 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
       const command = yield* resolveSpawnCommand("missing & calc", ["unsafe & value"], {
         env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "win32"),
+        Effect.provideService(HostProcess.Platform, "win32"),
         Effect.provideService(CommandResolutionCache, new Map()),
       );
 

@@ -2,7 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ServerSelfUpdateError, ThreadId } from "@t3tools/contracts";
 import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Deferred from "effect/Deferred";
@@ -144,8 +144,8 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
       },
     ),
     Effect.provideService(HttpClient.HttpClient, releaseHttpClient(order, requests)),
-    Effect.provideService(HostProcessPlatform, "linux"),
-    Effect.provideService(HostProcessArchitecture, "x64"),
+    Effect.provideService(HostProcess.Platform, "linux"),
+    Effect.provideService(HostProcess.Architecture, "x64"),
     Effect.provide(
       Layer.merge(
         ServerConfig.layer({ ...config, mode: options.mode ?? "web" }),

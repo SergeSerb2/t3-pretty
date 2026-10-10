@@ -1,4 +1,3 @@
-import * as NodeOS from "node:os";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -11,6 +10,7 @@ import * as Schema from "effect/Schema";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { readTextWithinLimit } from "../boundedFileRead.ts";
 import * as ServerConfig from "../config.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const TELEMETRY_PROVIDER_IDENTITY_MAX_BYTES = 1024 * 1024;
 const TELEMETRY_ANONYMOUS_ID_MAX_BYTES = 1024;
@@ -329,6 +329,7 @@ export const getTelemetryIdentifierForHome = Effect.fn("getTelemetryIdentifierFo
   Effect.orElseSucceed(() => null),
 );
 
-export const getTelemetryIdentifier = Effect.suspend(() =>
-  getTelemetryIdentifierForHome(NodeOS.homedir()),
+export const getTelemetryIdentifier = Effect.flatMap(
+  HostProcess.HomeDirectory,
+  getTelemetryIdentifierForHome,
 );

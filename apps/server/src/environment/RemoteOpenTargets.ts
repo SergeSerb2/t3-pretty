@@ -9,7 +9,7 @@
  * on the tailnet; `<hostname>.local` only on the same LAN).
  */
 import { REMOTE_OPEN_TARGET_HOST_MAX_LENGTH, type RemoteOpenTarget } from "@t3tools/contracts";
-import { HostProcessHostname } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NetService from "@t3tools/shared/Net";
 import { readTailscaleStatus } from "@t3tools/tailscale";
 import * as Context from "effect/Context";
@@ -66,7 +66,7 @@ export const make = Effect.gen(function* () {
 
     // os.hostname() may already be an FQDN (macOS often reports
     // "Name.local"); mDNS names are always `<first-label>.local`.
-    const hostname = yield* HostProcessHostname;
+    const hostname = yield* HostProcess.Hostname;
     const shortHostname = hostname.split(".")[0]?.trim();
     const mdnsHost =
       shortHostname === undefined ? null : validRemoteOpenHost(`${shortHostname}.local`);

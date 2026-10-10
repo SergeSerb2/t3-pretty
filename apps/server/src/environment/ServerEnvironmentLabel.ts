@@ -1,5 +1,5 @@
 import { ENVIRONMENT_LABEL_MAX_LENGTH } from "@t3tools/contracts";
-import { HostProcessHostname, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -160,7 +160,7 @@ const runFriendlyLabelCommand = Effect.fn("runFriendlyLabelCommand")(function* (
 });
 
 const resolveFriendlyHostLabel = Effect.fn("resolveFriendlyHostLabel")(function* () {
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   if (platform === "darwin") {
     return yield* runFriendlyLabelCommand({
       probe: "macos-computer-name",
@@ -196,7 +196,7 @@ export const resolveServerEnvironmentLabel = Effect.fn("resolveServerEnvironment
     return friendlyHostLabel;
   }
 
-  const hostname = normalizeLabel(yield* HostProcessHostname);
+  const hostname = normalizeLabel(yield* HostProcess.Hostname);
   if (hostname) {
     return hostname;
   }

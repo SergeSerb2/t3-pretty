@@ -369,6 +369,11 @@ const config: ExpoConfig = {
       // IPA proves the SDK/runtime pair. iOS 27 may ignore this key; the
       // react-native-screens kill-switch remains the construction gate.
       UIDesignRequiresCompatibility: true,
+      UISupportedInterfaceOrientations: [
+        "UIInterfaceOrientationPortrait",
+        "UIInterfaceOrientationLandscapeLeft",
+        "UIInterfaceOrientationLandscapeRight",
+      ],
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },

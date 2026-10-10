@@ -412,7 +412,7 @@ function SidebarUpdateControl() {
       className={cn(
         // Same radius as the utility icons it sits with, in every sidebar state,
         // so a peek does not pop it between a circle and a square.
-        "inline-flex size-8 items-center justify-center rounded-[var(--control-radius)] outline-hidden ring-ring transition-colors focus-visible:ring-2",
+        "inline-flex size-8 items-center justify-center rounded-[var(--control-radius)] outline-hidden ring-ring transition-colors focus-visible:ring-2 focus-visible:ring-inset",
         isInteractionDisabled ? "cursor-not-allowed" : "cursor-pointer",
         showUpdateIconState
           ? cn(

@@ -39,8 +39,8 @@ import { vcsEnvironment } from "../../state/vcs";
 import {
   createNativeMailSearchToolbarItem,
   NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET,
-  NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
+import { useNativeMailSearchToolbar } from "../../native/use-native-mail-search-toolbar";
 import { branchBadgeLabel, useNewTaskFlow } from "./new-task-flow-provider";
 import { checkoutNewTaskBranch } from "./checkout-new-task-branch";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
@@ -464,7 +464,7 @@ export function BranchPickerScreen(props: {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const glass = useGlassChromeActive();
-  const usesNativeMailSearchToolbar = Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
+  const usesNativeMailSearchToolbar = useNativeMailSearchToolbar();
   const selectedBranchName =
     props.selectedBranchName ??
     props.branches.find((branch) => branch.current)?.name ??

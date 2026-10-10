@@ -38,7 +38,7 @@ describe("shouldBundleCliDependency", () => {
       "effect",
       "@effect/platform",
       "hono",
-      "@t3tools/shared/hostProcess",
+      "@t3tools/shared/HostProcess",
       "semver",
     ]) {
       assert.strictEqual(shouldBundleCliDependency(id), true, id);

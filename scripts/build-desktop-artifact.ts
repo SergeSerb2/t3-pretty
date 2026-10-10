@@ -5,6 +5,8 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
+// plist is CommonJS; Node cannot load its named exports from an ES module.
+import Plist from "plist";
 
 import {
   createPackageWithOptions,
@@ -16,7 +18,7 @@ import {
 
 import { DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS } from "@t3tools/contracts";
 import { fromYaml } from "@t3tools/shared/schemaYaml";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
@@ -89,9 +91,27 @@ const StageWorkspaceConfig = Schema.Struct({
   allowBuilds: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   patchedDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  packageExtensions: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        peerDependenciesMeta: Schema.Record(
+          Schema.String,
+          Schema.Struct({ optional: Schema.Boolean }),
+        ),
+      }),
+    ),
+  ),
   nodeLinker: Schema.optional(Schema.Literals(["hoisted"])),
 });
 type StageWorkspaceConfig = typeof StageWorkspaceConfig.Type;
+
+// electron-webauthn declares TypeScript as a peer only for its typings. pnpm
+// auto-installs missing peers, which would ship a compiler inside the app.
+const STAGE_PACKAGE_EXTENSIONS = {
+  "electron-webauthn": { peerDependenciesMeta: { typescript: { optional: true } } },
+  "@electron-webauthn/macos": { peerDependenciesMeta: { typescript: { optional: true } } },
+} as const;
 
 const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
@@ -888,7 +908,7 @@ const resolveGitCommitHash = Effect.fn("resolveGitCommitHash")(function* (repoRo
 const resolvePythonForNodeGyp = Effect.fn("resolvePythonForNodeGyp")(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   const env = yield* Config.all({
     configuredPython: Config.String("npm_config_python").pipe(
       Config.orElse(() => Config.String("PYTHON")),
@@ -965,6 +985,7 @@ interface StagePackageJson {
   readonly version: string;
   readonly buildVersion: string;
   readonly t3codeCommitHash: string;
+  readonly t3codeWebAuthn?: MacWebAuthnEntitlements;
   readonly private: true;
   readonly packageManager: string;
   readonly description: string;
@@ -1384,8 +1405,64 @@ function escapeXml(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
+/**
+ * Passkey entitlements for the in-app browser. Each is granted only when the
+ * provisioning profile authorizes it: macOS refuses to launch an app that
+ * claims a restricted entitlement its embedded profile does not carry.
+ */
+export interface MacWebAuthnEntitlements {
+  /** Keychain group for Electron's Touch ID passkeys. */
+  readonly touchIdKeychainAccessGroup: string | undefined;
+  /** Apple's managed browser entitlement, which allows passkeys for any site. */
+  readonly browserPasskeys: boolean;
+}
+
+const BROWSER_PASSKEYS_ENTITLEMENT = "com.apple.developer.web-browser.public-key-credential";
+
+const ProvisioningProfilePlist = Schema.Struct({
+  Entitlements: Schema.Struct({
+    "keychain-access-groups": Schema.optional(Schema.Array(Schema.String)),
+    [BROWSER_PASSKEYS_ENTITLEMENT]: Schema.optional(Schema.Boolean),
+  }),
+});
+const isProvisioningProfilePlist = Schema.is(ProvisioningProfilePlist);
+
+/**
+ * Reads the Entitlements dict of the XML plist a provisioning profile wraps in
+ * its CMS envelope. Anything unreadable grants nothing.
+ */
+const readProfileEntitlements = (provisioningProfile: string) => {
+  const start = provisioningProfile.indexOf("<?xml");
+  const end = provisioningProfile.indexOf("</plist>", start);
+  if (start === -1 || end === -1) return undefined;
+  try {
+    const profile: unknown = Plist.parse(provisioningProfile.slice(start, end + "</plist>".length));
+    return isProvisioningProfilePlist(profile) ? profile.Entitlements : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export function resolveMacWebAuthnEntitlements(
+  provisioningProfile: string,
+  configuration: Pick<MacPasskeySigningConfiguration, "appId" | "teamId">,
+): MacWebAuthnEntitlements {
+  const entitlements = readProfileEntitlements(provisioningProfile);
+  const keychainAccessGroup = `${configuration.teamId}.${configuration.appId}.webauthn`;
+  const keychainGroupAuthorized = (entitlements?.["keychain-access-groups"] ?? []).some((group) =>
+    group.endsWith("*")
+      ? keychainAccessGroup.startsWith(group.slice(0, -1))
+      : group === keychainAccessGroup,
+  );
+  return {
+    touchIdKeychainAccessGroup: keychainGroupAuthorized ? keychainAccessGroup : undefined,
+    browserPasskeys: entitlements?.[BROWSER_PASSKEYS_ENTITLEMENT] === true,
+  };
+}
+
 export function renderMacPasskeyEntitlements(
   configuration: MacPasskeySigningConfiguration,
+  webAuthn: MacWebAuthnEntitlements,
 ): string {
   const associatedDomains = configuration.rpDomains
     .map((domain) => `      <string>webcredentials:${escapeXml(domain)}</string>`)
@@ -1394,6 +1471,18 @@ export function renderMacPasskeyEntitlements(
     configuration.appId === INTERNAL_DESKTOP_APP_ID
       ? "    <key>com.apple.security.device.audio-input</key>\n    <true/>"
       : "";
+  const keychainAccessGroups = webAuthn.touchIdKeychainAccessGroup
+    ? `
+    <key>keychain-access-groups</key>
+    <array>
+      <string>${escapeXml(webAuthn.touchIdKeychainAccessGroup)}</string>
+    </array>`
+    : "";
+  const browserPasskeys = webAuthn.browserPasskeys
+    ? `
+    <key>${BROWSER_PASSKEYS_ENTITLEMENT}</key>
+    <true/>`
+    : "";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1406,7 +1495,7 @@ export function renderMacPasskeyEntitlements(
     <key>com.apple.developer.associated-domains</key>
     <array>
 ${associatedDomains}
-    </array>
+    </array>${keychainAccessGroups}${browserPasskeys}
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
 ${microphoneEntitlement}
@@ -1656,6 +1745,7 @@ export function createStageWorkspaceConfig(input: {
       ? { patchedDependencies }
       : {}),
     ...(overrides && Object.keys(overrides).length > 0 ? { overrides } : {}),
+    packageExtensions: STAGE_PACKAGE_EXTENSIONS,
   };
 }
 
@@ -1839,7 +1929,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
   const path = yield* Path.Path;
   const repoRoot = yield* RepoRoot;
   const env = yield* BuildEnvConfig;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
 
   const platform = mergeOptions(
     input.platform,
@@ -2720,7 +2810,7 @@ export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (inp
   // silently. `universal` is a mac-only arch the option type still admits;
   // the helper script rejects it, so it maps to the concrete x64 the Linux
   // resource monitor uses for the same request.
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   if (hostPlatform !== "linux") {
     return yield* new LinuxBrowserSecretHostError({ hostPlatform });
   }
@@ -3265,6 +3355,16 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
                 "T3 Pretty turns your speech into composer text with macOS speech recognition.",
             }
           : {}),
+        // macOS lists an app under Default web browser only when it opens web
+        // pages as documents as well as http and https links (see protocols).
+        CFBundleDocumentTypes: [
+          {
+            CFBundleTypeName: "Web page",
+            CFBundleTypeRole: "Viewer",
+            LSHandlerRank: "Alternate",
+            LSItemContentTypes: ["public.html", "public.xhtml"],
+          },
+        ],
       },
       protocols: [
         {
@@ -3272,6 +3372,13 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           // Upstream Clerk and existing pairing links allow the t3code scheme.
           // Bundle IDs keep the two apps installable side-by-side.
           schemes: ["t3code", "t3code-dev"],
+        },
+        // Lets people choose T3 Code as their default web browser, which opens
+        // each link in a new thread's browser panel.
+        {
+          name: "Web site URL",
+          schemes: ["http", "https"],
+          role: "Viewer",
         },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
@@ -3639,8 +3746,8 @@ export const verifyWindowsPrimaryFffNativeLoad = Effect.fn(
   readonly targetArch: typeof BuildArch.Type;
   readonly verbose: boolean;
 }) {
-  const hostPlatform = yield* HostProcessPlatform;
-  const hostArchitecture = yield* HostProcessArchitecture;
+  const hostPlatform = yield* HostProcess.Platform;
+  const hostArchitecture = yield* HostProcess.Architecture;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const executablePath = path.join(input.packagedAppDir, input.appExecutableName);
@@ -4027,7 +4134,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const repoRoot = yield* RepoRoot;
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   if (hostPlatform === "linux" && options.platform === "linux") {
     yield* preflightLinuxDesktopBuild(options.arch);
   }
@@ -4342,15 +4449,23 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     ? path.join(stageAppDir, "entitlements.mac.plist")
     : undefined;
   const macEntitlementsPath = macPasskeyEntitlementsPath ?? macDictationEntitlementsPath;
+  let macWebAuthn: MacWebAuthnEntitlements | undefined;
   if (macPasskeySigning && macPasskeyEntitlementsPath) {
     if (!(yield* fs.exists(macPasskeySigning.provisioningProfilePath))) {
       return yield* new MacProvisioningProfileNotFoundError({
         provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
       });
     }
+    macWebAuthn = resolveMacWebAuthnEntitlements(
+      yield* fs.readFileString(macPasskeySigning.provisioningProfilePath),
+      macPasskeySigning,
+    );
+    yield* Effect.log(
+      `[desktop-artifact] In-app browser passkeys: Touch ID ${macWebAuthn.touchIdKeychainAccessGroup ? "enabled" : "disabled"}, browser passkeys ${macWebAuthn.browserPasskeys ? "enabled" : "disabled"}.`,
+    );
     yield* fs.writeFileString(
       macPasskeyEntitlementsPath,
-      renderMacPasskeyEntitlements(macPasskeySigning),
+      renderMacPasskeyEntitlements(macPasskeySigning, macWebAuthn),
     );
   }
 
@@ -4381,6 +4496,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
+    // Read by apps/desktop/src/preview/Passkeys.ts; must match the signed entitlements.
+    ...(macWebAuthn ? { t3codeWebAuthn: macWebAuthn } : {}),
     private: true,
     packageManager: rootPackageJson.packageManager,
     description:

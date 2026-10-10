@@ -1,4 +1,3 @@
-import * as NodeOS from "node:os";
 import * as FileSystem from "effect/FileSystem";
 
 import type { AgentOptions, RunResult } from "@cursor/sdk";
@@ -14,6 +13,7 @@ import { TEXT_GENERATION_RESULT_MAX_BYTES } from "@t3tools/provider-core/server/
 import { cursorSdkModelSelection } from "./sdkModel.ts";
 import type { CursorAuth } from "./auth.ts";
 import * as CursorSdk from "./CursorSdk.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const CURSOR_TIMEOUT_MS = 180_000;
 
@@ -91,7 +91,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       const apiKey = yield* resolveCursorApiKey(operation);
       // The SDK loads sandbox.json independently of settingSources and lets it
       // expand the writable paths. Its public API cannot override that policy.
-      if (yield* fs.exists(`${NodeOS.homedir()}/.cursor/sandbox.json`)) {
+      if (yield* fs.exists(`${yield* HostProcess.HomeDirectory}/.cursor/sandbox.json`)) {
         return yield* new TextGenerationError({
           operation,
           detail:
