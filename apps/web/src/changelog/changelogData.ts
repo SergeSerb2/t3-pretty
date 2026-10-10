@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261010.2908003344",
+    date: "2026-10-10",
+    items: [
+      {
+        kind: "fixed",
+        title: "Retarget leftover 2908 identifiers so macos-dmg and ios-mobile pass",
+      },
+      {
+        kind: "fixed",
+        title: "Close typecheck gaps after the 2908 source-control extract",
+      },
+      {
+        kind: "fixed",
+        title: "Retarget leftover HostProcessPlatform in shell.test",
+      },
+      {
+        kind: "fixed",
+        title: "Retarget leftover hostProcess imports to HostProcess",
+      },
+      {
+        kind: "fixed",
+        title: "Project-rail gutter to unblock nightly 20261008.2849",
+      },
+      {
+        kind: "fixed",
+        title: "Unblock upstream sync v0.0.46-nightly.20261008.2849",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261009.2886003331",
     date: "2026-10-10",
     items: [
