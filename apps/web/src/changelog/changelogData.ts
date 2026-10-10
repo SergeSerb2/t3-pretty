@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261010.2922003352",
+    date: "2026-10-10",
+    items: [
+      {
+        kind: "fixed",
+        title: "Adapt GitCafe ChangeRequest.mergedAt to Option<Utc>",
+      },
+      {
+        kind: "fixed",
+        title: "Use observeResize in leftover fork ResizeObserver sites",
+      },
+      {
+        kind: "fixed",
+        title: "Retarget leftover 2908 identifiers so macos-dmg and ios-mobile pass",
+      },
+      {
+        kind: "fixed",
+        title: "Close typecheck gaps after the 2908 source-control extract",
+      },
+      {
+        kind: "fixed",
+        title: "Retarget leftover HostProcessPlatform in shell.test",
+      },
+      {
+        kind: "fixed",
+        title: "Retarget leftover hostProcess imports to HostProcess",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261010.2908003344",
     date: "2026-10-10",
     items: [
