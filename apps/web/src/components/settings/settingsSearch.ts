@@ -1,3 +1,4 @@
+import { HOSTED_APP_CHANNEL } from "~/branding";
 import { isElectron } from "~/env";
 import { SURGE_CODE_ACCOUNT_NAME } from "@t3tools/shared/connectBranding";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
@@ -63,6 +64,9 @@ export interface SettingsSearchItem {
   // Its row only renders on Windows desktop, so other desktop platforms must
   // not expose a result that points to a missing anchor.
   readonly windowsOnly?: boolean;
+  // Its row renders only where the release channel can change: the desktop
+  // app, or a hosted web build deployed with a channel.
+  readonly releaseChannelOnly?: boolean;
   readonly cloudOnly?: boolean;
   readonly environmentOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
@@ -661,6 +665,19 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     searchTerms: ["home screen suggestions refresh regenerate now"],
     requiresHomeSuggestions: true,
+  },
+  {
+    id: "app-version",
+    title: "Version",
+    to: "/settings/general",
+    searchTerms: ["about check for updates download install upgrade release"],
+  },
+  {
+    id: "update-track",
+    title: "Update track",
+    to: "/settings/general",
+    searchTerms: ["release channel stable latest nightly prerelease"],
+    releaseChannelOnly: true,
   },
   {
     id: "agent-monitoring",
@@ -1414,6 +1431,7 @@ export function searchSettings(
     .flatMap((item, index) => {
       if (!isElectron && item.desktopOnly === true) return [];
       if (item.sceneryOnly && !sceneryActive) return [];
+      if (item.releaseChannelOnly && !isElectron && HOSTED_APP_CHANNEL === null) return [];
       if (item.macOnly && !isMacPlatform(platform)) return [];
       if (item.windowsOnly && !isWindowsPlatform(platform)) return [];
 

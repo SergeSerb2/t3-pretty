@@ -39,7 +39,7 @@ import {
   type ProjectSearchContentsResult,
   type ProjectSearchEntriesResult,
 } from "@t3tools/contracts";
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { isProjectFaviconPath } from "@t3tools/shared/projectFavicon";
 
 // fff-node stays external to the CLI bundle because it dlopens a native
 // library. A static `import` of an external package is a hard error inside a
@@ -219,7 +219,7 @@ function mapFileSearchResult(
       skippedInvalidPath = true;
       return [];
     }
-    return !imageOnly || isWorkspaceImagePreviewPath(entry.path) ? [entry] : [];
+    return !imageOnly || isProjectFaviconPath(entry.path) ? [entry] : [];
   });
   return {
     entries: entries.slice(0, limit),

@@ -1,4 +1,4 @@
-import { isWorkspaceImagePreviewPath } from "./filePreview.ts";
+import { isWorkspaceImagePreviewPath, WORKSPACE_IMAGE_PREVIEW_EXTENSIONS } from "./filePreview.ts";
 
 export const PROJECT_FAVICON_FALLBACK_MARKER = "project-favicon-missing";
 
@@ -12,6 +12,13 @@ export const MANAGED_PROJECT_FAVICON_FILE_NAME_MAX_LENGTH = 255;
 export const MANAGED_PROJECT_FAVICON_REVISION_RE = new RegExp(
   `^[0-9a-f]{${MANAGED_PROJECT_FAVICON_REVISION_LENGTH}}$`,
 );
+
+export const PROJECT_FAVICON_EXTENSIONS = [...WORKSPACE_IMAGE_PREVIEW_EXTENSIONS, ".icns"] as const;
+
+export function isProjectFaviconPath(path: string): boolean {
+  const literalPath = path.toLowerCase();
+  return PROJECT_FAVICON_EXTENSIONS.some((extension) => literalPath.endsWith(extension));
+}
 
 export function getProjectFaviconResourceKey(
   environmentId: string,

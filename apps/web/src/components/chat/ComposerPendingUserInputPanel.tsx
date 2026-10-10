@@ -94,13 +94,6 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   onAdvanceRef.current = onAdvance;
 
   useEffect(() => {
-    if (disabled && autoAdvanceTimerRef.current !== null) {
-      window.clearTimeout(autoAdvanceTimerRef.current);
-      autoAdvanceTimerRef.current = null;
-    }
-  }, [disabled]);
-
-  useEffect(() => {
     if (!activeQuestion || activeQuestion.multiSelect || !optimisticSingleSelect) {
       return;
     }
@@ -121,17 +114,19 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     progress.selectedOptionValues,
   ]);
 
-  // A remote answer or another control can advance the prompt before the
+  // A remote answer, navigation, or revoked permission can land before the
   // click's delay expires. Cancel that old question's timer so it cannot skip
   // the newly active question.
   useEffect(() => {
-    return () => {
+    const clearAutoAdvance = () => {
       if (autoAdvanceTimerRef.current !== null) {
         window.clearTimeout(autoAdvanceTimerRef.current);
         autoAdvanceTimerRef.current = null;
       }
     };
-  }, [activeQuestion?.id]);
+    if (disabled || activeQuestion?.id === undefined) clearAutoAdvance();
+    return clearAutoAdvance;
+  }, [activeQuestion?.id, disabled]);
 
   const handleOptionSelection = useCallback(
     (questionId: string, optionValue: string) => {

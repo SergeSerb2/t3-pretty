@@ -32,6 +32,7 @@ import {
 } from "@t3tools/shared/imageDimensions";
 import { githubMediaFetchUrl, githubMediaFileName } from "@t3tools/shared/githubMedia";
 import {
+  isProjectFaviconPath,
   managedProjectFaviconFileName,
   parseManagedProjectFaviconPath,
   PROJECT_FAVICON_FALLBACK_MARKER,
@@ -63,6 +64,7 @@ import { resolveManagedProjectFaviconFile } from "../project/ProjectFaviconStore
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
 import { resolveGrokSessionImageFile } from "./GrokSessionImages.ts";
+import { extractIcnsPng } from "./icns.ts";
 import { openMediaFile, readMediaFileHeader, type OpenMediaFile } from "./MediaFile.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
@@ -72,6 +74,8 @@ const SIGNING_SECRET_NAME = "asset-access-signing-key";
 const ASSET_TOKEN_TTL_MS = 60 * 60 * 1000;
 const PROJECT_FAVICON_TOKEN_BUCKET_MS = 30 * 60 * 1000;
 const PROJECT_FAVICON_VERSION_PREFIX = "v";
+// Clients draw project icons from a 96px thumbnail at most.
+const PROJECT_FAVICON_ICNS_MIN_SIZE = 96;
 const INLINE_VIDEO_MIME_TYPE_PATTERN = /^video\/[\w!#$&^.+-]+$/i;
 // Extensions a document viewer or audio player may request inline. The extension comes from
 // the attachment id the server assigned, never from the client's mime type.
@@ -255,6 +259,26 @@ const readToolOutputImage = Effect.fn("AssetAccess.readToolOutputImage")(functio
   return image?.data === undefined || image.data.length > MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH
     ? null
     : { mimeType: image.mimeType, bytes: Buffer.from(image.data, "base64") };
+});
+
+/** Serves an `.icns` favicon as its embedded PNG, since browsers cannot draw it. */
+const projectFaviconAsset = Effect.fn("AssetAccess.projectFaviconAsset")(function* (
+  filePath: string,
+) {
+  if (!filePath.toLowerCase().endsWith(".icns")) {
+    return { kind: "file", path: filePath, source: "project-favicon" } satisfies ResolvedAsset;
+  }
+  const fileSystem = yield* FileSystem.FileSystem;
+  const bytes = yield* fileSystem.readFile(filePath).pipe(
+    Effect.tapError((cause) =>
+      Effect.logError("Failed to read project icon image.", { filePath, cause }),
+    ),
+    Effect.orElseSucceed(() => null),
+  );
+  const png = bytes ? extractIcnsPng(bytes, PROJECT_FAVICON_ICNS_MIN_SIZE) : null;
+  return png
+    ? ({ kind: "bytes", bytes: png, mimeType: "image/png" } satisfies ResolvedAsset)
+    : null;
 });
 
 const resolveCanonicalFile = Effect.fn("AssetAccess.resolveCanonicalFile")(function* (
@@ -713,7 +737,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       const relativePath =
         faviconPath && !isExternalOverride ? path.relative(workspaceRoot, faviconPath) : null;
       const sourceFaviconPath = isExternalOverride ? faviconPath : relativePath;
-      if (sourceFaviconPath && !isWorkspaceImagePreviewPath(sourceFaviconPath)) {
+      if (sourceFaviconPath && !isProjectFaviconPath(sourceFaviconPath)) {
         return yield* new AssetPreviewTypeValidationError({ resource: input.resource });
       }
       sourcePath =
@@ -921,9 +945,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       workspaceRoot: claims.workspaceRoot,
       relativePath: claims.relativePath,
     });
-    return faviconPath
-      ? ({ kind: "file", path: faviconPath, source: "project-favicon" } satisfies ResolvedAsset)
-      : null;
+    return faviconPath ? yield* projectFaviconAsset(faviconPath) : null;
   }
 
   if (claims.kind === "project-favicon-external") {
@@ -936,9 +958,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       ),
       Effect.orElseSucceed(() => null),
     );
-    return faviconPath === claims.filePath
-      ? ({ kind: "file", path: faviconPath, source: "project-favicon" } satisfies ResolvedAsset)
-      : null;
+    return faviconPath === claims.filePath ? yield* projectFaviconAsset(faviconPath) : null;
   }
 
   if (claims.kind === "github-media") {
