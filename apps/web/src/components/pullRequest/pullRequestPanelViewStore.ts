@@ -1,6 +1,8 @@
 import type { RefObject } from "react";
 import { useLayoutEffect } from "react";
 
+import { observeResize } from "~/lib/observeResize";
+
 import {
   clampRestoredScrollTop,
   findPullRequestTabScroller,
@@ -96,14 +98,12 @@ export function usePullRequestPanelScrollRestore(input: {
     };
 
     apply();
-    const observer = new ResizeObserver(apply);
-    observer.observe(viewport);
     const scroller = findPullRequestTabScroller(viewport, input.tab);
-    if (scroller !== null) observer.observe(scroller);
+    const stopObserving = observeResize(scroller !== null ? [viewport, scroller] : viewport, apply);
     viewport.addEventListener("scroll", onScroll, true);
     return () => {
       cancelled = true;
-      observer.disconnect();
+      stopObserving();
       viewport.removeEventListener("scroll", onScroll, true);
     };
   }, [input.canRestore, input.tab, input.viewKey, input.viewportRef]);

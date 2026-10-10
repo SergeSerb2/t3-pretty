@@ -12,6 +12,7 @@ import {
 
 import { isElectron } from "~/env";
 import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "~/hooks/useResizableWidth";
+import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 
 import { RightPanelResizeHandle } from "./RightPanelResizeHandle";
@@ -260,12 +261,7 @@ function useClampedMaxWidth(hostRef: RefObject<HTMLDivElement | null>, enabled: 
       setContainerWidth(parent.clientWidth);
     };
     measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(parent);
-    return () => {
-      observer.disconnect();
-    };
+    return observeResize(parent, measure);
   }, [hostRef, enabled]);
   return getPreviewPanelMaxWidth(vw, containerWidth);
 }

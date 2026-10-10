@@ -3,6 +3,8 @@ import type { HomeSuggestion } from "@t3tools/contracts";
 import { ChevronLeftIcon, ChevronRightIcon, CompassIcon, XIcon } from "lucide-react";
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
+import { observeResize } from "~/lib/observeResize";
+
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import {
@@ -64,11 +66,10 @@ export function HomeSuggestionShelfView({
     if (!node) return;
     updateEdges();
     node.addEventListener("scroll", updateEdges, { passive: true });
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateEdges);
-    observer?.observe(node);
+    const stopObserving = observeResize(node, updateEdges);
     return () => {
       node.removeEventListener("scroll", updateEdges);
-      observer?.disconnect();
+      stopObserving();
     };
   }, [shelf.cards.length, updateEdges]);
 
