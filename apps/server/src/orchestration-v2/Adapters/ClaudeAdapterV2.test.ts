@@ -2625,7 +2625,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         assert.equal(new Set(items.map((item) => item.id)).size, 1);
         assert.isFalse(items.at(-1)?.streaming);
         assert.equal(items.at(-1)?.status, "completed");
-      }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
   );
 
   it.effect(
@@ -2661,7 +2666,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           for (const thread of updates.slice(firstProfile))
             assert.equal(thread.nativeMetadata?.configDir, configDir);
           assert.equal(updates.at(-1)?.pendingBackgroundTasks?.[0]?.taskId, WAKE_TASK_ID);
-        }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+          ),
+        ),
       ),
   );
 
@@ -8485,7 +8494,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         assert.equal(completed.outputFile, "/tmp/fork-workflow.output");
         assert.equal(completed.usage?.totalTokens, 20);
         assert.equal(completed.recentActivity?.at(-1)?.summary, "Reviewed");
-      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
     ),
   );
 

@@ -31,3 +31,5 @@
 
 - Port leftover `readMcpProviderSession` / `setMcpProviderSession` call sites onto `McpProviderSessions` and `mcpSession` arguments.
 - Restore Pretty MCP fixture fields (`servers`, `capabilities`, `preview`) on helpers that now construct `McpProviderSessionConfig` values instead of mutating a process-wide map.
+- Provide `McpProviderSessions.layer` on the three Claude adapter tests whose wake harness now requires the service.
+- Rename the leftover `layerTest` call in `DesktopWindow.test.ts` to `makeTestLayer` so desktop typecheck matches the local helper.
