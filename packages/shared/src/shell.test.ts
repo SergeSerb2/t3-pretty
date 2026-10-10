@@ -371,7 +371,7 @@ effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
       yield* resolveCommandPath("missing-command", {
         env: { PATH: "/definitely/not-installed" },
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "linux"),
+        Effect.provideService(HostProcess.Platform, "linux"),
         Effect.provideService(CommandResolutionCache, cache),
         Effect.result,
       );
