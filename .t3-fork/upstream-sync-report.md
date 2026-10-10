@@ -1,201 +1,38 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.46-nightly.20261010.2922`
-- Previously integrated parent nightly: `v0.0.46-nightly.20261010.2908`
-- Conflict resolver: reused `automation/sync-resolution-cache` (`c7080001c` from Buildkite #3346); StorageSettings and UsageService were completed manually after those cache entries were only partial or missing
-- 0 file(s) remain on an unresolved fork-side fallback after the manual composition below
+- Parent nightly: `v0.0.46-nightly.20261010.2935`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261010.2922`
+- Conflict resolver: hand-merge from Origin `main` (`6cb8c1ed7`)
+- 0 file(s) remain on an unresolved fork-side fallback
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `apps/web/src/components/onboarding/WelcomeWizard.tsx` — kept T3 Pretty's intentional deletion of this file
-- `README.md` — T3 Pretty's numbered source workflow remains intact: clone from Origin, install Vite+ on macOS/Linux or Windows, then install dependencies and start development.
-- `README.md` — T3 Pretty's identity and fork-owned R2 desktop installation channel remain distinct from the original T3 Code and its package-manager distribution.
-- `apps/desktop/src/shell/DesktopShellEnvironment.ts` — Byte-bounded stdout capture through collectBoundedText preserves the fork's memory safeguard while continuing to consume the output stream.
-- `apps/desktop/src/shell/DesktopShellEnvironment.ts` — Concurrent stdout consumption, stderr draining, and exit-code waiting preserve the fork's protection against child-process pipe stalls.
-- `apps/desktop/src/shell/DesktopShellEnvironment.ts` — Scoped subprocess cleanup, SIGTERM escalation, timeout logging, and nonthrowing probe fallbacks remain intact.
-- `apps/server/src/git/GitManager.test.ts` — Regression coverage for materializing a same-repository PR from its remote source branch when no pull ref exists, including the expected branch and worktree contents.
-- `apps/server/src/git/GitManager.test.ts` — Regression coverage for using the primary remote when same-repository head repository and owner metadata are present.
-- `apps/server/src/git/GitManager.test.ts` — Regression coverage for falling back to the pull ref after the source branch has been deleted, preserving the PR branch name and contents.
-- `apps/server/src/git/GitManager.test.ts` — Regression coverage for retaining both same-repository materialization failures in an AggregateError, with structured PR error metadata and the first failure retained as its cause.
-- `apps/server/src/mcp/toolkits/orchestrator/tools.ts` — Preserve guidance allowing cross-thread messages when requested by the user or when coordinating with another thread's agent materially helps.
-- `apps/server/src/mcp/toolkits/orchestrator/tools.ts` — Preserve sender-thread attribution and the recipient's ability to reply using t3_thread_send.
-- `apps/server/src/mcp/toolkits/orchestrator/tools.ts` — Preserve the instruction to end the turn after asking a question rather than polling.
-- `apps/server/src/orchestration-v2/ProviderSessionManager.ts` — Retains clear-response guidance controlled by the thread project's effective clearAgentResponses setting.
-- `apps/server/src/orchestration-v2/ProviderSessionManager.ts` — Preserves slash-command bypass and enabled guidance when the optional settings service is absent.
-- `apps/server/src/orchestration-v2/ProviderSessionManager.ts` — Preserves warning logging and unchanged input text if response-style settings or thread lookup fail.
-- `apps/server/src/orchestration-v2/ProviderSessionManager.ts` — Leaves existing project-aware browser/device access gates and fail-closed behavior unchanged.
-- `apps/server/src/preview/PortScanner.ts` — T3 Pretty's deliberate increase from BASE's 3-second polling interval to 8 seconds, preserving reduced polling overhead.
-- `apps/server/src/process/externalLauncher.test.ts` — Cursor-shim avoidance regression coverage: a later PATH Cursor IDE executable must be launched instead of the earlier agent shim, with the worktree path passed unchanged.
-- `apps/server/src/server.ts` — Retained the named ws.layer import as websocketRpcRouteLayer, preserving T3 Pretty's existing WebSocket route-layer naming and server composition.
-- `apps/server/src/server.ts` — Retained ThreadSettlementWorkerLive, including service startup and its PullRequestServiceLive and ProjectionStoreV2.layer dependencies, preserving server-owned automatic thread settlement.
-- `apps/server/src/server.ts` — Retained ThreadPullRequestWorkerLive, including service startup and its PullRequestServiceLive dependency.
-- `apps/server/src/server.ts` — Preserved OURS' removal of HeldHooksWaker.layer from the core runtime composition rather than restoring unchanged BASE wiring.
-- `apps/server/src/server.ts` — Retains T3 Pretty's PlatformServicesLive naming and platform-service provisioning rather than reverting to layerPlatformServices.
-- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Retains the OriginCli mock required by the registry test layer for T3 Pretty's first-class Cursor Origin host integration.
-- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Cursor Origin authentication-discovery regression coverage: retain the origin auth status response with account and token-validity information, supporting the existing authenticated-account assertion and verification that token details are not exposed.
-- `apps/server/src/storageCleanup.ts` — Fork-only HTML attachment cleanup remains reachable through both automatic and manual sweeps, using config.attachmentsDir and running before worktree and file cleanup.
-- `apps/server/src/storageCleanup.ts` — HTML attachment cleanup failures retain their dedicated warning and remain isolated so other cleanup categories continue.
-- `apps/server/src/usage/UsageService.ts` — Transcript scans still consume Pretty's structured `listing.files` result and report partial usage when file or directory scan limits truncate the listing.
-- `apps/server/src/usage/UsageService.ts` — Unreadable transcript directories retain partial status and the existing unreadable-directory warning, including the combined warning when truncation also occurs.
-- `apps/server/src/usage/usageTranscriptReader.ts` — Legacy string filename filters remain supported alongside the options-object form, including Grok's updates.jsonl filtering.
-- `apps/server/src/usage/usageTranscriptReader.ts` — The iterative directory walk, configurable file and entry limits, existing limit defaults and normalization, and truncation reporting remain intact.
-- `apps/server/src/usage/usageTranscriptReader.ts` — The existing TranscriptListing contract and unreadableDirectories counter remain available alongside the new upstream failure counter.
-- `apps/server/src/usage/usageTranscriptReader.ts` — The returned file list remains trimmed to maxFiles.
-- `apps/server/src/usage/usageTranscriptReader.ts` — Retains the maxFiles result cap, including protection against concurrent stat workers finding more matches than the limit.
-- `apps/server/src/usage/usageTranscriptReader.ts` — Preserves truncated reporting for file and entry limits, plus the separate unreadableDirectories count.
-- `apps/server/src/ws.ts` — Retained T3 Pretty's AgentMonitoring import, leaving existing monitoring references and wiring unchanged.
-- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Window resize and captured scroll events continue through T3 Pretty's shared subscription, with passive scroll handling and requestAnimationFrame coalescing instead of immediate per-slot updates.
-- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Subscription teardown retains last-subscriber listener removal and pending-frame cancellation; updates remain event-driven without a continuous repaint loop.
-- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Browser surfaces continue tracking inline preview-panel and sidebar movement, with existing presentation updates, lease recovery, and release behavior left intact.
-- `apps/web/src/components/ChatView.tsx` — Keep the workspace root as the relative containing block for the parked titlebar controls, preserving their --workspace-controls-* anchoring without introducing a new wrapper or containing block.
-- `apps/web/src/components/ChatView.tsx` — Retain Pretty's overflow-clip behavior rather than reverting to overflow-hidden and its scroll-container semantics.
-- `apps/web/src/components/GitActionsControl.tsx` — Retained OriginIcon for T3 Pretty's first-class Cursor Origin source-control presentation.
-- `apps/web/src/components/GitActionsControl.tsx` — Retain Cursor Origin ("origin") in PublishProviderKind, preserving the fork's publish-provider type support.
-- `apps/web/src/components/GitActionsControl.tsx` — Cursor Origin remains a first-class publishing provider with its Origin label, origin.cursor.com host and description, owner/repo placeholder, and OriginIcon.
-- `apps/web/src/components/GitActionsControl.tsx` — Origin remains recognized by the option lookup and publish-provider type guard, with the existing discovery and authentication readiness checks unchanged.
-- `apps/web/src/components/GitActionsControl.tsx` — Retains the fork's Cursor Origin (`origin`) publishing-account entry and its existing discovery-populated account and repository-owner prefill path.
-- `apps/web/src/components/RightPanelTabs.tsx` — Preserves the fork-added Bot icon import for its existing panel UI consumers; no fork handler, subscription, or render path is changed by this resolution.
-- `apps/web/src/components/RightPanelTabs.tsx` — Pretty's aria-current="true" accessibility indication remains on the active surface's activation button and clears for inactive surfaces.
-- `apps/web/src/components/RightPanelTabs.tsx` — Existing surface activation and device double-click renaming remain reachable, including focus/select, blur or Enter to commit, Escape to restore the original title, and disabled tab dragging during renaming.
-- `apps/web/src/components/RightPanelTabs.tsx` — Existing close and reversible mute/unmute interactions remain available without conflating the audio toggle with closing or activating a surface.
-- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Retains collectOpenProjectPullRequests from the fork's threadPullRequestNesting module, preserving the dependency supporting open-project PR nesting.
-- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Leaves the existing draft PR attachment state, draft/project change reset, and project/environment setup unchanged.
-- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Long project names retain truncation and bottom alignment so the picker stays level with the surrounding headline.
-- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — The picker retains its InlineButton styling, width constraint, data-draft-project-trigger hook, visible-title accessible name, and full-project-name tooltip.
-- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Existing controlled picker state and project-selection handlers remain intact.
-- `apps/web/src/components/onboarding/Trailhead.import.test.tsx` — Trailhead's fork-specific “Pack your projects.” heading remains the expected observable import-step text.
-- `apps/web/src/components/onboarding/Trailhead.import.test.tsx` — The existing Trailhead navigation and summit-completion test wiring remains unchanged, including read-only import restrictions, fresh-grant checks, and retained project selections.
-- `apps/web/src/components/onboarding/Trailhead.terminal.test.tsx` — The Pretty-specific Trailhead project-step expectation, “Pack your projects.”, consistent with the fork’s copy and test-retargeting history.
-- `apps/web/src/components/onboarding/Trailhead.terminal.test.tsx` — The regression test still checks that an accepted terminal remains visible after terminal access is revoked, that revoked access prevents pretyping and remote cleanup, and that local Close followed by Continue reaches the project step.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — Retains Fragment, useEffect, and the existing React hooks and types supporting Pretty's shell rendering and lifecycle paths.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — Preserves Pretty's local getPreviewPanelMaxWidth implementation and direct useResizableWidth path, including the container-aware sibling-column reservation, viewport cap, and minimum-width protection.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — Preserves the PreviewPanelInlineSize override contract, per-surface persisted width settings, and measurement restricted to non-maximized inline panels.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — Leaves Electron drag-region mode gates and the existing open, maximized, and exit-completion interfaces unchanged.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — World Scenery/right-panel frosting retains one data-right-panel hook per rendering mode, including the sidebar versus embedded distinction.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — Shared keyed panelContents retains the children fragment, desktop drag region, and inline resize handle with its width and minimum/maximum bounds.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — Pretty's separate inline frame and surface remain intact, including maximized layout and the elevated maximized-exit overlay.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — Existing open/close transition classes, exit-completion handlers, resize-state attributes, two-frame width-transition suppression, and closed-panel inert/aria-hidden behavior remain unchanged; no new animation or continuous repaint loop is introduced.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — Viewport and container width clamping continue to feed the inline width without restoring the superseded nested content layout.
-- `apps/web/src/components/pullRequest/PullRequestCodeTab.tsx` — Retains PullRequestFixDestination, preserving typed support for T3 Pretty's two fix destinations alongside the existing finding imports.
-- `apps/web/src/components/settings/StorageSettings.tsx` — Pretty's device inventory, managed-worktree cleanup, and StorageCleanupPolicySections remain mounted and reachable.
-- `apps/web/src/components/ui/sidebar.tsx` — An unchanged drag restores the wrapper CSS expression and the container-local width variable instead of committing a static pixel width.
-- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Retain the T3Wordmark dependency for T3 Pretty branding without changing the existing wordmark, collapsed-rail, or hover-peek rendering.
-- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Leave the width probe's overlapping parent and Pretty brand measurements intact, preserving sizing for the Pretty mark actually rendered.
-- `apps/web/src/components/ui/sidebar.tsx` — Original-width tracking, acceptance checks, and the guard against redundant writes for unchanged accepted widths.
-- `apps/web/src/components/ui/sidebar.tsx` — The fixed-width sidebar inner content remains synchronized with live resizing through a container-local width variable; the existing clipped peek, hover bridge, and rounded frame render paths remain intact.
-- `apps/web/src/hooks/useResizableWidth.test.tsx` — Retain the fork-added isConnected: true on the pointer-capture target, preserving the connected-element test setup associated with the fix for sidebar resizing after the first drag.
-- `apps/web/src/hooks/useResizeDrag.ts` — Repeatable sidebar resizing: the active drag is cleared before releasing pointer capture, preventing synchronous lostpointercapture from re-entering finalization.
-- `apps/web/src/hooks/useResizeDrag.ts` — Pointer release, body cursor/user-select restoration, and session cleanup remain in finally, including when the final resize flush throws.
-- `apps/web/src/hooks/useResizeDrag.ts` — Session finish runs only after a successful committed flush; existing abandoned-drag recovery, reset/unmount cancellation, and frame scheduling remain intact.
-- `apps/web/src/sourceControlPresentation.ts` — Cursor Origin remains a first-class source-control host with OriginIcon, provider-name overrides and fallback, and provider-specific change-request terminology.
-- `apps/web/src/sourceControlPresentation.ts` — Origin presentation remains reachable through both getSourceControlPresentation and the existing getSourceControlPresentationForKind helper.
-- `apps/web/src/state/sourceControlActions.ts` — Cursor Origin (`origin`) remains accepted by the repository-publishing action and is forwarded unchanged to the environment-scoped publish command.
-- `docs/user/install.md` — Keep the ~/.local/bin location and PATH troubleshooting explicitly scoped to macOS and Linux, rather than applying them to the documented Windows PowerShell installation.
-- `docs/user/install.md` — Preserve T3 Pretty's R2-based installation guidance and its deliberate removal of upstream channel/version selector instructions.
-- `docs/user/source-control.md` — Origin remains documented in the introduction and supported-provider list, including its forge URL and pull request, clone, and publish support; its existing authentication instructions remain unchanged.
-- `docs/user/source-control.md` — The fork's supported-provider descriptions and explicit ability to review changes without leaving the app are retained.
-- `packages/client-runtime/src/rpc/client.ts` — Retain WS_METHODS.automationsSubscribe as a subscription RPC, preserving its eligibility for subscription observation and stream typing rather than classifying it as a unary RPC.
-- `packages/contracts/src/pullRequest.ts` — Both timeline and review-thread comments retain the shared optional ForwardCompatibleArray reaction schema, so unknown reaction groups do not invalidate otherwise usable comments.
-- `packages/contracts/src/pullRequest.ts` — Existing reaction content, counts, actor attribution, and viewerHasReacted metadata remain unchanged, preserving the contract used to display and toggle reactions.
-- `packages/contracts/src/server.ts` — Provider-auth profileId remains optional, trimmed, and nonempty, with T3 Pretty's 4,096-character ServerProviderLabel limit.
-- `packages/contracts/src/sourceControl.ts` — Preserve Cursor Origin's "origin" provider kind in the shared contract and all supplied schemas that reference it, including provider metadata, change requests, and repository lookup, clone, and publish.
-- `packages/shared/src/changeRequestUrl.ts` — Origin pull-request URL generation remains https://cursor.com/codebase/{repository}/pull/{number}, compatible with the existing parser that associates these links with origin.cursor.com.
-- `packages/shared/src/sourceControl.ts` — Origin remains a supported ChangeRequestPresentation icon variant.
-- `packages/shared/src/sourceControl.ts` — The Origin presentation retains its provider identity, PR terminology, origin checkout command example, and cursor.com pull-request URL example.
-- `packages/shared/src/sourceControl.ts` — Cursor Origin remains a first-class provider in presentation resolution, retaining its Origin icon, branding, pull-request terminology, checkout example, and URL example instead of falling back to generic source-control presentation.
-- `packages/shared/src/sourceControl.ts` — Both terminology helpers continue to obtain Origin-specific labels through the shared presentation resolver.
-- `packages/source-control-azure-devops/src/server/AzureDevOpsSourceControlProvider.ts` — Azure DevOps change requests retain mergedAt from the CLI summary through the shared mapper used by both listChangeRequests and getChangeRequest.
+- `apps/desktop/src/ipc/methods/window.ts` — Kept `resolveEditorExecutable` while adopting `.icns` project-icon picker extensions.
+- `apps/server/src/assets/AssetAccess.ts` — Kept managed computer-picked icons and Grok session images; serve `.icns` as embedded PNG.
+- `apps/server/src/assets/AssetAccess.test.ts` — Kept managed-icon coverage and added the parent macOS `.icns` PNG test.
+- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` — Kept Claude subagent `role` while adopting reported reasoning `effort`.
+- `apps/server/src/workspace/WorkspaceSearchIndex.ts` — Kept invalid-path truncation accounting; favicon search now includes `.icns`.
+- `apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx` — Kept the stale-timer comment and adopted the parent cancel-on-navigation/disabled cleanup.
+- `apps/web/src/components/chat/providerIconUtils.test.ts` — Kept Grok package-icon mapping coverage and added OpenCode Zen/Go label tests.
+- `apps/web/src/components/settings/settingsSearch.ts` — Kept Pretty home-suggestions, live-activity, scenery, and agent-monitoring rows; added Version and Update track.
+- `apps/web/src/routes/settings.tsx` — Kept Pretty's `settingsEscapeAction` Escape handling; adopted Diagnostics/Providers mount-key so those panels stay mounted across project switches.
+- `packages/shared/src/KeyedCoalescingWorker.ts` — Adopted tail-requeue fairness so a busy key cannot starve others; still propagate processor interrupts.
+- `packages/shared/src/projectFavicon.ts` — Kept managed `t3-project-icon/` helpers and added `.icns` to project-favicon extensions.
 
 ## Parent changes integrated at conflict boundaries
 
-- `README.md` — Documented the new Windows Scoop installation option, `scoop install extras/t3code`, explicitly for the original T3 Code.
-- `apps/desktop/src/shell/DesktopShellEnvironment.ts` — Nonzero exit codes now reject shell-probe output with DesktopShellEnvironmentCommandError carrying the exit code, log the failure, and return empty output so existing fallback paths remain reachable.
-- `apps/desktop/src/shell/DesktopShellEnvironment.ts` — The parent's scoped spawn-and-wait implementation is composed with the fork's bounded stdout collector and stderr drain; successful output is returned only after process completion.
-- `apps/server/src/git/GitManager.test.ts` — Azure DevOps regression coverage for preparing an open PR worktree from the remote head branch when the host provides no pull ref, using an Azure remote URL with a local Git URL rewrite.
-- `apps/server/src/git/GitManager.test.ts` — Negative coverage ensuring a PR from another Azure repository and a merged PR cannot materialize the same-named remote branch or leave that local branch behind.
-- `apps/server/src/git/GitManager.test.ts` — Assertions that the Azure PR worktree uses the exact expected head commit and tracks origin/feature/no-pull-ref.
-- `apps/server/src/mcp/toolkits/orchestrator/tools.ts` — Distinguish independent review rounds, which use delegate_task with full review context and a new clientRequestId, from follow-ups that need the same child's conversation.
-- `apps/server/src/mcp/toolkits/orchestrator/tools.ts` — Document sending conversation-preserving follow-ups to childThreadId and creating a fresh task with a returned taskId after the original task completes.
-- `apps/server/src/mcp/toolkits/orchestrator/tools.ts` — Document that follow-up completion notifies the parent while leaving the original task result unchanged.
-- `apps/server/src/orchestration-v2/ProviderSessionManager.ts` — Acquires AgentScope in the provider-session manager layer while retaining the fork's responseStyleMessage helper.
-- `apps/server/src/preview/PortScanner.ts` — Removal of the COMMON_DEV_PORTS export and list, which OURS retained unchanged from BASE.
-- `apps/server/src/process/externalLauncher.test.ts` — Windows command-shim test helper and rejection tests for CRLF, LF, and double quotes in target paths, asserting no spawn and ExternalLauncherUnsupportedTargetError.
-- `apps/server/src/process/externalLauncher.test.ts` — Windows command-shim regression coverage for Unicode paths, cmd metacharacter escaping, shell usage, and --goto arguments.
-- `apps/server/src/process/externalLauncher.test.ts` — Shell-free editor regression coverage ensuring embedded line breaks pass through unchanged, including the upstream Windows-host skip.
-- `apps/server/src/server.ts` — Added the parent AgentScopeLive import from ./process/agentScope.ts without reverting Pretty's WebSocket import adaptation.
-- `apps/server/src/server.ts` — Replaced the manual StorageCleanup.make/start registration with StorageCleanup.layer, retaining the ProjectionStoreV2.layer dependency.
-- `apps/server/src/server.ts` — Adds AgentScopeLive.layer beneath the application and runtime layers so agent and terminal spawns receive it, preserving upstream's ordering relative to platform services.
-- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Adds the parent's GitCafeApi mock to satisfy the GitCafe dependency in the registry test layer.
-- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — GitCafe authentication-discovery coverage: add the cafe auth status --json mock with the schemaVersion 1 response, supporting the existing authenticated cafe-user assertion and verification that authentication details are not exposed.
-- `apps/server/src/storageCleanup.ts` — Initialize the shared cleanup report entries and pass them to the updated cleanWorktrees API, preserving worktree outcomes in the aggregate report.
-- `apps/server/src/storageCleanup.ts` — Record top-level worktree cleanup failures with cleanupFailureReason while retaining warning logging and continuing subsequent cleanup.
-- `apps/server/src/storageCleanup.ts` — Use the existing parent category loop for browser artifacts and rotated logs, preserving the updated cleanFiles accumulator API, partial-removal accounting, and report publication without duplicate cleanup calls.
-- `apps/server/src/storageCleanup.ts` — Reuse the parent’s single sweep timestamp, avoiding the obsolete duplicate now declaration.
-- `apps/server/src/usage/usageTranscriptReader.ts` — The function's return type exposes the readonly failedPaths counter without replacing Pretty's existing listing metadata.
-- `apps/server/src/usage/usageTranscriptReader.ts` — Failed directory opens increment failedPaths while retaining Pretty's directory-specific accounting.
-- `apps/server/src/usage/usageTranscriptReader.ts` — Non-ENOENT stat failures increment failedPaths; files disappearing with ENOENT remain ordinary rotation rather than failures.
-- `apps/server/src/usage/usageTranscriptReader.ts` — Returns failedPaths alongside files and Pretty's existing diagnostics, exposing unreadable directory and file failures while retaining the existing exclusion of ENOENT rotation events.
-- `apps/server/src/ws.ts` — Integrated the parent's StorageCleanup import alongside the fork's monitoring dependency.
-- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Use observeResize with the collected slot, inline preview panel, and sidebar-gap elements instead of direct ResizeObserver calls.
-- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Use the observeResize cleanup function during effect teardown, alongside the retained fork subscription cleanup.
-- `apps/web/src/components/ChatView.tsx` — Wire setWorkspaceLayoutElement to the workspace root, incorporating the parent's replacement of the former workspaceLayoutRef attachment.
-- `apps/web/src/components/GitActionsControl.tsx` — Added the GitCafeIcon import introduced by upstream.
-- `apps/web/src/components/GitActionsControl.tsx` — Retained ForgejoIcon through its existing shared import while eliminating the duplicate import.
-- `apps/web/src/components/GitActionsControl.tsx` — Add GitCafe ("gitcafe") to PublishProviderKind alongside the existing providers and Origin.
-- `apps/web/src/components/GitActionsControl.tsx` — Added the GitCafe publishing option with its gitcafe provider value, GitCafe label, git.cafe host and description, owner/repo placeholder, and GitCafeIcon. It participates in the existing provider lookup, type guard, and readiness flow.
-- `apps/web/src/components/GitActionsControl.tsx` — Adds the parent's GitCafe (`gitcafe`) publishing-account entry to the existing provider-account discovery and repository-owner prefill flow.
-- `apps/web/src/components/RightPanelTabs.tsx` — Integrates the complete upstream drag-and-drop import hunk: drag context, collision detection, pointer sensor and sensor hooks, DragEndEvent type, horizontal and scrollable-ancestor restrictions, sortable helpers, and CSS utilities.
-- `apps/web/src/components/RightPanelTabs.tsx` — Render the pending-surface indicator beside the surface icon within the properly closed PanelTabCloseButton.
-- `apps/web/src/components/RightPanelTabs.tsx` — Use the upstream sibling audio-control structure, gated by audio state and runtime tab ID, with accessible mute/unmute labels, MorphIcon feedback, propagation isolation, runtime-addressed bridge calls, and rejected-call handling.
-- `apps/web/src/components/RightPanelTabs.tsx` — Integrate the upstream JSX structure around device renaming and the title tooltip without duplicating the title or rename controls.
-- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Removes MessageSquareDashedIcon from the lucide-react import as upstream does, while retaining FolderPlusIcon.
-- `apps/web/src/components/chat/DraftHeroHeadline.tsx` — Replace MenuTrigger with ComboboxTrigger inside the project-selection Combobox.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — Retains upstream's CSSProperties React typing, which Pretty already includes.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — Adds upstream's RESIZABLE_WIDTH_PROPERTY import from the shared resize hook without replacing Pretty's sizing architecture.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — The parent's RESIZABLE_WIDTH_PROPERTY is initialized on the actual inline host and consumed through Pretty's --right-panel-width alias, propagating custom-property width changes to the existing frame and surface.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — The parent's shift away from pixel-only content-width bindings is adapted to Pretty's inline architecture rather than placed in the unreachable isInline condition of the non-inline branch.
-- `apps/web/src/components/pullRequest/PullRequestCodeTab.tsx` — Adds canResolvePullRequestThread from the parent editing logic while retaining canEditPullRequestComment.
-- `apps/web/src/components/sidebar/SidebarChrome.tsx` — Add the observeResize import required by SidebarBrandWidthProbe, retaining resize-driven sidebar minimum sizing that accounts for font size, zoom, and titlebar insets.
-- `apps/web/src/components/ui/sidebar.tsx` — Drag initialization and accepted resize frames update the gap and container directly instead of changing the wrapper's app-wide inherited width variable.
-- `apps/web/src/components/ui/sidebar.tsx` — The upstream widthTargets naming and initial clamped-width application are integrated with Pretty's resize tracking.
-- `apps/web/src/components/ui/sidebar.tsx` — Finish writes the wrapper width only when the drag actually changed it; cleanup removes inline target widths and restores the pre-drag container-local variable.
-- `apps/web/src/components/settings/StorageSettings.tsx` — WorktreesDirectoryRow, worktreeKeepWhen, CleanupSection (Delete now + last-run report), and CleanupResults are mounted around Pretty's existing policy and inventory sections.
-- `apps/server/src/usage/UsageService.ts` — Parse failures now mark `failed: true`, and scan diagnostics include the parent's failed-path / failed-parse unread count alongside Pretty's truncation and unreadable-directory warnings.
-- `apps/web/src/hooks/useResizableWidth.test.tsx` — Add the parentElement.style setProperty/removeProperty mock backed by hostStyle, supporting upstream assertions for direct CSS width updates and transition suppression during resizing.
-- `apps/web/src/hooks/useResizeDrag.ts` — The cleanup callback receives its committed boolean: true after a successful committed flush, and false for abandoned or failed-flush sessions. Existing cleanup(false) handling for pointer-capture failure remains intact.
-- `apps/web/src/sourceControlPresentation.ts` — GitCafe presentation uses GitCafeIcon while preserving the parent's provider-name fallback and change-request terminology resolution, including access through the existing kind-based helper.
-- `apps/web/src/state/sourceControlActions.ts` — GitCafe (`gitcafe`) is accepted by the repository-publishing action and forwarded through the existing publish command.
-- `docs/user/install.md` — Clarify that installation places the t3 binary in ~/.local/bin, adapted to the fork's macOS/Linux qualification.
-- `docs/user/source-control.md` — GitCafe is added alongside Origin in the introduction and included in the supported-provider list.
-- `docs/user/source-control.md` — The complete Review turn changes section is retained: turn diffs exclude files merely brought in by pull, merge, or rebase; retain files edited, committed, or conflict-resolved by the turn; direct users to branch comparison for the full comparison; and clarify that Restore returns the complete saved workspace.
-- `packages/client-runtime/src/rpc/client.ts` — Add WS_METHODS.serverGetStorageCleanupReport to the subscription RPC union, incorporating the parent's subscription classification into the derived stream types and unary exclusion.
-- `packages/contracts/src/pullRequest.ts` — Add optional host-reported canEdit to both PullRequestComment and PullRequestThreadComment, allowing both representations to carry the same edit permission while preserving absence for hosts that leave consumers to infer permission from authorship.
-- `packages/contracts/src/server.ts` — ServerProviderAuth gains the optional, trimmed, nonempty workspaceId field and its documentation identifying the workspace or organization whose quota the login uses.
-- `packages/contracts/src/sourceControl.ts` — Add the parent's "gitcafe" provider kind to the shared contract alongside Cursor Origin.
-- `packages/shared/src/changeRequestUrl.ts` — GitCafe change-request URL generation uses https://{host}/{repository}/pulls/{number}, matching the existing parser for git.cafe and staging.git.cafe.
-- `packages/shared/src/sourceControl.ts` — GitCafe is added to the ChangeRequestPresentation icon union alongside Origin and the existing providers.
-- `packages/shared/src/sourceControl.ts` — The complete parent GitCafe presentation is incorporated, including its provider identity, PR terminology, cafe checkout command example, and git.cafe pull-request URL example.
-- `packages/shared/src/sourceControl.ts` — GitCafe provider resolution now returns the parent GitCafe presentation, making its icon, branding, pull-request terminology, checkout example, and URL example available through the shared resolver and terminology helpers.
-- `packages/source-control-azure-devops/src/server/AzureDevOpsSourceControlProvider.ts` — Azure DevOps change requests expose summary.isCrossRepository instead of hardcoding false, preserving cross-repository status in both list and detail responses.
+- macOS `.icns` project icons (picker, path classification, PNG extraction, search).
+- OpenCode Zen vs Go provider-row labels and display-name qualifier stripping.
+- Settings Version / Update track search entries and hosted-channel visibility.
+- Diagnostics and Providers stay mounted when only the project scope changes.
+- Question auto-advance cancels after navigation or when permission is revoked.
+- Keyed coalescing worker yields to other keys between batches of a busy key.
+- Claude subagents record the reasoning effort they actually run at.
 
 ## Parent changes intentionally omitted
 
-- `apps/web/src/components/onboarding/WelcomeWizard.tsx` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
-- `apps/desktop/src/shell/DesktopShellEnvironment.ts` — Unbounded stdout accumulation through Stream.mkString(Stream.decodeText(child.stdout)).. Reason: It would remove the fork's explicit output-memory limit. The existing byte-bounded collector is retained instead.
-- `apps/desktop/src/shell/DesktopShellEnvironment.ts` — Collecting only stdout and exitCode with concurrency: 2, without draining stderr.. Reason: The fork deliberately drains piped stderr to prevent blocked child processes. All three effects remain concurrent, while the parent's exit-code validation is retained.
-- `apps/server/src/preview/PortScanner.ts` — THEIRS' 3-second polling interval, unchanged from BASE.. Reason: Using this cadence would undo T3 Pretty's deliberate 8-second interval and increase polling frequency. The fork's efficiency behavior takes priority.
-- `apps/server/src/server.ts` — THEIRS retains HeldHooksWaker.layer and its comment describing delivery of held T3 Connect webhooks.. Reason: This registration is unchanged from BASE, whereas OURS explicitly removes it. Preserve that fork-side deletion rather than reintroducing it alongside the unrelated StorageCleanup API refactor.
-- `apps/server/src/usage/UsageService.ts` — Parent's replacement of Pretty's truncation / unreadable-directory wording with an unread-only message. Reason: Both diagnostics are composed; the parent unread count is added rather than replacing Pretty's scan-limit warnings.
-- `apps/web/src/browser/BrowserSurfaceSlot.tsx` — Direct per-slot window resize/scroll listener registration and removal retained by THEIRS from BASE.. Reason: Using those listeners would undo T3 Pretty's deliberate shared, passive, frame-coalesced geometry handling. Both event sources remain connected through subscribeWindowGeometry; only the parent's immediate per-slot listener mechanism is omitted.
-- `apps/web/src/components/onboarding/Trailhead.import.test.tsx` — Change the import-step heading assertion from “Choose your projects” to “Import your projects”.. Reason: OURS deliberately replaces the base heading with Trailhead's “Pack your projects.” copy. Adopting the parent assertion would contradict the fork-specific heading; preserving this customized presentation takes priority.
-- `apps/web/src/components/onboarding/Trailhead.terminal.test.tsx` — Change the project-step expectation to “Import your projects”.. Reason: This is a competing parent copy assertion, not an additional capability. It would replace the deliberate Pretty-specific “Pack your projects.” expectation. Retaining the fork assertion preserves its Trailhead wording coverage without altering the surrounding terminal-access tests.
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — The parent's runtime imports of getPreviewPanelMaxWidth and usePreviewPanelInlineSize, which are unchanged from BASE, are not restored.. Reason: Pretty deliberately uses a locally defined, container-aware getPreviewPanelMaxWidth and direct useResizableWidth sizing. Importing the same helper name would conflict with the local declaration; restoring the parent sizing path would replace Pretty's sibling-space protection. The shared sizing type and upstream's new width-property constant are retained.
-- `apps/web/src/components/settings/StorageSettings.tsx` — Replacing Pretty's StorageCleanupPolicySections + StorageInventorySettings architecture with the parent's single-panel StorageSettingsPanel. Reason: Parent cleanup-run, worktree location, and keep-when controls are transplanted onto the fork panel instead of discarding Pretty's multi-device inventory.
-- `docs/user/install.md` — Retained upstream instructions to use T3CODE_CHANNEL=nightly or T3CODE_VERSION for CLI installation.. Reason: These instructions were already present in BASE and deliberately removed by OURS. The supplied context does not establish that the selectors apply to T3 Pretty's R2 installers, so restoring them would undo the fork's documentation change and assert unverified compatibility.
+- `apps/web/src/routes/settings.tsx` — Parent `useEscapeToGoBack` on the settings layout. Pretty already handles Escape through `settingsEscapeAction` (ignore / blur / leave). The generic hook would skip that and double-fire with the existing listener.
 
 ## Post-merge repairs
 
-- Compose StorageSettings.tsx after the scheduled run's fork-side fallback: keep Pretty inventory and policy sections, and mount parent WorktreesDirectoryRow, worktreeKeepWhen, and CleanupSection (Delete now + last-run report).
-- Compose UsageService.ts scan diagnostics so parent `failedPaths` / parse-failure unread counts sit beside Pretty's truncation and unreadable-directory warnings.
-- Finish sidebar.tsx resize cleanup: commit wrapper width only when the drag changed it, and restore the container-local `--sidebar-width` on pointer-up.
-- Regenerate `pnpm-lock.yaml` against the merged manifests. The 2922 lockfile auto-merged into a broken graph (`ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY` for `@effect/vitest@4.0.2`) and the scheduled repair refused to regenerate.
+- `mergeLearnedRoutes` no longer auto-learns `http:`/`ws:` routes when `allowInsecure` is true. Saved plaintext routes still stay and can still receive Tailscale labels. This is the Buildkite #3355 publication gate.
