@@ -3042,7 +3042,6 @@ function rememberClaudeSubagentLaunch(
       : ownerToolUseId === null
         ? context.input.modelSelection.model
         : undefined;
-  const effort = firstStringInputField(input, ["effort"]);
   // A model already known (a snapshot's, or an earlier sighting of this
   // call) wins over the requested one.
   const role = firstStringInputField(input, ["subagent_type", "role"]);
@@ -3051,7 +3050,6 @@ function rememberClaudeSubagentLaunch(
     ...(role === undefined ? {} : { role }),
     ...(effort === undefined ? {} : { effort }),
     ...(model === undefined || pending.get(toolUseId)?.model !== undefined ? {} : { model }),
-    ...(effort === undefined ? {} : { effort }),
     ...(ownerToolUseId === null ? {} : { ownerToolUseId }),
   };
   if (
@@ -4320,7 +4318,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly workflowName?: string;
           readonly error?: string;
           readonly role?: string;
-          readonly effort?: string;
           readonly usage?: RuntimeTaskUsage;
           readonly outputFile?: string;
           readonly lastTool?: string;
