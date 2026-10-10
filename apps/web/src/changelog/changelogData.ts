@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261010.2935003360",
+    date: "2026-10-10",
+    items: [
+      {
+        kind: "fixed",
+        title: "Drop duplicate Claude subagent effort bindings",
+      },
+      {
+        kind: "fixed",
+        title: "Menu imports on the draft PR picker",
+      },
+      {
+        kind: "fixed",
+        title: "Never auto-learn plaintext routes when allowInsecure",
+      },
+      {
+        kind: "fixed",
+        title: "Adapt GitCafe ChangeRequest.mergedAt to Option<Utc>",
+      },
+      {
+        kind: "fixed",
+        title: "Use observeResize in leftover fork ResizeObserver sites",
+      },
+      {
+        kind: "fixed",
+        title: "Retarget leftover 2908 identifiers so macos-dmg and ios-mobile pass",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261010.2922003354",
     date: "2026-10-10",
     items: [
