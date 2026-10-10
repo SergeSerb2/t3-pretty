@@ -423,7 +423,7 @@ export const make = Effect.gen(function* () {
         if (homePath.length === 0) {
           continue;
         }
-        const instanceHome = path.resolve(expandHomePath(homePath));
+        const instanceHome = path.resolve(expandHomePath(homePath, home));
         if (!(yield* isDirectory(instanceHome))) {
           continue;
         }

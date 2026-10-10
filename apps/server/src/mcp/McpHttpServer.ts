@@ -872,12 +872,21 @@ export const layerPreviewToolkit = Layer.mergeAll(
   layerPreviewSnapshotRegistration,
 );
 
-export const ComputerUseToolkitRegistrationLive = McpServer.toolkit(ComputerUseToolkit).pipe(
-  Layer.provide(ComputerUseToolkitHandlersLive),
+const toolkitWithoutInvocationContext = <A, E, R>(layer: Layer.Layer<A, E, R>) => {
+  // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off - the auth middleware provides it per request.
+  return layer as Layer.Layer<
+    A,
+    E,
+    Exclude<R, McpInvocationContext.McpInvocationContext>
+  >;
+};
+
+export const ComputerUseToolkitRegistrationLive = toolkitWithoutInvocationContext(
+  McpServer.toolkit(ComputerUseToolkit).pipe(Layer.provide(ComputerUseToolkitHandlersLive)),
 );
 
-export const AutomationsToolkitRegistrationLive = McpServer.toolkit(AutomationsToolkit).pipe(
-  Layer.provide(AutomationsToolkitHandlersLive),
+export const AutomationsToolkitRegistrationLive = toolkitWithoutInvocationContext(
+  McpServer.toolkit(AutomationsToolkit).pipe(Layer.provide(AutomationsToolkitHandlersLive)),
 );
 
 export const layerOrchestratorToolkit = toolkitRegistration(
@@ -914,8 +923,8 @@ export const layerPullRequestsToolkit = toolkitRegistration(
   PullRequestsHandlers.layer,
 );
 
-export const SecretsToolkitRegistrationLive = McpServer.toolkit(SecretsToolkit).pipe(
-  Layer.provide(SecretsToolkitHandlersLive),
+export const SecretsToolkitRegistrationLive = toolkitWithoutInvocationContext(
+  McpServer.toolkit(SecretsToolkit).pipe(Layer.provide(SecretsToolkitHandlersLive)),
 );
 
 const layerDeviceStandardToolkitRegistration = toolkitRegistration(

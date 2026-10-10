@@ -362,16 +362,32 @@ it.effect("propagates OriginCli layer construction failures", () =>
                 Effect.die(new Error("Service not found: t3/sourceControl/OriginCli")),
               ),
               Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
+              Layer.mock(AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli)({}),
               Layer.mock(BitbucketApi.BitbucketApi)({}),
+              Layer.mock(BitbucketPullRequestApi.BitbucketPullRequestApi)({}),
               Layer.mock(GitHubApi.GitHubApi)({}),
+              Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({}),
               Layer.mock(GitVcsDriver.GitVcsDriver)({}),
               ServerSettings.ServerSettingsService.layerTest(),
               Layer.mock(GitLabCli.GitLabCli)({}),
+              Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
               Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
               Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
               Layer.mock(VcsProcess.VcsProcess)({
                 run: () => Effect.succeed(processOutput("")),
               }),
+              ServerSourceControlHost.layer.pipe(
+                Layer.provide(
+                  Layer.mergeAll(
+                    Layer.mock(VcsProcess.VcsProcess)({
+                      run: () => Effect.succeed(processOutput("")),
+                    }),
+                    Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+                    ServerSettings.ServerSettingsService.layerTest(),
+                    Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+                  ),
+                ),
+              ),
               ServerConfig.layerTest(process.cwd(), {
                 prefix: "t3-source-control-registry-missing-origin-",
               }).pipe(Layer.provide(NodeServices.layer)),
@@ -403,16 +419,32 @@ it.effect("propagates ForgejoCli layer construction failures", () =>
                 Effect.die(new Error("Service not found: t3/sourceControl/ForgejoCli")),
               ),
               Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
+              Layer.mock(AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli)({}),
               Layer.mock(BitbucketApi.BitbucketApi)({}),
+              Layer.mock(BitbucketPullRequestApi.BitbucketPullRequestApi)({}),
               Layer.mock(GitHubApi.GitHubApi)({}),
+              Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({}),
               Layer.mock(GitVcsDriver.GitVcsDriver)({}),
               ServerSettings.ServerSettingsService.layerTest(),
               Layer.mock(GitLabCli.GitLabCli)({}),
+              Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
               Layer.mock(OriginCli.OriginCli)({}),
               Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
               Layer.mock(VcsProcess.VcsProcess)({
                 run: () => Effect.succeed(processOutput("")),
               }),
+              ServerSourceControlHost.layer.pipe(
+                Layer.provide(
+                  Layer.mergeAll(
+                    Layer.mock(VcsProcess.VcsProcess)({
+                      run: () => Effect.succeed(processOutput("")),
+                    }),
+                    Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+                    ServerSettings.ServerSettingsService.layerTest(),
+                    Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+                  ),
+                ),
+              ),
               ServerConfig.layerTest(process.cwd(), {
                 prefix: "t3-source-control-registry-missing-forgejo-",
               }).pipe(Layer.provide(NodeServices.layer)),
@@ -443,11 +475,15 @@ it.effect("boots the registry layer when OriginCli.layer is provided", () =>
           Layer.mergeAll(
             NodeServices.layer,
             Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
+            Layer.mock(AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli)({}),
             Layer.mock(BitbucketApi.BitbucketApi)({}),
+            Layer.mock(BitbucketPullRequestApi.BitbucketPullRequestApi)({}),
             Layer.mock(GitHubApi.GitHubApi)({}),
+            Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({}),
             Layer.mock(GitVcsDriver.GitVcsDriver)({}),
             ServerSettings.ServerSettingsService.layerTest(),
             Layer.mock(GitLabCli.GitLabCli)({}),
+            Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
             Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
             OriginCli.layer.pipe(
               Layer.provide(
@@ -460,6 +496,18 @@ it.effect("boots the registry layer when OriginCli.layer is provided", () =>
             Layer.mock(VcsProcess.VcsProcess)({
               run: () => Effect.succeed(processOutput("")),
             }),
+            ServerSourceControlHost.layer.pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  Layer.mock(VcsProcess.VcsProcess)({
+                    run: () => Effect.succeed(processOutput("")),
+                  }),
+                  Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+                  ServerSettings.ServerSettingsService.layerTest(),
+                  Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+                ),
+              ),
+            ),
             ServerConfig.layerTest(process.cwd(), {
               prefix: "t3-source-control-registry-origin-boot-",
             }).pipe(Layer.provide(NodeServices.layer)),
@@ -483,11 +531,15 @@ it.effect("boots the registry layer when ForgejoCli.layer is provided", () =>
             NodeServices.layer,
             FetchHttpClient.layer,
             Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
+            Layer.mock(AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli)({}),
             Layer.mock(BitbucketApi.BitbucketApi)({}),
+            Layer.mock(BitbucketPullRequestApi.BitbucketPullRequestApi)({}),
             Layer.mock(GitHubApi.GitHubApi)({}),
+            Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({}),
             Layer.mock(GitVcsDriver.GitVcsDriver)({}),
             ServerSettings.ServerSettingsService.layerTest(),
             Layer.mock(GitLabCli.GitLabCli)({}),
+            Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
             Layer.mock(OriginCli.OriginCli)({}),
             ForgejoCli.layer.pipe(
               Layer.provide(
@@ -497,6 +549,18 @@ it.effect("boots the registry layer when ForgejoCli.layer is provided", () =>
                   Layer.mock(VcsProcess.VcsProcess)({
                     run: () => Effect.succeed(processOutput("")),
                   }),
+                  ServerSourceControlHost.layer.pipe(
+                    Layer.provide(
+                      Layer.mergeAll(
+                        Layer.mock(VcsProcess.VcsProcess)({
+                          run: () => Effect.succeed(processOutput("")),
+                        }),
+                        Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+                        ServerSettings.ServerSettingsService.layerTest(),
+                        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -504,6 +568,18 @@ it.effect("boots the registry layer when ForgejoCli.layer is provided", () =>
             Layer.mock(VcsProcess.VcsProcess)({
               run: () => Effect.succeed(processOutput("")),
             }),
+            ServerSourceControlHost.layer.pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  Layer.mock(VcsProcess.VcsProcess)({
+                    run: () => Effect.succeed(processOutput("")),
+                  }),
+                  Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+                  ServerSettings.ServerSettingsService.layerTest(),
+                  Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+                ),
+              ),
+            ),
             ServerConfig.layerTest(process.cwd(), {
               prefix: "t3-source-control-registry-forgejo-boot-",
             }).pipe(Layer.provide(NodeServices.layer)),

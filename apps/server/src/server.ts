@@ -128,6 +128,7 @@ import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
+import * as ComputerUseService from "./computerUse/ComputerUseService.ts";
 import * as OriginCli from "./sourceControl/OriginCli.ts";
 import * as SourceControlBuiltInDrivers from "./sourceControl/builtInDrivers.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
@@ -713,10 +714,11 @@ const RuntimeCoreDependenciesLive = RuntimeCoreDependenciesBaseLive.pipe(
 );
 
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
-  // Misc.
+  // Misc. Usage readers need ProviderHost, which needs BackgroundPolicy, so
+  // the usage layer is merged first and Background satisfies it.
+  Layer.provideMerge(Layer.mergeAll(UsageLayerLive, StorageInventoryLayerLive)),
   Layer.provideMerge(BackgroundLayerLive),
   Layer.provideMerge(ResourceDiagnosticsLayerLive),
-  Layer.provideMerge(Layer.mergeAll(UsageLayerLive, StorageInventoryLayerLive)),
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(AnalyticsService.layer),
   Layer.provideMerge(ExternalLauncher.layer),
@@ -767,6 +769,7 @@ const makeRoutesLayer = Layer.mergeAll(
   // orchestrator uses, so MCP capability reporting can never drift from
   // what dispatch can actually serve.
   McpHttpServer.layer.pipe(
+    Layer.provide(ComputerUseService.layer),
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
   ),

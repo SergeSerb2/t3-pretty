@@ -35,6 +35,7 @@ import * as Path from "effect/Path";
 
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { ServerSettingsService } from "../serverSettings.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
 import { readFilePrefix } from "../boundedFileRead.ts";
@@ -159,11 +160,12 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+    const home = yield* HostProcess.HomeDirectory;
     const targets: Array<InstructionTarget> = [];
     const seenPaths = new Set<string>();
     for (const convention of GLOBAL_CONVENTIONS) {
       const defaultDirectory = path.resolve(
-        expandHomePath(convention.defaultDirectory(process.env)),
+        expandHomePath(convention.defaultDirectory(process.env), home),
       );
       const defaultPath = path.join(defaultDirectory, convention.fileName);
       seenPaths.add(defaultPath);
@@ -189,7 +191,10 @@ export const make = Effect.gen(function* () {
         if (homePath.length === 0) {
           continue;
         }
-        const instancePath = path.join(path.resolve(expandHomePath(homePath)), convention.fileName);
+        const instancePath = path.join(
+          path.resolve(expandHomePath(homePath, home)),
+          convention.fileName,
+        );
         if (seenPaths.has(instancePath)) {
           continue;
         }
