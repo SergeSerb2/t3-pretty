@@ -18,7 +18,7 @@ import {
   decodeOriginPullRequestJson,
   decodeOriginPullRequestListJson,
 } from "./originPullRequests.ts";
-import type * as SourceControlProvider from "./SourceControlProvider.ts";
+import type * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const ORIGIN_GIT_HOST = "origin.cursor.com";

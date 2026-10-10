@@ -5,14 +5,14 @@ import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contrac
 
 import * as OriginCli from "./OriginCli.ts";
 import { parseOriginAuthStatus } from "./originAuthStatus.ts";
-import * as SourceControlProvider from "./SourceControlProvider.ts";
+import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import {
   combinedAuthOutput,
   firstSafeAuthLine,
   providerAuth,
   type SourceControlAuthProbeInput,
   type SourceControlCliDiscoverySpec,
-} from "./SourceControlProviderDiscovery.ts";
+} from "@t3tools/source-control-core/server/discovery";
 
 function toChangeRequest(summary: OriginCli.OriginPullRequestSummary): ChangeRequest {
   return {

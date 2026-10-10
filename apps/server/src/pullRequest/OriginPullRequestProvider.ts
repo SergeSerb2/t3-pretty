@@ -6,7 +6,7 @@ import {
   PullRequestProviderError,
   type PullRequestProviderFailure,
   type PullRequestProviderApi,
-} from "./PullRequestProvider.ts";
+} from "@t3tools/source-control-core/server/PullRequestProvider";
 
 const CAPABILITIES: PullRequestCapabilities = {
   diff: true,

@@ -21,7 +21,7 @@ import {
   originPullRequestState,
   originPullRequestUrl,
 } from "../sourceControl/originPullRequests.ts";
-import type { ProviderChangeRequest, ProviderChangeRequestDetail } from "./PullRequestProvider.ts";
+import type { ProviderChangeRequest, ProviderChangeRequestDetail } from "@t3tools/source-control-core/server/PullRequestProvider";
 
 const UnknownRecord = Schema.Record(Schema.String, Schema.Unknown);
 

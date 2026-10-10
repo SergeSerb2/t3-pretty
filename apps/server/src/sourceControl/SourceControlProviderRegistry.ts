@@ -11,27 +11,18 @@ import {
 import type { SourceControlProviderKind } from "@t3tools/contracts";
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
-import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
-import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
-import * as BitbucketApi from "./BitbucketApi.ts";
-import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
-import * as GitHubApi from "./GitHubApi.ts";
-import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
-import * as GitLabCli from "./GitLabCli.ts";
-import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
-import * as ForgejoCli from "./ForgejoCli.ts";
-import * as ForgejoSourceControlProvider from "./ForgejoSourceControlProvider.ts";
-import * as OriginCli from "./OriginCli.ts";
+import * as BuiltInDrivers from "./builtInDrivers.ts";
 import * as OriginSourceControlProvider from "./OriginSourceControlProvider.ts";
-import * as SourceControlProvider from "./SourceControlProvider.ts";
+import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import {
   probeSourceControlProvider,
   refineUnknownRemoteProvider,
   type SourceControlProviderDiscoverySpec,
-} from "./SourceControlProviderDiscovery.ts";
+} from "@t3tools/source-control-core/server/discovery";
+import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+
 import * as ServerConfig from "../config.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
-import * as VcsProcess from "../vcs/VcsProcess.ts";
 
 const PROVIDER_DETECTION_CACHE_CAPACITY = 2_048;
 const PROVIDER_DETECTION_CACHE_TTL = Duration.seconds(5);
@@ -166,11 +157,9 @@ function bindProviderContext(
   if (context === null) {
     return provider;
   }
-  const getAutomatedReview = provider.getAutomatedReview;
 
   return SourceControlProvider.SourceControlProvider.of({
-    kind: provider.kind,
-    ...(provider.resolveLink ? { resolveLink: provider.resolveLink } : {}),
+    ...provider,
     listChangeRequests: (input) =>
       provider.listChangeRequests({
         ...input,
@@ -181,17 +170,6 @@ function bindProviderContext(
         ...input,
         context: input.context ?? context,
       }),
-    ...(getAutomatedReview
-      ? {
-          getAutomatedReview: (
-            input: Parameters<NonNullable<typeof provider.getAutomatedReview>>[0],
-          ) =>
-            getAutomatedReview({
-              ...input,
-              context: input.context ?? context,
-            }),
-        }
-      : {}),
     createChangeRequest: (input) =>
       provider.createChangeRequest({
         ...input,
@@ -220,7 +198,7 @@ function bindProviderContext(
 export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWithProviders")(
   function* (registrations: ReadonlyArray<SourceControlProviderRegistration>) {
     const config = yield* ServerConfig.ServerConfig;
-    const process = yield* VcsProcess.VcsProcess;
+    const { process } = yield* SourceControlHost.SourceControlHost;
     const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
     const providers = new Map<
       SourceControlProviderKind,
@@ -322,55 +300,24 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
   },
 );
 
-/** CLI/API clients the live registry constructs during boot. Origin and
- * Forgejo were registered in `make` but omitted from this provide-merge,
- * which died with `Service not found` during packaged desktop backend boot. */
-export const sourceControlProviderCliLayers = Layer.mergeAll(
-  AzureDevOpsCli.layer,
-  BitbucketApi.layer,
-  GitHubApi.layerWithDependencies,
-  GitLabCli.layer,
-  OriginCli.layer,
-  ForgejoCli.layer,
-);
-
 export const make = Effect.gen(function* () {
-  const github = yield* GitHubSourceControlProvider.make;
-  const githubDiscovery = yield* GitHubSourceControlProvider.makeDiscovery;
-  const gitlab = yield* GitLabSourceControlProvider.make;
+  const drivers = yield* Effect.forEach(BuiltInDrivers.BUILT_IN_SOURCE_CONTROL_DRIVERS, (driver) =>
+    driver.make.pipe(
+      Effect.map((instance): SourceControlProviderRegistration => ({
+        kind: driver.kind,
+        provider: instance.sourceControl,
+        discovery: instance.discovery,
+      })),
+    ),
+  );
   const origin = yield* OriginSourceControlProvider.make;
-  const forgejo = yield* ForgejoSourceControlProvider.make;
-  const forgejoDiscovery = yield* ForgejoSourceControlProvider.makeDiscovery;
-  const bitbucket = yield* BitbucketSourceControlProvider.make;
-  const bitbucketDiscovery = yield* BitbucketSourceControlProvider.makeDiscovery;
-  const azureDevOps = yield* AzureDevOpsSourceControlProvider.make;
   return yield* makeWithProviders([
-    {
-      kind: "github",
-      provider: github,
-      discovery: githubDiscovery,
-    },
-    {
-      kind: "gitlab",
-      provider: gitlab,
-      discovery: GitLabSourceControlProvider.discovery,
-    },
-    {
-      kind: "azure-devops",
-      provider: azureDevOps,
-      discovery: AzureDevOpsSourceControlProvider.discovery,
-    },
-    {
-      kind: "bitbucket",
-      provider: bitbucket,
-      discovery: bitbucketDiscovery,
-    },
+    ...drivers,
     {
       kind: "origin",
       provider: origin,
       discovery: OriginSourceControlProvider.discovery,
     },
-    { kind: "forgejo", provider: forgejo, discovery: forgejoDiscovery },
   ]);
 });
 

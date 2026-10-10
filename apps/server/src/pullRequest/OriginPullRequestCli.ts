@@ -32,7 +32,7 @@ import type {
   ProviderChangeRequestPage,
   ProviderDiffSlice,
   ProviderListCursor,
-} from "./PullRequestProvider.ts";
+} from "@t3tools/source-control-core/server/PullRequestProvider";
 
 export class OriginPullRequestReadError extends Schema.TaggedError<OriginPullRequestReadError>()(
   "OriginPullRequestReadError",
