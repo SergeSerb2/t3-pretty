@@ -887,11 +887,12 @@ repair_sync_tree() {
   local status=0
   case "$SYNC_FAIL_STEP" in
     install)
-      # Network, registry, or vp i crashes are not lockfile drift. Only a
-      # frozen-lockfile refusal means the merged manifests and the lockfile
-      # disagree even though the lockfile itself did not conflict.
+      # Network, registry, or vp i crashes are not lockfile drift. A
+      # frozen-lockfile refusal, or a lockfile that lost an importer after a
+      # bad auto-merge, means the merged manifests and the lockfile disagree
+      # even though the lockfile itself did not stay conflicted.
       if [[ -z "${VALIDATION_LOG:-}" || ! -f "$VALIDATION_LOG" ]] ||
-        ! grep -Eq 'ERR_PNPM_OUTDATED_LOCKFILE|ERR_PNPM_LOCKFILE_CONFIG_MISMATCH|lockfile is not up to date' "$VALIDATION_LOG"; then
+        ! grep -Eq 'ERR_PNPM_OUTDATED_LOCKFILE|ERR_PNPM_LOCKFILE_CONFIG_MISMATCH|ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY|lockfile is not up to date' "$VALIDATION_LOG"; then
         echo "Install failed without a frozen-lockfile refusal; not regenerating pnpm-lock.yaml." >&2
         return 1
       fi

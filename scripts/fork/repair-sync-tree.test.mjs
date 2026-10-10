@@ -428,7 +428,17 @@ describe("run-upstream-sync.sh repair loop", () => {
     );
     assert.include(installRepair, "ERR_PNPM_OUTDATED_LOCKFILE");
     assert.include(installRepair, "ERR_PNPM_LOCKFILE_CONFIG_MISMATCH");
+    assert.include(installRepair, "ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY");
     assert.include(installRepair, "lockfile is not up to date");
+    const lockfileRefusal = installRepair.match(/grep -Eq '([^']+)'/)?.[1];
+    assert.ok(lockfileRefusal);
+    const lockfileRefusalPattern = new RegExp(lockfileRefusal);
+    assert.match(
+      "[ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY] Broken lockfile: no entry for '@effect/vitest@4.0.2'",
+      lockfileRefusalPattern,
+    );
+    assert.match("ERR_PNPM_OUTDATED_LOCKFILE", lockfileRefusalPattern);
+    assert.notMatch("ERR_PNPM_UNEXPECTED_STORE", lockfileRefusalPattern);
     assert.isBelow(
       installRepair.indexOf("ERR_PNPM_OUTDATED_LOCKFILE"),
       installRepair.indexOf("regenerate_lockfile"),
