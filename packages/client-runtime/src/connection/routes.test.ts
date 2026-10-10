@@ -282,6 +282,21 @@ describe("learned routes", () => {
     ).toBeNull();
   });
 
+  it("never learns plaintext routes even when allowInsecure is true", () => {
+    expect(
+      mergeLearnedRoutes({
+        entry: relayOnly,
+        activeRoute: RELAY,
+        allowInsecure: true,
+        reported: [
+          { httpBaseUrl: "http://192.168.1.10:3773/" },
+          { httpBaseUrl: "http://100.101.102.103:3773/" },
+          { httpBaseUrl: "http://guard.example/" },
+        ],
+      }),
+    ).toBeNull();
+  });
+
   it("removes learned routes along with the route whose credential they borrow", () => {
     const overRelay = mergeLearnedRoutes({
       entry: relayOnly,

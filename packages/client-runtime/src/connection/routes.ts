@@ -330,6 +330,9 @@ export function mergeLearnedRoutes(input: {
   let next: ReadonlyArray<ConnectionRoute> = kept;
   for (const url of reported.values()) {
     if (known.has(url.origin)) continue;
+    // allowInsecure only keeps already-saved plaintext usable (mixed-content
+    // vs native). Automatically learned routes must still be https/wss.
+    if (url.protocol !== "https:") continue;
     const httpBaseUrl = `${url.origin}/`;
     const connectionId = learnedConnectionId(
       entry.target.environmentId,
