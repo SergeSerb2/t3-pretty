@@ -3,7 +3,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { ComputerScreenshotInput, ComputerScrollInput, ComputerUseError } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -45,7 +45,7 @@ const makeServiceHarness = (options?: {
   });
   const serviceLayer = Layer.effect(ComputerUseService, make).pipe(
     Layer.provide(executorLayer),
-    Layer.provide(Layer.succeed(HostProcessPlatform, options?.platform ?? "darwin")),
+    Layer.provide(Layer.succeed(HostProcess.Platform, options?.platform ?? "darwin")),
   );
   const getService = ComputerUseService.pipe(Effect.provide(serviceLayer));
   return { calls, getService };
@@ -346,7 +346,7 @@ it.effect("non-zero process exit surfaces as action-failed with stderr detail", 
     const executorLayer = ComputerUseExecutorLive.pipe(Layer.provide(processRunnerLayer));
     const serviceLayer = Layer.effect(ComputerUseService, make).pipe(
       Layer.provide(executorLayer),
-      Layer.provide(Layer.succeed(HostProcessPlatform, "darwin")),
+      Layer.provide(Layer.succeed(HostProcess.Platform, "darwin")),
     );
     const service = yield* ComputerUseService.pipe(Effect.provide(serviceLayer));
 

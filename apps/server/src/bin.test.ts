@@ -16,7 +16,7 @@ import {
 } from "@t3tools/contracts";
 import * as NetService from "@t3tools/shared/Net";
 import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { assert, it } from "@effect/vitest";
@@ -65,7 +65,7 @@ import packageJson from "../package.json" with { type: "json" };
 
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 const DisconnectedLauncherChildLayer = Layer.mergeAll(
-  Layer.succeed(HostProcessEnvironment, {
+  Layer.succeed(HostProcess.Environment, {
     ...process.env,
     [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify({
       protocol: SERVICE_LAUNCHER_PROTOCOL,

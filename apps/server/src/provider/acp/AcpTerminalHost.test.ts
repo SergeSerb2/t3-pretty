@@ -7,11 +7,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { describe, expect } from "vite-plus/test";
-import {
-  HostProcessExecutablePath,
-  HostProcessPlatform,
-  HostProcessWorkingDirectory,
-} from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import {
   appendTerminalOutput,
@@ -219,8 +215,8 @@ describe("appendTerminalOutput", () => {
 describe("AcpTerminalHost", () => {
   it.effect("runs argv commands and returns output after exit", () =>
     Effect.gen(function* () {
-      const cwd = yield* HostProcessWorkingDirectory;
-      const execPath = yield* HostProcessExecutablePath;
+      const cwd = yield* HostProcess.WorkingDirectory;
+      const execPath = yield* HostProcess.ExecutablePath;
       const host = yield* makeAcpTerminalHost({ cwd });
       const created = yield* host.create({
         sessionId,
@@ -244,10 +240,10 @@ describe("AcpTerminalHost", () => {
 
   it.effect("runs omitted-args command lines through the shell", () =>
     Effect.gen(function* () {
-      const cwd = yield* HostProcessWorkingDirectory;
+      const cwd = yield* HostProcess.WorkingDirectory;
       const host = yield* makeAcpTerminalHost({ cwd });
-      const platform = yield* HostProcessPlatform;
-      const execPath = yield* HostProcessExecutablePath;
+      const platform = yield* HostProcess.Platform;
+      const execPath = yield* HostProcess.ExecutablePath;
       const command =
         platform === "win32"
           ? `"${execPath}" -e "process.stdout.write('via-shell')"`
@@ -268,8 +264,8 @@ describe("AcpTerminalHost", () => {
 
   it.effect("kills a long-running command", () =>
     Effect.gen(function* () {
-      const cwd = yield* HostProcessWorkingDirectory;
-      const execPath = yield* HostProcessExecutablePath;
+      const cwd = yield* HostProcess.WorkingDirectory;
+      const execPath = yield* HostProcess.ExecutablePath;
       const host = yield* makeAcpTerminalHost({ cwd });
       const created = yield* host.create({
         sessionId,
@@ -291,8 +287,8 @@ describe("AcpTerminalHost", () => {
 
   it.effect("rejects terminal access from a different session", () =>
     Effect.gen(function* () {
-      const cwd = yield* HostProcessWorkingDirectory;
-      const execPath = yield* HostProcessExecutablePath;
+      const cwd = yield* HostProcess.WorkingDirectory;
+      const execPath = yield* HostProcess.ExecutablePath;
       const host = yield* makeAcpTerminalHost({ cwd });
       const created = yield* host.create({
         sessionId,
@@ -310,8 +306,8 @@ describe("AcpTerminalHost", () => {
 
   it.effect("rejects cwd outside the session working directory", () =>
     Effect.gen(function* () {
-      const cwd = yield* HostProcessWorkingDirectory;
-      const execPath = yield* HostProcessExecutablePath;
+      const cwd = yield* HostProcess.WorkingDirectory;
+      const execPath = yield* HostProcess.ExecutablePath;
       const host = yield* makeAcpTerminalHost({ cwd });
       const outside = NodePath.resolve(cwd, "..");
       expect(outside).not.toBe(NodePath.resolve(cwd));
@@ -329,8 +325,8 @@ describe("AcpTerminalHost", () => {
 
   it.effect("truncates output to the requested byte limit", () =>
     Effect.gen(function* () {
-      const cwd = yield* HostProcessWorkingDirectory;
-      const execPath = yield* HostProcessExecutablePath;
+      const cwd = yield* HostProcess.WorkingDirectory;
+      const execPath = yield* HostProcess.ExecutablePath;
       const host = yield* makeAcpTerminalHost({ cwd });
       const created = yield* host.create({
         sessionId,
@@ -357,7 +353,7 @@ describe("AcpTerminalHost", () => {
       const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "acp-term-host-out-" });
       const escapeLink = path.join(sessionRoot, "escape");
       yield* fileSystem.symlink(outside, escapeLink);
-      const execPath = yield* HostProcessExecutablePath;
+      const execPath = yield* HostProcess.ExecutablePath;
       const host = yield* makeAcpTerminalHost({ cwd: sessionRoot });
       const error = yield* host
         .create({
@@ -373,8 +369,8 @@ describe("AcpTerminalHost", () => {
 
   it.effect("output includes the full stdout tail once it reports exitStatus", () =>
     Effect.gen(function* () {
-      const cwd = yield* HostProcessWorkingDirectory;
-      const execPath = yield* HostProcessExecutablePath;
+      const cwd = yield* HostProcess.WorkingDirectory;
+      const execPath = yield* HostProcess.ExecutablePath;
       const host = yield* makeAcpTerminalHost({ cwd });
       const created = yield* host.create({
         sessionId,
@@ -404,8 +400,8 @@ describe("AcpTerminalHost", () => {
 
   it.effect("rejects output after release", () =>
     Effect.gen(function* () {
-      const cwd = yield* HostProcessWorkingDirectory;
-      const execPath = yield* HostProcessExecutablePath;
+      const cwd = yield* HostProcess.WorkingDirectory;
+      const execPath = yield* HostProcess.ExecutablePath;
       const host = yield* makeAcpTerminalHost({ cwd });
       const created = yield* host.create({
         sessionId,

@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -37,7 +37,7 @@ const PONYTAIL_SKILL_MD = [
 const makeLibrary = (home: string, overrides: { providerInstances?: TestProviderInstances } = {}) =>
   make.pipe(
     Effect.provideService(SkillLibraryHomeDirectory, home),
-    Effect.provideService(HostProcessEnvironment, {}),
+    Effect.provideService(HostProcess.Environment, {}),
     Effect.provide(
       serverSettingsLayerTest(
         overrides as unknown as Parameters<typeof serverSettingsLayerTest>[0],
@@ -457,7 +457,7 @@ it.layer(
       const home = yield* tempHome(".cursor", ".codex", "claude-elsewhere");
       const library = yield* make.pipe(
         Effect.provideService(SkillLibraryHomeDirectory, home),
-        Effect.provideService(HostProcessEnvironment, {
+        Effect.provideService(HostProcess.Environment, {
           CLAUDE_CONFIG_DIR: path.join(home, "claude-elsewhere"),
         }),
         Effect.provide(serverSettingsLayerTest({})),

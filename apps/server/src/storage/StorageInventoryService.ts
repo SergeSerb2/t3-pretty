@@ -1,4 +1,4 @@
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as DateTime from "effect/DateTime";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -96,7 +96,7 @@ export const make = Effect.gen(function* () {
   const projects = yield* ProjectStoreV2;
   const threads = yield* ProjectionStoreV2;
   const vcsProcess = yield* VcsProcess.VcsProcess;
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
 
   const managedRoot = canonicalizeStoragePath(config.worktreesDir);
 

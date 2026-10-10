@@ -41,7 +41,7 @@ import {
   type SkillSource,
   type SkillsState,
 } from "@t3tools/contracts";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
 import { parseSkillFrontmatter, SKILL_FRONTMATTER_PATTERN } from "@t3tools/shared/skillFrontmatter";
 import { normalizeSkillId } from "@t3tools/shared/skillTool";
@@ -309,8 +309,8 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
   const serverSettings = yield* ServerSettingsService;
-  const platform = yield* HostProcessPlatform;
-  const environment = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const environment = yield* HostProcess.Environment;
   const home = path.resolve(yield* SkillLibraryHomeDirectory);
 
   const abbreviateHome = (absolutePath: string): string =>

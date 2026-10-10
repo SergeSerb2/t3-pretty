@@ -207,7 +207,7 @@ const isStatSkippableBootstrapFdError = Predicate.compose(
 
 const isFdReady = (fd: number) =>
   Effect.gen(function* () {
-    const platform = yield* HostProcessPlatform;
+    const platform = yield* HostProcess.Platform;
     return yield* Effect.try({
       try: () => NodeFS.fstatSync(fd),
       catch: (error) =>

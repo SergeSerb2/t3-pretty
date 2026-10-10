@@ -19,7 +19,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/compat";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 export interface AcpTerminalHost {
@@ -170,7 +170,7 @@ export const confineAcpTerminalCwd = (
   sessionCwd: string,
 ): Effect.Effect<string | undefined> =>
   Effect.gen(function* () {
-    const platform = yield* HostProcessPlatform;
+    const platform = yield* HostProcess.Platform;
     const path = pathForPlatform(platform);
     const realRoot = yield* realpathOrUndefined(path.resolve(sessionCwd));
     if (realRoot === undefined) {
@@ -270,8 +270,8 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
     const crypto = yield* Crypto.Crypto;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const sessionScope = yield* Scope.Scope;
-    const platform = yield* HostProcessPlatform;
-    const hostEnvironment = yield* HostProcessEnvironment;
+    const platform = yield* HostProcess.Platform;
+    const hostEnvironment = yield* HostProcess.Environment;
     const terminals = new Map<string, HostedTerminal>();
 
     const getTerminal = (request: { readonly sessionId: string; readonly terminalId: string }) => {

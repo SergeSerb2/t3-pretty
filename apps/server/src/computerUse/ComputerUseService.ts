@@ -4,7 +4,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   type ComputerActionResult,
   type ComputerClickInput,
@@ -274,7 +274,7 @@ const ScreenInfoJson = Schema.fromJsonString(ComputerScreenInfoResult);
 
 export const make = Effect.gen(function* () {
   const executor = yield* ComputerUseExecutor;
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
 
   const requireDarwin = Effect.fn("ComputerUseService.requireDarwin")(function* () {
     if (platform !== "darwin") {

@@ -4,7 +4,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
-import { HostProcessPlatform } from "./hostProcess.ts";
+import * as HostProcess from "./HostProcess.ts";
 import { resolveCommandPath } from "./shell.ts";
 
 /**
@@ -152,7 +152,7 @@ export const resolveEditorExecutable = Effect.fn("editorLaunch.resolveEditorExec
       if (seen.has(candidate)) return Option.none<string>();
       seen.add(candidate);
       const resolved = yield* resolveCommandPath(candidate, { env: input.env }).pipe(
-        Effect.provideService(HostProcessPlatform, input.platform),
+        Effect.provideService(HostProcess.Platform, input.platform),
         Effect.map(Option.some),
         Effect.catchTag("CommandResolutionError", () => Effect.succeed(Option.none<string>())),
       );

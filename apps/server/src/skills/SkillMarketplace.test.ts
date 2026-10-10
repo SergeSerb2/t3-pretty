@@ -5,7 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -83,7 +83,7 @@ function makeLayer(input: {
     ),
     Layer.provideMerge(Layer.succeed(SkillLibrary.SkillLibraryHomeDirectory, home)),
     // A developer's CLAUDE_CONFIG_DIR must not become a location the test links into.
-    Layer.provideMerge(Layer.succeed(HostProcessEnvironment, {})),
+    Layer.provideMerge(Layer.succeed(HostProcess.Environment, {})),
     Layer.provideMerge(NodeServices.layer),
   );
   return { execute, layer, home };

@@ -216,7 +216,7 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
       try {
         const payload = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, {
           timeoutMs: 100,
-        }).pipe(Effect.provideService(HostProcessPlatform, "win32"));
+        }).pipe(Effect.provideService(HostProcess.Platform, "win32"));
         assertSome(payload, { mode: "desktop" });
       } finally {
         fstatSyncInterceptor.failFd = null;
@@ -237,7 +237,7 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
       try {
         const error = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, {
           timeoutMs: 100,
-        }).pipe(Effect.provideService(HostProcessPlatform, "linux"), Effect.flip);
+        }).pipe(Effect.provideService(HostProcess.Platform, "linux"), Effect.flip);
 
         assert.instanceOf(error, BootstrapFdStatError);
         assert.equal(error.fd, fd);
@@ -264,7 +264,7 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
       try {
         const payload = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, {
           timeoutMs: 100,
-        }).pipe(Effect.provideService(HostProcessPlatform, "win32"));
+        }).pipe(Effect.provideService(HostProcess.Platform, "win32"));
         assertSome(payload, { mode: "desktop" });
       } finally {
         fstatSyncInterceptor.failFd = null;
