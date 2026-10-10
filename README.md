@@ -276,6 +276,12 @@ Want the original instead? [T3 Code](https://github.com/pingdotgg/t3code) ships 
 `npx t3@latest`, and mobile apps on [iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824)
 and [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code).
 
+Windows users of the original T3 Code can also install it with Scoop:
+
+```powershell
+scoop install extras/t3code
+```
+
 ---
 
 ## Contributing 🫶

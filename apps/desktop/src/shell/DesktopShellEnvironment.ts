@@ -1,3 +1,4 @@
+import { listLoginShellCandidates } from "@t3tools/shared/shell";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -16,7 +17,6 @@ type EnvironmentPatch = Record<string, string>;
 interface ShellEnvironmentConfig {
   readonly env: NodeJS.ProcessEnv;
   readonly platform: NodeJS.Platform;
-  readonly userShell: Option.Option<string>;
 }
 
 interface WindowsProbeOptions {
@@ -159,25 +159,6 @@ const mergePaths = (
   return entries.length > 0 ? Option.some(entries.join(delimiter)) : Option.none();
 };
 
-const listLoginShellCandidates = (config: ShellEnvironmentConfig): ReadonlyArray<string> => {
-  const fallback =
-    config.platform === "darwin" ? "/bin/zsh" : config.platform === "linux" ? "/bin/bash" : "";
-  const seen = new Set<string>();
-  const candidates: string[] = [];
-
-  for (const candidate of [
-    trimNonEmpty(config.env.SHELL),
-    config.userShell,
-    trimNonEmpty(fallback),
-  ]) {
-    if (Option.isNone(candidate) || seen.has(candidate.value)) continue;
-    seen.add(candidate.value);
-    candidates.push(candidate.value);
-  }
-
-  return candidates;
-};
-
 const knownWindowsCliDirs = (env: NodeJS.ProcessEnv): ReadonlyArray<string> => [
   ...trimNonEmpty(env.APPDATA).pipe(
     Option.match({
@@ -312,7 +293,7 @@ const runCommandOutput = Effect.fn("desktop.shellEnvironment.runCommandOutput")(
           Effect.all(
             [collectBoundedText(handle.stdout), Stream.runDrain(handle.stderr), handle.exitCode],
             { concurrency: "unbounded" },
-          ).pipe(Effect.map(([stdout]) => stdout)),
+          ),
         ),
       ),
   ).pipe(
@@ -325,6 +306,17 @@ const runCommandOutput = Effect.fn("desktop.shellEnvironment.runCommandOutput")(
           cause,
         }),
     ),
+    Effect.filterOrFail(
+      ([, , exitCode]) => exitCode === 0,
+      ([, , exitCode]) =>
+        new DesktopShellEnvironmentCommandError({
+          probe: input.probe,
+          executable: executableName(input.command),
+          argumentCount: input.args.length,
+          cause: { exitCode },
+        }),
+    ),
+    Effect.map(([stdout]) => stdout),
     Effect.catchTags({
       DesktopShellEnvironmentCommandError: (error) =>
         logShellEnvironmentCommandError(error).pipe(Effect.as("")),
@@ -443,7 +435,7 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
     const fileSystem = yield* FileSystem.FileSystem;
     const shellEnvironment: EnvironmentPatch = {};
 
-    for (const shell of listLoginShellCandidates(config)) {
+    for (const shell of listLoginShellCandidates(config.platform, config.env.SHELL)) {
       Object.assign(
         shellEnvironment,
         yield* readLoginShellEnvironment(shell, LOGIN_SHELL_ENV_NAMES),
@@ -558,7 +550,6 @@ export const make = Effect.gen(function* () {
     installShellEnvironment({
       env: process.env,
       platform: environment.platform,
-      userShell: Option.none(),
     }).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

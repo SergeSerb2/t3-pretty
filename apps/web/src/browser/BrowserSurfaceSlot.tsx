@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef } from "react";
 
 import { acquireBrowserSurface } from "./browserSurfaceStore";
+import { observeResize } from "../lib/observeResize";
 
 const windowGeometryListeners = new Set<() => void>();
 let windowGeometryFrameId = 0;
@@ -94,21 +95,19 @@ export function BrowserSurfaceSlot(props: {
     };
     updateRef.current = update;
     update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
+    const observed: Element[] = [element];
     // Inline panels animate their outer width while keeping the content at
     // full width. The slot moves without resizing, so measure on shell resizes too.
     const panel = element.closest('[data-preview-panel-mode="inline"]');
-    if (panel) observer.observe(panel);
+    if (panel) observed.push(panel);
     // A sidebar opening or closing shifts the whole column, so a slot that keeps
     // its size and its offset inside the column (the mini player on the left)
     // still moves on screen. The gap element carries the sidebar's width.
-    for (const gap of document.querySelectorAll('[data-slot="sidebar-gap"]')) {
-      observer.observe(gap);
-    }
+    observed.push(...document.querySelectorAll('[data-slot="sidebar-gap"]'));
+    const stopObserving = observeResize(observed, update);
     const unsubscribeWindowGeometry = subscribeWindowGeometry(update);
     return () => {
-      observer.disconnect();
+      stopObserving();
       unsubscribeWindowGeometry();
       if (updateRef.current === update) updateRef.current = null;
       lease.release();

@@ -11,7 +11,7 @@ import {
 } from "react";
 
 import { isElectron } from "~/env";
-import { useResizableWidth } from "~/hooks/useResizableWidth";
+import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "~/hooks/useResizableWidth";
 import { cn } from "~/lib/utils";
 
 import { RightPanelResizeHandle } from "./RightPanelResizeHandle";
@@ -157,7 +157,10 @@ export function PreviewPanelShell(props: {
         )}
         style={
           {
-            "--right-panel-width": maximized ? undefined : `${width}px`,
+            [RESIZABLE_WIDTH_PROPERTY]: `${width}px`,
+            "--right-panel-width": maximized
+              ? undefined
+              : `var(${RESIZABLE_WIDTH_PROPERTY})`,
             transitionDuration: suppressWidthTransition ? "0ms" : undefined,
           } as CSSProperties
         }

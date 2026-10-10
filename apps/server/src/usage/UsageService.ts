@@ -519,6 +519,7 @@ export const make = Effect.gen(function* () {
     format: TranscriptUsageFormat<unknown>,
   ): Effect.Effect<{
     readonly records: readonly UsageRecord[];
+    readonly failed?: true;
     readonly update?: { readonly entry: CachedFile; readonly replaces: CachedFile | undefined };
   }> =>
     Effect.gen(function* () {
@@ -554,6 +555,7 @@ export const make = Effect.gen(function* () {
       if (parsed === null)
         return {
           records: cached?.provider === provider ? [...cached.records, ...cached.tailRecords] : [],
+          failed: true,
         };
 
       // Stored already de-duplicated within the file, which is 99% of all
@@ -613,6 +615,7 @@ export const make = Effect.gen(function* () {
         ),
       { concurrency: TRANSCRIPT_READ_CONCURRENCY },
     );
+    const unread = listing.failedPaths + read.filter((file) => file.failed).length;
     const parsedFiles = read.map(({ path, records, update }) => {
       if (update === undefined) return { path, records };
       // A scan of another window may have cached its own read of this file
@@ -629,20 +632,26 @@ export const make = Effect.gen(function* () {
       }
       return { path, records };
     });
+    const limitSkipped = listing.truncated;
+    const unreadableDirectories = listing.unreadableDirectories > 0;
+    const warnings = [
+      limitSkipped
+        ? "Some transcript files were skipped after the scan reached its file or directory limit."
+        : null,
+      unreadableDirectories ? "Some transcript directories could not be read." : null,
+      unread > 0
+        ? `${unread} transcript path(s) could not be read; usage may be incomplete.`
+        : null,
+    ].filter((warning): warning is string => warning !== null);
     return {
       provider,
       dir,
       volumeId,
       files: parsedFiles,
-      ...(listing.truncated || listing.unreadableDirectories > 0
+      ...(warnings.length > 0
         ? {
             status: "partial" as const,
-            message:
-              listing.truncated && listing.unreadableDirectories > 0
-                ? "Some transcript files were skipped after the scan reached its file or directory limit, and some directories could not be read."
-                : listing.truncated
-                  ? "Some transcript files were skipped after the scan reached its file or directory limit."
-                  : "Some transcript directories could not be read.",
+            message: warnings.join(" "),
           }
         : {}),
     } satisfies ScannedDir;

@@ -12,6 +12,7 @@ export const SourceControlProviderKind = Schema.Literals([
   "azure-devops",
   "bitbucket",
   "origin",
+  "gitcafe",
   "unknown",
 ]);
 export type SourceControlProviderKind = typeof SourceControlProviderKind.Type;

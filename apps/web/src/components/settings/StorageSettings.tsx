@@ -16,14 +16,16 @@ import { useAtomValue } from "@effect/atom-react";
 import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
 import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type {
   EnvironmentId,
+  StorageCleanupReport,
   StorageCleanupSettings,
   StorageInventory,
   StorageWorktreeEntry,
   WorktreeCleanupRules,
 } from "@t3tools/contracts";
+import { Atom } from "effect/reactivity";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -32,7 +34,9 @@ import {
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { resolveAndPersistPreferredEditor } from "../../editorPreferences";
+import { formatBytes } from "../../lib/formatBytes";
 import { cn } from "../../lib/utils";
+import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { formatWorktreePathForDisplay } from "../../worktreeCleanup";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { usePrimaryEnvironmentId } from "../../state/environments";
@@ -48,6 +52,7 @@ import {
   type EnvironmentStorageStatus,
 } from "../../state/storageInventory";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -73,7 +78,15 @@ import {
 } from "../ConnectionStatusDot";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { FoldedSettingsSection } from "./FoldedSettingsSection";
+import { SettingsGroup } from "./SettingsGroup";
+import {
+  SettingResetButton,
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+  useRelativeTimeTick,
+} from "./settingsLayout";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
 import type { ScopedSettingsTarget } from "./scopedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -81,6 +94,7 @@ import { searchableSetting } from "./settingsSearch";
 import {
   useClearScopedSettings,
   useScopedSettings,
+  useScopedSettingsMixed,
   useUpdateScopedSettings,
 } from "./useScopedSettings";
 import {
@@ -163,6 +177,293 @@ function RetentionControl({
         onCheckedChange={(enabled) => onChange(enabled ? 8 : null)}
       />
     </div>
+  );
+}
+
+const KEEP_WHEN_LABELS = {
+  "any-local-files": "Any local files",
+  "uncommitted-changes": "Uncommitted changes",
+  "tracked-changes": "Edited tracked files",
+} as const;
+
+function WorktreesDirectoryRow() {
+  const { connectedEnvironments, targets } = useSettingsScope();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["worktreesDirectory"]);
+  const edited = useRef(false);
+  if (
+    connectedEnvironments.some(
+      (environment) =>
+        environment.serverConfig?.environment.capabilities.worktreesDirectory !== true,
+    )
+  )
+    return null;
+  const scopeKey = targets.map((target) => target.environmentId).join(",");
+
+  return (
+    <SettingsRow
+      {...searchableSetting("storage-worktrees-location")}
+      description={
+        "Folder where new worktrees are created, on any drive, such as D:\\worktrees or ~/worktrees. Existing worktrees stay where they are. Leave empty to use the T3 home folder."
+      }
+      serverScoped
+      settingKeys={["worktreesDirectory"]}
+      resetAction={
+        mixed || settings.worktreesDirectory !== "" ? (
+          <SettingResetButton
+            label="worktree location"
+            onClick={() => updateSettings({ worktreesDirectory: "" })}
+          />
+        ) : null
+      }
+      control={
+        <Input
+          key={`${scopeKey}:${mixed}:${settings.worktreesDirectory}`}
+          aria-label="Worktree location"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder={mixed ? "Mixed" : "Default"}
+          defaultValue={mixed ? "" : settings.worktreesDirectory}
+          onChange={() => {
+            edited.current = true;
+          }}
+          onBlur={(event) => {
+            const value = event.target.value.trim();
+            if (edited.current && (mixed || value !== settings.worktreesDirectory))
+              updateSettings({ worktreesDirectory: value });
+            edited.current = false;
+          }}
+        />
+      }
+    />
+  );
+}
+
+function CleanupResults({
+  report,
+  environmentLabel,
+}: {
+  report: StorageCleanupReport;
+  environmentLabel: string | undefined;
+}) {
+  return (
+    <>
+      {report.entries.map((entry, index) => {
+        const name =
+          entry.kind === "worktree"
+            ? (entry.path?.split(/[\\/]/).findLast(Boolean) ?? "Worktrees")
+            : entry.kind === "logs"
+              ? "Rotated logs"
+              : "Browser artifacts";
+        return (
+          <SettingsRow
+            key={`${entry.path ?? entry.kind}:${entry.threadId ?? index}`}
+            title={environmentLabel ? `${environmentLabel}: ${name}` : name}
+            description={
+              <span
+                className={`wrap-anywhere ${entry.outcome === "failed" ? "text-destructive" : ""}`}
+              >
+                {entry.threadTitle && entry.threadTitle !== name ? `${entry.threadTitle}. ` : ""}
+                {entry.reason}
+              </span>
+            }
+            control={
+              entry.outcome === "removed" && (
+                <span className="text-xs text-muted-foreground">
+                  {[
+                    entry.kind !== "worktree" && entry.files !== null
+                      ? `${entry.files.toLocaleString()} ${entry.files === 1 ? "file" : "files"}`
+                      : null,
+                    entry.bytes !== null ? formatBytes(entry.bytes) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              )
+            }
+          />
+        );
+      })}
+      {report.omittedCount > 0 && (
+        <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
+          {environmentLabel ? `${environmentLabel}: ` : ""}
+          {report.omittedCount.toLocaleString()} more results.
+        </p>
+      )}
+      {report.entries.length === 0 && report.omittedCount === 0 && (
+        <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
+          {environmentLabel ? `${environmentLabel}: ` : ""}Nothing needed cleanup.
+        </p>
+      )}
+    </>
+  );
+}
+
+function CleanupSection() {
+  useRelativeTimeTick(60_000);
+  const { connectedEnvironments } = useSettingsScope();
+  const [pending, setPending] = useState(false);
+  const run = useAtomCommand(serverEnvironment.runStorageCleanup);
+  const supported = connectedEnvironments.filter(
+    (environment) => environment.serverConfig?.environment.capabilities.storageCleanupRun === true,
+  );
+  const state = useAtomValue(
+    useMemo(
+      () =>
+        Atom.make((get) =>
+          connectedEnvironments.flatMap((environment) => {
+            if (environment.serverConfig?.environment.capabilities.storageCleanupRun !== true)
+              return [];
+            const query = get(
+              serverEnvironment.storageCleanupReport({
+                environmentId: environment.environmentId,
+                input: {},
+              }),
+            );
+            return [
+              {
+                environmentId: environment.environmentId,
+                allowed: get(
+                  serverEnvironment.runStorageCleanup.permissionAtom(environment.environmentId),
+                ),
+                report: query._tag === "Success" ? query.value : null,
+                loading: query.waiting,
+                failed: query._tag === "Failure",
+              },
+            ];
+          }),
+        ),
+      [connectedEnvironments],
+    ),
+  );
+  const hasRules = supported.some((environment) => {
+    const settings = environment.serverConfig?.settings;
+    if (!settings) return false;
+    const enabled = (rules: WorktreeCleanupRules) =>
+      rules.worktreeAfterDays !== null ||
+      rules.worktreeOnMerge ||
+      rules.worktreeOnDelete ||
+      rules.worktreeUnchanged;
+    return (
+      settings.storageCleanup.browserArtifactsAfterDays !== null ||
+      settings.storageCleanup.logsAfterDays !== null ||
+      enabled(resolveWorktreeCleanup(settings, null)) ||
+      Object.values(settings.projectSettingsOverrides).some(
+        (override) =>
+          override.worktreeCleanup?.mode === "custom" && enabled(override.worktreeCleanup.rules),
+      )
+    );
+  });
+  if (supported.length === 0) return null;
+  const summaries = supported.map((environment) => {
+    const query = state.find((entry) => entry.environmentId === environment.environmentId);
+    const report = query?.report ?? null;
+    return {
+      environment,
+      report,
+      description: report
+        ? `Last run ${formatRelativeTimeLabel(report.finishedAt)}. ${formatBytes(report.bytesFreed)} recovered.${report.counts.failed > 0 ? ` ${report.counts.failed} ${report.counts.failed === 1 ? "item" : "items"} couldn't be removed.` : ""}`
+        : query?.failed
+          ? "Could not load the last run."
+          : query?.loading
+            ? "Loading last run…"
+            : "Cleanup hasn't run yet.",
+    };
+  });
+  const deleteNow = async () => {
+    if (pending) return;
+    setPending(true);
+    try {
+      await Promise.all(
+        supported
+          .filter((environment) =>
+            state.some(
+              (entry) => entry.environmentId === environment.environmentId && entry.allowed,
+            ),
+          )
+          .map(async (environment) => {
+            const result = await run({ environmentId: environment.environmentId, input: {} });
+            if (result._tag === "Success") {
+              const failures = result.value.entries.filter((entry) => entry.outcome === "failed");
+              if (failures.length > 0)
+                toastManager.add({
+                  type: "error",
+                  title: `Cleanup failed on ${environment.label}`,
+                  description: failures[0]!.reason,
+                });
+            } else if (!isAtomCommandInterrupted(result)) {
+              toastManager.add({
+                type: "error",
+                title: `Could not run cleanup on ${environment.label}`,
+                description: String(squashAtomCommandFailure(result)),
+              });
+            }
+          }),
+      );
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <SettingsSection id="storage-cleanup" title="Cleanup" variant="plain">
+      <SettingsGroup>
+        <SettingsRow
+          {...searchableSetting("storage-delete-now")}
+          description={
+            <span>
+              {!hasRules
+                ? "Turn on a cleanup rule to use this."
+                : summaries.map(({ environment, description }) => (
+                    <span key={environment.environmentId} className="block">
+                      {supported.length > 1 ? `${environment.label}: ` : ""}
+                      {description}
+                    </span>
+                  ))}
+            </span>
+          }
+          control={
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending || !hasRules || !state.some((entry) => entry.allowed)}
+              onClick={() => void deleteNow()}
+            >
+              {pending ? "Deleting…" : "Delete now"}
+            </Button>
+          }
+        />
+      </SettingsGroup>
+      {summaries.some(({ report }) => report !== null) && (
+        <FoldedSettingsSection
+          id="storage-cleanup-last-run"
+          title="Last run"
+          headerPlacement="inside"
+          summary={summaries
+            .flatMap(({ environment, report }) =>
+              report
+                ? [
+                    `${connectedEnvironments.length > 1 ? `${environment.label}: ` : ""}${report.counts.removed} removed, ${report.counts.kept} kept${report.counts.failed > 0 ? `, ${report.counts.failed} failed` : ""}`,
+                  ]
+                : [],
+            )
+            .join(" · ")}
+        >
+          {summaries.map(
+            ({ environment, report }) =>
+              report && (
+                <CleanupResults
+                  key={environment.environmentId}
+                  report={report}
+                  environmentLabel={
+                    connectedEnvironments.length > 1 ? environment.label : undefined
+                  }
+                />
+              ),
+          )}
+        </FoldedSettingsSection>
+      )}
+    </SettingsSection>
   );
 }
 
@@ -408,6 +709,7 @@ function StorageCleanupPolicySections() {
   return (
     <>
       <SettingsSection id="storage-worktrees" title="Worktrees">
+        {!isProjectScope && <WorktreesDirectoryRow />}
         {isProjectScope && (
           <SettingsRow
             title="Automatic worktree cleanup"
@@ -505,6 +807,49 @@ function StorageCleanupPolicySections() {
                 />
               }
             />
+            {connectedEnvironments.every(
+              (environment) =>
+                environment.serverConfig?.environment.capabilities.storageCleanupRun === true,
+            ) && (
+              <SettingsRow
+                {...searchableSetting("storage-worktree-keep-when")}
+                status={ruleStatus("worktreeKeepWhen")}
+                description={
+                  settings.worktreeKeepWhen === "any-local-files"
+                    ? "Includes ignored files, except node_modules."
+                    : settings.worktreeKeepWhen === "tracked-changes"
+                      ? "Deletes untracked and ignored files, including .env."
+                      : "Keeps edits and untracked files. Deletes ignored files, including .env."
+                }
+                serverScoped={!isProjectScope}
+                control={
+                  <Select
+                    value={ruleStatus("worktreeKeepWhen") ? null : settings.worktreeKeepWhen}
+                    onValueChange={(next) => {
+                      if (
+                        next === "any-local-files" ||
+                        next === "uncommitted-changes" ||
+                        next === "tracked-changes"
+                      )
+                        updateWorktree({ worktreeKeepWhen: next });
+                    }}
+                  >
+                    <SelectTrigger size="sm" aria-label="Keep worktrees with local changes">
+                      <SelectValue>
+                        {ruleStatus("worktreeKeepWhen")
+                          ? "Mixed"
+                          : KEEP_WHEN_LABELS[settings.worktreeKeepWhen]}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      <SelectItem value="any-local-files">Any local files</SelectItem>
+                      <SelectItem value="uncommitted-changes">Uncommitted changes</SelectItem>
+                      <SelectItem value="tracked-changes">Edited tracked files</SelectItem>
+                    </SelectPopup>
+                  </Select>
+                }
+              />
+            )}
           </>
         )}
       </SettingsSection>
@@ -817,9 +1162,12 @@ function StorageInventorySettings() {
 }
 
 export function StorageSettingsPanel() {
+  const { scope } = useSettingsScope();
+  const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
   return (
     <SettingsPageContainer>
       <StorageCleanupPolicySections />
+      {!isProjectScope && <CleanupSection />}
       <StorageInventorySettings />
     </SettingsPageContainer>
   );

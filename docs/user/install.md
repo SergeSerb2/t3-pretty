@@ -37,9 +37,9 @@ Then start it:
 t3
 ```
 
-On macOS and Linux, this puts `t3` in `~/.local/bin`. If your shell reports
-`command not found` afterwards, that directory is not on your `PATH` yet; the
-installer prints the line to add.
+On macOS and Linux, this installs the `t3` binary to `~/.local/bin`. If your
+shell reports `command not found` afterwards, that directory is not on your
+`PATH` yet; the installer prints the line to add.
 
 | Task                                             | Command                                                   |
 | ------------------------------------------------ | --------------------------------------------------------- |

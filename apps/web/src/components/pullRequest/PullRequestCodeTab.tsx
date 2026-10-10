@@ -37,7 +37,7 @@ import {
   type PullRequestFinding,
   type PullRequestFixDestination,
 } from "./pullRequestDetail.logic";
-import { canEditPullRequestComment } from "./pullRequestEditing.logic";
+import { canEditPullRequestComment, canResolvePullRequestThread } from "./pullRequestEditing.logic";
 import { orderDiffFiles } from "./pullRequestFileOrder.logic";
 import {
   buildFileDiffRenderKey,
@@ -992,7 +992,7 @@ function PullRequestCodeTab({
         thread={thread}
         workspaceRoot={detail.workspaceRoot}
         canReply={review.reply}
-        canResolve={review.resolve}
+        canResolve={review.resolve && canResolvePullRequestThread(detail, thread)}
         canReact={detail.capabilities.reactions === true}
         environmentId={environmentId}
         reference={reference}
@@ -1029,7 +1029,11 @@ function PullRequestCodeTab({
         }
         // A conversation on a line is made of review comments, whatever the host filed them as.
         canEditComment={(comment) =>
-          canEditPullRequestComment(detail, { author: comment.author, kind: "review-comment" })
+          canEditPullRequestComment(detail, {
+            author: comment.author,
+            kind: "review-comment",
+            canEdit: comment.canEdit,
+          })
         }
         onEditComment={(commentId, body) =>
           runThreadCommand("The comment could not be saved", () =>

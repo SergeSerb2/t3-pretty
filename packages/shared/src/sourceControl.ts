@@ -60,6 +60,7 @@ export interface ChangeRequestPresentation {
     | "azure-devops"
     | "bitbucket"
     | "origin"
+    | "gitcafe"
     | "change-request";
   readonly providerName: string;
   readonly shortName: string;
@@ -145,6 +146,17 @@ const ORIGIN_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
   urlExample: "https://cursor.com/codebase/owner/repo/pull/42",
 };
 
+const GITCAFE_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
+  icon: "gitcafe",
+  providerName: "GitCafe",
+  shortName: "PR",
+  longName: "pull request",
+  pluralLongName: "pull requests",
+  providerLongName: "GitCafe pull request",
+  checkoutCommandExample: "cafe pr checkout 123",
+  urlExample: "https://git.cafe/owner/repo/pulls/42",
+};
+
 const GENERIC_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
   icon: "change-request",
   providerName: "source control",
@@ -172,6 +184,8 @@ export function resolveChangeRequestPresentation(
       return BITBUCKET_CHANGE_REQUEST_PRESENTATION;
     case "origin":
       return ORIGIN_CHANGE_REQUEST_PRESENTATION;
+    case "gitcafe":
+      return GITCAFE_CHANGE_REQUEST_PRESENTATION;
     case "unknown":
     default:
       return GENERIC_CHANGE_REQUEST_PRESENTATION;
@@ -295,6 +309,11 @@ function isAzureDevOpsHost(host: string): boolean {
     host.endsWith(".dev.azure.com") ||
     host.endsWith(".visualstudio.com")
   );
+}
+
+/** GitCafe has no self-hosted installs: production and staging are the only hosts. */
+function isGitCafeHost(host: string): boolean {
+  return host === "git.cafe" || host === "staging.git.cafe";
 }
 
 function isBitbucketHost(host: string): boolean {
@@ -431,6 +450,10 @@ export function detectSourceControlProviderFromRemoteUrl(
     return null;
   }
   const hostname = parseHostName(host);
+
+  if (isGitCafeHost(hostname)) {
+    return { kind: "gitcafe", name: "GitCafe", baseUrl: toBaseUrl(hostname) };
+  }
 
   if (
     hostname === "codeberg.org" ||

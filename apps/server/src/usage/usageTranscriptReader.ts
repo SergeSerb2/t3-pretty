@@ -196,9 +196,9 @@ function fnv1a(buffer: Buffer): number {
 /**
  * Lists `.jsonl` transcripts under `root` last modified at or after `sinceMs`.
  *
- * Errors on individual entries are swallowed: session files rotate and get
- * removed while the walk is in flight, and a partial listing is far better than
- * failing the page.
+ * Unreadable directories and files are counted in `failedPaths` rather than
+ * failing the page, so the source can report incomplete usage. Files that
+ * vanish between `readdir` and `stat` are ordinary rotation and not counted.
  *
  * `fileName` restricts the walk to a single basename (Grok's `updates.jsonl`).
  * Grok sessions also ship multi-megabyte `chat_history` and `events` logs that
@@ -214,7 +214,7 @@ export async function listTranscriptFiles(
   sinceMs: number,
   options?: { readonly fileName?: string } | string,
   limits: TranscriptListingLimits = {},
-): Promise<TranscriptListing> {
+): Promise<TranscriptListing & { readonly failedPaths: number }> {
   const fileName = typeof options === "string" ? options : options?.fileName;
   const boundedLimit = (value: number | undefined, fallback: number) =>
     value === undefined || !Number.isFinite(value) ? fallback : Math.max(0, Math.trunc(value));
@@ -224,6 +224,7 @@ export async function listTranscriptFiles(
   const pendingDirectories = [root];
   let visitedEntries = 0;
   let unreadableDirectories = 0;
+  let failedPaths = 0;
   let truncated = maxFiles === 0 || maxEntries === 0;
 
   while (pendingDirectories.length > 0 && !truncated) {
@@ -235,6 +236,7 @@ export async function listTranscriptFiles(
       entries = await NodeFSP.opendir(dir);
     } catch {
       unreadableDirectories += 1;
+      failedPaths += 1;
       continue;
     }
 
@@ -272,8 +274,11 @@ export async function listTranscriptFiles(
           found[index] = { path, size: stats.size, mtimeMs: stats.mtimeMs };
           matchedFiles += 1;
         }
-      } catch {
-        // Vanished between directory iteration and stat.
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+          failedPaths += 1;
+        }
+
       }
     }
   };
@@ -283,7 +288,7 @@ export async function listTranscriptFiles(
 
   if (matchedFiles >= maxFiles) truncated = true;
   const files = found.filter((file): file is TranscriptFile => file !== undefined);
-  return { files: files.slice(0, maxFiles), truncated, unreadableDirectories };
+  return { files: files.slice(0, maxFiles), truncated, unreadableDirectories, failedPaths };
 }
 
 /**

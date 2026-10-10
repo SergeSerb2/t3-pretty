@@ -53,6 +53,7 @@ import {
   GitHubIcon,
   GitLabIcon,
   OriginIcon,
+  GitCafeIcon,
 } from "~/components/Icons";
 import { RadioGroup } from "~/components/ui/radio-group";
 import { Spinner } from "~/components/ui/spinner";
@@ -161,7 +162,7 @@ interface PendingDefaultBranchAction {
 
 type PublishProviderKind = Extract<
   SourceControlProviderKind,
-  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops" | "origin"
+  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops" | "origin" | "gitcafe"
 >;
 
 type GitActionToastId = ReturnType<typeof toastManager.add>;
@@ -249,6 +250,14 @@ const PUBLISH_PROVIDER_OPTIONS = [
     host: "origin.cursor.com",
     pathPlaceholder: "owner/repo",
     Icon: OriginIcon,
+  },
+  {
+    value: "gitcafe",
+    label: "GitCafe",
+    description: "git.cafe",
+    host: "git.cafe",
+    pathPlaceholder: "owner/repo",
+    Icon: GitCafeIcon,
   },
 ] as const satisfies ReadonlyArray<{
   readonly value: PublishProviderKind;
@@ -349,13 +358,10 @@ function getMenuActionDisabledReason({
   if (!hasBranch) {
     return `Detached HEAD: check out a branch before creating a ${terminology.singular}.`;
   }
-  if (hasChanges) {
-    return `Commit local changes before creating a ${terminology.singular}.`;
-  }
   if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
     return `Add an "origin" remote before creating a ${terminology.singular}.`;
   }
-  if (!isAhead) {
+  if ((gitStatus.aheadOfDefaultCount ?? gitStatus.aheadCount) <= 0) {
     return `No local commits to include in a ${terminology.singular}.`;
   }
   if (isBehind) {
@@ -580,6 +586,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
       bitbucket: null,
       "azure-devops": null,
       origin: null,
+      gitcafe: null,
     };
     for (const provider of sourceControlDiscovery.data?.sourceControlProviders ?? []) {
       if (isPublishProviderKind(provider.kind)) {
