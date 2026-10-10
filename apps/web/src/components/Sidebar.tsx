@@ -1895,7 +1895,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           event.stopPropagation();
           props.onToggleNest?.();
         }}
-        className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-sidebar-muted-foreground outline-none hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-sidebar-muted-foreground outline-none hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <ChevronRightIcon
           aria-hidden

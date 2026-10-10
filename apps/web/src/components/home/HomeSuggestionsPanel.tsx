@@ -207,7 +207,7 @@ function EnvironmentSuggestionsStrip({
                       aria-pressed={candidate.kind === shelf.kind}
                       onClick={() => setSelectedKind(candidate.kind)}
                       className={cn(
-                        "flex items-center gap-1.5 rounded-sm transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                        "flex items-center gap-1.5 rounded-sm transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                         candidate.kind === shelf.kind
                           ? "text-foreground"
                           : "text-muted-foreground hover:text-foreground",

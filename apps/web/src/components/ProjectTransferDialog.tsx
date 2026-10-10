@@ -306,7 +306,7 @@ export function ProjectTransferDialog() {
                   return (
                     <label
                       key={option.id}
-                      className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/70 p-3 transition-colors has-checked:border-ring has-checked:bg-accent/50 has-focus-visible:ring-2 has-focus-visible:ring-ring/50 has-disabled:cursor-not-allowed has-disabled:opacity-60"
+                      className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/70 p-3 transition-colors has-checked:border-ring has-checked:bg-accent/50 has-focus-visible:ring-2 has-focus-visible:ring-inset has-focus-visible:ring-ring/50 has-disabled:cursor-not-allowed has-disabled:opacity-60"
                     >
                       <input
                         type="radio"
@@ -334,7 +334,7 @@ export function ProjectTransferDialog() {
                   return (
                     <label
                       key={environment.environmentId}
-                      className="flex cursor-pointer items-center gap-3 rounded-xl border border-border/70 p-3 transition-colors has-checked:border-ring has-checked:bg-accent/50 has-focus-visible:ring-2 has-focus-visible:ring-ring/50"
+                      className="flex cursor-pointer items-center gap-3 rounded-xl border border-border/70 p-3 transition-colors has-checked:border-ring has-checked:bg-accent/50 has-focus-visible:ring-2 has-focus-visible:ring-inset has-focus-visible:ring-ring/50"
                     >
                       <input
                         type="radio"

@@ -117,7 +117,7 @@ export const SidebarAutomationRow = memo(function SidebarAutomationRow(
         data-testid="sidebar-automation-row"
         aria-label={`${automation.name}, ${STATUS_VISUALS[visual].label}`}
         className={cn(
-          "group/sidebar-row relative flex h-9 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-ring",
+          "group/sidebar-row relative flex h-9 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           props.isActive
             ? "bg-sidebar-row-active text-sidebar-foreground"
             : "text-sidebar-foreground hover:bg-sidebar-row-hover",

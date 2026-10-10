@@ -28,7 +28,7 @@ export function RightPanelResizeHandle({ handlers, width, minWidth, maxWidth, cl
       aria-valuenow={width}
       tabIndex={0}
       className={cn(
-        "group absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize select-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-1",
+        "group absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize select-none focus-visible:outline-2 focus-visible:outline-primary",
         className,
       )}
       {...handlers}

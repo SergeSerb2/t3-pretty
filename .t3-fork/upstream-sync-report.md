@@ -2,8 +2,8 @@
 
 - Parent nightly: `v0.0.46-nightly.20261010.2908`
 - Previously integrated parent nightly: `v0.0.46-nightly.20261009.2886`
-- Conflict resolver: `gpt-6.1-sol` with `xhigh` reasoning
-- 11 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
+- Conflict resolver: reused `automation/sync-resolution-cache` (`f1e859cb5` from Buildkite #3332); remaining files took the same fork-side fallbacks the scheduled run recorded after model declines
+- 11 file(s) took the fork-side fallback; review their omissions below
 
 ## T3 Pretty changes preserved at conflict boundaries
 
@@ -342,3 +342,7 @@
 - `apps/web/src/components/settings/ThemeSettings.tsx` — Move custom-theme-removal checkbox focus outlines inward and add a background-colored inset ring when a checked checkbox is keyboard-focused.. Reason: This is the only THEIRS-versus-BASE change in the conflict. It targets checkboxes in the old import/removal flow that OURS replaced with Pretty’s personalization and color-scheme cards. Those checkboxes no longer exist in this render path; restoring their dialog and obsolete state/handlers would undo the fork’s replacement. Checkbox-specific checked-state styling cannot be transplanted directly onto the supplied ThemeChoiceCard usages.
 - `packages/provider-grok/src/server/xaiAcpExtension.test.ts` — Complete removal of the nodeBuiltinImport diagnostic exemption.. Reason: The fork still imports node:path and node:url, and the supplied context shows both are needed to resolve acp-mock-agent.ts. The exemption is retained with a rationale matching those remaining imports.
 - `scripts/build-desktop-artifact.test.ts` — The macOS protocol assertion's parent-branded "T3 Code" display name.. Reason: Replaced only the display name with "T3 Pretty" to preserve fork identity; all protocol schemes and browser-registration assertions are retained.
+
+## Post-merge repairs
+
+- Satisfy the new parent `t3code(no-outset-state-indicators)` error gate on fork-only surfaces that auto-merged cleanly. Add `ring-inset` under the same focus/selection variant on Sidebar, SidebarThreadHeader, SidebarAutomationRow, ProjectTransferDialog, DraftHeroHeadline, AgentInstructionsSettings, HomeSuggestionsPanel, and HomeSuggestionShelf. Drop the positive `outline-offset-1` on RightPanelResizeHandle so the 2px outline stays inward.

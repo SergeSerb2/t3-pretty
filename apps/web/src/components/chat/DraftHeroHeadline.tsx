@@ -384,7 +384,7 @@ export function DraftHeroHeadline({
       <Menu>
         <MenuTrigger
           aria-label="Attach to an existing pull request"
-          className="pointer-events-auto inline-flex max-w-80 items-center gap-1.5 truncate border-foreground/40 border-b border-dotted text-sm text-muted-foreground transition-colors hover:border-foreground/70 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          className="pointer-events-auto inline-flex max-w-80 items-center gap-1.5 truncate border-foreground/40 border-b border-dotted text-sm text-muted-foreground transition-colors hover:border-foreground/70 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           <PullRequestGlyph.pullRequest aria-hidden className="size-3.5 shrink-0" />
           {attachedPullRequest

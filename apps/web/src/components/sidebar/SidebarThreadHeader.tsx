@@ -97,7 +97,7 @@ export function SidebarThreadHeader({
   const searchField = (
     <div
       className={cn(
-        "flex min-w-0 flex-1 items-center gap-2 border border-sidebar-border bg-sidebar-control-surface/40 text-sidebar-muted-foreground focus-within:border-ring focus-within:ring-1 focus-within:ring-ring",
+        "flex min-w-0 flex-1 items-center gap-2 border border-sidebar-border bg-sidebar-control-surface/40 text-sidebar-muted-foreground focus-within:border-ring focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring",
         teslaTouch ? "h-12 rounded-xl px-3 text-base" : "h-8 rounded-md px-2 text-sm",
       )}
     >

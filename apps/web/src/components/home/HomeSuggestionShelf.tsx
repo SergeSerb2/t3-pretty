@@ -174,7 +174,7 @@ function SuggestionCard({
       <button
         type="button"
         onClick={onStart}
-        className="flex h-full w-full flex-col gap-1 rounded-xl border border-border/50 bg-card/60 px-3.5 py-3 text-left transition-colors hover:border-border hover:bg-card/80 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex h-full w-full flex-col gap-1 rounded-xl border border-border/50 bg-card/60 px-3.5 py-3 text-left transition-colors hover:border-border hover:bg-card/80 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <span className="flex items-center gap-1.5 pr-5 text-[.6875rem] text-muted-foreground">
           {project ? (

@@ -287,7 +287,7 @@ function InstructionFileRow({ file, onOpen }: { file: AgentInstructionFile; onOp
     <button
       type="button"
       onClick={onOpen}
-      className="t3-instruction-row group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors duration-100 hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:px-4"
+      className="t3-instruction-row group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors duration-100 hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:outline-none sm:px-4"
     >
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/60 text-foreground transition-transform duration-150 group-hover:scale-105 group-active:scale-95">
         <InstructionFileIcon file={file} />
