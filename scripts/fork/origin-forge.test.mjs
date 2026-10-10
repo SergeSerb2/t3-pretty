@@ -635,6 +635,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(sceneryUnit, "sceneryDomContract.test.ts");
     assert.include(syncScript, "run_validation_step server-typecheck");
     assert.include(syncScript, "--filter t3 typecheck");
+    assert.include(syncScript, "run_validation_step scripts-typecheck");
+    assert.include(syncScript, "--filter @t3tools/scripts typecheck");
     assert.include(syncScript, "--filter t3 build:bundle");
     assert.include(syncScript, "--filter t3code-relay typecheck");
     assert.include(syncScript, "run-relay-migrations-unit.sh");

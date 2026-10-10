@@ -139,12 +139,6 @@ const STATUS_BY_BADGE: Record<
     className: "text-foreground",
     pill: { pillClassName: "bg-adaptive-zinc-500-a12-a16", textClassName: "text-foreground" },
   },
-  waiting: {
-    label: "Waiting",
-    icon: "clock",
-    className: "text-foreground-muted",
-    iconTintClassName: "accent-foreground-muted",
-  },
   failed: {
     label: "Failed",
     className: "text-danger-foreground",

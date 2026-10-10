@@ -236,7 +236,9 @@ steps:
     key: server-typecheck
     # PR builds skip packaging and the nightly sync tree. Sync bundles the
     # server but did not typecheck it, so unused-directive and merge drift
-    # landed on main. This is tsc only: no packaging, no EAS, no Relay.
+    # landed on main. Also typechecks @t3tools/scripts so leftovers in
+    # build-desktop-artifact.ts fail before macos-dmg. tsc only: no
+    # packaging, no EAS, no Relay.
     if: >-
       build.env("T3CODE_IOS_ONLY") != "1" && (
       build.branch != "main" && build.source != "schedule" &&
@@ -250,6 +252,25 @@ steps:
       queue: macos-release
       os: macos
     command: bash scripts/fork/run-server-typecheck.sh
+
+  - label: ":ts: Mobile typecheck"
+    key: mobile-typecheck
+    # PR builds skip ios-mobile packaging. Metro does not typecheck, so
+    # leftover identifiers after a sync only fail on main's OTA gate.
+    # This is tsc only: no packaging, no EAS, no TestFlight.
+    if: >-
+      build.env("T3CODE_IOS_ONLY") != "1" && (
+      build.branch != "main" && build.source != "schedule" &&
+      !(build.branch =~ /^automation\//)
+      )
+    timeout_in_minutes: 15
+    agents:
+      # os=macos keeps Linux review-only agents off this job. Their live
+      # pre-command hook is copied at setup and would refuse this new key
+      # until someone recopies macos-review-only-hook.sh.
+      queue: macos-release
+      os: macos
+    command: bash scripts/fork/run-mobile-typecheck.sh
 
   - label: ":white_check_mark: Origin PR comments resolved"
     key: origin-pr-comments

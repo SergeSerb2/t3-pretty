@@ -849,6 +849,11 @@ validate_sync_tree_once() {
   run_validation_step server-typecheck \
     "The merged sync tree failed the server typecheck." \
     vp run --filter t3 typecheck || return 1
+  # The server tsconfig only pulls in scripts/lib. Packaging entrypoints such
+  # as build-desktop-artifact.ts are silent until macos-dmg / windows-nsis.
+  run_validation_step scripts-typecheck \
+    "The merged sync tree failed the packaging scripts typecheck." \
+    vp run --filter @t3tools/scripts typecheck || return 1
   run_validation_step server-bundle \
     "The merged sync tree failed the bundled server build." \
     vp run --filter t3 build:bundle || return 1

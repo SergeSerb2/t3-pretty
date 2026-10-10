@@ -2839,7 +2839,7 @@ export const stageMacDictationHelper = Effect.fn("stageMacDictationHelper")(func
   readonly verbose: boolean;
 }) {
   if (input.platform !== "mac") return;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   if (hostPlatform !== "darwin") {
     return yield* new MacDictationHostError({ hostPlatform });
   }
@@ -3830,8 +3830,8 @@ export const verifyWindowsPackagedBackendReadiness = Effect.fn(
   readonly targetArch: typeof BuildArch.Type;
   readonly verbose: boolean;
 }) {
-  const hostPlatform = yield* HostProcessPlatform;
-  const hostArchitecture = yield* HostProcessArchitecture;
+  const hostPlatform = yield* HostProcess.Platform;
+  const hostArchitecture = yield* HostProcess.Architecture;
   const path = yield* Path.Path;
   const executablePath = path.join(input.packagedAppDir, input.appExecutableName);
   if (hostPlatform !== "win32" || hostArchitecture !== input.targetArch) return;

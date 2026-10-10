@@ -89,11 +89,19 @@ describe("DesktopPreReadyPlatform", () => {
       const options = yield* DesktopPreReadyPlatform.DesktopPreReadyElectronOptions;
 
       assert.isNull(options.linuxPasswordStoreCommandLine);
-      assert.isFalse(appendSwitchMock.mock.calls.some(([name]) => name === "password-store"));
+      // Empty is absent, so a persisted linux.passwordStore may be applied.
+      const passwordStoreCalls = appendSwitchMock.mock.calls.filter(
+        ([name]) => name === "password-store",
+      );
+      if (options.linux?.passwordStore != null) {
+        assert.deepEqual(passwordStoreCalls, [["password-store", options.linux.passwordStore]]);
+      } else {
+        assert.lengthOf(passwordStoreCalls, 0);
+      }
     }).pipe(
       Effect.provide(
         DesktopPreReadyPlatform.layer.pipe(
-          Layer.provide(Layer.succeed(HostProcessPlatform, "linux")),
+          Layer.provide(Layer.succeed(HostProcess.Platform, "linux")),
         ),
       ),
     );
@@ -113,7 +121,7 @@ describe("DesktopPreReadyPlatform", () => {
     }).pipe(
       Effect.provide(
         DesktopPreReadyPlatform.layer.pipe(
-          Layer.provide(Layer.succeed(HostProcessPlatform, "linux")),
+          Layer.provide(Layer.succeed(HostProcess.Platform, "linux")),
         ),
       ),
     );
@@ -258,7 +266,7 @@ describe("DesktopPreReadyPlatform", () => {
       yield* DesktopPreReadyPlatform.DesktopPreReadyElectronOptions.pipe(
         Effect.provide(
           DesktopPreReadyPlatform.layer.pipe(
-            Layer.provide(Layer.succeed(HostProcessPlatform, "win32")),
+            Layer.provide(Layer.succeed(HostProcess.Platform, "win32")),
           ),
         ),
       );

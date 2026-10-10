@@ -9,26 +9,25 @@ const pipeline = NodeFS.readFileSync(
   new URL("../../.buildkite/pipeline.yml", import.meta.url),
   "utf8",
 );
-const script = NodeFS.readFileSync(NodePath.join(here, "run-server-typecheck.sh"), "utf8");
+const script = NodeFS.readFileSync(NodePath.join(here, "run-mobile-typecheck.sh"), "utf8");
 const steps = pipeline.split(/(?=^  - label:)/mu).filter((block) => block.startsWith("  - label:"));
-const typecheck = steps.find((block) => /^    key: server-typecheck$/mu.test(block));
+const typecheck = steps.find((block) => /^    key: mobile-typecheck$/mu.test(block));
 
-describe("server typecheck PR gate", () => {
-  it("runs the apps/server typecheck after a frozen server-graph install", () => {
+describe("mobile typecheck PR gate", () => {
+  it("runs the apps/mobile typecheck after a frozen mobile-graph install", () => {
     assert.include(script, 'source "$ROOT/scripts/fork/ensure-vite-plus.sh"');
-    assert.include(script, 'ensure_vite_plus "to typecheck the server"');
-    assert.include(script, "vp i --frozen-lockfile --filter t3... --filter @t3tools/scripts...");
-    assert.include(script, "vp run --filter t3 typecheck");
-    assert.include(script, "vp run --filter @t3tools/scripts typecheck");
+    assert.include(script, 'ensure_vite_plus "to typecheck mobile"');
+    assert.include(script, "vp i --frozen-lockfile --filter @t3tools/mobile...");
+    assert.include(script, "vp run --filter @t3tools/mobile typecheck");
     assert.notInclude(script, "FORCE_IOS");
     assert.notInclude(script, "T3CODE_FORCE_IOS");
     assert.notInclude(script, "eas build");
-    assert.notInclude(script, "PLANETSCALE");
+    assert.notInclude(script, "eas update");
   });
 
-  it("runs on PR branches so packaging skips cannot hide server type drift", () => {
+  it("runs on PR branches so packaging skips cannot hide mobile type drift", () => {
     assert.isString(typecheck);
-    assert.include(typecheck, "bash scripts/fork/run-server-typecheck.sh");
+    assert.include(typecheck, "bash scripts/fork/run-mobile-typecheck.sh");
     assert.match(typecheck, /build\.branch != "main"/u);
     assert.notInclude(typecheck, 'build.branch == "main"');
     assert.include(typecheck, 'build.env("T3CODE_IOS_ONLY") != "1"');
