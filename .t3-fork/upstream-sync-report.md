@@ -1,40 +1,42 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.46-nightly.20261010.2935`
-- Previously integrated parent nightly: `v0.0.46-nightly.20261010.2922`
-- Conflict resolver: hand-merge from Origin `main` (`6cb8c1ed7`)
+- Parent nightly: `v0.0.46-nightly.20261010.2948`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261010.2935`
+- Conflict resolver: hand-merge from Origin `main` (`e1fca72bb`)
 - 0 file(s) remain on an unresolved fork-side fallback
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `apps/desktop/src/ipc/methods/window.ts` — Kept `resolveEditorExecutable` while adopting `.icns` project-icon picker extensions.
-- `apps/server/src/assets/AssetAccess.ts` — Kept managed computer-picked icons and Grok session images; serve `.icns` as embedded PNG.
-- `apps/server/src/assets/AssetAccess.test.ts` — Kept managed-icon coverage and added the parent macOS `.icns` PNG test.
-- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` — Kept Claude subagent `role` while adopting reported reasoning `effort`.
-- `apps/server/src/workspace/WorkspaceSearchIndex.ts` — Kept invalid-path truncation accounting; favicon search now includes `.icns`.
-- `apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx` — Kept the stale-timer comment and adopted the parent cancel-on-navigation/disabled cleanup.
-- `apps/web/src/components/chat/providerIconUtils.test.ts` — Kept Grok package-icon mapping coverage and added OpenCode Zen/Go label tests.
-- `apps/web/src/components/settings/settingsSearch.ts` — Kept Pretty home-suggestions, live-activity, scenery, and agent-monitoring rows; added Version and Update track.
-- `apps/web/src/routes/settings.tsx` — Kept Pretty's `settingsEscapeAction` Escape handling; adopted Diagnostics/Providers mount-key so those panels stay mounted across project switches.
-- `packages/shared/src/KeyedCoalescingWorker.ts` — Adopted tail-requeue fairness so a busy key cannot starve others; still propagate processor interrupts.
-- `packages/shared/src/projectFavicon.ts` — Kept managed `t3-project-icon/` helpers and added `.icns` to project-favicon extensions.
+- `packages/contracts/src/sourceControl.ts` — Kept Pretty discovery caps and `ChangeRequest.mergedAt` as `Option<Utc>`; adopted the parent's open branded `SourceControlProviderKind`.
+- `packages/contracts/src/settings.ts` — Kept Pretty fields (`globalEnvironment`, `legacyQueueEnabled`, scenery, home suggestions, agent monitoring) while adopting `sourceControlHosts` in place of top-level `github`/`bitbucket`.
+- `packages/contracts/src/pullRequest.ts` — Kept Origin capability requirements and the fork `Map` comment shape; adopted parent host-agnostic action/capability types.
+- `packages/shared/src/sourceControl.ts` — Kept Origin detection, Grok review markers, and Forgejo/GitCafe host rules; branded every kind with `SourceControlProviderKind.make`.
+- `packages/client-runtime/src/operations/projects.ts` — Adopted `getNewProjectPublishTargets` / host-definition clone sources; Origin stays in the registry so publish and clone pickers still offer it.
+- `packages/client-runtime/src/originSourceControlClient.ts` — New Pretty client definition so Origin survives the parent's per-host registry. GitHub's `/pull/` matcher yields to Origin's `cursor.com/codebase/.../pull/` URLs.
+- `apps/server/src/serverSettings.ts` — Adopted parent host-secret slots; kept Pretty bounded `readFilePrefix` reads, write-size cap, and `globalEnvironment` secret hydrate/persist.
+- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` — Kept multi-server MCP via `T3_CODE_MCP_AUTHORIZATION` while adopting parent timeout and read-only tool lists.
+- `apps/server/src/server.ts` — Kept `ReviewLayerLive` / `ProjectStore.layer` wiring required by Pretty review.
+- `apps/mobile/src/Stack.tsx` and settings sheet targets — Kept Pretty Microphone settings; adopted parent source-control host presentation.
+- `apps/mobile/src/persistence/mobile-preferences.ts` — Kept `legacyQueueEnabled` (Follow-ups stay removed) and adopted parent microphone priority.
+- `docs/user/composer.md` — Kept T3 Pretty microphone docs while adopting parent composer wording.
 
 ## Parent changes integrated at conflict boundaries
 
-- macOS `.icns` project icons (picker, path classification, PNG extraction, search).
-- OpenCode Zen vs Go provider-row labels and display-name qualifier stripping.
-- Settings Version / Update track search entries and hosted-channel visibility.
-- Diagnostics and Providers stay mounted when only the project scope changes.
-- Question auto-advance cancels after navigation or when permission is revoked.
-- Keyed coalescing worker yields to other keys between batches of a busy key.
-- Claude subagents record the reasoning effort they actually run at.
+- Source control provider kind is an open branded slug, not a closed literal union.
+- Each host package ships a client definition; clone, publish, checkout, and presentation read that registry.
+- New projects can be published to any ready host (`getNewProjectPublishTargets`).
+- Host settings live under `settings.sourceControlHosts` (GitCafe token and GitHub tokens included); retired top-level `github`/`bitbucket` keys migrate on load.
+- Quick actions and reference parsing follow each host's capabilities.
+- Mobile microphone order for voice input.
+- Diffs for projects outside the server cwd; Claude MCP servers on the control channel; native subagent stop without stopping the owner.
 
 ## Parent changes intentionally omitted
 
-- `apps/web/src/routes/settings.tsx` — Parent `useEscapeToGoBack` on the settings layout. Pretty already handles Escape through `settingsEscapeAction` (ignore / blur / leave). The generic hook would skip that and double-fire with the existing listener.
+- Follow-ups / Settings Follow-up UI. Pretty keeps `legacyQueueEnabled` and steering as the default.
+- GitHub-only `getNewProjectGitHubTarget`. Replaced by the parent registry, with Origin registered as a first-class host.
 
 ## Post-merge repairs
 
-- `mergeLearnedRoutes` no longer auto-learns `http:`/`ws:` routes when `allowInsecure` is true. Saved plaintext routes still stay and can still receive Tailscale labels. This is the Buildkite #3355 publication gate.
-- Restore `Menu` imports on the draft-hero pull-request picker so web typecheck passes. The Combobox project-picker change had dropped them while the Pretty PR-attachment menu still used those components.
-- Deduplicate auto-merged Claude subagent `effort` bindings in `ClaudeAdapterV2` so server typecheck passes while keeping Pretty `role` and parent `effort`/`reasoning_effort`.
+- Register Origin in `sourceControlClients` and wrap GitHub's change-request URL matcher so `cursor.com/codebase/.../pull/` is not attributed to GitHub.
+- Brand Origin server `kind`/`provider` fields with `SourceControlProviderKind.make("origin")`.
+- Restore Pretty `globalEnvironmentSecretName` and bounded settings-file reads on top of the parent's host-secret model.
