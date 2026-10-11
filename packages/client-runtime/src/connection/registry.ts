@@ -49,6 +49,7 @@ import {
   RELAY_ROUTE_ID,
   connectionRouteId,
   connectionRoutes,
+  learnedRoutesAllowInsecure,
   entryWithRoutes,
   findRouteToSameAddress,
   mergeLearnedRoutes,
@@ -895,8 +896,7 @@ export const make = Effect.gen(function* () {
 
   // Plain HTTP reports can label already-saved routes. New learned routes
   // still require TLS in mergeLearnedRoutes, including on native clients.
-  const allowInsecureRoutes =
-    typeof globalThis.location === "undefined" || globalThis.location.protocol !== "https:";
+  const allowInsecureRoutes = learnedRoutesAllowInsecure();
 
   /**
    * Saves the direct addresses a connected server reports as learned routes,

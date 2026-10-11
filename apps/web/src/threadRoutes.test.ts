@@ -7,11 +7,13 @@ import {
   buildDraftThreadRouteParams,
   buildThreadRouteParams,
   isThreadRouteSnapshotAuthoritative,
+  isThreadRouteSnapshotAvailable,
   resolveActiveThreadRouteRef,
   resolveThreadRouteRenderState,
   resolveThreadRouteRef,
   resolveThreadRouteTarget,
   shouldRedirectMissingThreadRoute,
+  shouldRenderServerThreadView,
 } from "./threadRoutes";
 
 describe("threadRoutes", () => {
@@ -20,6 +22,51 @@ describe("threadRoutes", () => {
     expect(isThreadRouteSnapshotAuthoritative("cached")).toBe(false);
     expect(isThreadRouteSnapshotAuthoritative("synchronizing")).toBe(false);
     expect(isThreadRouteSnapshotAuthoritative("live")).toBe(true);
+  });
+
+  it("treats a cached or synchronizing remote snapshot as available for lookup", () => {
+    expect(isThreadRouteSnapshotAvailable("empty")).toBe(false);
+    expect(isThreadRouteSnapshotAvailable("cached")).toBe(true);
+    expect(isThreadRouteSnapshotAvailable("synchronizing")).toBe(true);
+    expect(isThreadRouteSnapshotAvailable("live")).toBe(true);
+  });
+
+  it("paints a server thread from a shell row or HTTP detail before the shell is live", () => {
+    expect(
+      shouldRenderServerThreadView({
+        renderState: "ready",
+        serverThreadShell: null,
+        serverThreadDetail: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRenderServerThreadView({
+        renderState: "loading",
+        serverThreadShell: { id: "thread-1" },
+        serverThreadDetail: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRenderServerThreadView({
+        renderState: "loading",
+        serverThreadShell: null,
+        serverThreadDetail: { projection: { messages: [] } },
+      }),
+    ).toBe(true);
+    expect(
+      shouldRenderServerThreadView({
+        renderState: "loading",
+        serverThreadShell: null,
+        serverThreadDetail: null,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRenderServerThreadView({
+        renderState: "missing",
+        serverThreadShell: { id: "thread-1" },
+        serverThreadDetail: null,
+      }),
+    ).toBe(false);
   });
 
   it("builds canonical thread route params from a scoped ref", () => {

@@ -1,6 +1,11 @@
 import { requireOptionalNativeModule } from "expo";
+import { useEffect, useState } from "react";
 import { Platform } from "react-native";
 import { useNativeLayoutMetrics } from "./native-layout-metrics";
+import {
+  NATIVE_WORKSPACE_COLUMNS_READY_TIMEOUT_MS,
+  nativeWorkspaceColumnsAreReady,
+} from "./native-workspace-columns-ready";
 
 const nativeControls = requireOptionalNativeModule<{
   readonly supportsWorkspaceColumns?: boolean;
@@ -11,13 +16,24 @@ export const NATIVE_WORKSPACE_COLUMNS_SUPPORTED =
 
 export function useNativeWorkspaceColumnsReady() {
   const metrics = useNativeLayoutMetrics();
+  const [timedOut, setTimedOut] = useState(false);
+  useEffect(() => {
+    if (metrics !== null) return;
+    const timer = setTimeout(() => setTimedOut(true), NATIVE_WORKSPACE_COLUMNS_READY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [metrics]);
   // Choose the phone's native host before attaching any screens. Older clients
-  // without the observer can immediately use the compact navigator.
-  return (
-    (Platform.OS === "ios" && Platform.isPad) ||
-    !nativeControls?.ViewPrototypes?.T3NativeControls_LayoutMetrics ||
-    metrics !== null
-  );
+  // without the observer can immediately use the compact navigator. Build 190+
+  // advertises LayoutMetrics; if the native view never publishes (iOS 27.1
+  // hinge wait), fail open so the root is not a white screen.
+  return nativeWorkspaceColumnsAreReady({
+    isPad: Platform.OS === "ios" && Platform.isPad,
+    hasLayoutMetricsPrototype: Boolean(
+      nativeControls?.ViewPrototypes?.T3NativeControls_LayoutMetrics,
+    ),
+    hasMetrics: metrics !== null,
+    timedOut,
+  });
 }
 
 export function useNativeWorkspaceColumnsSupported() {

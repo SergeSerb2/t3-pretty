@@ -50,7 +50,7 @@ import {
 import { useKnownTerminalSessions } from "../../state/use-terminal-session";
 import { uuidv4 } from "../../lib/uuid";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
-import { useSelectedThreadDetailState } from "../../state/use-thread-detail";
+import { useSelectedThreadDetailState, useThreadDetail } from "../../state/use-thread-detail";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { GitActionProgressOverlay } from "./GitActionProgressOverlay";
 import {
@@ -193,6 +193,14 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
       ? null
       : scopedThreadKey(selectedThread.environmentId, selectedThread.id);
   const selectedThreadDetailState = useSelectedThreadDetailState();
+  const routeThreadDetailState = useThreadDetail({
+    environmentId,
+    threadId: threadIdRaw ? ThreadId.make(threadIdRaw) : null,
+  });
+  const threadDetailState =
+    selectedThread !== null && selectedThreadKey === routeThreadKey
+      ? selectedThreadDetailState
+      : routeThreadDetailState;
 
   if (environmentId === null || threadIdRaw === null) {
     return <OpeningThreadLoadingScreen />;
@@ -212,8 +220,10 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
     connectionState: routeConnectionState,
     shellStatus: routeEnvironmentShellState.status,
     shellHasError: routeEnvironmentShellState.hasError,
-    detailStatus: selectedThreadDetailState.status,
-    detailHasError: Option.isSome(selectedThreadDetailState.error),
+    hasShellSnapshot: routeEnvironmentShellState.hasSnapshot,
+    detailStatus: threadDetailState.status,
+    detailHasError: Option.isSome(threadDetailState.error),
+    hasDetail: Option.isSome(threadDetailState.data),
   });
 
   if (stillHydrating) {

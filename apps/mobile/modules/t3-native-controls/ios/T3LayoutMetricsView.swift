@@ -16,7 +16,9 @@ final class T3LayoutMetricsView: ExpoView {
     }
     #if compiler(>=6.4)
     if #available(iOS 27.1, *) {
-      hasHinge = nil
+      // Stay `false` until the hinge interaction reports one. Nil blocked
+      // publishMetrics on phones where UIHingeInteraction never fires, which
+      // left JS waiting on metrics and the workspace navigator blank.
       addInteraction(UIHingeInteraction { [weak self] _, update in
         guard let self, self.window != nil else { return }
         // Capability survives temporary detachment and does not follow the hinge angle.

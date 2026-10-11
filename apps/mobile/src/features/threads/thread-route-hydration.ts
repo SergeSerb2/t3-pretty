@@ -13,8 +13,15 @@ export function threadRouteIsHydrating(input: {
   readonly shellHasError: boolean;
   readonly detailStatus: EnvironmentThreadStatus;
   readonly detailHasError: boolean;
+  readonly hasShellSnapshot?: boolean;
+  readonly hasDetail?: boolean;
 }): boolean {
   if (input.detailStatus === "deleted" || input.shellHasError || input.detailHasError) {
+    return false;
+  }
+  // HTTP detail or a cached shell row is enough to leave the opening screen.
+  // Remotes that never reach `live` (interrupted subscribe) used to spin here.
+  if (input.hasDetail === true) {
     return false;
   }
   if (input.isLoadingConnections) {
@@ -26,6 +33,12 @@ export function threadRouteIsHydrating(input: {
     input.connectionState === "error"
   ) {
     return false;
+  }
+  if (
+    input.hasShellSnapshot === true &&
+    (input.shellStatus === "cached" || input.shellStatus === "synchronizing")
+  ) {
+    return input.detailStatus === "synchronizing" || input.detailStatus === "empty";
   }
   return (
     input.connectionState === "connecting" ||

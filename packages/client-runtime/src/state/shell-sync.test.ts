@@ -1136,7 +1136,7 @@ describe("environment shell synchronization", () => {
     }),
   );
 
-  it.effect("does not save rows whose deferred links are still pending", () =>
+  it.effect("saves HTTP rows even while deferred pull request links are still pending", () =>
     Effect.gen(function* () {
       const link: ThreadPullRequestLink = {
         host: "github.com",
@@ -1196,10 +1196,14 @@ describe("environment shell synchronization", () => {
         Stream.runHead,
       );
 
-      // Neither the throttled worker nor the closing flush may save the rows without links.
+      // A dropped subscribe used to leave remotes with an empty cache because
+      // pending badges blocked the write. Persist the rows; badges refill later.
       yield* TestClock.adjust("30 seconds");
       yield* Scope.close(scope, Exit.void);
-      expect(yield* Ref.get(saved)).toEqual([]);
+      const saves = yield* Ref.get(saved);
+      expect(saves.length).toBeGreaterThan(0);
+      expect(saves[0]?.threads[0]?.id).toBe(v2ThreadShell.id);
+      expect(saves[0]?.threads[0]?.pullRequests).toBeUndefined();
     }),
   );
 

@@ -17,6 +17,7 @@ import {
   credentialConnectionId,
   insertRoute,
   entryWithRoutes,
+  learnedRoutesAllowInsecure,
   mergeLearnedRoutes,
   reconcilePendingRouteOrder,
   removedWithRelay,
@@ -114,7 +115,48 @@ it("excludes persisted plaintext learned routes while preserving explicitly save
     enabled: true,
     alternateRoutes: [downgradedSocket, LAN, RELAY],
   };
-  expect(connectionRoutes(entry)).toEqual([LAN, RELAY]);
+  expect(connectionRoutes(entry, { allowInsecure: false })).toEqual([LAN, RELAY]);
+  expect(connectionRoutes(entry, { allowInsecure: true })).toEqual([learned, LAN, RELAY]);
+});
+
+it("allows learned plaintext routes outside an https page", () => {
+  const previousLocation = globalThis.location;
+  const setProtocol = (protocol: string | undefined) => {
+    Object.defineProperty(globalThis, "location", {
+      configurable: true,
+      value: protocol === undefined ? undefined : { protocol },
+    });
+  };
+  try {
+    setProtocol(undefined);
+    expect(learnedRoutesAllowInsecure()).toBe(true);
+    setProtocol("https:");
+    expect(learnedRoutesAllowInsecure()).toBe(false);
+    setProtocol("file:");
+    expect(learnedRoutesAllowInsecure()).toBe(true);
+  } finally {
+    Object.defineProperty(globalThis, "location", {
+      configurable: true,
+      value: previousLocation,
+    });
+  }
+});
+
+it("keeps learned plaintext routes on native and desktop clients", () => {
+  const unsafe = direct("learned:lan", "http://192.168.1.10:3773/");
+  const unsafeProfile = Option.getOrThrow(unsafe.profile);
+  if (unsafeProfile._tag !== "BearerConnectionProfile") throw new Error("Expected bearer fixture");
+  const learned: ConnectionRoute = {
+    ...unsafe,
+    profile: Option.some(new BearerConnectionProfile({ ...unsafeProfile, learned: true })),
+  };
+  const entry: ConnectionCatalogEntry = {
+    target: learned.target,
+    profile: learned.profile,
+    enabled: true,
+    alternateRoutes: [RELAY],
+  };
+  expect(connectionRoutes(entry, { allowInsecure: true })).toEqual([learned, RELAY]);
 });
 
 describe("learned routes", () => {

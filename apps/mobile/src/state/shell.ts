@@ -35,8 +35,8 @@ const EMPTY_ENVIRONMENT_SHELL_STATE_ATOM = Atom.make<EnvironmentShellState>({
 
 const shellStatus = (state: EnvironmentShellState) => state.status;
 const shellHasError = (state: EnvironmentShellState) => Option.isSome(state.error);
+const shellHasSnapshot = (state: EnvironmentShellState) => Option.isSome(state.snapshot);
 
-/** Snapshot contents do not affect whether the route is still hydrating. */
 export function useEnvironmentShellReadiness(environmentId: EnvironmentId | null) {
   const atom =
     environmentId === null
@@ -45,5 +45,6 @@ export function useEnvironmentShellReadiness(environmentId: EnvironmentId | null
   return {
     status: useAtomValue(atom, shellStatus),
     hasError: useAtomValue(atom, shellHasError),
+    hasSnapshot: useAtomValue(atom, shellHasSnapshot),
   };
 }

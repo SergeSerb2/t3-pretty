@@ -57,6 +57,13 @@ export function isThreadRouteSnapshotAuthoritative(
   return status === "live";
 }
 
+/** A cached or synchronizing snapshot is enough to look up a row. Only `live` may redirect. */
+export function isThreadRouteSnapshotAvailable(
+  status: EnvironmentShellStatus | undefined,
+): boolean {
+  return status === "live" || status === "cached" || status === "synchronizing";
+}
+
 export function resolveThreadRouteRenderState(input: {
   bootstrapComplete: boolean;
   serverThreadExists: boolean;
@@ -70,6 +77,19 @@ export function resolveThreadRouteRenderState(input: {
     return "loading";
   }
   return "missing";
+}
+
+/** Paint the server thread as soon as the shell row or HTTP detail exists. */
+export function shouldRenderServerThreadView(input: {
+  readonly renderState: ThreadRouteRenderState;
+  readonly serverThreadShell: unknown | null;
+  readonly serverThreadDetail: unknown | null;
+}): boolean {
+  if (input.renderState === "ready") return true;
+  return (
+    input.renderState === "loading" &&
+    (input.serverThreadShell !== null || input.serverThreadDetail !== null)
+  );
 }
 
 export function buildThreadRouteParams(ref: ScopedThreadRef): {

@@ -67,6 +67,39 @@ function withoutDeferredPullRequests(value: DeferredShellSnapshot): Orchestratio
 
 const SHELL_SYNCHRONIZATION_ERROR_MESSAGE = "Could not synchronize environment data.";
 
+/** Keep the last painted shell across short supervisor replacements. */
+export const SHELL_SNAPSHOT_IDLE_TTL_MS = 90_000;
+
+interface ShellResumeCache {
+  snapshot: EnvironmentShellState | undefined;
+}
+
+function cachedShellState(value: EnvironmentShellState): EnvironmentShellState {
+  return {
+    snapshot: value.snapshot,
+    status: shellStatusForSnapshot(value.snapshot),
+    error: Option.none(),
+  };
+}
+
+/**
+ * Remember a painted snapshot across supervisor replace. A replacement
+ * service starts at snapshot-none before HTTP/subscribe applies — that
+ * leading empty is not a real clear. Keep the last Some; only a later
+ * Some replaces it. Disk persist + idle TTL bound staleness.
+ */
+export function nextShellResumeCache(
+  previous: EnvironmentShellState | undefined,
+  state: EnvironmentShellState,
+): EnvironmentShellState | undefined {
+  if (Option.isNone(state.snapshot)) return previous;
+  return {
+    snapshot: state.snapshot,
+    status: state.status,
+    error: state.error,
+  };
+}
+
 export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")(function* () {
   const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
   const cache = yield* Persistence.EnvironmentCacheStore;
@@ -100,16 +133,16 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
 
   const persistenceLock = yield* Semaphore.make(1);
   let lastPersisted: OrchestrationV2ShellSnapshot | undefined;
-  // Rows still waiting for their deferred pull request links, which must not be saved:
-  // the cache would keep them without links until the next server refresh.
-  let pendingLinkRows: ReadonlySet<OrchestrationV2ThreadShell> = new Set();
   const persistLatest = Effect.fn("EnvironmentShellState.persistLatest")(function* (
     flush: boolean,
   ) {
     while (true) {
       const latest = yield* Ref.get(latestLiveSnapshot);
       if (Option.isNone(latest) || latest.value === lastPersisted) return;
-      if (latest.value.threads.some((thread) => pendingLinkRows.has(thread))) return;
+      // Persist even while pull-request links are still decoding. Holding the
+      // write left remotes with an empty cache after a dropped subscribe, so
+      // the next supervisor replace showed no threads. Badges refill on the
+      // next snapshot.
       const snapshot = latest.value;
       const saved = yield* cache.saveShell(environmentId, snapshot).pipe(
         Effect.as(true),
@@ -185,8 +218,6 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   // writes, but each write includes every event in that batch.
   const applyItems = Effect.fn("EnvironmentShellState.applyItems")(function* (
     items: ReadonlyArray<OrchestrationV2ShellStreamItem>,
-    // Ids of rows whose links will fill later; they are held out of saves before one queues.
-    pendingLinkIds?: ReadonlySet<ThreadId>,
   ) {
     const initial = yield* SubscriptionRef.get(state);
     let waiting = yield* Ref.get(awaitingCompletion);
@@ -228,11 +259,6 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     }
     yield* Ref.set(awaitingCompletion, waiting);
     if (next === initial) return;
-    if (pendingLinkIds !== undefined && Option.isSome(next.snapshot)) {
-      pendingLinkRows = new Set(
-        next.snapshot.value.threads.filter((thread) => pendingLinkIds.has(thread.id)),
-      );
-    }
     if (Option.isSome(next.snapshot)) {
       yield* Ref.set(latestLiveSnapshot, next.snapshot);
     }
@@ -270,7 +296,6 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     if (source.loadPullRequests === undefined) return;
     const arrivedRows = new Set(applied.threads);
     const arrivedIds = new Set(source.threads.map((thread) => thread.id));
-    pendingLinkRows = new Set(applied.threads.filter((thread) => arrivedIds.has(thread.id)));
     activeFill = yield* source.loadPullRequests.pipe(
       Effect.flatMap((linksByThreadId) =>
         writeFilledLinks(linksByThreadId, arrivedRows, arrivedIds),
@@ -307,9 +332,6 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
           return [Option.some(next), { ...current, snapshot: Option.some(next) }];
         },
       );
-      // Saves skipped while links were pending are queued again. Cached rows are never live:
-      // until a server snapshot arrives there is nothing new to save.
-      pendingLinkRows = new Set();
       const live = yield* Ref.get(latestLiveSnapshot);
       if (Option.isNone(live)) return;
       const latest = Option.isSome(filled) ? filled : live;
@@ -370,12 +392,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
               Option.getOrNull(previous.snapshot),
               withoutDeferredPullRequests(httpSnapshot.value),
             );
-            const pendingLinkIds = new Set(
-              httpSnapshot.value.loadPullRequests === undefined
-                ? []
-                : httpSnapshot.value.threads.map((thread) => thread.id),
-            );
-            yield* applyItems([{ kind: "snapshot", snapshot }], pendingLinkIds);
+            yield* applyItems([{ kind: "snapshot", snapshot }]);
             canResume = true;
             current = yield* SubscriptionRef.get(state);
             if (Option.isSome(current.snapshot)) {
@@ -548,11 +565,33 @@ export function createEnvironmentShellAtoms<R, E>(
     E
   >,
 ) {
-  const stateAtom = Atom.family((environmentId: EnvironmentId) =>
-    runtime.atom(shellStateChanges(environmentId), {
-      initialValue: EMPTY_SHELL_STATE,
-    }),
+  const resumeFamily = Atom.family((environmentId: EnvironmentId) =>
+    Atom.make((): ShellResumeCache => ({ snapshot: undefined })).pipe(
+      Atom.setIdleTTL(SHELL_SNAPSHOT_IDLE_TTL_MS),
+      Atom.withLabel(`environment-shell-resume:${environmentId}`),
+    ),
   );
+  const stateAtom = Atom.family((environmentId: EnvironmentId) => {
+    const resumeAtom = resumeFamily(environmentId);
+    return runtime.atom(
+      (get) => {
+        get.mount(resumeAtom);
+        const resume = get.once(resumeAtom);
+        const live = shellStateChanges(environmentId).pipe(
+          Stream.map((state) => {
+            resume.snapshot = nextShellResumeCache(resume.snapshot, state);
+            return state;
+          }),
+        );
+        return resume.snapshot === undefined
+          ? live
+          : Stream.concat(Stream.succeed(cachedShellState(resume.snapshot)), live);
+      },
+      {
+        initialValue: EMPTY_SHELL_STATE,
+      },
+    );
+  });
 
   const stateValueAtom = Atom.family((environmentId: EnvironmentId) =>
     Atom.make((get) =>

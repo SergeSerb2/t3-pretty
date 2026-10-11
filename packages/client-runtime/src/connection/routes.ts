@@ -56,8 +56,20 @@ export function connectionRouteId(target: ConnectionTarget): string {
   }
 }
 
+/**
+ * Native and `t3code://` desktop can use plaintext LAN routes. An https://
+ * page cannot (mixed content), so learned HTTP stays hidden there.
+ */
+export function learnedRoutesAllowInsecure(): boolean {
+  return typeof globalThis.location === "undefined" || globalThis.location.protocol !== "https:";
+}
+
 /** Every route of an entry, preferred first. */
-export function connectionRoutes(entry: ConnectionCatalogEntry): ReadonlyArray<ConnectionRoute> {
+export function connectionRoutes(
+  entry: ConnectionCatalogEntry,
+  options?: { readonly allowInsecure?: boolean },
+): ReadonlyArray<ConnectionRoute> {
+  const allowInsecure = options?.allowInsecure ?? learnedRoutesAllowInsecure();
   return [
     { target: entry.target, profile: entry.profile },
     ...(entry.alternateRoutes ?? []),
@@ -66,12 +78,16 @@ export function connectionRoutes(entry: ConnectionCatalogEntry): ReadonlyArray<C
     try {
       const url = routeHttpBaseUrl(route);
       const profile = Option.getOrNull(route.profile);
-      return (
-        url !== null &&
-        new URL(url).protocol === "https:" &&
-        profile?._tag === "BearerConnectionProfile" &&
-        new URL(profile.wsBaseUrl).protocol === "wss:"
-      );
+      if (url === null || profile?._tag !== "BearerConnectionProfile") return false;
+      const httpProtocol = new URL(url).protocol;
+      const wsProtocol = new URL(profile.wsBaseUrl).protocol;
+      if (allowInsecure) {
+        return (
+          (httpProtocol === "http:" && wsProtocol === "ws:") ||
+          (httpProtocol === "https:" && wsProtocol === "wss:")
+        );
+      }
+      return httpProtocol === "https:" && wsProtocol === "wss:";
     } catch {
       return false;
     }
@@ -270,7 +286,7 @@ export function mergeLearnedRoutes(input: {
 }): ReadonlyArray<ConnectionRoute> | null {
   const { entry } = input;
   const active = input.activeRoute.target;
-  const saved = connectionRoutes(entry);
+  const saved = connectionRoutes(entry, { allowInsecure: input.allowInsecure === true });
   // The primary and SSH routes have no credential a learned route could reuse.
   if (active._tag !== "RelayConnectionTarget" && active._tag !== "BearerConnectionTarget") {
     return null;

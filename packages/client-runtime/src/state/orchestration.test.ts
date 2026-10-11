@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type OrchestrationV2ShellSnapshot } from "@t3tools/contracts";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { nextShellResumeCache, SHELL_SNAPSHOT_IDLE_TTL_MS } from "./shell.ts";
 import {
   ARCHIVED_SHELL_SNAPSHOT_IDLE_TTL_MS,
   createOrchestrationEnvironmentAtoms,
@@ -24,6 +26,7 @@ describe("orchestration environment atoms", () => {
         input: {},
       }).idleTTL,
     ).toBe(ARCHIVED_SHELL_SNAPSHOT_IDLE_TTL_MS);
+    expect(SHELL_SNAPSHOT_IDLE_TTL_MS).toBe(ARCHIVED_SHELL_SNAPSHOT_IDLE_TTL_MS);
   });
 
   it("releases idle diff payloads before the generic query TTL", () => {
@@ -47,5 +50,32 @@ describe("orchestration environment atoms", () => {
         input: { threadId, toTurnCount: 1 },
       }).idleTTL,
     ).toBe(ORCHESTRATION_DIFF_IDLE_TTL_MS);
+  });
+
+  it("keeps a painted shell across a replacement supervisor's leading empty", () => {
+    const snapshot = Option.some({
+      snapshotSequence: 1,
+      threads: [],
+    } as OrchestrationV2ShellSnapshot);
+    const painted = nextShellResumeCache(undefined, {
+      snapshot,
+      status: "synchronizing",
+      error: Option.none(),
+    });
+    expect(painted?.snapshot).toBe(snapshot);
+    expect(
+      nextShellResumeCache(painted, {
+        snapshot: Option.none(),
+        status: "empty",
+        error: Option.none(),
+      }),
+    ).toBe(painted);
+    expect(
+      nextShellResumeCache(painted, {
+        snapshot: Option.none(),
+        status: "empty",
+        error: Option.some("Could not synchronize environment data."),
+      }),
+    ).toBe(painted);
   });
 });

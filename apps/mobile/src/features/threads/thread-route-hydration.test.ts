@@ -71,4 +71,40 @@ describe("threadRouteIsHydrating", () => {
       }),
     ).toBe(false);
   });
+
+  it("leaves the opening screen once HTTP detail exists", () => {
+    expect(
+      threadRouteIsHydrating({
+        ...settled,
+        connectionState: "connecting",
+        shellStatus: "synchronizing",
+        detailStatus: "cached",
+        hasDetail: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not wait on a cached remote shell when detail is already settled", () => {
+    expect(
+      threadRouteIsHydrating({
+        ...settled,
+        connectionState: "reconnecting",
+        shellStatus: "synchronizing",
+        hasShellSnapshot: true,
+        detailStatus: "live",
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps waiting while a cached remote shell has no thread detail yet", () => {
+    expect(
+      threadRouteIsHydrating({
+        ...settled,
+        connectionState: "reconnecting",
+        shellStatus: "synchronizing",
+        hasShellSnapshot: true,
+        detailStatus: "empty",
+      }),
+    ).toBe(true);
+  });
 });
