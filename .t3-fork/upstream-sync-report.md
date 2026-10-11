@@ -53,3 +53,4 @@
   - `AgentsSettings` and `FixAllFindingsDialog`: `primaryEnvironmentIdAtom`, the same id that backs `primaryServerProvidersAtom`.
 - Deduplicate auto-merged `"/settings/diagnostics"` keys in `SETTINGS_SECTION_LABELS` and `SETTINGS_CATEGORY_SCOPES`. Pretty already owned the diagnostics page; the parent added the same key in a second position.
 - Add required `childThreadId: null` to the `RuntimeSubagent` test fixture in `packages/client-runtime/src/state/subagentActivityLog.test.ts`.
+- Drop the duplicate `workflowName` field on `updateClaudeSubagentNode` in `ClaudeAdapterV2.ts`. The cached AI resolution listed it twice and failed server typecheck.
