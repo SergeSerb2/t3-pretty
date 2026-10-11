@@ -30,12 +30,12 @@ export type {
   PrContentGenerationResult,
   ProjectIconGenerationInput,
   ProjectIconGenerationResult,
+  ReviewGuideGenerationInput,
+  ReviewGuideGenerationResult,
   ThreadTitleGenerationInput,
   ThreadTitleGenerationResult,
 } from "@t3tools/provider-core/server/textGeneration";
-export {
-  unsupportedProjectIconGeneration,
-} from "@t3tools/provider-core/server/textGeneration";
+export { unsupportedProjectIconGeneration } from "@t3tools/provider-core/server/textGeneration";
 
 /**
  * TextGeneration - Service tag for commit and change request text generation.
@@ -172,6 +172,10 @@ export const make = Effect.gen(function* () {
         input.modelSelection,
         (textGeneration, modelSelection) =>
           textGeneration.generateBranchName({ ...input, modelSelection }),
+      ),
+    generateReviewGuide: (input) =>
+      resolveInstance(registry, "generateReviewGuide", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generateReviewGuide(input)),
       ),
     generateThreadTitle: (input) =>
       Effect.gen(function* () {

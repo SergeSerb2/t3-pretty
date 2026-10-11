@@ -145,23 +145,27 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
     );
   };
 
-  const generateProjectIcon: ProviderTextGeneration["generateProjectIcon"] =
-    Effect.fn("GrokTextGeneration.generateProjectIcon")(function* (input) {
-      const generated = yield* runGrokJson({
-        operation: "generateProjectIcon",
-        cwd: input.cwd,
-        modelSelection: input.modelSelection,
-        ...buildProjectIconPrompt({
-          projectTitle: input.projectTitle,
-          outputPath: input.outputPath,
-        }),
-      });
-      const path = generated.path.trim();
-      return { path: path.length > 0 ? path : input.outputPath };
+  const generateProjectIcon: ProviderTextGeneration["generateProjectIcon"] = Effect.fn(
+    "GrokTextGeneration.generateProjectIcon",
+  )(function* (input) {
+    const generated = yield* runGrokJson({
+      operation: "generateProjectIcon",
+      cwd: input.cwd,
+      modelSelection: input.modelSelection,
+      ...buildProjectIconPrompt({
+        projectTitle: input.projectTitle,
+        outputPath: input.outputPath,
+      }),
     });
+    const path = generated.path.trim();
+    return { path: path.length > 0 ? path : input.outputPath };
+  });
 
   return {
-    ...TextGenerationOperations.fromRunner("GrokTextGeneration", runGrokJson),
+    ...TextGenerationOperations.fromRunner(
+      "GrokTextGeneration",
+      TextGenerationOperations.withoutInvestigation("Grok", runGrokJson),
+    ),
     generateProjectIcon,
   };
 });

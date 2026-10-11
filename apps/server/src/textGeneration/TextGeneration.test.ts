@@ -29,6 +29,7 @@ const makeStubTextGeneration = (
     generateHomeSuggestions: () =>
       Effect.die("generateHomeSuggestions stub not configured for this test"),
     generateProjectIcon: () => Effect.die("generateProjectIcon stub not configured for this test"),
+    generateReviewGuide: () => Effect.die("generateReviewGuide stub not configured for this test"),
     ...overrides,
   });
 

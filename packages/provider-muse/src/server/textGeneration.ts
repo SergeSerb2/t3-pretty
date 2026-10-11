@@ -16,6 +16,7 @@ import { createMuseSdkHost, createMuseSdkHostEffect, type MuseSdkHost } from "./
 import { museModelCapabilities, resolveMuseReasoningEffort } from "./modelCatalog.ts";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
+import { investigationUnsupported } from "@t3tools/provider-core/server/textGenerationOperations";
 import { toJsonSchemaObject } from "@t3tools/provider-core/server/textGenerationUtils";
 
 const SessionStarted = Schema.Struct({ session: Schema.Struct({ sessionId: Schema.String }) });
@@ -276,8 +277,11 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
     );
   });
 
-  return TextGenerationOperations.fromRunner(
-    "MuseTextGeneration",
-    runMuseJson,
-  ) satisfies ProviderTextGeneration;
+  // Muse runs in an empty read-only directory and cannot be pointed at a checkout to read.
+  const generateReviewGuide: ProviderTextGeneration["generateReviewGuide"] = () =>
+    Effect.fail(investigationUnsupported("generateReviewGuide", "Muse Code"));
+  return {
+    ...TextGenerationOperations.fromRunner("MuseTextGeneration", runMuseJson),
+    generateReviewGuide,
+  } satisfies ProviderTextGeneration;
 });
