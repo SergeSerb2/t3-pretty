@@ -45,6 +45,7 @@ export const USAGE_PROVIDER_KINDS = [
   "cursor",
   "opencode",
   "antigravity",
+  "pi",
 ] as const;
 
 export const USAGE_MODEL_MAX_LENGTH = 512;

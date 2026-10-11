@@ -1,44 +1,43 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.46-nightly.20261010.2948`
-- Previously integrated parent nightly: `v0.0.46-nightly.20261010.2935`
-- Conflict resolver: hand-merge from Origin `main` (`e1fca72bb`)
+- Parent nightly: `v0.0.46-nightly.20261011.2955`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261010.2948`
+- Conflict resolver: hand-merge from Origin `main` (`9a409892d`)
 - 0 file(s) remain on an unresolved fork-side fallback
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `packages/contracts/src/sourceControl.ts` — Kept Pretty discovery caps and `ChangeRequest.mergedAt` as `Option<Utc>`; adopted the parent's open branded `SourceControlProviderKind`.
-- `packages/contracts/src/settings.ts` — Kept Pretty fields (`globalEnvironment`, `legacyQueueEnabled`, scenery, home suggestions, agent monitoring) while adopting `sourceControlHosts` in place of top-level `github`/`bitbucket`.
-- `packages/contracts/src/pullRequest.ts` — Kept Origin capability requirements and the fork `Map` comment shape; adopted parent host-agnostic action/capability types.
-- `packages/shared/src/sourceControl.ts` — Kept Origin detection, Grok review markers, and Forgejo/GitCafe host rules; branded every kind with `SourceControlProviderKind.make`.
-- `packages/client-runtime/src/operations/projects.ts` — Adopted `getNewProjectPublishTargets` / host-definition clone sources; Origin stays in the registry so publish and clone pickers still offer it.
-- `packages/client-runtime/src/originSourceControlClient.ts` — New Pretty client definition so Origin survives the parent's per-host registry. GitHub's `/pull/` matcher yields to Origin's `cursor.com/codebase/.../pull/` URLs.
-- `apps/server/src/serverSettings.ts` — Adopted parent host-secret slots; kept Pretty bounded `readFilePrefix` reads, write-size cap, and `globalEnvironment` secret hydrate/persist.
-- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` — Kept multi-server MCP via `T3_CODE_MCP_AUTHORIZATION` while adopting parent timeout and read-only tool lists.
-- `apps/server/src/server.ts` — Kept `ReviewLayerLive` / `ProjectStore.layer` wiring required by Pretty review.
-- `apps/mobile/src/Stack.tsx` and settings sheet targets — Kept Pretty Microphone settings; adopted parent source-control host presentation.
-- `apps/mobile/src/persistence/mobile-preferences.ts` — Kept `legacyQueueEnabled` (Follow-ups stay removed) and adopted parent microphone priority.
-- `docs/user/composer.md` — Kept T3 Pretty microphone docs while adopting parent composer wording.
+- `packages/client-runtime/package.json` — Kept Pretty-only export maps (pending requests, preview automation, scenery, dictation, skills, and the other fork state modules) and added the parent's `./diff-count` export. The automated sync dropped that export and broke four web imports.
+- `apps/web/src/pierre-icons.ts` — Restored Pretty `inferEntryKindFromPath` (used by `MessagesTimeline` and `FileTagChip`) on top of the parent's mime-type icon fallback. The parent deleted the helper in the same region as the mime-type change; a clean take of the parent file is what failed the blocked sync's web typecheck.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Kept Pretty `SlidingActivity` / `ActivityLabel` / `inferEntryKindFromPath` and took the parent's `WorkspaceEntryIcon` imports, disclosure-aware `handleItemSizeChanged`, and top-fade class.
+- `apps/web/src/components/ChatView.tsx` — Kept Pretty draft `attachedPullRequestForSend` and the parked-titlebar containing-block comment; took the parent's `sendQueuesBehindSetup` first-message guard and `FileMetadataThreadProvider` wrapper (`const content =`).
+- `apps/desktop/src/window/DesktopWindow.ts` — Kept Pretty in-app edit menus on the host renderer. Guests and sign-in popups use the parent's native `popupTemplate` path (the in-app IPC channel cannot reach those contents). Host copy-image now uses the parent's `copyContextMenuImage`.
+- `apps/mobile/src/features/review/ReviewSheet.tsx` — Kept `useIsFocused` and added `formatDiffCount`.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Kept Pretty create/babysit pull-request suffix helpers and took `resolveNewThreadEnvMode`.
+- `apps/server/src/workspace/WorkspaceFileSystem.ts` — Kept Pretty symlink-safe write realpath helpers and `PROJECT_FILE_CONTENTS_MAX_BYTES`; took parent `getMetadata` (absolute/`~` paths, 512-byte mime sniff).
+- `packages/client-runtime/src/state/projectCommands.ts` — Kept Pretty `PROJECT_LARGE_QUERY_IDLE_TTL_MS` (60s) and took parent `fileMetadata.seedAfterRead` executors.
+- `packages/contracts/src/filesystem.ts` — Kept Pretty `PROJECT_PATH_MAX_LENGTH` browse/path caps and took `NonNegativeInt` for metadata byte lengths.
+- `packages/contracts/src/usage.ts` — Kept Pretty usage bounds (`USAGE_MODEL_MAX_LENGTH`, summary/source caps, `isUsageProviderKind`) and added parent provider `"pi"`.
+- `packages/provider-pi/package.json` — Kept Pretty `mcpExtensionSource` / `mcpInjection` exports and added parent `./server/usage`.
 
 ## Parent changes integrated at conflict boundaries
 
-- Source control provider kind is an open branded slug, not a closed literal union.
-- Each host package ships a client definition; clone, publish, checkout, and presentation read that registry.
-- New projects can be published to any ready host (`getNewProjectPublishTargets`).
-- Host settings live under `settings.sourceControlHosts` (GitCafe token and GitHub tokens included); retired top-level `github`/`bitbucket` keys migrate on load.
-- Quick actions and reference parsing follow each host's capabilities.
-- Mobile microphone order for voice input.
-- Diffs for projects outside the server cwd; Claude MCP servers on the control channel; native subagent stop without stopping the owner.
+- Shared `formatDiffCount` via `@t3tools/client-runtime/diff-count`.
+- File metadata RPC (`getMetadata`) for icon mime types on extensionless files; workspace reads may target absolute host paths.
+- New-thread env mode from project settings (`resolveNewThreadEnvMode`).
+- First message after setup no longer counts as the thread's first once send is queued behind setup.
+- File-metadata thread provider wraps chat content so entry icons can resolve mime types.
+- Native context menus for browser guests and sign-in popups; `copyContextMenuImage` for image copy.
+- Pi usage provider kind and `@t3tools/provider-pi/server/usage`.
+- File-metadata seeding after search/list/read queries.
 
 ## Parent changes intentionally omitted
 
-- Follow-ups / Settings Follow-up UI. Pretty keeps `legacyQueueEnabled` and steering as the default.
-- GitHub-only `getNewProjectGitHubTarget`. Replaced by the parent registry, with Origin registered as a first-class host.
+- Replacing Pretty in-app host edit menus with a native Electron menu on the main renderer. Guests and popups take the native path.
+- Parent 5-minute idle TTL on list/read file queries. Pretty keeps the 60s `PROJECT_LARGE_QUERY_IDLE_TTL_MS` bound.
+- Inlining `UsageProviderKind` as a one-off `Schema.Literals([...])` and dropping Pretty usage caps / `USAGE_PROVIDER_KINDS`.
 
 ## Post-merge repairs
 
-- Register Origin in `sourceControlClients` and wrap GitHub's change-request URL matcher so `cursor.com/codebase/.../pull/` is not attributed to GitHub.
-- Brand Origin server `kind`/`provider` fields with `SourceControlProviderKind.make("origin")`.
-- Restore Pretty `globalEnvironmentSecretName` and bounded settings-file reads on top of the parent's host-secret model.
-- Restore Pretty `getCloneDirectoryName` hardening (reject `.`/`..`, strip `.git` case-insensitively).
-- Brand leftover test and GitHub `getAutomatedReview` kinds; provide `GitCafeCredentials` on Origin/Forgejo registry-layer tests; drop a duplicated Claude wake-harness `subagentReceipts` binding; restore the mobile `useEffect` import.
+- Re-export `inferEntryKindFromPath` from `apps/web/src/pierre-icons.ts` after the parent mime-type icon change auto-merged over it.
+- Publish `./diff-count` from `@t3tools/client-runtime` so web and mobile `formatDiffCount` imports resolve.

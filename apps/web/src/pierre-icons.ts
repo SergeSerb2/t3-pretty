@@ -4,6 +4,7 @@ import {
   type FileTreeIcons,
 } from "@pierre/trees";
 import { VIDEO_FILE_EXTENSIONS } from "@t3tools/shared/video";
+import { fileIconPathForMimeType } from "@t3tools/shared/filePreview";
 
 export interface PierreIconResolution {
   name: string;
@@ -171,9 +172,16 @@ export function syntheticFileNameForLanguageId(languageId: string): string {
 export function resolvePierreIconForEntry(
   pathValue: string,
   kind: "file" | "directory",
+  mimeType?: string,
 ): PierreIconResolution | null {
   if (kind === "directory") return null;
-  return completeIconResolver.resolveIcon("file-tree-icon-file", pathValue);
+  const icon = completeIconResolver.resolveIcon("file-tree-icon-file", pathValue);
+  return icon?.token === "default" && mimeType
+    ? completeIconResolver.resolveIcon(
+        "file-tree-icon-file",
+        fileIconPathForMimeType(pathValue, mimeType),
+      )
+    : icon;
 }
 
 export function hasSpecificPierreIconForFileName(fileName: string): boolean {

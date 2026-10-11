@@ -14,6 +14,7 @@ import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import { getDesktopUrl } from "../electron/ElectronProtocol.ts";
+import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
@@ -44,6 +45,7 @@ import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
+import { copyContextMenuImage } from "./ContextMenuImage.ts";
 
 const TITLEBAR_HEIGHT = 40;
 // Matches --workspace-topbar-height in apps/web/src/index.css. Native macOS
@@ -99,6 +101,7 @@ type DesktopWindowRuntimeServices =
   | DesktopAppSettings.DesktopAppSettings
   | DesktopClientSettings.DesktopClientSettings
   | ElectronApp.ElectronApp
+  | ElectronMenu.ElectronMenu
   | ElectronShell.ElectronShell
   | ElectronTheme.ElectronTheme
   | ElectronWindow.ElectronWindow
@@ -372,6 +375,7 @@ function bindFirstRevealTrigger(
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const assets = yield* DesktopAssets.DesktopAssets;
+  const electronMenu = yield* ElectronMenu.ElectronMenu;
   const electronShell = yield* ElectronShell.ElectronShell;
   const electronTheme = yield* ElectronTheme.ElectronTheme;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
@@ -621,6 +625,70 @@ export const make = Effect.gen(function* () {
         contents.focus();
 
         const hasSafeLink = Option.isSome(ElectronShell.parseSafeExternalUrl(params.linkURL));
+
+        // Pretty in-app menus only work on the host renderer. Browser guests and
+        // sign-in popups need a native menu — they cannot receive the IPC channel.
+        if (contents !== window.webContents) {
+          const menuTemplate: Electron.MenuItemConstructorOptions[] = [];
+
+          if (params.misspelledWord) {
+            for (const suggestion of params.dictionarySuggestions.slice(0, 5)) {
+              menuTemplate.push({
+                label: suggestion,
+                click: () => {
+                  if (!contents.isDestroyed()) contents.replaceMisspelling(suggestion);
+                },
+              });
+            }
+            if (params.dictionarySuggestions.length === 0) {
+              menuTemplate.push({ label: "No suggestions", enabled: false });
+            }
+            menuTemplate.push({ type: "separator" });
+          }
+
+          if (hasSafeLink) {
+            menuTemplate.push(
+              {
+                label: "Copy Link",
+                click: () => {
+                  void runPromise(electronShell.copyText(params.linkURL));
+                },
+              },
+              { type: "separator" },
+            );
+          }
+
+          if (params.mediaType === "image") {
+            menuTemplate.push({
+              label: "Copy Image",
+              click: () => {
+                void runPromise(
+                  Effect.tryPromise(() => copyContextMenuImage(contents, params)).pipe(
+                    Effect.catch(() => logWindowWarning("failed to copy context-menu image")),
+                  ),
+                );
+              },
+            });
+            menuTemplate.push({ type: "separator" });
+          }
+
+          menuTemplate.push(
+            { role: "cut", enabled: params.editFlags.canCut },
+            { role: "copy", enabled: params.editFlags.canCopy },
+            { role: "paste", enabled: params.editFlags.canPaste },
+            { role: "selectAll", enabled: params.editFlags.canSelectAll },
+          );
+
+          void runPromise(
+            electronMenu.popupTemplate({
+              window: ownerWindow,
+              template: menuTemplate,
+              ...(params.frame ? { frame: params.frame } : {}),
+            }),
+          );
+          return;
+        }
+
         if (
           !shouldOfferEditContextMenu({
             isEditable: params.isEditable,
@@ -677,10 +745,9 @@ export const make = Effect.gen(function* () {
                 case "copy-link":
                   return electronShell.copyText(params.linkURL);
                 case "copy-image":
-                  if (!contents.isDestroyed()) {
-                    contents.copyImageAt(params.x, params.y);
-                  }
-                  return Effect.void;
+                  return Effect.tryPromise(() => copyContextMenuImage(contents, params)).pipe(
+                    Effect.catch(() => logWindowWarning("failed to copy context-menu image")),
+                  );
                 case "cut":
                   if (!contents.isDestroyed()) contents.cut();
                   return Effect.void;
@@ -697,6 +764,9 @@ export const make = Effect.gen(function* () {
             }),
           ),
         );
+      });
+      contents.on("did-create-window", (popup) => {
+        installContextMenu(popup, popup.webContents);
       });
     };
     installContextMenu(window, window.webContents);

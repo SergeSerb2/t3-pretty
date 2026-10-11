@@ -1,6 +1,7 @@
 /**
- * Muse Code internals for replay tests and the fixture recorder: the MSP
- * launch arguments, initialize parameters, environment, and version parser.
+ * Muse Code internals for replay tests and the fixture recorder: how Muse is
+ * started, the MSP launch arguments, initialize parameters, environment, the
+ * workspace root `turn/start` sends, and version parser.
  *
  * @module provider-muse/testing
  */
@@ -8,7 +9,9 @@ export { museSessionMcpConfig } from "./server/adapter.ts";
 export {
   makeMuseEnvironment,
   museInitializeParams,
+  museLaunch,
   museServeArgs,
+  museWorkspaceRoot,
   type MuseSdkHost,
   type MuseSdkHostOptions,
 } from "./server/sdk.ts";

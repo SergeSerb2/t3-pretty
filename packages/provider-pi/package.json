@@ -22,6 +22,10 @@
     "./server/mcpInjection": {
       "types": "./src/server/mcpInjection.ts",
       "import": "./src/server/mcpInjection.ts"
+    },
+    "./server/usage": {
+      "types": "./src/server/usage.ts",
+      "import": "./src/server/usage.ts"
     }
   },
   "scripts": {
