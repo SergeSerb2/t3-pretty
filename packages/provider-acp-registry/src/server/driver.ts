@@ -86,6 +86,7 @@ const makeUnsupportedTextGeneration = (): ProviderTextGeneration => {
     generateActivityHeadline: () => unsupported("generateActivityHeadline"),
     generateHomeSuggestions: () => unsupported("generateHomeSuggestions"),
     generateProjectIcon: () => unsupported("generateProjectIcon"),
+    generateReviewGuide: () => unsupported("generateReviewGuide"),
   };
 };
 

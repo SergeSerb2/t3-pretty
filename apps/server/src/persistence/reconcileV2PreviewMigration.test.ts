@@ -78,12 +78,17 @@ describe("T3 Pretty migration history", () => {
         ([, name]) => name === "ThreadSnapshotWindowIndexes",
       );
       assert.strictEqual(threadSnapshotWindowIndexesMigrations.length, 1);
+      const pullRequestReviewGuidesMigrations = migrationManifest.filter(
+        ([, name]) => name === "PullRequestReviewGuides",
+      );
+      assert.strictEqual(pullRequestReviewGuidesMigrations.length, 1);
       assert.deepStrictEqual(yield* runMigrations(), [
         [70, "ScheduledTaskWebhooks"],
         [71, "WebhookRelayDeliveries"],
         [72, "WebhookDispatchOutbox"],
         ...mcpAppModelContextMigrations,
         ...threadSnapshotWindowIndexesMigrations,
+        ...pullRequestReviewGuidesMigrations,
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),

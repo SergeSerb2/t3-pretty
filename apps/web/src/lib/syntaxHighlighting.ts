@@ -9,7 +9,7 @@ import { resolveDiffThemeName } from "./diffRendering";
 
 const highlighterPromiseCache = new Map<string, Promise<DiffsHighlighter>>();
 const MAX_HIGHLIGHTER_CACHE_ENTRIES = 128;
-export const PREFERRED_HIGHLIGHTER = "shiki-js" satisfies HighlighterTypes;
+export const PREFERRED_HIGHLIGHTER = "shiki-js" as const satisfies HighlighterTypes;
 
 function cacheHighlighterPromise(language: string, promise: Promise<DiffsHighlighter>): void {
   highlighterPromiseCache.set(language, promise);

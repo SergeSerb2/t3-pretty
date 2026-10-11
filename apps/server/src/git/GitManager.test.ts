@@ -394,6 +394,7 @@ function createTextGeneration(
       Effect.succeed({
         path: "/tmp/icon.png",
       }),
+    generateReviewGuide: () => Effect.succeed({ stops: [] }),
     ...overrides,
   };
 
@@ -475,6 +476,7 @@ function createTextGeneration(
             }),
         ),
       ),
+    generateReviewGuide: (input) => implementation.generateReviewGuide(input),
   };
 }
 
@@ -644,7 +646,8 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
       const repository = args[2];
       if (typeof repository === "string" && args.includes("nameWithOwner,url,sshUrl")) {
         const cloneUrls =
-          scenario.repositoryCloneUrls?.[repository] ?? defaultCloneUrlsForRepository(input.cwd, repository);
+          scenario.repositoryCloneUrls?.[repository] ??
+          defaultCloneUrlsForRepository(input.cwd, repository);
         return Effect.succeed(
           fakeGhOutput(
             JSON.stringify({
@@ -832,10 +835,7 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
         "codexReview" in scenario
           ? Effect.succeed(scenario.codexReview ?? null)
           : Effect.fail(
-              fail(
-                input.cwd,
-                "Codex review lookup is not configured in this GitManager fake.",
-              ),
+              fail(input.cwd, "Codex review lookup is not configured in this GitManager fake."),
             ),
       getRepositoryCloneUrls: (input) =>
         execute({
@@ -1323,19 +1323,18 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
           prListByHeadSelector: {
-            [branch]:
-              JSON.stringify([
-                {
-                  number: 18,
-                  title: "Background merged PR",
-                  url: "https://github.com/pingdotgg/codething-mvp/pull/18",
-                  baseRefName: "main",
-                  headRefName: branch,
-                  state: "merged",
-                  mergedAt: "2026-01-02T00:00:00.000Z",
-                  updatedAt: "2026-01-03T00:00:00.000Z",
-                },
-              ]),
+            [branch]: JSON.stringify([
+              {
+                number: 18,
+                title: "Background merged PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/18",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "merged",
+                mergedAt: "2026-01-02T00:00:00.000Z",
+                updatedAt: "2026-01-03T00:00:00.000Z",
+              },
+            ]),
           },
         },
       });
@@ -1645,9 +1644,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           isCrossRepository: true,
         },
       });
-      expect(
-        ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`)),
-      ).toBe(true);
+      expect(ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`))).toBe(
+        true,
+      );
       expect(ghCalls.some((call) => call.includes(`--head intruder:${branch}`))).toBe(false);
     }),
   );
@@ -2958,9 +2957,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
   it("does not re-announce an evicted terminal PR lookup as open-to-merged", () => {
     const states = new Map<string, "open" | "closed" | "merged">();
     const evicted = new Map<string, "open" | "closed" | "merged">();
-    expect(GitManager.rememberPullRequestLookupState(states, evicted, "merged-pr", "merged", 2)).toBe(
-      "open",
-    );
+    expect(
+      GitManager.rememberPullRequestLookupState(states, evicted, "merged-pr", "merged", 2),
+    ).toBe("open");
     expect(GitManager.rememberPullRequestLookupState(states, evicted, "open-a", "open", 2)).toBe(
       "open",
     );
