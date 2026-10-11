@@ -1008,7 +1008,7 @@ export const make = Effect.gen(function* () {
       if (coordinates === null) {
         return Effect.fail(
           new SourceControlProviderError({
-            provider: "github",
+            provider: SourceControlProviderKind.make("github"),
             operation: "getAutomatedReview",
             cwd: input.cwd,
             reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),

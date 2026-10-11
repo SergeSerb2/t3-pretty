@@ -2318,10 +2318,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* Queue.unbounded<
           Extract<ProviderAdapter.ProviderAdapterV2Event, { type: "turn.terminal" }>
         >();
-      const subagentReceipts =
-        yield* Queue.unbounded<
-          Extract<ProviderAdapter.ProviderAdapterV2Event, { type: "subagent.updated" }>
-        >();
       const systemNoticeReceipts =
         yield* Queue.unbounded<
           Extract<ProviderAdapter.ProviderAdapterV2Event, { type: "turn_item.updated" }>
@@ -2467,7 +2463,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         subagentReceipts,
         systemNoticeReceipts,
         assistantReceipts,
-        subagentReceipts,
         getOpenedOptions: () => openedOptions,
         terminalEvents,
         hasPendingBackgroundWork,

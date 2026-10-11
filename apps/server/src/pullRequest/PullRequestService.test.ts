@@ -4345,7 +4345,7 @@ it.effect("does not ask each repository when the host search is rate-limited", (
         project({ id: "p2", title: "docs", workspaceRoot: "/b", repository: "acme/docs" }),
       ],
       providers: [
-        fakeProvider("github", {
+        fakeProvider(SourceControlProviderKind.make("github"), {
           listChangeRequests: ({ repository }) => {
             separately.push(repository);
             return Effect.succeed({
@@ -4357,7 +4357,7 @@ it.effect("does not ask each repository when the host search is rate-limited", (
           listChangeRequestsAcross: () =>
             Effect.fail(
               new PullRequestProviderError({
-                provider: "github",
+                provider: SourceControlProviderKind.make("github"),
                 operation: "listChangeRequestsAcross",
                 reason: "rate-limited",
                 detail: "GitHub API rate limit exceeded.",

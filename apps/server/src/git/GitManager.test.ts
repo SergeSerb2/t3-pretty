@@ -679,7 +679,7 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
     const decoded = decodeGitHubPullRequestListJson(raw);
     if (Result.isSuccess(decoded)) {
       return decoded.success.map((record) => ({
-        provider: "github" as const,
+        provider: SourceControlProviderKind.make("github"),
         ...record,
         mergedAt:
           record.mergedAt == null || record.mergedAt.trim().length === 0
@@ -760,6 +760,10 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
                   ? decoded.success.map((record) => ({
                       provider: SourceControlProviderKind.make("github"),
                       ...record,
+                      mergedAt:
+                        record.mergedAt == null || record.mergedAt.trim().length === 0
+                          ? Option.none()
+                          : Option.some(DateTime.makeUnsafe(record.mergedAt)),
                     }))
                   : [];
               }),

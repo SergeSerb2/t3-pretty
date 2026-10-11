@@ -380,6 +380,9 @@ it.effect("propagates OriginCli layer construction failures", () =>
               Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
               Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
               Layer.mock(GitCafeApi.GitCafeApi)({}),
+              Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+                cliEnv: () => Effect.succeed({}),
+              }),
               Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
               Layer.mock(VcsProcess.VcsProcess)({
                 run: () => Effect.succeed(processOutput("")),
@@ -438,6 +441,9 @@ it.effect("propagates ForgejoCli layer construction failures", () =>
               Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
               Layer.mock(OriginCli.OriginCli)({}),
               Layer.mock(GitCafeApi.GitCafeApi)({}),
+              Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+                cliEnv: () => Effect.succeed({}),
+              }),
               Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
               Layer.mock(VcsProcess.VcsProcess)({
                 run: () => Effect.succeed(processOutput("")),
@@ -475,7 +481,7 @@ it.effect("propagates ForgejoCli layer construction failures", () =>
 it.effect("boots the registry layer when OriginCli.layer is provided", () =>
   Effect.gen(function* () {
     const registry = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
-    const origin = yield* registry.get("origin");
+    const origin = yield* registry.get(SourceControlProviderKind.make("origin"));
     assert.strictEqual(origin.kind, "origin");
   }).pipe(
     Effect.provide(
@@ -495,6 +501,9 @@ it.effect("boots the registry layer when OriginCli.layer is provided", () =>
             Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
             Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
             Layer.mock(GitCafeApi.GitCafeApi)({}),
+            Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+              cliEnv: () => Effect.succeed({}),
+            }),
             OriginCli.layer.pipe(
               Layer.provide(
                 Layer.mock(VcsProcess.VcsProcess)({
@@ -531,7 +540,7 @@ it.effect("boots the registry layer when OriginCli.layer is provided", () =>
 it.effect("boots the registry layer when ForgejoCli.layer is provided", () =>
   Effect.gen(function* () {
     const registry = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
-    const forgejo = yield* registry.get("forgejo");
+    const forgejo = yield* registry.get(SourceControlProviderKind.make("forgejo"));
     assert.strictEqual(forgejo.kind, "forgejo");
   }).pipe(
     Effect.provide(
@@ -552,6 +561,9 @@ it.effect("boots the registry layer when ForgejoCli.layer is provided", () =>
             Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
             Layer.mock(OriginCli.OriginCli)({}),
             Layer.mock(GitCafeApi.GitCafeApi)({}),
+            Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+              cliEnv: () => Effect.succeed({}),
+            }),
             ForgejoCli.layer.pipe(
               Layer.provide(
                 Layer.mergeAll(

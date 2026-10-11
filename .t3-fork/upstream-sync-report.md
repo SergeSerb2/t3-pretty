@@ -40,3 +40,5 @@
 - Register Origin in `sourceControlClients` and wrap GitHub's change-request URL matcher so `cursor.com/codebase/.../pull/` is not attributed to GitHub.
 - Brand Origin server `kind`/`provider` fields with `SourceControlProviderKind.make("origin")`.
 - Restore Pretty `globalEnvironmentSecretName` and bounded settings-file reads on top of the parent's host-secret model.
+- Restore Pretty `getCloneDirectoryName` hardening (reject `.`/`..`, strip `.git` case-insensitively).
+- Brand leftover test and GitHub `getAutomatedReview` kinds; provide `GitCafeCredentials` on Origin/Forgejo registry-layer tests; drop a duplicated Claude wake-harness `subagentReceipts` binding; restore the mobile `useEffect` import.
