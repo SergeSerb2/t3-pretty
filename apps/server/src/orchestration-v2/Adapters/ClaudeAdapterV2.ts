@@ -4881,7 +4881,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly result?: string;
           readonly status: OrchestrationV2Subagent["status"];
           readonly kind?: OrchestrationV2Subagent["kind"];
-          readonly workflowName?: string;
           readonly error?: string;
           readonly role?: string;
           readonly usage?: RuntimeTaskUsage;
