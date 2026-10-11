@@ -879,6 +879,7 @@ describe("macos review-only pre-command hook", () => {
       "publish-cli",
       "server-typecheck",
       "mobile-typecheck",
+      "web-typecheck",
     ]) {
       const blocked = run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: key });
       assert.equal(blocked.status, 1, key);

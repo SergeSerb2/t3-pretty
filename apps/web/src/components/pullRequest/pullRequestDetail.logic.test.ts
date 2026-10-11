@@ -346,22 +346,16 @@ describe("pull request handoff labels", () => {
   it("names the open thread when actions write to its composer", () => {
     expect(pullRequestHandoffLabels(true)).toEqual({
       fixFinding: "Fix in this thread",
-      fixFindingOther: "Fix in another thread",
       fixCheck: "Fix in this thread",
-      fixFindings: "Fix all findings",
-      resolve: "Resolve in this thread",
-      resolveConflicts: "Resolve conflicts in this thread",
+      fixFindings: "Fix findings in this thread",
     });
   });
 
   it("keeps the standalone pull request page labels", () => {
     expect(pullRequestHandoffLabels(false)).toEqual({
       fixFinding: "Fix in a thread",
-      fixFindingOther: "Fix in another thread",
       fixCheck: "Fix",
-      fixFindings: "Fix all findings",
-      resolve: "Resolve in a new thread",
-      resolveConflicts: "Resolve conflicts in a thread",
+      fixFindings: "Fix findings in a thread",
     });
   });
 });
@@ -1058,7 +1052,7 @@ describe("pull request timeline", () => {
 
 describe("fix findings handoff", () => {
   const base = {
-    provider: "github" as const,
+    provider: SourceControlProviderKind.make("github"),
     host: "github.com",
     number: 42,
     title: "Add the pull requests page",
@@ -1127,7 +1121,7 @@ describe("fix findings handoff", () => {
   it("names the host's own resolve path instead of always pointing at GitHub", () => {
     const gitlab = buildFixFindingsHandoff({
       ...base,
-      provider: "gitlab",
+      provider: SourceControlProviderKind.make("gitlab"),
       host: "gitlab.com",
       url: "https://gitlab.com/acme/app/-/merge_requests/42",
       reviewThreads: [thread("rename the helper")],
@@ -1140,7 +1134,7 @@ describe("fix findings handoff", () => {
 
     const bitbucket = buildFixFindingsHandoff({
       ...base,
-      provider: "bitbucket",
+      provider: SourceControlProviderKind.make("bitbucket"),
       host: "bitbucket.org",
       url: "https://bitbucket.org/acme/app/pull-requests/42",
       reviewThreads: [thread("rename the helper")],
@@ -1479,7 +1473,7 @@ describe("fix findings handoff", () => {
 
 describe("findings that cannot be attached", () => {
   const base = {
-    provider: "github" as const,
+    provider: SourceControlProviderKind.make("github"),
     host: "github.com",
     number: 42,
     title: "Add the pull requests page",
@@ -1583,7 +1577,7 @@ describe("findings that cannot be attached", () => {
 
 describe("one finding handed over on its own", () => {
   const base = {
-    provider: "github" as const,
+    provider: SourceControlProviderKind.make("github"),
     host: "github.com",
     number: 42,
     title: "Add the pull requests page",
@@ -1755,7 +1749,7 @@ describe("findings that are already on a line", () => {
       ],
     };
     const handoff = buildFixFindingsHandoff({
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       host: "github.com",
       number: 42,
       title: "Add the pull requests page",

@@ -11513,6 +11513,7 @@ export default function ChatView(props: ChatViewProps) {
           key={activeThreadKey}
           mode="embedded"
           composerDraftTarget={composerDraftTarget}
+          workspaceMutationId={workspaceMutationId}
         />
       </Suspense>
     ) : renderedRightPanelSurface?.kind === "pull-request" && !pullRequestsCapabilityKnown ? (
