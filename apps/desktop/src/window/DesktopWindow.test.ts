@@ -2005,8 +2005,9 @@ describe("DesktopWindow", () => {
         yield* desktopWindow.dispatchSnapShotEvent({ type: "failed", id: captureTwo });
 
         assert.equal(foreground, "Explorer");
-        assert.deepEqual(operations, ["send", "reveal", "send", "send"]);
+        assert.deepEqual(operations, ["send", "send", "reveal", "send", "send"]);
         assert.deepEqual(fakeWindow.send.mock.calls, [
+          [WINDOW_ACTIVE_STATE_CHANNEL, false],
           [SNAP_SHOT_EVENT_CHANNEL, { type: "started", id: captureOne }],
           [SNAP_SHOT_EVENT_CHANNEL, { type: "ready", id: captureOne }],
           [SNAP_SHOT_EVENT_CHANNEL, { type: "failed", id: captureTwo }],
@@ -2037,6 +2038,7 @@ describe("DesktopWindow", () => {
         );
 
         assert.deepEqual(fakeWindow.send.mock.calls, [
+          [WINDOW_ACTIVE_STATE_CHANNEL, false],
           [SNAP_SHOT_EVENT_CHANNEL, { type: "started", id: captureOne }],
         ]);
       }).pipe(Effect.provide(layer));
@@ -2076,7 +2078,7 @@ describe("DesktopWindow", () => {
         yield* desktopWindow.dispatchSnapShotEvent({ type: "ready", id: captureOne });
 
         assert.equal(yield* Ref.get(createCount), 1);
-        assert.equal(fakeWindow.send.mock.calls.length, 0);
+        assert.deepEqual(fakeWindow.send.mock.calls, [[WINDOW_ACTIVE_STATE_CHANNEL, false]]);
         assert.equal(onReveal.mock.calls.length, 0);
       }).pipe(Effect.provide(layer));
     }),

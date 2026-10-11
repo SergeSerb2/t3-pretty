@@ -41,3 +41,5 @@
 
 - Re-export `inferEntryKindFromPath` from `apps/web/src/pierre-icons.ts` after the parent mime-type icon change auto-merged over it.
 - Publish `./diff-count` from `@t3tools/client-runtime` so web and mobile `formatDiffCount` imports resolve.
+- Teach the parent's `FilesystemGetMetadataInput` path-length test to use Pretty's `FILESYSTEM_PATH_MAX_LENGTH` (32 KiB), not the parent's 512-byte cap.
+- Expect Pretty's host-window `WINDOW_ACTIVE_STATE` seed in the parent's capture-delivery DesktopWindow tests.

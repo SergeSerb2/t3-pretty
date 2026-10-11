@@ -2,6 +2,7 @@ import { assert, describe, it } from "vite-plus/test";
 
 import {
   hasSpecificPierreIconForFileName,
+  inferEntryKindFromPath,
   resolvePierreIconForEntry,
   syntheticFileNameForLanguageId,
   T3_PIERRE_ICONS,
@@ -71,6 +72,13 @@ describe("Pierre file icons", () => {
 
   it("leaves directory rendering to the shared folder fallback", () => {
     assert.isNull(resolvePierreIconForEntry("packages/client-runtime", "directory"));
+  });
+
+  it("infers files vs directories from the path when no metadata is available", () => {
+    assert.equal(inferEntryKindFromPath("src/Button.tsx"), "file");
+    assert.equal(inferEntryKindFromPath("packages/client-runtime"), "directory");
+    assert.equal(inferEntryKindFromPath(".eslintrc.json"), "file");
+    assert.equal(inferEntryKindFromPath(".git"), "directory");
   });
 
   it("normalizes common markdown fence language aliases", () => {
