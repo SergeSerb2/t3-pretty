@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261011.2967003384",
+    date: "2026-10-11",
+    items: [
+      {
+        kind: "fixed",
+        title: "Favorite rollback safe when settings is missing",
+      },
+      {
+        kind: "fixed",
+        title: "PR conversation helpers dropped by the nightly sync",
+      },
+      {
+        kind: "fixed",
+        title: "Drop duplicate Claude subagent effort bindings",
+      },
+      {
+        kind: "fixed",
+        title: "Menu imports on the draft PR picker",
+      },
+      {
+        kind: "fixed",
+        title: "Never auto-learn plaintext routes when allowInsecure",
+      },
+      {
+        kind: "fixed",
+        title: "Adapt GitCafe ChangeRequest.mergedAt to Option<Utc>",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261011.2967003382",
     date: "2026-10-11",
     items: [
