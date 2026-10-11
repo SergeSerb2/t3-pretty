@@ -48,7 +48,7 @@ interface GuideRunStoreState {
 }
 
 export function guideRunKey(environmentId: EnvironmentId, reference: PullRequestRef): string {
-  return `${environmentId}:${pullRequestReviewKey(reference)}`;
+  return `${environmentId}:${pullRequestReviewKey(environmentId, reference)}`;
 }
 
 export const useGuideRunStore = create<GuideRunStoreState>()((set) => ({

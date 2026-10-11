@@ -98,3 +98,11 @@
 
 - `apps/server/src/persistence/reconcileV2PreviewMigration.test.ts` — Restoration of the parent preview-seeded upgrade test body in place of Pretty's shipped-ledger test.. Reason: Relative to BASE, Pretty deliberately replaced this test body with shipped-ledger compatibility coverage. Retain that fork intent; the new parent review-guide expectation is incorporated into the manifest-based retry test instead.
 - `apps/server/src/persistence/reconcileV2PreviewMigration.test.ts` — Literal parent migration-number expectations 53, 54, and 56–61, including ID 61 for PullRequestReviewGuides.. Reason: These cannot replace Pretty's shipped numbering. ID 61 lies within the ledger range that Pretty explicitly retains unchanged; the review-guide expectation uses its migrationManifest entry instead.
+
+## Post-merge repairs
+
+- `web-typecheck` failed after merging `v0.0.46-nightly.20261011.2980`; repaired with `gpt-6.1-sol`: Adapt all failing guide call sites to the environment-scoped review API and make the shared highlighter literal non-widening, addressing all six reported errors. Preserve guide rendering, comment subscriptions, and fork behavior while leaving suggestions and unrelated code unchanged.
+  - edited `apps/web/src/components/pullRequest/PullRequestGuideTab.tsx`
+  - edited `apps/web/src/components/pullRequest/guide/guideRunStore.ts`
+  - edited `apps/web/src/components/pullRequest/guide/useGuideDiffFiles.ts`
+  - edited `apps/web/src/lib/syntaxHighlighting.ts`

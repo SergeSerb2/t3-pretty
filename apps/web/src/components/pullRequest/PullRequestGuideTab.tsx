@@ -66,8 +66,8 @@ export function PullRequestGuideTab({
   });
   const runKey = guideRunKey(environmentId, reference);
   // Line comments join the review the Code tab collects, so either place shows and sends them.
-  const reviewKey = pullRequestReviewKey(reference);
-  const pending = usePendingReviewComments(reference);
+  const reviewKey = pullRequestReviewKey(environmentId, reference);
+  const pending = usePendingReviewComments(environmentId, reference);
   const addComment = usePullRequestReviewStore((store) => store.addComment);
   const removeComment = usePullRequestReviewStore((store) => store.removeComment);
   const commenting = useMemo<ExcerptCommenting | null>(
