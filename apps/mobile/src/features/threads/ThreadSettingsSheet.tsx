@@ -546,7 +546,7 @@ function ThreadSettingsSessionProvider(
         if (
           AsyncResult.isSuccess(result) &&
           registry.get(environmentServerConfigsAtom).get(props.environmentId)?.settings
-            .favorites === currentSettings.favorites
+            ?.favorites === currentSettings.favorites
         ) {
           pending.pending = false;
         }
@@ -556,7 +556,7 @@ function ThreadSettingsSessionProvider(
             previous &&
             !previous.pending &&
             registry.get(environmentServerConfigsAtom).get(props.environmentId)?.settings
-              .favorites === previous.settings.favorites
+              ?.favorites === previous.settings.favorites
           ) {
             pendingFavorites.current.set(key, previous);
           } else {
