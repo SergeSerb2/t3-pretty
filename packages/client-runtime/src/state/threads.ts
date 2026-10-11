@@ -912,7 +912,20 @@ function threadStateChanges(
   return followStreamInEnvironment(
     environmentId,
     Stream.unwrap(
-      makeEnvironmentThreadState(threadId, resumeCache).pipe(Effect.map(SubscriptionRef.changes)),
+      makeEnvironmentThreadState(threadId, resumeCache).pipe(
+        Effect.flatMap((state) =>
+          SubscriptionRef.get(state).pipe(
+            Effect.map((current) =>
+              // Publish the disk/resume snapshot before waiting on session
+              // changes. `SubscriptionRef.changes` only replays the latest
+              // pubsub value; a replacement supervisor that never connects
+              // would otherwise leave the atom at EMPTY and the thread body
+              // blank even though persist already wrote the cache.
+              Stream.concat(Stream.succeed(current), SubscriptionRef.changes(state)),
+            ),
+          ),
+        ),
+      ),
     ),
   );
 }

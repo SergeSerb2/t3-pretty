@@ -68,6 +68,8 @@ import {
   threadKeysShareEnvironment,
   timelineHasEphemeralPreviewUrls,
   scheduleEnvironmentReconnectWarning,
+  environmentUnavailableComposerPlaceholder,
+  resolveEnvironmentUnavailableChrome,
   codexArtifactTemplatePromptToAppend,
   shouldDockDraftHeroForSubmission,
   shouldReleaseTimelineAnchorForToolActivity,
@@ -1502,6 +1504,57 @@ describe("environment reconnect warning grace", () => {
     expect(hasEnvironmentReconnectWarningGraceElapsed(anotherEnvironmentId, environmentId)).toBe(
       false,
     );
+  });
+});
+
+describe("environment unavailable chrome", () => {
+  it("shows Reconnecting immediately when this view never had a live session", () => {
+    const chrome = resolveEnvironmentUnavailableChrome({
+      label: "serge",
+      phase: "reconnecting",
+      updateRunning: false,
+      hadConnectedSession: false,
+      reconnectGraceElapsed: false,
+    });
+    expect(chrome.bannerTitle).toBe("Reconnecting to serge...");
+    expect(chrome.suppressBanner).toBe(false);
+    expect(chrome.composerReadOnly).toBe(true);
+    expect(
+      environmentUnavailableComposerPlaceholder({ label: "serge", phase: "reconnecting" }),
+    ).toBe("Reconnecting to serge...");
+  });
+
+  it("keeps grace only for a brief drop from a session that was already live", () => {
+    expect(
+      resolveEnvironmentUnavailableChrome({
+        label: "serge",
+        phase: "reconnecting",
+        updateRunning: false,
+        hadConnectedSession: true,
+        reconnectGraceElapsed: false,
+      }).suppressBanner,
+    ).toBe(true);
+    expect(
+      resolveEnvironmentUnavailableChrome({
+        label: "serge",
+        phase: "reconnecting",
+        updateRunning: false,
+        hadConnectedSession: true,
+        reconnectGraceElapsed: true,
+      }).suppressBanner,
+    ).toBe(false);
+  });
+
+  it("hides the reconnect banner while a self-update is already showing progress", () => {
+    expect(
+      resolveEnvironmentUnavailableChrome({
+        label: "serge",
+        phase: "reconnecting",
+        updateRunning: true,
+        hadConnectedSession: false,
+        reconnectGraceElapsed: true,
+      }).suppressBanner,
+    ).toBe(true);
   });
 });
 

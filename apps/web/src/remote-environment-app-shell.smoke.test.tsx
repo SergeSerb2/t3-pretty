@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 
-import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  MessageId,
+  ThreadId,
+  TurnItemId,
+  type OrchestrationV2TurnItem,
+} from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { createRef, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
@@ -8,10 +15,16 @@ import type { LegendListRef } from "@legendapp/list/react";
 
 import { searchSidebarThreads } from "./components/Sidebar.logic";
 import {
+  environmentUnavailableComposerPlaceholder,
+  resolveEnvironmentUnavailableChrome,
+} from "./components/ChatView.logic";
+import { deriveTimelineEntriesFromVisibleTurnItemsWithState } from "./session-logic";
+import {
   isThreadRouteSnapshotAuthoritative,
   resolveThreadRouteRenderState,
   shouldRenderServerThreadView,
 } from "./threadRoutes";
+import { resolveThreadSyncPhase } from "./threadSync";
 
 vi.mock("./components/ui/tooltip", async (importOriginal) => {
   const original = await importOriginal<typeof import("./components/ui/tooltip")>();
@@ -51,8 +64,9 @@ vi.mock("@legendapp/list/react", async () => {
 });
 
 const REMOTE_ENVIRONMENT_ID = EnvironmentId.make("7d1bf2b2");
-const THREAD_ID = ThreadId.make("remote-thread-1");
-const MESSAGE_CREATED_AT = "2026-10-11T22:21:00.000Z";
+const THREAD_ID = ThreadId.make("f50e7c5c-6a35-465d-a716-3bf474cea5be");
+const MESSAGE_CREATED_AT = "2026-10-09T22:21:00.000Z";
+const CACHED_MESSAGE = "Open Stremio on the Tesla";
 
 function matchMedia() {
   return {
@@ -74,41 +88,93 @@ function remoteThreads() {
     {
       environmentId: REMOTE_ENVIRONMENT_ID,
       id: THREAD_ID,
-      title: "Serge remote launch",
+      title: "Remote Stremio Access on Tesla",
     },
   ];
 }
 
-function RemoteEnvironmentAppShell(props: {
-  readonly serverThreadShell: { readonly id: string } | null;
-  readonly serverThreadDetail: { readonly messages: ReadonlyArray<string> } | null;
+function cachedRemoteProjection() {
+  const occurredAt = DateTime.makeUnsafe(MESSAGE_CREATED_AT);
+  const item = {
+    id: TurnItemId.make("user-1"),
+    threadId: THREAD_ID,
+    runId: null,
+    nodeId: null,
+    providerThreadId: null,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    ordinal: 0,
+    status: "completed",
+    title: null,
+    startedAt: occurredAt,
+    completedAt: occurredAt,
+    updatedAt: occurredAt,
+    type: "user_message",
+    messageId: MessageId.make("message-1"),
+    inputIntent: "turn_start",
+    text: CACHED_MESSAGE,
+    attachments: [],
+    createdBy: "user",
+    creationSource: "web",
+  } satisfies OrchestrationV2TurnItem;
+  return {
+    visibleTurnItems: [
+      {
+        position: 0,
+        visibility: "local" as const,
+        sourceThreadId: THREAD_ID,
+        sourceItemId: item.id,
+        item,
+      },
+    ],
+  };
+}
+
+function remoteThreadView(input: {
+  readonly shellStatus: "live" | "cached" | "synchronizing";
+  readonly threadStatus: "live" | "cached" | "synchronizing" | "empty";
+  readonly detail: ReturnType<typeof cachedRemoteProjection> | null;
 }) {
   const threads = remoteThreads();
-  const listed = searchSidebarThreads(threads, "remote", new Set());
+  const listed = searchSidebarThreads(threads, "stremio", new Set());
+  const serverThreadShell = { id: THREAD_ID };
   const renderState = resolveThreadRouteRenderState({
-    bootstrapComplete: isThreadRouteSnapshotAuthoritative("synchronizing"),
-    serverThreadExists: props.serverThreadShell !== null || props.serverThreadDetail !== null,
+    bootstrapComplete: isThreadRouteSnapshotAuthoritative(input.shellStatus),
+    serverThreadExists: true,
     serverThreadDeleted: false,
     draftThreadExists: false,
   });
   const showThread = shouldRenderServerThreadView({
     renderState,
-    serverThreadShell: props.serverThreadShell,
-    serverThreadDetail: props.serverThreadDetail,
+    serverThreadShell,
+    serverThreadDetail: input.detail,
   });
-  return (
-    <div data-testid="remote-environment-app-shell">
-      <ul aria-label="Thread list">
-        {listed.map((thread) => (
-          <li key={thread.id}>{thread.title}</li>
-        ))}
-      </ul>
-      {showThread ? <RemoteThreadMessages /> : <div>blank</div>}
-    </div>
-  );
+  const timeline = deriveTimelineEntriesFromVisibleTurnItemsWithState({
+    visibleTurnItems: input.detail?.visibleTurnItems ?? [],
+    optimisticMessages: [],
+  });
+  const syncPhase = resolveThreadSyncPhase({
+    detailExists: input.detail !== null,
+    shellExists: true,
+    status: input.threadStatus,
+  });
+  return {
+    listed,
+    showThread,
+    timeline,
+    syncPhase,
+    messageTexts: timeline.entries.flatMap((entry) =>
+      entry.kind === "message" ? [entry.message.text] : [],
+    ),
+  };
 }
 
-function RemoteThreadMessages() {
+function RemoteThreadMessages(props: {
+  readonly entries: ReturnType<
+    typeof deriveTimelineEntriesFromVisibleTurnItemsWithState
+  >["entries"];
+}) {
   return (
     <MessagesTimeline
       isWorking={false}
@@ -139,47 +205,84 @@ function RemoteThreadMessages() {
       liveFollowEnabled
       onIsAtEndChange={() => {}}
       onManualNavigation={() => {}}
-      timelineEntries={[
-        {
-          id: "entry-1",
-          kind: "message",
-          createdAt: MESSAGE_CREATED_AT,
-          message: {
-            id: MessageId.make("message-1"),
-            role: "user",
-            text: "Launch this remote thread",
-            runId: null,
-            createdAt: MESSAGE_CREATED_AT,
-            updatedAt: MESSAGE_CREATED_AT,
-            streaming: false,
-          },
-        },
-      ]}
+      timelineEntries={props.entries}
     />
   );
 }
 
 describe("remote environment app shell smoke", () => {
-  it("lists remote threads and paints messages while the shell is only synchronizing", () => {
-    const markup = renderToStaticMarkup(
-      <RemoteEnvironmentAppShell
-        serverThreadShell={{ id: THREAD_ID }}
-        serverThreadDetail={{ messages: ["Launch this remote thread"] }}
-      />,
-    );
+  it("opens an older remote thread from the list and paints its messages while connected", () => {
+    const view = remoteThreadView({
+      shellStatus: "live",
+      threadStatus: "live",
+      detail: cachedRemoteProjection(),
+    });
+    expect(view.listed.map((thread) => thread.title)).toEqual(["Remote Stremio Access on Tesla"]);
+    expect(view.showThread).toBe(true);
+    expect(view.messageTexts).toEqual([CACHED_MESSAGE]);
+    expect(view.syncPhase).toBeNull();
 
-    expect(markup).toContain("Serge remote launch");
-    expect(markup).toContain("Launch this remote thread");
-    expect(markup).not.toContain(">blank<");
+    const markup = renderToStaticMarkup(<RemoteThreadMessages entries={view.timeline.entries} />);
+    expect(markup).toContain(CACHED_MESSAGE);
+  });
+
+  it("keeps the cached timeline after disconnect and marks the composer read-only", () => {
+    const view = remoteThreadView({
+      shellStatus: "cached",
+      threadStatus: "cached",
+      detail: cachedRemoteProjection(),
+    });
+    expect(view.showThread).toBe(true);
+    expect(view.messageTexts).toEqual([CACHED_MESSAGE]);
+    expect(view.syncPhase).toBe("syncing");
+
+    const chrome = resolveEnvironmentUnavailableChrome({
+      label: "serge",
+      phase: "reconnecting",
+      updateRunning: false,
+      hadConnectedSession: false,
+      reconnectGraceElapsed: false,
+    });
+    expect(chrome.bannerTitle).toBe("Reconnecting to serge...");
+    expect(chrome.suppressBanner).toBe(false);
+    expect(chrome.composerReadOnly).toBe(true);
+    expect(
+      environmentUnavailableComposerPlaceholder({ label: "serge", phase: "reconnecting" }),
+    ).toBe("Reconnecting to serge...");
+
+    const markup = renderToStaticMarkup(<RemoteThreadMessages entries={view.timeline.entries} />);
+    expect(markup).toContain(CACHED_MESSAGE);
+  });
+
+  it("still paints the same cached messages after the remote reconnects", () => {
+    const disconnected = remoteThreadView({
+      shellStatus: "cached",
+      threadStatus: "cached",
+      detail: cachedRemoteProjection(),
+    });
+    const reconnected = remoteThreadView({
+      shellStatus: "live",
+      threadStatus: "live",
+      detail: cachedRemoteProjection(),
+    });
+    expect(disconnected.messageTexts).toEqual(reconnected.messageTexts);
+    expect(reconnected.messageTexts).toEqual([CACHED_MESSAGE]);
+    expect(reconnected.showThread).toBe(true);
   });
 
   it("stays blank when a synchronizing remote has no shell row and no HTTP detail", () => {
-    const markup = renderToStaticMarkup(
-      <RemoteEnvironmentAppShell serverThreadShell={null} serverThreadDetail={null} />,
-    );
-
-    expect(markup).toContain("Serge remote launch");
-    expect(markup).toContain("blank");
-    expect(markup).not.toContain("Launch this remote thread");
+    const renderState = resolveThreadRouteRenderState({
+      bootstrapComplete: isThreadRouteSnapshotAuthoritative("synchronizing"),
+      serverThreadExists: false,
+      serverThreadDeleted: false,
+      draftThreadExists: false,
+    });
+    expect(
+      shouldRenderServerThreadView({
+        renderState,
+        serverThreadShell: null,
+        serverThreadDetail: null,
+      }),
+    ).toBe(false);
   });
 });

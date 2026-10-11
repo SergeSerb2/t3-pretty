@@ -3,6 +3,7 @@ import { ProjectId } from "@t3tools/contracts";
 import { DEFAULT_RUNTIME_MODE } from "@t3tools/contracts";
 import { resolveRuntimeModeForProviderDriver } from "@t3tools/contracts";
 import * as Option from "effect/Option";
+import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
@@ -504,6 +505,53 @@ export function hasEnvironmentReconnectWarningGraceElapsed(
   elapsedEnvironmentId: EnvironmentId | null,
 ): boolean {
   return activeEnvironmentId !== null && activeEnvironmentId === elapsedEnvironmentId;
+}
+
+export function isEnvironmentReconnectingPhase(
+  phase: EnvironmentConnectionPhase | null | undefined,
+): boolean {
+  return phase === "connecting" || phase === "reconnecting";
+}
+
+/** Banner and composer chrome while a remote (or any) environment is not live. */
+export function resolveEnvironmentUnavailableChrome(input: {
+  readonly label: string;
+  readonly phase: EnvironmentConnectionPhase;
+  readonly updateRunning: boolean;
+  readonly hadConnectedSession: boolean;
+  readonly reconnectGraceElapsed: boolean;
+}): {
+  readonly bannerTitle: string;
+  readonly reconnecting: boolean;
+  readonly suppressBanner: boolean;
+  readonly composerReadOnly: boolean;
+} {
+  const reconnecting = isEnvironmentReconnectingPhase(input.phase);
+  const bannerTitle = reconnecting
+    ? `Reconnecting to ${input.label}...`
+    : `${input.label} is offline`;
+  // Suppress only a brief drop from a session that was already live, or the
+  // expected restart while a self-update banner is showing. After app launch
+  // (or opening a remote that was never live this view) show the banner
+  // immediately — otherwise the body looks like an empty new thread.
+  const suppressBanner =
+    reconnecting &&
+    (input.updateRunning || (input.hadConnectedSession && !input.reconnectGraceElapsed));
+  return {
+    bannerTitle,
+    reconnecting,
+    suppressBanner,
+    composerReadOnly: true,
+  };
+}
+
+export function environmentUnavailableComposerPlaceholder(input: {
+  readonly label: string;
+  readonly phase: EnvironmentConnectionPhase;
+}): string {
+  return isEnvironmentReconnectingPhase(input.phase)
+    ? `Reconnecting to ${input.label}...`
+    : `${input.label} is offline`;
 }
 
 export function startNewThreadForProject(

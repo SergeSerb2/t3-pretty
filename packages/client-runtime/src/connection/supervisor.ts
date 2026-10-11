@@ -45,6 +45,17 @@ import {
 // immediately.
 const RETRY_DELAYS_MS = [3_000, 4_000, 8_000, 16_000, 32_000, 60_000, 120_000, 300_000];
 const RETRY_MAX_DELAY_MS = 300_000;
+// Ticket/endpoint hangs after a remote self-update look like a dead host.
+// Keep those retries tight for the same window the update-restart nudge
+// uses, then resume the five-minute cap so a permanently down relay does
+// not hammer the ticket endpoint forever.
+const EXPECTED_RESTART_TRANSIENT_REASONS = new Set([
+  "timeout",
+  "endpoint-unavailable",
+  "remote-unavailable",
+]);
+export const EXPECTED_RESTART_RETRY_WINDOW_MS = 240_000;
+export const EXPECTED_RESTART_RETRY_MAX_DELAY_MS = 8_000;
 const establishmentTimeout = Duration.fromInputUnsafe(
   ConnectionDriver.CONNECTION_ESTABLISHMENT_TIMEOUT,
 );
@@ -184,6 +195,23 @@ export interface EnvironmentSupervisorOptions {
 export function retryDelayMs(failureCount: number, random: number): number {
   const delay = RETRY_DELAYS_MS[Math.min(failureCount, RETRY_DELAYS_MS.length - 1)]!;
   return Math.min(RETRY_MAX_DELAY_MS, Math.round(delay * (0.8 + random * 0.4)));
+}
+
+export function retryDelayMsForFailure(input: {
+  readonly failureCount: number;
+  readonly random: number;
+  readonly reason?: string;
+  readonly windowElapsedMs: number;
+}): number {
+  const delay = retryDelayMs(input.failureCount, input.random);
+  if (
+    input.reason !== undefined &&
+    EXPECTED_RESTART_TRANSIENT_REASONS.has(input.reason) &&
+    input.windowElapsedMs < EXPECTED_RESTART_RETRY_WINDOW_MS
+  ) {
+    return Math.min(delay, EXPECTED_RESTART_RETRY_MAX_DELAY_MS);
+  }
+  return delay;
 }
 
 function annotateTarget(target: ConnectionTarget) {
@@ -1194,9 +1222,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     let generation = 0;
     let latestFailure: ConnectionAttemptError | null = null;
     let pendingRetry = Option.none<PendingRetryTrace>();
+    let restartWindowStartedAt: number | null = null;
     const resetRetryLadder = () => {
       failureCount = 0;
       pendingRetry = Option.none();
+      restartWindowStartedAt = null;
     };
     // Set after a long resume ends an attempt or a session. The fresh attempt
     // runs even while the network reports offline: the report is often wrong,
@@ -1208,6 +1238,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         failureCount = 0;
         latestFailure = null;
         pendingRetry = Option.none();
+        restartWindowStartedAt = null;
       }
       const currentIntent = yield* Ref.get(intent);
       if (!currentIntent.desired) {
@@ -1295,7 +1326,19 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       }
 
       failureCount += 1;
-      const delayMs = retryDelayMs(failureCount - 1, yield* Random.next);
+      if (EXPECTED_RESTART_TRANSIENT_REASONS.has(error.reason)) {
+        restartWindowStartedAt ??= yield* Clock.currentTimeMillis;
+      }
+      const now = yield* Clock.currentTimeMillis;
+      const delayMs = retryDelayMsForFailure({
+        failureCount: failureCount - 1,
+        random: yield* Random.next,
+        reason: error.reason,
+        windowElapsedMs:
+          restartWindowStartedAt === null
+            ? EXPECTED_RESTART_RETRY_WINDOW_MS
+            : now - restartWindowStartedAt,
+      });
       pendingRetry = Option.map(attemptSpan, (previousAttempt) => ({
         previousAttempt,
         failureCount,

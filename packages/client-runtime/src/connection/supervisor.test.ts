@@ -321,6 +321,33 @@ describe("retryDelayMs", () => {
       );
     }
   });
+
+  it("caps ticket-timeout backoff at 8s during the post-restart window", () => {
+    expect(
+      EnvironmentSupervisor.retryDelayMsForFailure({
+        failureCount: 5,
+        random: 0.5,
+        reason: "timeout",
+        windowElapsedMs: 60_000,
+      }),
+    ).toBe(EnvironmentSupervisor.EXPECTED_RESTART_RETRY_MAX_DELAY_MS);
+    expect(
+      EnvironmentSupervisor.retryDelayMsForFailure({
+        failureCount: 5,
+        random: 0.5,
+        reason: "timeout",
+        windowElapsedMs: EnvironmentSupervisor.EXPECTED_RESTART_RETRY_WINDOW_MS,
+      }),
+    ).toBe(60_000);
+    expect(
+      EnvironmentSupervisor.retryDelayMsForFailure({
+        failureCount: 5,
+        random: 0.5,
+        reason: "transport",
+        windowElapsedMs: 0,
+      }),
+    ).toBe(60_000);
+  });
 });
 
 describe("EnvironmentSupervisor", () => {
@@ -477,6 +504,39 @@ describe("EnvironmentSupervisor", () => {
         );
       }
 
+      expect(yield* Ref.get(harness.prepareCount)).toBe(delays.length + 1);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("retries ticket timeouts at most every 8s for the first four minutes", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        prepare: () =>
+          Effect.fail(
+            new ConnectionTransientError({
+              reason: "timeout",
+              detail: "Remote environment endpoint timed out after 6000ms.",
+            }),
+          ),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.attempt === 1,
+      );
+      const delays = [3_000, 4_000, 8_000, 8_000, 8_000];
+      for (const [index, delay] of delays.entries()) {
+        yield* TestClock.adjust(delay - 1);
+        expect(yield* Ref.get(harness.prepareCount)).toBe(index + 1);
+        yield* TestClock.adjust(1);
+        yield* eventuallyState(
+          supervisor.state,
+          (state) => state.phase === "backoff" && state.attempt === index + 2,
+        );
+      }
       expect(yield* Ref.get(harness.prepareCount)).toBe(delays.length + 1);
     }).pipe(Effect.provide(TestClock.layer())),
   );

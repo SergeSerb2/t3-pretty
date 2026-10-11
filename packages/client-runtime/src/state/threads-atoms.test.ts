@@ -53,9 +53,22 @@ const THREAD: OrchestrationV2ThreadProjection = {
 };
 const SNAPSHOT: OrchestrationV2ThreadDetailSnapshot = { snapshotSequence: 7, projection: THREAD };
 
+const BACKOFF_CONNECTION_STATE = {
+  desired: true,
+  network: "online" as const,
+  phase: "backoff" as const,
+  stage: null,
+  attempt: 2,
+  generation: 0,
+  lastFailure: null,
+  retryAt: null,
+};
+
 const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?: {
   readonly snapshot?: OrchestrationV2ThreadDetailSnapshot;
   readonly snapshotUnavailable?: boolean;
+  readonly diskSnapshot?: OrchestrationV2ThreadDetailSnapshot;
+  readonly sessionPresent?: boolean;
 }) {
   const subscriptions = yield* Queue.unbounded<{
     readonly afterSequence: number | undefined;
@@ -106,8 +119,12 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
   };
   const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
     target: TARGET,
-    state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
-    session: yield* SubscriptionRef.make(Option.some(session)),
+    state: yield* SubscriptionRef.make(
+      options?.sessionPresent === false ? BACKOFF_CONNECTION_STATE : AVAILABLE_CONNECTION_STATE,
+    ),
+    session: yield* SubscriptionRef.make(
+      options?.sessionPresent === false ? Option.none() : Option.some(session),
+    ),
     prepared: yield* SubscriptionRef.make<Option.Option<PreparedConnection>>(
       Option.some({
         environmentId: TARGET.environmentId,
@@ -174,7 +191,9 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
           loadThread: () =>
             Effect.sync(() => {
               diskLoads += 1;
-              return Option.none();
+              return options?.diskSnapshot === undefined
+                ? Option.none()
+                : Option.some(options.diskSnapshot);
             }),
           saveThread: () => Effect.void,
           removeThread: () => Effect.void,
@@ -231,6 +250,8 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
     stateAtom,
     details,
     ref,
+    supervisor,
+    session,
     subscriptions,
     olderLoads,
     loadEarlier: () => historyController.loadEarlier(TARGET.environmentId, THREAD_ID),
@@ -598,4 +619,76 @@ it.effect("keeps snapshot boundaries and completion markers ordered inside a rep
     remount();
     yield* Deferred.await(next.closed);
   }),
+);
+
+it.effect(
+  "paints a persisted remote thread while the environment is disconnected, then keeps it across reconnect",
+  () =>
+    Effect.gen(function* () {
+      const cached = {
+        ...THREAD,
+        thread: { ...THREAD.thread, title: "Remote Stremio Access on Tesla" },
+        messages: [
+          {
+            id: MessageId.make("cached-user"),
+            threadId: THREAD_ID,
+            runId: null,
+            nodeId: null,
+            role: "user" as const,
+            text: "Open the Tesla stream",
+            streaming: false,
+            attachments: [],
+            createdBy: "user" as const,
+            creationSource: "web" as const,
+            createdAt: THREAD.thread.createdAt,
+            updatedAt: THREAD.thread.updatedAt,
+          },
+        ],
+      };
+      const h = yield* makeHarness({
+        diskSnapshot: { snapshotSequence: 12, projection: cached },
+        sessionPresent: false,
+      });
+      const unmount = h.registry.mount(h.stateAtom);
+      const offline = yield* observeState(
+        h.registry,
+        h.stateAtom,
+        (state) =>
+          Option.isSome(state.data) && state.data.value.thread.title === cached.thread.title,
+      );
+      expect(offline.status === "cached" || offline.status === "synchronizing").toBe(true);
+      expect(Option.getOrThrow(offline.data).messages[0]?.text).toBe("Open the Tesla stream");
+      expect(h.counts()).toEqual({ httpLoads: 0, diskLoads: 1, opened: 0, active: 0 });
+
+      yield* SubscriptionRef.set(h.supervisor.session, Option.some(h.session));
+      yield* SubscriptionRef.set(h.supervisor.state, {
+        desired: true,
+        network: "online",
+        phase: "connected",
+        stage: null,
+        attempt: 1,
+        generation: 1,
+        lastFailure: null,
+        retryAt: null,
+      });
+      const first = yield* Queue.take(h.subscriptions);
+      expect(first.afterSequence).toBe(12);
+      yield* Queue.offer(first.events, { kind: "synchronized" });
+      const live = yield* observeState(h.registry, h.stateAtom, (state) => state.status === "live");
+      expect(Option.getOrThrow(live.data).messages[0]?.text).toBe("Open the Tesla stream");
+
+      yield* SubscriptionRef.set(h.supervisor.session, Option.none());
+      yield* SubscriptionRef.set(h.supervisor.state, BACKOFF_CONNECTION_STATE);
+      const afterDrop = yield* observeState(
+        h.registry,
+        h.stateAtom,
+        (state) =>
+          state.status !== "live" &&
+          Option.isSome(state.data) &&
+          state.data.value.messages[0]?.text === "Open the Tesla stream",
+      );
+      expect(afterDrop.status).toBe("cached");
+      unmount();
+      yield* Deferred.await(first.closed);
+    }),
 );

@@ -563,6 +563,8 @@ import {
   dismissBranchMismatchForSession,
   hasEnvironmentReconnectWarningGraceElapsed,
   scheduleEnvironmentReconnectWarning,
+  isEnvironmentReconnectingPhase,
+  resolveEnvironmentUnavailableChrome,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
   shouldShowBranchMismatchBanner,
@@ -2803,10 +2805,19 @@ export default function ChatView(props: ChatViewProps) {
       : null;
   const [reconnectWarningGraceElapsedEnvironmentId, setReconnectWarningGraceElapsedEnvironmentId] =
     useState<EnvironmentId | null>(null);
+  const [hadConnectedSession, setHadConnectedSession] = useState(false);
   const reconnectWarningGraceElapsed = hasEnvironmentReconnectWarningGraceElapsed(
     activeReconnectingEnvironmentId,
     reconnectWarningGraceElapsedEnvironmentId,
   );
+  useEffect(() => {
+    setHadConnectedSession(false);
+  }, [activeEnvironment?.environmentId]);
+  useEffect(() => {
+    if (activeEnvironmentConnectionPhase === "connected") {
+      setHadConnectedSession(true);
+    }
+  }, [activeEnvironmentConnectionPhase]);
   useEffect(() => {
     setReconnectWarningGraceElapsedEnvironmentId(null);
     if (activeReconnectingEnvironmentId === null) return;
@@ -3234,21 +3245,31 @@ export default function ChatView(props: ChatViewProps) {
           Disconnect server
         </Button>
       ) : undefined;
+    const environmentChrome =
+      activeEnvironmentUnavailableState && unavailableConnection
+        ? resolveEnvironmentUnavailableChrome({
+            label: activeEnvironmentUnavailableState.label,
+            phase: unavailableConnection.phase,
+            updateRunning,
+            hadConnectedSession,
+            reconnectGraceElapsed: reconnectWarningGraceElapsed,
+          })
+        : null;
     const environmentReconnecting =
-      unavailableConnection !== null &&
-      (unavailableConnection.phase === "connecting" ||
-        unavailableConnection.phase === "reconnecting");
+      unavailableConnection !== null && isEnvironmentReconnectingPhase(unavailableConnection.phase);
     // While an update runs, transient connect blips are expected (the server
     // restarts) and the update banner already shows progress. Hard failure
-    // phases still surface so the Reconnect action stays reachable.
-    const suppressUnavailableBanner =
-      environmentReconnecting && (updateRunning || !reconnectWarningGraceElapsed);
+    // phases still surface so the Reconnect action stays reachable. After
+    // launch, a remote that was never live this view shows immediately.
+    const suppressUnavailableBanner = environmentChrome?.suppressBanner ?? false;
     if (activeEnvironmentUnavailableState && unavailableConnection && !suppressUnavailableBanner) {
       items.push({
         id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
         variant: unavailableConnection.phase === "error" ? "error" : "warning",
         icon: <WifiOffIcon />,
-        title: `${activeEnvironmentUnavailableState.label} is ${environmentReconnecting ? "reconnecting" : "offline"}`,
+        title:
+          environmentChrome?.bannerTitle ??
+          `${activeEnvironmentUnavailableState.label} is ${environmentReconnecting ? "reconnecting" : "offline"}`,
         actions: (
           <>
             {!environmentReconnecting ? (
@@ -3361,6 +3382,7 @@ export default function ChatView(props: ChatViewProps) {
     setDismissedVersionMismatchKey,
     showVersionMismatchBanner,
     reconnectWarningGraceElapsed,
+    hadConnectedSession,
     serverUpdateFailureDismissed,
     serverUpdateState,
     versionMismatch,
