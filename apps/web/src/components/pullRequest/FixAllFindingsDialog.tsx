@@ -15,6 +15,7 @@ import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "~/providerInstances";
+import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 import { primaryServerProvidersAtom } from "~/state/server";
 
 import { Button } from "../ui/button";
@@ -66,6 +67,7 @@ export function FixAllFindingsDialog({
   const continuousRef = useRef(continuous);
   if (open) continuousRef.current = continuous;
   const activeContinuous = continuousRef.current;
+  const environmentId = useAtomValue(primaryEnvironmentIdAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const fallbackSelection = useMemo(
     () => resolveAppModelSelectionState(settings, serverProviders),
@@ -130,6 +132,7 @@ export function FixAllFindingsDialog({
           ) : (
             <div className="flex flex-wrap items-center gap-1.5">
               <ProviderModelPicker
+                environmentId={environmentId}
                 activeInstanceId={selection.instanceId}
                 model={selection.model}
                 lockedProvider={null}

@@ -1,45 +1,55 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.46-nightly.20261011.2955`
-- Previously integrated parent nightly: `v0.0.46-nightly.20261010.2948`
-- Conflict resolver: hand-merge from Origin `main` (`9a409892d`)
+- Parent nightly: `v0.0.46-nightly.20261011.2967`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261011.2955`
+- Conflict resolver: hand-merge from Origin `main` (`8294392e4`) using `automation/sync-resolution-cache` for 21 of 24 text conflicts
 - 0 file(s) remain on an unresolved fork-side fallback
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `packages/client-runtime/package.json` — Kept Pretty-only export maps (pending requests, preview automation, scenery, dictation, skills, and the other fork state modules) and added the parent's `./diff-count` export. The automated sync dropped that export and broke four web imports.
-- `apps/web/src/pierre-icons.ts` — Restored Pretty `inferEntryKindFromPath` (used by `MessagesTimeline` and `FileTagChip`) on top of the parent's mime-type icon fallback. The parent deleted the helper in the same region as the mime-type change; a clean take of the parent file is what failed the blocked sync's web typecheck.
-- `apps/web/src/components/chat/MessagesTimeline.tsx` — Kept Pretty `SlidingActivity` / `ActivityLabel` / `inferEntryKindFromPath` and took the parent's `WorkspaceEntryIcon` imports, disclosure-aware `handleItemSizeChanged`, and top-fade class.
-- `apps/web/src/components/ChatView.tsx` — Kept Pretty draft `attachedPullRequestForSend` and the parked-titlebar containing-block comment; took the parent's `sendQueuesBehindSetup` first-message guard and `FileMetadataThreadProvider` wrapper (`const content =`).
-- `apps/desktop/src/window/DesktopWindow.ts` — Kept Pretty in-app edit menus on the host renderer. Guests and sign-in popups use the parent's native `popupTemplate` path (the in-app IPC channel cannot reach those contents). Host copy-image now uses the parent's `copyContextMenuImage`.
-- `apps/mobile/src/features/review/ReviewSheet.tsx` — Kept `useIsFocused` and added `formatDiffCount`.
-- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Kept Pretty create/babysit pull-request suffix helpers and took `resolveNewThreadEnvMode`.
-- `apps/server/src/workspace/WorkspaceFileSystem.ts` — Kept Pretty symlink-safe write realpath helpers and `PROJECT_FILE_CONTENTS_MAX_BYTES`; took parent `getMetadata` (absolute/`~` paths, 512-byte mime sniff).
-- `packages/client-runtime/src/state/projectCommands.ts` — Kept Pretty `PROJECT_LARGE_QUERY_IDLE_TTL_MS` (60s) and took parent `fileMetadata.seedAfterRead` executors.
-- `packages/contracts/src/filesystem.ts` — Kept Pretty `PROJECT_PATH_MAX_LENGTH` browse/path caps and took `NonNegativeInt` for metadata byte lengths.
-- `packages/contracts/src/usage.ts` — Kept Pretty usage bounds (`USAGE_MODEL_MAX_LENGTH`, summary/source caps, `isUsageProviderKind`) and added parent provider `"pi"`.
-- `packages/provider-pi/package.json` — Kept Pretty `mcpExtensionSource` / `mcpInjection` exports and added parent `./server/usage`.
+- `apps/desktop/src/preview/AnnotationStyles.generated.ts` — Kept Pretty's generated preview CSS (truncate, outline-offset). The parent only regenerated the same file from its CSS sources; the AI timed out on the generated blob.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.ts` — Kept Pretty `visibleSheetOptionDescriptors` / `toggleModelFavorite` / instant-apply helpers. Did not restore the parent's staged `pendingModelAfterPress` / `canCommitPendingModel`.
+- `apps/mobile/src/features/threads/thread-settings-sheet-state.test.ts` — Kept Pretty helper coverage, including `effectiveProviderFilter` and `visibleSheetOptionDescriptors`.
+- `apps/mobile/src/features/threads/ThreadSettingsRows.shared.tsx` — Kept Pretty glass rows and took the parent's hidden-model disable + hide/show control (this is where the parent's `!isHidden` commit guard lands on instant-apply).
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Kept Pretty glass / scenery / instant-apply picker and existing-thread transfer. Took parent hidden-model management on Android and both iOS filter menus. The fallback iOS toolbar is still gated by `hasLegacyModels`.
+- `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx` — Kept Pretty scratch entry, glass presentation, and recycled project-list architecture; adapted the parent's Android subtitle fix to the live `renderItem` path.
+- `apps/mobile/src/features/threads/ThreadAgentsSheet.tsx` / `ThreadQueueControl.tsx` — Kept Pretty glass chrome and took parent Material / adaptive-layout imports.
+- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` — Kept Pretty assistant-delta flush, `subagent_type` role, task-usage, and `lastTool` forwarding; took parent workflow-frame progress and best-effort native task stops.
+- `apps/web/src/components/Sidebar.tsx` / `Sidebar.logic.ts` — Kept Pretty search-row subagent indicator, peek pane, and action-sweep shielding; took parent settled-title typography and PR-number search.
+- `apps/web/src/components/chat/composerPromptHistory.ts` — Kept Pretty `stripHiddenInstructionSuffixes` / auto-PR suffix stripping; took `ATTACHMENT_ONLY_BOOTSTRAP_PROMPT`.
+- `apps/web/src/components/pullRequest/PullRequest{Code,Summary,Timeline}Tab.tsx` — Kept Pretty `data-pull-request-tab-scroll` restoration hooks; took parent `scrollerRef` wiring.
+- `apps/web/src/components/ui/switch.tsx` — Kept Pretty 150 ms thumb motion, mixed state, and sizes; took parent removal of persistent `will-change-transform`.
+- `apps/web/src/threadRoutes.ts` — Kept Pretty 10s missing-thread grace; took `isThreadRouteSnapshotAuthoritative`.
+- `docs/user/telemetry.md` — Kept Pretty agent-monitoring / Sentry docs; took parent OTLP export docs.
+- `packages/client-runtime/src/state/subagentRuntime.ts` — Kept Pretty explicit projected kind/usage/activity; took parent `childThreadId` and workflow coordinator inference.
+- `packages/contracts/src/settings.ts` — Kept Pretty agent-monitoring, automations, apps, and favorite-skill contracts; took parent model favorites / hidden-models / order patches.
+- `packages/shared/src/serverSettings.ts` — Kept Pretty monitoring-consent versioning; took parent favorite / hidden-model merge writes.
 
 ## Parent changes integrated at conflict boundaries
 
-- Shared `formatDiffCount` via `@t3tools/client-runtime/diff-count`.
-- File metadata RPC (`getMetadata`) for icon mime types on extensionless files; workspace reads may target absolute host paths.
-- New-thread env mode from project settings (`resolveNewThreadEnvMode`).
-- First message after setup no longer counts as the thread's first once send is queued behind setup.
-- File-metadata thread provider wraps chat content so entry icons can resolve mime types.
-- Native context menus for browser guests and sign-in popups; `copyContextMenuImage` for image copy.
-- Pi usage provider kind and `@t3tools/provider-pi/server/usage`.
-- File-metadata seeding after search/list/read queries.
+- Hidden-model catalog management on mobile (disable selection, hide/show control, Android catalog group, iOS filter menus).
+- Workflow-frame task progress and best-effort Claude native task stops.
+- Settled-thread title treatment and PR-number search in the sidebar.
+- Attachment-only composer prompt-history coverage.
+- Pull-request tab scroll refs.
+- Reduced-motion-aware switch `will-change` cleanup.
+- Authoritative shell snapshot helper for thread routes.
+- OpenTelemetry export user docs.
+- Runtime `childThreadId` and workflow coordinator inference.
+- Model favorites, hidden models, and per-provider order in settings contracts.
 
 ## Parent changes intentionally omitted
 
-- Replacing Pretty in-app host edit menus with a native Electron menu on the main renderer. Guests and popups take the native path.
-- Parent 5-minute idle TTL on list/read file queries. Pretty keeps the 60s `PROJECT_LARGE_QUERY_IDLE_TTL_MS` bound.
-- Inlining `UsageProviderKind` as a one-off `Schema.Literals([...])` and dropping Pretty usage caps / `USAGE_PROVIDER_KINDS`.
+- Regenerating `AnnotationStyles.generated.ts` from the parent's CSS sources. Pretty's generated blob stays until Pretty's preview CSS is rebuilt.
+- Restoring staged model-commit helpers (`pendingModelAfterPress` / `canCommitPendingModel`). Pretty applies the model immediately; hidden-model rejection is on the row (`isHidden` disables selection).
+- Parent tests that only cover those staged helpers. Hidden-model coverage lives on the instant-apply row.
+- Ungating the fallback iOS thread-settings toolbar so hidden-model management appears without legacy models. The cached resolution left that toolbar on `session.hasLegacyModels`.
 
 ## Post-merge repairs
 
-- Re-export `inferEntryKindFromPath` from `apps/web/src/pierre-icons.ts` after the parent mime-type icon change auto-merged over it.
-- Publish `./diff-count` from `@t3tools/client-runtime` so web and mobile `formatDiffCount` imports resolve.
-- Teach the parent's `FilesystemGetMetadataInput` path-length test to use Pretty's `FILESYSTEM_PATH_MAX_LENGTH` (32 KiB), not the parent's 512-byte cap.
-- Expect Pretty's host-window `WINDOW_ACTIVE_STATE` seed in the parent's capture-delivery DesktopWindow tests.
+- Pass `environmentId` into Pretty-only `ProviderModelPicker` call sites. Upstream made the prop required so favorites can bind to an environment (`useEnvironmentModelPreferences` / `useToggleEnvironmentModelFavorite`). Null is valid and used by upstream tests — it no-ops favorite writes — but the real environment id is used where one exists:
+  - `AutomationEditorDialog`: the dialog's `environmentId` prop (already scoped to the automation's environment).
+  - `HomeSuggestionsSettings`: the settings-scope `environmentId`.
+  - `AgentsSettings` and `FixAllFindingsDialog`: `primaryEnvironmentIdAtom`, the same id that backs `primaryServerProvidersAtom`.
+- Deduplicate auto-merged `"/settings/diagnostics"` keys in `SETTINGS_SECTION_LABELS` and `SETTINGS_CATEGORY_SCOPES`. Pretty already owned the diagnostics page; the parent added the same key in a second position.
+- Add required `childThreadId: null` to the `RuntimeSubagent` test fixture in `packages/client-runtime/src/state/subagentActivityLog.test.ts`.

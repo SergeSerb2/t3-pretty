@@ -460,6 +460,7 @@ export function AutomationEditorDialog({
                 </div>
                 {pickerSelection ? (
                   <ProviderModelPicker
+                    environmentId={environmentId}
                     activeInstanceId={pickerSelection.instanceId}
                     model={pickerSelection.model}
                     lockedProvider={null}

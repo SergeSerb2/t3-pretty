@@ -15,6 +15,8 @@ export type ModelRowProps = {
   readonly isFavorite: boolean;
   readonly favoritesLoaded: boolean;
   readonly onToggleFavorite: () => void;
+  readonly onToggleHidden?: () => void;
+  readonly hiddenUpdatePending?: boolean;
   readonly isFirst: boolean;
   readonly isLast: boolean;
 };
@@ -65,11 +67,11 @@ export function ModelRowContent(
         accessibilityRole="radio"
         accessibilityState={{
           checked: props.selected,
-          disabled: props.option.isUnavailable === true,
+          disabled: props.option.isUnavailable === true || props.option.isHidden === true,
         }}
         className={cn("min-h-11 min-w-0 flex-1 flex-row items-center gap-2", glass && "pl-4")}
         fallbackClassName="active:opacity-70"
-        disabled={props.option.isUnavailable}
+        disabled={props.option.isUnavailable || props.option.isHidden}
         onPress={props.onPress}
       >
         {props.leadingSelection}
@@ -91,6 +93,9 @@ export function ModelRowContent(
                 <Text className="text-3xs font-t3-bold text-foreground-muted">Legacy</Text>
               </View>
             ) : null}
+            {props.option.isHidden ? (
+              <Text className="text-xs text-foreground-muted">Hidden</Text>
+            ) : null}
             {props.option.isUnavailable ? (
               <Text className="text-xs text-foreground">Unavailable</Text>
             ) : null}
@@ -106,6 +111,23 @@ export function ModelRowContent(
         </View>
         {props.trailingSelection}
       </GlassRowPressable>
+      {props.onToggleHidden ? (
+        <Pressable
+          accessibilityLabel={`${props.option.isHidden ? "Show" : "Hide"} model: ${props.option.providerLabel}, ${props.option.label}`}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: props.hiddenUpdatePending === true }}
+          className="min-h-11 min-w-11 items-center justify-center"
+          disabled={props.hiddenUpdatePending}
+          onPress={props.onToggleHidden}
+        >
+          <SymbolView
+            name={props.option.isHidden ? "eye.slash" : "eye"}
+            size={18}
+            tintColorClassName={props.option.isHidden ? "accent-icon-subtle" : "accent-icon"}
+            type="monochrome"
+          />
+        </Pressable>
+      ) : null}
       <Pressable
         accessibilityLabel={`${props.isFavorite ? "Remove from" : "Add to"} favorites: ${
           props.option.providerLabel

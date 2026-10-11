@@ -30,6 +30,7 @@ function agent(overrides: Partial<RuntimeSubagent> & { id: string }): RuntimeSub
     workflowName: null,
     phases: [],
     runHandles: null,
+    childThreadId: null,
     recentActivity: [],
     firstSeenAt: "2026-08-01T10:00:00.000Z",
     startedAt: "2026-08-01T10:00:00.000Z",

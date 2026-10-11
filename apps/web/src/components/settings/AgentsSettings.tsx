@@ -16,6 +16,7 @@ import {
   deriveProviderInstanceEntries,
   getDefaultProviderInstanceModel,
 } from "../../providerInstances";
+import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 import { primaryServerProvidersAtom } from "~/state/server";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
@@ -27,6 +28,7 @@ import { searchableSetting } from "./settingsSearch";
 export function AgentsSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
+  const environmentId = useAtomValue(primaryEnvironmentIdAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const instances = useMemo(
     () => deriveProviderInstanceEntries(serverProviders).filter((entry) => entry.enabled),
@@ -100,6 +102,7 @@ export function AgentsSettingsPanel() {
                     ) : (
                       <>
                         <ProviderModelPicker
+                          environmentId={environmentId}
                           activeInstanceId={instanceId}
                           model={child.model}
                           lockedProvider={null}

@@ -591,6 +591,7 @@ function startAnnotation(sendEnabled: boolean): void {
   let finished = false;
   const host = document.createElement("div");
   host.setAttribute(OVERLAY_ATTRIBUTE, "");
+  host.setAttribute("dir", "ltr");
   host.style.cssText = `position:fixed;inset:0;z-index:${Z_INDEX_OVERLAY};pointer-events:none`;
   applyAnnotationTheme(host, annotationTheme);
   const shadowRoot = host.attachShadow({ mode: "closed" });
@@ -600,6 +601,7 @@ function startAnnotation(sendEnabled: boolean): void {
 
   const root = document.createElement("div");
   root.setAttribute(OVERLAY_ATTRIBUTE, "");
+  root.setAttribute("dir", "ltr");
   root.className = "fixed inset-0 font-sans text-foreground";
   root.style.cssText = "pointer-events:none";
   const cursorStyle = document.createElement("style");
@@ -649,6 +651,7 @@ function startAnnotation(sendEnabled: boolean): void {
 
   const comment = document.createElement("textarea");
   comment.placeholder = "Describe the change…";
+  comment.setAttribute("dir", "auto");
   comment.rows = 1;
   comment.maxLength = PREVIEW_ANNOTATION_MAX_COMMENT_LENGTH;
   comment.className =

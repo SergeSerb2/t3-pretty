@@ -184,6 +184,7 @@ export function HomeSuggestionsSettingsSection() {
           ) : (
             <div className="flex flex-wrap items-center justify-end gap-1.5">
               <ProviderModelPicker
+                environmentId={environmentId}
                 activeInstanceId={selection.instanceId}
                 model={selection.model}
                 lockedProvider={null}

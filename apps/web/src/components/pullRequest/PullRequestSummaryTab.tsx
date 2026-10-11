@@ -633,6 +633,7 @@ function CommentGroup({
 const COMMENT_PAGE = 10;
 
 export function PullRequestSummaryTab({
+  scrollerRef,
   environmentId,
   threadRef,
   reference,
@@ -653,6 +654,7 @@ export function PullRequestSummaryTab({
   onViewChange,
   onRefreshChecks = onRefresh,
 }: {
+  scrollerRef: (node: HTMLDivElement | null) => void;
   environmentId: EnvironmentId;
   threadRef: ScopedThreadRef | null;
   reference: PullRequestRef;
@@ -1102,6 +1104,7 @@ export function PullRequestSummaryTab({
 
   return (
     <div
+      ref={scrollerRef}
       className="h-full overflow-y-auto"
       data-pull-request-summary-scroll
       data-pull-request-tab-scroll="summary"

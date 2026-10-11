@@ -32,7 +32,7 @@ import {
 
 export { getThreadSortTimestamp };
 import type { SidebarThreadSummary, Thread } from "../types";
-import { cn } from "../lib/utils";
+import { cn, normalizeSearchText } from "../lib/utils";
 import { isLatestRunSettled } from "../session-logic";
 import { resolveServerBackedAppStageLabel } from "../branding.logic";
 
@@ -1436,6 +1436,21 @@ export function sortSettledThreadsForSidebar<
   return [...threads].toSorted(
     (left, right) => timestampMs(right) - timestampMs(left) || left.id.localeCompare(right.id),
   );
+}
+
+/**
+ * Whether a PR's search terms contain every whitespace-separated token of the
+ * query. Search results use this to pick the PR number to show, so it has to
+ * accept the multi-token queries the command palette matches on.
+ */
+export function pullRequestMatchesSearchQuery(
+  pullRequest: Parameters<typeof threadPullRequestSearchTerms>[0],
+  query: string,
+): boolean {
+  const normalizedQuery = normalizeSearchText(query);
+  if (normalizedQuery.length === 0) return false;
+  const haystack = normalizeSearchText(threadPullRequestSearchTerms(pullRequest).join(" "));
+  return normalizedQuery.split(" ").every((token) => haystack.includes(token));
 }
 
 export function filterSidebarProjectScopeItems<TItem extends { readonly value: string }>(input: {
