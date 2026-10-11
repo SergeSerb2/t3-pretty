@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -538,7 +539,13 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
   };
 
   const fail = (cwd: string, detail: string, cause?: unknown, operation = "fakeGh") =>
-    new SourceControlProviderFailure({ provider: "github", operation, cwd, detail, cause });
+    new SourceControlProviderFailure({
+      provider: SourceControlProviderKind.make("github"),
+      operation,
+      cwd,
+      detail,
+      cause,
+    });
 
   /** `operation` is the provider method the call answers, which a failure reports. */
   const execute = (input: {
@@ -652,7 +659,7 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
   /** What GitHubSourceControlProvider makes of a pull request it read. */
   const toChangeRequest = (summary: FakePullRequestSummary): ChangeRequest => ({
     ...summary,
-    provider: "github",
+    provider: SourceControlProviderKind.make("github"),
     state: summary.state ?? "open",
     closedAt: summary.closedAt ?? null,
     mergedAt:
@@ -672,7 +679,7 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
     const decoded = decodeGitHubPullRequestListJson(raw);
     if (Result.isSuccess(decoded)) {
       return decoded.success.map((record) => ({
-        provider: "github" as const,
+        provider: SourceControlProviderKind.make("github"),
         ...record,
         mergedAt:
           record.mergedAt == null || record.mergedAt.trim().length === 0
@@ -694,7 +701,7 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
 
   return {
     service: {
-      kind: "github",
+      kind: SourceControlProviderKind.make("github"),
       // The GitHub provider's own lookup rule and template convention, which GitManager reads
       // instead of the kind.
       headBranchProbe: ({ headSelectors }) => ({
@@ -703,24 +710,64 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
       }),
 
       listChangeRequests: (input) =>
-        execute({
-          operation: "listChangeRequests",
-          cwd: input.cwd,
-          args: [
-            "pr",
-            "list",
-            "--head",
-            input.headSelector,
-            "--state",
-            input.state,
-            "--limit",
-            String(input.limit ?? (input.state === "open" ? 1 : 20)),
-            "--json",
-            input.state === "open"
-              ? "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,isCrossRepository,headRepository,headRepositoryOwner"
-              : "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
-          ],
-        }).pipe(Effect.map((result) => changeRequestsFromListStdout(result.stdout))),
+        input.state === "open"
+          ? execute({
+              operation: "listChangeRequests",
+              cwd: input.cwd,
+              args: [
+                "pr",
+                "list",
+                "--head",
+                input.headSelector,
+                "--state",
+                "open",
+                "--limit",
+                String(input.limit ?? 1),
+                "--json",
+                "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,isCrossRepository,headRepository,headRepositoryOwner",
+              ],
+            }).pipe(
+              Effect.map((result) => JSON.parse(result.stdout) as unknown[]),
+              Effect.map((raw) =>
+                raw
+                  .map((entry) => normalizeFakePullRequestSummary(entry))
+                  .filter((entry): entry is FakePullRequestSummary => entry !== null)
+                  .map(toChangeRequest),
+              ),
+            )
+          : // The fake answers the CLI shape, so batched lookups read it the way the fallback does.
+            execute({
+              operation: "listChangeRequests",
+              cwd: input.cwd,
+              args: [
+                "pr",
+                "list",
+                "--head",
+                input.headSelector,
+                "--state",
+                input.state,
+                "--limit",
+                String(input.limit ?? 20),
+                "--json",
+                "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+              ],
+            }).pipe(
+              Effect.map((result) => {
+                const raw = result.stdout.trim();
+                if (raw.length === 0) return [];
+                const decoded = decodeGitHubPullRequestListJson(raw);
+                return Result.isSuccess(decoded)
+                  ? decoded.success.map((record) => ({
+                      provider: SourceControlProviderKind.make("github"),
+                      ...record,
+                      mergedAt:
+                        record.mergedAt == null || record.mergedAt.trim().length === 0
+                          ? Option.none()
+                          : Option.some(DateTime.makeUnsafe(record.mergedAt)),
+                    }))
+                  : [];
+              }),
+            ),
       createChangeRequest: (input) =>
         execute({
           operation: "createChangeRequest",
@@ -3472,7 +3519,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         operation: "lookupStatusPr",
         branch: "feature/status-rate-limited",
         errorTag: "SourceControlProviderError",
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerOperation: "listChangeRequests",
         errorDetail: "GitHub API rate limit exceeded. Requests resume when the limit resets.",
       });

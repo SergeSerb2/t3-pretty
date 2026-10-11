@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -26,6 +27,7 @@ import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import * as GitLabPullRequestCli from "@t3tools/source-control-gitlab/server/GitLabPullRequestCli";
 import * as ForgejoCli from "@t3tools/source-control-forgejo/server/ForgejoCli";
 import * as GitCafeApi from "@t3tools/source-control-gitcafe/server/GitCafeApi";
+import * as GitCafeCredentials from "@t3tools/source-control-gitcafe/server/GitCafeCredentials";
 import * as ForgejoSourceControlProvider from "@t3tools/source-control-forgejo/server/ForgejoSourceControlProvider";
 import * as ForgejoPullRequestProvider from "@t3tools/source-control-forgejo/server/ForgejoPullRequestProvider";
 import * as OriginCli from "./OriginCli.ts";
@@ -57,6 +59,9 @@ const layerSourceControlProviderRegistryTest = (input: {
         Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
         Layer.mock(OriginCli.OriginCli)({}),
         Layer.mock(GitCafeApi.GitCafeApi)({}),
+        Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+          cliEnv: () => Effect.succeed({}),
+        }),
         Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
         Layer.mock(VcsProcess.VcsProcess)(input.process),
         ServerSourceControlHost.layer.pipe(
@@ -178,43 +183,43 @@ it.effect("reports implemented tools separately from locally available executabl
       })),
       [
         {
-          kind: "github",
+          kind: SourceControlProviderKind.make("github"),
           status: "available",
           auth: "authenticated",
           account: Option.some("juliusmarminge"),
         },
         {
-          kind: "gitlab",
+          kind: SourceControlProviderKind.make("gitlab"),
           status: "missing",
           auth: "unknown",
           account: Option.none(),
         },
         {
-          kind: "azure-devops",
+          kind: SourceControlProviderKind.make("azure-devops"),
           status: "missing",
           auth: "unknown",
           account: Option.none(),
         },
         {
-          kind: "bitbucket",
+          kind: SourceControlProviderKind.make("bitbucket"),
           status: "available",
           auth: "unauthenticated",
           account: Option.none(),
         },
         {
-          kind: "origin",
+          kind: SourceControlProviderKind.make("origin"),
           status: "missing",
           auth: "unknown",
           account: Option.none(),
         },
         {
-          kind: "forgejo",
+          kind: SourceControlProviderKind.make("forgejo"),
           status: "missing",
           auth: "unknown",
           account: Option.none(),
         },
         {
-          kind: "gitcafe",
+          kind: SourceControlProviderKind.make("gitcafe"),
           status: "missing",
           auth: "unknown",
           account: Option.none(),
@@ -340,43 +345,43 @@ Logged in to gitlab.com as gitlab-user
       })),
       [
         {
-          kind: "github",
+          kind: SourceControlProviderKind.make("github"),
           auth: "authenticated",
           account: Option.some("octocat"),
           detail: Option.none(),
         },
         {
-          kind: "gitlab",
+          kind: SourceControlProviderKind.make("gitlab"),
           auth: "authenticated",
           account: Option.some("gitlab-user"),
           detail: Option.none(),
         },
         {
-          kind: "azure-devops",
+          kind: SourceControlProviderKind.make("azure-devops"),
           auth: "authenticated",
           account: Option.some("azure-user@example.com"),
           detail: Option.none(),
         },
         {
-          kind: "bitbucket",
+          kind: SourceControlProviderKind.make("bitbucket"),
           auth: "authenticated",
           account: Option.some("bitbucket-user"),
           detail: Option.none(),
         },
         {
-          kind: "origin",
+          kind: SourceControlProviderKind.make("origin"),
           auth: "authenticated",
           account: Option.some("origin-user@example.com"),
           detail: Option.none(),
         },
         {
-          kind: "forgejo",
+          kind: SourceControlProviderKind.make("forgejo"),
           auth: "authenticated",
           account: Option.some("forgejo-user"),
           detail: Option.none(),
         },
         {
-          kind: "gitcafe",
+          kind: SourceControlProviderKind.make("gitcafe"),
           auth: "authenticated",
           account: Option.some("cafe-user"),
           detail: Option.none(),
@@ -547,7 +552,11 @@ it.effect(
         reference: "42",
         force: true,
         context: {
-          provider: { kind: "forgejo", name: "Forgejo", baseUrl: "https://forgejo.test" },
+          provider: {
+            kind: SourceControlProviderKind.make("forgejo"),
+            name: "Forgejo",
+            baseUrl: "https://forgejo.test",
+          },
           remoteName: "origin",
           remoteUrl: "git@forgejo.test:maria/project.git",
         },

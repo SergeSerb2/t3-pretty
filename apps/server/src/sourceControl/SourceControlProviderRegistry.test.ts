@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Cause from "effect/Cause";
@@ -29,6 +30,7 @@ import * as GitLabPullRequestCli from "@t3tools/source-control-gitlab/server/Git
 import * as OriginCli from "./OriginCli.ts";
 import * as ForgejoCli from "@t3tools/source-control-forgejo/server/ForgejoCli";
 import * as GitCafeApi from "@t3tools/source-control-gitcafe/server/GitCafeApi";
+import * as GitCafeCredentials from "@t3tools/source-control-gitcafe/server/GitCafeCredentials";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as ServerSourceControlHost from "./ServerSourceControlHost.ts";
 
@@ -133,6 +135,9 @@ function makeRegistry(input: {
         Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
         Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
         Layer.mock(GitCafeApi.GitCafeApi)({}),
+        Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+          cliEnv: () => Effect.succeed({}),
+        }),
         ServerConfig.layerTest(process.cwd(), {
           prefix: "t3-source-control-registry-test-",
         }).pipe(Layer.provide(NodeServices.layer)),
@@ -187,7 +192,7 @@ it.effect("routes directly by provider kind for remote-first workflows", () =>
       remotes: [],
     });
 
-    const provider = yield* registry.get("github");
+    const provider = yield* registry.get(SourceControlProviderKind.make("github"));
 
     assert.strictEqual(provider.kind, "github");
   }),
@@ -196,7 +201,7 @@ it.effect("routes directly by provider kind for remote-first workflows", () =>
 it.effect("includes the request cwd when an unregistered provider is used", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry({ remotes: [] });
-    const provider = yield* registry.get("unknown");
+    const provider = yield* registry.get(SourceControlProviderKind.make("unknown"));
 
     const error = yield* provider
       .getChangeRequest({ cwd: "/repo", reference: "#42" })
@@ -290,7 +295,7 @@ it.effect("refines the caller-selected remote instead of choosing another config
       cwd: "/repo",
       context: {
         provider: {
-          kind: "unknown",
+          kind: SourceControlProviderKind.make("unknown"),
           name: "self-hosted.example.test",
           baseUrl: "https://self-hosted.example.test",
         },
@@ -375,6 +380,9 @@ it.effect("propagates OriginCli layer construction failures", () =>
               Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
               Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
               Layer.mock(GitCafeApi.GitCafeApi)({}),
+              Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+                cliEnv: () => Effect.succeed({}),
+              }),
               Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
               Layer.mock(VcsProcess.VcsProcess)({
                 run: () => Effect.succeed(processOutput("")),
@@ -433,6 +441,9 @@ it.effect("propagates ForgejoCli layer construction failures", () =>
               Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
               Layer.mock(OriginCli.OriginCli)({}),
               Layer.mock(GitCafeApi.GitCafeApi)({}),
+              Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+                cliEnv: () => Effect.succeed({}),
+              }),
               Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
               Layer.mock(VcsProcess.VcsProcess)({
                 run: () => Effect.succeed(processOutput("")),
@@ -470,7 +481,7 @@ it.effect("propagates ForgejoCli layer construction failures", () =>
 it.effect("boots the registry layer when OriginCli.layer is provided", () =>
   Effect.gen(function* () {
     const registry = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
-    const origin = yield* registry.get("origin");
+    const origin = yield* registry.get(SourceControlProviderKind.make("origin"));
     assert.strictEqual(origin.kind, "origin");
   }).pipe(
     Effect.provide(
@@ -490,6 +501,9 @@ it.effect("boots the registry layer when OriginCli.layer is provided", () =>
             Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
             Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
             Layer.mock(GitCafeApi.GitCafeApi)({}),
+            Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+              cliEnv: () => Effect.succeed({}),
+            }),
             OriginCli.layer.pipe(
               Layer.provide(
                 Layer.mock(VcsProcess.VcsProcess)({
@@ -526,7 +540,7 @@ it.effect("boots the registry layer when OriginCli.layer is provided", () =>
 it.effect("boots the registry layer when ForgejoCli.layer is provided", () =>
   Effect.gen(function* () {
     const registry = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
-    const forgejo = yield* registry.get("forgejo");
+    const forgejo = yield* registry.get(SourceControlProviderKind.make("forgejo"));
     assert.strictEqual(forgejo.kind, "forgejo");
   }).pipe(
     Effect.provide(
@@ -547,6 +561,9 @@ it.effect("boots the registry layer when ForgejoCli.layer is provided", () =>
             Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
             Layer.mock(OriginCli.OriginCli)({}),
             Layer.mock(GitCafeApi.GitCafeApi)({}),
+            Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+              cliEnv: () => Effect.succeed({}),
+            }),
             ForgejoCli.layer.pipe(
               Layer.provide(
                 Layer.mergeAll(
@@ -690,7 +707,7 @@ it.effect.each([
       },
     });
     const handle = yield* registry.resolveHandle({ cwd: "/repo" });
-    assert.strictEqual(handle.provider.kind, scenario.expected);
+    assert.strictEqual(handle.provider.kind, SourceControlProviderKind.make(scenario.expected));
     assert.strictEqual(handle.context?.provider.baseUrl, "https://code.example.test");
     assert.deepStrictEqual(hosts, ["code.example.test"]);
     // Recognition goes through the credential layer; gh is only one of its sources.
@@ -715,7 +732,7 @@ it.effect("skips GitHub discovery for the identity resolver's empty base URL", (
       },
     });
     const context = {
-      provider: { kind: "unknown" as const, name: "Unknown", baseUrl: "" },
+      provider: { kind: SourceControlProviderKind.make("unknown"), name: "Unknown", baseUrl: "" },
       remoteName: "origin",
       remoteUrl,
     };

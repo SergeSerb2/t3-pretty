@@ -29,11 +29,10 @@ import { useFileContextMenuHandler } from "../fileContextMenu";
 import { type DraftId } from "../composerDraftStore";
 import { openDiffFilePrimaryAction } from "../diffFileActions";
 import { useCheckpointDiff } from "~/lib/checkpointDiffState";
-import { compareIsoDateTimes } from "~/lib/threadSort";
 import { cn } from "~/lib/utils";
 import { selectThreadDiffPanelSelection, useDiffPanelStore } from "../diffPanelStore";
 import { useLocalStorage } from "../hooks/useLocalStorage";
-import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
+import { useTheme } from "../hooks/useTheme";
 import {
   buildFileDiffContentVersion,
   buildFileDiffIdentityKey,
@@ -188,27 +187,18 @@ function DiffFileHeaderSuffix({
   );
 }
 
-type DiffPanelProps =
-  | {
-      mode?: DiffPanelMode;
-      composerDraftTarget: ScopedThreadRef | DraftId;
-      initialGitScope: "branch" | "unstaged";
-      workspaceMutationId: string | null;
-    }
-  | {
-      mode: "embedded";
-      composerDraftTarget: ScopedThreadRef | DraftId;
-      initialGitScope?: "branch";
-      workspaceMutationId?: null;
-    };
+interface DiffPanelProps {
+  mode?: DiffPanelMode;
+  composerDraftTarget: ScopedThreadRef | DraftId;
+  workspaceMutationId: string | null;
+}
 
 export default function DiffPanel({
   mode = "inline",
   composerDraftTarget,
-  initialGitScope: initialGitScopeProp = "branch",
-  workspaceMutationId = null,
+  workspaceMutationId,
 }: DiffPanelProps) {
-  const resolvedTheme = usePaintedAppearance();
+  const { resolvedTheme } = useTheme();
   const settings = useClientSettings();
   const diffLayout = settings.diffLayout;
   const updateClientSettings = useUpdateClientSettings();
@@ -226,10 +216,6 @@ export default function DiffPanel({
   }));
   const [codeViewRevision, setCodeViewRevision] = useState(0);
   const [codeView, setCodeView] = useState<AnnotatableCodeViewHandle | null>(null);
-  const lastCompletedTurnRefreshRef = useRef<{
-    readonly threadKey: string | null;
-    readonly turnId: RunId | null;
-  } | null>(null);
 
   const routeThreadRef = useParams({
     strict: false,
@@ -286,7 +272,7 @@ export default function DiffPanel({
         if (leftTurnCount !== rightTurnCount) {
           return rightTurnCount - leftTurnCount;
         }
-        return compareIsoDateTimes(right.completedAt, left.completedAt);
+        return right.completedAt.localeCompare(left.completedAt);
       }),
     [inferredCheckpointTurnCountByRunId, turnDiffSummaries],
   );
@@ -353,7 +339,7 @@ export default function DiffPanel({
     },
     { enabled: isGitRepo && selectedTurn !== undefined },
   );
-  const primaryBranchDiffPreview = useEnvironmentQuery(
+  const branchDiffPreview = useEnvironmentQuery(
     canReadFiles && selectedRunId === null && activeThread && activeCwd
       ? reviewEnvironment.diffPreview({
           environmentId: activeThread.environmentId,
@@ -365,57 +351,11 @@ export default function DiffPanel({
         })
       : null,
   );
-  const shouldRetryBranchDiffAtEnvironmentCwd =
-    selectedRunId === null &&
-    primaryBranchDiffPreview.error?.includes("configured workspace root") === true &&
-    serverConfig?.cwd !== undefined &&
-    serverConfig.cwd !== activeCwd;
-  const fallbackBranchDiffPreview = useEnvironmentQuery(
-    canReadFiles && shouldRetryBranchDiffAtEnvironmentCwd && activeThread && serverConfig
-      ? reviewEnvironment.diffPreview({
-          environmentId: activeThread.environmentId,
-          input: {
-            cwd: serverConfig.cwd,
-            ...(selectedBaseRef ? { baseRef: selectedBaseRef } : {}),
-            ignoreWhitespace: diffIgnoreWhitespace,
-          },
-        })
-      : null,
-  );
-  const branchDiffPreview = shouldRetryBranchDiffAtEnvironmentCwd
-    ? fallbackBranchDiffPreview
-    : primaryBranchDiffPreview;
-  const refreshBranchDiffPreview = branchDiffPreview.refresh;
   const canRefreshGitDiff =
     isGitRepo && selectedRunId === null && activeThread != null && activeCwd != null;
   const activeThreadRefreshKey = routeThreadRef
     ? `${routeThreadRef.environmentId}:${routeThreadRef.threadId}`
     : null;
-
-  useEffect(() => {
-    if (!canRefreshGitDiff) return;
-    const refreshOnFocus = () => refreshBranchDiffPreview();
-    window.addEventListener("focus", refreshOnFocus);
-    return () => window.removeEventListener("focus", refreshOnFocus);
-  }, [canRefreshGitDiff, refreshBranchDiffPreview]);
-
-  useEffect(() => {
-    const current = {
-      threadKey: activeThreadRefreshKey,
-      turnId: latestTurn?.runId ?? null,
-    };
-    const previous = lastCompletedTurnRefreshRef.current;
-    if (!canRefreshGitDiff) {
-      return;
-    }
-    if (previous === null || previous.threadKey !== current.threadKey) {
-      lastCompletedTurnRefreshRef.current = current;
-      return;
-    }
-    if (previous.turnId === current.turnId) return;
-    refreshBranchDiffPreview();
-    lastCompletedTurnRefreshRef.current = current;
-  }, [activeThreadRefreshKey, canRefreshGitDiff, latestTurn?.runId, refreshBranchDiffPreview]);
 
   const selectedGitSource = branchDiffPreview.data?.sources.find(
     (source) => source.kind === (selectedGitScope === "unstaged" ? "working-tree" : "branch-range"),
@@ -550,6 +490,15 @@ export default function DiffPanel({
       : undefined,
     preview: renderablePatch,
   });
+  const refreshBranchDiffPreview = refreshPreviewQuery;
+
+  useEffect(() => {
+    if (!canRefreshGitDiff) return;
+    const refreshOnFocus = () => refreshBranchDiffPreview();
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
+  }, [canRefreshGitDiff, refreshBranchDiffPreview]);
+
   useWorkspaceMutationRefresh({
     enabled: canRefreshGitDiff,
     mutationId: workspaceMutationId,

@@ -1,7 +1,8 @@
-import type {
-  PullRequestComment,
-  PullRequestDetailView,
-  PullRequestReviewThread,
+import {
+  SourceControlProviderKind,
+  type PullRequestComment,
+  type PullRequestDetailView,
+  type PullRequestReviewThread,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -283,7 +284,7 @@ describe("handoffs and failures", () => {
   });
 
   const findingsBase = {
-    provider: "github" as const,
+    provider: SourceControlProviderKind.make("github"),
     host: "github.com",
     number: 42,
     title: "Add the page",
