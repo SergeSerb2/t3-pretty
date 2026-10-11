@@ -4,9 +4,9 @@ import type {
   ThreadPullRequestLink,
   VcsStatusResult,
 } from "@t3tools/contracts";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
   resolveAutomatedReviewPresentation,
-  resolveChangeRequestPresentation,
   type AutomatedReviewPresentation,
 } from "@t3tools/shared/sourceControl";
 
@@ -44,7 +44,7 @@ export function presentThreadPr(
   pr: ThreadPr,
   provider: VcsStatusResult["sourceControlProvider"] | null | undefined,
 ): ThreadPrPresentation {
-  const presentation = resolveChangeRequestPresentation(provider);
+  const { changeRequest } = sourceControlClients.get(provider?.kind);
   const isDraft = pr.state === "open" && pr.isDraft === true;
   const automatedReviewSignal = "automatedReview" in pr ? pr.automatedReview : undefined;
   const automatedReview = resolveAutomatedReviewPresentation(automatedReviewSignal);
@@ -65,7 +65,7 @@ export function presentThreadPr(
     updatedAt: pr.updatedAt ?? null,
     url: pr.url,
     label: String(pr.number),
-    accessibilityLabel: `#${pr.number} ${presentation.longName} ${isDraft ? "draft" : pr.state}${automatedReviewLabel}`,
+    accessibilityLabel: `#${pr.number} ${changeRequest.singular} ${isDraft ? "draft" : pr.state}${automatedReviewLabel}`,
     textClassName: isDraft ? "text-foreground-muted" : PR_STATE_TEXT_CLASS[pr.state],
     automatedReview: automatedReviewWithState,
   };

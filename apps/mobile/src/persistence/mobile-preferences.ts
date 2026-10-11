@@ -12,6 +12,7 @@ import {
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
+import { isMicrophoneKind, type MicrophoneEntry } from "../lib/microphonePriority";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
 import { parsePhotoSetId, type PhotoSetId } from "../features/scenery/photoSets";
 import * as MobileDatabase from "./mobile-database";
@@ -50,6 +51,8 @@ export interface Preferences {
    * is ignored so existing devices also default to steering.
    */
   readonly legacyQueueEnabled?: boolean;
+  /** Microphone kinds and remembered devices, most preferred first. iOS only. */
+  readonly microphones?: ReadonlyArray<MicrophoneEntry>;
   /** @deprecated Kept temporarily so older OTA bundles retain the selected mode. */
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
@@ -170,6 +173,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     collapsedProjectGroups?: readonly string[];
     composerEnterBehavior?: ComposerEnterBehavior;
     legacyQueueEnabled?: boolean;
+    microphones?: ReadonlyArray<MicrophoneEntry>;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     autoCreatePullRequestByEnvMode?: {
@@ -275,6 +279,15 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.legacyQueueEnabled === "boolean") {
     preferences.legacyQueueEnabled = parsed.legacyQueueEnabled;
+  }
+  if (Array.isArray(parsed.microphones)) {
+    preferences.microphones = parsed.microphones.flatMap((entry): MicrophoneEntry[] => {
+      if (typeof entry !== "object" || entry === null || !isMicrophoneKind(entry.kind)) return [];
+      if (!("uid" in entry)) return [{ kind: entry.kind }];
+      return typeof entry.uid === "string" && typeof entry.name === "string"
+        ? [{ kind: entry.kind, uid: entry.uid, name: entry.name }]
+        : [];
+    });
   }
   if (typeof parsed.projectGroupingEnabled === "boolean") {
     preferences.projectGroupingEnabled = parsed.projectGroupingEnabled;

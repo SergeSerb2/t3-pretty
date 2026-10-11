@@ -1,7 +1,11 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
+import {
+  SourceControlProviderError,
+  SourceControlProviderKind,
+  type ChangeRequest,
+} from "@t3tools/contracts";
 
 import * as OriginCli from "./OriginCli.ts";
 import { parseOriginAuthStatus } from "./originAuthStatus.ts";
@@ -14,9 +18,11 @@ import {
   type SourceControlCliDiscoverySpec,
 } from "@t3tools/source-control-core/server/discovery";
 
+const KIND = SourceControlProviderKind.make("origin");
+
 function toChangeRequest(summary: OriginCli.OriginPullRequestSummary): ChangeRequest {
   return {
-    provider: "origin",
+    provider: KIND,
     number: summary.number,
     title: summary.title,
     url: summary.url,
@@ -58,7 +64,7 @@ function parseOriginAuth(input: SourceControlAuthProbeInput) {
 
 export const discovery = {
   type: "cli",
-  kind: "origin",
+  kind: KIND,
   label: "Origin",
   executable: "origin",
   versionArgs: ["--version"],
@@ -72,7 +78,7 @@ export const make = Effect.gen(function* () {
   const origin = yield* OriginCli.OriginCli;
 
   return SourceControlProvider.SourceControlProvider.of({
-    kind: "origin",
+    kind: KIND,
     listChangeRequests: (input) => {
       const source = SourceControlProvider.sourceControlRefFromInput(input);
       return origin
@@ -88,7 +94,7 @@ export const make = Effect.gen(function* () {
           Effect.mapError(
             (error) =>
               new SourceControlProviderError({
-                provider: "origin",
+                provider: KIND,
                 operation: "listChangeRequests",
                 command: error.command,
                 cwd: input.cwd,
@@ -107,7 +113,7 @@ export const make = Effect.gen(function* () {
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
-              provider: "origin",
+              provider: KIND,
               operation: "getChangeRequest",
               command: error.command,
               cwd: input.cwd,
@@ -135,7 +141,7 @@ export const make = Effect.gen(function* () {
           Effect.mapError(
             (error) =>
               new SourceControlProviderError({
-                provider: "origin",
+                provider: KIND,
                 operation: "createChangeRequest",
                 command: error.command,
                 cwd: input.cwd,
@@ -153,7 +159,7 @@ export const make = Effect.gen(function* () {
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
-              provider: "origin",
+              provider: KIND,
               operation: "getRepositoryCloneUrls",
               command: error.command,
               cwd: input.cwd,
@@ -170,7 +176,7 @@ export const make = Effect.gen(function* () {
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
-              provider: "origin",
+              provider: KIND,
               operation: "createRepository",
               command: error.command,
               cwd: input.cwd,
@@ -187,7 +193,7 @@ export const make = Effect.gen(function* () {
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
-              provider: "origin",
+              provider: KIND,
               operation: "getDefaultBranch",
               command: error.command,
               cwd: input.cwd,
@@ -201,7 +207,7 @@ export const make = Effect.gen(function* () {
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
-              provider: "origin",
+              provider: KIND,
               operation: "checkoutChangeRequest",
               command: error.command,
               cwd: input.cwd,

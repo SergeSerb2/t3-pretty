@@ -1,5 +1,9 @@
 import * as Effect from "effect/Effect";
-import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@t3tools/contracts";
+import {
+  SourceControlProviderKind,
+  type PullRequestCapabilities,
+  type PullRequestViewerPermissions,
+} from "@t3tools/contracts";
 
 import * as OriginPullRequestCli from "./OriginPullRequestCli.ts";
 import {
@@ -7,6 +11,8 @@ import {
   type PullRequestProviderFailure,
   type PullRequestProviderApi,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
+
+const KIND = SourceControlProviderKind.make("origin");
 
 const CAPABILITIES: PullRequestCapabilities = {
   diff: true,
@@ -55,7 +61,7 @@ export const make = Effect.gen(function* () {
 
   const fail = (operation: string) => (error: OriginPullRequestCli.OriginPullRequestCliError) =>
     new PullRequestProviderError({
-      provider: "origin",
+      provider: KIND,
       operation,
       ...originProviderFailure(error),
       detail: error.detail,
@@ -65,7 +71,7 @@ export const make = Effect.gen(function* () {
   const unsupported = (operation: string, detail: string) =>
     Effect.fail(
       new PullRequestProviderError({
-        provider: "origin",
+        provider: KIND,
         operation,
         reason: "failed",
         detail,
@@ -73,7 +79,7 @@ export const make = Effect.gen(function* () {
     );
 
   const provider: PullRequestProviderApi = {
-    kind: "origin",
+    kind: KIND,
     capabilities: CAPABILITIES,
 
     getViewer: (input) =>
