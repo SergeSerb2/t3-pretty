@@ -1207,9 +1207,9 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
 // 3010 grew the RPC group enough that `toLayer` exceeds TS instantiation
 // depth once Pretty extras and RpcInstrumentation wrap it. Cast the group
 // before the call so the checker never instantiates the full Layer channels.
-type SealedWsRpcLayer = Layer.Layer<never, never, never>;
+// Success stays `any` so RpcServer.make still sees handlers as provided.
+type SealedWsRpcLayer = Layer.Layer<any, never, never>;
 const serverWsRpcToLayer = (
-  // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
   ServerWsRpcGroup as unknown as {
     readonly toLayer: (handlers: unknown) => SealedWsRpcLayer;
   }

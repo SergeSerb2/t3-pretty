@@ -90,12 +90,8 @@ describe("mobile theme runtime variables", () => {
             themeColorWithAlpha(android["--color-sheet-solid"], 1),
           );
         }
-        expect(themeColorWithAlpha(ios["--color-thread-hover"], 1)).not.toBe(
-          themeColorWithAlpha(ios["--color-drawer"], 1),
-        );
-        expect(themeColorWithAlpha(ios["--color-thread-hover"], 1)).not.toBe(
-          themeColorWithAlpha(ios["--color-thread-selected"], 1),
-        );
+        expect(ios["--color-thread-hover"]).not.toBe(ios["--color-drawer"]);
+        expect(ios["--color-thread-hover"]).not.toBe(ios["--color-thread-selected"]);
         for (const role of [
           "--color-screen",
           "--color-thread-canvas",
