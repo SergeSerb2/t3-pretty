@@ -43,6 +43,15 @@ describe("PR comments in continuous native diffs", () => {
       "discussion:right",
     ]);
   });
+  it("keeps host threads without a file path off the current code", () => {
+    const annotated = annotatePullRequestDiff(
+      data,
+      [{ ...thread, path: null }],
+      [],
+      "abc",
+    );
+    expect(annotated.rows).toEqual(data.rows);
+  });
   it("keeps outdated and unloaded anchors off the current code", () => {
     const annotated = annotatePullRequestDiff(
       data,

@@ -116,6 +116,7 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
   ].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   const canReply = permissions.canReply && Boolean(thread);
   const resolveLabel = thread?.isResolved ? "Unresolve" : "Resolve";
+  const filePath = thread?.path ?? null;
   return (
     <PullRequestMarkdownRepository
       params={params}
@@ -174,12 +175,14 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
                   {thread.isResolved ? "Resolved" : "Unresolved"}
                   {thread.isOutdated ? " · Outdated" : ""}
                 </Text>
-                <MaterialButton
-                  label="View file diff"
-                  onPress={() =>
-                    navigation.navigate("PullRequestFile", { ...params, path: thread.path })
-                  }
-                />
+                {filePath ? (
+                  <MaterialButton
+                    label="View file diff"
+                    onPress={() =>
+                      navigation.navigate("PullRequestFile", { ...params, path: filePath })
+                    }
+                  />
+                ) : null}
               </View>
             ) : !activity.isPending ? (
               <Text>This discussion is no longer available.</Text>

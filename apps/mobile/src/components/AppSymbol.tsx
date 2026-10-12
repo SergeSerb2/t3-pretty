@@ -278,7 +278,6 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "exclamationmark.shield": IconShieldQuestion,
   "bubble.left.and.bubble.right": IconMessage,
   "bubble.left": IconMessage,
-  sparkles: IconSparkles,
   "plus.bubble": IconMessagePlus,
   "text.word.spacing": IconLetterSpacing,
   "textformat.size": IconTypography,
