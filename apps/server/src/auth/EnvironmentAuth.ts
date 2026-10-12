@@ -1055,6 +1055,8 @@ export const make = Effect.gen(function* () {
         ...(input?.proofKeyThumbprint !== undefined
           ? { proofKeyThumbprint: input.proofKeyThumbprint }
           : {}),
+        // Forward extras so consume can reject without spending a one-time
+        // link. Intersection below still narrows a granted request.
         ...(requestedScopes !== undefined ? { requestedScopes } : {}),
       }).pipe(
         Effect.flatMap((grant) =>
@@ -1365,7 +1367,8 @@ export const make = Effect.gen(function* () {
         !isAllowedAmbientCookieWebSocketOrigin({
           requestUrl: Option.isSome(requestUrl) ? requestUrl.value : undefined,
           origin: request.headers.origin,
-        })
+        }) &&
+        !isBrowserOriginAllowed(request, trustedBrowserOrigins)
       ) {
         return yield* new ServerAuthInvalidCredentialError({
           diagnostic: "Cross-origin WebSocket cookie authentication is not allowed.",

@@ -1204,14 +1204,25 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
+// 3010 grew the RPC group enough that `toLayer` exceeds TS instantiation
+// depth once Pretty extras and RpcInstrumentation wrap it. Cast the group
+// before the call so the checker never instantiates the full Layer channels.
+type SealedWsRpcLayer = Layer.Layer<never, never, never>;
+const serverWsRpcToLayer = (
+  // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
+  ServerWsRpcGroup as unknown as {
+    readonly toLayer: (handlers: unknown) => SealedWsRpcLayer;
+  }
+).toLayer;
+
 const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
-) =>
-  ServerWsRpcGroup.toLayer(
+): SealedWsRpcLayer =>
+  serverWsRpcToLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
@@ -3385,9 +3396,9 @@ export const WS_RPC_SERVER_OPTIONS = {
 
 type WithoutInferredAny<T> = [0] extends [1 & T] ? never : T;
 
-// Pretty's extra RPCs plus 2787's RpcInstrumentation middleware make
-// Layer.Services infer `any`. Seal that so CLI/server typecheck can see a
-// real requirements channel; runtime wiring is unchanged.
+// Pretty's extra RPCs plus RpcInstrumentation make Layer.Services infer `any`.
+// Seal that so CLI/server typecheck can see a real requirements channel;
+// runtime wiring is unchanged.
 const layerWsRoute = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;

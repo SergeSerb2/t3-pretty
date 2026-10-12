@@ -47,13 +47,18 @@ describe("generate mobile Uniwind themes", () => {
 
   it("keeps the default runtime bridge and generated CSS on the same palette", () => {
     const variables = JSON.parse(renderDefaultThemeVariablesJSON());
+    const lightSheet = readDefaultMobileThemeVariables("light");
+    const darkSheet = readDefaultMobileThemeVariables("dark");
 
-    expect(variables.light).toEqual(readDefaultMobileThemeVariables("light"));
-    expect(variables.dark).toEqual(readDefaultMobileThemeVariables("dark"));
+    // JS overlay / native JSON stay Pretty; Uniwind default variants stay parent t3-code.
+    expect(Object.keys(variables.light).sort()).toEqual(Object.keys(lightSheet).sort());
+    expect(Object.keys(variables.dark).sort()).toEqual(Object.keys(darkSheet).sort());
     expect(variables.light["--color-screen"]).toBe("#f4f6f4");
-    expect(variables.light["--color-drawer"]).toBe("#fafafa");
+    expect(variables.light["--color-drawer"]).toBe("rgba(250, 252, 250, 0.99)");
     expect(variables.dark["--color-screen"]).toBe("#0e1110");
-    expect(variables.dark["--color-drawer"]).toBe("#000000");
+    expect(variables.dark["--color-drawer"]).toBe("rgba(12, 16, 14, 0.99)");
+    expect(lightSheet["--color-screen"]).toBe("#fcfcfc");
+    expect(darkSheet["--color-screen"]).toBe("#0a0a0a");
     expect(Object.keys(variables.light)).toEqual(Object.keys(variables.dark));
   });
   it("gives every theme the same variables and a fixed Clerk palette for its appearance", () => {

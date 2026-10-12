@@ -233,11 +233,19 @@ const renderVariant = (name: string, variables: Readonly<Record<string, string>>
   return `    @variant ${name} {\n${declarations}\n    }`;
 };
 
+const parentDefaultThemeVariables = (appearance: MobileThemeAppearance) => {
+  const colors = getMobileThemeColors(DEFAULT_MOBILE_THEME_ID, appearance);
+  // Uniwind `@variant light/dark` stays the parent t3-code sheet. Pretty's
+  // World Scenery overlay lives on the native JSON bridge and in global.css.
+  const groupedCard = appearance === "light" ? colors.toolbarControlHover : colors.sidebarRowActive;
+  return createMobileThemeVariables(colors, appearance, groupedCard);
+};
+
 export const renderUniwindThemesCSS = () => {
   const variants = [
     ...APPEARANCES.map((appearance) =>
       renderVariant(appearance, {
-        ...getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, appearance),
+        ...parentDefaultThemeVariables(appearance),
         ...adaptiveVariablesFor(appearance),
         ...clerkVariablesFor(appearance),
       }),

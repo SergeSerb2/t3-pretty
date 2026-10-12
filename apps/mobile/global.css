@@ -54,6 +54,8 @@
 
       /* Primary action */
       --color-primary: #27633f;
+      --color-prominent-action: #161a17;
+      --color-prominent-action-foreground: #f4f6f4;
       --color-primary-foreground: #ffffff;
       --color-primary-shadow: #1c4630;
 
@@ -168,6 +170,8 @@
 
       /* Primary action */
       --color-primary: #98d2ac;
+      --color-prominent-action: #f3f6f3;
+      --color-prominent-action-foreground: #0e1110;
       --color-primary-foreground: #07140c;
       --color-primary-shadow: #000000;
 

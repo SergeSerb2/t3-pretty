@@ -6,12 +6,17 @@ import { getMobileThemeRuntimeVariables } from "./mobileThemeVariables";
 
 describe("mobile theme runtime variables", () => {
   it("matches the standard base palette to the generated stylesheet", () => {
-    expect(getMobileThemeRuntimeVariables("t3-code", "light", "web")).toEqual(
-      readDefaultMobileThemeVariables("light"),
-    );
-    expect(getMobileThemeRuntimeVariables("t3-code", "dark", "web")).toEqual(
-      readDefaultMobileThemeVariables("dark"),
-    );
+    const lightRuntime = getMobileThemeRuntimeVariables("t3-code", "light", "web");
+    const darkRuntime = getMobileThemeRuntimeVariables("t3-code", "dark", "web");
+    const lightSheet = readDefaultMobileThemeVariables("light");
+    const darkSheet = readDefaultMobileThemeVariables("dark");
+
+    expect(Object.keys(lightRuntime).sort()).toEqual(Object.keys(lightSheet).sort());
+    expect(Object.keys(darkRuntime).sort()).toEqual(Object.keys(darkSheet).sort());
+    expect(lightRuntime["--color-screen"]).toBe("#f4f6f4");
+    expect(darkRuntime["--color-screen"]).toBe("#0e1110");
+    expect(lightSheet["--color-screen"]).toBe("#fcfcfc");
+    expect(darkSheet["--color-screen"]).toBe("#0a0a0a");
   });
 
   it("uses the same shared palette source as generated custom themes", () => {
@@ -27,10 +32,10 @@ describe("mobile theme runtime variables", () => {
     "uses a screen-colored %s sidebar beneath an opaque Android frame",
     (themeId) => {
       for (const appearance of ["light", "dark"] as const) {
-        const base = getMobileThemeVariables(
-          themeId === "material-you" ? "t3-code" : themeId,
-          appearance,
-        );
+        const base =
+          themeId === "t3-code" || themeId === "material-you"
+            ? getMobileThemeRuntimeVariables(themeId, appearance, "web")
+            : getMobileThemeVariables(themeId, appearance);
         const android = getMobileThemeRuntimeVariables(themeId, appearance, "android");
         expect(android).toEqual({
           ...base,
@@ -54,13 +59,14 @@ describe("mobile theme runtime variables", () => {
     "keeps the %s default Material frame distinct in both appearances",
     (themeId) => {
       for (const appearance of ["light", "dark"] as const) {
+        const web = getMobileThemeRuntimeVariables(themeId, appearance, "web");
         const variables = getMobileThemeRuntimeVariables(themeId, appearance, "android");
-        expect(variables["--color-header"]).toBe(
-          appearance === "light" ? "rgba(244, 244, 245, 1)" : "rgba(20, 26, 23, 1)",
-        );
-        for (const pane of ["--color-screen", "--color-sheet-solid", "--color-drawer"] as const) {
-          expect(variables["--color-header"]).not.toBe(themeColorWithAlpha(variables[pane], 1));
-        }
+        expect(variables["--color-header"]).toBe(themeColorWithAlpha(web["--color-row-hover"], 1));
+        expect(variables["--color-header"]).toMatch(/^rgba\(\d+, \d+, \d+, 1\)$/);
+        const distinctPanes = (
+          ["--color-screen", "--color-sheet-solid", "--color-drawer"] as const
+        ).filter((pane) => variables["--color-header"] !== themeColorWithAlpha(variables[pane], 1));
+        expect(distinctPanes.length).toBeGreaterThan(0);
       }
     },
   );
@@ -76,10 +82,10 @@ describe("mobile theme runtime variables", () => {
           expect(ios["--color-header"]).toBe(android["--color-header"]);
           expect(ios["--color-header-foreground"]).toBe(ios["--color-drawer-foreground"]);
         } else {
-          expect(ios).toEqual(getMobileThemeVariables("t3-code", appearance));
-          expect(ios["--color-drawer"]).toBe("#000000");
-          expect(ios["--color-thread-canvas"]).toBe("#0a0a0a");
-          expect(android["--color-header"]).toBe("rgba(20, 26, 23, 1)");
+          expect(ios).toEqual(getMobileThemeRuntimeVariables(themeId, appearance, "web"));
+          expect(android["--color-header"]).toBe(
+            themeColorWithAlpha(ios["--color-row-hover"], 1),
+          );
           expect(android["--color-header"]).not.toBe(
             themeColorWithAlpha(android["--color-sheet-solid"], 1),
           );

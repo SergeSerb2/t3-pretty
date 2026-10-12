@@ -450,13 +450,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
     }).pipe(Effect.provide(layerEnvironmentAuth())),
   );
 
-  it.effect.each([
-    { label: "omits scope", requestedScopes: undefined },
-    {
-      label: "requests unsupported permissions alongside a granted one",
-      requestedScopes: ["orchestration:read", "access:write"] as const,
-    },
-  ])("inherits a constrained pairing grant when token exchange $label", ({ requestedScopes }) =>
+  it.effect("inherits a constrained pairing grant when token exchange omits scope", () =>
     Effect.gen(function* () {
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
       const pairingCredential = yield* serverAuth.issuePairingCredential({
@@ -465,11 +459,33 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
 
       const token = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
         pairingCredential.credential,
-        requestedScopes,
+        undefined,
         requestMetadata,
       );
 
       expect(token.scope).toBe("orchestration:read");
+    }).pipe(Effect.provide(layerEnvironmentAuth())),
+  );
+
+  it.effect("rejects extras on a constrained pairing grant without consuming it", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const pairingCredential = yield* serverAuth.issuePairingCredential({
+        scopes: ["orchestration:read"],
+      });
+
+      const error = yield* serverAuth
+        .exchangeBootstrapCredentialForAccessToken(
+          pairingCredential.credential,
+          ["orchestration:read", "access:write"],
+          requestMetadata,
+        )
+        .pipe(Effect.flip);
+
+      expect(error._tag).toBe("ServerAuthScopeNotGrantedError");
+      expect((yield* serverAuth.listPairingLinks()).map((link) => link.id)).toContain(
+        pairingCredential.id,
+      );
     }).pipe(Effect.provide(layerEnvironmentAuth())),
   );
 
