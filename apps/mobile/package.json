@@ -173,7 +173,10 @@
         "react-native-reanimated",
         "@react-native-menu/menu",
         "expo-audio"
-      ]
+      ],
+      "ios": {
+        "exclude": ["react-native-enriched-markdown"]
+      }
     }
   },
   "reanimated": {
