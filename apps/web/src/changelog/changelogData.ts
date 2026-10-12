@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261011.2994003411",
+    date: "2026-10-12",
+    items: [
+      {
+        kind: "fixed",
+        title: "Remote threads stay painted after bounded snapshot sync",
+      },
+      {
+        kind: "fixed",
+        title: "Rename Pretty PR presentation off the upstream filename",
+      },
+      {
+        kind: "fixed",
+        title: "Provide ServerSettings in fork CLI test layers",
+      },
+      {
+        kind: "fixed",
+        title: "Adapt fork call sites to nightly provider and settings APIs",
+      },
+      {
+        kind: "fixed",
+        title: "Handle nullable review-thread paths after nightly sync",
+      },
+      {
+        kind: "fixed",
+        title: "Show cached remote threads while reconnecting",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261011.2994003406",
     date: "2026-10-12",
     items: [
