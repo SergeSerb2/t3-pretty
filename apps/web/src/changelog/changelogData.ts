@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261011.2994003406",
+    date: "2026-10-12",
+    items: [
+      {
+        kind: "fixed",
+        title: "Rename Pretty PR presentation off the upstream filename",
+      },
+      {
+        kind: "fixed",
+        title: "Provide ServerSettings in fork CLI test layers",
+      },
+      {
+        kind: "fixed",
+        title: "Adapt fork call sites to nightly provider and settings APIs",
+      },
+      {
+        kind: "fixed",
+        title: "Handle nullable review-thread paths after nightly sync",
+      },
+      {
+        kind: "fixed",
+        title: "Show cached remote threads while reconnecting",
+      },
+      {
+        kind: "fixed",
+        title: "Remote threads stay visible; iOS no longer whitescreens",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261011.2980003397",
     date: "2026-10-11",
     items: [
