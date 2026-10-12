@@ -17,15 +17,21 @@ export const NATIVE_WORKSPACE_COLUMNS_SUPPORTED =
 export function useNativeWorkspaceColumnsReady() {
   const metrics = useNativeLayoutMetrics();
   const [timedOut, setTimedOut] = useState(false);
-  useEffect(() => {
-    if (metrics !== null) return;
-    const timer = setTimeout(() => setTimedOut(true), NATIVE_WORKSPACE_COLUMNS_READY_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [metrics]);
   // Choose the phone's native host before attaching any screens. Older clients
   // without the observer can immediately use the compact navigator. Build 190+
   // advertises LayoutMetrics; if the native view never publishes (iOS 27.1
   // hinge wait), fail open so the root is not a white screen.
+  const waiting =
+    !(Platform.OS === "ios" && Platform.isPad) &&
+    Boolean(nativeControls?.ViewPrototypes?.T3NativeControls_LayoutMetrics) &&
+    metrics === null;
+
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setTimeout(() => setTimedOut(true), NATIVE_WORKSPACE_COLUMNS_READY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [waiting]);
+
   return nativeWorkspaceColumnsAreReady({
     isPad: Platform.OS === "ios" && Platform.isPad,
     hasLayoutMetricsPrototype: Boolean(
