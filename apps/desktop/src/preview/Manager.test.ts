@@ -387,6 +387,7 @@ const managerLayer = (platform: NodeJS.Platform = "darwin") =>
       Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {
         register: () => Effect.void,
         recordMetrics: () => Effect.void,
+        recordError: () => Effect.void,
         shutdown: Effect.void,
       }),
     ),

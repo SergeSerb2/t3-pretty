@@ -16,6 +16,20 @@ export interface RendererIdentity {
   readonly tabId?: string;
 }
 
+export type RendererErrorEvent =
+  | "console-error"
+  | "preload-error"
+  | "window-error"
+  | "unhandled-rejection"
+  | "render-error";
+
+export interface RendererErrorInput {
+  readonly webContentsId?: number;
+  readonly event: Exclude<RendererErrorEvent, "console-error" | "preload-error">;
+  readonly message: string;
+  readonly stack?: string;
+}
+
 export class DesktopRendererHistory extends Context.Service<
   DesktopRendererHistory,
   {
@@ -24,6 +38,7 @@ export class DesktopRendererHistory extends Context.Service<
       identity: RendererIdentity,
     ) => Effect.Effect<void>;
     readonly recordMetrics: (metrics: ReadonlyArray<Electron.ProcessMetric>) => Effect.Effect<void>;
+    readonly recordError: (input: RendererErrorInput) => Effect.Effect<void>;
     readonly shutdown: Effect.Effect<void>;
   }
 >()("@t3tools/desktop/telemetry/DesktopRendererHistory") {}
@@ -47,7 +62,8 @@ interface RendererRecord {
     | "dom-ready"
     | "sample"
     | "render-process-gone"
-    | "destroyed";
+    | "destroyed"
+    | RendererErrorEvent;
   readonly webContentsId: number;
   readonly surface: RendererIdentity["surface"];
   readonly tabId?: string;
@@ -57,6 +73,49 @@ interface RendererRecord {
   readonly memory: RendererMemory | null;
   readonly reason?: Electron.RenderProcessGoneDetails["reason"];
   readonly exitCode?: number;
+  readonly message?: string;
+  readonly stack?: string;
+}
+
+const MESSAGE_MAX = 1_024;
+const STACK_MAX = 2_048;
+
+const boundText = (value: string, max: number): string =>
+  value.length <= max ? value : value.slice(0, max);
+
+function parseConsoleMessageArgs(args: ReadonlyArray<unknown>): {
+  readonly level: string;
+  readonly message: string;
+} | null {
+  const details = args[1];
+  if (details !== null && typeof details === "object") {
+    const message = Reflect.get(details, "message");
+    if (typeof message === "string") {
+      const level = Reflect.get(details, "level");
+      return {
+        level:
+          typeof level === "string"
+            ? level
+            : typeof level === "number"
+              ? (["debug", "info", "warning", "error"][level] ?? "info")
+              : "info",
+        message,
+      };
+    }
+  }
+  if (typeof args[2] === "string") {
+    const level = args[1];
+    return {
+      level:
+        typeof level === "number"
+          ? (["debug", "info", "warning", "error"][level] ?? "info")
+          : typeof level === "string"
+            ? level
+            : "info",
+      message: args[2],
+    };
+  }
+  return null;
 }
 
 interface TrackedRenderer {
@@ -139,7 +198,11 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
   const record = (
     renderer: TrackedRenderer,
     event: RendererRecord["event"],
-    details?: Electron.RenderProcessGoneDetails,
+    extras?: {
+      readonly details?: Electron.RenderProcessGoneDetails;
+      readonly message?: string;
+      readonly stack?: string;
+    },
   ): void => {
     const rendererPidSource = readPid(renderer);
     Queue.offerUnsafe(records, {
@@ -154,15 +217,35 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
       rendererPidSource,
       rendererCreationTimeMs: renderer.creationTimeMs,
       memory: renderer.memory,
-      ...(details === undefined
+      ...(extras?.details === undefined
         ? {}
         : {
-            reason: details.reason,
-            ...(Number.isFinite(details.exitCode)
-              ? { exitCode: Math.round(details.exitCode) }
+            reason: extras.details.reason,
+            ...(Number.isFinite(extras.details.exitCode)
+              ? { exitCode: Math.round(extras.details.exitCode) }
               : {}),
           }),
+      ...(extras?.message === undefined ? {} : { message: boundText(extras.message, MESSAGE_MAX) }),
+      ...(extras?.stack === undefined ? {} : { stack: boundText(extras.stack, STACK_MAX) }),
     });
+  };
+
+  const logRendererError = (
+    renderer: TrackedRenderer,
+    event: RendererErrorEvent,
+    extras: { readonly message: string; readonly stack?: string },
+  ) => {
+    record(renderer, event, extras);
+    runFork(
+      Effect.logError("Renderer error").pipe(
+        Effect.annotateLogs({
+          event,
+          surface: renderer.identity.surface,
+          webContentsId: renderer.webContents.id,
+          message: boundText(extras.message, MESSAGE_MAX),
+        }),
+      ),
+    );
   };
 
   const register = (webContents: Electron.WebContents, identity: RendererIdentity) =>
@@ -205,7 +288,19 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
       const onGone = (_event: Electron.Event, details: Electron.RenderProcessGoneDetails) => {
         readPid(renderer);
         renderer.gone = true;
-        record(renderer, "render-process-gone", details);
+        record(renderer, "render-process-gone", { details });
+      };
+      const onConsoleMessage = (...args: unknown[]) => {
+        const parsed = parseConsoleMessageArgs(args);
+        if (parsed === null || parsed.level !== "error") return;
+        logRendererError(renderer, "console-error", { message: parsed.message });
+      };
+      const onPreloadError = (_event: unknown, _preloadPath: unknown, error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error ?? "preload failed");
+        logRendererError(renderer, "preload-error", {
+          message,
+          ...(error instanceof Error && error.stack !== undefined ? { stack: error.stack } : {}),
+        });
       };
       const onDestroyed = () => {
         record(renderer, "destroyed");
@@ -223,6 +318,8 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
           webContents.removeListener("dom-ready", onDomReady);
           webContents.removeListener("devtools-opened", onDevToolsOpened);
           webContents.removeListener("render-process-gone", onGone);
+          webContents.removeListener("console-message", onConsoleMessage as never);
+          webContents.removeListener("preload-error", onPreloadError as never);
           webContents.removeListener("destroyed", onDestroyed);
         },
       };
@@ -230,6 +327,8 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
       webContents.on("dom-ready", onDomReady);
       webContents.on("devtools-opened", onDevToolsOpened);
       webContents.on("render-process-gone", onGone);
+      webContents.on("console-message", onConsoleMessage as never);
+      webContents.on("preload-error", onPreloadError as never);
       webContents.once("destroyed", onDestroyed);
       record(renderer, "created");
     }).pipe(
@@ -270,6 +369,50 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
         () => Effect.void,
       ),
     );
+  const recordError = (input: RendererErrorInput) =>
+    Effect.sync(() => {
+      if (!accepting) return;
+      const renderer =
+        input.webContentsId === undefined
+          ? ([...active.values()].find((candidate) => candidate.identity.surface === "main") ??
+            [...active.values()][0])
+          : active.get(input.webContentsId);
+      if (renderer === undefined) {
+        runFork(
+          Effect.logError("Renderer error").pipe(
+            Effect.annotateLogs({
+              event: input.event,
+              message: boundText(input.message, MESSAGE_MAX),
+            }),
+          ),
+        );
+        Queue.offerUnsafe(records, {
+          version: 1,
+          mainPid: process.pid,
+          mainSessionStartedAtUnixMs,
+          timestampUnixMs: clock.currentTimeMillisUnsafe(),
+          event: input.event,
+          webContentsId: input.webContentsId ?? -1,
+          surface: "main",
+          rendererPid: null,
+          rendererPidSource: "unavailable",
+          rendererCreationTimeMs: null,
+          memory: null,
+          message: boundText(input.message, MESSAGE_MAX),
+          ...(input.stack === undefined ? {} : { stack: boundText(input.stack, STACK_MAX) }),
+        });
+        return;
+      }
+      logRendererError(renderer, input.event, {
+        message: input.message,
+        ...(input.stack === undefined ? {} : { stack: input.stack }),
+      });
+    }).pipe(
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterrupts(cause),
+        () => Effect.void,
+      ),
+    );
   const shutdown = Effect.sync(() => {
     accepting = false;
     for (const renderer of active.values()) renderer.removeListeners();
@@ -277,7 +420,7 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
   }).pipe(Effect.andThen(Fiber.interrupt(writerFiber)), Effect.asVoid);
   yield* Effect.addFinalizer(() => shutdown);
 
-  return DesktopRendererHistory.of({ register, recordMetrics, shutdown });
+  return DesktopRendererHistory.of({ register, recordMetrics, recordError, shutdown });
 });
 
 export const layer = Layer.effect(DesktopRendererHistory, make());

@@ -12,6 +12,7 @@ import {
   resolveWebAssetBrandForPackageVersion,
   resolveWebIconOverrides,
 } from "../../../scripts/lib/brand-assets.ts";
+import { selectCliRuntimeExternalDependencies } from "../../../scripts/lib/cli-external-packages.ts";
 import { resolveCatalogDependencies } from "../../../scripts/lib/resolve-catalog.ts";
 
 import {
@@ -81,7 +82,11 @@ const readServerPackPackageJson = Effect.fn("readServerPackPackageJson")(functio
   });
 });
 
-/** Resolve catalog: specs and drop pnpm override selectors for the npm tarball. */
+/**
+ * Resolve catalog: specs, keep only disk-backed runtime externals, and drop
+ * pnpm override selectors. Bundled workspace:* packages must not appear in
+ * the npm tarball — remotes install with npm, which rejects that protocol.
+ */
 export function createPackPackageJson(input: {
   readonly serverPackageJson: typeof ServerPackPackageJson.Type;
   readonly catalog: Record<string, string>;
@@ -95,10 +100,12 @@ export function createPackPackageJson(input: {
     version: input.version,
     engines: input.serverPackageJson.engines,
     files: input.serverPackageJson.files,
-    dependencies: resolveCatalogDependencies(
-      input.serverPackageJson.dependencies,
-      input.catalog,
-      "apps/server",
+    dependencies: selectCliRuntimeExternalDependencies(
+      resolveCatalogDependencies(
+        input.serverPackageJson.dependencies,
+        input.catalog,
+        "apps/server",
+      ),
     ),
     // pnpm override selectors (`@clerk/clerk-js>`) are not valid npm
     // package names. The tarball only needs resolved runtime deps.

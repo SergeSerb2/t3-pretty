@@ -5,6 +5,7 @@ import {
   MessageId,
   ThreadId,
   TurnItemId,
+  type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -18,6 +19,7 @@ import {
   environmentUnavailableComposerPlaceholder,
   resolveEnvironmentUnavailableChrome,
 } from "./components/ChatView.logic";
+import { boundedSnapshotProjection } from "@t3tools/shared/orchestrationV2BoundedSnapshot";
 import { deriveTimelineEntriesFromVisibleTurnItemsWithState } from "./session-logic";
 import {
   isThreadRouteSnapshotAuthoritative,
@@ -134,7 +136,9 @@ function cachedRemoteProjection() {
 function remoteThreadView(input: {
   readonly shellStatus: "live" | "cached" | "synchronizing";
   readonly threadStatus: "live" | "cached" | "synchronizing" | "empty";
-  readonly detail: ReturnType<typeof cachedRemoteProjection> | null;
+  readonly detail: {
+    readonly visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>;
+  } | null;
 }) {
   const threads = remoteThreads();
   const listed = searchSidebarThreads(threads, "stremio", new Set());
@@ -268,6 +272,113 @@ describe("remote environment app shell smoke", () => {
     expect(disconnected.messageTexts).toEqual(reconnected.messageTexts);
     expect(reconnected.messageTexts).toEqual([CACHED_MESSAGE]);
     expect(reconnected.showThread).toBe(true);
+  });
+
+  it("paints compact bounded snapshot messages from an older remote server", () => {
+    const occurredAt = DateTime.makeUnsafe(MESSAGE_CREATED_AT);
+    const item = {
+      id: TurnItemId.make("user-compact"),
+      threadId: THREAD_ID,
+      runId: null,
+      nodeId: null,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 0,
+      status: "completed",
+      title: null,
+      startedAt: occurredAt,
+      completedAt: occurredAt,
+      updatedAt: occurredAt,
+      type: "user_message",
+      messageId: MessageId.make("message-compact"),
+      inputIntent: "turn_start",
+      text: CACHED_MESSAGE,
+      attachments: [],
+      createdBy: "user",
+      creationSource: "web",
+    } satisfies OrchestrationV2TurnItem;
+    const restored = boundedSnapshotProjection({
+      turnItemsOmitLocalVisible: true,
+      projection: {
+        thread: { id: THREAD_ID },
+        turnItems: [],
+        visibleTurnItems: [
+          {
+            position: 0,
+            visibility: "local",
+            sourceThreadId: THREAD_ID,
+            sourceItemId: item.id,
+            item,
+          },
+        ],
+        messages: [
+          {
+            id: MessageId.make("message-compact"),
+            threadId: THREAD_ID,
+            runId: null,
+            nodeId: null,
+            role: "user",
+            text: CACHED_MESSAGE,
+            attachments: [],
+            streaming: false,
+            createdBy: "user",
+            creationSource: "web",
+            createdAt: occurredAt,
+            updatedAt: occurredAt,
+          },
+        ],
+      } as never,
+    });
+    const view = remoteThreadView({
+      shellStatus: "live",
+      threadStatus: "live",
+      detail: restored,
+    });
+    expect(view.showThread).toBe(true);
+    expect(view.messageTexts).toEqual([CACHED_MESSAGE]);
+    expect(view.syncPhase).toBeNull();
+
+    const markup = renderToStaticMarkup(<RemoteThreadMessages entries={view.timeline.entries} />);
+    expect(markup).toContain(CACHED_MESSAGE);
+    expect(markup).not.toContain("Send a message to start the conversation.");
+  });
+
+  it("paints conversation messages when an older remote snapshot has an empty visible window", () => {
+    const occurredAt = DateTime.makeUnsafe(MESSAGE_CREATED_AT);
+    const restored = boundedSnapshotProjection({
+      projection: {
+        thread: { id: THREAD_ID },
+        turnItems: [],
+        visibleTurnItems: [],
+        messages: [
+          {
+            id: MessageId.make("message-legacy"),
+            threadId: THREAD_ID,
+            runId: null,
+            nodeId: null,
+            role: "user",
+            text: CACHED_MESSAGE,
+            attachments: [],
+            streaming: false,
+            createdBy: "user",
+            creationSource: "web",
+            createdAt: occurredAt,
+            updatedAt: occurredAt,
+          },
+        ],
+      } as never,
+    });
+    const view = remoteThreadView({
+      shellStatus: "live",
+      threadStatus: "live",
+      detail: restored,
+    });
+    expect(view.messageTexts).toEqual([CACHED_MESSAGE]);
+
+    const markup = renderToStaticMarkup(<RemoteThreadMessages entries={view.timeline.entries} />);
+    expect(markup).toContain(CACHED_MESSAGE);
   });
 
   it("stays blank when a synchronizing remote has no shell row and no HTTP detail", () => {

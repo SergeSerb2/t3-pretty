@@ -5,6 +5,7 @@ import {
   type AssetResource,
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2PlanArtifact,
+  type OrchestrationV2ConversationMessage,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2RunAttempt,
   type OrchestrationV2ThreadProjection,
@@ -312,7 +313,7 @@ function planItemTime(projection: OrchestrationV2ThreadProjection, planId: PlanI
       (candidate.type === "proposed_plan" || candidate.type === "todo_list") &&
       candidate.planId === planId,
   );
-  return DateTime.formatIso(item?.updatedAt ?? projection.updatedAt);
+  return formatProjectedTimestamp(item?.updatedAt ?? projection.updatedAt);
 }
 
 function toLatestProposedPlanState(
@@ -373,8 +374,38 @@ export function timelineEntryIsPersistentResourceCard(entry: TimelineEntry): boo
   );
 }
 
+function formatProjectedTimestamp(value: unknown): string {
+  if (typeof value === "string" && value.length > 0) return value;
+  try {
+    return DateTime.formatIso(value as DateTime.Utc);
+  } catch {
+    return "";
+  }
+}
+
 function projectedItemCreatedAt(row: OrchestrationV2ProjectedTurnItem): string {
-  return DateTime.formatIso(row.item.startedAt ?? row.item.updatedAt);
+  return formatProjectedTimestamp(row.item.startedAt ?? row.item.updatedAt);
+}
+
+function conversationMessageToChatMessage(
+  message: OrchestrationV2ConversationMessage,
+): ChatMessage | null {
+  if (message.role === "system") return null;
+  return {
+    id: message.id,
+    role: message.role,
+    text: message.text,
+    attachments: message.attachments,
+    runId: message.runId,
+    streaming: message.streaming,
+    createdBy: message.createdBy,
+    creationSource: message.creationSource,
+    createdAt: formatProjectedTimestamp(message.createdAt),
+    updatedAt: formatProjectedTimestamp(message.updatedAt),
+    ...(message.scheduledTaskId === undefined ? {} : { scheduledTaskId: message.scheduledTaskId }),
+    ...(message.senderThreadId === undefined ? {} : { senderThreadId: message.senderThreadId }),
+    ...(message.context === undefined ? {} : { context: message.context }),
+  };
 }
 
 function projectedWorkEntryStatus(
@@ -614,6 +645,7 @@ export interface TimelineEntriesInput {
   readonly visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>;
   readonly optimisticMessages: ReadonlyArray<ChatMessage>;
   readonly anchoredMessages?: ReadonlyArray<ChatMessage>;
+  readonly conversationMessages?: ReadonlyArray<OrchestrationV2ConversationMessage>;
   readonly attachmentUrlById?: ReadonlyMap<string, string>;
   readonly attempts?: ReadonlyArray<OrchestrationV2RunAttempt>;
   readonly nodes?: ReadonlyArray<OrchestrationV2ExecutionNode>;
@@ -715,7 +747,7 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
             }
           : {}),
         createdAt,
-        updatedAt: DateTime.formatIso(item.updatedAt),
+        updatedAt: formatProjectedTimestamp(item.updatedAt),
         ...(item.type === "user_message" ? { inputIntent: item.inputIntent } : {}),
       };
       committedMessageIds.add(message.id);
@@ -738,7 +770,7 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
         planMarkdown: item.markdown,
         status: plan?.kind === "proposed_plan" ? plan.status : ("active" as const),
         createdAt,
-        updatedAt: DateTime.formatIso(item.updatedAt),
+        updatedAt: formatProjectedTimestamp(item.updatedAt),
       };
       entries.push({
         id: item.id,
@@ -806,6 +838,19 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
   }
 
   const retainedMessageIds = new Set([...committedMessageIds, ...foldedAnswerMessageIds]);
+  if (entries.length === 0) {
+    for (const conversation of input.conversationMessages ?? []) {
+      const message = conversationMessageToChatMessage(conversation);
+      if (message === null || retainedMessageIds.has(message.id)) continue;
+      retainedMessageIds.add(message.id);
+      entries.push({
+        id: message.id,
+        kind: "message",
+        createdAt: message.createdAt,
+        message,
+      });
+    }
+  }
   for (const message of input.anchoredMessages ?? []) {
     if (retainedMessageIds.has(message.id)) continue;
     retainedMessageIds.add(message.id);
@@ -1024,7 +1069,7 @@ function reuseTimelineEntries(
       message: {
         ...entry.message,
         text: row.item.text,
-        updatedAt: DateTime.formatIso(row.item.updatedAt),
+        updatedAt: formatProjectedTimestamp(row.item.updatedAt),
       },
     };
   });

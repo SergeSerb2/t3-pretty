@@ -85,6 +85,7 @@ import {
   installCliCommand,
   uninstallCliCommand,
 } from "./methods/cliCommand.ts";
+import { reportRendererError } from "./methods/rendererError.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
   const ipc = yield* DesktopIpc.DesktopIpc;
@@ -169,6 +170,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(getCliCommandState);
   yield* ipc.handle(installCliCommand);
   yield* ipc.handle(uninstallCliCommand);
+  yield* ipc.handle(reportRendererError);
   for (const previewMethod of PreviewIpc.methods) {
     yield* ipc.handle(previewMethod);
   }

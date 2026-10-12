@@ -4,6 +4,7 @@ interface RenderErrorBoundaryProps {
   readonly children: ReactNode;
   readonly fallback: ReactNode;
   readonly resetKeys?: ReadonlyArray<unknown>;
+  readonly onError?: (error: Error) => void;
 }
 
 interface RenderErrorBoundaryState {
@@ -33,6 +34,10 @@ export class RenderErrorBoundary extends Component<
 
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+
+  override componentDidCatch(error: Error) {
+    this.props.onError?.(error);
   }
 
   override render() {

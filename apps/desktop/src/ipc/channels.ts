@@ -130,6 +130,8 @@ export const DICTATION_EVENT_CHANNEL = "desktop:dictation-event";
 
 export const PREVIEW_RECORDING_INPUT_CHANNEL = "desktop:preview-recording-input";
 
+export const REPORT_RENDERER_ERROR_CHANNEL = "desktop:report-renderer-error";
+
 export const RECEIVE_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:receive-provider-auth-callback";
 export const CANCEL_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:cancel-provider-auth-callback";
 export const TAKE_LEGACY_LOCAL_STORAGE_CHANNEL = "desktop:take-legacy-local-storage";

@@ -6,7 +6,11 @@ import {
   type OrchestrationV2ThreadStreamItem,
   type ThreadId as ThreadIdType,
 } from "@t3tools/contracts";
-import { boundedSnapshotProjection } from "@t3tools/shared/orchestrationV2BoundedSnapshot";
+import {
+  boundedSnapshotProjection,
+  ensureVisibleTurnItems,
+  retainVisibleTimeline,
+} from "@t3tools/shared/orchestrationV2BoundedSnapshot";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -202,7 +206,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           ),
         )
       : Option.none<OrchestrationV2ThreadDetailSnapshot>();
-  const cachedThread = Option.map(cached, (snapshot) => snapshot.projection);
+  const cachedThread = Option.map(cached, (snapshot) =>
+    ensureVisibleTurnItems(snapshot.projection),
+  );
   const initialState: EnvironmentThreadState = retained
     ? cachedThreadState(retained.state)
     : {
@@ -589,8 +595,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         item.latestLocalTurnOrdinal !== undefined;
       // Bounded socket fallbacks carry their cursor. Legacy-compatible full
       // snapshots omit these fields and still replace progressive state.
+      const current = yield* SubscriptionRef.get(state);
       yield* setThread(
-        boundedSnapshotProjection(item),
+        retainVisibleTimeline(Option.getOrNull(current.data), boundedSnapshotProjection(item), {
+          resetHistory: !hasProgressiveHistory,
+        }),
         hasProgressiveHistory
           ? {
               history: {
@@ -852,7 +861,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                           latestLocalTurnOrdinal: httpResult.history.latestLocalTurnOrdinal ?? null,
                         }
                       : EMPTY_THREAD_HISTORY_META;
-                  yield* setThread(httpResult.snapshot.projection, { history });
+                  yield* setThread(ensureVisibleTurnItems(httpResult.snapshot.projection), {
+                    history,
+                  });
                   yield* remember;
                 }),
               );

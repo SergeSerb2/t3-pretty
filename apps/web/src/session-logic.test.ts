@@ -1881,6 +1881,37 @@ describe("V2 generated image presentation", () => {
   });
 });
 
+describe("conversation message timeline fallback", () => {
+  it("paints conversation messages when visible turn items are empty", () => {
+    const now = DateTime.makeUnsafe("2026-10-09T22:21:00.000Z");
+    const entries = deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: [],
+      optimisticMessages: [],
+      conversationMessages: [
+        {
+          id: MessageId.make("message-fallback"),
+          threadId: ThreadId.make("thread-fallback"),
+          runId: null,
+          nodeId: null,
+          role: "user",
+          text: "Open Stremio on the Tesla",
+          attachments: [],
+          streaming: false,
+          createdBy: "user",
+          creationSource: "web",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "message",
+      message: { text: "Open Stremio on the Tesla", role: "user" },
+    });
+  });
+});
+
 describe("resolveLiveThreadHeadline", () => {
   it("hides persisted status when no run is active or headlines are disabled", () => {
     const runtime = { status: "running", activeRunId: RunId.make("run-1") } as NonNullable<

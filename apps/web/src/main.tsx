@@ -19,6 +19,9 @@ import {
 import { AppRoot } from "./AppRoot";
 import { BOOT_SHELL_EXIT_MS, bootShellRevealDelayMs } from "./lib/bootShell";
 import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
+import { installRendererErrorTelemetry } from "./lib/rendererErrorTelemetry";
+
+installRendererErrorTelemetry(window);
 
 // The Electron provider bundles all of clerk-js; only the desktop renderer
 // pays for it. The provider wraps the whole tree, so the tree shape must be

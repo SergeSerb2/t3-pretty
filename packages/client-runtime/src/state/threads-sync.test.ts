@@ -1190,6 +1190,117 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("keeps HTTP-painted messages when a later socket snapshot arrives empty", () =>
+    Effect.gen(function* () {
+      const at = DateTime.makeUnsafe("2026-10-09T22:21:00.000Z");
+      const userItem = {
+        id: TurnItemId.make("user-stremio"),
+        threadId: THREAD_ID,
+        runId: null,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 0,
+        status: "completed" as const,
+        title: null,
+        startedAt: at,
+        completedAt: at,
+        updatedAt: at,
+        type: "user_message" as const,
+        messageId: MessageId.make("message-stremio"),
+        inputIntent: "turn_start" as const,
+        text: "Open Stremio on the Tesla",
+        attachments: [],
+        createdBy: "user" as const,
+        creationSource: "web" as const,
+      } satisfies OrchestrationV2TurnItem;
+      const conversation = {
+        id: userItem.messageId,
+        threadId: THREAD_ID,
+        runId: null,
+        nodeId: null,
+        role: "user" as const,
+        text: userItem.text,
+        attachments: [],
+        streaming: false,
+        createdBy: "user" as const,
+        creationSource: "web" as const,
+        createdAt: at,
+        updatedAt: at,
+      };
+      const harness = yield* makeHarness({
+        httpSnapshot: {
+          _tag: "present",
+          snapshot: {
+            snapshotSequence: 3,
+            projection: {
+              ...BASE_PROJECTION,
+              turnItems: [],
+              visibleTurnItems: [],
+              messages: [conversation],
+            },
+          },
+          history: {
+            historyCursor: "http-cursor",
+            hasMoreHistory: false,
+          },
+        },
+      });
+      const seeded = yield* awaitThreadState(
+        harness.observed,
+        (value) => Option.isSome(value.data) && value.data.value.visibleTurnItems.length > 0,
+      );
+      expect(Option.getOrThrow(seeded.data).visibleTurnItems[0]?.item).toMatchObject({
+        type: "user_message",
+        text: "Open Stremio on the Tesla",
+      });
+
+      yield* Queue.offer(harness.inputs, {
+        kind: "snapshot",
+        snapshotSequence: 4,
+        projection: {
+          ...BASE_PROJECTION,
+          turnItems: [userItem],
+          visibleTurnItems: [],
+          messages: [],
+        },
+        historyCursor: "socket-cursor",
+        hasMoreHistory: false,
+      });
+      const afterItems = yield* awaitThreadState(
+        harness.observed,
+        (value) => value.history.historyCursor === "socket-cursor",
+      );
+      expect(Option.getOrThrow(afterItems.data).visibleTurnItems[0]?.item).toMatchObject({
+        type: "user_message",
+        text: "Open Stremio on the Tesla",
+      });
+
+      yield* Queue.offer(harness.inputs, {
+        kind: "snapshot",
+        snapshotSequence: 5,
+        projection: {
+          ...BASE_PROJECTION,
+          turnItems: [],
+          visibleTurnItems: [],
+          messages: [],
+        },
+        historyCursor: "empty-cursor",
+        hasMoreHistory: false,
+      });
+      const afterEmpty = yield* awaitThreadState(
+        harness.observed,
+        (value) => value.history.historyCursor === "empty-cursor",
+      );
+      expect(Option.getOrThrow(afterEmpty.data).visibleTurnItems[0]?.item).toMatchObject({
+        type: "user_message",
+        text: "Open Stremio on the Tesla",
+      });
+    }),
+  );
+
   it.effect("seeds the thread from the HTTP snapshot and resumes live events", () =>
     Effect.gen(function* () {
       const httpProjection: OrchestrationV2ThreadProjection = {

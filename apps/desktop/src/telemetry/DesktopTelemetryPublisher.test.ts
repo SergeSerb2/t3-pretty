@@ -30,6 +30,7 @@ import * as DesktopRendererHistory from "./DesktopRendererHistory.ts";
 const layerHistory = Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {
   register: () => Effect.void,
   recordMetrics: () => Effect.void,
+  recordError: () => Effect.void,
   shutdown: Effect.void,
 });
 
@@ -165,6 +166,7 @@ describe("DesktopTelemetryPublisher", () => {
             Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {
               register: () => Effect.void,
               shutdown: Effect.void,
+              recordError: () => Effect.void,
               recordMetrics: (sample) =>
                 Effect.sync(() => {
                   recordedMetrics.push(sample);
@@ -723,6 +725,107 @@ describe("DesktopRendererHistory", () => {
         assert.isFalse(contents.includes("private.invalid"));
         assert.isFalse(contents.includes("secret"));
       }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("persists renderer console, preload, and window errors into incident history", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const directory = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-renderer-errors-",
+      });
+      const recordSchema = Schema.fromJsonString(
+        Schema.Struct({
+          event: Schema.String,
+          message: Schema.optional(Schema.String),
+          stack: Schema.optional(Schema.String),
+          surface: Schema.String,
+        }),
+      );
+      const decodeRecord = Schema.decodeUnknownEffect(recordSchema);
+      type Record = typeof recordSchema.Type;
+      const persisted: Record[] = [];
+      let milestone:
+        | {
+            readonly matches: (record: Record) => boolean;
+            readonly written: Deferred.Deferred<Record>;
+          }
+        | undefined;
+      const layerFile = Layer.succeed(FileSystem.FileSystem, {
+        ...fileSystem,
+        writeFile: (filePath, bytes, options) =>
+          fileSystem.writeFile(filePath, bytes, options).pipe(
+            Effect.tap(() =>
+              decodeRecord(new TextDecoder().decode(bytes).trim()).pipe(
+                Effect.orDie,
+                Effect.flatMap((record) =>
+                  Effect.sync(() => {
+                    persisted.push(record);
+                    if (milestone?.matches(record)) {
+                      Deferred.doneUnsafe(milestone.written, Effect.succeed(record));
+                    }
+                  }),
+                ),
+              ),
+            ),
+          ),
+      });
+      const layer = DesktopRendererHistory.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(
+              DesktopEnvironment.DesktopEnvironment,
+              DesktopEnvironment.DesktopEnvironment.of({
+                logDir: directory,
+              } as DesktopEnvironment.DesktopEnvironment["Service"]),
+            ),
+            layerFile,
+          ),
+        ),
+      );
+      const renderer = Object.assign(new NodeEvents.EventEmitter(), {
+        id: 11,
+        getOSProcessId: () => 8_001,
+        isDestroyed: () => false,
+      });
+      yield* Effect.gen(function* () {
+        const history = yield* DesktopRendererHistory.DesktopRendererHistory;
+        yield* history.register(renderer as unknown as Electron.WebContents, { surface: "main" });
+        const consoleError = yield* Deferred.make<Record>();
+        milestone = { matches: (row) => row.event === "console-error", written: consoleError };
+        renderer.emit(
+          "console-message",
+          {},
+          { level: "error", message: "Cannot read properties of undefined" },
+        );
+        assert.equal(
+          (yield* Deferred.await(consoleError)).message,
+          "Cannot read properties of undefined",
+        );
+
+        const preloadError = yield* Deferred.make<Record>();
+        milestone = { matches: (row) => row.event === "preload-error", written: preloadError };
+        renderer.emit("preload-error", {}, "/private/preload.js", new Error("preload exploded"));
+        assert.equal((yield* Deferred.await(preloadError)).message, "preload exploded");
+
+        const windowError = yield* Deferred.make<Record>();
+        milestone = { matches: (row) => row.event === "window-error", written: windowError };
+        yield* history.recordError({
+          webContentsId: 11,
+          event: "window-error",
+          message: "boom",
+          stack: "Error: boom\n    at thread",
+        });
+        const reported = yield* Deferred.await(windowError);
+        assert.equal(reported.message, "boom");
+        assert.include(reported.stack ?? "", "Error: boom");
+        yield* history.shutdown;
+      }).pipe(Effect.provide(layer));
+      const contents = yield* fileSystem.readFileString(`${directory}/renderer-history.ndjson`);
+      assert.include(contents, "console-error");
+      assert.include(contents, "preload-error");
+      assert.include(contents, "window-error");
+      assert.isFalse(contents.includes("/private/preload.js"));
+    }).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("rotates retained incident history within three 256 kib files", () =>

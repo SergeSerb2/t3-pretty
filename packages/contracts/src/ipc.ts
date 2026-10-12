@@ -637,7 +637,6 @@ export interface DesktopWslDistro {
   version: 1 | 2;
 }
 
-
 export const DesktopWslDistroSchema = Schema.Struct({
   name: DesktopWslDistroNameSchema,
   isDefault: Schema.Boolean,
@@ -1352,6 +1351,14 @@ export type DesktopDictationEvent =
   | { readonly type: "error"; readonly message: string }
   | { readonly type: "ended" };
 
+export type DesktopRendererErrorSource = "window-error" | "unhandled-rejection" | "render-error";
+
+export interface DesktopRendererErrorReport {
+  readonly source: DesktopRendererErrorSource;
+  readonly message: string;
+  readonly stack?: string;
+}
+
 export interface DesktopBridge {
   onLocalBackendReady?: (listener: () => void) => () => void;
   setWindowButtonVisibility?: (visible: boolean) => Promise<void>;
@@ -1382,7 +1389,9 @@ export interface DesktopBridge {
   // One bootstrap per pool instance currently registered with bootstrap
   // info (omits instances whose backend hasn't produced a config yet).
   // The primary backend is identified by id === PRIMARY_LOCAL_ENVIRONMENT_ID.
-  getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[] | Promise<readonly DesktopEnvironmentBootstrap[]>;
+  getLocalEnvironmentBootstraps: () =>
+    | readonly DesktopEnvironmentBootstrap[]
+    | Promise<readonly DesktopEnvironmentBootstrap[]>;
   getLocalEnvironmentEnabled?: () => boolean;
   setLocalEnvironmentEnabled?: (enabled: boolean) => Promise<void>;
   getLocalEnvironmentBearerToken: () => Promise<string>;
@@ -1507,6 +1516,11 @@ export interface DesktopBridge {
     complete: (response: DesktopAppActivationResponse) => Promise<void>;
     onRequest: (listener: (request: DesktopAppActivationRequest) => void) => () => void;
   };
+  /**
+   * Report a renderer exception so the desktop host can persist it in
+   * renderer-history and desktop.trace. Optional: older builds lack it.
+   */
+  reportRendererError?: (error: DesktopRendererErrorReport) => Promise<void>;
   /**
    * Desktop-only preview surface. Present iff the renderer is hosted by the
    * Electron desktop build; web builds have `preview === undefined`.

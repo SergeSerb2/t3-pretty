@@ -119,8 +119,6 @@ describe("createPackPackageJson", () => {
       version: "1.2.3",
     });
     assert.deepStrictEqual(pkg.dependencies, {
-      effect: "4.0.0-rc.112",
-      yaml: "^2.9.0",
       "node-pty": "^1.1.0",
     });
     assert.deepStrictEqual(pkg.overrides, {});
@@ -164,6 +162,29 @@ describe("createPackPackageJson", () => {
     });
     for (const spec of Object.values(pkg.dependencies)) {
       assert.isFalse(spec.startsWith("catalog:"), spec);
+      assert.isFalse(spec.startsWith("workspace:"), spec);
+    }
+    for (const name of Object.keys(pkg.dependencies)) {
+      assert.isFalse(name.startsWith("@t3tools/"), name);
+    }
+  });
+
+  it("omits workspace protocol specs so npm can install the tarball", () => {
+    const pkg = createPackPackageJson({
+      serverPackageJson: {
+        ...fixturePackageJson,
+        dependencies: {
+          ...fixturePackageJson.dependencies,
+          "@t3tools/provider-core": "workspace:*",
+        },
+      },
+      catalog: { effect: "4.0.0-rc.112", yaml: "^2.9.0" },
+      version: "0.0.46-nightly.20261011.2994003406",
+    });
+    assert.deepStrictEqual(pkg.dependencies, { "node-pty": "^1.1.0" });
+    assert.equal(pkg.version, "0.0.46-nightly.20261011.2994003406");
+    for (const spec of Object.values(pkg.dependencies)) {
+      assert.isFalse(spec.includes("workspace:"), spec);
     }
   });
 });
@@ -189,13 +210,12 @@ it.layer(NodeServices.layer)("packServerCli", (it) => {
       const packed = yield* readTarballPackageJson(tarballPath);
       assert.equal(packed.version, "1.2.3");
       assert.deepStrictEqual(packed.dependencies, {
-        effect: "4.0.0-rc.112",
-        yaml: "^2.9.0",
         "node-pty": "^1.1.0",
       });
       assert.deepStrictEqual(packed.overrides ?? {}, {});
       for (const spec of Object.values(packed.dependencies)) {
         assert.isFalse(spec.startsWith("catalog:"), spec);
+        assert.isFalse(spec.startsWith("workspace:"), spec);
       }
 
       const packedIcon = yield* readTarballIcon(tarballPath, "package/dist/client/favicon.ico");

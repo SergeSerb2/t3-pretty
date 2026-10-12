@@ -467,6 +467,8 @@ import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import { MessagesTimeline, type MessagesTimelineHistoryControls } from "./chat/MessagesTimeline";
+import { RenderErrorBoundary } from "./RenderErrorBoundary";
+import { reportRendererError } from "~/lib/rendererErrorTelemetry";
 import { ProviderSubagentBar } from "./chat/ProviderSubagentBar";
 import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
 import { resolveTimelineIsAtEnd, worktreeSetupAgentStarted } from "./chat/MessagesTimeline.logic";
@@ -4103,6 +4105,7 @@ export default function ChatView(props: ChatViewProps) {
               attempts: serverProjection.attempts,
               nodes: serverProjection.nodes,
               plans: serverProjection.plans,
+              conversationMessages: serverProjection.messages,
             }),
       },
       previous?.threadKey === activeThreadKey ? previous.projection : null,
@@ -11943,109 +11946,136 @@ export default function ChatView(props: ChatViewProps) {
               className="relative flex min-h-0 flex-1 flex-col bg-background"
             >
               {/* Messages — LegendList handles virtualization and scrolling internally */}
-              <MessagesTimeline
-                citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}
-                citationHistoryLoading={threadDetailLoading}
-                {...(!paintOnlyDisplayedTimeline
-                  ? {
-                      onCiteAssistantText: citeAssistantText,
-                      ...(activeProject ? { onRunShellCommand: runShellCommand } : {}),
-                    }
-                  : {})}
-                isWorking={!paintOnlyDisplayedTimeline && isWorking}
-                runlessWorkActive={runlessWorkStartedAt !== null}
-                activeTurnInProgress={
-                  !paintOnlyDisplayedTimeline && (isWorking || !latestRunSettled)
+              <RenderErrorBoundary
+                resetKeys={[displayedTimelineKey, displayedTimeline.entries.length]}
+                onError={(error) => reportRendererError("render-error", error)}
+                fallback={
+                  <div
+                    className="flex h-full min-h-0 flex-col overflow-auto bg-background p-4"
+                    data-timeline-error="true"
+                  >
+                    {displayedTimeline.entries.flatMap((entry) =>
+                      entry.kind === "message"
+                        ? [
+                            <p key={entry.id} className="whitespace-pre-wrap text-sm">
+                              {entry.message.text}
+                            </p>,
+                          ]
+                        : [],
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      Something went wrong rendering this thread.
+                    </p>
+                  </div>
                 }
-                isCompacting={!paintOnlyDisplayedTimeline && isCompacting}
-                awaitingUser={
-                  !paintOnlyDisplayedTimeline &&
-                  (activePendingApproval !== null ||
-                    activePendingUserInput !== null ||
-                    // A secret request has no runtime request; the shell carries it.
-                    activeThreadShell?.hasPendingUserInput === true)
-                }
-                activeTurnStartedAt={paintOnlyDisplayedTimeline ? null : activeWorkStartedAt}
-                worktreeSetup={paintOnlyDisplayedTimeline ? null : worktreeSetup}
-                worktreeSetupExiting={!paintOnlyDisplayedTimeline && worktreeSetupExiting}
-                onCancelWorktreeSetup={onCancelWorktreeSetup}
-                {...(paintOnlyDisplayedTimeline
-                  ? {}
-                  : { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation })}
-                {...(draftId ? { onWorktreeSetupWorkLocally } : {})}
-                {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
-                isPreparingWorktree={!paintOnlyDisplayedTimeline && isPreparingWorktree}
-                footer={paintOnlyDisplayedTimeline ? null : threadStatusLine}
-                listRef={legendListRef}
-                timelineEntries={displayedTimeline.entries}
-                providerStatuses={
-                  environmentById.get(
-                    displayedThreadRef?.environmentId ?? activeThread.environmentId,
-                  )?.serverConfig?.providers ?? EMPTY_PROVIDERS
-                }
-                runs={paintOnlyDisplayedTimeline ? [] : (serverProjection?.runs ?? [])}
-                latestRun={paintOnlyDisplayedTimeline ? null : activeLatestRun}
-                runningRunId={paintOnlyDisplayedTimeline ? null : activeRunningTurnId}
-                liveHeadline={paintOnlyDisplayedTimeline ? null : liveTurnHeadline}
-                turnDiffSummaries={
-                  paintOnlyDisplayedTimeline ? EMPTY_HELD_TURN_DIFF_SUMMARIES : turnDiffSummaries
-                }
-                activeThreadEnvironmentId={
-                  displayedThreadRef?.environmentId ?? activeThread.environmentId
-                }
-                routeThreadKey={displayedTimelineKey}
-                displayThreadKey={displayedTimelineKey}
-                onOpenTurnDiff={paintOnlyDisplayedTimeline ? noopHeldTurnDiff : onOpenTurnDiff}
-                onOpenThread={onOpenRelatedThread}
-                parentThreadLink={paintOnlyDisplayedTimeline ? null : parentThreadLink}
-                onForkFromRun={paintOnlyDisplayedTimeline ? async () => {} : onForkFromRun}
-                onRollbackCheckpoint={(input) => {
-                  if (!paintOnlyDisplayedTimeline) void onRollbackCheckpoint(input);
-                }}
-                supportsConversationRollback={
-                  !paintOnlyDisplayedTimeline && supportsConversationRollback
-                }
-                onRevertToTurnCount={
-                  paintOnlyDisplayedTimeline ? noopHeldRevert : onRevertTimelineTurn
-                }
-                {...(!paintOnlyDisplayedTimeline
-                  ? { onUseArtifactTemplate: useArtifactTemplate, onSendAppMessage: sendAppMessage }
-                  : {})}
-                isRevertingCheckpoint={isRevertingCheckpoint}
-                onImageExpand={onExpandTimelineImage}
-                onFileOpen={paintOnlyDisplayedTimeline ? noopHeldAttachment : openFileAttachment}
-                onFileDownload={
-                  paintOnlyDisplayedTimeline ? noopHeldAttachment : downloadFileAttachment
-                }
-                markdownCwd={
-                  paintOnlyDisplayedTimeline
-                    ? (heldPaintContext?.markdownCwd ?? undefined)
-                    : (gitCwd ?? undefined)
-                }
-                resolvedTheme={resolvedTheme}
-                timestampFormat={timestampFormat}
-                workspaceRoot={
-                  paintOnlyDisplayedTimeline
-                    ? (heldPaintContext?.workspaceRoot ?? undefined)
-                    : activeWorkspaceRoot
-                }
-                skills={timelineSkills}
-                anchorMessageId={paintOnlyDisplayedTimeline ? null : timelineAnchorMessageId}
-                onAnchorReady={onTimelineAnchorReady}
-                onAnchorSizeChanged={onTimelineAnchorSizeChanged}
-                contentInsetEndAdjustment={composerTimelineInset}
-                liveFollowEnabled={!paintOnlyDisplayedTimeline && timelineLiveFollowEnabled}
-                onIsAtEndChange={onIsAtEndChange}
-                onContentOverflowChange={setTimelineOverflows}
-                onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEnd}
-                onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
-                cancelPositionRestoreRef={cancelPositionRestoreRef}
-                hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
-                topFadeEnabled={!hasTimelineTopBanner}
-                {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined
-                  ? {}
-                  : { historyControls: threadHistoryControls })}
-              />
+              >
+                <MessagesTimeline
+                  citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}
+                  citationHistoryLoading={threadDetailLoading}
+                  {...(!paintOnlyDisplayedTimeline
+                    ? {
+                        onCiteAssistantText: citeAssistantText,
+                        ...(activeProject ? { onRunShellCommand: runShellCommand } : {}),
+                      }
+                    : {})}
+                  isWorking={!paintOnlyDisplayedTimeline && isWorking}
+                  runlessWorkActive={runlessWorkStartedAt !== null}
+                  activeTurnInProgress={
+                    !paintOnlyDisplayedTimeline && (isWorking || !latestRunSettled)
+                  }
+                  isCompacting={!paintOnlyDisplayedTimeline && isCompacting}
+                  awaitingUser={
+                    !paintOnlyDisplayedTimeline &&
+                    (activePendingApproval !== null ||
+                      activePendingUserInput !== null ||
+                      // A secret request has no runtime request; the shell carries it.
+                      activeThreadShell?.hasPendingUserInput === true)
+                  }
+                  activeTurnStartedAt={paintOnlyDisplayedTimeline ? null : activeWorkStartedAt}
+                  worktreeSetup={paintOnlyDisplayedTimeline ? null : worktreeSetup}
+                  worktreeSetupExiting={!paintOnlyDisplayedTimeline && worktreeSetupExiting}
+                  onCancelWorktreeSetup={onCancelWorktreeSetup}
+                  {...(paintOnlyDisplayedTimeline
+                    ? {}
+                    : { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation })}
+                  {...(draftId ? { onWorktreeSetupWorkLocally } : {})}
+                  {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
+                  isPreparingWorktree={!paintOnlyDisplayedTimeline && isPreparingWorktree}
+                  footer={paintOnlyDisplayedTimeline ? null : threadStatusLine}
+                  listRef={legendListRef}
+                  timelineEntries={displayedTimeline.entries}
+                  providerStatuses={
+                    environmentById.get(
+                      displayedThreadRef?.environmentId ?? activeThread.environmentId,
+                    )?.serverConfig?.providers ?? EMPTY_PROVIDERS
+                  }
+                  runs={paintOnlyDisplayedTimeline ? [] : (serverProjection?.runs ?? [])}
+                  latestRun={paintOnlyDisplayedTimeline ? null : activeLatestRun}
+                  runningRunId={paintOnlyDisplayedTimeline ? null : activeRunningTurnId}
+                  liveHeadline={paintOnlyDisplayedTimeline ? null : liveTurnHeadline}
+                  turnDiffSummaries={
+                    paintOnlyDisplayedTimeline ? EMPTY_HELD_TURN_DIFF_SUMMARIES : turnDiffSummaries
+                  }
+                  activeThreadEnvironmentId={
+                    displayedThreadRef?.environmentId ?? activeThread.environmentId
+                  }
+                  routeThreadKey={displayedTimelineKey}
+                  displayThreadKey={displayedTimelineKey}
+                  onOpenTurnDiff={paintOnlyDisplayedTimeline ? noopHeldTurnDiff : onOpenTurnDiff}
+                  onOpenThread={onOpenRelatedThread}
+                  parentThreadLink={paintOnlyDisplayedTimeline ? null : parentThreadLink}
+                  onForkFromRun={paintOnlyDisplayedTimeline ? async () => {} : onForkFromRun}
+                  onRollbackCheckpoint={(input) => {
+                    if (!paintOnlyDisplayedTimeline) void onRollbackCheckpoint(input);
+                  }}
+                  supportsConversationRollback={
+                    !paintOnlyDisplayedTimeline && supportsConversationRollback
+                  }
+                  onRevertToTurnCount={
+                    paintOnlyDisplayedTimeline ? noopHeldRevert : onRevertTimelineTurn
+                  }
+                  {...(!paintOnlyDisplayedTimeline
+                    ? {
+                        onUseArtifactTemplate: useArtifactTemplate,
+                        onSendAppMessage: sendAppMessage,
+                      }
+                    : {})}
+                  isRevertingCheckpoint={isRevertingCheckpoint}
+                  onImageExpand={onExpandTimelineImage}
+                  onFileOpen={paintOnlyDisplayedTimeline ? noopHeldAttachment : openFileAttachment}
+                  onFileDownload={
+                    paintOnlyDisplayedTimeline ? noopHeldAttachment : downloadFileAttachment
+                  }
+                  markdownCwd={
+                    paintOnlyDisplayedTimeline
+                      ? (heldPaintContext?.markdownCwd ?? undefined)
+                      : (gitCwd ?? undefined)
+                  }
+                  resolvedTheme={resolvedTheme}
+                  timestampFormat={timestampFormat}
+                  workspaceRoot={
+                    paintOnlyDisplayedTimeline
+                      ? (heldPaintContext?.workspaceRoot ?? undefined)
+                      : activeWorkspaceRoot
+                  }
+                  skills={timelineSkills}
+                  anchorMessageId={paintOnlyDisplayedTimeline ? null : timelineAnchorMessageId}
+                  onAnchorReady={onTimelineAnchorReady}
+                  onAnchorSizeChanged={onTimelineAnchorSizeChanged}
+                  contentInsetEndAdjustment={composerTimelineInset}
+                  liveFollowEnabled={!paintOnlyDisplayedTimeline && timelineLiveFollowEnabled}
+                  onIsAtEndChange={onIsAtEndChange}
+                  onContentOverflowChange={setTimelineOverflows}
+                  onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEnd}
+                  onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
+                  cancelPositionRestoreRef={cancelPositionRestoreRef}
+                  hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
+                  topFadeEnabled={!hasTimelineTopBanner}
+                  {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined
+                    ? {}
+                    : { historyControls: threadHistoryControls })}
+                />
+              </RenderErrorBoundary>
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && !isThreadFindActive && (
