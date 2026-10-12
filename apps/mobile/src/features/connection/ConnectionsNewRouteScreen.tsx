@@ -324,6 +324,7 @@ export function ConnectionsNewRouteScreen({
     >
       <ScrollView
         automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+        nestedScrollEnabled
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}

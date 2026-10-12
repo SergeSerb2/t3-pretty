@@ -121,6 +121,7 @@ export function GitCommitSheet(props: GitCommitSheetProps) {
       ) : null}
       <MaterialScreenContent fitToContents>
         <ScrollView
+          nestedScrollEnabled
           className="android:shrink android:grow-0 ios:flex-1"
           automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
           keyboardShouldPersistTaps="handled"

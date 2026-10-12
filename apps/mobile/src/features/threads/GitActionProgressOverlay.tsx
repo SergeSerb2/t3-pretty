@@ -1,14 +1,15 @@
+import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import * as Haptics from "expo-haptics";
 import { GlassView } from "expo-glass-effect";
+import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { SymbolView } from "../../components/AppSymbol";
 import { useCallback, useEffect, useRef } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, useColorScheme, View } from "react-native";
+import { Pressable, StyleSheet, useColorScheme, View } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { APP_BAR_HEIGHT } from "../../lib/layoutMetrics";
-import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
@@ -25,7 +26,8 @@ export function GitActionProgressOverlay(props: {
   readonly onOpenPullRequest?: (url: string) => void;
 }) {
   // Keyboard feedback also mounts this overlay above the screen navigator.
-  const { progress, onDismiss, onOpenPullRequest } = props;
+  const { progress, onDismiss } = props;
+  const openPullRequest = props.onOpenPullRequest;
   const insets = useSafeAreaInsets();
   const prevPhaseRef = useRef(progress.phase);
 
@@ -44,17 +46,15 @@ export function GitActionProgressOverlay(props: {
 
   const handlePress = useCallback(() => {
     if (progress.prUrl) {
-      if (onOpenPullRequest) {
-        onOpenPullRequest(progress.prUrl);
-      } else {
-        void tryOpenExternalUrl(progress.prUrl, "pull-request");
-      }
+      void (openPullRequest
+        ? openPullRequest(progress.prUrl)
+        : tryOpenExternalUrl(progress.prUrl, "pull-request"));
       return;
     }
     if (progress.phase === "success" || progress.phase === "error") {
       onDismiss();
     }
-  }, [onDismiss, onOpenPullRequest, progress.phase, progress.prUrl]);
+  }, [onDismiss, progress.phase, progress.prUrl, openPullRequest]);
 
   if (progress.phase === "idle") {
     return null;
@@ -174,7 +174,7 @@ function OverlayContent(props: { readonly progress: GitActionProgress }) {
 function OverlayIcon(props: { readonly phase: GitActionProgress["phase"] }) {
   switch (props.phase) {
     case "running":
-      return <ActivityIndicator size="small" colorClassName={"accent-icon"} />;
+      return <AppActivityIndicator size="small" colorClassName={"accent-icon"} />;
     case "success":
       return (
         <View className="h-6 w-6 items-center justify-center rounded-full bg-green-500">

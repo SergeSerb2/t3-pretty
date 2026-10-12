@@ -24,9 +24,12 @@ import {
 } from "../../native/SelectableMarkdownText";
 import { pullRequestBodySegments } from "./pullRequestMarkdown.logic";
 
+export { PullRequestMarkdownRepository } from "./PullRequestMarkdownRepository";
+
 export function PullRequestMarkdown(props: {
   readonly markdown: string;
   readonly density?: "body" | "comment";
+  readonly imageGroupMarkdown?: string;
 }) {
   const segments = useMemo(() => pullRequestBodySegments(props.markdown), [props.markdown]);
 

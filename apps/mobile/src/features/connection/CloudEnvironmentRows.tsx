@@ -1,3 +1,4 @@
+import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import { useAuth } from "@clerk/expo";
 import { SymbolView } from "../../components/AppSymbol";
@@ -14,7 +15,7 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { type ComponentProps, useCallback, useRef, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, type TextLayoutEvent, View } from "react-native";
+import { Platform, Pressable, type TextLayoutEvent, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
@@ -171,7 +172,7 @@ function CloudEnvironmentRowsContent(
               className="h-9 w-9 items-center justify-center rounded-full bg-subtle active:opacity-70 disabled:opacity-50"
             >
               {controller.relayDiscovery.isRefreshing ? (
-                <ActivityIndicator colorClassName={"accent-icon"} size="small" />
+                <AppActivityIndicator colorClassName={"accent-icon"} size="small" />
               ) : (
                 <SymbolView
                   name="arrow.clockwise"
@@ -224,7 +225,7 @@ function CloudEnvironmentRowsContent(
           collapsable={false}
           className={cn(Platform.OS === "android" && "rounded-[24px]", "items-center gap-3 p-6")}
         >
-          <ActivityIndicator colorClassName={"accent-icon"} />
+          <AppActivityIndicator colorClassName={"accent-icon"} />
           <Text className="text-center text-sm leading-normal text-foreground-muted">
             Loading linked cloud environments.
           </Text>

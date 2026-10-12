@@ -1,3 +1,4 @@
+import { useOpenPullRequest } from "../../../native/useOpenPullRequest";
 import {
   type GitActionRequestInput,
   buildMenuItems,
@@ -39,7 +40,6 @@ import {
   nativeHeaderScrollEdgeEffects,
 } from "../../../native/StackHeader";
 import { useOpenNativePullRequest } from "../../pull-requests/useOpenNativePullRequest";
-import { tryOpenExternalUrl } from "../../../lib/openExternalUrl";
 import { useEnvironmentQuery } from "../../../state/query";
 import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
@@ -80,6 +80,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const presentation = props.presentation ?? "sheet";
+  const openPullRequest = useOpenPullRequest({ replace: presentation === "sheet" });
   const isInspector = presentation === "inspector";
   const inspectorVisible = useThreadInspectorVisibility();
   const loadInitialState = !isInspector || inspectorVisible;
@@ -282,24 +283,25 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
 
   const behindCount = gitStatus.data?.behindCount ?? 0;
 
-  // Deterministic pull-to-refresh state. Tying RefreshControl to the query's
+  // Deterministic refresh state. Tying RefreshControl to the query's
   // isPending flag left the spinner stuck (the status query reports pending
   // during quiet background refreshes too).
-  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
-  const handlePullRefresh = useCallback(async () => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const handleRefresh = useCallback(async () => {
     if (pullRefreshPendingRef.current) return;
     pullRefreshPendingRef.current = true;
-    setIsPullRefreshing(true);
+    setIsRefreshing(true);
     try {
       await gitActions.refreshSelectedThreadGitStatus();
     } finally {
       pullRefreshPendingRef.current = false;
-      if (mountedRef.current) setIsPullRefreshing(false);
+      if (mountedRef.current) setIsRefreshing(false);
     }
   }, [gitActions]);
 
   const content = (
     <ScrollView
+      nestedScrollEnabled
       alwaysBounceVertical
       className={glass ? "flex-1" : "flex-1 android:bg-sheet-solid ios:bg-screen"}
       contentInsetAdjustmentBehavior={Platform.OS === "ios" ? "automatic" : "never"}
@@ -311,7 +313,9 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         gap: Platform.OS === "android" ? 8 : 14,
       }}
       refreshControl={
-        <RefreshControl refreshing={isPullRefreshing} onRefresh={() => void handlePullRefresh()} />
+        Platform.OS === "ios" || isInspector ? (
+          <RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />
+        ) : undefined
       }
     >
       <View
@@ -428,7 +432,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
                     title={`#${link.number} ${link.snapshot?.title ?? "Pull request"}`}
                     subtitle={`${link.repository} · ${link.snapshot === null ? "Status pending" : link.snapshot.isDraft && link.snapshot.state === "open" ? "Draft" : link.snapshot.state}${link.watch === undefined ? "" : " · Watching"}`}
                     onPress={() => {
-                      void tryOpenExternalUrl(link.url, "pull-request").then((opened) => {
+                      void openPullRequest(link.url).then((opened) => {
                         if (!opened)
                           Alert.alert("Unable to open PR", "The pull request could not be opened.");
                       });
@@ -520,11 +524,11 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         {
           id: "refresh",
           title: "Refresh repository status",
-          attributes: { disabled: busy || isPullRefreshing },
+          attributes: { disabled: busy || isRefreshing },
         },
       ]}
       onPressAction={({ nativeEvent }) => {
-        if (nativeEvent.event === "refresh") void handlePullRefresh();
+        if (nativeEvent.event === "refresh") void handleRefresh();
       }}
     >
       {(open) => (

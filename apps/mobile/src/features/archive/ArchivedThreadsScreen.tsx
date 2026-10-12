@@ -10,11 +10,11 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import { useNavigation } from "@react-navigation/native";
+import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { SymbolView } from "../../components/AppSymbol";
 import { useCallback, useMemo, useRef, type ComponentProps } from "react";
 import {
-  ActivityIndicator,
   Platform,
   Pressable,
   RefreshControl,
@@ -443,7 +443,7 @@ export function ArchivedThreadsScreen(props: {
     if (isInitialLoad) {
       return (
         <View className="items-center py-16">
-          <ActivityIndicator colorClassName="accent-icon" />
+          <AppActivityIndicator colorClassName="accent-icon" />
           <Text className="mt-3 text-sm text-foreground-muted">Loading archive...</Text>
         </View>
       );

@@ -407,7 +407,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
         type: "action",
         title: "Request reviewers",
         onPress: () =>
-          navigation.navigate("PullRequestReviewers", {
+          navigation.navigate("PullRequestReviewersSheet", {
             environmentId: String(environmentId),
             projectId: props.route.params.projectId,
             repository,
@@ -678,7 +678,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                 <OverviewTab
                   detail={detail}
                   onRequestReviewers={() =>
-                    navigation.navigate("PullRequestReviewers", {
+                    navigation.navigate("PullRequestReviewersSheet", {
                       environmentId: String(environmentId),
                       projectId: props.route.params.projectId,
                       repository,

@@ -35,13 +35,14 @@ type HomeHeaderProps = UpstreamHomeHeaderProps & {
 
 export function HomeHeader(props: HomeHeaderProps) {
   const navigation = useNavigation<NativeStackNavigationProp<ParamListBase>>();
-  const { panes, togglePrimarySidebar } = useAdaptiveWorkspaceLayout();
+  const { layout, panes, togglePrimarySidebar } = useAdaptiveWorkspaceLayout();
   const usesNativeMailSearchToolbar = useNativeMailSearchToolbar();
   const primaryColumn = use(NativePrimaryColumnContext);
   const sidebarHeader =
     Platform.OS === "ios" &&
     primaryColumn !== null &&
     (Platform.isPad || !usesNativeMailSearchToolbar);
+  const showsCompactCompose = Platform.OS === "ios" && Platform.isPad && !layout.usesSplitView;
   const searchBarRef = useRef<SearchBarCommands>(null);
   const focusAfterReveal = useRef(false);
   useEffect(
@@ -84,10 +85,14 @@ export function HomeHeader(props: HomeHeaderProps) {
     );
   }
 
+  if (props.usesWorkspaceToolbar) {
+    return null;
+  }
+
   return (
     <>
       <NativeStackScreenOptions
-        optionsVersion={filterMenu.items}
+        optionsVersion={[filterMenu.items, showsCompactCompose]}
         options={{
           // Static header config (glass, title, fonts) lives in Stack.tsx
           // (GLASS_HEADER_OPTIONS). Only dynamic values are set here.
@@ -99,15 +104,30 @@ export function HomeHeader(props: HomeHeaderProps) {
           headerBlurEffect: TRANSPARENT_NATIVE_HEADERS ? "systemUltraThinMaterial" : undefined,
           unstable_headerRightItems: () =>
             sidebarHeader
-              ? createSidebarHeaderItems({
-                  filterIcon: hasCustomListOptions
-                    ? "line.3.horizontal.decrease.circle.fill"
-                    : "line.3.horizontal.decrease.circle",
-                  filterMenu,
-                  onOpenPullRequests: props.onOpenPullRequests,
-                  onOpenAutomations: props.onOpenAutomations,
-                  onOpenSettings: props.onOpenSettings,
-                })
+              ? [
+                  ...createSidebarHeaderItems({
+                    filterIcon: hasCustomListOptions
+                      ? "line.3.horizontal.decrease.circle.fill"
+                      : "line.3.horizontal.decrease.circle",
+                    filterMenu,
+                    onOpenPullRequests: props.onOpenPullRequests,
+                    onOpenAutomations: props.onOpenAutomations,
+                    onOpenSettings: props.onOpenSettings,
+                  }),
+                  ...(showsCompactCompose
+                    ? [
+                        withNativeGlassHeaderItem({
+                          accessibilityLabel: "New task",
+                          axisBehavior: "horizontalOnly",
+                          icon: { name: "square.and.pencil", type: "sfSymbol" } as const,
+                          identifier: "home-new-task",
+                          label: "",
+                          onPress: props.onStartNewTask,
+                          type: "button",
+                        }),
+                      ]
+                    : []),
+                ]
               : [
                   withNativeGlassHeaderItem({
                     accessibilityLabel: "Open pull requests",

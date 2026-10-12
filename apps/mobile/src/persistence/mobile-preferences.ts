@@ -9,6 +9,7 @@ import {
   AgentMonitoringSettings,
   LoadBalancingWeights,
   type ProviderInstanceId,
+  type PullRequestMergeMethod,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
@@ -31,6 +32,8 @@ export interface Preferences {
   readonly loadBalancingEnabled?: boolean;
   readonly loadBalancingWeights?: Readonly<Record<string, number>>;
   readonly agentMonitoringEnrollment?: AgentMonitoringSettings | null;
+  readonly pullRequestHideTestFiles?: boolean;
+  readonly pullRequestMergeMethod?: PullRequestMergeMethod;
   readonly liveActivitiesEnabled?: boolean;
   readonly themeId?: MobileThemeId;
   readonly lightThemeId?: MobileThemeId;
@@ -158,6 +161,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     loadBalancingEnabled?: boolean;
     loadBalancingWeights?: Readonly<Record<string, number>>;
     agentMonitoringEnrollment?: AgentMonitoringSettings | null;
+    pullRequestHideTestFiles?: boolean;
+    pullRequestMergeMethod?: PullRequestMergeMethod;
     liveActivitiesEnabled?: boolean;
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
@@ -208,6 +213,19 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     const decoded = decodeAgentMonitoringSettings(parsed.agentMonitoringEnrollment);
     if (Option.isSome(decoded)) preferences.agentMonitoringEnrollment = decoded.value;
   }
+
+  if (typeof parsed.pullRequestHideTestFiles === "boolean") {
+    preferences.pullRequestHideTestFiles = parsed.pullRequestHideTestFiles;
+  }
+
+  if (
+    parsed.pullRequestMergeMethod === "squash" ||
+    parsed.pullRequestMergeMethod === "merge" ||
+    parsed.pullRequestMergeMethod === "rebase"
+  ) {
+    preferences.pullRequestMergeMethod = parsed.pullRequestMergeMethod;
+  }
+
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;
   }

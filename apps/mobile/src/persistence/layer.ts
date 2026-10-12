@@ -1,5 +1,6 @@
 import * as Layer from "effect/Layer";
 
+import * as PullRequestCacheStore from "../connection/pull-request-cache-store";
 import * as EnvironmentCacheStore from "../connection/environment-cache-store";
 import * as ThreadLifecycleOutboxStore from "../connection/thread-lifecycle-outbox-store";
 import * as MobileDatabase from "./mobile-database";
@@ -13,6 +14,7 @@ const layerDependent = Layer.mergeAll(
   MobileStorage.layer,
   EnvironmentCacheStore.layer,
   ThreadLifecycleOutboxStore.layer,
+  PullRequestCacheStore.layer,
 ).pipe(Layer.provide(layerBase));
 
 export const layer = Layer.merge(layerBase, layerDependent);

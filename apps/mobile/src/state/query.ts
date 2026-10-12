@@ -7,8 +7,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect, useRef } from "react";
-import * as Cause from "effect/Cause";
-import * as Option from "effect/Option";
+
 
 const EMPTY_ASYNC_RESULT_ATOM = Atom.make(AsyncResult.initial<never, never>(false)).pipe(
   Atom.withLabel("mobile-environment-query:empty"),
@@ -18,6 +17,7 @@ export interface EnvironmentQueryView<A> {
   readonly data: A | null;
   readonly error: string | null;
   readonly isPending: boolean;
+  readonly isSuccess: boolean;
   readonly refresh: () => void;
 }
 
@@ -49,6 +49,7 @@ export function useEnvironmentQuery<A, E>(
     data: snapshot.data,
     error: snapshot.error,
     isPending: atom !== null && snapshot.isPending,
+    isSuccess: result._tag === "Success",
     refresh,
   };
 }

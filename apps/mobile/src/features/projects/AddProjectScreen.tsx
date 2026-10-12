@@ -1,3 +1,4 @@
+import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { MaterialListRow } from "../../components/MaterialListRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
@@ -67,7 +68,6 @@ import {
 } from "react";
 import {
   Platform,
-  ActivityIndicator,
   Alert,
   Pressable,
   StyleSheet,
@@ -356,7 +356,7 @@ function PrimaryActionButton(props: {
       className="h-12 items-center justify-center rounded-full bg-primary active:opacity-70 disabled:opacity-45"
     >
       {props.loading ? (
-        <ActivityIndicator colorClassName={String("accent-primary-foreground")} />
+        <AppActivityIndicator colorClassName={String("accent-primary-foreground")} />
       ) : (
         <Text className="text-base font-t3-bold text-primary-foreground">{props.label}</Text>
       )}
@@ -769,7 +769,7 @@ export function AddProjectSourceScreen() {
             )}
           </GroupedCard>
           {discoveryState.isPending ? (
-            <ActivityIndicator colorClassName="accent-icon-muted" />
+            <AppActivityIndicator colorClassName="accent-icon-muted" />
           ) : null}
         </>
       ) : null}
@@ -1111,7 +1111,7 @@ function FolderBrowser(props: {
               {browseState.error ? <ErrorBanner message={browseState.error} /> : null}
               {fileAccess.isPending || (browseState.isPending && browseState.data === null) ? (
                 <Card className="items-center py-5">
-                  <ActivityIndicator colorClassName="accent-icon-muted" />
+                  <AppActivityIndicator colorClassName="accent-icon-muted" />
                 </Card>
               ) : null}
             </View>

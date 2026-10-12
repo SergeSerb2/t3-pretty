@@ -14,7 +14,7 @@ export function useThreadModelIdentity(
       return null;
     }
 
-    const modelOptions = buildModelOptions(serverConfig, modelSelection);
+    const modelOptions = buildModelOptions(serverConfig, modelSelection, undefined, null);
     const currentModelOption =
       modelOptions.find(
         (option) =>

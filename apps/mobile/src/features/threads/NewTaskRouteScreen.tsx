@@ -1,3 +1,4 @@
+import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { MaterialListRow } from "../../components/MaterialListRow";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { LegendList } from "@legendapp/list/react-native";
@@ -17,7 +18,7 @@ import {
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
+import { Alert, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
 import { MaterialScreenContent } from "../../components/MaterialScreenContent";
@@ -517,7 +518,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 style={glass ? glassCardStyle() : undefined}
               >
                 {projectEmptyState.loading ? (
-                  <ActivityIndicator colorClassName="accent-icon-muted" />
+                  <AppActivityIndicator colorClassName="accent-icon-muted" />
                 ) : null}
                 <Text className="text-center text-lg font-t3-bold text-foreground">
                   {projectEmptyState.title}

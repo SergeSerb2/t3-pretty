@@ -80,9 +80,12 @@ export function useHomeListOptions(availableEnvironmentIds: ReadonlySet<Environm
   const setSelectedEnvironmentId = useCallback((value: EnvironmentId | null) => {
     setOptions((current) => ({ ...current, selectedEnvironmentId: value }));
   }, []);
-  const setSelectedProjectKey = useCallback((value: string | null) => {
-    setOptions((current) => ({ ...current, selectedProjectKey: value }));
-  }, []);
+  const setSelectedProjectKey = useCallback(
+    (value: string | null) => {
+      setOptions((current) => ({ ...current, selectedProjectKey: value }));
+    },
+    [setOptions],
+  );
   const setProjectSortOrder = useCallback((value: HomeProjectSortOrder) => {
     setOptions((current) => ({ ...current, projectSortOrder: value }));
   }, []);

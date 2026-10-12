@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Platform, View, useWindowDimensions } from "react-native";
 
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { resolveScratchProjectScopeKey } from "@t3tools/client-runtime/state/project-grouping";
 
 import { EmptyState } from "../../components/EmptyState";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
@@ -33,6 +34,7 @@ import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
 import { getConnectionAwareBrandHeaderOptions } from "./WorkspaceConnectionTitle";
 import { markThreadOpenStarted } from "../observability/threadPerformance";
+import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 
 /* ─── Route screen ───────────────────────────────────────────────────── */
 
@@ -41,7 +43,8 @@ export function HomeRouteScreen() {
   const nativePrimaryColumn = use(NativePrimaryColumnContext);
   const columnMetrics = useNativeColumnLayoutMetrics();
   const headerWidth = nativePrimaryColumn ? (columnMetrics?.width ?? windowWidth) : windowWidth;
-  const { layout, panes } = useAdaptiveWorkspaceLayout();
+  const { layout, panes, primarySidebarSearchQuery, setPrimarySidebarSearchQuery } =
+    useAdaptiveWorkspaceLayout();
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
   // Streaming turns rewrite thread shells many times a second. While a Thread
@@ -54,8 +57,18 @@ export function HomeRouteScreen() {
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const navigation = useNavigation();
-  const [searchQuery, setSearchQuery] = useState("");
+  const workspace = useWorkspaceTabs();
   const topBarActive = useHomeTopBarActive();
+  const [localSearchQuery, setLocalSearchQuery] = useState("");
+  const searchQuery =
+    Platform.OS === "android"
+      ? primarySidebarSearchQuery
+      : (workspace?.state.tabs.threads.query ?? localSearchQuery);
+  const setSearchQuery = (query: string) => {
+    if (Platform.OS === "android") setPrimarySidebarSearchQuery(query);
+    else if (workspace) workspace.dispatch({ type: "query", query, tab: "threads" });
+    else setLocalSearchQuery(query);
+  };
   const handleSelectThread = useHomeThreadSelection();
   // One capable environment is enough to show the entry point; the list screen
   // then picks the environment and explains any that are too old.
@@ -132,8 +145,17 @@ export function HomeRouteScreen() {
     setSelectedProjectKey,
   } = useHomeListOptions(availableEnvironmentIds);
   const selectedEnvironmentId = listOptions.selectedEnvironmentId;
-  const selectedProjectKey = listOptions.selectedProjectKey;
   const startNewTask = useStartNewTaskFromHomeScope();
+  const projectScopeKey = listOptions.selectedProjectKey;
+  const selectedProjectKey = resolveScratchProjectScopeKey(projectScopeKey, projects, {
+    sidebarProjectGroupingMode: listOptions.projectGroupingMode,
+    sidebarProjectGroupingOverrides: {},
+  });
+  useEffect(() => {
+    if (selectedProjectKey !== projectScopeKey) {
+      setSelectedProjectKey(selectedProjectKey);
+    }
+  }, [projectScopeKey, selectedProjectKey, setSelectedProjectKey]);
   const projectFilterOptions = useMemo(
     () =>
       buildHomeProjectScopes({
@@ -164,7 +186,15 @@ export function HomeRouteScreen() {
           options={
             Platform.OS === "android"
               ? { headerShown: false }
-              : { title: "", headerTitle: "", unstable_headerLeftItems: () => [] }
+              : {
+                  title: "",
+                  headerTitle: "",
+                  unstable_headerLeftItems: () => [],
+                  // Options survive layout changes; search and settings now belong to the sidebar.
+                  headerSearchBarOptions: undefined,
+                  unstable_headerRightItems: () => [],
+                  unstable_headerToolbarItems: () => [],
+                }
           }
         />
         {Platform.OS === "ios" ? (
@@ -221,32 +251,35 @@ export function HomeRouteScreen() {
   }
 
   return (
-    <AndroidHomeFabLayout onStartNewTask={startNewTask}>
+    <AndroidHomeFabLayout disabled={workspace !== null} onStartNewTask={startNewTask}>
       <>
         {/* Restore the header after leaving split view; screen options are
             shallow-merged. The brand slot also doubles as the connection
             status surface while an environment reconnects. */}
-        <NativeStackScreenOptions
-          optionsVersion={`${headerWidth}:${automationsSupported}:${topBarActive}`}
-          options={{
-            ...getConnectionAwareBrandHeaderOptions({
-              headerWidth,
-              // Reserve Pretty pull requests and optional automations alongside parent actions.
-              trailingItemCount:
-                (nativePrimaryColumn && Platform.OS === "ios" && Platform.isPad ? 2 : 1) +
-                1 +
-                (automationsSupported ? 1 : 0),
-              onOpenEnvironments: () =>
-                navigation.navigate("SettingsSheet", {
-                  screen: "SettingsContent",
-                  params: { screen: "SettingsEnvironments" },
-                }),
-            }),
-            // iPhone Home draws its own one-row bar (HomeTopBar) instead.
-            headerShown: !topBarActive,
-          }}
-        />
+        {workspace !== null && Platform.OS === "ios" ? null : (
+          <NativeStackScreenOptions
+            optionsVersion={`${headerWidth}:${automationsSupported}:${topBarActive}`}
+            options={{
+              ...getConnectionAwareBrandHeaderOptions({
+                headerWidth,
+                // Reserve Pretty pull requests and optional automations alongside parent actions.
+                trailingItemCount:
+                  (nativePrimaryColumn && Platform.OS === "ios" && Platform.isPad ? 2 : 1) +
+                  1 +
+                  (automationsSupported ? 1 : 0),
+                onOpenEnvironments: () =>
+                  navigation.navigate("SettingsSheet", {
+                    screen: "SettingsContent",
+                    params: { screen: "SettingsEnvironments" },
+                  }),
+              }),
+              // iPhone Home draws its own one-row bar (HomeTopBar) instead.
+              headerShown: !topBarActive,
+            }}
+          />
+        )}
         <HomeHeader
+          usesWorkspaceToolbar={workspace !== null}
           environments={environments}
           projects={projectFilterOptions}
           searchQuery={searchQuery}

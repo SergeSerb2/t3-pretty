@@ -76,6 +76,7 @@ import * as CursorKeychain from "@t3tools/provider-cursor/server/CursorKeychain"
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { layer as ProviderInstanceRegistryHydrationLive } from "./provider/ProviderInstanceRegistryHydration.ts";
+import * as ProjectSettingsOverrideSweep from "./provider/ProjectSettingsOverrideSweep.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
@@ -619,6 +620,10 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   ProviderUsageLimitsIngestionLive,
   ProviderInstallationRefreshLive,
   ReplayMarkers.layer,
+  // Catches overrides left behind by a project deleted before this cleanup
+  // existed, or by a cleanup write that failed. See ProjectService.delete
+  // for the normal (on-delete) path.
+  Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
   // Core Services
   Layer.provideMerge(AutomationStoreLive),

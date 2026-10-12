@@ -104,6 +104,7 @@ import {
   ProviderInteractionMode,
   ProviderDriverKind,
   resolveEnvironmentMachineKind,
+  resolveProjectProviderInstanceEnabled,
   RuntimeMode,
   TerminalOpenInput,
   type WorktreeSetupSnapshot,
@@ -3397,9 +3398,13 @@ export default function ChatView(props: ChatViewProps) {
   const providerInstanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providerStatuses), settings),
+        applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(providerStatuses),
+          settings,
+          activeProject?.id ?? null,
+        ),
       ),
-    [providerStatuses, settings],
+    [providerStatuses, settings, activeProject?.id],
   );
   const { selectedProviderEntry, requestedDriverKind } = useMemo(
     () =>
@@ -4631,7 +4636,14 @@ export default function ChatView(props: ChatViewProps) {
           providers: (environment.serverConfig?.providers ?? []).map((provider) => ({
             instanceId: provider.instanceId,
             driver: provider.driver,
-            enabled: provider.enabled,
+            // The destination project may override the machine switch.
+            enabled: environment.serverConfig?.settings
+              ? resolveProjectProviderInstanceEnabled(
+                  environment.serverConfig.settings,
+                  candidate.projectId,
+                  provider.instanceId,
+                )
+              : provider.enabled,
             installed: provider.installed,
             status: provider.status,
             authStatus: provider.auth.status,
@@ -12292,6 +12304,7 @@ export default function ChatView(props: ChatViewProps) {
                                 activeProjectDefaultModelSelection
                               }
                               activeThreadModelSelection={activeThread?.modelSelection}
+                              activeProjectId={activeProject?.id ?? null}
                               activeContextWindow={activeContextWindow}
                               activeTasksProgress={activeComposerTasksProgress}
                               activeTaskSteps={activeComposerTaskSteps}

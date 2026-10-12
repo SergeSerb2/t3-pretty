@@ -1,3 +1,4 @@
+import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { createNativeHeaderMenu } from "../../components/nativeHeaderMenu.ios";
 import type { ScreenHeaderMenu } from "../../components/ScreenHeader.types";
 import {

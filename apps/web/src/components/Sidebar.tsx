@@ -3,7 +3,7 @@ import { ChevronRightIcon } from "lucide-react";
 import { resolveSidebarThreadTopStatus } from "./Sidebar.logic";
 import { resolveThreadStatusPill } from "./Sidebar.logic";
 import { sortStoredThreadsForSidebar } from "./Sidebar.logic";
-import { type EnvironmentId } from "@t3tools/contracts";
+import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "./ThreadHoverCard";
 import { CollapsibleSectionHeader } from "./ui/collapsible-section-header";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
@@ -132,6 +132,8 @@ import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalPro
 import {
   buildSidebarProjectSnapshots,
   projectGroupsSpanEnvironments,
+  resolveSidebarProjectScopeKey,
+  getSidebarProjectSettingsKey,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { projectFolderScopeKey, resolveSidebarProjectScope } from "../sidebarProjectFolders";
@@ -167,6 +169,7 @@ import {
   useThreadShells,
 } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
+import { environmentProjects } from "../state/projects";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
 import { useEnvironmentQuery } from "../state/query";
@@ -2815,6 +2818,7 @@ export default function Sidebar() {
     () =>
       buildSidebarProjectSnapshots({
         projects: sidebarProjectSortOrder === "manual" ? orderedProjects : projects,
+        groupScratchProjects: true,
         settings: projectGroupingSettings,
         primaryEnvironmentId,
         resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
@@ -2876,8 +2880,34 @@ export default function Sidebar() {
   // them. The selection lives in the persisted UI store next to the other
   // sidebar project preferences, so routes that unmount the sidebar
   // (Settings) and app restarts keep it.
-  const projectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
+  const persistedProjectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
   const setProjectScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
+  const clientSettingsHydrated = useClientSettingsHydrated();
+  // Folder scopes belong to the rail, not the project-key normalizer. Wait
+  // for folder settings before deciding whether a persisted key is a folder.
+  const projectScopeKey = useMemo(() => {
+    if (
+      !clientSettingsHydrated ||
+      resolveSidebarProjectScope(
+        persistedProjectScopeKey,
+        projectGroups,
+        projectFolders.settings,
+      )?.kind === "folder"
+    ) {
+      return persistedProjectScopeKey;
+    }
+    return resolveSidebarProjectScopeKey({
+      groups: projectGroups,
+      key: persistedProjectScopeKey,
+      settings: projectGroupingSettings,
+    });
+  }, [
+    clientSettingsHydrated,
+    persistedProjectScopeKey,
+    projectFolders.settings,
+    projectGroups,
+    projectGroupingSettings,
+  ]);
   // Same-named projects on two machines are only told apart by where they
   // live, so the scope title carries the machine once the catalog spans more
   // than one environment.
@@ -2918,24 +2948,34 @@ export default function Sidebar() {
   }, [projectScope]);
   // A persisted scope whose project or folder is gone falls back to all
   // projects, but only after every catalog environment has a live project
-  // snapshot and local folder settings have loaded. Cached or disconnected
-  // environments cannot establish that the project is gone.
+  // snapshot and config and local folder settings have loaded. Configs
+  // identify scratch projects; cached or disconnected environments cannot
+  // establish that a project is gone.
   const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
-  const clientSettingsHydrated = useClientSettingsHydrated();
+  const allProjectConfigsReady = useAtomValue(environmentProjects.projectConfigsReadyAtom);
   useEffect(() => {
-    if (
-      projectScopeKey !== null &&
-      allProjectSnapshotsReady &&
-      clientSettingsHydrated &&
-      projectScope === null
-    ) {
-      setProjectScopeKey(null);
+    // Folder scopes must not pass through the project-only key normalizer.
+    // Wait for local settings before deciding whether a saved key is a folder.
+    if (!clientSettingsHydrated || projectScope?.kind === "folder") {
+      return;
+    }
+    const nextKey = resolveSidebarProjectScopeKey({
+      groups: projectGroups,
+      key: persistedProjectScopeKey,
+      settings: projectGroupingSettings,
+      canClearMissingScope: allProjectSnapshotsReady && allProjectConfigsReady,
+    });
+    if (nextKey !== persistedProjectScopeKey) {
+      setProjectScopeKey(nextKey);
     }
   }, [
+    allProjectConfigsReady,
     allProjectSnapshotsReady,
     clientSettingsHydrated,
+    persistedProjectScopeKey,
+    projectGroups,
+    projectGroupingSettings,
     projectScope,
-    projectScopeKey,
     setProjectScopeKey,
   ]);
   // Count-only subscription: the parent needs "are there draft rows" for the
@@ -2971,16 +3011,23 @@ export default function Sidebar() {
   }, [clearSelection, projectScopeKey]);
 
   const openProjectSettings = useCallback(
-    (projectGroup: SidebarProjectSnapshot) => {
+    (projectGroup: SidebarProjectSnapshot, projectRef?: ScopedProjectRef) => {
       if (isMobile) {
         setOpenMobile(false);
       }
       void router.navigate({
         to: "/projects/$projectKey",
-        params: { projectKey: projectGroup.projectKey },
+        params: {
+          projectKey: getSidebarProjectSettingsKey(
+            projectGroup,
+            projectGroupingSettings,
+            projects,
+            projectRef,
+          ),
+        },
       });
     },
-    [isMobile, router, setOpenMobile],
+    [isMobile, projectGroupingSettings, projects, router, setOpenMobile],
   );
 
   // Keep a dropped row at its destination while its server applies the
@@ -4998,7 +5045,11 @@ export default function Sidebar() {
         if (clicked._tag === "Failure") return;
         switch (clicked.value) {
           case "project-settings":
-            if (projectGroup) openProjectSettings(projectGroup);
+            if (projectGroup)
+              openProjectSettings(projectGroup, {
+                environmentId: session.environmentId,
+                projectId: session.projectId,
+              });
             return;
           case "copy-path":
             if (workspacePath) copyPathToClipboard(workspacePath, { path: workspacePath });
@@ -5129,7 +5180,11 @@ export default function Sidebar() {
             }
             return;
           case "project-settings":
-            if (threadProjectGroup) openProjectSettings(threadProjectGroup);
+            if (threadProjectGroup)
+              openProjectSettings(threadProjectGroup, {
+                environmentId: threadRef.environmentId,
+                projectId: thread.projectId,
+              });
             return;
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it

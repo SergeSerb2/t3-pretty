@@ -1,3 +1,4 @@
+import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { useAndroidControlSizing } from "../../components/useAndroidControlSizing";
 import type { ThreadMoveDestination } from "../threads/threadOrder";
 import { computeThreadMoveAvailability } from "../threads/threadOrder";
@@ -16,7 +17,6 @@ import { useAtomValue } from "@effect/atom-react";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { use, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import {
-  ActivityIndicator,
   Platform,
   Pressable,
   ScrollView,
@@ -28,6 +28,7 @@ import {
   type NativeSyntheticEvent,
 } from "react-native";
 import { ScrollViewMarker } from "react-native-screens";
+import { GestureDetector, useNativeGesture } from "react-native-gesture-handler";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
@@ -100,6 +101,8 @@ import {
 import { createSwipeRowActivation } from "./swipe-row-activation";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "./thread-swipe-actions";
 import { useMaterialFabScroll } from "./MaterialFabScrollContext";
+import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
+import { ThreadListFilters } from "./ThreadListFilters";
 
 /* ─── Types ──────────────────────────────────────────────────────────── */
 
@@ -313,6 +316,8 @@ export function HomeScreen(props: HomeScreenProps) {
   const sceneryChrome = useSceneryChromeActive();
   const glassRows = useGlassChromeActive();
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
+  const workspace = useWorkspaceTabs();
+  const [initialScrollOffset] = useState(() => workspace?.getScrollOffset("threads") ?? 0);
   const primaryColumn = use(NativePrimaryColumnContext);
   const contentBackground = primaryColumn ? "bg-drawer" : "bg-screen";
   const containerClassName = cn(
@@ -324,6 +329,8 @@ export function HomeScreen(props: HomeScreenProps) {
   const fullSwipeWidth = primaryColumn && columnMetrics ? columnMetrics.width - 20 : undefined;
   const queuedThreadKeys = useQueuedThreadKeys();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
+  // Let trackpad scrolling coexist with each row's horizontal swipe gesture.
+  const homeScrollGesture = useNativeGesture();
   const insets = useSafeAreaInsets();
   const topBarActive = useHomeTopBarActive();
   const topBarInset = useHomeTopBarInset();
@@ -335,7 +342,11 @@ export function HomeScreen(props: HomeScreenProps) {
     ? (columnMetrics ?? screenMetrics)?.safeArea
     : undefined;
   // UIKit's column safe area already includes its bottom toolbar.
-  const iosBottomClearance = Math.max(columnMetrics?.safeArea.bottom ?? insets.bottom, 24);
+  const iosBottomClearance = Math.max(
+    columnMetrics?.safeArea.bottom ?? insets.bottom,
+    24,
+    workspace?.bottomClearance ?? 0,
+  );
   const iosBottomToolbarClearance =
     Platform.OS === "ios" && !NATIVE_LIQUID_GLASS_SUPPORTED && !primaryColumn
       ? PRE_LIQUID_GLASS_BOTTOM_TOOLBAR_HEIGHT
@@ -390,6 +401,15 @@ export function HomeScreen(props: HomeScreenProps) {
   }, []);
   const onMaterialFabScroll = useMaterialFabScroll();
   const listRef = useRef<LegendListRef>(null);
+  const searchMode = workspace?.state.tabs.threads.searchMode;
+  const restoredOffset = workspace?.state.tabs.threads.scrollOffset;
+  useEffect(() => {
+    if (searchMode !== "resting" || restoredOffset === undefined) return;
+    listRef.current?.scrollToOffset({
+      offset: restoredOffset - (Platform.OS === "ios" ? insets.top : 0),
+      animated: false,
+    });
+  }, [searchMode, insets.top, restoredOffset]);
   const swipeRowActivation = useMemo(() => createSwipeRowActivation(), []);
   const activateVisibleRows = useCallback(
     (rows: ReadonlyArray<ThreadListV2ListItem>) => {
@@ -408,13 +428,18 @@ export function HomeScreen(props: HomeScreenProps) {
   const handleListScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       onMaterialFabScroll?.(event);
+      if (workspace)
+        workspace.recordScrollOffset(
+          "threads",
+          Math.max(0, event.nativeEvent.contentOffset.y + (Platform.OS === "ios" ? insets.top : 0)),
+        );
       clearTimeout(activationTimerRef.current);
       activationTimerRef.current = setTimeout(
         () => activateVisibleRows(listRef.current?.getState()?.data ?? []),
         200,
       );
     },
-    [activateVisibleRows, onMaterialFabScroll],
+    [activateVisibleRows, onMaterialFabScroll, workspace, insets.top],
   );
   const trackListTouches = useCallback(
     (event: GestureResponderEvent, started: boolean) => {
@@ -950,6 +975,7 @@ export function HomeScreen(props: HomeScreenProps) {
           onMoveThread={handleMoveThread}
           onSwipeableClose={handleSwipeableClose}
           onSwipeableWillOpen={handleSwipeableWillOpen}
+          simultaneousSwipeGesture={homeScrollGesture}
           activationKey={item.key}
         />
       );
@@ -971,6 +997,7 @@ export function HomeScreen(props: HomeScreenProps) {
       handleSwipeableWillOpen,
       handleUnsettleThread,
       handleSetThreadAutoSettle,
+      homeScrollGesture,
       autoSettleOptOutEnvironmentIds,
       pinningEnvironmentIds,
       autoSettleOptOutEnvironmentIds,
@@ -1110,7 +1137,7 @@ export function HomeScreen(props: HomeScreenProps) {
             />
             {emptyState.loading ? (
               <View className="mt-4 items-center">
-                <ActivityIndicator colorClassName="accent-icon-muted" />
+                <AppActivityIndicator colorClassName="accent-icon-muted" />
               </View>
             ) : null}
           </View>
@@ -1122,15 +1149,27 @@ export function HomeScreen(props: HomeScreenProps) {
 
   const listHeader = Platform.OS === "ios" ? undefined : <HomeTopContentSpacer />;
 
-  // Project scoping lives in the header filter menu (no inline chip row on
-  // mobile — the menu is the one filter surface). Glass Home opens on the
-  // glance; search results start at the top instead.
-  const v2ListHeader =
-    glassRows && !topBarActive && !hasSearchQuery && threadListV2Items.length > 0 ? (
-      <HomeGlance date={glanceDate} photo={dailyPhoto} summary={glanceSummary} />
-    ) : (
-      listHeader
-    );
+  // Glass Home opens on the glance; search results skip it. Workspace
+  // filters follow the glance or the platform-specific list header.
+  const v2ListHeader = (
+    <>
+      {glassRows && !topBarActive && !hasSearchQuery && threadListV2Items.length > 0 ? (
+        <HomeGlance date={glanceDate} photo={dailyPhoto} summary={glanceSummary} />
+      ) : (
+        listHeader
+      )}
+      {workspace ? (
+        <ThreadListFilters
+          environments={props.environments}
+          projects={projectScopes.map((scope) => ({ key: scope.key, label: scope.title }))}
+          selectedEnvironmentId={props.selectedEnvironmentId}
+          selectedProjectKey={props.selectedProjectKey}
+          onEnvironmentChange={props.onEnvironmentChange}
+          onProjectChange={props.onProjectChange}
+        />
+      ) : null}
+    </>
+  );
 
   // Use the v2 project scope for its empty state. Snoozed threads need no
   // special empty state: their shelf header is a list row even while collapsed.
@@ -1197,96 +1236,104 @@ export function HomeScreen(props: HomeScreenProps) {
             shell update) from re-rendering untouched rows. */}
         <ThreadListGlassContext value={glassRows}>
           <SwipeableScrollGateProvider enabled={swipeEnabled} activation={swipeRowActivation}>
-            <AnimatedLegendList
-              ref={listRef}
-              onLoad={() => activateVisibleRows(threadListV2Items)}
-              onTouchStart={(event) => trackListTouches(event, true)}
-              onTouchEnd={(event) => trackListTouches(event, false)}
-              onTouchCancel={(event) => trackListTouches(event, false)}
-              renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
-              data={threadListV2Items}
-              renderItem={renderV2Item}
-              keyExtractor={v2KeyExtractor}
-              getItemType={(item) => item.type}
-              itemsAreEqual={threadListV2ListItemsAreEqual}
-              estimatedItemSize={ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT}
-              drawDistance={THREAD_LIST_V2_DRAW_DISTANCE}
-              recycleItems
-              // Settle, wake, reorder and shelf toggles reflow rows into
-              // place; the patched list skips this for recycled cells and
-              // while scrolling.
-              itemLayoutAnimation={layoutSettle}
-              extraData={v2ExtraData}
-              ListHeaderComponent={v2ListHeader}
-              ListFooterComponent={
-                <>
-                  {settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
-                    glassRows ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={showMoreSettled}
-                        className="mx-3 mt-2 items-center border-chrome-glass-border bg-chrome-glass py-3"
-                        style={({ pressed }) => ({
-                          borderCurve: "continuous",
-                          borderRadius: GLASS_CARD_RADIUS,
-                          borderWidth: StyleSheet.hairlineWidth,
-                          opacity: pressed ? 0.6 : 1,
-                        })}
-                      >
-                        <Text className="text-xs font-t3-medium text-foreground-muted">
-                          Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
-                        </Text>
-                      </Pressable>
-                    ) : sceneryChrome ? (
-                      <Pressable
-                        onPress={showMoreSettled}
-                        className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
-                        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-                      >
-                        <Text className="text-xs font-t3-medium text-foreground-muted">
-                          Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
-                        </Text>
-                      </Pressable>
-                    ) : (
-                      <ThreadListV2ShowMoreRow
-                        hiddenCount={threadListV2Layout.hiddenSettledCount}
-                        onPress={showMoreSettled}
-                      />
-                    )
-                  ) : null}
-                  {/* The glance card used to credit today's photo; with the
-                      top bar it sits at the end of the list instead. */}
-                  {topBarActive && !hasSearchQuery && dailyPhoto !== null ? (
-                    <View className="mt-5 flex-row justify-center px-8">
-                      <HomeGlancePhotoCredit
-                        className="max-w-full shrink flex-row items-center gap-1"
-                        photo={dailyPhoto}
-                      />
-                    </View>
-                  ) : null}
-                </>
-              }
-              ListEmptyComponent={v2ListEmpty}
-              style={{ flex: 1 }}
-              automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
-              contentInsetAdjustmentBehavior="never"
-              contentInset={Platform.OS === "ios" ? { top: iosListTopInset } : undefined}
-              contentInsetStartAdjustment={Platform.OS === "ios" ? iosListTopInset : 0}
-              showsVerticalScrollIndicator={false}
-              keyboardDismissMode="on-drag"
-              keyboardShouldPersistTaps="handled"
-              {...scrollGateHandlers}
-              scrollEventThrottle={16}
-              contentContainerStyle={{
-                paddingLeft: (contentSideInsets?.left ?? 0) + (primaryColumn ? 8 : 0),
-                paddingRight: (contentSideInsets?.right ?? 0) + (primaryColumn ? 8 : 0),
-                paddingBottom:
-                  Platform.OS === "ios"
-                    ? iosListBottomPad
-                    : Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
-                      (Platform.OS === "android" ? fabClearance : 88),
-              }}
-            />
+            <GestureDetector gesture={homeScrollGesture}>
+              <AnimatedLegendList
+                ref={listRef}
+                onLoad={() => activateVisibleRows(threadListV2Items)}
+                onTouchStart={(event) => trackListTouches(event, true)}
+                onTouchEnd={(event) => trackListTouches(event, false)}
+                onTouchCancel={(event) => trackListTouches(event, false)}
+                renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
+                data={threadListV2Items}
+                renderItem={renderV2Item}
+                keyExtractor={v2KeyExtractor}
+                getItemType={(item) => item.type}
+                itemsAreEqual={threadListV2ListItemsAreEqual}
+                estimatedItemSize={ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT}
+                drawDistance={THREAD_LIST_V2_DRAW_DISTANCE}
+                recycleItems
+                // Settle, wake, reorder and shelf toggles reflow rows into
+                // place; the patched list skips this for recycled cells and
+                // while scrolling.
+                itemLayoutAnimation={layoutSettle}
+                extraData={v2ExtraData}
+                ListHeaderComponent={v2ListHeader}
+                ListFooterComponent={
+                  <>
+                    {settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
+                      glassRows ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={showMoreSettled}
+                          className="mx-3 mt-2 items-center border-chrome-glass-border bg-chrome-glass py-3"
+                          style={({ pressed }) => ({
+                            borderCurve: "continuous",
+                            borderRadius: GLASS_CARD_RADIUS,
+                            borderWidth: StyleSheet.hairlineWidth,
+                            opacity: pressed ? 0.6 : 1,
+                          })}
+                        >
+                          <Text className="text-xs font-t3-medium text-foreground-muted">
+                            Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
+                          </Text>
+                        </Pressable>
+                      ) : sceneryChrome ? (
+                        <Pressable
+                          onPress={showMoreSettled}
+                          className="mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
+                          style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                        >
+                          <Text className="text-xs font-t3-medium text-foreground-muted">
+                            Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
+                          </Text>
+                        </Pressable>
+                      ) : (
+                        <ThreadListV2ShowMoreRow
+                          hiddenCount={threadListV2Layout.hiddenSettledCount}
+                          onPress={showMoreSettled}
+                        />
+                      )
+                    ) : null}
+                    {/* The glance card used to credit today's photo; with the
+                        top bar it sits at the end of the list instead. */}
+                    {topBarActive && !hasSearchQuery && dailyPhoto !== null ? (
+                      <View className="mt-5 flex-row justify-center px-8">
+                        <HomeGlancePhotoCredit
+                          className="max-w-full shrink flex-row items-center gap-1"
+                          photo={dailyPhoto}
+                        />
+                      </View>
+                    ) : null}
+                  </>
+                }
+                ListEmptyComponent={v2ListEmpty}
+                style={{ flex: 1 }}
+                automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
+                contentInsetAdjustmentBehavior="never"
+                contentInset={Platform.OS === "ios" ? { top: iosListTopInset } : undefined}
+                contentInsetStartAdjustment={Platform.OS === "ios" ? iosListTopInset : 0}
+                initialScrollOffset={
+                  initialScrollOffset > 0
+                    ? initialScrollOffset - (Platform.OS === "ios" ? iosListTopInset : 0)
+                    : undefined
+                }
+                showsVerticalScrollIndicator={false}
+                keyboardDismissMode="on-drag"
+                keyboardShouldPersistTaps="handled"
+                {...scrollGateHandlers}
+                scrollEventThrottle={16}
+                contentContainerStyle={{
+                  paddingLeft: (contentSideInsets?.left ?? 0) + (primaryColumn ? 8 : 0),
+                  paddingRight: (contentSideInsets?.right ?? 0) + (primaryColumn ? 8 : 0),
+                  paddingBottom:
+                    Platform.OS === "ios"
+                      ? iosListBottomPad
+                      : (workspace?.bottomClearance ??
+                        Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
+                          (Platform.OS === "android" ? fabClearance : 88)),
+                }}
+              />
+            </GestureDetector>
           </SwipeableScrollGateProvider>
         </ThreadListGlassContext>
       </View>

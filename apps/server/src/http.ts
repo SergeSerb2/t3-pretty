@@ -6,6 +6,7 @@ import {
   PROJECT_TRANSFER_MAX_ARCHIVE_BYTES,
 } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
+import { injectMcpAppCookieBootstrap, injectMcpAppThemeBootstrap } from "@t3tools/shared/mcpApp";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -32,6 +33,7 @@ import { OtlpTracer, OtlpSerialization } from "effect/observability";
 import * as ServerConfig from "./config.ts";
 import {
   ASSET_ROUTE_PREFIX,
+  readMcpAppHtml,
   resolveAsset,
   type ResolvedAssetSource,
 } from "./assets/AssetAccess.ts";
@@ -203,12 +205,30 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
     readonly fileName?: string;
     readonly mimeType?: string;
     readonly file?: OpenMediaFile;
+    readonly renderIntent?: "mcp-app";
   },
   rangeHeader?: string,
   ifRangeHeader?: string,
   method: "GET" | "HEAD" = "GET",
 ) {
   const headers = assetResponseHeaders(asset.path, asset);
+  if (
+    asset.renderIntent === "mcp-app" &&
+    !asset.download &&
+    headers["Content-Type"] === "text/html; charset=utf-8"
+  ) {
+    const bytes = yield* readMcpAppHtml(asset.path);
+    if (bytes === null) {
+      return HttpServerResponse.text("MCP app is too large to preview.", { status: 413 });
+    }
+    const body = new TextEncoder().encode(
+      injectMcpAppCookieBootstrap(injectMcpAppThemeBootstrap(new TextDecoder().decode(bytes))),
+    );
+    headers["Content-Length"] = String(body.byteLength);
+    return method === "HEAD"
+      ? HttpServerResponse.empty({ status: 200, headers })
+      : HttpServerResponse.uint8Array(body, { headers });
+  }
   const mediaFile = asset.file;
   const mediaInfo = mediaFile ? yield* statMediaFile(asset.path, mediaFile) : undefined;
   const isMedia = /^(?:audio|video)\//i.test(headers["Content-Type"] ?? "");

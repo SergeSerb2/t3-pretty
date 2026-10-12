@@ -1,7 +1,9 @@
+import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
 import { useWorktreeSetup } from "./use-worktree-setup";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
+import { ScreenHeader } from "../../components/ScreenHeader";
 import {
   StackActions,
   useFocusEffect,
@@ -112,15 +114,52 @@ function firstRouteParam(value: string | string[] | undefined): string | null {
   return first === undefined || first.trim().length === 0 ? null : first;
 }
 
+function ThreadPane(props: { readonly children: ReactNode }) {
+  return (
+    <View className="flex-1 bg-screen android:overflow-hidden android:rounded-t-[28px] android:bg-thread-canvas">
+      {props.children}
+    </View>
+  );
+}
+
+function ThreadRouteFallbackLayout(props: { readonly children: ReactNode }) {
+  const navigation = useNavigation();
+  const { layout } = useAdaptiveWorkspaceLayout();
+  const { themeVariables } = useAppearancePreferences();
+  if (Platform.OS !== "android") return props.children;
+
+  return (
+    <>
+      <ScreenHeader
+        title="Thread"
+        options={{ contentStyle: { backgroundColor: themeVariables["--color-header"] } }}
+        onBack={
+          layout.usesSplitView
+            ? undefined
+            : () => {
+                if (navigation.canGoBack()) navigation.goBack();
+                else navigation.dispatch(StackActions.replace("Home"));
+              }
+        }
+        hideBottomBorder
+      />
+      <ThreadPane>{props.children}</ThreadPane>
+    </>
+  );
+}
+
 function OpeningThreadLoadingScreen() {
   // Keeps a photo on screen between Home's scenery and the thread's.
   const glass = useGlassChromeActive();
   return (
-    <LoadingScreen
-      message="Opening thread…"
-      messagePlacement="above-spinner"
-      backdrop={glass ? <SceneryBackdrop threadKey={null} /> : null}
-    />
+    <ThreadRouteFallbackLayout>
+      <LoadingScreen
+        message="Opening thread…"
+        messagePlacement="above-spinner"
+        backdrop={glass ? <SceneryBackdrop threadKey={null} /> : null}
+        embedded={Platform.OS === "android"}
+      />
+    </ThreadRouteFallbackLayout>
   );
 }
 
@@ -149,7 +188,7 @@ function ThreadUnavailableScreen(props: {
         paddingHorizontal: 24,
         paddingVertical: 32,
       }}
-      className={glass ? "flex-1" : "bg-screen flex-1"}
+      className={glass ? "flex-1" : "bg-screen flex-1 android:bg-transparent"}
     >
       <EmptyState
         title="Thread unavailable"
@@ -160,13 +199,17 @@ function ThreadUnavailableScreen(props: {
     </ScrollView>
   );
   // The glass empty state needs the photo under it, not a bare screen plate.
-  return glass ? (
-    <View className="flex-1 bg-screen">
-      <SceneryBackdrop threadKey={null} surface="cards" />
-      {content}
-    </View>
-  ) : (
-    content
+  return (
+    <ThreadRouteFallbackLayout>
+      {glass ? (
+        <View className="flex-1 bg-screen android:bg-transparent">
+          <SceneryBackdrop threadKey={null} surface="cards" />
+          {content}
+        </View>
+      ) : (
+        content
+      )}
+    </ThreadRouteFallbackLayout>
   );
 }
 
@@ -311,6 +354,7 @@ function ThreadRouteContent(
     };
   }, [loadEarlierHistory, selectedThread, selectedThreadDetailState.history]);
   const navigation = useNavigation();
+  const openPullRequest = useOpenPullRequest();
   const mergeBack = useAtomCommand(threadEnvironment.mergeBack, "merge thread back");
   const mergeBackTargetThreadId = resolveMergeBackTargetThreadId(selectedThreadDetail);
   const mergeBackRun =
@@ -1020,9 +1064,13 @@ function ThreadRouteContent(
   const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
   const renderThreadRouteBody = () => (
     <>
-      <GitActionProgressOverlay progress={gitActionProgress} onDismiss={dismissGitActionResult} />
+      <GitActionProgressOverlay
+        progress={gitActionProgress}
+        onDismiss={dismissGitActionResult}
+        onOpenPullRequest={openPullRequest}
+      />
 
-      <View className="flex-1 bg-screen android:overflow-hidden android:rounded-t-[28px] android:bg-thread-canvas">
+      <ThreadPane>
         {routeThreadIdentity !== null ? <SceneryBackdrop threadKey={routeThreadIdentity} /> : null}
         <ThreadDetailScreen
           canOperateThread={canOperateThread}
@@ -1119,7 +1167,7 @@ function ThreadRouteContent(
           onSubmitUserInput={requests.onSubmitUserInput}
           onDismissUserInput={requests.onDismissUserInput}
         />
-      </View>
+      </ThreadPane>
     </>
   );
 

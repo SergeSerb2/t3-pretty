@@ -10,11 +10,13 @@ import {
   isValidElement,
   useLayoutEffect,
   useMemo,
+  use,
   type ReactElement,
   type ReactNode,
 } from "react";
 import type { ColorValue } from "react-native";
 import type { HeaderBarButtonSearchBarPlacementItem } from "react-native-screens";
+import { NativeWorkspaceTabActivityContext } from "./v5-workspace-context";
 
 import { mintGlassHeaderItems } from "./mintGlassHeaderItems";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native-glass";
@@ -42,7 +44,9 @@ type NativeStackHeaderAxisBehavior = Extract<
   NativeStackHeaderItem,
   { type: "button" }
 >["axisBehavior"];
-type NativeToolbarItem = NativeStackHeaderItem | HeaderBarButtonSearchBarPlacementItem;
+type NativeToolbarItem =
+  | (NativeStackHeaderItem & { readonly height?: number })
+  | HeaderBarButtonSearchBarPlacementItem;
 type NativeStackOptionsWithToolbar = NativeStackNavigationOptions & {
   unstable_headerToolbarItems?: () => NativeToolbarItem[];
 };
@@ -154,7 +158,13 @@ function convertToolbarChild(child: ReactNode): NativeToolbarItem | null {
           : () => undefined,
       sharesBackground: NATIVE_LIQUID_GLASS_SUPPORTED && !child.props.separateBackground,
       tintColor: child.props.tintColor as ColorValue | undefined,
-      variant: "plain",
+      width: typeof child.props.width === "number" ? child.props.width : undefined,
+      height: typeof child.props.height === "number" ? child.props.height : undefined,
+      variant:
+        child.props.variant === "done" || child.props.variant === "prominent"
+          ? child.props.variant
+          : "plain",
+      identifier: typeof child.props.identifier === "string" ? child.props.identifier : undefined,
     };
   }
 
@@ -167,6 +177,7 @@ function convertToolbarChild(child: ReactNode): NativeToolbarItem | null {
           ? child.props.accessibilityLabel
           : undefined,
       disabled: Boolean(child.props.disabled),
+      axisBehavior: child.props.axisBehavior as NativeStackHeaderAxisBehavior,
       icon: iconFromProp(child.props.icon),
       menu: {
         title: typeof child.props.title === "string" ? child.props.title : undefined,
@@ -174,7 +185,13 @@ function convertToolbarChild(child: ReactNode): NativeToolbarItem | null {
       },
       sharesBackground: NATIVE_LIQUID_GLASS_SUPPORTED && !child.props.separateBackground,
       tintColor: child.props.tintColor as ColorValue | undefined,
-      variant: "plain",
+      width: typeof child.props.width === "number" ? child.props.width : undefined,
+      height: typeof child.props.height === "number" ? child.props.height : undefined,
+      variant:
+        child.props.variant === "done" || child.props.variant === "prominent"
+          ? child.props.variant
+          : "plain",
+      identifier: typeof child.props.identifier === "string" ? child.props.identifier : undefined,
     };
   }
 
@@ -210,22 +227,22 @@ function NativeHeaderToolbarRoot(props: {
   readonly children?: ReactNode;
 }) {
   const navigation = useNativeStackNavigation();
+  const tabActivity = use(NativeWorkspaceTabActivityContext);
+  const tabActive = tabActivity?.active ?? true;
+  const isTabActive = tabActivity?.isActive;
   const items = useMemo(() => collectToolbarItems(props.children), [props.children]);
 
-  // Swap toolbar owners before paint so split and compact headers cannot clear each other.
+  // Update items in place. Clearing them on every render causes UIKit to run a
+  // second transition and detach custom views while the stack is animating.
   useLayoutEffect(() => {
-    if (!navigation) {
+    if (!navigation || !tabActive) {
       return;
     }
     if (props.placement === "bottom") {
       navigation.setOptions({
         unstable_headerToolbarItems: () => items,
       } as NativeStackOptionsWithToolbar);
-      return () => {
-        navigation.setOptions({
-          unstable_headerToolbarItems: () => [],
-        } as NativeStackOptionsWithToolbar);
-      };
+      return;
     }
     // UIKit's search placement item belongs to the toolbar, never a header group.
     const headerItems = items.filter(
@@ -235,15 +252,26 @@ function NativeHeaderToolbarRoot(props: {
     const glassItems = mintGlassHeaderItems(headerItems);
     if (props.placement === "left") {
       navigation.setOptions({ unstable_headerLeftItems: () => glassItems });
-      return () => {
-        navigation.setOptions({ unstable_headerLeftItems: () => [] });
-      };
+      return;
     }
     navigation.setOptions({ unstable_headerRightItems: () => glassItems });
+  }, [items, navigation, props.placement, tabActive]);
+
+  useLayoutEffect(() => {
+    if (!navigation) return;
     return () => {
-      navigation.setOptions({ unstable_headerRightItems: () => [] });
+      if (isTabActive && !isTabActive()) return;
+      if (props.placement === "bottom") {
+        navigation.setOptions({
+          unstable_headerToolbarItems: () => [],
+        } as NativeStackOptionsWithToolbar);
+      } else if (props.placement === "left") {
+        navigation.setOptions({ unstable_headerLeftItems: () => [] });
+      } else {
+        navigation.setOptions({ unstable_headerRightItems: () => [] });
+      }
     };
-  }, [items, navigation, props.placement]);
+  }, [navigation, props.placement, isTabActive]);
 
   return null;
 }
@@ -257,6 +285,10 @@ function NativeHeaderToolbarButton(_props: {
   readonly onPress?: () => void;
   readonly separateBackground?: boolean;
   readonly tintColor?: ColorValue;
+  readonly variant?: "plain" | "done" | "prominent";
+  readonly identifier?: string;
+  readonly width?: number;
+  readonly height?: number;
 }) {
   return null;
 }
@@ -264,13 +296,18 @@ NativeHeaderToolbarButton.displayName = "NativeHeaderToolbarButton";
 
 function NativeHeaderToolbarMenu(_props: {
   readonly accessibilityLabel?: string;
+  readonly axisBehavior?: NativeStackHeaderAxisBehavior;
   readonly children?: ReactNode;
   readonly disabled?: boolean;
   readonly icon?: string;
+  readonly identifier?: string;
   readonly inline?: boolean;
   readonly separateBackground?: boolean;
   readonly tintColor?: ColorValue;
   readonly title?: string;
+  readonly variant?: "plain" | "done" | "prominent";
+  readonly width?: number;
+  readonly height?: number;
 }) {
   return null;
 }

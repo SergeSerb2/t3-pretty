@@ -240,6 +240,7 @@ export function GitBranchesSheet(props: GitBranchesSheetProps) {
         />
       ) : null}
       <LegendList
+        nestedScrollEnabled
         className={Platform.OS === "android" ? "shrink grow-0" : "flex-1"}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
