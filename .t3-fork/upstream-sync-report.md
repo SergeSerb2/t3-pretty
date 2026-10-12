@@ -28,3 +28,8 @@
 
 - Scheduled sync #3422 resolved the text conflicts, then refused publication because `connectionRoutes` still attempted persisted learned `http://` / `ws://` when `allowInsecure` defaulted true. That TLS regression is fixed in the follow-up commit on this branch; the guard script is unchanged.
 - Pretty already had the iPhone LayoutMetrics fail-open as `nativeWorkspaceColumnsAreReady`. Parent 3021 shipped the first-party Swift no-hinge fallback plus an inlined JS timeout; the helper is kept and the Swift change is taken.
+
+## Post-merge repairs
+
+- `packages/client-runtime/src/connection/routes.ts` — `connectionRoutes` always requires https/wss for learned routes. `allowInsecure` still lets mergeLearnedRoutes label explicitly saved plaintext and never learns or selects learned http/ws.
+- `packages/client-runtime/src/connection/routes.test.ts` and `registry.test.ts` — cover the drop of persisted learned plaintext and label Tailscale over HTTPS.

@@ -2077,8 +2077,8 @@ describe("EnvironmentRegistry routes", () => {
 
   it.effect("saves the Tailscale mark when the server reports a learned address as tailnet", () =>
     Effect.gen(function* () {
-      const httpBaseUrl = "http://100.101.102.103:3773/";
-      const learnedId = `learned:${LAN_TARGET.environmentId}:http://100.101.102.103:3773@${LAN_TARGET.connectionId}`;
+      const httpBaseUrl = "https://100.101.102.103:3773/";
+      const learnedId = `learned:${LAN_TARGET.environmentId}:https://100.101.102.103:3773@${LAN_TARGET.connectionId}`;
       const learned = new BearerConnectionTarget({ ...LAN_TARGET, connectionId: learnedId });
       // Learned by an earlier build, which saved no network.
       const learnedProfile = new BearerConnectionProfile({
@@ -2086,7 +2086,7 @@ describe("EnvironmentRegistry routes", () => {
         environmentId: LAN_TARGET.environmentId,
         label: LAN_TARGET.label,
         httpBaseUrl,
-        wsBaseUrl: "ws://100.101.102.103:3773/",
+        wsBaseUrl: "wss://100.101.102.103:3773/",
         learned: true,
       });
       const harness = yield* makeHarness(

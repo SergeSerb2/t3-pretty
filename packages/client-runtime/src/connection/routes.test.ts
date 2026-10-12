@@ -116,7 +116,8 @@ it("excludes persisted plaintext learned routes while preserving explicitly save
     alternateRoutes: [downgradedSocket, LAN, RELAY],
   };
   expect(connectionRoutes(entry, { allowInsecure: false })).toEqual([LAN, RELAY]);
-  expect(connectionRoutes(entry, { allowInsecure: true })).toEqual([learned, LAN, RELAY]);
+  expect(connectionRoutes(entry, { allowInsecure: true })).toEqual([LAN, RELAY]);
+  expect(connectionRoutes(entry)).toEqual([LAN, RELAY]);
 });
 
 it("allows learned plaintext routes outside an https page", () => {
@@ -142,7 +143,7 @@ it("allows learned plaintext routes outside an https page", () => {
   }
 });
 
-it("keeps learned plaintext routes on native and desktop clients", () => {
+it("drops learned plaintext routes even on native and desktop clients", () => {
   const unsafe = direct("learned:lan", "http://192.168.1.10:3773/");
   const unsafeProfile = Option.getOrThrow(unsafe.profile);
   if (unsafeProfile._tag !== "BearerConnectionProfile") throw new Error("Expected bearer fixture");
@@ -156,7 +157,8 @@ it("keeps learned plaintext routes on native and desktop clients", () => {
     enabled: true,
     alternateRoutes: [RELAY],
   };
-  expect(connectionRoutes(entry, { allowInsecure: true })).toEqual([learned, RELAY]);
+  expect(connectionRoutes(entry, { allowInsecure: true })).toEqual([RELAY]);
+  expect(connectionRoutes(entry)).toEqual([RELAY]);
 });
 
 describe("learned routes", () => {
@@ -335,6 +337,24 @@ describe("learned routes", () => {
           { httpBaseUrl: "http://100.101.102.103:3773/" },
           { httpBaseUrl: "http://guard.example/" },
         ],
+      }),
+    ).toBeNull();
+  });
+
+  it("drops a persisted learned plaintext route even when the server still reports it", () => {
+    const unsafe = direct(`learned:${ENVIRONMENT_ID}:http://192.168.1.10:3773`, "http://192.168.1.10:3773/");
+    const unsafeProfile = Option.getOrThrow(unsafe.profile);
+    if (unsafeProfile._tag !== "BearerConnectionProfile") throw new Error("Expected bearer fixture");
+    const learned: ConnectionRoute = {
+      ...unsafe,
+      profile: Option.some(new BearerConnectionProfile({ ...unsafeProfile, learned: true })),
+    };
+    expect(
+      mergeLearnedRoutes({
+        entry: entryWithRoutes(relayOnly, [learned, RELAY]),
+        activeRoute: RELAY,
+        allowInsecure: true,
+        reported: [{ httpBaseUrl: "http://192.168.1.10:3773/" }],
       }),
     ).toBeNull();
   });

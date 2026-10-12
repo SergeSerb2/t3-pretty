@@ -57,19 +57,23 @@ export function connectionRouteId(target: ConnectionTarget): string {
 }
 
 /**
- * Native and `t3code://` desktop can use plaintext LAN routes. An https://
- * page cannot (mixed content), so learned HTTP stays hidden there.
+ * Native and `t3code://` desktop can use explicitly saved plaintext LAN
+ * routes. An https:// page cannot (mixed content). Automatically learned
+ * routes stay https/wss on every client.
  */
 export function learnedRoutesAllowInsecure(): boolean {
   return typeof globalThis.location === "undefined" || globalThis.location.protocol !== "https:";
 }
 
-/** Every route of an entry, preferred first. */
+/**
+ * Every route of an entry, preferred first. `_options.allowInsecure` is
+ * accepted so mergeLearnedRoutes can still label already-saved plaintext. It
+ * must not promote or select learned http/ws.
+ */
 export function connectionRoutes(
   entry: ConnectionCatalogEntry,
-  options?: { readonly allowInsecure?: boolean },
+  _options?: { readonly allowInsecure?: boolean },
 ): ReadonlyArray<ConnectionRoute> {
-  const allowInsecure = options?.allowInsecure ?? learnedRoutesAllowInsecure();
   return [
     { target: entry.target, profile: entry.profile },
     ...(entry.alternateRoutes ?? []),
@@ -79,15 +83,7 @@ export function connectionRoutes(
       const url = routeHttpBaseUrl(route);
       const profile = Option.getOrNull(route.profile);
       if (url === null || profile?._tag !== "BearerConnectionProfile") return false;
-      const httpProtocol = new URL(url).protocol;
-      const wsProtocol = new URL(profile.wsBaseUrl).protocol;
-      if (allowInsecure) {
-        return (
-          (httpProtocol === "http:" && wsProtocol === "ws:") ||
-          (httpProtocol === "https:" && wsProtocol === "wss:")
-        );
-      }
-      return httpProtocol === "https:" && wsProtocol === "wss:";
+      return new URL(url).protocol === "https:" && new URL(profile.wsBaseUrl).protocol === "wss:";
     } catch {
       return false;
     }
@@ -340,6 +336,18 @@ export function mergeLearnedRoutes(input: {
       ];
     }
     if (url === null || !reported.has(normalized(url)) || known.has(normalized(url))) return [];
+    try {
+      const profile = Option.getOrNull(route.profile);
+      if (
+        profile?._tag !== "BearerConnectionProfile" ||
+        new URL(url).protocol !== "https:" ||
+        new URL(profile.wsBaseUrl).protocol !== "wss:"
+      ) {
+        return [];
+      }
+    } catch {
+      return [];
+    }
     known.add(normalized(url));
     return [withNetwork(route, tailscaleOrigins.has(normalized(url)))];
   });
