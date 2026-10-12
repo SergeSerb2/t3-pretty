@@ -198,8 +198,9 @@ function AutomationDetail({ automation }: { automation: EnvironmentAutomation })
       applyProviderInstanceSettings(
         deriveProviderInstanceEntries(serverProviders),
         environmentSettings,
+        automation.projectId,
       ),
-    [environmentSettings, serverProviders],
+    [automation.projectId, environmentSettings, serverProviders],
   );
   const modelSelection = automation.modelSelection ?? project?.defaultModelSelection ?? null;
   const modelEntry = instanceEntries.find(

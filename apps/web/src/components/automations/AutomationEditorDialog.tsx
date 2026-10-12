@@ -240,9 +240,10 @@ export function AutomationEditorDialog({
         applyProviderInstanceSettings(
           deriveProviderInstanceEntries(serverProviders),
           environmentSettings,
+          projectId,
         ),
       ),
-    [environmentSettings, serverProviders],
+    [environmentSettings, projectId, serverProviders],
   );
   const projectDefaultSelection = resolveDefaultProviderModelSelection(
     serverProviders,

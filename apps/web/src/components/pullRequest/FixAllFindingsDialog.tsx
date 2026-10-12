@@ -1,6 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ModelSelection, ScopedThreadRef } from "@t3tools/contracts";
+import { ScopedThreadRef, type ModelSelection } from "@t3tools/contracts";
+import type { ScopedThreadRef as ThreadRef } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
+import * as Schema from "effect/Schema";
 import { HammerIcon, Repeat2Icon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -15,9 +17,9 @@ import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "~/providerInstances";
+import { useThreadShell } from "~/state/entities";
 import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 import { primaryServerProvidersAtom } from "~/state/server";
-
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -29,8 +31,10 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 
+const isThreadRef = Schema.is(ScopedThreadRef);
+
 function readDialogModelSelection(
-  composerTarget: ScopedThreadRef | DraftId | null,
+  composerTarget: ThreadRef | DraftId | null,
   fallback: ModelSelection,
 ): ModelSelection {
   const store = useComposerDraftStore.getState();
@@ -57,7 +61,7 @@ export function FixAllFindingsDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   findingCount: number;
-  composerTarget: ScopedThreadRef | DraftId | null;
+  composerTarget: ThreadRef | DraftId | null;
   pending: boolean;
   continuous: boolean;
   onConfirm: (selection: ModelSelection, continuous: boolean) => void;
@@ -69,6 +73,8 @@ export function FixAllFindingsDialog({
   const activeContinuous = continuousRef.current;
   const environmentId = useAtomValue(primaryEnvironmentIdAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
+  const thread = useThreadShell(isThreadRef(composerTarget) ? composerTarget : null);
+  const projectId = thread?.projectId ?? null;
   const fallbackSelection = useMemo(
     () => resolveAppModelSelectionState(settings, serverProviders),
     [serverProviders, settings],
@@ -83,9 +89,13 @@ export function FixAllFindingsDialog({
   const instanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings),
+        applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(serverProviders),
+          settings,
+          projectId,
+        ),
       ),
-    [serverProviders, settings],
+    [projectId, serverProviders, settings],
   );
   const modelOptionsByInstance = useMemo(
     () =>

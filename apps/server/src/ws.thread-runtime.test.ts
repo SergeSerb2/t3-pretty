@@ -27,7 +27,9 @@ import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegi
 import * as ProviderEventIngestor from "./orchestration-v2/ProviderEventIngestor.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
 import * as ThreadCommandExecutor from "./orchestration-v2/ThreadCommandExecutor.ts";
+import * as CommandReceiptStore from "./orchestration-v2/CommandReceiptStore.ts";
 import { makeOrchestratorV2ReplayLayerWithRegistry } from "./orchestration-v2/testkit/ProviderReplayHarness.ts";
+import * as ServerSettings from "./serverSettings.ts";
 import { subscribeOrchestrationV2Thread } from "./ws.ts";
 
 const instanceId = ProviderInstanceId.make("claudeAgent");
@@ -59,7 +61,14 @@ const testLayer = Layer.mergeAll(
   projections,
   ingestor,
   ThreadManagementService.layer.pipe(
-    Layer.provide(Layer.mergeAll(runtime, ThreadCommandExecutor.layer)),
+    Layer.provide(
+      Layer.mergeAll(
+        runtime,
+        ThreadCommandExecutor.layer,
+        ServerSettings.layerTest(),
+        CommandReceiptStore.layer.pipe(Layer.provide(database)),
+      ),
+    ),
   ),
   OrchestrationEventStoreLive.pipe(Layer.provide(database)),
 );

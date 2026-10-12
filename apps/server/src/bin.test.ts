@@ -60,10 +60,15 @@ import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { environmentAuthenticatedAuthLayer } from "./auth/http.ts";
+import * as ServerSettings from "./serverSettings.ts";
 
 import packageJson from "../package.json" with { type: "json" };
 
-const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
+const CliRuntimeLayer = Layer.mergeAll(
+  NodeServices.layer,
+  NetService.layer,
+  ServerSettings.layerTest(),
+);
 const DisconnectedLauncherChildLayer = Layer.mergeAll(
   Layer.succeed(HostProcess.Environment, {
     ...process.env,

@@ -60,7 +60,7 @@ export function HomeSuggestionsSettingsSection() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
-  const { scope, environment, connectedEnvironments } = useSettingsScope();
+  const { scope, environment, connectedEnvironments, target } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
   const hasServerTargets = connectedEnvironments.length > 0;
   const { isTargetAvailable: supportsHomeSuggestions, eligibleEnvironmentIds } =
@@ -82,7 +82,11 @@ export function HomeSuggestionsSettingsSection() {
     textGenerationProviders,
   );
   const instanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(textGenerationProviders), settings),
+    applyProviderInstanceSettings(
+      deriveProviderInstanceEntries(textGenerationProviders),
+      settings,
+      target?.projectId ?? null,
+    ),
   );
   const hasProvider = instanceEntries.some((entry) => entry.enabled && entry.isAvailable);
   const instanceEntry = instanceEntries.find((entry) => entry.instanceId === selection.instanceId);
