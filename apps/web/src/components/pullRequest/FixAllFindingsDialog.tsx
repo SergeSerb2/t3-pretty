@@ -1,6 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import { ScopedThreadRef, type ModelSelection } from "@t3tools/contracts";
-import type { ScopedThreadRef as ThreadRef } from "@t3tools/contracts";
+import {
+  ScopedThreadRef,
+  type ModelSelection,
+  type ScopedThreadRef as ThreadRef,
+} from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import * as Schema from "effect/Schema";
 import { HammerIcon, Repeat2Icon } from "lucide-react";
