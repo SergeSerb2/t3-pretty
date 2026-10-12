@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261012.3021003426",
+    date: "2026-10-12",
+    items: [
+      {
+        kind: "fixed",
+        title: "Drop persisted learned plaintext routes",
+      },
+      {
+        kind: "fixed",
+        title: "Enriched off the iOS native pod graph",
+      },
+      {
+        kind: "fixed",
+        title: "Remote threads stay painted after bounded snapshot sync",
+      },
+      {
+        kind: "fixed",
+        title: "Rename Pretty PR presentation off the upstream filename",
+      },
+      {
+        kind: "fixed",
+        title: "Provide ServerSettings in fork CLI test layers",
+      },
+      {
+        kind: "fixed",
+        title: "Adapt fork call sites to nightly provider and settings APIs",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261012.3010003421",
     date: "2026-10-12",
     items: [
