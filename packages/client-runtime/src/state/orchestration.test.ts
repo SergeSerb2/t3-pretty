@@ -54,9 +54,12 @@ describe("orchestration environment atoms", () => {
 
   it("keeps a painted shell across a replacement supervisor's leading empty", () => {
     const snapshot = Option.some({
+      schemaVersion: 1,
       snapshotSequence: 1,
       threads: [],
-    } as OrchestrationV2ShellSnapshot);
+      archivedThreads: [],
+      projects: [],
+    } satisfies OrchestrationV2ShellSnapshot);
     const painted = nextShellResumeCache(undefined, {
       snapshot,
       status: "synchronizing",

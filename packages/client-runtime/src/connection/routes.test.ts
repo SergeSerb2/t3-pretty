@@ -342,9 +342,13 @@ describe("learned routes", () => {
   });
 
   it("drops a persisted learned plaintext route even when the server still reports it", () => {
-    const unsafe = direct(`learned:${ENVIRONMENT_ID}:http://192.168.1.10:3773`, "http://192.168.1.10:3773/");
+    const unsafe = direct(
+      `learned:${ENVIRONMENT_ID}:http://192.168.1.10:3773`,
+      "http://192.168.1.10:3773/",
+    );
     const unsafeProfile = Option.getOrThrow(unsafe.profile);
-    if (unsafeProfile._tag !== "BearerConnectionProfile") throw new Error("Expected bearer fixture");
+    if (unsafeProfile._tag !== "BearerConnectionProfile")
+      throw new Error("Expected bearer fixture");
     const learned: ConnectionRoute = {
       ...unsafe,
       profile: Option.some(new BearerConnectionProfile({ ...unsafeProfile, learned: true })),

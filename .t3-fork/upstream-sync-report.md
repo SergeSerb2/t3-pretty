@@ -33,3 +33,5 @@
 
 - `packages/client-runtime/src/connection/routes.ts` — `connectionRoutes` always requires https/wss for learned routes. `allowInsecure` still lets mergeLearnedRoutes label explicitly saved plaintext and never learns or selects learned http/ws.
 - `packages/client-runtime/src/connection/routes.test.ts` and `registry.test.ts` — cover the drop of persisted learned plaintext and label Tailscale over HTTPS.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — desktop-entry icon path follows Pretty `com.t3tools.T3Pretty.desktop` identity after the Hyprland auto-merge.
+- `packages/client-runtime/src/state/orchestration.test.ts` — shell-resume fixture includes `schemaVersion`, `archivedThreads`, and `projects` so shared-typecheck accepts the snapshot.
