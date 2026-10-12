@@ -64,11 +64,8 @@ import * as ServerSettings from "./serverSettings.ts";
 
 import packageJson from "../package.json" with { type: "json" };
 
-const CliRuntimeLayer = Layer.mergeAll(
-  NodeServices.layer,
-  NetService.layer,
-  ServerSettings.layerTest(),
-);
+const TestServicesLayer = Layer.mergeAll(NodeServices.layer, ServerSettings.layerTest());
+const CliRuntimeLayer = Layer.mergeAll(TestServicesLayer, NetService.layer);
 const DisconnectedLauncherChildLayer = Layer.mergeAll(
   Layer.succeed(HostProcess.Environment, {
     ...process.env,
@@ -160,6 +157,7 @@ const makeProjectPersistenceLayer = (config: ServerConfig.ServerConfig["Service"
       Layer.provideMerge(ProjectFaviconResolver.layer),
       Layer.provideMerge(T3ProjectFileLoader.layer),
       Layer.provideMerge(WorkspacePaths.layer),
+      Layer.provideMerge(ServerSettings.layerTest()),
     ),
     ProjectionStore.layer,
     ProjectStore.layer,
@@ -235,7 +233,7 @@ const makeProjectLookupFixture = Effect.fn("makeProjectLookupFixture")(function*
   return { baseDir, workspaceRoot, project };
 });
 
-it.layer(NodeServices.layer)("project lookup with unavailable workspaces", (it) => {
+it.layer(TestServicesLayer)("project lookup with unavailable workspaces", (it) => {
   it.effect("removes an empty project by ID without force after its directory is gone", () =>
     Effect.gen(function* () {
       const { baseDir, project } = yield* makeProjectLookupFixture(false, true);
@@ -469,7 +467,7 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
     );
   });
 
-it.layer(NodeServices.layer)("bin cli parsing", (it) => {
+it.layer(TestServicesLayer)("bin cli parsing", (it) => {
   it.effect("accepts the built-in lowercase log-level flag values", () =>
     Effect.gen(function* () {
       const { output } = yield* captureStdout(runCli(["--log-level", "debug", "--version"]));
