@@ -64,6 +64,20 @@ export interface MarkdownImageRequest {
  */
 export type MarkdownImageRenderer = (image: MarkdownImageRequest) => import("react").ReactNode;
 
+export type MarkdownImageSourceResolver = (
+  image: MarkdownImageRequest,
+) =>
+  | { uri: string; headers?: Record<string, string> }
+  | null
+  | Promise<{ uri: string; headers?: Record<string, string> } | null>;
+
+export interface MarkdownLinkCustomization {
+  readonly iconTintColor?: string;
+  readonly color?: string;
+  readonly label?: string;
+  readonly icon?: import("react-native").ImageSourcePropType;
+}
+
 export interface MarkdownFileContextMenuAction {
   readonly id: string;
   readonly title: string;
@@ -88,7 +102,10 @@ export interface SelectableMarkdownTextProps {
   readonly onLinkLongPress?: (href: string) => void;
   readonly fileContextMenu?: (href: string) => MarkdownFileContextMenu | undefined;
   readonly onFileContextMenuAction?: (href: string, actionId: string) => void;
+  readonly linkCustomization?: (href: string) => MarkdownLinkCustomization | undefined;
   readonly renderImage?: MarkdownImageRenderer;
+  readonly resolveImageSource?: MarkdownImageSourceResolver;
+  readonly onImagePress?: (href: string) => void;
   readonly marginTop?: number;
   readonly marginBottom?: number;
 }

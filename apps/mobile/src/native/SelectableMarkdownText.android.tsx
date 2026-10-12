@@ -11,7 +11,12 @@ import { useUniwindTheme } from "../lib/useUniwindTheme";
 type MobileSelectableMarkdownTextProps = Omit<SelectableMarkdownTextProps, "highlightCode">;
 
 export type {
+  MarkdownFileContextMenu,
+  MarkdownFileContextMenuAction,
+  MarkdownImageRenderer,
   MarkdownImageRequest,
+  MarkdownImageSourceResolver,
+  MarkdownLinkCustomization,
   NativeMarkdownTextStyle,
   SelectableMarkdownSkill,
 } from "@t3tools/mobile-markdown-text/types";

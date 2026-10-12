@@ -221,6 +221,7 @@ function MarkdownRun(props: { readonly markdown: string; readonly density: "body
         <SelectableMarkdownText
           markdown={props.markdown}
           onLinkPress={onLinkPress}
+          onLinkLongPress={onLinkLongPress}
           textStyle={{
             color: body,
             strongColor: strong,

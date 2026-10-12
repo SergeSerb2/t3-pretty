@@ -14,6 +14,7 @@ import { MarkdownImageRendererContext, NativeMarkdownBlock } from "./NativeMarkd
 import {
   MarkdownContextClipboardContext,
   MarkdownFileContextMenuContext,
+  MarkdownLinkCallbacksContext,
   NativeMarkdownSelectableText,
   type MarkdownFileContextMenuHandlers,
 } from "./NativeMarkdownSelectableText";
@@ -29,6 +30,8 @@ export type {
   MarkdownHighlightedToken,
   MarkdownImageRenderer,
   MarkdownImageRequest,
+  MarkdownImageSourceResolver,
+  MarkdownLinkCustomization,
   NativeMarkdownTextStyle,
   SelectableMarkdownSkill,
   SelectableMarkdownTextProps,
@@ -47,12 +50,17 @@ export function SelectableMarkdownText({
   highlightCodeEnabled = true,
   preserveSoftBreaks = false,
   onLinkPress,
+  onLinkLongPress,
   fileContextMenu,
   onFileContextMenuAction,
   renderImage,
   marginTop = 0,
   marginBottom = 0,
 }: SelectableMarkdownTextProps) {
+  const linkCallbacks = useMemo(
+    () => ({ onLinkPress, onLinkLongPress }),
+    [onLinkPress, onLinkLongPress],
+  );
   const chunks = useMemo(() => {
     const parsedDocument = nativeMarkdownWithAuthoredWindowsPaths(
       nativeMarkdownWithHtml(
@@ -85,7 +93,8 @@ export function SelectableMarkdownText({
   return (
     <MarkdownContextClipboardContext.Provider value={contextClipboardFragment ?? ""}>
       <MarkdownImageRendererContext.Provider value={renderImage ?? null}>
-        <MarkdownFileContextMenuContext.Provider value={fileContextMenuHandlers}>
+        <MarkdownLinkCallbacksContext.Provider value={linkCallbacks}>
+          <MarkdownFileContextMenuContext.Provider value={fileContextMenuHandlers}>
           {/* A percentage width here creates a cyclic intrinsic measurement inside
           shrink-to-fit containers such as user-message bubbles. Yoga then gives
           the native text node an unbounded second pass and the parent only clips
@@ -107,6 +116,7 @@ export function SelectableMarkdownText({
                     runs={chunk.runs}
                     textStyle={textStyle}
                     onLinkPress={onLinkPress}
+                    onLinkLongPress={onLinkLongPress}
                   />
                 );
 
@@ -120,7 +130,8 @@ export function SelectableMarkdownText({
               );
             })}
           </View>
-        </MarkdownFileContextMenuContext.Provider>
+          </MarkdownFileContextMenuContext.Provider>
+        </MarkdownLinkCallbacksContext.Provider>
       </MarkdownImageRendererContext.Provider>
     </MarkdownContextClipboardContext.Provider>
   );

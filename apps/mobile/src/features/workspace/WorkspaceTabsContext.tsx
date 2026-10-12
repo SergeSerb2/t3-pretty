@@ -32,8 +32,6 @@ export const WorkspaceTabsContext = createContext<{
   readonly recordScrollOffset: (tab: WorkspaceTab, offset: number) => void;
   readonly getScrollAnchor: (tab: WorkspaceTab) => WorkspaceScrollAnchor | undefined;
   readonly recordScrollAnchor: (tab: WorkspaceTab, anchor: WorkspaceScrollAnchor) => void;
-  readonly threadsProjectKey: string | null;
-  readonly setThreadsProjectKey: (key: string | null) => void;
   readonly pullRequestEnvironmentId: string | null;
   readonly setPullRequestEnvironmentId: (id: string | null) => void;
 } | null>(null);
@@ -50,8 +48,6 @@ export function WorkspaceTabsProvider(props: { readonly children: ReactNode }) {
     activeTab.current = state.selectedTab;
   }, [state.selectedTab]);
   const isTabActive = useCallback((tab: WorkspaceTab) => activeTab.current === tab, []);
-  const [threadsProjectKey, setThreadsProjectKey] = useState<string | null>(null);
-  const [pullRequestEnvironmentId, setPullRequestEnvironmentId] = useState<string | null>(null);
   const scrollOffsets = useRef({ threads: 0, pullRequests: 0 });
   const scrollAnchors = useRef<Partial<Record<WorkspaceTab, WorkspaceScrollAnchor>>>({});
   const getScrollOffset = useCallback((tab: WorkspaceTab) => scrollOffsets.current[tab], []);
@@ -62,6 +58,7 @@ export function WorkspaceTabsProvider(props: { readonly children: ReactNode }) {
   const recordScrollAnchor = useCallback((tab: WorkspaceTab, anchor: WorkspaceScrollAnchor) => {
     scrollAnchors.current[tab] = anchor;
   }, []);
+  const [pullRequestEnvironmentId, setPullRequestEnvironmentId] = useState<string | null>(null);
   const context = useMemo(
     () => ({
       state,
@@ -72,8 +69,6 @@ export function WorkspaceTabsProvider(props: { readonly children: ReactNode }) {
       recordScrollOffset,
       getScrollAnchor,
       recordScrollAnchor,
-      threadsProjectKey,
-      setThreadsProjectKey,
       pullRequestEnvironmentId,
       setPullRequestEnvironmentId,
     }),
@@ -84,7 +79,6 @@ export function WorkspaceTabsProvider(props: { readonly children: ReactNode }) {
       recordScrollOffset,
       getScrollAnchor,
       recordScrollAnchor,
-      threadsProjectKey,
       pullRequestEnvironmentId,
     ],
   );

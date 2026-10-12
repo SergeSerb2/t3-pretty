@@ -147,15 +147,15 @@ export function HomeRouteScreen() {
   const selectedEnvironmentId = listOptions.selectedEnvironmentId;
   const startNewTask = useStartNewTaskFromHomeScope();
   const projectScopeKey = listOptions.selectedProjectKey;
-  const selectedProjectKey = resolveScratchProjectScopeKey(projectScopeKey, projects, {
+  const resolvedProjectKey = resolveScratchProjectScopeKey(projectScopeKey, projects, {
     sidebarProjectGroupingMode: listOptions.projectGroupingMode,
     sidebarProjectGroupingOverrides: {},
   });
   useEffect(() => {
-    if (selectedProjectKey !== projectScopeKey) {
-      setSelectedProjectKey(selectedProjectKey);
+    if (resolvedProjectKey !== projectScopeKey) {
+      setSelectedProjectKey(resolvedProjectKey);
     }
-  }, [projectScopeKey, selectedProjectKey, setSelectedProjectKey]);
+  }, [projectScopeKey, resolvedProjectKey, setSelectedProjectKey]);
   const projectFilterOptions = useMemo(
     () =>
       buildHomeProjectScopes({
@@ -168,14 +168,12 @@ export function HomeRouteScreen() {
       })),
     [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
   );
-  useEffect(() => {
-    if (
-      selectedProjectKey !== null &&
-      !projectFilterOptions.some((project) => project.key === selectedProjectKey)
-    ) {
-      setSelectedProjectKey(null);
-    }
-  }, [projectFilterOptions, selectedProjectKey, setSelectedProjectKey]);
+  // A saved project stays selected while its environment is offline or filtered out.
+  const selectedProjectKey = projectFilterOptions.some(
+    (project) => project.key === resolvedProjectKey,
+  )
+    ? resolvedProjectKey
+    : null;
 
   // In split layouts the persistent sidebar IS the thread list — Home becomes
   // an empty detail pane so selecting a thread never transitions layouts.
@@ -251,7 +249,10 @@ export function HomeRouteScreen() {
   }
 
   return (
-    <AndroidHomeFabLayout disabled={workspace !== null} onStartNewTask={startNewTask}>
+    <AndroidHomeFabLayout
+      disabled={workspace !== null && Platform.OS !== "android"}
+      onStartNewTask={startNewTask}
+    >
       <>
         {/* Restore the header after leaving split view; screen options are
             shallow-merged. The brand slot also doubles as the connection
@@ -274,7 +275,8 @@ export function HomeRouteScreen() {
                   }),
               }),
               // iPhone Home draws its own one-row bar (HomeTopBar) instead.
-              headerShown: !topBarActive,
+              // Android uses the native workspace header / FAB, so hide this one.
+              headerShown: Platform.OS !== "android" && !topBarActive,
             }}
           />
         )}

@@ -170,6 +170,7 @@ export function WorkspacePullRequestsScreen() {
     ({ item }: { readonly item: EnvironmentPullRequestListEntry }) => (
       <PullRequestListRow
         item={item}
+        sidebar={primaryColumn !== null}
         onSelect={selectPullRequest}
         getActions={actions}
         onAction={select}
@@ -177,7 +178,7 @@ export function WorkspacePullRequestsScreen() {
         selected={selectedKey === pullRequestKey(item)}
       />
     ),
-    [selectPullRequest, selectedKey, actions, select, busyKey],
+    [selectPullRequest, selectedKey, actions, select, busyKey, primaryColumn],
   );
   const previousSearchMode = useRef(tab.searchMode);
   useEffect(() => {

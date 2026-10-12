@@ -123,6 +123,7 @@ function SidebarControl({
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const {
     isMobile,
+    mobileSheetMounted,
     open,
     peeking,
     toggleSidebar,
@@ -254,8 +255,12 @@ function SidebarControl({
     // The right-side layout controls carry mr-px (border compensation inside
     // the panel), so the trigger mirrors it: both clusters sit one extra pixel
     // off their edge and the titlebar reads symmetric.
+    // The sheet owns its trigger until its closing transition unmounts it.
     <div
-      className="pointer-events-auto fixed left-[calc(env(safe-area-inset-left)+0.75rem)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center [-webkit-app-region:no-drag]"
+      className={cn(
+        "pointer-events-auto fixed left-[calc(env(safe-area-inset-left)+0.75rem)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center [-webkit-app-region:no-drag]",
+        isMobile && mobileSheetMounted && "hidden",
+      )}
       data-sidebar-control=""
       style={
         {

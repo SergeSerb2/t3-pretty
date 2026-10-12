@@ -37,12 +37,15 @@ const SIDEBAR_WIDTH_MOBILE = "calc(100vw - var(--spacing(3)))";
 const SIDEBAR_WIDTH_TESLA = "min(26rem, calc(100vw - 2.5rem))";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH = 16 * 16;
+const SIDEBAR_TITLEBAR_CONTROL_SIZE = "max-sm:[--workspace-titlebar-control-size:--spacing(8)]";
 
 type SidebarContextProps = {
   state: ResponsiveSidebarState;
   open: boolean;
   setOpen: (open: boolean) => void;
   openMobile: boolean;
+  mobileSheetMounted: boolean;
+  setMobileSheetElement: (element: HTMLDivElement | null) => void;
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
   toggleSidebar: () => void;
@@ -131,6 +134,10 @@ function SidebarProvider({
   // over the desk sidebar preference.
   const isMobile = isNarrowViewport && !teslaTouch;
   const [openMobile, setOpenMobile] = React.useState(false);
+  const [mobileSheetMounted, setMobileSheetMounted] = React.useState(false);
+  const setMobileSheetElement = React.useCallback((element: HTMLDivElement | null) => {
+    setMobileSheetMounted(element !== null);
+  }, []);
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -188,6 +195,8 @@ function SidebarProvider({
       isMobile,
       open,
       openMobile,
+      mobileSheetMounted,
+      setMobileSheetElement,
       setOpen,
       setOpenMobile,
       state,
@@ -206,6 +215,8 @@ function SidebarProvider({
       setOpen,
       isMobile,
       openMobile,
+      mobileSheetMounted,
+      setMobileSheetElement,
       toggleSidebar,
       peeking,
       peekFlyout,
@@ -222,7 +233,8 @@ function SidebarProvider({
       <div
         // Inset layouts opt into bg-sidebar through className.
         className={cn(
-          "group/sidebar-wrapper flex min-h-svh w-full max-sm:[--workspace-titlebar-control-size:--spacing(8)]",
+          "group/sidebar-wrapper flex min-h-svh w-full",
+          SIDEBAR_TITLEBAR_CONTROL_SIZE,
           className,
         )}
         data-sidebar-peeking={peekFlyout ? "" : undefined}
@@ -264,6 +276,7 @@ function Sidebar({
     state,
     openMobile,
     setOpenMobile,
+    setMobileSheetElement,
     peeking,
     peekFlyout,
     onPeekPointerEnter,
@@ -349,6 +362,7 @@ function Sidebar({
       <SidebarInstanceContext value={instanceContextValue}>
         <Sheet onOpenChange={setOpenMobile} open={openMobile}>
           <SheetPopup
+            ref={setMobileSheetElement}
             className={cn(
               "w-(--sidebar-width) max-w-none bg-sidebar surface-grain p-0 text-sidebar-foreground",
               className,
@@ -371,6 +385,7 @@ function Sidebar({
             <div
               className={cn(
                 "flex h-full w-full flex-col pb-safe pt-safe",
+                SIDEBAR_TITLEBAR_CONTROL_SIZE,
                 side === "left" ? "pl-safe" : "pr-safe",
               )}
               {...props}

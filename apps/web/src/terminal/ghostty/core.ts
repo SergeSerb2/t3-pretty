@@ -15,6 +15,7 @@ const MAX_SCROLLBACK_ROWS = 5_000;
 // wasm32 C ABI layout for GhosttyTerminalSelectionFormatOptions at the
 // libghostty-vt revision pinned alongside this module.
 const SELECTION_FORMAT_OPTIONS_SIZE = 16;
+const PALETTE_BYTES = 256 * 3;
 
 const RENDER_DATA = {
   cols: 1,
@@ -83,6 +84,7 @@ export interface GhosttyTheme {
   readonly foreground: GhosttyColor;
   readonly background: GhosttyColor;
   readonly cursor: GhosttyColor;
+  readonly palette?: readonly GhosttyColor[];
   /** CSS color the renderer overlays on selected cells; not sent to Ghostty. */
   readonly selectionBackground?: string;
   /**
@@ -439,6 +441,22 @@ export class GhosttyTerminalCore {
       }
     } finally {
       this.runtime.free(color, 3);
+    }
+    if (theme.palette) this.setPalette(theme.palette);
+  }
+
+  private setPalette(colors: readonly GhosttyColor[]): void {
+    // Ghostty takes all 256 entries; keep its defaults for 16-255.
+    const palette = this.runtime.alloc(PALETTE_BYTES);
+    try {
+      this.runtime.call("ghostty_terminal_get", this.terminal, 25, palette);
+      const bytes = this.runtime.bytes(palette, PALETTE_BYTES);
+      colors.slice(0, 16).forEach((color, index) => {
+        bytes.set([color.r, color.g, color.b], index * 3);
+      });
+      this.runtime.call("ghostty_terminal_set", this.terminal, 14, palette);
+    } finally {
+      this.runtime.free(palette, PALETTE_BYTES);
     }
   }
 

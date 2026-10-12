@@ -91,7 +91,7 @@ function BannerAction(props: {
       className={
         props.glass
           ? "rounded-full border border-chrome-glass-border bg-foreground/5 px-3 py-1.5 active:opacity-70"
-          : "rounded-full border border-border bg-background px-3 py-1.5"
+          : "rounded-full border border-border bg-card px-3 py-1.5"
       }
       onPress={props.onPress}
     >
