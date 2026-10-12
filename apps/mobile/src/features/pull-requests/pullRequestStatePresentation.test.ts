@@ -7,7 +7,7 @@ import {
   formatReviewState,
   pullRequestLabelColor,
   resolvePullRequestState,
-} from "./pullRequestPresentation";
+} from "./pullRequestStatePresentation";
 
 describe("resolvePullRequestState", () => {
   it("ranks merged and closed above draft", () => {

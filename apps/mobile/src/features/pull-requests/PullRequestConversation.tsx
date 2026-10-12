@@ -21,7 +21,7 @@ import {
 } from "./pullRequestDetail.logic";
 import { hasVisiblePullRequestBody } from "./pullRequestMarkdown.logic";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
-import { formatReviewState } from "./pullRequestPresentation";
+import { formatReviewState } from "./pullRequestStatePresentation";
 
 type Detail = NonNullable<ReturnType<typeof composePullRequestDetailView>>;
 

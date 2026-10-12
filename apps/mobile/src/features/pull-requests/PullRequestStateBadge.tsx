@@ -3,7 +3,7 @@ import { View } from "react-native";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { cn } from "../../lib/cn";
-import { resolvePullRequestState, type PullRequestStateKind } from "./pullRequestPresentation";
+import { resolvePullRequestState, type PullRequestStateKind } from "./pullRequestStatePresentation";
 
 const SYMBOL_COLOR: Record<PullRequestStateKind, string> = {
   merged: "#7c3aed",

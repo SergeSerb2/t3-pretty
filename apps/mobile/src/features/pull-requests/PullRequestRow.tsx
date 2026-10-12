@@ -15,7 +15,7 @@ import {
   pullRequestLabelColor,
   resolvePullRequestState,
   reviewDecisionTextClass,
-} from "./pullRequestPresentation";
+} from "./pullRequestStatePresentation";
 import { PullRequestStateBadge } from "./PullRequestStateBadge";
 
 export function PullRequestRow(props: {

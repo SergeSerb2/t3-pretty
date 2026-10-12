@@ -72,7 +72,7 @@ import {
   pullRequestLabelColor,
   resolvePullRequestState,
   summarizePullRequestChecks,
-} from "./pullRequestPresentation";
+} from "./pullRequestStatePresentation";
 import { parseRoutePositiveInt, type PullRequestDetailRouteParams } from "./pullRequestNavigation";
 import { PullRequestActionChip, PullRequestPrimaryButton } from "./PullRequestActionChip";
 import { PullRequestActorAvatar } from "./PullRequestActorAvatar";
