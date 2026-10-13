@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261013.3042003480",
+    date: "2026-10-13",
+    items: [
+      {
+        kind: "new",
+        title: "Global and project prompt guidance",
+      },
+      {
+        kind: "improved",
+        title: "The search backfill and legacy fold off the boot path",
+      },
+      {
+        kind: "improved",
+        title: "Renderer-blocking sync IPC and make chrome glass cheap",
+      },
+      {
+        kind: "fixed",
+        title: "Prompt-link pages keep World Scenery glass",
+      },
+      {
+        kind: "fixed",
+        title: "Failed server-browser opens report instead of hanging",
+      },
+      {
+        kind: "fixed",
+        title: "World Scenery glass for the terminal drawer and thread pane",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261013.3042003475",
     date: "2026-10-13",
     items: [
