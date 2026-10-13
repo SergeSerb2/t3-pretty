@@ -1370,7 +1370,7 @@ export function PullRequestSummaryTab({
                         }`}
                   </Button>
                 ) : null}
-                {filteredComments.length === 0 ? (
+                {filteredComments.length === 0 && filteredOutCount > 0 ? (
                   <p className="py-2 text-xs text-muted-foreground">
                     {filteredOutCount === 1
                       ? "The only comment is hidden by the filter."
