@@ -24,6 +24,7 @@ vi.mock("../ui/tooltip", () => ({
   TooltipPopup: () => null,
 }));
 
+import type { PullRequestPanelViewSnapshot } from "./pullRequestPanelView.logic";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 
 const detail: PullRequestDetailView = {
@@ -98,9 +99,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function render(value = detail) {
+function render(
+  value = detail,
+  view?: {
+    readonly restoredView?: PullRequestPanelViewSnapshot;
+    readonly onViewChange?: (patch: PullRequestPanelViewSnapshot) => void;
+  },
+) {
   return (
     <PullRequestSummaryTab
+      {...view}
       scrollerRef={() => {}}
       environmentId={EnvironmentId.make("environment")}
       threadRef={null}
@@ -130,26 +138,41 @@ function click(title: string) {
   );
 }
 
-it("toggles checks from their heading and resets sections for another pull request", () => {
+it("toggles checks from their heading and restores sections per pull request", () => {
+  const checksVisible = () =>
+    renderer.root.findAllByType("span").some((span) => span.children.includes("Unit tests"));
+  const onViewChange = vi.fn();
   act(() => {
-    renderer = create(render());
+    renderer = create(render(detail, { onViewChange }));
   });
-  expect(
-    renderer.root.findAllByType("span").some((span) => span.children.includes("Unit tests")),
-  ).toBe(false);
-  click("Checks");
-  expect(
-    renderer.root.findAllByType("span").some((span) => span.children.includes("Unit tests")),
-  ).toBe(true);
+  // Checks open by default so a failing run is visible without a click.
+  expect(heading("Checks").props["aria-expanded"]).toBe(true);
+  expect(checksVisible()).toBe(true);
   click("Checks");
   expect(heading("Checks").props["aria-expanded"]).toBe(false);
+  expect(onViewChange).toHaveBeenLastCalledWith({ sectionOpen: { checks: false } });
+  click("Checks");
+  expect(heading("Checks").props["aria-expanded"]).toBe(true);
+  expect(checksVisible()).toBe(true);
   click("Checks");
   click("Description");
+  expect(onViewChange).toHaveBeenLastCalledWith({ sectionOpen: { description: false } });
+
+  // Another pull request with no saved view starts from the defaults.
+  const other = { ...detail, url: "https://github.com/owner/repo/pull/2", number: 2 };
+  act(() => renderer.update(render(other)));
+  expect(heading("Checks").props["aria-expanded"]).toBe(true);
+  expect(heading("Description").props["aria-expanded"]).toBe(true);
+
+  // Returning to the first one restores what the reader left collapsed.
   act(() =>
-    renderer.update(render({ ...detail, url: "https://github.com/owner/repo/pull/2", number: 2 })),
+    renderer.update(
+      render(detail, { restoredView: { sectionOpen: { checks: false, description: false } } }),
+    ),
   );
   expect(heading("Checks").props["aria-expanded"]).toBe(false);
-  expect(heading("Description").props["aria-expanded"]).toBe(true);
+  expect(heading("Description").props["aria-expanded"]).toBe(false);
+  expect(checksVisible()).toBe(false);
 });
 
 it("keeps an unsaved description when collapsed and reopened", () => {
