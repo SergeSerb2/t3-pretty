@@ -520,6 +520,7 @@ const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
   "providerHealthRefreshInterval",
   "sourceControlWriterModelSelection",
   "reviewGuideModelSelection",
+  "homeSuggestionsModelSelection",
   "textGenerationModelSelection",
   "pullRequestMergeMethod",
 ]);
