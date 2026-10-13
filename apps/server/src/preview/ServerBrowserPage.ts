@@ -211,17 +211,22 @@ export const snapshot = async (input: {
       "The page changed while capturing its snapshot. Take another snapshot.",
     );
   }
-  // Rewriting refs lengthens the text, so cut at a line boundary under the contract
-  // cap afterwards and register only the refs the agent can actually see.
-  const rewritten = tree.replace(
-    /\[ref=((?:f\d+)?e\d+)\]/g,
-    (_match, nativeRef: string) => `[ref=t3-${generation}-${nativeRef}]`,
-  );
+  // Rewriting refs lengthens the text, so cap it afterwards and register only
+  // the refs whose closing bracket survived the cut.
+  let rewritten = "";
+  let consumed = 0;
+  const rewrittenRefs: Array<{ ref: string; nativeRef: string; end: number }> = [];
+  for (const match of tree.matchAll(/\[ref=((?:f\d+)?e\d+)\]/g)) {
+    const [token, nativeRef = ""] = match;
+    const ref = `t3-${generation}-${nativeRef}`;
+    rewritten += `${tree.slice(consumed, match.index)}[ref=${ref}]`;
+    rewrittenRefs.push({ ref, nativeRef, end: rewritten.length });
+    consumed = match.index + token.length;
+  }
+  rewritten += tree.slice(consumed);
   const accessibilityTree = capAtLineBoundary(rewritten, MAX_VISIBLE_TEXT_LENGTH);
-  for (const [, ref, nativeRef] of accessibilityTree.matchAll(
-    /\[ref=(t3-\d+-((?:f\d+)?e\d+))\]/g,
-  )) {
-    state.refs.set(ref!, nativeRef!);
+  for (const { ref, nativeRef, end } of rewrittenRefs) {
+    if (end <= accessibilityTree.length) state.refs.set(ref, nativeRef);
   }
   return {
     ...page,
