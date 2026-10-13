@@ -131,6 +131,22 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.deepEqual(settings.providerModelPreferences?.[provider]?.modelOrder, ["luna", "sol"]);
     }).pipe(Effect.provide(layerServerSettings())),
   );
+  it.effect("saves a home suggestions model that keeps the default provider instance", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      // Same instance as the default, different model: stripping defaults field by
+      // field would drop instanceId and every later save would fail to encode.
+      const selection = createModelSelection(ProviderInstanceId.make("codex"), "gpt-test-model");
+      yield* service.updateSettings({ homeSuggestionsModelSelection: selection });
+      const updated = yield* service.updateSettings({ homeSuggestionsEnabled: false });
+      assert.deepEqual(updated.homeSuggestionsModelSelection, selection);
+      const saved = yield* decodeServerSettingsJson(yield* fs.readFileString(config.settingsPath));
+      assert.deepEqual(saved.homeSuggestionsModelSelection, selection);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("persists and broadcasts model preferences to other connected clients", () =>
     Effect.scoped(
       Effect.gen(function* () {
