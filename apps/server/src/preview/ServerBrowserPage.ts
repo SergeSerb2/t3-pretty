@@ -175,6 +175,13 @@ export const captureViewport = async (
   return data;
 };
 
+/** Keeps whole lines within `max` characters; a first line longer than `max` is cut hard. */
+export const capAtLineBoundary = (text: string, max: number): string => {
+  if (text.length <= max) return text;
+  const lineEnd = text.lastIndexOf("\n", max - 1) + 1;
+  return text.slice(0, lineEnd > 0 ? lineEnd : max);
+};
+
 export const snapshot = async (input: {
   readonly page: Page;
   readonly cdp: CDPSession;
@@ -210,10 +217,7 @@ export const snapshot = async (input: {
     /\[ref=((?:f\d+)?e\d+)\]/g,
     (_match, nativeRef: string) => `[ref=t3-${generation}-${nativeRef}]`,
   );
-  const accessibilityTree =
-    rewritten.length <= MAX_VISIBLE_TEXT_LENGTH
-      ? rewritten
-      : rewritten.slice(0, rewritten.lastIndexOf("\n", MAX_VISIBLE_TEXT_LENGTH) + 1);
+  const accessibilityTree = capAtLineBoundary(rewritten, MAX_VISIBLE_TEXT_LENGTH);
   for (const [, ref, nativeRef] of accessibilityTree.matchAll(
     /\[ref=(t3-\d+-((?:f\d+)?e\d+))\]/g,
   )) {
