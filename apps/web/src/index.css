@@ -398,9 +398,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 @media (prefers-reduced-motion: no-preference) {
   [data-sidebar-control] {
     transition:
-      translate var(--sidebar-peek-duration, 280ms)
+      translate var(--sidebar-peek-duration, 180ms)
         var(--sidebar-peek-ease, cubic-bezier(0.22, 1, 0.36, 1)),
-      opacity var(--sidebar-peek-duration, 280ms)
+      opacity var(--sidebar-peek-duration, 180ms)
         var(--sidebar-peek-ease, cubic-bezier(0.22, 1, 0.36, 1));
   }
 }
@@ -1184,22 +1184,83 @@ html[data-window-inactive]
     display: none;
   }
 
-  /* Collapsed peek: the shell animates width over a clip of the expanded
-     tree. Copy and the thread pane fade/slide into the revealed space so the
-     clip edge never slices glyphs. Rail icons stay seated; settings icons
-     already sit in the 3rem column and do not travel. */
+  /* Collapsed peek: the full-width shell parks off the docked edge by the
+     hidden width and the expanded tree counter-translates by the same
+     amount, so rail icons stay seated behind the overflow clip. Revealing
+     is two synced transforms back to zero. No frame lays out a width or
+     repaints a resized shadow or backdrop, and a reverse hover retargets
+     both transforms mid-flight. Copy and the thread pane fade/slide into
+     the revealed space so the clip edge never slices glyphs; settings
+     icons already sit in the 3rem column and do not travel. */
   [data-slot="sidebar"] {
     --sidebar-peek-shift: 0.625rem;
   }
 
-  /* Navigation flips data-panel-animations for a frame. That utility rewrites
-     transition-property on the shell and restarts the peek width. Only while
-     the flyout is up: a plain collapse keeps the panel timing. */
+  [data-slot="sidebar"][data-side="left"][data-collapsed]:not([data-peeking])
+    [data-slot="sidebar-container"] {
+    transform: translateX(
+      calc(var(--sidebar-collapsed-width, var(--sidebar-width-icon)) - var(--sidebar-width))
+    );
+  }
+
+  [data-slot="sidebar"][data-side="left"][data-collapsed]:not([data-peeking])
+    [data-slot="sidebar-inner"] {
+    transform: translateX(
+      calc(var(--sidebar-width) - var(--sidebar-collapsed-width, var(--sidebar-width-icon)))
+    );
+  }
+
+  [data-slot="sidebar"][data-side="right"][data-collapsed]:not([data-peeking])
+    [data-slot="sidebar-container"] {
+    transform: translateX(
+      calc(var(--sidebar-width) - var(--sidebar-collapsed-width, var(--sidebar-width-icon)))
+    );
+  }
+
+  [data-slot="sidebar"][data-side="right"][data-collapsed]:not([data-peeking])
+    [data-slot="sidebar-inner"] {
+    transform: translateX(
+      calc(var(--sidebar-collapsed-width, var(--sidebar-width-icon)) - var(--sidebar-width))
+    );
+  }
+
+  /* The counter-translated inner tree becomes the rail's containing block,
+     so park the rail on the visible edge instead of the layout edge. Its
+     centering utility uses the separate `translate` property and still
+     applies on top of this transform. */
+  [data-slot="sidebar"][data-side="left"][data-collapsed]:not([data-peeking])
+    [data-slot="sidebar-rail"] {
+    transform: translateX(
+      calc(var(--sidebar-collapsed-width, var(--sidebar-width-icon)) - var(--sidebar-width))
+    );
+  }
+
+  [data-slot="sidebar"][data-side="right"][data-collapsed]:not([data-peeking])
+    [data-slot="sidebar-rail"] {
+    transform: translateX(
+      calc(var(--sidebar-width) - var(--sidebar-collapsed-width, var(--sidebar-width-icon)))
+    );
+  }
+
+  /* Navigation flips data-panel-animations for a frame. That utility
+     rewrites transition-property on the shell and would drop the reveal
+     transform, so icon mode pins the reveal timing on the shell and the
+     inner tree. The two must share it exactly or the seated content
+     drifts while the transforms run. */
   @media (prefers-reduced-motion: no-preference) {
-    [data-slot="sidebar"][data-collapsed]:is([data-peeking], [data-present])
-      [data-slot="sidebar-container"] {
-      transition-property: width, box-shadow !important;
-      transition-duration: var(--sidebar-peek-duration, 280ms) !important;
+    [data-slot="sidebar"][data-icon-collapsible]
+      :is([data-slot="sidebar-container"], [data-slot="sidebar-inner"]) {
+      transition-property: transform !important;
+      transition-duration: var(--sidebar-peek-duration, 180ms) !important;
+      transition-timing-function: var(
+        --sidebar-peek-ease,
+        cubic-bezier(0.22, 1, 0.36, 1)
+      ) !important;
+    }
+
+    [data-slot="sidebar"]:is([data-collapsed], [data-opening]) [data-slot="sidebar-rail"] {
+      transition-property: transform !important;
+      transition-duration: var(--sidebar-peek-duration, 180ms) !important;
       transition-timing-function: var(
         --sidebar-peek-ease,
         cubic-bezier(0.22, 1, 0.36, 1)
@@ -3722,22 +3783,49 @@ code {
   display: block;
 }
 
-/* Immediately covers the titlebar the flyout is opening into. The container
-   width catches up over the peek animation; without this strip the pointer
-   leaves as soon as it moves above the search row. */
+/* Immediately covers the titlebar the flyout is opening into. The reveal
+   edge catches up over the peek animation; without this strip the pointer
+   leaves as soon as it moves above the search row. The strip rides the
+   shell transform at its layout edge and shrinks from the hidden width
+   to zero on the same timing, so its far edge stays on the final sidebar
+   edge. It stays rendered but hidden at rest so that width transition
+   has a computed value to start from; the empty strip itself never
+   paints, so the per-frame width change costs no layout beyond it. */
 [data-sidebar-peek-hover-bridge] {
-  display: none;
   position: absolute;
   top: 0;
   left: 100%;
   z-index: 2;
   height: var(--workspace-topbar-height);
-  width: max(0px, calc(var(--sidebar-width) - 100%));
+  width: max(
+    0px,
+    calc(var(--sidebar-width) - var(--sidebar-collapsed-width, var(--sidebar-width-icon)))
+  );
+  visibility: hidden;
+  /* Only the live strip punches a no-drag hole; at rest this band of the
+     page titlebar must keep dragging the window. */
+  -webkit-app-region: initial;
+}
+
+[data-slot="sidebar"][data-side="right"] [data-sidebar-peek-hover-bridge] {
+  right: 100%;
+  left: auto;
+}
+
+[data-slot="sidebar"][data-present] [data-sidebar-peek-hover-bridge] {
+  visibility: visible;
   -webkit-app-region: no-drag;
 }
 
 [data-slot="sidebar"][data-peeking] [data-sidebar-peek-hover-bridge] {
-  display: block;
+  width: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-sidebar-peek-hover-bridge] {
+    transition: width var(--sidebar-peek-duration, 180ms)
+      var(--sidebar-peek-ease, cubic-bezier(0.22, 1, 0.36, 1));
+  }
 }
 
 [data-titlebar-controls-drag-hole] {

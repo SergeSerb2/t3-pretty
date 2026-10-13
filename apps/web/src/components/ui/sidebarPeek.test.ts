@@ -51,8 +51,10 @@ describe("sidebar peek", () => {
     expect(resolveSidebarPeekIntent(true, "hide-now")).toEqual({ peeking: false, delayMs: 0 });
   });
 
-  it("keeps the overlay mounted through the close width animation", () => {
-    expect(SIDEBAR_PEEK_ANIMATION_MS).toBe(280);
+  it("keeps the overlay mounted through the close reveal animation", () => {
+    expect(SIDEBAR_PEEK_ANIMATION_MS).toBe(180);
+    expect(SIDEBAR_PEEK_OPEN_DELAY_MS).toBe(60);
+    expect(SIDEBAR_PEEK_CLOSE_DELAY_MS).toBe(120);
   });
 
   it("does not ignore a leave into nowhere", () => {

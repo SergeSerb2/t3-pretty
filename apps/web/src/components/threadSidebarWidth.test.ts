@@ -142,16 +142,19 @@ describe("thread sidebar width", () => {
     );
   });
 
-  it("peeks by animating width over an overflow clip, not clip-path", () => {
+  it("peeks with synced shell and inner transforms over an overflow clip, not width", () => {
     const sidebar = NodeFS.readFileSync(new URL("./ui/sidebar.tsx", import.meta.url), "utf8");
+    const css = NodeFS.readFileSync(new URL("../index.css", import.meta.url), "utf8");
 
-    expect(sidebar).toContain("group-data-collapsed:w-(--sidebar-width-icon)");
-    expect(sidebar).toContain("group-data-collapsed:group-data-peeking:w-(--sidebar-width)!");
+    expect(sidebar).toContain('"--sidebar-collapsed-width"');
+    expect(sidebar).toContain('data-icon-collapsible={collapsible === "icon"');
+    // The gap keeps its collapsed width; only the shell stopped animating it.
+    expect(sidebar).not.toContain("group-data-peeking:w-");
     expect(sidebar).toContain("group-data-collapsed:overflow-hidden");
     expect(sidebar).toContain("group-data-present:overflow-hidden");
     expect(sidebar).toContain("group-data-opening:overflow-hidden");
     expect(sidebar).toContain("w-(--sidebar-width) min-w-(--sidebar-width)");
-    expect(sidebar).toContain("motion-safe:transition-[width,box-shadow]");
+    expect(sidebar).not.toContain("transition-[width,box-shadow]");
     expect(sidebar).toContain("group-data-present:z-40");
     expect(sidebar).toContain("group-data-present:shadow-[12px_0_40px_rgba(0,0,0,0.12)]");
     expect(sidebar).toContain("data-opening-ready");
@@ -160,9 +163,22 @@ describe("thread sidebar width", () => {
     expect(sidebar).toContain("data-sidebar-peeking={peekFlyout");
     expect(sidebar).not.toContain("clip-path");
     expect(sidebar).not.toContain("data-compact");
+    // The shell parks off the docked edge and the inner tree counter-slides
+    // by the same amount, so revealing never animates a layout property.
+    expect(css).toContain(
+      '[data-slot="sidebar"][data-side="left"][data-collapsed]:not([data-peeking])\n    [data-slot="sidebar-container"]',
+    );
+    expect(css).toContain(
+      '[data-slot="sidebar"][data-side="left"][data-collapsed]:not([data-peeking])\n    [data-slot="sidebar-inner"]',
+    );
+    expect(css).toContain(
+      "calc(var(--sidebar-collapsed-width, var(--sidebar-width-icon)) - var(--sidebar-width))",
+    );
+    expect(css).toContain("transition-property: transform !important");
+    expect(css).not.toContain("transition-property: width, box-shadow !important");
   });
 
-  it("fades the thread pane and settings copy with the peek width", () => {
+  it("fades the thread pane and settings copy with the peek reveal", () => {
     const threadSidebar = NodeFS.readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
     const settings = NodeFS.readFileSync(
       new URL("./settings/SettingsSidebarNav.tsx", import.meta.url),
@@ -183,11 +199,9 @@ describe("thread sidebar width", () => {
     expect(css).not.toContain("--sidebar-peek-duration: 280ms");
     expect(css).toContain("var(--sidebar-peek-duration)");
     expect(css).toContain("var(--sidebar-peek-ease)");
-    // Peek !important width/shadow is already scoped in index.css. This lock
-    // fails if that rule is widened to every collapsed rail or dropped.
-    expect(css).toContain(
-      '[data-slot="sidebar"][data-collapsed]:is([data-peeking], [data-present])',
-    );
+    // The pinned reveal timing is scoped to icon mode in index.css. This
+    // lock fails if that rule is widened to offcanvas sidebars or dropped.
+    expect(css).toContain('[data-slot="sidebar"][data-icon-collapsible]');
     expect(css).not.toContain(
       '[data-slot="sidebar"][data-collapsed] [data-slot="sidebar-container"]',
     );
@@ -199,7 +213,10 @@ describe("thread sidebar width", () => {
     expect(css).toContain("[data-sidebar-peeking] [data-sidebar-peek-drag-hole]");
     expect(css).toContain("[data-sidebar-peek-hover-bridge]");
     expect(css).toContain("calc(var(--sidebar-width) - var(--sidebar-width-icon))");
-    expect(css).toContain("calc(var(--sidebar-width) - 100%)");
+    expect(css).toContain(
+      "calc(var(--sidebar-width) - var(--sidebar-collapsed-width, var(--sidebar-width-icon)))",
+    );
+    expect(css).not.toContain("calc(var(--sidebar-width) - 100%)");
   });
 
   it("keeps the project rail one column whether the sidebar is icon-only or open", () => {
