@@ -98,13 +98,13 @@ export function SidebarThreadHeader({
     <div
       className={cn(
         "flex min-w-0 flex-1 items-center gap-2 border border-sidebar-border bg-sidebar-control-surface/40 text-sidebar-muted-foreground focus-within:border-ring focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring",
-        teslaTouch ? "h-12 rounded-xl px-3 text-base" : "h-8 rounded-md px-2 text-sm",
+        teslaTouch ? "h-14 rounded-2xl px-3 text-lg" : "h-8 rounded-md px-2 text-sm",
       )}
     >
       <SearchIcon
         className={cn(
           "shrink-0 text-[var(--sidebar-icon-color)]",
-          teslaTouch ? "size-5" : "size-4",
+          teslaTouch ? "size-6" : "size-4",
         )}
       />
       <SidebarInput
@@ -136,13 +136,14 @@ export function SidebarThreadHeader({
         }
         className="min-w-0 flex-1 [&_[data-slot=input]]:placeholder:text-[var(--sidebar-icon-color)]"
       />
-      {isSearching ? (
+      {/* Car display has no Escape key, so its open search always offers a way out. */}
+      {isSearching || teslaTouch ? (
         <Button
           type="button"
-          size={teslaTouch ? "icon" : "icon-micro"}
+          size={teslaTouch ? "icon-lg" : "icon-micro"}
           variant="ghost"
           className="shrink-0 text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-          aria-label="Clear thread search"
+          aria-label={teslaTouch ? "Close thread search" : "Clear thread search"}
           onClick={() => {
             onClearSearch();
             if (teslaTouch) {
@@ -152,37 +153,41 @@ export function SidebarThreadHeader({
             searchInputRef.current?.focus();
           }}
         >
-          <XIcon className={teslaTouch ? "size-4" : "size-3"} />
+          <XIcon className={teslaTouch ? "size-5" : "size-3"} />
         </Button>
       ) : null}
     </div>
   );
 
   if (teslaTouch) {
+    // One row keeps the thread list high on a short car screen. Search takes
+    // the whole row while it is open.
     return (
-      <div className="flex min-w-0 flex-col gap-2.5">
-        <button
-          type="button"
-          data-tesla-new-thread=""
-          disabled={newThreadDisabled}
-          onClick={onNewThread}
-          className="flex h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-primary px-4 text-lg font-medium text-primary-foreground outline-none transition-transform duration-150 ease-out active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
-        >
-          <SquarePenIcon className="size-5" aria-hidden />
-          New thread
-        </button>
+      <div className="flex min-w-0 flex-col gap-2">
         {showSearchField ? (
           searchField
         ) : (
-          <button
-            type="button"
-            data-tesla-search=""
-            onClick={() => setSearchOpen(true)}
-            className="flex h-12 w-full items-center gap-2.5 rounded-xl border border-sidebar-border bg-sidebar-control-surface/40 px-3 text-base text-sidebar-muted-foreground outline-none transition-transform duration-150 ease-out active:scale-[0.98]"
-          >
-            <SearchIcon className="size-5 shrink-0" aria-hidden />
-            Search threads
-          </button>
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              data-tesla-new-thread=""
+              disabled={newThreadDisabled}
+              onClick={onNewThread}
+              className="flex h-14 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-2xl bg-primary px-4 text-lg font-medium text-primary-foreground outline-none transition-transform duration-150 ease-out focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+            >
+              <SquarePenIcon className="size-5 shrink-0" aria-hidden />
+              <span className="truncate">New thread</span>
+            </button>
+            <button
+              type="button"
+              data-tesla-search=""
+              aria-label="Search threads"
+              onClick={() => setSearchOpen(true)}
+              className="flex size-14 shrink-0 items-center justify-center rounded-2xl border border-sidebar-border bg-sidebar-control-surface/60 text-sidebar-foreground outline-none transition-transform duration-150 ease-out focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            >
+              <SearchIcon className="size-6" aria-hidden />
+            </button>
+          </div>
         )}
         {scopeTitle != null ? (
           <div className="flex min-w-0 items-center gap-2 px-1 text-base font-medium text-sidebar-foreground">

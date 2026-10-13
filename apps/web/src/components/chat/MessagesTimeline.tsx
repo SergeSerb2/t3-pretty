@@ -2680,7 +2680,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </span>
         </div>
       ) : null}
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+      <div
+        data-message-meta=""
+        className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100"
+      >
         <div className="flex shrink-0 items-center gap-2">
           <Tooltip>
             <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
@@ -3050,12 +3053,13 @@ function AssistantMessageMeta({
   return (
     <div
       data-assistant-meta={alwaysVisible ? "visible" : "overlay"}
+      data-message-meta=""
       data-assistant-meta-gap={!alwaysVisible || undefined}
       className={cn(
         assistantMetaActionsClassName,
         alwaysVisible
           ? "opacity-100"
-          : "h-8 overflow-hidden opacity-0 pointer-events-none pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 tesla-touch:pointer-events-auto tesla-touch:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
+          : "h-8 overflow-hidden opacity-0 pointer-events-none pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100",
         className,
       )}
     >
