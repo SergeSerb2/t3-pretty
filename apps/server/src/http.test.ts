@@ -14,6 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Tracer from "effect/Tracer";
+import * as NodeZlib from "node:zlib";
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServerResponse } from "effect/http";
 import { openMediaFile } from "./assets/MediaFile.ts";
 
@@ -259,6 +260,40 @@ it.layer(
     Layer.provideMerge(NodeServices.layer),
   ),
 )("static HTTP responses", (it) => {
+  it.effect("serves precompressed assets only when Brotli is acceptable", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const staticDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-static-encoding-" });
+      const asset = "assets/app-12345678.js";
+      const body = "export const remote = true;";
+      const compressed = NodeZlib.brotliCompressSync(Buffer.from(body));
+      yield* fs.makeDirectory(path.join(staticDir, "assets"));
+      yield* fs.makeDirectory(path.join(staticDir, ".vite"));
+      yield* fs.writeFileString(
+        path.join(staticDir, ".vite", "manifest.json"),
+        JSON.stringify({ "index.html": { file: asset } }),
+      );
+      yield* fs.writeFileString(path.join(staticDir, asset), body);
+      yield* fs.writeFile(path.join(staticDir, `${asset}.br`), compressed);
+      const request = yield* makeStaticRequest(staticDir);
+
+      const rejected = yield* request(`/${asset}`, {
+        headers: { "accept-encoding": "br;q=0, identity" },
+      });
+      expect(rejected.headers["content-encoding"]).toBeUndefined();
+      expect(yield* rejected.text).toBe(body);
+
+      const accepted = yield* request(`/${asset}`, {
+        headers: { "accept-encoding": "br;q=0.5" },
+      });
+      expect(accepted.headers["content-encoding"]).toBe("br");
+      expect(accepted.headers["vary"]).toBe("Accept-Encoding");
+      expect(accepted.headers["content-length"]).toBe(String(compressed.length));
+      expect(yield* accepted.text).toBe(body);
+    }),
+  );
+
   it.effect("revalidates non-HTML files and returns changed contents", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -927,6 +962,17 @@ describe("static client asset cache", () => {
     expect(acceptsBrotliEncoding("br;q=1.0, gzip;q=0.8")).toBe(true);
     expect(acceptsBrotliEncoding("gzip, deflate")).toBe(false);
     expect(acceptsBrotliEncoding(undefined)).toBe(false);
+  });
+
+  it("honors encoding quality and explicit exclusions before a wildcard", () => {
+    expect(acceptsBrotliEncoding("br;q=0")).toBe(false);
+    expect(acceptsBrotliEncoding("br;q=0.000, gzip")).toBe(false);
+    expect(acceptsBrotliEncoding("BR; Q=0.5")).toBe(true);
+    expect(acceptsBrotliEncoding("*;q=0.5")).toBe(true);
+    expect(acceptsBrotliEncoding("br;q=0, *;q=1")).toBe(false);
+    expect(acceptsBrotliEncoding("*;q=1, br;q=0")).toBe(false);
+    expect(acceptsBrotliEncoding("*;q=0")).toBe(false);
+    expect(acceptsBrotliEncoding("br;q=invalid")).toBe(false);
   });
 });
 

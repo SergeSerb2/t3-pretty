@@ -589,29 +589,60 @@ const isFreshSettledResult = <A, E>(
 const FOREGROUND_REVALIDATION_SETTLE_MS = 3_500;
 
 /**
- * Refreshes a query when `signal` changes, but only while something reads it.
+ * Refreshes a query when its signals change, but only while something reads it.
  * `Atom.makeRefreshOnSignal` subscribes to the signal, so a query that outlives its view on an
  * idle TTL still re-runs on every change. Reading the signal as a dependency instead lets the
  * registry re-run a mounted query right away and only mark an idle one stale, which then
  * refreshes on its next read.
  */
-const refreshOnSignalWhileRead =
-  (signal: Atom.Atom<unknown>) =>
-  <A>(self: Atom.Atom<A>): Atom.Atom<A> => {
+const refreshOnSignalsWhileRead =
+  (
+    signals: ReadonlyArray<{
+      readonly atom: Atom.Atom<unknown>;
+      readonly onChange?: () => void;
+    }>,
+    staleTimeMs: number,
+  ) =>
+  <A, E>(
+    self: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
+  ): Atom.Atom<AsyncResult.AsyncResult<A, E>> => {
     // The signal value each registry's data was read under. Held outside the node because the
     // registry can sweep this node while `self` keeps the data, and the rebuilt node must still
     // see a change it missed.
-    const readUnder = new WeakMap<AtomRegistry.AtomRegistry, unknown>();
+    const readUnder = new WeakMap<AtomRegistry.AtomRegistry, ReadonlyArray<unknown>>();
     return Atom.transform(
       self,
       (get) => {
-        const current = get(signal);
+        const current = signals.map(({ atom }) => get(atom));
         get.subscribe(self, (value) => get.setSelf(value));
-        const changed =
-          readUnder.has(get.registry) && !Object.is(readUnder.get(get.registry), current);
+        const previous = readUnder.get(get.registry);
+        let changed = false;
+        if (previous !== undefined) {
+          for (const [index, signal] of signals.entries()) {
+            if (Object.is(previous[index], current[index])) continue;
+            changed = true;
+            signal.onChange?.();
+          }
+        }
         readUnder.set(get.registry, current);
         if (changed) get.refresh(self);
-        return get.once(self);
+        const result = get.once(self);
+        // This outer node can expire while SWR keeps its data. Recheck that
+        // data on the next read even when the shared signals have not changed.
+        if (!changed && !result.waiting && !isFreshSettledResult(result, staleTimeMs)) {
+          let active = true;
+          get.addFinalizer(() => {
+            active = false;
+          });
+          get.registry.schedulerAsync.makeDispatcher().scheduleTask(() => {
+            if (!active) return;
+            const latest = get.once(self);
+            if (!latest.waiting && !isFreshSettledResult(latest, staleTimeMs)) {
+              get.refresh(self);
+            }
+          }, 0);
+        }
+        return result;
       },
       { initialValueTarget: self },
     );
@@ -705,7 +736,7 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         | EnvironmentRpcUnavailableError
       >((get) => {
         const connection = Option.getOrNull(
-          AsyncResult.value(get(connectionAtom(target.environmentId))),
+          AsyncResult.value(get.once(connectionAtom(target.environmentId))),
         );
         const emit = (value: A) =>
           Effect.sync(() => get.setSelf(AsyncResult.success(value, { waiting: true }))).pipe(
@@ -821,18 +852,37 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         }),
         Atom.setIdleTTL(idleTtlMs),
       );
-    const intervalQuery =
+    const intervalSignal =
       options.refreshIntervalMs === undefined
-        ? queryAtom
-        : queryAtom.pipe(Atom.withRefresh(options.refreshIntervalMs));
+        ? undefined
+        : Atom.make((get) => Option.getOrElse(get.self<number>(), () => 0) + 1).pipe(
+            Atom.withRefresh(options.refreshIntervalMs),
+            Atom.setIdleTTL(idleTtlMs),
+          );
     const refreshTrigger = options.refreshTrigger?.(target);
-    const labeled = (
-      refreshTrigger === undefined
-        ? intervalQuery
-        : withForcedQueryRefresh(intervalQuery, () => {
-            skipStaleTime = true;
-          }).pipe(refreshOnSignalWhileRead(refreshTrigger))
-    ).pipe(Atom.setIdleTTL(idleTtlMs), Atom.withLabel(`${options.label}:${key}`));
+    // Keep all invalidation signals at the outer read boundary. A subscription
+    // held by SWR for cached data must not refetch an unused query on reconnect.
+    const labeled = queryAtom.pipe(
+      refreshOnSignalsWhileRead(
+        [
+          { atom: connectionAtom(target.environmentId) },
+          ...(intervalSignal === undefined ? [] : [{ atom: intervalSignal }]),
+          ...(refreshTrigger === undefined
+            ? []
+            : [
+                {
+                  atom: refreshTrigger,
+                  onChange: () => {
+                    skipStaleTime = true;
+                  },
+                },
+              ]),
+        ],
+        staleTimeMs,
+      ),
+      Atom.setIdleTTL(idleTtlMs),
+      Atom.withLabel(`${options.label}:${key}`),
+    );
     return withForcedQueryRefresh(labeled, () => {
       skipStaleTime = true;
     });
