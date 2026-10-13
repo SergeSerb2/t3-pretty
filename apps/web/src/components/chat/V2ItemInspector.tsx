@@ -14,7 +14,7 @@ import {
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import { isJavaScriptReplTool } from "@t3tools/shared/toolActivity";
 import { ExternalLinkIcon, GitBranchIcon, RotateCcwIcon } from "lucide-react";
-import { memo, Suspense, use, useMemo } from "react";
+import { memo, Suspense, use, useEffect, useMemo, useState } from "react";
 
 import { useTheme } from "../../hooks/useTheme";
 import { cn } from "../../lib/utils";
@@ -149,6 +149,32 @@ function useFetchedTurnItem(
   };
 }
 
+/**
+ * Starts the fetch an open row makes as soon as the closed row is pressed, so
+ * the click usually opens to the final output in one step.
+ */
+export function TurnItemDetailPrefetch(props: {
+  readonly projectedItem: OrchestrationV2ProjectedTurnItem;
+  readonly environmentId: EnvironmentId;
+}) {
+  useFetchedTurnItem(props.projectedItem, props.environmentId);
+  return null;
+}
+
+const PENDING_OUTPUT_LABEL_DELAY_MS = 150;
+
+/** Invisible for a moment, so output that loads quickly replaces it without a flash. */
+function PendingOutputLine() {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const timeout = setTimeout(() => setShown(true), PENDING_OUTPUT_LABEL_DELAY_MS);
+    return () => clearTimeout(timeout);
+  }, []);
+  return (
+    <div className={cn("text-muted-foreground italic", !shown && "invisible")}>Loading output…</div>
+  );
+}
+
 interface ToolOutputState {
   readonly output: string | null;
   readonly images: ReturnType<typeof turnItemOutputImages>;
@@ -173,7 +199,7 @@ function ToolOutput(props: ToolOutputState) {
   const text = props.output ? (
     <div className="max-h-80 overflow-auto text-muted-foreground">{props.output}</div>
   ) : props.pending ? (
-    <div className="text-muted-foreground italic">Loading output…</div>
+    <PendingOutputLine />
   ) : props.error ? (
     <div className="text-destructive">Couldn&apos;t load output: {props.error}</div>
   ) : props.empty && images.length === 0 ? (

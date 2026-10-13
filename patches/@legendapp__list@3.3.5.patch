@@ -1481,10 +1481,117 @@ index 95465f2..d7cbe1c 100644
      }
    }
 diff --git a/react.js b/react.js
-index 914d2da..0c2917d 100644
+index 914d2da..25ba7ce 100644
 --- a/react.js
 +++ b/react.js
-@@ -4702,7 +4702,8 @@ function maybeUpdateAnchoredEndSpace(ctx) {
+@@ -1426,6 +1426,97 @@ function listenForScrollEnd(ctx, params) {
+ }
+ 
+ // src/core/doMaintainScrollAtEnd.ts
++// T3 Pretty: streamed text lands a paragraph at a time. One native smooth
++// scroll per landing plus a fixed 500ms lock reads as glide, pause, glide.
++// Follow the end with a critically damped spring instead. The end is re-read
++// every frame, so growth during a glide continues the same motion, and the
++// lock ends as soon as the end is reached. User input hands control back.
++var MAINTAIN_END_FOLLOW_OMEGA = 16;
++var MAINTAIN_END_FOLLOW_MAX_DT = 1 / 30;
++var MAINTAIN_END_FOLLOW_USER_EVENTS = ["wheel", "touchstart", "pointerdown", "keydown"];
++function followScrollAtEnd(ctx, activeState) {
++  const state = ctx.state;
++  const scroller = state.refScroller.current;
++  const node = scroller == null ? void 0 : scroller.getScrollableNode();
++  if (!node || typeof node.scrollTo !== "function" || state.props.horizontal || (scroller.isWindowScroll == null ? void 0 : scroller.isWindowScroll())) {
++    return false;
++  }
++  let position = node.scrollTop;
++  let written = position;
++  let velocity = 0;
++  let lastTime;
++  let frame;
++  const release = (processPending) => {
++    if (frame !== void 0) {
++      cancelAnimationFrame(frame);
++      frame = void 0;
++    }
++    for (const type of MAINTAIN_END_FOLLOW_USER_EVENTS) {
++      node.removeEventListener(type, onUserInput);
++    }
++    if (state.maintainingScrollAtEnd === activeState) {
++      state.maintainingScrollAtEnd = void 0;
++      if (processPending && state.pendingMaintainScrollAtEnd) {
++        doMaintainScrollAtEnd(ctx);
++      }
++    }
++  };
++  const onUserInput = (event) => {
++    if (event.type === "wheel" && event.deltaY >= 0) {
++      return;
++    }
++    release(false);
++  };
++  const step = (time) => {
++    frame = void 0;
++    const follow = state.props.maintainScrollAtEnd;
++    if (state.maintainingScrollAtEnd !== activeState || !follow || !node.isConnected) {
++      release(false);
++      return;
++    }
++    if (!follow.animated) {
++      release(false);
++      doMaintainScrollAtEnd(ctx);
++      return;
++    }
++    const target = Math.max(0, node.scrollHeight - node.clientHeight);
++    const current = node.scrollTop;
++    if (current < written - 1 && current < target - 1) {
++      release(false);
++      return;
++    }
++    if (Math.abs(current - written) > 1) {
++      position = current;
++    }
++    const dt = lastTime === void 0 ? 1 / 60 : Math.min(MAINTAIN_END_FOLLOW_MAX_DT, Math.max(0, (time - lastTime) / 1e3));
++    lastTime = time;
++    const offset = position - target;
++    const drift = velocity + MAINTAIN_END_FOLLOW_OMEGA * offset;
++    const decay = Math.exp(-MAINTAIN_END_FOLLOW_OMEGA * dt);
++    let nextOffset = (offset + drift * dt) * decay;
++    velocity = (velocity - MAINTAIN_END_FOLLOW_OMEGA * drift * dt) * decay;
++    const settled = Math.abs(nextOffset) < 0.5 && Math.abs(velocity) < 20;
++    if (settled) {
++      nextOffset = 0;
++      velocity = 0;
++    }
++    position = target + nextOffset;
++    if (Math.abs(position - current) >= 0.5) {
++      node.scrollTo({ behavior: "instant", top: position });
++    }
++    written = position;
++    if (settled) {
++      release(true);
++      return;
++    }
++    frame = requestAnimationFrame(step);
++  };
++  for (const type of MAINTAIN_END_FOLLOW_USER_EVENTS) {
++    node.addEventListener(type, onUserInput, { passive: true });
++  }
++  frame = requestAnimationFrame(step);
++  return true;
++}
+ function doMaintainScrollAtEnd(ctx) {
+   const state = ctx.state;
+   const {
+@@ -1466,6 +1557,8 @@ function doMaintainScrollAtEnd(ctx) {
+               x: nativeOffset,
+               y: 0
+             });
++          } else if (maintainScrollAtEnd.animated && followScrollAtEnd(ctx, activeState)) {
++            return;
+           } else {
+             scroller == null ? void 0 : scroller.scrollToEnd({
+               animated: maintainScrollAtEnd.animated
+@@ -4702,7 +4795,8 @@ function maybeUpdateAnchoredEndSpace(ctx) {
        contentBelowAnchor = Math.max(0, contentBelowAnchor - ctx.scrollAxisGap);
        contentBelowAnchor += (ctx.values.get("footerSize") || 0) + getStylePaddingEnd(state.props);
        isReady = !hasUnknownTailSize;
@@ -1494,7 +1601,7 @@ index 914d2da..0c2917d 100644
      } else if (anchorIndex >= 0) {
        isReady = false;
      }
-@@ -4722,6 +4723,12 @@ function maybeUpdateAnchoredEndSpace(ctx) {
+@@ -4722,6 +4816,12 @@ function maybeUpdateAnchoredEndSpace(ctx) {
        updateScroll(ctx, state.scroll, true, { markHasScrolled: false });
      }
      (_b = anchoredEndSpace == null ? void 0 : anchoredEndSpace.onReady) == null ? void 0 : _b.call(anchoredEndSpace, { anchorIndex: nextAnchorIndex, anchorKey: nextAnchorKey, size: nextSize });
@@ -1507,7 +1614,7 @@ index 914d2da..0c2917d 100644
    }
    return nextSize;
  }
-@@ -5651,6 +5658,18 @@ var ContainerSlot = typedMemo(function ContainerSlot2(props) {
+@@ -5651,6 +5751,18 @@ var ContainerSlot = typedMemo(function ContainerSlot2(props) {
  });
  
  // src/utils/reordering.ts
@@ -1526,7 +1633,7 @@ index 914d2da..0c2917d 100644
  function sortDOMElements(container, indexByElement) {
    const elements = Array.from(container.children);
    if (elements.length <= 1) return elements;
-@@ -5690,9 +5709,9 @@ function sortDOMElements(container, indexByElement) {
+@@ -5690,9 +5802,9 @@ function sortDOMElements(container, indexByElement) {
          }
        }
        if (nextStableElement) {
@@ -1538,7 +1645,7 @@ index 914d2da..0c2917d 100644
        }
      }
    }
-@@ -6446,8 +6465,8 @@ function ScrollAdjust() {
+@@ -6446,8 +6558,8 @@ function ScrollAdjust() {
                window.getComputedStyle(contentNode)[axis.paddingEndProp]
              );
              const temporaryPaddingEnd = `${(currentPaddingEnd || 0) + pad}px`;
@@ -1549,10 +1656,117 @@ index 914d2da..0c2917d 100644
              scrollBy();
              if (resetPaddingRafRef.current !== void 0) {
 diff --git a/react.mjs b/react.mjs
-index 95465f2..b73bfdf 100644
+index 95465f2..39155ad 100644
 --- a/react.mjs
 +++ b/react.mjs
-@@ -4681,7 +4681,8 @@ function maybeUpdateAnchoredEndSpace(ctx) {
+@@ -1405,6 +1405,97 @@ function listenForScrollEnd(ctx, params) {
+ }
+ 
+ // src/core/doMaintainScrollAtEnd.ts
++// T3 Pretty: streamed text lands a paragraph at a time. One native smooth
++// scroll per landing plus a fixed 500ms lock reads as glide, pause, glide.
++// Follow the end with a critically damped spring instead. The end is re-read
++// every frame, so growth during a glide continues the same motion, and the
++// lock ends as soon as the end is reached. User input hands control back.
++var MAINTAIN_END_FOLLOW_OMEGA = 16;
++var MAINTAIN_END_FOLLOW_MAX_DT = 1 / 30;
++var MAINTAIN_END_FOLLOW_USER_EVENTS = ["wheel", "touchstart", "pointerdown", "keydown"];
++function followScrollAtEnd(ctx, activeState) {
++  const state = ctx.state;
++  const scroller = state.refScroller.current;
++  const node = scroller == null ? void 0 : scroller.getScrollableNode();
++  if (!node || typeof node.scrollTo !== "function" || state.props.horizontal || (scroller.isWindowScroll == null ? void 0 : scroller.isWindowScroll())) {
++    return false;
++  }
++  let position = node.scrollTop;
++  let written = position;
++  let velocity = 0;
++  let lastTime;
++  let frame;
++  const release = (processPending) => {
++    if (frame !== void 0) {
++      cancelAnimationFrame(frame);
++      frame = void 0;
++    }
++    for (const type of MAINTAIN_END_FOLLOW_USER_EVENTS) {
++      node.removeEventListener(type, onUserInput);
++    }
++    if (state.maintainingScrollAtEnd === activeState) {
++      state.maintainingScrollAtEnd = void 0;
++      if (processPending && state.pendingMaintainScrollAtEnd) {
++        doMaintainScrollAtEnd(ctx);
++      }
++    }
++  };
++  const onUserInput = (event) => {
++    if (event.type === "wheel" && event.deltaY >= 0) {
++      return;
++    }
++    release(false);
++  };
++  const step = (time) => {
++    frame = void 0;
++    const follow = state.props.maintainScrollAtEnd;
++    if (state.maintainingScrollAtEnd !== activeState || !follow || !node.isConnected) {
++      release(false);
++      return;
++    }
++    if (!follow.animated) {
++      release(false);
++      doMaintainScrollAtEnd(ctx);
++      return;
++    }
++    const target = Math.max(0, node.scrollHeight - node.clientHeight);
++    const current = node.scrollTop;
++    if (current < written - 1 && current < target - 1) {
++      release(false);
++      return;
++    }
++    if (Math.abs(current - written) > 1) {
++      position = current;
++    }
++    const dt = lastTime === void 0 ? 1 / 60 : Math.min(MAINTAIN_END_FOLLOW_MAX_DT, Math.max(0, (time - lastTime) / 1e3));
++    lastTime = time;
++    const offset = position - target;
++    const drift = velocity + MAINTAIN_END_FOLLOW_OMEGA * offset;
++    const decay = Math.exp(-MAINTAIN_END_FOLLOW_OMEGA * dt);
++    let nextOffset = (offset + drift * dt) * decay;
++    velocity = (velocity - MAINTAIN_END_FOLLOW_OMEGA * drift * dt) * decay;
++    const settled = Math.abs(nextOffset) < 0.5 && Math.abs(velocity) < 20;
++    if (settled) {
++      nextOffset = 0;
++      velocity = 0;
++    }
++    position = target + nextOffset;
++    if (Math.abs(position - current) >= 0.5) {
++      node.scrollTo({ behavior: "instant", top: position });
++    }
++    written = position;
++    if (settled) {
++      release(true);
++      return;
++    }
++    frame = requestAnimationFrame(step);
++  };
++  for (const type of MAINTAIN_END_FOLLOW_USER_EVENTS) {
++    node.addEventListener(type, onUserInput, { passive: true });
++  }
++  frame = requestAnimationFrame(step);
++  return true;
++}
+ function doMaintainScrollAtEnd(ctx) {
+   const state = ctx.state;
+   const {
+@@ -1445,6 +1536,8 @@ function doMaintainScrollAtEnd(ctx) {
+               x: nativeOffset,
+               y: 0
+             });
++          } else if (maintainScrollAtEnd.animated && followScrollAtEnd(ctx, activeState)) {
++            return;
+           } else {
+             scroller == null ? void 0 : scroller.scrollToEnd({
+               animated: maintainScrollAtEnd.animated
+@@ -4681,7 +4774,8 @@ function maybeUpdateAnchoredEndSpace(ctx) {
        contentBelowAnchor = Math.max(0, contentBelowAnchor - ctx.scrollAxisGap);
        contentBelowAnchor += (ctx.values.get("footerSize") || 0) + getStylePaddingEnd(state.props);
        isReady = !hasUnknownTailSize;
@@ -1562,7 +1776,7 @@ index 95465f2..b73bfdf 100644
      } else if (anchorIndex >= 0) {
        isReady = false;
      }
-@@ -4701,6 +4702,12 @@ function maybeUpdateAnchoredEndSpace(ctx) {
+@@ -4701,6 +4795,12 @@ function maybeUpdateAnchoredEndSpace(ctx) {
        updateScroll(ctx, state.scroll, true, { markHasScrolled: false });
      }
      (_b = anchoredEndSpace == null ? void 0 : anchoredEndSpace.onReady) == null ? void 0 : _b.call(anchoredEndSpace, { anchorIndex: nextAnchorIndex, anchorKey: nextAnchorKey, size: nextSize });
@@ -1575,7 +1789,7 @@ index 95465f2..b73bfdf 100644
    }
    return nextSize;
  }
-@@ -5630,6 +5637,18 @@ var ContainerSlot = typedMemo(function ContainerSlot2(props) {
+@@ -5630,6 +5730,18 @@ var ContainerSlot = typedMemo(function ContainerSlot2(props) {
  });
  
  // src/utils/reordering.ts
@@ -1594,7 +1808,7 @@ index 95465f2..b73bfdf 100644
  function sortDOMElements(container, indexByElement) {
    const elements = Array.from(container.children);
    if (elements.length <= 1) return elements;
-@@ -5669,9 +5688,9 @@ function sortDOMElements(container, indexByElement) {
+@@ -5669,9 +5781,9 @@ function sortDOMElements(container, indexByElement) {
          }
        }
        if (nextStableElement) {
@@ -1606,7 +1820,7 @@ index 95465f2..b73bfdf 100644
        }
      }
    }
-@@ -6425,8 +6444,8 @@ function ScrollAdjust() {
+@@ -6425,8 +6537,8 @@ function ScrollAdjust() {
                window.getComputedStyle(contentNode)[axis.paddingEndProp]
              );
              const temporaryPaddingEnd = `${(currentPaddingEnd || 0) + pad}px`;
