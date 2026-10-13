@@ -1208,12 +1208,15 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
 // depth once Pretty extras and RpcInstrumentation wrap it. Cast the group
 // before the call so the checker never instantiates the full Layer channels.
 // Success stays `any` so RpcServer.make still sees handlers as provided.
+// Call it as a method: `toLayer` reads `this.toHandlers`, so a detached
+// reference fails every WebSocket upgrade.
 type SealedWsRpcLayer = Layer.Layer<any, never, never>;
-const serverWsRpcToLayer = (
-  ServerWsRpcGroup as unknown as {
-    readonly toLayer: (handlers: unknown) => SealedWsRpcLayer;
-  }
-).toLayer;
+export const serverWsRpcToLayer = (handlers: unknown): SealedWsRpcLayer =>
+  (
+    ServerWsRpcGroup as unknown as {
+      readonly toLayer: (handlers: unknown) => SealedWsRpcLayer;
+    }
+  ).toLayer(handlers);
 
 const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
