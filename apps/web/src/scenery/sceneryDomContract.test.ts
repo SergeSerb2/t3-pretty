@@ -13,6 +13,7 @@ import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
 import composerSpecularSource from "../components/chat/ComposerSpecular.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import messagesTimelineSource from "../components/chat/MessagesTimeline.tsx?raw";
+import newThreadLinkViewSource from "../components/promptLinks/NewThreadLinkView.tsx?raw";
 import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx?raw";
 import pullRequestSummaryTabSource from "../components/pullRequest/PullRequestSummaryTab.tsx?raw";
 import threadRouteViewSource from "../components/ThreadRouteView.tsx?raw";
@@ -23,6 +24,7 @@ import useThemeSource from "../hooks/useTheme.ts?raw";
 import rightPanelLayoutSource from "../rightPanelLayout.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
 import chatLayoutRouteSource from "../routes/_chat.tsx?raw";
+import newThreadLinkRouteSource from "../routes/_chat.new.tsx?raw";
 import pullRequestsRouteSource from "../routes/_chat.pull-requests.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
@@ -254,6 +256,10 @@ describe("glass contract with upstream chrome", () => {
     expect(chatViewSource).toContain("overflow-x-clip");
     expect(threadRouteViewSource).toContain("overflow-clip overscroll-y-none");
     expect(threadRouteViewSource).not.toContain("overflow-hidden overscroll-y-none");
+    for (const pageSource of [newThreadLinkRouteSource, newThreadLinkViewSource]) {
+      expect(pageSource).toContain("overflow-clip overscroll-y-none");
+      expect(pageSource).not.toContain("overflow-hidden overscroll-y-none");
+    }
   });
 
   it("the top band is one surface and the column edge starts below it", () => {

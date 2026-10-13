@@ -12,7 +12,7 @@ function NewThreadLinkRoute() {
   const parsed = useMemo(() => parseNewThreadLink(search), [search]);
   if (!parsed.ok) {
     return (
-      <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+      <SidebarInset className="h-dvh min-h-0 overflow-clip overscroll-y-none">
         <Empty className="flex-1">
           <EmptyHeader className="max-w-md">
             <EmptyTitle>Could not open the link</EmptyTitle>
