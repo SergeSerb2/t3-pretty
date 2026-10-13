@@ -815,6 +815,7 @@ const make = Effect.gen(function* () {
       ),
     );
 
+    let legacyProjectSettingsRead = true;
     const legacyProjectRows =
       settings.projectSettingsFolded || !settingsFileTrusted
         ? []
@@ -828,13 +829,18 @@ const make = Effect.gen(function* () {
           FROM projection_projects
           WHERE deleted_at IS NULL
         `.pipe(
-            Effect.mapError(
-              (cause) =>
-                new ServerSettingsError({
-                  settingsPath,
-                  operation: "read-project-settings",
-                  cause,
-                }),
+            Effect.catch((cause) =>
+              Effect.logWarning(
+                "failed to read legacy project settings; skipping the one-time fold for this load",
+                { cause },
+              ).pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    legacyProjectSettingsRead = false;
+                  }),
+                ),
+                Effect.as([]),
+              ),
             ),
           );
 
@@ -843,9 +849,12 @@ const make = Effect.gen(function* () {
         ? settings
         : migrateLegacyProviderSettings(settings, legacyProviders, providerHistory),
     );
-    const folded = settingsFileTrusted
-      ? foldLegacyProjectSettings(loaded, legacyProjectRows)
-      : loaded;
+    // A failed legacy read must not mark the fold done: keep
+    // `projectSettingsFolded` off so a later load folds the real rows.
+    const folded =
+      settingsFileTrusted && legacyProjectSettingsRead
+        ? foldLegacyProjectSettings(loaded, legacyProjectRows)
+        : loaded;
     // Copied, not moved: the old entry is removed only after the new file is written. A token
     // that cannot be read or copied leaves the retired keys in place, so the migration runs again
     // on the next load instead of dropping it.

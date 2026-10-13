@@ -131,6 +131,19 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.deepEqual(settings.providerModelPreferences?.[provider]?.modelOrder, ["luna", "sol"]);
     }).pipe(Effect.provide(layerServerSettings())),
   );
+  it.effect("still loads settings when a legacy schema read fails", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const sql = yield* SqlClient.SqlClient;
+      // Simulate a database from a divergent build whose projection_projects
+      // table lacks a column this build's legacy-settings query selects: the
+      // one-time fold must degrade, not take every settings read down with it.
+      yield* sql`ALTER TABLE projection_projects RENAME TO projection_projects_divergent`;
+      const settings = yield* service.getSettings;
+      assert.equal(settings.projectSettingsFolded, false);
+      yield* sql`ALTER TABLE projection_projects_divergent RENAME TO projection_projects`;
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
   it.effect("saves a home suggestions model that keeps the default provider instance", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
