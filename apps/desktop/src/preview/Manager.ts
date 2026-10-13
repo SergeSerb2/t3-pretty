@@ -1362,12 +1362,23 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         }
         const consumers = new Set(current.consumers);
         consumers.delete(consumer);
+        const stopsFrames =
+          current.scope !== null && (consumer === "picture-in-picture" || consumers.size === 0);
+        if (stopsFrames) {
+          yield* Effect.forEach(current.unthrottledWebContentsIds, (webContentsId) => {
+            const contents = webContents.fromId(webContentsId);
+            return contents && !contents.isDestroyed()
+              ? stopScreencast(tabId, contents)
+              : Effect.void;
+          });
+        }
         if (consumers.size > 0) {
           return [
-            undefined,
+            stopsFrames ? current.scope : null,
             replaceMap(sessions, (copy) => {
               copy.set(tabId, {
                 ...current,
+                scope: stopsFrames ? null : current.scope,
                 consumers,
                 lastPictureInPictureFrame:
                   consumer === "picture-in-picture" ? null : current.lastPictureInPictureFrame,
@@ -1375,12 +1386,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             }),
           ] as const;
         }
-        yield* Effect.forEach(current.unthrottledWebContentsIds, (webContentsId) => {
-          const contents = webContents.fromId(webContentsId);
-          return contents && !contents.isDestroyed()
-            ? stopScreencast(tabId, contents)
-            : Effect.void;
-        });
         const remainingSessions = replaceMap(sessions, (copy) => {
           copy.delete(tabId);
         });
@@ -3489,7 +3494,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     Effect.gen(function* () {
       const beforeAttach = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
       if (beforeAttach?.webContentsId !== wc.id) return;
-      const capturing = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).has(tabId);
+      // Only picture-in-picture streams frames; recording is captured natively.
+      const capturing =
+        ((yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId)?.scope ?? null) !== null;
       if (
         beforeAttach.colorScheme === "system" &&
         !capturing &&
@@ -3641,17 +3648,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   ) {
     const encoded = Buffer.isBuffer(frame.data) ? frame.data : Buffer.from(frame.data);
     const deliveries: Array<Effect.Effect<void>> = [];
-    const host = wc.hostWebContents;
-    if (session.consumers.has("recording") && host && !host.isDestroyed()) {
-      const listeners = yield* Ref.get(recordingFrameListenersRef);
-      deliveries.push(
-        Effect.forEach(
-          listeners,
-          (listener) => deliverEvent("recording-frame", frame.tabId, () => listener(frame, host)),
-          { discard: true },
-        ),
-      );
-    }
     if (
       session.consumers.has("picture-in-picture") &&
       session.lastPictureInPictureFrame?.equals(encoded) !== true
@@ -3883,13 +3879,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               yield* setFrameCaptureWebContentsBackgroundThrottling(wc, false);
             }
             let scope = current.scope;
-            if (scope === null) {
+            if (consumer === "picture-in-picture" && scope === null) {
               scope = yield* Scope.fork(parentScope, "sequential");
               yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
               yield* startScreencast(tabId, wc);
             }
             return [
-              false,
+              consumer === "picture-in-picture",
               replaceMap(sessions, (copy) => {
                 copy.set(tabId, {
                   ...current,
@@ -3916,11 +3912,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               ),
             ),
           );
-          const scope = yield* Scope.fork(parentScope, "sequential");
-          yield* startScreencast(tabId, wc);
-          yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
+          // Recording only holds the activity lease: the renderer records the
+          // guest natively through getDisplayMedia. Picture-in-picture is the
+          // only consumer of captured frames.
+          const scope =
+            consumer === "picture-in-picture" ? yield* Scope.fork(parentScope, "sequential") : null;
+          if (scope !== null) {
+            yield* startScreencast(tabId, wc);
+            yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
+          }
           return [
-            true,
+            consumer === "picture-in-picture",
             replaceMap(sessions, (copy) => {
               copy.set(tabId, {
                 scope,
@@ -4370,6 +4372,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         yield* attempt({ operation: "recording.cursor", tabId, webContentsId: wc.id }, () =>
           wc.send(RECORDING_CURSOR_CHANNEL, true, options, tab?.controller),
         );
+        // A hidden guest may not have composited yet; one capture wakes its
+        // compositor so the native display-media stream starts with a frame.
+        yield* attemptPromise(
+          {
+            operation: "recording.warmSource",
+            tabId,
+            webContentsId: wc.id,
+          },
+          () => wc.capturePage().then(() => undefined),
+        ).pipe(Effect.retry({ times: 1 }), Effect.ignore);
         const currentWebContents = yield* requireWebContents(tabId);
         if (currentWebContents !== wc || wc.isDestroyed()) {
           return yield* new PreviewWebContentsNotFoundError({
