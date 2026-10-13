@@ -22,9 +22,15 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import {
   hasCompatibleOrchestrationProtocol,
   resolveAvailableEditorsForConfig,
+  serverWsRpcToLayer,
   shouldUseBoundedThreadSnapshot,
   withLateEditorConfig,
 } from "./ws.ts";
+
+it("builds the per-connection websocket RPC layer", () => {
+  // Every /ws upgrade builds this layer; a throw here is an HTTP 500 for every client.
+  assert.isTrue(Layer.isLayer(serverWsRpcToLayer(Effect.succeed({}))));
+});
 
 it("accepts only the current orchestration protocol before websocket RPC setup", () => {
   assert.isTrue(
