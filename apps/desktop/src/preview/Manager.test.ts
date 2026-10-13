@@ -3899,6 +3899,7 @@ describe("PreviewManager", () => {
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           isDevToolsOpened: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
@@ -3911,6 +3912,7 @@ describe("PreviewManager", () => {
           ipc: { on: vi.fn(), off: vi.fn() },
           send: webviewSend,
           navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+          setIgnoreMenuShortcuts: vi.fn(),
           setWindowOpenHandler: vi.fn(),
           debugger: {
             isAttached: () => false,
@@ -5028,6 +5030,7 @@ describe("PreviewManager", () => {
         const pick = yield* manager.pickElement("tab_1").pipe(Effect.forkChild);
         yield* Effect.yieldNow;
 
+        yield* manager.setAnnotationSendEnabled("tab_1", true);
         onPicked?.(
           {},
           {
@@ -5457,6 +5460,7 @@ describe("PreviewManager", () => {
             getURL: () => "https://example.com",
             getTitle: () => "Example",
             isLoading: () => false,
+            isLoadingMainFrame: () => false,
             isDevToolsOpened: () => false,
             getZoomFactor: () => 1,
             setZoomFactor: vi.fn(),
@@ -5603,16 +5607,6 @@ describe("PreviewManager", () => {
             if (method === "Target.attachToTarget") return { sessionId: "child-session" };
             if (method === "Input.dispatchKeyEvent" && params?.["type"] !== "keyUp") {
               if (failKeyDown) throw new Error("key dispatch failed");
-              if (params?.["type"] === "keyDown" || params?.["type"] === "rawKeyDown") {
-                humanInput?.(
-                  {},
-                  {
-                    kind: "key",
-                    key: params["key"],
-                    code: params["code"] ?? "Digit1",
-                  },
-                );
-              }
               if (interruptFrameKeyDown)
                 humanInput?.({}, { kind: "pointer", x: 80, y: 40, button: 0 });
             }
@@ -5657,6 +5651,7 @@ describe("PreviewManager", () => {
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           isDevToolsOpened: () => false,
           focus,
           sendInputEvent,
@@ -5866,6 +5861,7 @@ describe("PreviewManager", () => {
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           isDevToolsOpened: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
@@ -6031,6 +6027,7 @@ describe("PreviewManager", () => {
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           isDevToolsOpened: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
