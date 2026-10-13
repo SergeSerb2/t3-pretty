@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261012.3035003462",
+    date: "2026-10-13",
+    items: [
+      {
+        kind: "fixed",
+        title: "Failed server-browser opens report instead of hanging",
+      },
+      {
+        kind: "fixed",
+        title: "World Scenery glass for the terminal drawer and thread pane",
+      },
+      {
+        kind: "fixed",
+        title: "Preview behavior lost in sync merges",
+      },
+      {
+        kind: "fixed",
+        title: "Threads show their messages again with scenery on",
+      },
+      {
+        kind: "fixed",
+        title: "The pull request comment filter dropped by a sync merge",
+      },
+      {
+        kind: "fixed",
+        title: "Preview_snapshot works for server-runtime browser tabs",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261012.3035003452",
     date: "2026-10-13",
     items: [
