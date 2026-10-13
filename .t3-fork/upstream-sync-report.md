@@ -1,37 +1,23 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.46-nightly.20261012.3021`
-- Previously integrated parent nightly: `v0.0.46-nightly.20261012.3010`
-- Conflict resolver: hand-merge after scheduled Buildkite #3422 blocked on the learned-route TLS guard. Text conflicts were the modify/delete of `.github/workflows/release-desktop.yml` plus content in `DesktopEarlyElectronStartup.test.ts` and `NativeWorkspaceColumns.ios.tsx`.
+- Parent nightly: `v0.0.46-nightly.20261012.3035`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261012.3021`
+- Conflict resolver: `gpt-6.1-sol` with `xhigh` reasoning
+- 1 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `.github/workflows` — fork-owned sync, signing, release, and security workflows stay pinned to Pretty main. Parent `release-desktop.yml` remains deleted.
-- `apps/desktop/src/app/DesktopEarlyElectronStartup.ts` — auto-merged. Pretty `buildFlavor` / `.t3-pretty` / `t3pretty` Linux identity stays; parent Hyprland `resolveLinuxDisableFeaturesSwitch` is integrated.
-- `apps/desktop/src/app/DesktopEarlyElectronStartup.test.ts` — Pretty public-flavor identity assertion stays; parent Hyprland color-manager cases are added beside it.
-- `apps/desktop/src/app/DesktopPreReadyPlatform.ts` — auto-merged. Pretty Windows GPU switches, bounded settings read, and `T3CODE_BUILD_FLAVOR` branding stay; parent Hyprland `--disable-features` wiring is integrated.
-- `apps/mobile/src/native/NativeWorkspaceColumns.ios.tsx` — Pretty `nativeWorkspaceColumnsAreReady` helper stays. Parent's waiting-only timer is used so iPad and older clients do not start a fail-open clock; the tested helper still decides readiness.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Generated-image path selection retains Pretty's priority: savedPath, then the first generated path, then null.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — The generatedImage binding remains available to subsequent consumers, and non-generated-image rows retain workEntryViewedImagePath handling.
+- `apps/web/src/components/LegacySidebar.tsx` — Retains the fork-added ThreadActiveSubagentIndicator import supporting active-subagent badges on sidebar thread rows.
+- `apps/web/src/components/Sidebar.tsx` — kept the fork side wholesale as a fork-side fallback resolution
 
 ## Parent changes integrated at conflict boundaries
 
-- `apps/desktop/src/app/DesktopEarlyElectronStartup.ts` — Hyprland 0.48–0.50 Wayland color-manager disable-features probe.
-- `apps/desktop/src/app/DesktopPreReadyPlatform.ts` — applies that probe before Electron is ready.
-- `apps/mobile/modules/t3-native-controls/ios/T3LayoutMetricsView.swift` — `assumeNoHingeIfSilent` so ordinary iPhones publish metrics instead of staying blank.
-- `apps/web/src/lib/contextWindow.ts` — context meter no longer treats just-under-a-million tokens as 1000k.
-- Forgejo pull-request head commit reporting and the Windows ACP terminal-kill test fix.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Keep viewedImagePath defined before fetchedOutput evaluates it, without duplicate declarations.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Retain the parent's image-aware output fallback: fetched rows with output images or a viewed image path do not display the misleading "No output." message.
+- `apps/web/src/components/LegacySidebar.tsx` — Adopts ThreadTerminalStatusButton in place of the legacy terminalStatusFromRunningIds and synchronizeTerminalPulse imports, which OURS had retained unchanged from BASE.
 
-## Parent changes omitted to protect T3 Pretty
+## Parent changes intentionally omitted
 
-- `.github/workflows/release-desktop.yml` — parent Windows ARM PowerShell release-workflow change was omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned.
-
-## Hand-complete notes
-
-- Scheduled sync #3422 resolved the text conflicts, then refused publication because `connectionRoutes` still attempted persisted learned `http://` / `ws://` when `allowInsecure` defaulted true. That TLS regression is fixed in the follow-up commit on this branch; the guard script is unchanged.
-- Pretty already had the iPhone LayoutMetrics fail-open as `nativeWorkspaceColumnsAreReady`. Parent 3021 shipped the first-party Swift no-hinge fallback plus an inlined JS timeout; the helper is kept and the Swift change is taken.
-
-## Post-merge repairs
-
-- `packages/client-runtime/src/connection/routes.ts` — `connectionRoutes` always requires https/wss for learned routes. `allowInsecure` still lets mergeLearnedRoutes label explicitly saved plaintext and never learns or selects learned http/ws.
-- `packages/client-runtime/src/connection/routes.test.ts` and `registry.test.ts` — cover the drop of persisted learned plaintext and label Tailscale over HTTPS.
-- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — desktop-entry icon path follows Pretty `com.t3tools.T3Pretty.desktop` identity after the Hyprland auto-merge.
-- `packages/client-runtime/src/state/orchestration.test.ts` — shell-resume fixture includes `schemaVersion`, `archivedThreads`, and `projects` so shared-typecheck accepts the snapshot.
+- `apps/web/src/components/Sidebar.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: apps/web/src/components/Sidebar.tsx was not safe to resolve automatically: These exact edits remove both conflict blocks, but the result is not safe to apply as a completed resolution. The supplied context contains imports, not the affected terminal and pull-request consumers. Provide the terminal render/effect sections and snapshot usages in apps/web/src/components/Sidebar.tsx, plus the current exports and implementations of ThreadTerminalStatusButton and synchronizeTerminalPulse in apps/web/src/components/ThreadStatusIndicators.tsx. That context is needed to verify export compatibility, retained subscriptions and motion behavior, reduced-motion handling, and whether the parent component preserves the existing terminal interactions.
