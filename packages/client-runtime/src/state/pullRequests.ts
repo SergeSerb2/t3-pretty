@@ -84,7 +84,7 @@ function writableQueryFamily<A, E>(
       },
       (context, value: AsyncResult.AsyncResult<A, E>) => context.setSelf(value),
       (refresh) => refresh(source),
-    ).pipe(Atom.setIdleTTL(source.idleTTL ?? 5 * 60_000)),
+    ).pipe(Atom.setIdleTTL(5 * 60_000)),
   );
   return ({
     environmentId,
@@ -175,9 +175,8 @@ export function pullRequestDetailToVcsStatus(
 }
 
 /**
- * Detail stays fresh for a minute; activity and diffs release soon after their views close.
- * Explicit refreshes and turn notifications still revalidate. Mutations run serially per
- * environment: actions on the same
+ * Reopening a PR within a minute reuses detail and activity. Explicit refreshes and
+ * turn notifications still revalidate. Mutations run serially per environment: actions on the same
  * pull request are order-sensitive. Confirmed label and reviewer edits update cached state.
  */
 export function createPullRequestEnvironmentAtoms<R, E>(
@@ -200,7 +199,6 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       tag: WS_METHODS.pullRequestsActivity,
       execute: (input) => routedRequest(WS_METHODS.pullRequestsActivity, input),
       staleTimeMs: 60_000,
-      idleTtlMs: LINKED_PULL_REQUEST_IDLE_TTL_MS,
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
   );
@@ -307,7 +305,6 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     diff: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:diff",
       persistence: persistQuery(PullRequestDiffResult),
-      idleTtlMs: LINKED_PULL_REQUEST_IDLE_TTL_MS,
       staleTimeMs: 60_000,
       execute: (input: PullRequestDiffInput) =>
         Effect.gen(function* () {

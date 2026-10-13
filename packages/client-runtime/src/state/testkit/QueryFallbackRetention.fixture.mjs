@@ -60,10 +60,21 @@ const environments = EnvironmentRegistry.of({
   stateChanges: () => SubscriptionRef.changes(state),
 });
 const refs = [];
+const signalRefs = [];
+const signalAtom = Atom.writable(
+  (get) =>
+    Option.getOrElse(get.self(), () => {
+      const value = { payload: NodeCrypto.randomBytes(1024 * 1024).toString("hex") };
+      signalRefs.push(new WeakRef(value));
+      return value;
+    }),
+  (context, value) => context.setSelf(value),
+).pipe(Atom.setIdleTTL(0));
 const runtime = Atom.runtime(Layer.succeed(EnvironmentRegistry, environments));
 const family = createEnvironmentQueryAtomFamily(runtime, {
   label: "query-memory",
-  idleTtlMs: mode === "idle" ? 1_000 : 0,
+  idleTtlMs: mode === "idle" || mode === "signal" ? 1_000 : 0,
+  ...(mode === "signal" ? { refreshTrigger: () => signalAtom } : {}),
   staleTimeMs: 60_000,
   persistence: { load: () => Effect.succeedNone, save: () => Effect.void },
   execute: () =>
@@ -127,6 +138,7 @@ async function populate() {
     Date.now = () => now;
     try {
       unmount();
+      if (mode === "signal") registry.set(signalAtom, { version: 2 });
       while (tasks.length > 0) tasks.shift()();
       if (!registry.getNodes().has(atom)) throw new Error("The parent query TTL was not retained");
       // One parent TTL plus its sweep bucket; do not grant a second holder TTL.
@@ -158,6 +170,7 @@ console.log(
     payloads: refs.length,
     retained: refs.filter((ref) => ref.deref()).length,
     definitionRetained: atom !== undefined,
+    retainedSignals: signalRefs.filter((ref) => ref.deref()).length,
   }),
 );
 registry.dispose();

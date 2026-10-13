@@ -602,20 +602,18 @@ const refreshOnSignalsWhileRead =
       readonly onChange?: () => void;
     }>,
     staleTimeMs: number,
+    readUnderAtom: Atom.Atom<{ signals: ReadonlyArray<unknown> | undefined }>,
   ) =>
   <A, E>(
     self: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
   ): Atom.Atom<AsyncResult.AsyncResult<A, E>> => {
-    // The signal value each registry's data was read under. Held outside the node because the
-    // registry can sweep this node while `self` keeps the data, and the rebuilt node must still
-    // see a change it missed.
-    const readUnder = new WeakMap<AtomRegistry.AtomRegistry, ReadonlyArray<unknown>>();
     return Atom.transform(
       self,
       (get) => {
+        const readUnder = get(readUnderAtom);
         const current = signals.map(({ atom }) => get(atom));
-        get.subscribe(self, (value) => get.setSelf(value));
-        const previous = readUnder.get(get.registry);
+        const firstRead = Option.isNone(get.self());
+        const previous = readUnder.signals;
         let changed = false;
         if (previous !== undefined) {
           for (const [index, signal] of signals.entries()) {
@@ -624,12 +622,20 @@ const refreshOnSignalsWhileRead =
             signal.onChange?.();
           }
         }
-        readUnder.set(get.registry, current);
+        readUnder.signals = current;
         if (changed) get.refresh(self);
-        const result = get.once(self);
+        // Keep a dependency edge so sweeping this node also releases the
+        // source's spent idle TTL, rather than starting another TTL afterward.
+        const result = get(self);
         // This outer node can expire while SWR keeps its data. Recheck that
         // data on the next read even when the shared signals have not changed.
-        if (!changed && !result.waiting && !isFreshSettledResult(result, staleTimeMs)) {
+        // Source completions must not refresh themselves at staleTime zero.
+        if (
+          firstRead &&
+          !changed &&
+          !result.waiting &&
+          !isFreshSettledResult(result, staleTimeMs)
+        ) {
           let active = true;
           get.addFinalizer(() => {
             active = false;
@@ -727,9 +733,16 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
     // Definitions can outlive their registry nodes. Keep the original result
     // in registry-owned state so an offline fallback preserves freshness
     // without retaining a disposed registry's large query payload.
-    const cachedFallbackAtom = Atom.make(
-      (): { previous: AsyncResult.AsyncResult<A, E | ER | Error> | undefined } => ({
+    // The raw source also owns this signal history, so it lasts as long as
+    // cached source data. This preserves triggers missed while idle, including
+    // queued source removal after the outer node expires.
+    const queryStateAtom = Atom.make(
+      (): {
+        previous: AsyncResult.AsyncResult<A, E | ER | Error> | undefined;
+        signals: ReadonlyArray<unknown> | undefined;
+      } => ({
         previous: undefined,
+        signals: undefined,
       }),
     ).pipe(Atom.setIdleTTL(0));
     const queryAtom = runtime
@@ -740,7 +753,7 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         | EnvironmentRegistry.EnvironmentNotRegisteredError
         | EnvironmentRpcUnavailableError
       >((get) => {
-        const cachedFallback = get(cachedFallbackAtom);
+        const cachedFallback = get(queryStateAtom);
         const connection = Option.getOrNull(
           AsyncResult.value(get.once(connectionAtom(target.environmentId))),
         );
@@ -882,6 +895,7 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
               ]),
         ],
         staleTimeMs,
+        queryStateAtom,
       ),
       Atom.setIdleTTL(idleTtlMs),
       Atom.withLabel(`${options.label}:${key}`),
