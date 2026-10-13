@@ -4691,6 +4691,19 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
+  const emitAutomationPointer = Effect.fn("PreviewManager.emitAutomationPointer")(function* (
+    tabId: string,
+    phase: DesktopPreviewPointerEvent["phase"],
+    point: { readonly x?: number; readonly y?: number },
+  ) {
+    // Cursor emission is presentation-only; a page script returning odd
+    // coordinates must never fail or misplace the pointer overlay.
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+    const sequence = yield* nextCounter(pointerSequenceRef);
+    const createdAt = yield* currentIso;
+    yield* emitPointerEvent({ tabId, phase, x: point.x!, y: point.y!, sequence, createdAt });
+  });
+
   const performAutomationClick = Effect.fn("PreviewManager.performAutomationClick")(function* (
     tabId: string,
     input: PreviewAutomationClickInput,
@@ -4773,7 +4786,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       input.text,
     );
     const result = yield* evaluateWithDebugger<
-      | { ok: true }
+      | { ok: true; x: number; y: number }
       | { invalidSelector: true; message: string }
       | { notEditable: true }
       | { notFound: true }
@@ -4832,7 +4845,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             }
             if (!inserted) return { notEditable: true };
             element.dispatchEvent(new Event("change", { bubbles: true }));
-            return { ok: true };
+            const rect = element.getBoundingClientRect();
+            return {
+              ok: true,
+              x: Math.min(Math.max(rect.left + rect.width / 2, 0), window.innerWidth),
+              y: Math.min(Math.max(rect.top + rect.height / 2, 0), window.innerHeight),
+            };
           } catch (error) {
             return { invalidSelector: true, message: String(error) };
           }
@@ -4861,7 +4879,41 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         ...automationSelectorDiagnostics(input),
       });
     }
+    yield* emitAutomationPointer(tabId, "type", result);
   });
+
+  const emitFocusedElementPointer = Effect.fn("PreviewManager.emitFocusedElementPointer")(
+    function* (
+      tabId: string,
+      send: SendCommand,
+      phase: Extract<DesktopPreviewPointerEvent["phase"], "press">,
+    ) {
+      const focusedPoint = yield* evaluateWithDebugger<{
+        readonly x?: number;
+        readonly y?: number;
+      }>(
+        tabId,
+        send,
+        `(() => {
+        const element = document.activeElement;
+        const rect =
+          element && element !== document.body && element !== document.documentElement
+            ? element.getBoundingClientRect()
+            : null;
+        return {
+          x: rect
+            ? Math.min(Math.max(rect.left + rect.width / 2, 0), window.innerWidth)
+            : window.innerWidth / 2,
+          y: rect
+            ? Math.min(Math.max(rect.top + rect.height / 2, 0), window.innerHeight)
+            : window.innerHeight / 2,
+        };
+      })()`,
+        true,
+      ).pipe(Effect.orElseSucceed(() => ({})));
+      yield* emitAutomationPointer(tabId, phase, focusedPoint ?? {});
+    },
+  );
 
   const performAutomationType = Effect.fn("PreviewManager.performAutomationType")(function* (
     tabId: string,
@@ -5070,6 +5122,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     checkControl: Effect.Effect<void, PreviewManagerError>,
   ) {
     yield* prepareAutomationInput(send, false);
+    yield* emitFocusedElementPointer(tabId, send, "press");
     const keySequence = makePreviewAutomationNativeKeySequence(input, {
       isMac: hostPlatform === "darwin",
     });
@@ -5240,7 +5293,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       ? yield* encodeJson({ operation: "automationScroll.encodeLocator", tabId }, locator)
       : null;
     const result = yield* evaluateWithDebugger<
-      { ok: true } | { invalidSelector: true; message: string } | { notFound: true }
+      | { ok: true; x: number; y: number }
+      | { invalidSelector: true; message: string }
+      | { notFound: true }
     >(
       tabId,
       send,
@@ -5249,7 +5304,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           const target = ${locatorJson ? `(() => { const injected = globalThis.__t3PlaywrightInjected; return injected.querySelector(injected.parseSelector(${locatorJson}), document, true); })()` : "window"};
           if (!target) return { notFound: true };
           target.scrollBy({ left: ${input.deltaX ?? 0}, top: ${input.deltaY ?? 0}, behavior: "instant" });
-          return { ok: true };
+          const rect = target === window ? null : target.getBoundingClientRect();
+          return {
+            ok: true,
+            x: rect ? Math.min(Math.max(rect.left + rect.width / 2, 0), window.innerWidth) : window.innerWidth / 2,
+            y: rect ? Math.min(Math.max(rect.top + rect.height / 2, 0), window.innerHeight) : window.innerHeight / 2,
+          };
         } catch (error) {
           return { invalidSelector: true, message: String(error) };
         }
@@ -5272,6 +5332,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         ...automationSelectorDiagnostics(input),
       });
     }
+    yield* emitAutomationPointer(tabId, "scroll", result);
   });
 
   const automationScroll = Effect.fn("PreviewManager.automationScroll")(function* (
