@@ -90,7 +90,6 @@ import {
   type LegendListRef,
   type MaintainScrollAtEndOptions,
 } from "@legendapp/list/react";
-import { flushSync } from "react-dom";
 import { FileDiff } from "@pierre/diffs/react";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import {
@@ -3806,13 +3805,6 @@ function ExpandedWorkGroupEntries({
   }, [viewState]);
 
   useLayoutEffect(updateExpandedContentHeight, [entries, updateExpandedContentHeight]);
-  // Rows mostly resize from LegendList's ResizeObserver, after layout, where a
-  // plain update commits a frame late and the group grows twice. Its layout
-  // effect measures too, where flushSync would warn, so commit from a
-  // microtask: it still runs before that frame paints.
-  const handleEntrySizeChanged = useCallback(() => {
-    queueMicrotask(() => flushSync(updateExpandedContentHeight));
-  }, [updateExpandedContentHeight]);
 
   return (
     <WorkGroupViewCtx value={groupView}>
@@ -3840,7 +3832,7 @@ function ExpandedWorkGroupEntries({
           onLoad={handleLoad}
           onScroll={handleScroll}
           onLayout={updateScrollFades}
-          onItemSizeChanged={handleEntrySizeChanged}
+          onItemSizeChanged={updateExpandedContentHeight}
           tabIndex={0}
           role="region"
           aria-label="Tool calls"

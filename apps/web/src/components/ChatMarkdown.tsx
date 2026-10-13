@@ -1083,9 +1083,16 @@ function MarkdownMermaidCodeBlock({
     <Suspense
       fallback={block(
         true,
-        <div className="flex min-h-36 items-center justify-center text-xs text-muted-foreground">
-          Rendering diagram
-        </div>,
+        <>
+          <div className="flex min-h-36 items-center justify-center text-xs text-muted-foreground">
+            Rendering diagram
+          </div>
+          {searching ? (
+            <pre ref={sourceRevealRef} hidden>
+              {code}
+            </pre>
+          ) : null}
+        </>,
       )}
     >
       {block(
