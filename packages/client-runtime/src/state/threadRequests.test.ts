@@ -184,3 +184,42 @@ it("restores old text answers without mutating history or replacing unchanged ro
   expect(project(answered)).toBe(result);
   expect(project({ ...answered, visibleTurnItems: [...rows] })[0]).toBe(result[0]);
 });
+
+it("does not rebuild question request lookups while output rows stream", () => {
+  const project = createQuestionHistoryProjector();
+  const item = projection.turnItems[0]!;
+  const rows = [
+    {
+      item,
+      position: 0,
+      sourceItemId: item.id,
+      sourceThreadId: item.threadId,
+      visibility: "local" as const,
+    },
+  ];
+  let requestReads = 0;
+  const requests = [
+    {
+      ...projection.runtimeRequests[0]!,
+      get id() {
+        requestReads++;
+        return requestId;
+      },
+    },
+  ];
+  expect(project({ visibleTurnItems: rows, runtimeRequests: requests })).toBe(rows);
+  requestReads = 0;
+  for (let index = 0; index < 100; index++) {
+    const streamedRows = [...rows];
+    expect(project({ visibleTurnItems: streamedRows, runtimeRequests: requests })).toBe(
+      streamedRows,
+    );
+  }
+  expect(requestReads).toBe(0);
+
+  const result = project({
+    visibleTurnItems: rows,
+    runtimeRequests: [{ ...requests[0]!, status: "resolved", answers: { next: "Fresh answer" } }],
+  });
+  expect(result[0]?.item).toMatchObject({ questionAnswer: { answers: { next: "Fresh answer" } } });
+});

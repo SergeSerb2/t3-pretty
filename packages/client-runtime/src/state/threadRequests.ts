@@ -121,6 +121,7 @@ export function createQuestionHistoryProjector() {
   let previousRows: Rows | undefined;
   let previousRequests: Requests | undefined;
   let previousResult: Rows | undefined;
+  let byId = new Map<RuntimeRequestId, Requests[number]>();
   const cache = new WeakMap<Rows[number], { request: Requests[number]; row: Rows[number] }>();
   return (
     projection: Pick<OrchestrationV2ThreadProjection, "visibleTurnItems" | "runtimeRequests">,
@@ -128,7 +129,10 @@ export function createQuestionHistoryProjector() {
     const { visibleTurnItems: rows, runtimeRequests: requests } = projection;
     if (rows === previousRows && requests === previousRequests && previousResult)
       return previousResult;
-    const byId = new Map(requests.map((request) => [request.id, request]));
+    // Streaming rows change on every token; request entities usually do not.
+    if (requests !== previousRequests) {
+      byId = new Map(requests.map((request) => [request.id, request]));
+    }
     let result: Rows[number][] | undefined;
     for (const [index, row] of rows.entries()) {
       const item = row.item;

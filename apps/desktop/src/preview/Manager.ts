@@ -100,6 +100,12 @@ import { isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
 import { playwrightInjectedSource } from "./PlaywrightInjectedSource.generated.ts";
 import { captureFavicon, safeHttpOrigin, selectFaviconCandidates } from "./FaviconCapture.ts";
 import { DEFAULT_RECORDING_INPUT_OPTIONS, type RecordingInputOptions } from "./RecordingInput.ts";
+import {
+  boundDiagnosticText,
+  diagnosticConsoleText,
+  DIAGNOSTIC_LABEL_LIMIT,
+  DIAGNOSTIC_URL_LIMIT,
+} from "./DiagnosticText.ts";
 
 interface KeyDefinition {
   readonly code: string;
@@ -1644,17 +1650,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       const next = (() => {
         if (method === "Runtime.consoleAPICalled") {
           const args = Array.isArray(params["args"]) ? params["args"] : [];
-          const text = args
-            .map((arg) => {
-              if (typeof arg !== "object" || arg === null) return String(arg);
-              const value = arg as Record<string, unknown>;
-              return String(value["value"] ?? value["description"] ?? "");
-            })
-            .join(" ");
+          const text = diagnosticConsoleText(args);
           return {
             ...current,
             consoleEntries: pushBounded(current.consoleEntries, {
-              level: typeof params["type"] === "string" ? params["type"] : "log",
+              level: boundDiagnosticText(
+                typeof params["type"] === "string" ? params["type"] : "log",
+                DIAGNOSTIC_LABEL_LIMIT,
+              ),
               text,
               timestamp,
               source: "console",
@@ -1670,7 +1673,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             ...current,
             consoleEntries: pushBounded(current.consoleEntries, {
               level: "error",
-              text: String(details["text"] ?? "Uncaught exception"),
+              text: boundDiagnosticText(details["text"] ?? "Uncaught exception"),
               timestamp,
               source: "exception",
             }),
@@ -1684,10 +1687,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           return {
             ...current,
             consoleEntries: pushBounded(current.consoleEntries, {
-              level: typeof entry["level"] === "string" ? entry["level"] : "info",
-              text: String(entry["text"] ?? ""),
+              level: boundDiagnosticText(
+                typeof entry["level"] === "string" ? entry["level"] : "info",
+                DIAGNOSTIC_LABEL_LIMIT,
+              ),
+              text: boundDiagnosticText(entry["text"] ?? ""),
               timestamp,
-              source: typeof entry["source"] === "string" ? entry["source"] : "log",
+              source: boundDiagnosticText(
+                typeof entry["source"] === "string" ? entry["source"] : "log",
+                DIAGNOSTIC_LABEL_LIMIT,
+              ),
             }),
           };
         }
@@ -1704,8 +1713,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                 if (!oldest.done) copy.delete(oldest.value);
               }
               copy.set(requestId, {
-                url: String(request["url"] ?? ""),
-                method: String(request["method"] ?? "GET"),
+                url: boundDiagnosticText(request["url"] ?? "", DIAGNOSTIC_URL_LIMIT),
+                method: boundDiagnosticText(request["method"] ?? "GET", DIAGNOSTIC_LABEL_LIMIT),
               });
             }),
           };
@@ -1741,7 +1750,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                   ...request,
                   status: null,
                   failed: true,
-                  errorText: String(params["errorText"] ?? "Network request failed"),
+                  errorText: boundDiagnosticText(params["errorText"] ?? "Network request failed"),
                   timestamp,
                 })
               : current.networkEntries,
@@ -2848,6 +2857,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     });
     if (Option.isNone(tab)) return;
     const closedTab = tab.value;
+    yield* Ref.update(actionTimelineRef, (timelines) =>
+      replaceMap(timelines, (copy) => {
+        copy.delete(tabId);
+      }),
+    );
     if (closedTab.webContentsId != null) {
       yield* Effect.all(
         [

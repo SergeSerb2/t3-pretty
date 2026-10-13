@@ -6,6 +6,10 @@ import * as ReviewModel from "./reviewModel";
 import { getCachedReviewParsedDiff, MAX_CACHED_REVIEW_SOURCE_CHARACTERS } from "./reviewState";
 import { getReviewDiffPrewarmSections, prewarmReviewDiffSection } from "./useReviewDiffPrewarming";
 
+vi.mock("react-native", () => ({
+  AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) },
+}));
+
 const threadKey = "env:thread-prewarm";
 const reviewDiff = [
   "diff --git a/src/a.ts b/src/a.ts",
@@ -49,7 +53,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("warms the nearest sections within the remaining entry budget", () => {
+it("bounds speculative parsing to the nearest four sections", () => {
   const sections = Array.from({ length: 12 }, (_, index) => makeSection(index));
 
   const pending = getReviewDiffPrewarmSections({
@@ -60,7 +64,28 @@ it("warms the nearest sections within the remaining entry budget", () => {
 
   assert.deepStrictEqual(
     pending.map((section) => section.id),
-    ["turn:4", "turn:6", "turn:3", "turn:7", "turn:2", "turn:8", "turn:1"],
+    ["turn:4", "turn:6", "turn:3", "turn:7"],
+  );
+});
+
+it("limits speculative source parsing to one million characters", () => {
+  const sections = [
+    makeSection(0, "x".repeat(400_000)),
+    makeSection(1, "x".repeat(600_000)),
+    makeSection(2),
+    makeSection(3, "x".repeat(600_000)),
+    makeSection(4, "x".repeat(1_000_001)),
+  ];
+
+  const pending = getReviewDiffPrewarmSections({
+    threadKey,
+    sections,
+    selectedSectionId: "turn:2",
+  });
+
+  assert.deepStrictEqual(
+    pending.map((section) => section.id),
+    ["turn:1", "turn:0"],
   );
 });
 
@@ -83,7 +108,7 @@ it("reserves the selected source budget and skips unloaded or oversized sections
 
   assert.deepStrictEqual(
     pending.map((section) => section.id),
-    ["turn:1"],
+    ["turn:5", "turn:0"],
   );
   prepareSelection(sections, "turn:3");
 });
@@ -160,7 +185,7 @@ it("reuses selected and native results across repeated nearby selections", () =>
   const parse = vi.spyOn(ReviewModel, "buildReviewParsedDiff");
   const sections = Array.from({ length: 10 }, (_, index) => makeSection(index));
   const first = prepareSelection(sections, "turn:0");
-  assert.strictEqual(parse.mock.calls.length, 8);
+  assert.strictEqual(parse.mock.calls.length, 5);
   parse.mockClear();
   const second = prepareSelection(sections, "turn:1");
 

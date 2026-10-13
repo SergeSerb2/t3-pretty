@@ -7,6 +7,7 @@ import { ArrowUpLeftIcon } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
 
 import type { ProviderInstanceEntry } from "../../providerInstances";
+import { subscribeSecondTick } from "../../lib/secondTicker";
 import { Button } from "../ui/button";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 
@@ -43,13 +44,12 @@ export function ProviderSubagentBar(props: {
   useLayoutEffect(() => {
     const update = () => {
       if (statusRef.current) {
-        statusRef.current.textContent = formatProviderSubagentStatus(status, Date.now());
+        const text = formatProviderSubagentStatus(status, Date.now());
+        if (statusRef.current.textContent !== text) statusRef.current.textContent = text;
       }
     };
+    if (live) return subscribeSecondTick(update);
     update();
-    if (!live) return;
-    const id = setInterval(update, 1_000);
-    return () => clearInterval(id);
   }, [live, status]);
 
   return (

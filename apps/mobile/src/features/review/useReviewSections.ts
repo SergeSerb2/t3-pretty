@@ -94,6 +94,7 @@ export function useReviewSections(input: {
       turnDiffById: reviewCache.turnDiffById,
       loadingTurnIds,
       loadingGitSections: fileAccess.isPending || diffPreview.isPending,
+      selectedSectionId: reviewCache.selectedSectionId,
     });
     // Keep the selected section while its grant loads, without displaying cached host files.
     return fileAccess.isPending
@@ -109,6 +110,7 @@ export function useReviewSections(input: {
     loadingTurnIds,
     readyCheckpoints,
     reviewCache.gitSections,
+    reviewCache.selectedSectionId,
     reviewCache.turnDiffById,
   ]);
   const selectedSection = useMemo(

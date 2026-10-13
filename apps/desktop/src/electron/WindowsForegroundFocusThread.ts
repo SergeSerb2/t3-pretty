@@ -43,6 +43,7 @@ export function startWindowsForegroundFocusThread(
   workerPath: string,
 ): WindowsForegroundFocusThread {
   let worker: NodeWorkerThreads.Worker | undefined;
+  let terminatingWorker: NodeWorkerThreads.Worker | undefined;
   let ready = false;
   let closed = false;
   let nextRequestId = 1;
@@ -72,7 +73,7 @@ export function startWindowsForegroundFocusThread(
     }
   };
   const start = (): boolean => {
-    if (closed) return false;
+    if (closed || terminatingWorker) return false;
     let nextWorker: NodeWorkerThreads.Worker;
     try {
       nextWorker = new NodeWorkerThreads.Worker(workerPath);
@@ -100,8 +101,17 @@ export function startWindowsForegroundFocusThread(
       if (message.type === "result") finish(message.requestId, message.focused);
     });
     nextWorker.once("error", reset);
-    nextWorker.once("exit", reset);
+    nextWorker.once("exit", () => {
+      reset();
+      finishTermination(nextWorker);
+    });
     return true;
+  };
+
+  const finishTermination = (terminatedWorker: NodeWorkerThreads.Worker) => {
+    if (terminatingWorker !== terminatedWorker) return;
+    terminatingWorker = undefined;
+    start();
   };
 
   if (!start()) return unavailableThread();
@@ -110,9 +120,15 @@ export function startWindowsForegroundFocusThread(
     if (!timedOutWorker || worker !== timedOutWorker) return;
     worker = undefined;
     ready = false;
+    terminatingWorker = timedOutWorker;
     for (const requestId of pending.keys()) finish(requestId, false);
-    void timedOutWorker.terminate();
-    start();
+    // A native accessibility call can delay termination indefinitely. Keep
+    // requests unavailable until it exits instead of accumulating stuck workers.
+    void timedOutWorker.terminate().then(
+      () => finishTermination(timedOutWorker),
+      // A rejected termination does not prove the old worker stopped.
+      () => undefined,
+    );
   };
   const request = (type: FocusRequest["type"], target: WindowsForegroundFocusTarget) =>
     new Promise<boolean>((resolve) => {

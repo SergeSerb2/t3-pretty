@@ -166,9 +166,14 @@ function upsertVisibleTurnItem(
     previous.visibility === next.visibility &&
     previous.sourceThreadId === next.sourceThreadId &&
     previous.sourceItemId === next.sourceItemId &&
-    previous.item === item
+    previous.item.ordinal === item.ordinal
   ) {
-    return rows;
+    if (previous.item === item) return rows;
+    // Streaming changes content, not sort order. Keep the position and avoid
+    // removing, reinserting, and renumbering the complete conversation.
+    const updated = [...rows];
+    updated[index] = { ...previous, item };
+    return updated;
   }
   if (
     index === -1 &&

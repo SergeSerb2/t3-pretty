@@ -1,4 +1,5 @@
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
+import { subscribeSecondTick } from "../../lib/secondTicker";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { MarkdownFindContext, useFindRevealRef } from "./markdownFindContext";
@@ -3665,12 +3666,11 @@ function WorkingTimer({ createdAt }: { createdAt: string }) {
   useEffect(() => {
     const updateText = () => {
       if (textRef.current) {
-        textRef.current.textContent = formatWorkingTimerNow(createdAt);
+        const text = formatWorkingTimerNow(createdAt);
+        if (textRef.current.textContent !== text) textRef.current.textContent = text;
       }
     };
-    updateText();
-    const id = setInterval(updateText, 1000);
-    return () => clearInterval(id);
+    return subscribeSecondTick(updateText);
   }, [createdAt]);
 
   return (

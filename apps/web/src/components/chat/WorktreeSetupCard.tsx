@@ -1,4 +1,5 @@
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
+import { subscribeSecondTick } from "~/lib/secondTicker";
 import {
   worktreeSetupStageLabel,
   type WorktreeSetupSnapshot,
@@ -53,8 +54,7 @@ function useNowWhile(active: boolean): number {
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     if (!active) return;
-    const id = setInterval(() => setNowMs(Date.now()), 1_000);
-    return () => clearInterval(id);
+    return subscribeSecondTick(() => setNowMs(Date.now()));
   }, [active]);
   return nowMs;
 }

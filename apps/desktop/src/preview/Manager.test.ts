@@ -4110,6 +4110,115 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("releases closed tab action history before the tab is recreated", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const sendCommand = vi.fn(async (method: string) =>
+          method === "Runtime.evaluate"
+            ? { result: { value: { interactiveElements: [] } } }
+            : undefined,
+        );
+        fromId.mockReturnValue(
+          makeTestPreviewWebContents(
+            async () =>
+              ({
+                toPNG: () => Buffer.from("png"),
+                getSize: () => ({ width: 100, height: 50 }),
+              }) as never,
+            42,
+            undefined,
+            {
+              debugger: {
+                isAttached: () => false,
+                attach: vi.fn(),
+                sendCommand,
+                on: vi.fn(),
+                off: vi.fn(),
+              },
+            },
+          ),
+        );
+        yield* manager.createTab("tab_recreated");
+        yield* manager.registerWebview("tab_recreated", 42);
+        yield* manager.automationEvaluate("tab_recreated", { expression: "null" });
+        const before = yield* manager.automationSnapshot("tab_recreated");
+        expect(before.actionTimeline.map((entry) => entry.action)).toEqual([
+          "evaluate",
+          "snapshot",
+        ]);
+
+        yield* manager.closeTab("tab_recreated");
+        yield* manager.createTab("tab_recreated");
+        yield* manager.registerWebview("tab_recreated", 42);
+        const after = yield* manager.automationSnapshot("tab_recreated");
+
+        expect(after.actionTimeline.map((entry) => entry.action)).toEqual(["snapshot"]);
+      }),
+    ),
+  );
+
+  effectIt.effect(
+    "bounds preview diagnostic values from oversized console and network events",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const messages = captureDebuggerMessages();
+          const sendCommand = vi.fn(async (method: string) =>
+            method === "Runtime.evaluate"
+              ? { result: { value: { interactiveElements: [] } } }
+              : undefined,
+          );
+          fromId.mockReturnValue(
+            makeTestPreviewWebContents(
+              async () =>
+                ({
+                  toPNG: () => Buffer.from("png"),
+                  getSize: () => ({ width: 100, height: 50 }),
+                }) as never,
+              42,
+              undefined,
+              {
+                debugger: {
+                  isAttached: () => false,
+                  attach: vi.fn(),
+                  sendCommand,
+                  on: messages.on,
+                  off: vi.fn(),
+                },
+              },
+            ),
+          );
+          yield* manager.createTab("tab_large_diagnostics");
+          yield* manager.registerWebview("tab_large_diagnostics", 42);
+          yield* manager.automationEvaluate("tab_large_diagnostics", { expression: "null" });
+          const large = "x".repeat(2 * 1024 * 1024);
+          messages.emit("Runtime.consoleAPICalled", {
+            type: "log",
+            args: [{ value: large }, { description: large }],
+          });
+          messages.emit("Log.entryAdded", { entry: { text: large } });
+          messages.emit("Runtime.exceptionThrown", { exceptionDetails: { text: large } });
+          messages.emit("Network.requestWillBeSent", {
+            requestId: "request-large",
+            request: { url: `https://example.com/${large}`, method: "GET" },
+          });
+          yield* Effect.yieldNow;
+          messages.emit("Network.loadingFailed", { requestId: "request-large", errorText: large });
+          yield* Effect.yieldNow;
+          const snapshot = yield* manager.automationSnapshot("tab_large_diagnostics");
+
+          expect(snapshot.consoleEntries).toHaveLength(3);
+          for (const entry of snapshot.consoleEntries) {
+            expect(entry.text.length).toBeLessThanOrEqual(16_384);
+            expect(entry.text).toContain("[truncated]");
+          }
+          expect(snapshot.networkEntries).toHaveLength(1);
+          expect(snapshot.networkEntries[0]!.url.length).toBeLessThanOrEqual(4_096);
+          expect(snapshot.networkEntries[0]!.errorText!.length).toBeLessThanOrEqual(16_384);
+        }),
+      ),
+  );
+
   effectIt.effect("shares background frame capture between recording and picture-in-picture", () =>
     withManager((manager) =>
       Effect.gen(function* () {

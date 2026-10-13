@@ -39,23 +39,23 @@ const EMPTY_REVIEW_SECTION_FILE_IDS_ATOM = Atom.make(EMPTY_REVIEW_SECTION_FILE_I
 );
 
 /**
- * Per-thread review payloads (raw diff strings, parsed diff graphs) are the
- * heaviest review state; without an idle TTL they accumulated for every
- * thread reviewed during a session. The review sheet refetches and
- * repopulates on open, so entries only need to outlive an open sheet.
+ * The review sheet refetches raw diff payloads on open. Retain them briefly
+ * for a quick return; keep lightweight selections and file disclosure state
+ * longer without holding every recently reviewed thread's diff strings.
  */
 const REVIEW_STATE_IDLE_TTL = 5 * 60_000;
+const REVIEW_PAYLOAD_IDLE_TTL = 15_000;
 
 const reviewGitSectionsByThreadKeyAtom = Atom.family((threadKey: string) =>
   Atom.make(EMPTY_GIT_REVIEW_SECTIONS).pipe(
-    Atom.setIdleTTL(REVIEW_STATE_IDLE_TTL),
+    Atom.setIdleTTL(REVIEW_PAYLOAD_IDLE_TTL),
     Atom.withLabel(`mobile:review:git-sections:${threadKey}`),
   ),
 );
 
 const reviewTurnDiffByThreadKeyAtom = Atom.family((threadKey: string) =>
   Atom.make(EMPTY_REVIEW_TURN_DIFFS).pipe(
-    Atom.setIdleTTL(REVIEW_STATE_IDLE_TTL),
+    Atom.setIdleTTL(REVIEW_PAYLOAD_IDLE_TTL),
     Atom.withLabel(`mobile:review:turn-diffs:${threadKey}`),
   ),
 );

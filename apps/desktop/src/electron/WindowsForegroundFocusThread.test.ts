@@ -98,3 +98,95 @@ it("replaces a timed-out helper before accepting more work", async () => {
     vi.useRealTimers();
   }
 });
+
+it("keeps one helper while an unresponsive native call delays termination", async () => {
+  vi.useFakeTimers();
+  const termination = Promise.withResolvers<number>();
+  worker.terminate.mockImplementation(() => termination.promise);
+  const replacement = makeWorker();
+  workerConstructorMock.mockReturnValueOnce(worker).mockReturnValueOnce(replacement);
+  const thread = startWindowsForegroundFocusThread("focus.cjs");
+
+  try {
+    worker.emit("message", "ready");
+    const focused = thread.focus(target);
+    await vi.advanceTimersByTimeAsync(1_000);
+    assert.isFalse(await focused);
+    assert.lengthOf(workerConstructorMock.mock.calls, 1);
+
+    for (let index = 0; index < 20; index++) {
+      assert.isFalse(await thread.focus(target));
+      assert.isFalse(await thread.prepare(target));
+    }
+    assert.lengthOf(workerConstructorMock.mock.calls, 1);
+    assert.lengthOf(worker.terminate.mock.calls, 1);
+    assert.equal(vi.getTimerCount(), 0);
+
+    worker.emit("error", new Error("Native call failed during teardown"));
+    worker.emit("message", { type: "result", requestId: 1, focused: true });
+    assert.lengthOf(workerConstructorMock.mock.calls, 1);
+    termination.resolve(0);
+    await termination.promise;
+    assert.lengthOf(workerConstructorMock.mock.calls, 2);
+    replacement.emit("message", "ready");
+    const next = thread.focus(target);
+    replacement.emit("message", { type: "result", requestId: 2, focused: true });
+    assert.isTrue(await next);
+  } finally {
+    thread.close();
+    termination.resolve(0);
+    vi.useRealTimers();
+  }
+});
+
+it("does not spawn a replacement after closing during delayed termination", async () => {
+  vi.useFakeTimers();
+  const termination = Promise.withResolvers<number>();
+  worker.terminate.mockImplementation(() => termination.promise);
+  const thread = startWindowsForegroundFocusThread("focus.cjs");
+
+  try {
+    worker.emit("message", "ready");
+    const focused = thread.focus(target);
+    await vi.advanceTimersByTimeAsync(1_000);
+    assert.isFalse(await focused);
+    thread.close();
+    termination.resolve(0);
+    await termination.promise;
+    assert.lengthOf(workerConstructorMock.mock.calls, 1);
+    assert.isFalse(await thread.focus(target));
+  } finally {
+    thread.close();
+    termination.resolve(0);
+    vi.useRealTimers();
+  }
+});
+
+it("waits for an exit receipt if termination rejects", async () => {
+  vi.useFakeTimers();
+  const termination = Promise.withResolvers<number>();
+  worker.terminate.mockImplementation(() => termination.promise);
+  const replacement = makeWorker();
+  workerConstructorMock.mockReturnValueOnce(worker).mockReturnValueOnce(replacement);
+  const thread = startWindowsForegroundFocusThread("focus.cjs");
+
+  try {
+    const focused = thread.focus(target);
+    await vi.advanceTimersByTimeAsync(1_000);
+    assert.isFalse(await focused);
+    termination.reject(new Error("Could not confirm native worker termination"));
+    await termination.promise.catch(() => undefined);
+    assert.isFalse(await thread.prepare(target));
+    assert.lengthOf(workerConstructorMock.mock.calls, 1);
+
+    worker.emit("exit", 1);
+    assert.lengthOf(workerConstructorMock.mock.calls, 2);
+    replacement.emit("message", "ready");
+    const prepared = thread.prepare(target);
+    replacement.emit("message", { type: "result", requestId: 2, focused: true });
+    assert.isTrue(await prepared);
+  } finally {
+    thread.close();
+    vi.useRealTimers();
+  }
+});

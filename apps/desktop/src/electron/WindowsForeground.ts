@@ -1,8 +1,6 @@
 export interface WindowsForegroundApi {
-  readonly getCurrentThreadId: () => number;
   readonly getForegroundWindow: () => bigint;
   readonly getWindowClassName: (windowHandle: bigint) => string;
-  readonly getWindowThreadId: (windowHandle: bigint) => number;
   readonly getWindowThreadAndProcessId: (windowHandle: bigint) => {
     readonly threadId: number;
     readonly processId: number;
@@ -16,11 +14,6 @@ export interface WindowsForegroundApi {
   readonly getProcessImagePath: (processId: number) => string;
   /** High bit of `GetAsyncKeyState`: whether the virtual key is currently down. */
   readonly isKeyDown: (virtualKey: number) => boolean;
-  readonly attachThreadInput: (
-    sourceThreadId: number,
-    targetThreadId: number,
-    attach: boolean,
-  ) => boolean;
   readonly setForegroundWindow: (windowHandle: bigint) => boolean;
 }
 
@@ -40,19 +33,11 @@ export function activateWindowsForegroundWithApi(
   const foregroundWindow = api.getForegroundWindow();
   if (targetWindow === foregroundWindow) return true;
 
-  const currentThreadId = api.getCurrentThreadId();
-  const foregroundThreadId = foregroundWindow === 0n ? 0 : api.getWindowThreadId(foregroundWindow);
-  const shouldAttach =
-    currentThreadId !== 0 && foregroundThreadId !== 0 && currentThreadId !== foregroundThreadId;
-  const attached = shouldAttach && api.attachThreadInput(currentThreadId, foregroundThreadId, true);
-
-  try {
-    return api.setForegroundWindow(targetWindow);
-  } finally {
-    if (attached) {
-      api.attachThreadInput(currentThreadId, foregroundThreadId, false);
-    }
-  }
+  // Attaching input queues makes activation wait for the other app to process
+  // WM_ACTIVATE. A stalled foreground app would then freeze Electron's main
+  // thread too. Leave the queues independent; denied activation can use the
+  // bounded accessibility worker in ElectronWindow.reveal.
+  return api.setForegroundWindow(targetWindow);
 }
 
 export function isWindowsShellHostedForegroundWithApi(api: WindowsForegroundApi): boolean {
@@ -75,14 +60,6 @@ export function loadWindowsForegroundApi(): Promise<WindowsForegroundApi> {
     open({ library: user32, path: "user32.dll" });
 
     return {
-      getCurrentThreadId: () =>
-        load({
-          library: kernel32,
-          funcName: "GetCurrentThreadId",
-          retType: DataType.U32,
-          paramsType: [],
-          paramsValue: [],
-        }),
       getForegroundWindow: () =>
         load({
           library: user32,
@@ -102,14 +79,6 @@ export function loadWindowsForegroundApi(): Promise<WindowsForegroundApi> {
         });
         return length > 0 ? buffer.subarray(0, length * 2).toString("utf16le") : "";
       },
-      getWindowThreadId: (windowHandle) =>
-        load({
-          library: user32,
-          funcName: "GetWindowThreadProcessId",
-          retType: DataType.U32,
-          paramsType: [DataType.BigInt, DataType.BigInt],
-          paramsValue: [windowHandle, 0n],
-        }),
       getWindowThreadAndProcessId: (windowHandle) => {
         const out = Buffer.alloc(4);
         const threadId = load({
@@ -192,14 +161,6 @@ export function loadWindowsForegroundApi(): Promise<WindowsForegroundApi> {
         }) &
           0x8000) !==
         0,
-      attachThreadInput: (sourceThreadId, targetThreadId, attach) =>
-        load({
-          library: user32,
-          funcName: "AttachThreadInput",
-          retType: DataType.Boolean,
-          paramsType: [DataType.U32, DataType.U32, DataType.Boolean],
-          paramsValue: [sourceThreadId, targetThreadId, attach],
-        }),
       setForegroundWindow: (windowHandle) =>
         load({
           library: user32,
