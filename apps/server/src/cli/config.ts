@@ -27,7 +27,7 @@ import * as ServerConfig from "../config.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
 import {
   isProcessAlive,
-  isRecordedServerResponding,
+  probeRecordedServer,
   readPersistedServerRuntimeState,
 } from "../serverRuntimeState.ts";
 
@@ -355,15 +355,21 @@ export const resolveServerConfig = (
     // and supervisor handoff are separate; this preflight cannot arbitrate two starts.
     if (options?.rejectRunningServer && mode === "web") {
       const runtime = yield* readPersistedServerRuntimeState(derivedPaths.serverRuntimeStatePath);
-      if (
-        Option.isSome(runtime) &&
-        runtime.value.pid > 0 &&
-        isProcessAlive(runtime.value.pid) &&
-        (yield* isRecordedServerResponding(runtime.value))
-      ) {
-        return yield* new CliError.UserError({
-          cause: `A T3 Code server is already running for ${baseDir} (pid ${runtime.value.pid}, ${runtime.value.origin}). Connect to that server, stop it before starting another, or use a different --base-dir.`,
-        });
+      if (Option.isSome(runtime) && runtime.value.pid > 0 && isProcessAlive(runtime.value.pid)) {
+        const { pid, origin } = runtime.value;
+        const environmentId = yield* fs.readFileString(derivedPaths.environmentIdPath).pipe(
+          Effect.map((value) => value.trim() || undefined),
+          Effect.orElseSucceed(() => undefined),
+        );
+        const status = yield* probeRecordedServer(runtime.value, environmentId);
+        if (status !== "stale") {
+          return yield* new CliError.UserError({
+            cause:
+              status === "running"
+                ? `A T3 Code server is already running for ${baseDir} (pid ${pid}, ${origin}). Connect to that server, stop it before starting another, or use a different --base-dir.`
+                : `A T3 Code server recorded for ${baseDir} (pid ${pid}, ${origin}) is not responding. It may be busy and still using this data, so stop it before starting another, or use a different --base-dir. If pid ${pid} is not a T3 Code server, delete ${derivedPaths.serverRuntimeStatePath}.`,
+          });
+        }
       }
     }
     yield* fs.makeDirectory(cwd, { recursive: true });

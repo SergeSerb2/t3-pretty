@@ -4,14 +4,18 @@ import * as NodeOS from "node:os";
 
 import { assert, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
+import * as Cause from "effect/Cause";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   DesktopBackendBootstrap,
@@ -143,11 +147,75 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     }),
   );
 
-  it.effect("does not mistake a reused PID for a responding T3 server", () =>
+  const resolveRejectingServer = (baseDir: string) =>
+    resolveServerConfig({ ...minimalWebFlags(baseDir), port: Option.some(8788) }, Option.none(), {
+      rejectRunningServer: true,
+    }).pipe(
+      Effect.provide(
+        Layer.merge(NetService.layer, ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+      ),
+    );
+
+  it.effect("refuses to start beside a recorded server unless the record is provably stale", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cli-reused-pid-" });
+      const descriptor = (environmentId: string) =>
+        encodeUnknownJson({
+          environmentId,
+          label: "Runtime",
+          platform: { os: "linux", arch: "x64" },
+          serverVersion: "0.0.46",
+          capabilities: { repositoryIdentity: true },
+        });
+      const otherDescriptor = yield* descriptor("env-other");
+      const localDescriptor = yield* descriptor("env-local");
+      const socketError = (code: string) =>
+        new TypeError("fetch failed", { cause: Object.assign(new Error(code), { code }) });
+      const hangUntilAborted = (_url: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) =>
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
+        );
+      const cases: ReadonlyArray<
+        readonly [name: string, fetch: () => Promise<Response>, blocked: boolean]
+      > = [
+        // The recorded PID was reused and something other than T3 owns the port.
+        ["not-t3", async () => new Response("{}"), false],
+        ["refused", () => Promise.reject(socketError("ECONNREFUSED")), false],
+        ["other-environment", async () => new Response(otherDescriptor), false],
+        ["same-environment", async () => new Response(localDescriptor), true],
+        // Older and newer servers still identify themselves by environment ID.
+        ["older-descriptor", async () => new Response('{"environmentId":"env-local"}'), true],
+        ["server-error", async () => new Response("busy", { status: 503 }), true],
+        ["reset", () => Promise.reject(socketError("ECONNRESET")), true],
+      ];
+      const outcomes: Array<readonly [string, boolean]> = [];
+      for (const [name, fetch] of cases) {
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: `t3-cli-${name}-` });
+        const stateDir = path.join(baseDir, "userdata");
+        yield* fs.makeDirectory(stateDir, { recursive: true });
+        yield* fs.writeFileString(path.join(stateDir, "environment-id"), "env-local\n");
+        yield* fs.writeFileString(
+          path.join(stateDir, "server-runtime.json"),
+          yield* encodeUnknownJson({
+            version: 1,
+            pid: process.pid,
+            port: 3773,
+            origin: "http://127.0.0.1:3773",
+            startedAt: "2026-10-01T00:00:00.000Z",
+          }),
+        );
+        yield* Effect.acquireRelease(
+          Effect.sync(() => vi.spyOn(globalThis, "fetch").mockImplementation(fetch)),
+          (spy) => Effect.sync(() => spy.mockRestore()),
+        );
+        const exit = yield* Effect.exit(resolveRejectingServer(baseDir));
+        outcomes.push([name, exit._tag === "Failure"]);
+      }
+      expect(outcomes).toEqual(cases.map(([name, , blocked]) => [name, blocked]));
+
+      // A server too busy to answer still owns the database.
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cli-busy-" });
       const stateDir = path.join(baseDir, "userdata");
       yield* fs.makeDirectory(stateDir, { recursive: true });
       yield* fs.writeFileString(
@@ -160,34 +228,22 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           startedAt: "2026-10-01T00:00:00.000Z",
         }),
       );
-      const probe = yield* Effect.acquireRelease(
-        Effect.sync(() => vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}"))),
-        (spy) => Effect.sync(() => spy.mockRestore()),
-      );
-      const resolve = resolveServerConfig(
-        { ...minimalWebFlags(baseDir), port: Option.some(8788) },
-        Option.none(),
-        { rejectRunningServer: true },
-      ).pipe(
-        Effect.provide(
-          Layer.merge(NetService.layer, ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
-        ),
-      );
-      const config = yield* resolve;
-      expect(config.baseDir).toBe(baseDir);
-      expect(probe).toHaveBeenCalledTimes(1);
-      probe.mockResolvedValue(
-        new Response(
-          yield* encodeUnknownJson({
-            environmentId: "runtime-test",
-            label: "Runtime",
-            platform: { os: "linux", arch: "x64" },
-            serverVersion: "0.0.46",
-            capabilities: { repositoryIdentity: true },
+      const probed = Promise.withResolvers<void>();
+      yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          vi.spyOn(globalThis, "fetch").mockImplementation((url, init) => {
+            probed.resolve();
+            return hangUntilAborted(url, init);
           }),
         ),
+        (spy) => Effect.sync(() => spy.mockRestore()),
       );
-      expect((yield* Effect.exit(resolve))._tag).toBe("Failure");
+      const fiber = yield* Effect.forkChild(Effect.exit(resolveRejectingServer(baseDir)));
+      yield* Effect.promise(() => probed.promise);
+      yield* TestClock.adjust(Duration.seconds(3));
+      const exit = yield* Fiber.join(fiber);
+      assert(exit._tag === "Failure");
+      expect(String(Cause.squash(exit.cause))).toContain("not responding");
     }),
   );
 
