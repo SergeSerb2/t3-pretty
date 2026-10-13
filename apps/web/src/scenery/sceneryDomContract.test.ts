@@ -43,6 +43,16 @@ describe("scenery structural contract with upstream markup", () => {
     expect(sidebarSource).toContain('data-slot="sidebar-inner"');
   });
 
+  it("keeps the timeline scroller free of the fade class scenery hides", () => {
+    // Scenery hides `.topbar-scroll-fade`; on the scroller it blanks every thread.
+    expect(indexCssSource).toMatch(
+      /html\[data-theme-id="world-scenery"\]\[data-scenery-on\] \.topbar-scroll-fade\s*\{\s*display: none;/,
+    );
+    expect(messagesTimelineSource).toContain(
+      'className="messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]"',
+    );
+  });
+
   it("ChatView root is still the direct bg-background child the CSS clears", () => {
     expect(chatViewSource).toContain(
       '"relative flex min-h-0 min-w-0 flex-1 overflow-clip bg-background"',
