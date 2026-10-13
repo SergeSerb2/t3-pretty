@@ -151,13 +151,10 @@ export const resolveEditorExecutable = Effect.fn("editorLaunch.resolveEditorExec
     const tryCandidate = Effect.fn("editorLaunch.tryCandidate")(function* (candidate: string) {
       if (seen.has(candidate)) return Option.none<string>();
       seen.add(candidate);
-      const resolved = yield* resolveCommandPath(candidate, { env: input.env }).pipe(
+      const executable = yield* resolveCommandPath(candidate, { env: input.env }).pipe(
         Effect.provideService(HostProcess.Platform, input.platform),
-        Effect.map(Option.some),
-        Effect.catchTag("CommandResolutionError", () => Effect.succeed(Option.none<string>())),
       );
-      if (Option.isNone(resolved)) return Option.none<string>();
-      const executable = resolved.value;
+      if (executable === null) return Option.none<string>();
       if (yield* isCursorAgentShimAtPath(editorCommandStem(executable), executable)) {
         return Option.none<string>();
       }
