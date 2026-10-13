@@ -15,16 +15,17 @@ import chatViewSource from "../components/ChatView.tsx?raw";
 import messagesTimelineSource from "../components/chat/MessagesTimeline.tsx?raw";
 import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx?raw";
 import pullRequestSummaryTabSource from "../components/pullRequest/PullRequestSummaryTab.tsx?raw";
+import threadRouteViewSource from "../components/ThreadRouteView.tsx?raw";
 import threadTerminalDrawerSource from "../components/ThreadTerminalDrawer.tsx?raw";
 import sidebarSource from "../components/ui/sidebar.tsx?raw";
 import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
 import rightPanelLayoutSource from "../rightPanelLayout.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
+import chatLayoutRouteSource from "../routes/_chat.tsx?raw";
 import pullRequestsRouteSource from "../routes/_chat.pull-requests.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
-import threadRouteViewSource from "../routes/-threadRouteView.tsx?raw";
 import sceneryLayerSource from "./SceneryLayer.tsx?raw";
 import sceneryPlaceCreditSource from "./SceneryPlaceCredit.tsx?raw";
 import sceneryAppearanceSettingsSource from "./SceneryAppearanceSettings.tsx?raw";
@@ -106,24 +107,22 @@ describe("scenery structural contract with upstream markup", () => {
   it("both thread routes share one component so promotion cannot remount ChatView", () => {
     // The draft→server navigation lands seconds after the first send; two
     // different route components would remount ChatView there, flashing every
-    // glass surface right as the generated title arrives.
-    expect(draftThreadRouteSource).toContain("component: ThreadRouteView");
-    expect(serverThreadRouteSource).toContain("<ThreadRouteView");
+    // glass surface right as the generated title arrives. The `_chat` layout
+    // renders the one view, and both leaf routes render nothing.
+    expect(draftThreadRouteSource).toContain("component: () => null");
+    expect(serverThreadRouteSource).toContain("component: () => null");
+    expect(chatLayoutRouteSource).toContain("<ThreadRouteView target={threadTarget} />");
   });
 
   it("the shared thread view keeps ChatView mounted across the draft→server swap", () => {
-    expect(threadRouteViewSource).not.toContain("strict: false");
-    expect(threadRouteViewSource).toContain('from: "/_chat/draft/$draftId"');
-    expect(threadRouteViewSource).toContain('from: "/_chat/$environmentId/$threadId"');
+    // The promoted thread keeps the draft's key, so the swap is a prop change.
+    expect(threadRouteViewSource).toContain("key={target.draftId}");
+    expect(threadRouteViewSource).toContain("key={nextChatViewKey?.key}");
   });
 
   it("the server branch still gates ChatView on renderState", () => {
     // Direct visits to missing/not-ready threads must not mount ChatView.
-    // Promotion still renders: the draft route already has ChatView, and the
-    // replace lands with a shell so this gate stays true.
-    expect(threadRouteViewSource).toContain(
-      'renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)',
-    );
+    expect(threadRouteViewSource).toContain("shouldRenderServerThreadView({");
   });
 });
 
