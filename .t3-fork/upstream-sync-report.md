@@ -21,3 +21,8 @@
 ## Parent changes intentionally omitted
 
 - None. The resolver did not omit any parent change to protect T3 Pretty.
+
+## Post-merge repairs
+
+- `desktop-typecheck` failed after merging `v0.0.46-nightly.20261013.3042`; repaired with `gpt-6.1-sol`: Update editor executable discovery to handle the parent's string-or-null resolver API, resolving all reported type errors. Preserve T3 Pretty's command-priority PATH search, Cursor agent-shim filtering, and app-bundle fallbacks.
+  - edited `packages/shared/src/editorLaunch.ts`
