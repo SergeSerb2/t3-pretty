@@ -4,14 +4,20 @@ export const DIAGNOSTIC_LABEL_LIMIT = 128;
 const DIAGNOSTIC_TRUNCATION_SUFFIX = " [truncated]";
 
 // Even a short input can be a substring backed by a much larger protocol message.
-const copyDiagnosticPrefix = (text: string, length: number): string =>
-  Buffer.from(text.slice(0, length), "utf16le").toString("utf16le");
+const copyDiagnosticPrefix = (text: string, length: number): string => {
+  let end = Math.min(text.length, Math.max(0, Math.trunc(length)));
+  const previous = text.charCodeAt(end - 1);
+  const next = text.charCodeAt(end);
+  if (previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) end--;
+  return Buffer.from(text.slice(0, end), "utf16le").toString("utf16le");
+};
 
 export const boundDiagnosticText = (value: unknown, maxLength = DIAGNOSTIC_TEXT_LIMIT): string => {
   const text = String(value);
   if (text.length <= maxLength) return copyDiagnosticPrefix(text, text.length);
-  const prefix = copyDiagnosticPrefix(text, maxLength - DIAGNOSTIC_TRUNCATION_SUFFIX.length);
-  return `${prefix}${DIAGNOSTIC_TRUNCATION_SUFFIX}`;
+  const suffix = DIAGNOSTIC_TRUNCATION_SUFFIX.slice(0, Math.max(0, maxLength));
+  const prefix = copyDiagnosticPrefix(text, maxLength - suffix.length);
+  return `${prefix}${suffix}`;
 };
 
 export const diagnosticConsoleText = (args: ReadonlyArray<unknown>): string => {
