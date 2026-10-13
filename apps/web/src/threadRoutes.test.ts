@@ -12,7 +12,6 @@ import {
   resolveThreadRouteRenderState,
   resolveThreadRouteRef,
   resolveThreadRouteTarget,
-  shouldRedirectMissingThreadRoute,
   shouldRenderServerThreadView,
 } from "./threadRoutes";
 
