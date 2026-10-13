@@ -1,4 +1,3 @@
-import { openProjectTransferDialog } from "../projectTransferStore";
 import { useCopyThreadConversation } from "./useCopyThreadConversation";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
@@ -143,7 +142,6 @@ export function useThreadActionMenu(input: {
           storage: readEnvironmentSupportsStorage(threadRef.environmentId),
           pinning: readEnvironmentSupportsPinning(threadRef.environmentId),
           titleRegeneration: readEnvironmentSupportsTitleRegeneration(threadRef.environmentId),
-          projectTransfer: false,
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
@@ -160,8 +158,8 @@ export function useThreadActionMenu(input: {
               // can never disagree with the sidebar partition or ChatView's
               // parked-thread banner within the same minute.
               now: `${now.toISOString().slice(0, 16)}:00.000Z`,
-                      autoSettleOnMerge: false,
-      autoSettleAfterDays: null,
+              autoSettleOnMerge: false,
+              autoSettleAfterDays: null,
               changeRequest,
             }),
           autoSettleEnabled: thread.autoSettleDisabledAt == null,
@@ -267,9 +265,6 @@ export function useThreadActionMenu(input: {
             return;
           case "mark-unread":
             markThreadUnread(threadRef);
-            return;
-          case "transfer":
-            openProjectTransferDialog(threadRef);
             return;
           case "copy":
           case "copy-conversation":

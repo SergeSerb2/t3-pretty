@@ -5156,7 +5156,6 @@ export default function Sidebar() {
                 storage: supportsStorage,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
-                projectTransfer: false,
               },
               snoozePresets,
             }),
