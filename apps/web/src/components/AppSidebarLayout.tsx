@@ -405,10 +405,12 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       : false;
   });
   const sidebarProviderStyle = {
+    // Car display: rail plus thread list, leaving most of the screen to the
+    // conversation.
     "--sidebar-width": teslaTouch
-      ? "min(34rem, max(20rem, 40vw))"
+      ? "clamp(25rem, 34vw, 32rem)"
       : `max(${sidebarMinimumWidth}px, ${resolveThreadSidebarCssWidth(sidebarWidth)})`,
-    ...(teslaTouch ? { "--sidebar-width-icon": "5.75rem" } : {}),
+    ...(teslaTouch ? { "--sidebar-width-icon": "5.25rem" } : {}),
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
   } as CSSProperties;
 
