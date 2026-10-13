@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261012.3035003452",
+    date: "2026-10-13",
+    items: [
+      {
+        kind: "fixed",
+        title: "Threads show their messages again with scenery on",
+      },
+      {
+        kind: "fixed",
+        title: "The pull request comment filter dropped by a sync merge",
+      },
+      {
+        kind: "fixed",
+        title: "Preview_snapshot works for server-runtime browser tabs",
+      },
+      {
+        kind: "fixed",
+        title: "A busy running server still blocks a second server on the same data",
+      },
+      {
+        kind: "fixed",
+        title: "Settings saves no longer fail after choosing a suggestions model",
+      },
+      {
+        kind: "fixed",
+        title: "Home suggestions load and refresh again after restart",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261012.3035003444",
     date: "2026-10-13",
     items: [
