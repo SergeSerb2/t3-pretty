@@ -201,6 +201,27 @@ describe("createPageScrollController", () => {
     );
   });
 
+  test("jumps a whole page at once under reduced motion", () => {
+    const clock = new TestClock();
+    const container = {
+      clientHeight: 600,
+      scrollHeight: 1_800,
+      scrollTop: 0,
+      getBoundingClientRect: () => ({ height: 600 }),
+    };
+    const controller = createPageScrollController({
+      getContainer: () => container,
+      getScrollPaddingBottomPx: () => 24,
+      env: { ...clock.env, prefersReducedMotion: () => true },
+    });
+
+    controller.handleKeyDown("PageDown");
+
+    expect(container.scrollTop).toBe(
+      getPageScrollDistancePx({ containerHeightPx: 600, scrollPaddingBottomPx: 24 }),
+    );
+  });
+
   test("continues scrolling on hold without repeated keydown events and stops on keyup", () => {
     const clock = new TestClock();
     const container = {

@@ -790,17 +790,29 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     background: var(--popover) !important;
   }
 
-  .chat-composer-glass-shell::before,
-  .chat-composer-context-strip::before {
-    background: var(--chat-composer-glass-surface) !important;
+  /* Composer glass layers mix their own surface color with --glass-opacity,
+     so pinning it per layer turns each opaque and keeps its tints and seams. */
+  [data-slot="composer-shell"]::before,
+  [data-chat-composer-main-surface],
+  [data-slot="composer-context-strip"]::before,
+  [data-composer-banner-surface]::before,
+  [data-slot="composer-banner-peek"],
+  .chat-composer-drawer-surface::before,
+  .chat-composer-banner-stack-cap {
+    --glass-opacity: 100%;
   }
 
   .surface-glass,
   .dialog-glass,
   .dropdown-glass,
   .alert-glass,
-  .chat-composer-glass-shell::before,
-  .chat-composer-context-strip::before {
+  [data-slot="composer-shell"]::before,
+  [data-chat-composer-main-surface],
+  [data-slot="composer-context-strip"]::before,
+  [data-composer-banner-surface]::before,
+  [data-slot="composer-banner-peek"],
+  .chat-composer-drawer-surface::before,
+  .chat-composer-banner-stack-cap {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -820,14 +832,22 @@ html[data-window-interacting] :is(.dialog-glass, .dropdown-glass) {
   background: var(--popover) !important;
 }
 
-html[data-window-interacting] .chat-composer-glass-shell::before,
-html[data-window-interacting] .chat-composer-context-strip::before {
-  background: var(--chat-composer-glass-surface) !important;
+html[data-window-interacting] [data-slot="composer-shell"]::before,
+html[data-window-interacting]
+  :is(
+    [data-chat-composer-main-surface],
+    [data-slot="composer-banner-peek"],
+    .chat-composer-banner-stack-cap
+  ),
+html[data-window-interacting] [data-slot="composer-context-strip"]::before,
+html[data-window-interacting] [data-composer-banner-surface]::before,
+html[data-window-interacting] .chat-composer-drawer-surface::before {
+  --glass-opacity: 100%;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
-html[data-window-interacting] :is(.surface-glass, .dialog-glass, .dropdown-glass, .alert-glass),
-html[data-window-interacting] .chat-composer-glass-shell::before,
-html[data-window-interacting] .chat-composer-context-strip::before {
+html[data-window-interacting] :is(.surface-glass, .dialog-glass, .dropdown-glass, .alert-glass) {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -846,15 +866,23 @@ html.electron-windows[data-window-inactive] :is(.dialog-glass, .dropdown-glass) 
   background: var(--popover) !important;
 }
 
-html.electron-windows[data-window-inactive] .chat-composer-glass-shell::before,
-html.electron-windows[data-window-inactive] .chat-composer-context-strip::before {
-  background: var(--chat-composer-glass-surface) !important;
+html.electron-windows[data-window-inactive] [data-slot="composer-shell"]::before,
+html.electron-windows[data-window-inactive]
+  :is(
+    [data-chat-composer-main-surface],
+    [data-slot="composer-banner-peek"],
+    .chat-composer-banner-stack-cap
+  ),
+html.electron-windows[data-window-inactive] [data-slot="composer-context-strip"]::before,
+html.electron-windows[data-window-inactive] [data-composer-banner-surface]::before,
+html.electron-windows[data-window-inactive] .chat-composer-drawer-surface::before {
+  --glass-opacity: 100%;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 html.electron-windows[data-window-inactive]
-  :is(.surface-glass, .dialog-glass, .dropdown-glass, .alert-glass),
-html.electron-windows[data-window-inactive] .chat-composer-glass-shell::before,
-html.electron-windows[data-window-inactive] .chat-composer-context-strip::before {
+  :is(.surface-glass, .dialog-glass, .dropdown-glass, .alert-glass) {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -1459,40 +1487,54 @@ html[data-window-inactive]
     outline: none;
   }
 
-  /* Match the thread sidebar's 200ms motion. The gap changes only while the
-     panel enters or exits; its fixed-width surface slides independently so
-     expensive browser, terminal, and diff contents do not reflow each frame.
+  /* Match the thread sidebar's panel motion: same duration setting and curve,
+     and only under [data-panel-animations=true], which drops out for reduced
+     motion and while a navigation paints its restored state. The gap changes
+     only while the panel enters or exits; its fixed-width surface slides
+     independently so expensive browser, terminal, and diff contents do not
+     reflow each frame. The panel unmounts after the same duration
+     (usePanelPresence), so a close is never cut short.
 
-     Closed is the cascade default (width 0 / translated away): the panel
-     mounts closed and flips open a frame later (InlineRightPanelPresence), so
-     no @starting-style is involved. */
+     Closed is the cascade default (width 0 / translated away), and a panel
+     that mounts open is held closed for two frames (usePanelEnterHold sets
+     data-right-panel-entering on the chat view) so the slide starts after its
+     mount work; no @starting-style is involved. */
   .right-panel-inline-gap {
     width: 0;
-    transition: width 200ms linear;
   }
 
   .right-panel-inline-gap[data-right-panel-open="true"] {
     width: var(--right-panel-width);
   }
 
-  .right-panel-inline-gap[data-right-panel-resizing="true"] {
-    transition: none;
-  }
-
   .right-panel-inline-surface {
     translate: 100%;
-    transition: translate 200ms linear;
   }
 
   .right-panel-inline-frame[data-right-panel-open="true"] .right-panel-inline-surface {
     translate: 0;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .right-panel-inline-gap,
+  [data-right-panel-entering] .right-panel-inline-gap[data-right-panel-open="true"] {
+    width: 0;
+  }
+
+  [data-right-panel-entering]
+    .right-panel-inline-frame[data-right-panel-open="true"]
     .right-panel-inline-surface {
-      transition: none;
-    }
+    translate: 100%;
+  }
+
+  [data-panel-animations="true"] .right-panel-inline-gap {
+    transition: width var(--panel-animation-duration) cubic-bezier(0, 0, 0.2, 1);
+  }
+
+  [data-panel-animations="true"] .right-panel-inline-surface {
+    transition: translate var(--panel-animation-duration) cubic-bezier(0, 0, 0.2, 1);
+  }
+
+  .right-panel-inline-gap[data-right-panel-resizing="true"] {
+    transition: none;
   }
 
   /* Match both sidebars' 200ms motion without resizing the terminal canvas on
@@ -2340,27 +2382,43 @@ html[data-window-inactive]
     }
   }
 
-  /* Surfaces that mount conditionally over the chat view (scroll-to-end and
-     sync-status pills, the draft hero headline) rise and fade in once on
-     mount; unmount stays instant. */
+  /* Composer notices rise out of the composer once on mount, and a notice
+     that reaches the front fades in (data-composer-notice-enter); the banner
+     stack marks neither on thread switches and route loads. Unmount stays
+     instant. The host only slides: opacity on it would make it the backdrop
+     root and drop the frost its glass layers paint mid-fade, so each glass
+     layer and its contents fade on their own. */
   .mount-rise-in {
     animation: mount-rise-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
+  .mount-rise-in .chat-composer-banner-stack-cap,
+  [data-composer-notice-enter]::before,
+  [data-composer-notice-enter] > * {
+    animation: mount-fade-in 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+
   @keyframes mount-rise-in {
     from {
-      opacity: 0;
       translate: 0 6px;
     }
     to {
-      opacity: 1;
       translate: 0 0;
+    }
+  }
+
+  @keyframes mount-fade-in {
+    from {
+      opacity: 0;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .chat-composer-context-strip,
-    .mount-rise-in {
+    .mount-rise-in,
+    .mount-rise-in .chat-composer-banner-stack-cap,
+    [data-composer-notice-enter]::before,
+    [data-composer-notice-enter] > * {
       animation: none;
     }
   }
@@ -2518,7 +2576,8 @@ html[data-window-inactive]
 }
 
 @keyframes status-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {

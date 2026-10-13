@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import type { ComponentProps } from "react";
 import { Pressable } from "react-native";
 
@@ -10,6 +11,7 @@ export function RequestActionButton({
   tone = "primary",
   size = "default",
   disabled,
+  onPress,
   ...props
 }: Omit<ComponentProps<typeof Pressable>, "children" | "className" | "style"> & {
   label: string;
@@ -22,6 +24,11 @@ export function RequestActionButton({
       accessibilityRole="button"
       accessibilityState={{ ...props.accessibilityState, disabled: Boolean(disabled) }}
       disabled={disabled}
+      onPress={(event) => {
+        // These answer the agent or open the next step; confirm the commit.
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+        onPress?.(event);
+      }}
       className={cn(
         "items-center justify-center active:opacity-70 disabled:opacity-50",
         size === "large" ? "rounded-2xl px-4 py-3.5" : "rounded-[14px] px-3.5 py-3",

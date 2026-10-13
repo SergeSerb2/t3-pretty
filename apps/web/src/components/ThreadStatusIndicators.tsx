@@ -36,14 +36,9 @@ import {
   type ThreadPullRequestBadge,
 } from "@t3tools/shared/threadPullRequests";
 import { useRender } from "@base-ui/react/use-render";
-import {
-  type ReactNode,
-  type AnimationEvent,
-  type MouseEvent,
-  type ReactElement,
-  type ComponentProps,
-} from "react";
+import { type ReactNode, type MouseEvent, type ReactElement, type ComponentProps } from "react";
 import { cn } from "../lib/utils";
+import { useStatusPulse } from "../hooks/useStatusPulse";
 import { revealThreadTerminal } from "../lib/revealThreadTerminal";
 
 import { parseChangeRequestUrl } from "../lib/openPullRequestLink";
@@ -907,17 +902,6 @@ export function ThreadActiveSubagentIndicator({
   );
 }
 
-/** Align newly started pulses with the document clock without a timer or frame loop. */
-export function synchronizeTerminalPulse(event: AnimationEvent<SVGSVGElement>) {
-  if (event.animationName !== "status-pulse") return;
-
-  for (const animation of event.currentTarget.getAnimations()) {
-    if ("animationName" in animation && animation.animationName === "status-pulse") {
-      animation.startTime = 0;
-    }
-  }
-}
-
 export function ThreadTerminalStatusButton({
   threadRef,
   terminalIds,
@@ -928,6 +912,7 @@ export function ThreadTerminalStatusButton({
   onThreadActivate: (threadRef: ScopedThreadRef) => void;
 }) {
   const terminalId = terminalIds[0];
+  useStatusPulse(terminalId !== undefined);
   if (terminalId === undefined) return null;
   const status = terminalStatusFromRunningIds(terminalIds);
   const label =
@@ -957,10 +942,7 @@ export function ThreadTerminalStatusButton({
           />
         }
       >
-        <TerminalIcon
-          className="size-3.5 motion-safe:animate-status-pulse"
-          onAnimationStart={synchronizeTerminalPulse}
-        />
+        <TerminalIcon className="size-3.5 status-pulse" />
       </TooltipTrigger>
       <TooltipPopup side="top">{label}</TooltipPopup>
     </Tooltip>
@@ -1008,6 +990,7 @@ export function ThreadStatusLabel({
   status: ThreadStatusPill;
   compact?: boolean;
 }) {
+  useStatusPulse(status.pulse);
   if (compact) {
     return (
       <Tooltip>
@@ -1022,7 +1005,7 @@ export function ThreadStatusLabel({
         >
           <span
             className={`size-[9px] rounded-full ${status.dotClass} ${
-              status.pulse ? "animate-status-pulse" : ""
+              status.pulse ? "status-pulse" : ""
             }`}
           />
         </TooltipTrigger>
@@ -1044,7 +1027,7 @@ export function ThreadStatusLabel({
       >
         <span
           className={`h-1.5 w-1.5 rounded-full ${status.dotClass} ${
-            status.pulse ? "animate-status-pulse" : ""
+            status.pulse ? "status-pulse" : ""
           }`}
         />
         <span className="hidden md:inline">{status.label}</span>
@@ -1182,6 +1165,7 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
   const threadEnvironmentLabel = isRemoteThread ? (remoteEnvLabel ?? "Remote") : null;
   const remoteMachine = resolveEnvironmentMachineKind(environment?.serverConfig ?? null);
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
+  useStatusPulse(terminalStatus?.pulse === true);
 
   if (!terminalStatus && !isRemoteThread) {
     return null;
@@ -1200,10 +1184,7 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
               />
             }
           >
-            <TerminalIcon
-              className={`size-3 ${terminalStatus.pulse ? "motion-safe:animate-status-pulse" : ""}`}
-              onAnimationStart={synchronizeTerminalPulse}
-            />
+            <TerminalIcon className={`size-3 ${terminalStatus.pulse ? "status-pulse" : ""}`} />
           </TooltipTrigger>
           <TooltipPopup side="top">{terminalStatus.label}</TooltipPopup>
         </Tooltip>

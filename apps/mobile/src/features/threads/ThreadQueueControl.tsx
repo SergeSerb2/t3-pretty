@@ -3,8 +3,8 @@ import { useAtomValue } from "@effect/atom-react";
 import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Animated, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable, {
   type SwipeableMethods,
@@ -15,9 +15,11 @@ import Reanimated, {
   ReduceMotion,
   type SharedValue,
   useAnimatedStyle,
+  useSharedValue,
   withSpring,
   withTiming,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 
 import { MaterialButton } from "../../components/MaterialButton";
 import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
@@ -94,7 +96,12 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
     beforeRunId: RunId | null | undefined;
     rows: ReadonlyArray<QueueRowLayout>;
   } | null>(null);
-  const [translation] = useState(() => new Animated.Value(0));
+  // The held row, its finger travel, and the drag-start layouts live on the UI
+  // thread: the row tracks the finger and the drop slot resolves there, and
+  // JS only hears about it when the slot changes or the drag ends.
+  const translation = useSharedValue(0);
+  const heldRunId = useSharedValue<RunId | null>(null);
+  const heldRows = useSharedValue<ReadonlyArray<QueueRowLayout> | null>(null);
   const queuedRuns = workflow?.queuedRuns ?? [];
   const order = queuedRuns.map(({ run }) => run.id).join(",");
 
@@ -104,9 +111,11 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
       setDraggedRunId(null);
       setPreviewBeforeRunId(undefined);
       setDragRows(null);
-      translation.setValue(0);
+      translation.set(0);
+      heldRunId.set(null);
+      heldRows.set(null);
     }
-  }, [order, translation]);
+  }, [heldRows, heldRunId, order, translation]);
 
   // Nothing left to manage: the sheet closes rather than sitting on an empty
   // list the user has to dismiss themselves.
@@ -252,12 +261,15 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
         return (
           <QueueShiftedRow
             key={run.id}
+            runId={run.id}
             offset={offset}
             dragging={draggedRunId !== null}
             lifted={draggedRunId === run.id}
+            heldRunId={heldRunId}
+            heldTranslation={translation}
             onLayout={({ nativeEvent }) => rowLayouts.current.set(run.id, nativeEvent.layout)}
           >
-            <Animated.View
+            <View
               className={
                 glass
                   ? "mb-2 flex-row items-center overflow-hidden border-continuous border-chrome-glass-border bg-chrome-glass"
@@ -265,9 +277,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
               }
               style={[
                 glass ? GLASS_ROW_STYLE : undefined,
-                draggedRunId === run.id
-                  ? { transform: [{ translateY: translation }], zIndex: 1, opacity: 0.85 }
-                  : undefined,
+                draggedRunId === run.id ? { zIndex: 1, opacity: 0.85 } : undefined,
               ]}
             >
               {canReorder ? (
@@ -275,6 +285,10 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                 // the handle owns vertical movement while the row owns sideways.
                 <QueueDragHandle
                   disabled={busyRunId !== null}
+                  runId={run.id}
+                  translation={translation}
+                  heldRunId={heldRunId}
+                  rows={heldRows}
                   title={title}
                   canMoveUp={controls.canMoveUp}
                   canMoveDown={controls.canMoveDown}
@@ -283,17 +297,15 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                     const rows = queueRows();
                     const beforeRunId = resolveQueueDragBeforeRunId(rows, run.id, 0);
                     drag.current = { runId: run.id, order, beforeRunId, rows };
-                    translation.setValue(0);
+                    heldRows.set(rows);
                     setDragRows(rows);
                     setPreviewBeforeRunId(beforeRunId);
                     setDraggedRunId(run.id);
                     void Haptics.selectionAsync();
                   }}
-                  onMove={(y) => {
+                  onSlotChange={(before) => {
                     const current = drag.current;
                     if (current?.runId !== run.id || current.order !== order) return;
-                    translation.setValue(y);
-                    const before = resolveQueueDragBeforeRunId(current.rows, run.id, y);
                     if (current.beforeRunId !== before) {
                       current.beforeRunId = before;
                       setPreviewBeforeRunId(before);
@@ -307,7 +319,9 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                       setDraggedRunId(null);
                       setPreviewBeforeRunId(undefined);
                       setDragRows(null);
-                      translation.setValue(0);
+                      translation.set(0);
+                      heldRunId.set(null);
+                      heldRows.set(null);
                     };
                     // A remote reorder or a newly started run invalidates this drag.
                     if (!success || started?.order !== order || started.runId !== run.id) {
@@ -332,11 +346,12 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                       source.height !== undefined &&
                       insertion !== undefined
                     ) {
-                      Animated.timing(translation, {
-                        toValue: insertion - source.y - (insertion > source.y ? source.height : 0),
-                        duration: 160,
-                        useNativeDriver: true,
-                      }).start();
+                      translation.set(
+                        withTiming(
+                          insertion - source.y - (insertion > source.y ? source.height : 0),
+                          { duration: 160, reduceMotion: ReduceMotion.System },
+                        ),
+                      );
                     }
                     setPreviewBeforeRunId(before);
                     void move(run.id, before).finally(stop);
@@ -432,7 +447,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                   </Pressable>
                 </ControlPillMenu>
               </QueueRowSwipeable>
-            </Animated.View>
+            </View>
           </QueueShiftedRow>
         );
       })}
@@ -487,13 +502,17 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
 }
 
 function QueueShiftedRow(props: {
+  readonly runId: RunId;
   readonly offset: number;
   readonly dragging: boolean;
   readonly lifted: boolean;
+  /** The row a drag holds and its finger travel, both written on the UI thread. */
+  readonly heldRunId: SharedValue<RunId | null>;
+  readonly heldTranslation: SharedValue<number>;
   readonly onLayout: React.ComponentProps<typeof View>["onLayout"];
   readonly children: React.ReactNode;
 }) {
-  const { dragging, lifted, offset } = props;
+  const { dragging, heldRunId, heldTranslation, lifted, offset, runId } = props;
   const style = useAnimatedStyle(() => ({
     transform: [
       {
@@ -505,9 +524,14 @@ function QueueShiftedRow(props: {
       { scale: withSpring(lifted ? 1.03 : 1, MOTION_SETTLE_SPRING) },
     ],
   }));
+  // Separate from the gap/lift style above: that one restarts its timing and
+  // spring whenever it re-runs, and this one re-runs on every finger move.
+  const heldStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: heldRunId.get() === runId ? heldTranslation.get() : 0 }],
+  }));
   return (
     <Reanimated.View onLayout={props.onLayout} style={[style, { zIndex: props.lifted ? 1 : 0 }]}>
-      {props.children}
+      <Reanimated.View style={heldStyle}>{props.children}</Reanimated.View>
     </Reanimated.View>
   );
 }
@@ -636,29 +660,61 @@ function QueueAttachmentThumbnail(props: {
 
 function QueueDragHandle(props: {
   disabled: boolean;
+  runId: RunId;
   title: string;
   canMoveUp: boolean;
   canMoveDown: boolean;
+  /** Written on the UI thread so the held row tracks the finger. */
+  translation: SharedValue<number>;
+  heldRunId: SharedValue<RunId | null>;
+  /** Drag-start layouts, published by onStart; the drop slot resolves against them. */
+  rows: SharedValue<ReadonlyArray<QueueRowLayout> | null>;
   onStep: (action: "up" | "down") => void;
   onStart: () => void;
-  onMove: (y: number) => void;
+  onSlotChange: (beforeRunId: RunId | null | undefined) => void;
   onEnd: (y: number, success: boolean) => void;
 }) {
   const latest = useRef(props);
   useLayoutEffect(() => {
     latest.current = props;
   });
+  const handleStart = useCallback(() => latest.current.onStart(), []);
+  const handleSlotChange = useCallback(
+    (beforeRunId: RunId | null | undefined) => latest.current.onSlotChange(beforeRunId),
+    [],
+  );
+  const handleEnd = useCallback(
+    (y: number, success: boolean) => latest.current.onEnd(y, success),
+    [],
+  );
+  const slot = useSharedValue<RunId | null | undefined>(undefined);
+  const { disabled, heldRunId, rows, runId, translation } = props;
   const gesture = useMemo(
     () =>
       Gesture.Pan()
-        .enabled(!props.disabled)
+        .enabled(!disabled)
         .minDistance(0)
         .shouldCancelWhenOutside(false)
-        .runOnJS(true)
-        .onStart(() => latest.current.onStart())
-        .onUpdate((event) => latest.current.onMove(event.translationY))
-        .onFinalize((event, success) => latest.current.onEnd(event.translationY, success)),
-    [props.disabled],
+        .onStart(() => {
+          translation.set(0);
+          heldRunId.set(runId);
+          slot.set(undefined);
+          scheduleOnRN(handleStart);
+        })
+        .onUpdate((event) => {
+          translation.set(event.translationY);
+          const layouts = rows.get();
+          if (layouts === null) return;
+          const before = resolveQueueDragBeforeRunId(layouts, runId, event.translationY);
+          if (before !== slot.get()) {
+            slot.set(before);
+            scheduleOnRN(handleSlotChange, before);
+          }
+        })
+        .onFinalize((event, success) => {
+          scheduleOnRN(handleEnd, event.translationY, success);
+        }),
+    [disabled, handleEnd, handleSlotChange, handleStart, heldRunId, rows, runId, slot, translation],
   );
   return (
     <GestureDetector gesture={gesture}>

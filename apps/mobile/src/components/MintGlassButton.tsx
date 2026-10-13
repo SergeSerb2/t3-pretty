@@ -86,7 +86,7 @@ export function MintGlassButton(props: {
         hitSlop={6}
         onPress={props.onPress}
         onPressIn={() => {
-          scale.set(withSpring(0.88, MOTION_PRESS_SPRING));
+          scale.set(withSpring(0.97, MOTION_PRESS_SPRING));
           if (Platform.OS === "ios") void Haptics.selectionAsync().catch(() => undefined);
           props.onPressIn?.();
         }}

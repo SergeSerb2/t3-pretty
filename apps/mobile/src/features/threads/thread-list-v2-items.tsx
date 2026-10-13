@@ -40,14 +40,7 @@ import {
 } from "react";
 import { Alert, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, {
-  FadeInDown,
-  ReduceMotion,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-  ZoomIn,
-} from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
 import { SymbolView } from "../../components/AppSymbol";
@@ -73,7 +66,7 @@ import {
   subscribeThreadDeparture,
   threadDepartureHasLanded,
 } from "../home/thread-departure-store";
-import { MOTION_TIMING } from "../../lib/motion";
+import { createEnterFadeDown, enterPop, MOTION_TIMING } from "../../lib/motion";
 import { TONE_BY_BADGE } from "../home/HomeGlance";
 import { THREAD_RENAME_MENU_ACTION } from "./thread-rename";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
@@ -1834,8 +1827,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 // Later mounts (recycled cells, new threads mid-session) skip it, so scrolling
 // never replays the cascade.
 const CARD_ENTRANCE_WINDOW_MS = 900;
-const CARD_ENTRANCE_STAGGER_MS = 45;
-const CARD_ENTRANCE_MAX_STEPS = 9;
+const CARD_ENTRANCE_STAGGER_MS = 30;
+const CARD_ENTRANCE_MAX_STEPS = 4;
 let cardEntranceWindowStart: number | null = null;
 let cardEntranceCount = 0;
 
@@ -1847,30 +1840,15 @@ function nextCardEntranceDelay(): number | null {
 }
 
 function CardEntrance(props: { readonly children: ReactNode }) {
-  const [delay] = useState(nextCardEntranceDelay);
-  return (
-    <Animated.View
-      entering={
-        delay === null
-          ? undefined
-          : FadeInDown.springify()
-              .damping(16)
-              .stiffness(170)
-              .delay(delay)
-              .reduceMotion(ReduceMotion.System)
-      }
-    >
-      {props.children}
-    </Animated.View>
-  );
+  const [entering] = useState(() => {
+    const delay = nextCardEntranceDelay();
+    return delay === null ? undefined : createEnterFadeDown(delay);
+  });
+  return <Animated.View entering={entering}>{props.children}</Animated.View>;
 }
 
 // The dot pops in when a thread changes state; a recycled cell taking over a
 // different thread shows its dot without the pop.
-const statusDotEnter = ZoomIn.springify()
-  .damping(8)
-  .stiffness(300)
-  .reduceMotion(ReduceMotion.System);
 const CARD_STATUS_DOT_SIZE = 7;
 
 function CardStatusDot(props: { readonly badge: ThreadListV2Badge; readonly identity: string }) {
@@ -1881,7 +1859,7 @@ function CardStatusDot(props: { readonly badge: ThreadListV2Badge; readonly iden
   return (
     <Animated.View
       key={props.badge}
-      entering={animate ? statusDotEnter : undefined}
+      entering={animate ? enterPop : undefined}
       style={{ height: CARD_STATUS_DOT_SIZE, width: CARD_STATUS_DOT_SIZE }}
     >
       {props.badge === "working" ? (
@@ -1935,7 +1913,7 @@ function RowArrival(props: {
   }, [departure.arriving, identity, progress]);
   const style = useAnimatedStyle(() => ({
     opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * 6 }],
+    transform: [{ translateY: (1 - progress.value) * 3 }],
   }));
   return (
     <Animated.View collapsable={false} style={style}>

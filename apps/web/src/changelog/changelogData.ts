@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261013.3042003494",
+    date: "2026-10-13",
+    items: [
+      {
+        kind: "fixed",
+        title: "Tone down search and mobile motion",
+      },
+      {
+        kind: "fixed",
+        title: "Reduce traffic and stabilize remote recovery",
+      },
+      {
+        kind: "new",
+        title: "Require tsc-rs validation for TypeScript projects",
+      },
+      {
+        kind: "new",
+        title: "Global and project prompt guidance",
+      },
+      {
+        kind: "improved",
+        title: "The search backfill and legacy fold off the boot path",
+      },
+      {
+        kind: "improved",
+        title: "Renderer-blocking sync IPC and make chrome glass cheap",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261013.3042003491",
     date: "2026-10-13",
     items: [

@@ -1,21 +1,32 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 
 const HANDOFF_TIMING = { duration: 380, easing: "cubic-bezier(0.32, 0.72, 0, 1)" };
 
+/** What a live slot last showed, the content a handoff slides out. */
+export interface SlidingActivityHandoff {
+  readonly activityKey: string | null;
+  readonly text: string;
+  readonly children: ReactNode;
+}
+
 /**
  * Keeps the live slot in place while one tool hands off to the next. `text`
  * is the rendered label: a new call that keeps the same text (a headline
- * spanning several calls) swaps in place instead of sliding.
+ * spanning several calls) swaps in place instead of sliding. A parent that
+ * swaps the tree around the slot passes `handoffRef`, so the new slot still
+ * slides out what the old one showed.
  */
 export function SlidingActivity({
   activityKey,
   text,
+  handoffRef,
   children,
 }: {
   activityKey: string | null;
   text: string;
+  handoffRef?: RefObject<SlidingActivityHandoff | null>;
   children: ReactNode;
 }) {
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
@@ -23,7 +34,7 @@ export function SlidingActivity({
   const currentRef = useRef<HTMLDivElement>(null);
   const outgoingRef = useRef<HTMLDivElement>(null);
   const incomingAnimation = useRef<Animation | null>(null);
-  const previous = useRef({ activityKey, text, children });
+  const ownHandoffRef = useRef<SlidingActivityHandoff | null>(null);
   const [outgoing, setOutgoing] = useState<{
     children: ReactNode;
     transform: string;
@@ -31,9 +42,11 @@ export function SlidingActivity({
   } | null>(null);
 
   useLayoutEffect(() => {
-    const last = previous.current;
+    const last = (handoffRef ?? ownHandoffRef).current;
     // Skipped calls are still current content; never replay an older tool on return.
-    previous.current = { activityKey, text, children };
+    const shown = { activityKey, text, children };
+    if (handoffRef) handoffRef.current = shown;
+    else ownHandoffRef.current = shown;
     const retire = () => {
       incomingAnimation.current?.cancel();
       incomingAnimation.current = null;
@@ -49,7 +62,13 @@ export function SlidingActivity({
       retire();
       return;
     }
-    if (last.activityKey === null || last.activityKey === activityKey || last.text === text) return;
+    if (
+      last === null ||
+      last.activityKey === null ||
+      last.activityKey === activityKey ||
+      last.text === text
+    )
+      return;
     const bounds = element.getBoundingClientRect();
     if (bounds.bottom <= 0 || bounds.top >= window.innerHeight) {
       retire();

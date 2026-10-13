@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  resolveThreadFeedAwayFromEnd,
   resolveThreadFeedLiveFollow,
   resolveThreadFeedSubmissionAnchor,
   resolveThreadWorkGroupInitialScroll,
@@ -219,5 +220,53 @@ describe("resolveThreadFeedLiveFollow", () => {
 
   it("re-arms after an explicit reset", () => {
     expect(resolveThreadFeedLiveFollow(false, { type: "reset" })).toBe(true);
+  });
+});
+
+describe("resolveThreadFeedAwayFromEnd", () => {
+  it("does not count a drag that is still at the live edge", () => {
+    const begin = { type: "user-scroll-begin" } as const;
+    const away = resolveThreadFeedAwayFromEnd(
+      false,
+      resolveThreadFeedLiveFollow(true, begin),
+      begin,
+    );
+    expect(away).toBe(false);
+    const bounce = { type: "scroll", isAtEnd: true, userScrollSessionActive: true } as const;
+    expect(
+      resolveThreadFeedAwayFromEnd(away, resolveThreadFeedLiveFollow(false, bounce), bounce),
+    ).toBe(false);
+  });
+
+  it("counts once the list leaves the end with follow paused", () => {
+    expect(
+      resolveThreadFeedAwayFromEnd(false, false, {
+        type: "scroll",
+        isAtEnd: false,
+        userScrollSessionActive: true,
+      }),
+    ).toBe(true);
+    expect(
+      resolveThreadFeedAwayFromEnd(false, false, {
+        type: "disclosure-settled",
+        isAtEnd: false,
+        userScrollSessionActive: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the last answer for events without a position", () => {
+    expect(resolveThreadFeedAwayFromEnd(true, false, { type: "user-scroll-begin" })).toBe(true);
+  });
+
+  it("clears whenever follow re-arms", () => {
+    expect(resolveThreadFeedAwayFromEnd(true, true, { type: "reset" })).toBe(false);
+    expect(
+      resolveThreadFeedAwayFromEnd(true, true, {
+        type: "scroll",
+        isAtEnd: false,
+        userScrollSessionActive: false,
+      }),
+    ).toBe(false);
   });
 });

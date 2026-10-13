@@ -64,7 +64,7 @@ describe("row arrival contract with the messages timeline", () => {
     expect(motionDriverSource).toContain("firstPaintForThread");
     expect(motionDriverSource).toContain("ENTER_CLEAR_MS");
     expect(motionStylesSource).toContain(
-      "animation: scenery-row-rise 340ms var(--sc-ease-out) both",
+      "animation: scenery-row-rise 220ms var(--sc-ease-out) both",
     );
   });
 
@@ -99,7 +99,9 @@ describe("row arrival contract with the messages timeline", () => {
 describe("working-row thinking indicator contract", () => {
   it("the working row renders the shimmer Thinking indicator, not the pulse dots", () => {
     expect(messagesTimelineSource).toContain('"working"');
-    expect(messagesTimelineSource).toContain("<ThinkingTimelineRow row={row} />");
+    expect(messagesTimelineSource).toContain(
+      "<ThinkingTimelineRow row={row} handoffRef={handoffRef} />",
+    );
     expect(messagesTimelineSource).toContain('iconName="brain" active shimmer');
     expect(messagesTimelineSource).not.toContain("status-pulse-wave");
   });

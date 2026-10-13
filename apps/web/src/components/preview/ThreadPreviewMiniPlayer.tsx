@@ -51,6 +51,7 @@ import type { DeviceScreenSize } from "@t3tools/client-runtime/device/stream";
 import type { PreviewStreamViewport } from "@t3tools/client-runtime/preview/server-browser-stream";
 import { AgentBrowserCursor } from "./AgentBrowserCursor";
 import { previewBridge } from "./previewBridge";
+import { useStatusPulse } from "../../hooks/useStatusPulse";
 import { showPreviewPopup } from "./showPreviewPopup";
 import {
   clampPreviewMiniPlayerPosition,
@@ -378,6 +379,7 @@ function MiniPlayerShell({
   readonly cornerRadius?: (frame: PreviewMiniPlayerSize) => number;
   readonly children: (frame: PreviewMiniPlayerFrame) => ReactNode;
 }) {
+  useStatusPulse(recording);
   const canvas = useChatCanvas();
   const gestureRef = useRef<PointerGesture | null>(null);
   // Touch has no hover, so tapping the handle toggles the pill instead. The
@@ -450,11 +452,7 @@ function MiniPlayerShell({
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
     const gesture = gestureRef.current;
-    if (
-      !gesture ||
-      gesture.pointerId !== event.pointerId ||
-      !container
-    ) {
+    if (!gesture || gesture.pointerId !== event.pointerId || !container) {
       return;
     }
     const delta = { x: event.clientX - gesture.pointerX, y: event.clientY - gesture.pointerY };
@@ -538,16 +536,14 @@ function MiniPlayerShell({
               <span
                 className={cn(
                   "block size-2 rounded-full shadow-sm ring-1 ring-background/70",
-                  recording
-                    ? "bg-destructive motion-safe:animate-status-pulse"
-                    : "bg-foreground/25",
+                  recording ? "bg-destructive status-pulse" : "bg-foreground/25",
                 )}
               />
             </div>
             <div className="pointer-events-none absolute right-0 top-0 flex h-8 cursor-grab items-center gap-0.5 rounded-lg border border-border/80 bg-popover/92 p-0.5 opacity-0 shadow-lg/20 backdrop-blur-xl transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-data-pill-open:pointer-events-auto group-data-pill-open:opacity-100 active:cursor-grabbing pointer-coarse:right-2.5 pointer-coarse:top-2.5">
               {recording ? (
                 <span aria-hidden className="flex size-6 shrink-0 items-center justify-center">
-                  <span className="size-2 rounded-full bg-destructive motion-safe:animate-status-pulse" />
+                  <span className="size-2 rounded-full bg-destructive status-pulse" />
                 </span>
               ) : null}
               <Tooltip>

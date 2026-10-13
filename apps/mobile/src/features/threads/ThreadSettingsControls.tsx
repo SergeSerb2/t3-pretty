@@ -8,7 +8,6 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { Pressable, View, type AccessibilityActionEvent } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
-  FadeInDown,
   LayoutAnimationConfig,
   ReduceMotion,
   runOnJS,
@@ -28,10 +27,10 @@ import { cn } from "../../lib/cn";
 import type { ModelOption } from "../../lib/modelOptions";
 import {
   enterFade,
+  createEnterFadeDown,
   exitFade,
   layoutSettle,
-  MOTION_EASING,
-  MOTION_ENTER_MS,
+  MOTION_POP_SPRING,
   MOTION_SETTLE_SPRING,
   MOTION_TIMING,
 } from "../../lib/motion";
@@ -47,13 +46,9 @@ import {
 import { selectableChoices, type RuntimeModeChoice } from "./thread-settings-options";
 
 /** Cards rise into place one after another when the picker opens. */
-const CARD_STAGGER_MS = 45;
+const CARD_STAGGER_MS = 25;
 const CARD_ENTERING = Array.from({ length: 6 }, (_, index) =>
-  FadeInDown.duration(MOTION_ENTER_MS)
-    .delay(index * CARD_STAGGER_MS)
-    .easing(MOTION_EASING)
-    .withInitialValues({ transform: [{ translateY: 14 }] })
-    .reduceMotion(ReduceMotion.System),
+  createEnterFadeDown(index * CARD_STAGGER_MS),
 );
 const POP_DIP_TIMING = { duration: 90, reduceMotion: ReduceMotion.System } as const;
 const TRACK_INSET = 3;
@@ -91,9 +86,7 @@ function usePopWhenActivated(active: boolean) {
   const previous = useRef(active);
   useEffect(() => {
     if (active && !previous.current) {
-      scale.set(
-        withSequence(withTiming(0.72, POP_DIP_TIMING), withSpring(1, MOTION_SETTLE_SPRING)),
-      );
+      scale.set(withSequence(withTiming(0.97, POP_DIP_TIMING), withSpring(1, MOTION_POP_SPRING)));
     }
     previous.current = active;
   }, [active, scale]);

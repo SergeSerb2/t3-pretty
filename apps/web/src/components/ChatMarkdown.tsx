@@ -87,6 +87,7 @@ import React, {
   use,
   useCallback,
   memo,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -158,6 +159,7 @@ import { createIncrementalHighlightedDocument } from "../lib/incrementalHighligh
 import { HighlightedCodeLines } from "./chat/HighlightedCodeLines";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { MermaidDiagram } from "./chat/MermaidDiagram";
+import { useHeldFlag } from "./chat/useHeldFlag";
 import { useTheme } from "../hooks/useTheme";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import {
@@ -1039,17 +1041,20 @@ function MarkdownMermaidCodeBlock({
   const searching = use(MarkdownFindContext);
   const revealSource = useCallback(() => setShowCode(true), []);
   const sourceRevealRef = useFindRevealRef(revealSource);
-  const showDiagram = !showCode && !isStreaming && code.trim().length > 0;
+  // Deferred so the diagram renders in the background: the boundary below
+  // already shows the source, so it keeps it until the SVG is ready and the
+  // block changes height once. A mount still gets the placeholder.
+  const showDiagram = useDeferredValue(!showCode && !isStreaming && code.trim().length > 0);
   const toggleLabel = showCode ? "Show diagram" : "Show code";
-  return (
+  const block = (diagram: boolean, content: ReactNode) => (
     <MarkdownCodeBlock
       code={code}
       language="mermaid"
       fenceTitle={fenceTitle}
       theme={theme}
       isStreaming={isStreaming}
-      canWrap={!showDiagram}
-      diagram={showDiagram}
+      canWrap={!diagram}
+      diagram={diagram}
       leadingActions={
         isStreaming ? null : (
           <Tooltip>
@@ -1071,28 +1076,42 @@ function MarkdownMermaidCodeBlock({
         )
       }
     >
-      {showDiagram ? (
-        <RenderErrorBoundary resetKeys={[code, theme]} fallback={children}>
-          <Suspense
-            fallback={
-              <div className="flex min-h-36 items-center justify-center text-xs text-muted-foreground">
-                Rendering diagram
-              </div>
-            }
-          >
-            <MermaidDiagram source={code} theme={theme} onExpand={onExpand} />
-          </Suspense>
-          {/* Find counts the source; a selected match here switches to it. */}
+      {content}
+    </MarkdownCodeBlock>
+  );
+  return (
+    <Suspense
+      fallback={block(
+        true,
+        <>
+          <div className="flex min-h-36 items-center justify-center text-xs text-muted-foreground">
+            Rendering diagram
+          </div>
           {searching ? (
             <pre ref={sourceRevealRef} hidden>
               {code}
             </pre>
           ) : null}
-        </RenderErrorBoundary>
-      ) : (
-        children
+        </>,
       )}
-    </MarkdownCodeBlock>
+    >
+      {block(
+        showDiagram,
+        showDiagram ? (
+          <RenderErrorBoundary resetKeys={[code, theme]} fallback={children}>
+            <MermaidDiagram source={code} theme={theme} onExpand={onExpand} />
+            {/* Find counts the source; a selected match here switches to it. */}
+            {searching ? (
+              <pre ref={sourceRevealRef} hidden>
+                {code}
+              </pre>
+            ) : null}
+          </RenderErrorBoundary>
+        ) : (
+          children
+        ),
+      )}
+    </Suspense>
   );
 }
 
@@ -3442,6 +3461,9 @@ const CHAT_MARKDOWN_COMPONENTS = {
   },
 } satisfies Components;
 
+/** Covers the 600ms block fade in index.css. */
+const STREAMING_FADE_HOLD_MS = 650;
+
 function ChatMarkdown({
   text,
   className,
@@ -3458,6 +3480,9 @@ function ChatMarkdown({
     localMediaPreview,
     setLocalMediaPreview,
   } = useChatMarkdownState({ text, ...props });
+  // The completion commit can insert the last block and end the stream at
+  // once, so the fade gate outlasts the stream long enough to finish it.
+  const fadeArrivals = useHeldFlag(props.isStreaming === true, STREAMING_FADE_HOLD_MS);
   const incrementalParsing =
     props.isStreaming === true &&
     extraRemarkPlugins.length === 0 &&
@@ -3482,7 +3507,7 @@ function ChatMarkdown({
         className,
       )}
       // Gates the fade-in for blocks that arrive while the response streams.
-      data-streaming={componentState.isStreaming ? "" : undefined}
+      data-streaming={fadeArrivals ? "" : undefined}
       onCopy={handleCopy}
     >
       <ChatMarkdownRendererContext value={componentState}>

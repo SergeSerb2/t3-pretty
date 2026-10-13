@@ -23,7 +23,7 @@ html[data-scenery-motion] {
      are written as calc(Npx * var(--sc-m)) / calc(1 - N * var(--sc-m)), so
      the reduced-motion block zeroes every translate/scale in one line while
      the opacity fade (which aids comprehension) stays. */
-  --sc-m: 1;
+  --sc-m: 0.6;
   /* Must match WORKTREE_SETUP_EXIT_MS. Reduced motion overwrites this. */
   --sc-worktree-setup-exit-ms: 220ms;
 }
@@ -41,14 +41,14 @@ html[data-scenery-motion] {
 html[data-scenery-motion]
   [data-timeline-root].scenery-row-enter
   > *:not([data-worktree-setup-exiting]) {
-  animation: scenery-row-rise 340ms var(--sc-ease-out) both;
+  animation: scenery-row-rise 220ms var(--sc-ease-out) both;
   animation-delay: var(--sc-enter-delay, 0ms);
 }
 
 @keyframes scenery-row-rise {
   from {
     opacity: 0;
-    translate: 0 8px;
+    translate: 0 4px;
   }
   to {
     opacity: 1;
@@ -76,11 +76,11 @@ html[data-scenery-motion] [data-timeline-root] > [data-worktree-setup-exiting] {
 /* Draft hero headline rises on a fresh thread. */
 html[data-scenery-motion] [data-chat-composer-overlay] h1 {
   transition:
-    opacity 300ms var(--sc-ease-out),
-    translate 300ms var(--sc-ease-out);
+    opacity 200ms var(--sc-ease-out),
+    translate 200ms var(--sc-ease-out);
   @starting-style {
     opacity: 0;
-    translate: 0 10px;
+    translate: 0 4px;
   }
 }
 
@@ -117,11 +117,11 @@ html[data-scenery-motion] .scenery-reveal {
 
 html[data-scenery-motion] [data-changed-files-state] {
   transition:
-    opacity 300ms var(--sc-ease-out),
-    translate 300ms var(--sc-ease-out);
+    opacity 200ms var(--sc-ease-out),
+    translate 200ms var(--sc-ease-out);
   @starting-style {
     opacity: 0;
-    translate: 0 8px;
+    translate: 0 4px;
   }
 }
 
@@ -153,7 +153,7 @@ html[data-scenery-motion] [data-thread-item] svg.lucide-circle-check {
     scale 200ms var(--sc-ease-out),
     opacity 200ms var(--sc-ease-out);
   @starting-style {
-    scale: calc(1 - 0.4 * var(--sc-m));
+    scale: calc(1 - 0.1 * var(--sc-m));
     opacity: 0;
   }
 }
@@ -196,15 +196,20 @@ html[data-scenery-motion]
    one block (the top-drawer data attribute identifies this host,
    pinned by the contract test). Animating the wrapper — not the inner
    `[data-approval-detail]` pre — keeps the header line, question card and
-   badge on the same beat instead of only the detail rising. */
+   badge on the same beat instead of only the detail rising. The wrapper
+   only slides: its frosted glass paints on ::before, and opacity on the
+   wrapper would make it the backdrop root and drop the blur mid-fade, so the
+   glass and the contents fade on their own (as the composer menus do). */
 html[data-scenery-motion] [data-chat-composer-form] [data-chat-composer-top-drawer] {
-  transition:
-    opacity 220ms var(--sc-ease-out),
-    translate 220ms var(--sc-ease-out);
+  transition: translate 220ms var(--sc-ease-out);
   @starting-style {
-    opacity: 0;
     translate: 0 calc(8px * var(--sc-m));
   }
+}
+
+html[data-scenery-motion] [data-chat-composer-form] [data-chat-composer-top-drawer]::before,
+html[data-scenery-motion] [data-chat-composer-form] [data-chat-composer-top-drawer] > * {
+  animation: scenery-fade-in 220ms var(--sc-ease-out) backwards;
 }
 
 /* Their footer companions — the four approval buttons (the `justify-end`
@@ -272,6 +277,42 @@ html[data-scenery-motion] [data-composer-drawer-layer] > [data-composer-banner-s
   animation: scenery-fade-in 180ms var(--sc-ease-out) both;
 }
 
+/* The queue strip rises the same way when the first message is queued
+   (QueuedRunsControl marks only that in-place appearance, so thread switches
+   and remounts stay still). Expanding the list after a toggle unfolds it
+   under its header (display:none → shown counts as a first render), and a
+   message queued from this client fades in; the confirmed row that replaces
+   it is a new element and stays still. */
+html[data-scenery-motion] [data-composer-queue="enter"] {
+  animation: scenery-drawer-slide 180ms var(--sc-ease-out) both;
+}
+
+html[data-scenery-motion] [data-composer-queue="enter"]::before,
+html[data-scenery-motion] [data-composer-queue="enter"] > * {
+  animation: scenery-fade-in 180ms var(--sc-ease-out) both;
+}
+
+html[data-scenery-motion] [data-composer-queue] [data-composer-queue-list="enter"],
+html[data-scenery-motion] [data-composer-queue] li[data-queued-row-pending] {
+  transition:
+    opacity 160ms var(--sc-ease-out),
+    translate 160ms var(--sc-ease-out);
+}
+
+html[data-scenery-motion] [data-composer-queue] [data-composer-queue-list="enter"] {
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(-4px * var(--sc-m));
+  }
+}
+
+html[data-scenery-motion] [data-composer-queue] li[data-queued-row-pending] {
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(4px * var(--sc-m));
+  }
+}
+
 @keyframes scenery-drawer-slide {
   from {
     translate: 0 calc(6px * var(--sc-m));
@@ -285,12 +326,9 @@ html[data-scenery-motion] [data-composer-drawer-layer] > [data-composer-banner-s
 }
 
 /* Typing a follow-up while a turn runs replaces stop with the dispatch
-   action. Animate the button itself, including through the tooltip wrapper. */
+   action. Animate the button itself, including through the tooltip wrapper;
+   the primary-action rule below carries its transition. */
 html[data-scenery-motion] [data-chat-composer-send-while-running] {
-  transition:
-    opacity 150ms var(--sc-ease-out),
-    translate 150ms var(--sc-ease-out),
-    scale 150ms var(--sc-ease-out);
   @starting-style {
     opacity: 0;
     translate: calc(4px * var(--sc-m)) 0;
@@ -382,16 +420,39 @@ html[data-scenery-motion]
    travel the same number of pixels. */
 
 html[data-scenery-motion]
-  :is([data-slot="button"], [data-slot="toggle"]):not(:disabled):not([data-disabled]):active {
+  :is(
+    [data-slot="button"],
+    [data-slot="toggle"],
+    [data-slot="select-trigger"],
+    [data-slot="combobox-clear"],
+    [data-slot="autocomplete-clear"]
+  ):not(:disabled):not([data-disabled]):active {
   scale: calc(1 - 0.035 * var(--sc-m));
 }
 
+/* Search clear controls share the same small, interruptible press feedback. */
+html[data-scenery-motion] :is([data-slot="combobox-clear"], [data-slot="autocomplete-clear"]) {
+  transition:
+    scale 120ms var(--sc-ease-out),
+    opacity 120ms var(--sc-ease-out),
+    color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
 /* Primary actions and stop share a short entry pop, independent of their
-   current label, submit type, or tooltip wrapper. */
+   current label, submit type, or tooltip wrapper. A start state only plays
+   for properties in the transition list, and these buttons own just colour
+   transitions (or none), so the list lives here; it keeps their hover
+   colours, shadows, brightness, and hover scale. */
 html[data-scenery-motion] [data-chat-composer-stop],
 html[data-scenery-motion] [data-chat-composer-primary-action] {
+  transition-property:
+    color, background-color, border-color, box-shadow, filter, opacity, scale, translate;
+  transition-duration: 150ms;
+  transition-timing-function: var(--sc-ease-out);
   @starting-style {
-    scale: calc(1 - 0.25 * var(--sc-m));
+    scale: calc(1 - 0.05 * var(--sc-m));
     opacity: 0;
   }
 }
@@ -600,14 +661,12 @@ html[data-scenery-motion] [role="status"].fixed.z-100 > div:last-child {
 }
 
 /* ---------------------------------------------------------- primitives -- */
-/* Combobox and autocomplete popups (branch, base-ref, PR and font pickers)
-   open like menus and selects. Base UI stamps its starting state on the
-   inner popup, so the glass wrapper that owns the look never had a start
-   value and appeared in one frame. Entry only: Base UI unmounts once the
-   popup's own animations finish, which would cut an exit on the wrapper. */
-html[data-scenery-motion]
-  :is([data-slot="combobox-positioner"], [data-slot="autocomplete-positioner"])
-  > span {
+/* Autocomplete popups open like menus and selects. Base UI stamps its
+   starting state on the inner popup, so the wrapper that owns the look never
+   had a start value and appeared in one frame. Entry only: Base UI unmounts
+   once the popup's own animations finish, which would cut an exit on the
+   wrapper. Combobox popups carry their own open and close in combobox.tsx. */
+html[data-scenery-motion] [data-slot="autocomplete-positioner"] > span {
   transition-duration: 150ms;
   transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
   @starting-style {
