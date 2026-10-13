@@ -1,10 +1,9 @@
 import * as DateTime from "effect/DateTime";
-import { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { readTextWithinLimit } from "./boundedFileRead.ts";
@@ -131,20 +130,54 @@ export const isProcessAlive = (pid: number): boolean => {
   }
 };
 
-/** A reused PID alone is not evidence that the recorded T3 server still owns its origin. */
-export const isRecordedServerResponding = (state: PersistedServerRuntimeState) =>
+const decodeRecordedServerIdentity = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ environmentId: Schema.String })),
+);
+
+// fetch reports a refused connection as TypeError("fetch failed") caused by the socket error.
+const isConnectionRefused = (error: HttpClientError.HttpClientError) => {
+  const socketError =
+    error.reason._tag === "TransportError" && error.reason.cause instanceof Error
+      ? error.reason.cause.cause
+      : undefined;
+  return (
+    socketError instanceof Error && "code" in socketError && socketError.code === "ECONNREFUSED"
+  );
+};
+
+/**
+ * Probe the server a live-pid runtime record names. A reused PID alone is not
+ * evidence the recorded T3 server still owns its origin, so the record is
+ * "stale" when nothing listens there, something other than T3 answers, or a T3
+ * server for another environment answers. Anything short of that proof, such as
+ * a server too busy to answer in time, is "unresponsive": it may still own the
+ * database.
+ */
+export const probeRecordedServer = (
+  state: PersistedServerRuntimeState,
+  environmentId: string | undefined,
+) =>
   Effect.gen(function* () {
-    const url = yield* Effect.try(() => new URL("/.well-known/t3/environment", state.origin));
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return false;
+    const url = URL.parse("/.well-known/t3/environment", state.origin);
+    if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+      return "stale" as const;
+    }
     const client = yield* HttpClient.HttpClient;
     const response = yield* client.execute(HttpClientRequest.get(url.toString()));
-    yield* HttpClientResponse.filterStatusOk(response).pipe(
-      Effect.flatMap(HttpClientResponse.schemaBodyJson(ExecutionEnvironmentDescriptor)),
-    );
-    return true;
+    if (response.status < 200 || response.status >= 300) return "unresponsive" as const;
+    const identity = decodeRecordedServerIdentity(yield* response.text);
+    return Option.isNone(identity) ||
+      (environmentId !== undefined && identity.value.environmentId !== environmentId)
+      ? ("stale" as const)
+      : ("running" as const);
   }).pipe(
-    Effect.timeoutOrElse({ duration: 2_500, orElse: () => Effect.succeed(false) }),
-    Effect.orElseSucceed(() => false),
+    Effect.timeoutOrElse({
+      duration: 2_500,
+      orElse: () => Effect.succeed("unresponsive" as const),
+    }),
+    Effect.catch((error) =>
+      Effect.succeed(isConnectionRefused(error) ? ("stale" as const) : ("unresponsive" as const)),
+    ),
     Effect.provide(FetchHttpClient.layer),
   );
 
