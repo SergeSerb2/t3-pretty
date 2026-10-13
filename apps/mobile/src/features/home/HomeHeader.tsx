@@ -74,6 +74,11 @@ export function HomeHeader(props: HomeHeaderProps) {
   const filterMenu = buildHomeListFilterMenu(props);
   const topBarActive = useHomeTopBarActive();
 
+  // The workspace owns composition and filtering; do not add Home's fallback buttons.
+  if (props.usesWorkspaceToolbar) {
+    return null;
+  }
+
   // HomeTopBar owns search and the header actions; only the corners stay here.
   if (topBarActive) {
     return (
@@ -83,10 +88,6 @@ export function HomeHeader(props: HomeHeaderProps) {
         onStartNewTask={props.onStartNewTask}
       />
     );
-  }
-
-  if (props.usesWorkspaceToolbar) {
-    return null;
   }
 
   return (
