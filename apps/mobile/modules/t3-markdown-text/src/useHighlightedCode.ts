@@ -16,9 +16,24 @@ interface HighlightedCodeResult {
   readonly tokens: HighlightedCode | null;
 }
 
-const highlightedCodeCache = new Map<string, HighlightedCode>();
-const highlightedCodePromiseCache = new Map<string, Promise<HighlightedCode>>();
+interface CachedHighlightedCode {
+  readonly tokens: HighlightedCode;
+  readonly characters: number;
+  readonly nodes: number;
+}
+
+const highlightedCodeCache = new Map<string, CachedHighlightedCode>();
+interface PendingHighlightedCode {
+  readonly promise: Promise<HighlightedCode>;
+  readonly controller: AbortController;
+  consumers: number;
+}
+const highlightedCodePromiseCache = new Map<string, PendingHighlightedCode>();
 const HIGHLIGHTED_CODE_CACHE_LIMIT = 64;
+const HIGHLIGHTED_CODE_CACHE_CHARACTERS = 4 * 1024 * 1024;
+const HIGHLIGHTED_CODE_CACHE_NODES = 100_000;
+let cachedCharacters = 0;
+let cachedNodes = 0;
 
 function codeHighlightCacheKey(
   code: string,
@@ -29,16 +44,48 @@ function codeHighlightCacheKey(
 }
 
 function cacheHighlightedCode(key: string, tokens: HighlightedCode): void {
-  highlightedCodeCache.delete(key);
-  highlightedCodeCache.set(key, tokens);
+  removeCachedHighlightedCode(key);
+  let characters = key.length;
+  let nodes = tokens.length;
+  if (characters > HIGHLIGHTED_CODE_CACHE_CHARACTERS || nodes > HIGHLIGHTED_CODE_CACHE_NODES)
+    return;
+  for (const line of tokens) {
+    nodes += line.length;
+    for (const token of line) characters += token.content.length;
+    if (characters > HIGHLIGHTED_CODE_CACHE_CHARACTERS || nodes > HIGHLIGHTED_CODE_CACHE_NODES) {
+      return;
+    }
+  }
 
-  while (highlightedCodeCache.size > HIGHLIGHTED_CODE_CACHE_LIMIT) {
+  while (
+    highlightedCodeCache.size >= HIGHLIGHTED_CODE_CACHE_LIMIT ||
+    cachedCharacters + characters > HIGHLIGHTED_CODE_CACHE_CHARACTERS ||
+    cachedNodes + nodes > HIGHLIGHTED_CODE_CACHE_NODES
+  ) {
     const oldestKey = highlightedCodeCache.keys().next().value;
     if (oldestKey === undefined) {
       break;
     }
-    highlightedCodeCache.delete(oldestKey);
+    removeCachedHighlightedCode(oldestKey);
   }
+  highlightedCodeCache.set(key, { tokens, characters, nodes });
+  cachedCharacters += characters;
+  cachedNodes += nodes;
+}
+
+function removeCachedHighlightedCode(key: string): void {
+  const cached = highlightedCodeCache.get(key);
+  if (!cached) return;
+  highlightedCodeCache.delete(key);
+  cachedCharacters -= cached.characters;
+  cachedNodes -= cached.nodes;
+}
+
+function touchCachedHighlightedCode(key: string): void {
+  const cached = highlightedCodeCache.get(key);
+  if (!cached) return;
+  highlightedCodeCache.delete(key);
+  highlightedCodeCache.set(key, cached);
 }
 
 function loadHighlightedCode(
@@ -47,30 +94,44 @@ function loadHighlightedCode(
   theme: "light" | "dark",
   highlightCode: MarkdownCodeHighlighter,
   session: object,
-): Promise<HighlightedCode> {
+): { readonly promise: Promise<HighlightedCode>; readonly release: () => void } {
   const key = codeHighlightCacheKey(code, language, theme);
   const cached = highlightedCodeCache.get(key);
   if (cached) {
-    return Promise.resolve(cached);
+    return { promise: Promise.resolve(cached.tokens), release: () => undefined };
   }
 
-  const pending = highlightedCodePromiseCache.get(key);
-  if (pending) {
-    return pending;
+  let pending = highlightedCodePromiseCache.get(key);
+  if (!pending) {
+    const controller = new AbortController();
+    const promise = Promise.resolve()
+      .then(() => {
+        controller.signal.throwIfAborted();
+        return highlightCode({ code, language, theme, session, signal: controller.signal });
+      })
+      .then((tokens) => {
+        if (!controller.signal.aborted) cacheHighlightedCode(key, tokens);
+        return tokens;
+      })
+      .finally(() => {
+        if (highlightedCodePromiseCache.get(key)?.promise === promise) {
+          highlightedCodePromiseCache.delete(key);
+        }
+      });
+    pending = { promise, controller, consumers: 0 };
+    highlightedCodePromiseCache.set(key, pending);
   }
-
-  const promise = highlightCode({ code, language, theme, session })
-    .then((tokens) => {
-      cacheHighlightedCode(key, tokens);
-      highlightedCodePromiseCache.delete(key);
-      return tokens;
-    })
-    .catch((error) => {
-      highlightedCodePromiseCache.delete(key);
-      throw error;
-    });
-  highlightedCodePromiseCache.set(key, promise);
-  return promise;
+  const job = pending;
+  job.consumers += 1;
+  return {
+    promise: job.promise,
+    release: () => {
+      job.consumers -= 1;
+      if (job.consumers !== 0) return;
+      if (highlightedCodePromiseCache.get(key) === job) highlightedCodePromiseCache.delete(key);
+      job.controller.abort();
+    },
+  };
 }
 
 /**
@@ -88,7 +149,9 @@ export function useHighlightedCode(
   const [session] = useState(() => ({}));
   const key = codeHighlightCacheKey(code, language, theme);
   const ready = useMemo(
-    () => highlightedCodeCache.get(key) ?? highlightCode.read?.({ code, language, theme, session }),
+    () =>
+      highlightedCodeCache.get(key)?.tokens ??
+      highlightCode.read?.({ code, language, theme, session }),
     [code, language, theme, key, highlightCode, session],
   );
   const [highlighted, setHighlighted] = useState<HighlightedCodeResult>(() => ({
@@ -96,7 +159,7 @@ export function useHighlightedCode(
     language,
     theme,
     key,
-    tokens: highlightedCodeCache.get(key) ?? null,
+    tokens: highlightedCodeCache.get(key)?.tokens ?? null,
   }));
   // Synchronous reads never touch state, so each append costs one render. The
   // ref remembers the newest of them, and is cleared whenever an asynchronous
@@ -105,6 +168,7 @@ export function useHighlightedCode(
 
   useEffect(() => {
     if (ready) {
+      touchCachedHighlightedCode(key);
       latestRead.current = { code, language, theme, key, tokens: ready };
       return;
     }
@@ -115,14 +179,15 @@ export function useHighlightedCode(
     };
     const cached = highlightedCodeCache.get(key);
     if (cached) {
-      cacheHighlightedCode(key, cached);
-      commit(cached);
+      touchCachedHighlightedCode(key);
+      commit(cached.tokens);
       return () => {
         active = false;
       };
     }
 
-    void loadHighlightedCode(code, language, theme, highlightCode, session)
+    const pending = loadHighlightedCode(code, language, theme, highlightCode, session);
+    void pending.promise
       .then((tokens) => {
         if (active) {
           commit(tokens);
@@ -135,6 +200,7 @@ export function useHighlightedCode(
       });
     return () => {
       active = false;
+      pending.release();
     };
   }, [code, highlightCode, key, language, theme, ready, session]);
 

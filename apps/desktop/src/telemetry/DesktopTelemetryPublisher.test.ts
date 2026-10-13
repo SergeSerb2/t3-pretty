@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off -- The retention check needs an isolated V8 process with GC enabled.
 import {
   DESKTOP_ELECTRON_PROCESS_MAX_COUNT,
   DesktopHostTelemetryMessage,
@@ -11,6 +12,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -20,6 +22,9 @@ import * as TestClock from "effect/testing/TestClock";
 
 import type * as Electron from "electron";
 import * as NodeEvents from "node:events";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeURL from "node:url";
+import * as NodeUtil from "node:util";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
@@ -506,6 +511,75 @@ describe("DesktopTelemetryPublisher", () => {
 });
 
 describe("DesktopRendererHistory", () => {
+  it("owns bounded incident strings while writes are stalled", async () => {
+    const fixture = NodeURL.fileURLToPath(
+      new URL("./testkit/RendererHistoryRetention.fixture.mjs", import.meta.url),
+    );
+    const { stdout } = await NodeUtil.promisify(NodeChildProcess.execFile)(process.execPath, [
+      "--expose-gc",
+      fixture,
+    ]);
+    const result = JSON.parse(stdout) as { queuedPayloadBytes: number; retainedBytes: number };
+    assert.equal(result.queuedPayloadBytes, 96 * 1024 * 1024);
+    assert.isBelow(result.retainedBytes, 8 * 1024 * 1024);
+  });
+
+  it.effect("bounds logger work behind the incident queue during renderer error bursts", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-renderer-burst-" });
+      const writeStarted = yield* Deferred.make<void>();
+      const writeGate = yield* Deferred.make<void>();
+      let logged = 0;
+      const logger = Logger.make(() => {
+        logged++;
+      });
+      const layer = DesktopRendererHistory.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
+              logDir: directory,
+            } as DesktopEnvironment.DesktopEnvironment["Service"]),
+            Layer.succeed(FileSystem.FileSystem, {
+              ...fileSystem,
+              writeFile: (path, bytes, options) =>
+                Deferred.succeed(writeStarted, undefined).pipe(
+                  Effect.andThen(Deferred.await(writeGate)),
+                  Effect.andThen(fileSystem.writeFile(path, bytes, options)),
+                ),
+            }),
+          ),
+        ),
+      );
+      const renderer = Object.assign(new NodeEvents.EventEmitter(), {
+        id: 51,
+        getOSProcessId: () => 9_051,
+        isDestroyed: () => false,
+      });
+      yield* Effect.gen(function* () {
+        const history = yield* DesktopRendererHistory.DesktopRendererHistory;
+        yield* history.register(renderer as unknown as Electron.WebContents, {
+          surface: "preview",
+        });
+        yield* Deferred.await(writeStarted);
+        for (let index = 0; index < 5_000; index++) {
+          renderer.emit("console-message", {}, { level: "error", message: `error-${index}` });
+        }
+        yield* Effect.yieldNow;
+        assert.equal(logged, 0);
+        yield* Deferred.succeed(writeGate, undefined);
+        yield* history.shutdown;
+        assert.isAbove(logged, 0);
+        assert.isAtMost(logged, 256);
+      }).pipe(
+        Effect.ensuring(Deferred.succeed(writeGate, undefined)),
+        Effect.provide(
+          layer.pipe(Layer.provideMerge(Logger.layer([logger], { mergeWithExisting: false }))),
+        ),
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect(
     "persists surface identity and memory through renderer replacement and destruction",
     () =>

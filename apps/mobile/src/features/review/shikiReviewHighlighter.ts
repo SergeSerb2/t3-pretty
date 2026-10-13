@@ -510,12 +510,15 @@ async function highlightLines(
   code: string,
   language: string,
   theme: string,
+  signal?: AbortSignal,
 ): Promise<ReadonlyArray<ReadonlyArray<ReviewHighlightedToken>>> {
+  signal?.throwIfAborted();
   if (code.length === 0) {
     return [];
   }
 
   const highlighter = await getHighlighter();
+  signal?.throwIfAborted();
   const sourceLines = code.split("\n");
   const highlightedLines: Array<ReadonlyArray<ReviewHighlightedToken>> = [];
   // Batches resume from the previous batch's grammar state, so a comment or
@@ -525,6 +528,7 @@ async function highlightLines(
   let sliceStartedAt = performance.now();
 
   while (start < sourceLines.length) {
+    signal?.throwIfAborted();
     // A skipped line leaves its ending state unknown; resume from a fresh state.
     if (sourceLines[start]!.length > REVIEW_TOKENIZE_MAX_LINE_LENGTH) {
       highlightedLines.push([{ content: sourceLines[start]!, color: null, fontStyle: null }]);
@@ -575,12 +579,15 @@ const snippetSessions = new WeakMap<
 
 export async function highlightCodeSnippet(input: {
   readonly session?: object;
+  readonly signal?: AbortSignal;
   readonly code: string;
   readonly language?: string | null;
   readonly theme: ReviewDiffTheme;
 }): Promise<ReadonlyArray<ReadonlyArray<ReviewHighlightedToken>>> {
+  input.signal?.throwIfAborted();
   const languageHint = input.language?.trim() || "text";
   const language = await resolveLanguageFromPath(`snippet.${languageHint}`, languageHint);
+  input.signal?.throwIfAborted();
   const theme = SHIKI_THEME_NAME_BY_SCHEME[input.theme];
   // Bound retained text and preserve the existing plain-text/long-line fallback.
   if (
@@ -592,9 +599,10 @@ export async function highlightCodeSnippet(input: {
     input.code.split("\n").some((line) => line.length > REVIEW_TOKENIZE_MAX_LINE_LENGTH)
   ) {
     if (input.session) snippetSessions.delete(input.session);
-    return highlightLines(input.code, language, theme);
+    return highlightLines(input.code, language, theme, input.signal);
   }
   const highlighter = await getHighlighter();
+  input.signal?.throwIfAborted();
   let session = snippetSessions.get(input.session);
   if (!session || session.language !== language || session.theme !== theme) {
     session = {
@@ -604,7 +612,7 @@ export async function highlightCodeSnippet(input: {
     };
     snippetSessions.set(input.session, session);
   }
-  return normalizeHighlightedLines(await session.highlight(input.code));
+  return normalizeHighlightedLines(await session.highlight(input.code, input.signal));
 }
 
 highlightCodeSnippet.read = (input: Parameters<typeof highlightCodeSnippet>[0]) => {
@@ -628,9 +636,16 @@ export async function highlightSourceFile(input: {
   readonly path: string;
   readonly contents: string;
   readonly theme: ReviewDiffTheme;
+  readonly signal?: AbortSignal;
 }): Promise<ReadonlyArray<ReadonlyArray<ReviewHighlightedToken>>> {
+  input.signal?.throwIfAborted();
   const language = await resolveLanguageFromPath(input.path);
-  return highlightLines(input.contents, language, SHIKI_THEME_NAME_BY_SCHEME[input.theme]);
+  return highlightLines(
+    input.contents,
+    language,
+    SHIKI_THEME_NAME_BY_SCHEME[input.theme],
+    input.signal,
+  );
 }
 
 export async function highlightReviewSelectedLines(input: {

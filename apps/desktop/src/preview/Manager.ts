@@ -1153,6 +1153,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     ReadonlyMap<string, PictureInPictureSession>
   >(new Map());
   const pictureInPictureAspectRatiosRef = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
+  const pendingFrameCaptures = new WeakMap<Electron.WebContents, Promise<Electron.NativeImage>>();
   const pictureInPictureMutationSemaphore = yield* Semaphore.make(1);
   const closingTabIdsRef = yield* Ref.make<ReadonlySet<string>>(new Set());
   // Tab recording uses `setDisplayMediaRequestHandler` because Electron's legacy
@@ -3793,13 +3794,41 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       return;
     }
     const wc = yield* requireWebContents(tabId);
-    const sourceImage = yield* attemptPromise(
-      {
-        operation: "frameCapture.capturePage",
-        tabId,
-        webContentsId: wc.id,
+    const sourceImage = yield* Effect.tryPromise({
+      try: (_signal) => {
+        let physicalCapture = pendingFrameCaptures.get(wc);
+        if (!physicalCapture) {
+          physicalCapture = wc.capturePage();
+          pendingFrameCaptures.set(wc, physicalCapture);
+          const completed = () => {
+            if (pendingFrameCaptures.get(wc) === physicalCapture) pendingFrameCaptures.delete(wc);
+          };
+          void physicalCapture.then(completed, completed);
+        }
+        return physicalCapture;
       },
-      () => wc.capturePage(),
+      catch: (cause) =>
+        new PreviewOperationError({
+          operation: "frameCapture.capturePage",
+          tabId,
+          webContentsId: wc.id,
+          cause,
+        }),
+    }).pipe(
+      // A logical deadline keeps PiP opening/closing responsive. Electron cannot
+      // cancel capturePage, so retries share the physical capture until it settles.
+      Effect.timeout(CAPTURE_PAGE_ATTEMPT_TIMEOUT_MS),
+      Effect.catchTags({
+        TimeoutError: (cause) =>
+          Effect.fail(
+            new PreviewOperationError({
+              operation: "frameCapture.capturePage",
+              tabId,
+              webContentsId: wc.id,
+              cause,
+            }),
+          ),
+      }),
     );
     const currentCaptureSession = yield* Effect.all(
       [SynchronizedRef.get(frameCaptureSessionsRef), SynchronizedRef.get(tabsRef)],

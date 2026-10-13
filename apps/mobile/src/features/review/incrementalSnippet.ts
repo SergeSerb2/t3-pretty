@@ -46,11 +46,13 @@ export function createIncrementalSnippet(
       }),
     ];
   }
-  const highlight = async (code: string) => {
+  const highlight = async (code: string, signal?: AbortSignal) => {
+    signal?.throwIfAborted();
     const work = tokenize(code);
     let next = work.next();
     while (!next.done) {
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      signal?.throwIfAborted();
       next = work.next();
     }
     return next.value;

@@ -8,12 +8,14 @@ export const runCachePersistence = Effect.fn("runCachePersistence")(function* <A
   queue: Queue.Queue<A>,
   persist: (value: A) => Effect.Effect<void, E, R>,
 ) {
-  let next = yield* Queue.take(queue);
+  let next: Option.Option<A> = Option.some(yield* Queue.take(queue));
   yield* Effect.sleep("500 millis");
-  next = Option.getOrElse(yield* Queue.poll(queue), () => next);
+  next = Option.orElse(yield* Queue.poll(queue), () => next);
   while (true) {
-    yield* persist(next);
+    yield* persist(Option.getOrThrow(next));
+    // Do not retain a saved projection during the cooldown or an idle queue wait.
+    next = Option.none();
     yield* Effect.sleep("10 seconds");
-    next = yield* Queue.take(queue);
+    next = Option.some(yield* Queue.take(queue));
   }
 });

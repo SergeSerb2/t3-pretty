@@ -693,9 +693,14 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
     // A terminal connection error must be retried once connectivity returns,
     // even when its retained previous success is still fresh.
     let retryAfterConnectionUnavailable = false;
-    // Disconnected cache fallbacks create new successes. Keep the original
-    // result so they cannot reset its freshness clock.
-    let previousBeforeCachedFallback: AsyncResult.AsyncResult<A, E | ER | Error> | undefined;
+    // Definitions can outlive their registry nodes. Keep the original result
+    // in registry-owned state so an offline fallback preserves freshness
+    // without retaining a disposed registry's large query payload.
+    const cachedFallbackAtom = Atom.make(
+      (): { previous: AsyncResult.AsyncResult<A, E | ER | Error> | undefined } => ({
+        previous: undefined,
+      }),
+    ).pipe(Atom.setIdleTTL(0));
     const queryAtom = runtime
       .atom<
         A,
@@ -704,6 +709,7 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         | EnvironmentRegistry.EnvironmentNotRegisteredError
         | EnvironmentRpcUnavailableError
       >((get) => {
+        const cachedFallback = get(cachedFallbackAtom);
         const connection = Option.getOrNull(
           AsyncResult.value(get(connectionAtom(target.environmentId))),
         );
@@ -770,13 +776,13 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
           Option.isSome(connection[1])
         ) {
           const previous =
-            previousBeforeCachedFallback === undefined
+            cachedFallback.previous === undefined
               ? previousResult
-              : Option.some(previousBeforeCachedFallback);
+              : Option.some(cachedFallback.previous);
           const forceRefresh = skipStaleTime || retryAfterConnectionUnavailable;
           skipStaleTime = false;
           retryAfterConnectionUnavailable = false;
-          previousBeforeCachedFallback = undefined;
+          cachedFallback.previous = undefined;
           if (
             !forceRefresh &&
             Option.isSome(previous) &&
@@ -800,11 +806,8 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
             if (Option.isNone(previous)) {
               // A value loaded from storage has no live-query freshness proof.
               retryAfterConnectionUnavailable = true;
-            } else if (
-              previousBeforeCachedFallback === undefined &&
-              Option.isSome(previousResult)
-            ) {
-              previousBeforeCachedFallback = previousResult.value;
+            } else if (cachedFallback.previous === undefined && Option.isSome(previousResult)) {
+              cachedFallback.previous = previousResult.value;
             }
             return cached.value;
           }

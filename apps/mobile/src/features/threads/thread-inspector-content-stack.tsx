@@ -1,15 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { View } from "react-native";
 
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
+import { InspectorVisibilityProvider } from "../layout/inspector-visibility";
+
+export { useInspectorVisibility as useThreadInspectorVisibility } from "../layout/inspector-visibility";
 
 export type ThreadInspectorMode = "route" | "git" | "files";
-
-const ThreadInspectorVisibilityContext = createContext(true);
-
-export function useThreadInspectorVisibility(): boolean {
-  return useContext(ThreadInspectorVisibilityContext);
-}
 
 function InspectorContentPane(props: {
   readonly children: ReactNode;
@@ -22,7 +19,7 @@ function InspectorContentPane(props: {
   }
 
   return (
-    <ThreadInspectorVisibilityContext.Provider value={props.visible}>
+    <InspectorVisibilityProvider visible={props.visible}>
       <View
         accessibilityElementsHidden={!props.visible}
         focusable={props.visible}
@@ -44,7 +41,7 @@ function InspectorContentPane(props: {
           {props.children}
         </RenderErrorBoundary>
       </View>
-    </ThreadInspectorVisibilityContext.Provider>
+    </InspectorVisibilityProvider>
   );
 }
 
@@ -95,11 +92,7 @@ export function ThreadInspectorContentStack(
         resetKeys={props.resetKeys}
         visible={props.mode === "files"}
       >
-        {props.renderFiles ? (
-          <InspectorRenderer render={props.renderFiles} />
-        ) : (
-          props.files
-        )}
+        {props.renderFiles ? <InspectorRenderer render={props.renderFiles} /> : props.files}
       </InspectorContentPane>
       {props.renderGit !== undefined || "git" in props ? (
         <InspectorContentPane
@@ -107,11 +100,7 @@ export function ThreadInspectorContentStack(
           resetKeys={props.resetKeys}
           visible={props.mode === "git"}
         >
-          {props.renderGit ? (
-            <InspectorRenderer render={props.renderGit} />
-          ) : (
-            props.git
-          )}
+          {props.renderGit ? <InspectorRenderer render={props.renderGit} /> : props.git}
         </InspectorContentPane>
       ) : null}
       {props.route !== undefined || props.renderRoute !== undefined ? (
@@ -120,11 +109,7 @@ export function ThreadInspectorContentStack(
           resetKeys={props.resetKeys}
           visible={props.mode === "route"}
         >
-          {props.renderRoute ? (
-            <InspectorRenderer render={props.renderRoute} />
-          ) : (
-            props.route
-          )}
+          {props.renderRoute ? <InspectorRenderer render={props.renderRoute} /> : props.route}
         </InspectorContentPane>
       ) : null}
     </View>

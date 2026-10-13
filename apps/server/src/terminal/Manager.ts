@@ -2861,20 +2861,22 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         }
       }
 
+      // The live subscription owns this buffer. Release replayed payloads
+      // before keeping that listener around for the rest of the session.
+      bufferedEvents.length = 0;
       deliverLive = true;
       return () => {
         unsubscribe?.();
         unsubscribe = null;
       };
     }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.flatMap(
-          Effect.sync(() => {
-            unsubscribe?.();
-            unsubscribe = null;
-          }),
-          () => Effect.failCause(cause),
-        ),
+      Effect.onExit((exit) =>
+        Exit.isFailure(exit)
+          ? Effect.sync(() => {
+              unsubscribe?.();
+              unsubscribe = null;
+            })
+          : Effect.void,
       ),
     );
   };
@@ -2938,6 +2940,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       let deliverLive = false;
 
       unsubscribe = yield* subscribe((event) => {
+        if (!shouldPublishTerminalMetadataEvent(event)) return Effect.void;
         if (!deliverLive) {
           bufferedEvents.push(event);
           return Effect.void;
@@ -2956,20 +2959,20 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         yield* offerMetadataEvent(listener, event);
       }
 
+      bufferedEvents.length = 0;
       deliverLive = true;
       return () => {
         unsubscribe?.();
         unsubscribe = null;
       };
     }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.flatMap(
-          Effect.sync(() => {
-            unsubscribe?.();
-            unsubscribe = null;
-          }),
-          () => Effect.failCause(cause),
-        ),
+      Effect.onExit((exit) =>
+        Exit.isFailure(exit)
+          ? Effect.sync(() => {
+              unsubscribe?.();
+              unsubscribe = null;
+            })
+          : Effect.void,
       ),
     );
   };

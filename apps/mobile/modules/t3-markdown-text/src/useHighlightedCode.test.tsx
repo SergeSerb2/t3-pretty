@@ -7,7 +7,9 @@ import { useHighlightedCode, type HighlightedCode } from "./useHighlightedCode";
 
 type Deferred = {
   readonly code: string;
+  readonly signal?: AbortSignal;
   readonly resolve: (tokens: HighlightedCode) => void;
+  readonly reject: (error: Error) => void;
 };
 
 /** One colored line per newline-separated line, so a line's color proves where it came from. */
@@ -31,9 +33,9 @@ let root: Root;
 
 const highlightCode: MarkdownCodeHighlighter = Object.assign(
   vi.fn(
-    (input: { code: string }) =>
-      new Promise<HighlightedCode>((resolve) => {
-        deferred.push({ code: input.code, resolve });
+    (input: { code: string; signal?: AbortSignal }) =>
+      new Promise<HighlightedCode>((resolve, reject) => {
+        deferred.push({ code: input.code, signal: input.signal, resolve, reject });
       }),
   ),
   {
@@ -185,5 +187,96 @@ describe("useHighlightedCode", () => {
 
     await resolveAsync(2, "async-3");
     expect(lineColors(result)).toEqual(["async-3", "async-3", "async-3", "async-3", "async-3"]);
+  });
+
+  it("bounds retained source and token text before the entry limit", async () => {
+    const language = "source-character-budget";
+    const codes = Array.from({ length: 5 }, (_, index) => `${index}\n${"x".repeat(600_000)}`);
+    for (const [index, code] of codes.entries()) {
+      await render({ code, language });
+      await resolveAsync(index, `color-${index}`);
+    }
+    const recentTokens = result;
+    await render({ code: codes[4]!, language });
+    expect(result).toBe(recentTokens);
+    expect(highlightCode).toHaveBeenCalledTimes(5);
+
+    await render({ code: codes[0]!, language });
+    expect(highlightCode).toHaveBeenCalledTimes(6);
+  });
+
+  it("bounds retained token objects even when their text is small", async () => {
+    const language = "token-object-budget";
+    const codes = Array.from({ length: 4 }, (_, index) => `${index}${"x".repeat(30_000)}`);
+    for (const [index, code] of codes.entries()) {
+      await render({ code, language });
+      await act(async () => {
+        deferred[index]!.resolve([
+          [...code].map((content) => ({ content, color: "blue", fontStyle: 0 })),
+        ]);
+      });
+    }
+    expect(result).not.toBeNull();
+    await render({ code: codes[0]!, language });
+    expect(highlightCode).toHaveBeenCalledTimes(5);
+  });
+
+  it("keeps an oversized mounted result usable without retaining it for revisits", async () => {
+    const language = "oversized-highlight";
+    const code = "x".repeat(2_200_000);
+    await render({ code, language });
+    await resolveAsync(0, "large");
+    expect(result?.[0]?.[0]?.content.length).toBe(code.length);
+    await render({ code, language });
+    expect(highlightCode).toHaveBeenCalledTimes(1);
+
+    await render({ code: "other", language });
+    await resolveAsync(1, "small");
+    await render({ code, language });
+    expect(highlightCode).toHaveBeenCalledTimes(3);
+  });
+
+  it("shares pending work and cancels only after its final consumer leaves", async () => {
+    const props = { code: "shared abandoned work", language: "shared-cancellation" };
+    const pair = async (first: boolean, second: boolean) => {
+      await act(() =>
+        root.render(
+          <>
+            {first ? <Probe key="first" {...props} /> : null}
+            {second ? <Probe key="second" {...props} /> : null}
+          </>,
+        ),
+      );
+    };
+    await pair(true, true);
+    expect(highlightCode).toHaveBeenCalledTimes(1);
+    expect(deferred[0]?.signal?.aborted).toBe(false);
+    await pair(false, true);
+    expect(deferred[0]?.signal?.aborted).toBe(false);
+    await pair(false, false);
+    expect(deferred[0]?.signal?.aborted).toBe(true);
+
+    await pair(false, true);
+    expect(highlightCode).toHaveBeenCalledTimes(2);
+    await resolveAsync(0, "obsolete");
+    // A late completion cannot remove or satisfy the replacement pending job.
+    await pair(true, true);
+    expect(highlightCode).toHaveBeenCalledTimes(2);
+    expect(result).toBeNull();
+    await resolveAsync(1, "current");
+    expect(lineColors(result)).toEqual(["current"]);
+  });
+
+  it("releases a failed pending request so a later visit can retry", async () => {
+    const props = { code: "failed work", language: "failed-pending" };
+    await render(props);
+    await act(async () => deferred[0]!.reject(new Error("Highlight failed")));
+    expect(result).toBeNull();
+    await render({ ...props, code: "other" });
+    await resolveAsync(1, "other");
+    await render(props);
+    expect(highlightCode).toHaveBeenCalledTimes(3);
+    await resolveAsync(2, "retried");
+    expect(lineColors(result)).toEqual(["retried"]);
   });
 });

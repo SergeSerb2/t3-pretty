@@ -169,10 +169,11 @@ export function appendBoundedOutputChunk(
     return session;
   }
 
-  const retainedChunk =
-    chunk.byteLength > DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_BYTES
-      ? chunk.slice(chunk.byteLength - DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_BYTES)
-      : chunk.slice();
+  // Child process output can be a Buffer: its slice() is a view, which would
+  // retain the full incoming allocation and allow later writes to alter history.
+  const retainedChunk = Uint8Array.from(
+    chunk.subarray(Math.max(0, chunk.byteLength - DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_BYTES)),
+  );
   const chunks = [...session.chunks, { streamName, chunk: retainedChunk, offset: 0 }];
   let byteLength = session.byteLength + retainedChunk.byteLength;
   let overflow = Math.max(0, byteLength - DESKTOP_BACKEND_OUTPUT_BUFFER_MAX_BYTES);

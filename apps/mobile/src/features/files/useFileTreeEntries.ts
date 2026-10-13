@@ -12,24 +12,42 @@ export function useFileTreeEntries(input: {
   readonly cwd: string | null;
   readonly environmentId: EnvironmentId | null;
   readonly searchQuery: string;
+  readonly enabled?: boolean;
 }) {
   const { cwd, environmentId } = input;
+  const enabled = input.enabled ?? true;
   const searching = input.searchQuery.trim().length > 0;
   const query = input.searchQuery.trim().slice(0, 256);
   const debouncedQuery = useDebouncedValue(query, 200);
   const root = useEnvironmentQuery(
-    cwd !== null && environmentId !== null
+    enabled && cwd !== null && environmentId !== null
       ? projectEnvironment.listEntries({ environmentId, input: { cwd, directoryPath: "" } })
       : null,
   );
   const search = useEnvironmentQuery(
-    searching && debouncedQuery.length > 0 && cwd !== null && environmentId !== null
+    enabled && searching && debouncedQuery.length > 0 && cwd !== null && environmentId !== null
       ? projectEnvironment.searchEntries({
           environmentId,
           input: { cwd, query: debouncedQuery, limit: 200 },
         })
       : null,
   );
+  const retainedData = useMemo(
+    () => ({
+      cwd,
+      environmentId,
+      root: new Map<"root", NonNullable<typeof root.data>>(),
+      search: new Map<string, NonNullable<typeof search.data>>(),
+    }),
+    [cwd, environmentId],
+  );
+  useEffect(() => {
+    if (root.data !== null) retainedData.root.set("root", root.data);
+    if (search.data !== null) {
+      retainedData.search.clear();
+      retainedData.search.set(debouncedQuery, search.data);
+    }
+  }, [debouncedQuery, retainedData, root.data, search.data]);
   const [, render] = useReducer((value: number) => value + 1, 0);
   const [entriesRevision, entriesChanged] = useReducer((value: number) => value + 1, 0);
   const refreshVersion = useRef(0);
@@ -41,26 +59,36 @@ export function useFileTreeEntries(input: {
       requested: new Set<string>(),
       pending: new Map<string, AbortController>(),
       errors: new Map<string, string>(),
+      interrupted: new Set<string>(),
+      refreshControllers: new Set<AbortController>(),
+      refreshKey: Symbol(),
     }),
     [cwd, environmentId],
   );
-  const [refreshingDirectories, setRefreshingDirectories] = useState<typeof directories | null>(
-    null,
-  );
-  useEffect(
-    () => () => {
+  const [refreshingDirectoryKey, setRefreshingDirectoryKey] = useState<symbol | null>(null);
+  useEffect(() => {
+    const cancel = () => {
       refreshVersion.current++;
-      for (const controller of directories.pending.values()) controller.abort();
+      for (const controller of directories.refreshControllers) controller.abort();
+      directories.refreshControllers.clear();
+      for (const [path, controller] of directories.pending) {
+        directories.interrupted.add(path);
+        controller.abort();
+      }
       directories.pending.clear();
-    },
-    [directories],
-  );
+    };
+    if (!enabled) cancel();
+    return cancel;
+  }, [directories, enabled]);
   const loadDirectory = useCallback(
     (directoryPath: string, refresh = false) => {
       if (
+        !enabled ||
         cwd === null ||
         environmentId === null ||
-        (!refresh && directories.entries.has(directoryPath)) ||
+        (!refresh &&
+          directories.entries.has(directoryPath) &&
+          !directories.interrupted.has(directoryPath)) ||
         directories.pending.has(directoryPath)
       ) {
         return;
@@ -80,6 +108,7 @@ export function useFileTreeEntries(input: {
         if (controller.signal.aborted) return;
         directories.pending.delete(directoryPath);
         if (result._tag === "Success") {
+          directories.interrupted.delete(directoryPath);
           directories.entries.set(
             directoryPath,
             result.value.entries.filter(
@@ -98,10 +127,12 @@ export function useFileTreeEntries(input: {
         render();
       });
     },
-    [cwd, directories, environmentId],
+    [cwd, directories, enabled, environmentId],
   );
-  const { refresh: refreshRoot, data: rootData } = root;
-  const { refresh: refreshSearch, data: searchData } = search;
+  const { refresh: refreshRoot } = root;
+  const { refresh: refreshSearch } = search;
+  const rootData = root.data ?? retainedData.root.get("root") ?? null;
+  const searchData = search.data ?? retainedData.search.get(debouncedQuery) ?? null;
   const snapshot = useMemo(() => {
     const merged = new Map<string, ProjectEntry>();
     if (searching) {
@@ -122,16 +153,24 @@ export function useFileTreeEntries(input: {
   }, [directories, entriesRevision, rootData, searchData, searching]);
 
   const refresh = useCallback(() => {
+    if (!enabled) return Promise.resolve();
     refreshRoot();
     if (searching) refreshSearch();
     const paths = new Set(
       [...directories.requested].filter((path) => snapshot.reachableDirectories.has(path)),
     );
-    for (const controller of directories.pending.values()) controller.abort();
+    for (const controller of directories.refreshControllers) controller.abort();
+    directories.refreshControllers.clear();
+    const refreshController = new AbortController();
+    directories.refreshControllers.add(refreshController);
+    for (const [path, controller] of directories.pending) {
+      directories.interrupted.add(path);
+      controller.abort();
+    }
     directories.pending.clear();
     directories.errors.clear();
     const version = ++refreshVersion.current;
-    setRefreshingDirectories(directories);
+    setRefreshingDirectoryKey(directories.refreshKey);
     const remaining = paths.values();
     const worker = async () => {
       while (version === refreshVersion.current) {
@@ -156,18 +195,26 @@ export function useFileTreeEntries(input: {
         : [];
     const work = [
       ...queries.map((atom) =>
-        executeAtomQuery(appAtomRegistry, atom, { reportFailure: false, reportDefect: false }),
+        executeAtomQuery(appAtomRegistry, atom, {
+          signal: refreshController.signal,
+          reportFailure: false,
+          reportDefect: false,
+        }),
       ),
       ...Array.from({ length: Math.min(4, paths.size) }, () => worker()),
     ];
     render();
     return Promise.all(work).finally(() => {
-      if (version === refreshVersion.current) setRefreshingDirectories(null);
+      if (version === refreshVersion.current) {
+        directories.refreshControllers.delete(refreshController);
+        setRefreshingDirectoryKey(null);
+      }
     });
   }, [
     cwd,
     debouncedQuery,
     environmentId,
+    enabled,
     directories,
     loadDirectory,
     refreshRoot,
@@ -178,19 +225,23 @@ export function useFileTreeEntries(input: {
 
   return {
     entries: snapshot.entries,
-    isRefreshing: refreshingDirectories === directories,
+    isRefreshing:
+      enabled &&
+      refreshingDirectoryKey === directories.refreshKey &&
+      directories.refreshControllers.size > 0,
     error:
       root.error ??
       (searching ? search.error : null) ??
       [...directories.errors].find(([path]) => snapshot.reachableDirectories.has(path))?.[1] ??
       null,
     isPending:
-      root.isPending ||
-      directories.pending.size > 0 ||
-      (searching && (query !== debouncedQuery || search.isPending)),
-    searchTruncated: searching && (search.data?.truncated ?? false),
+      enabled &&
+      (root.isPending ||
+        directories.pending.size > 0 ||
+        (searching && (query !== debouncedQuery || search.isPending))),
+    searchTruncated: searching && (searchData?.truncated ?? false),
     loadedDirectories: new Set(directories.entries.keys()),
-    loadingDirectories: new Set(directories.pending.keys()),
+    loadingDirectories: new Set(enabled ? directories.pending.keys() : []),
     loadDirectory,
     refresh,
   };

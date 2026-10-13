@@ -339,6 +339,43 @@ describe("terminal session reducers", () => {
     expect(readTerminalOutputUpdate(state.output, update.cursor).type).toBe("none");
   });
 
+  it("does not rescan already consumed terminal chunks on a live output read", () => {
+    const initial = applyTerminalAttachStreamEvent(EMPTY_TERMINAL_BUFFER_STATE, {
+      type: "snapshot",
+      snapshot: { ...BASE_SNAPSHOT, history: "" },
+    });
+    let state = initial;
+    for (let index = 0; index < 1024; index++) {
+      state = applyTerminalAttachStreamEvent(state, {
+        type: "output",
+        threadId: TARGET.threadId,
+        terminalId: TARGET.terminalId,
+        data: "x",
+      });
+    }
+    let chunkReads = 0;
+    const output = {
+      ...state.output,
+      chunks: state.output.chunks.map((chunk) => ({
+        ...chunk,
+        get startOffset() {
+          chunkReads++;
+          return chunk.startOffset;
+        },
+      })),
+    };
+    const update = readTerminalOutputUpdate(output, {
+      generation: output.generation,
+      resetVersion: output.resetVersion,
+      offset: output.nextOffset - 1,
+    });
+    expect(update).toMatchObject({ type: "append", data: "x" });
+    expect(chunkReads).toBeLessThanOrEqual(4);
+    chunkReads = 0;
+    expect(readTerminalOutputUpdate(output, update.cursor).type).toBe("none");
+    expect(chunkReads).toBeLessThanOrEqual(2);
+  });
+
   it("preserves the byte-limited tail and resets a cursor before a partially trimmed chunk", () => {
     const initial = applyTerminalAttachStreamEvent(EMPTY_TERMINAL_BUFFER_STATE, {
       type: "snapshot",

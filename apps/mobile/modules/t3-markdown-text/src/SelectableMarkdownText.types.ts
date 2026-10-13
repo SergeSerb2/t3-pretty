@@ -31,6 +31,7 @@ export interface MarkdownHighlightedToken {
 export interface MarkdownCodeHighlightInput {
   /** Identity of the mounted code block, for incremental highlighting. */
   readonly session?: object;
+  readonly signal?: AbortSignal;
   readonly code: string;
   readonly language?: string | null;
   readonly theme: "light" | "dark";

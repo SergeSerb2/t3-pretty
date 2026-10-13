@@ -4517,6 +4517,53 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect(
+    "bounds a stalled picture-in-picture capture without overlapping native work",
+    () => {
+      const image = {
+        toJPEG: () => Buffer.from("late-native-frame"),
+        getSize: () => ({ width: 1280, height: 720 }),
+      };
+      const physicalCapture = Promise.withResolvers<typeof image>();
+      return withManager((manager) =>
+        Effect.gen(function* () {
+          const started = yield* Deferred.make<void>();
+          const capturePage = vi.fn(() => {
+            Deferred.doneUnsafe(started, Effect.void);
+            return physicalCapture.promise;
+          });
+          fromId.mockReturnValue(makeTestPreviewWebContents(capturePage));
+          const { pictureInPictureWindow, send } = makeTestPictureInPictureWindow();
+          browserWindowConstructor.mockImplementation(function () {
+            return pictureInPictureWindow;
+          });
+          yield* manager.createTab("tab_stalled_native_capture");
+          yield* manager.registerWebview("tab_stalled_native_capture", 42);
+          const open = yield* manager
+            .openPictureInPicture("tab_stalled_native_capture")
+            .pipe(Effect.forkChild);
+          yield* Deferred.await(started);
+          yield* TestClock.adjust(1_000);
+
+          expect(pictureInPictureWindow.showInactive).toHaveBeenCalledOnce();
+          yield* Fiber.join(open);
+          yield* TestClock.adjust(5_000);
+          expect(capturePage).toHaveBeenCalledOnce();
+          expect(send).not.toHaveBeenCalled();
+
+          physicalCapture.resolve(image);
+          yield* Effect.promise(() => physicalCapture.promise);
+          yield* TestClock.adjust(1_100);
+          expect(send).toHaveBeenCalledWith(
+            "desktop:preview-pip-frame",
+            expect.objectContaining({ data: Buffer.from("late-native-frame") }),
+          );
+          yield* manager.closePictureInPicture("tab_stalled_native_capture");
+        }).pipe(Effect.ensuring(Effect.sync(() => physicalCapture.resolve(image)))),
+      );
+    },
+  );
+
   effectIt.effect("drops empty frames before picture-in-picture delivery", () =>
     withManager((manager) =>
       Effect.gen(function* () {

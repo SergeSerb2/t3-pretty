@@ -331,9 +331,12 @@ export function readTerminalOutputUpdate(
     return { type: "reset", data: terminalOutputText(output), cursor: nextCursor };
   }
 
-  const appended = output.chunks.filter(
-    (chunk) => chunk.startOffset + chunk.data.length > cursor.offset,
-  );
+  // Chunks are ordered. A live reader normally needs only the newest suffix,
+  // so start at the end rather than revisiting every consumed output chunk.
+  const firstUnread =
+    output.chunks.findLastIndex((chunk) => chunk.startOffset + chunk.data.length <= cursor.offset) +
+    1;
+  const appended = output.chunks.slice(firstUnread);
   if (appended.length === 0) {
     return { type: "none", cursor: nextCursor };
   }
