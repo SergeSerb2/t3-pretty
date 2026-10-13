@@ -364,7 +364,8 @@ export const layerWithOptions = (
       const instructionMessage = Effect.fn("ProviderSessionManagerV2.instructionMessage")(
         function* (threadId: ThreadId, text: string) {
           if (text.trimStart().startsWith("/")) return text;
-          if (Option.isNone(serverSettings)) return responseStylePrompt(text, true);
+          if (Option.isNone(serverSettings))
+            return responseStylePrompt(threadInstructionsPrompt(text, "", ""), true);
           return yield* Effect.gen(function* () {
             const settings = yield* serverSettings.value.getSettings;
             const thread = yield* projectionStore.getThread(threadId);
@@ -382,7 +383,7 @@ export const layerWithOptions = (
               Effect.logWarning("Failed to read thread instruction settings", {
                 threadId,
                 cause,
-              }).pipe(Effect.as(text)),
+              }).pipe(Effect.as(threadInstructionsPrompt(text, "", ""))),
             ),
           );
         },

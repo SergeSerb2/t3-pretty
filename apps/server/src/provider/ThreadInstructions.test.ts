@@ -15,13 +15,22 @@ describe("threadInstructionsPrompt", () => {
     expect(stripHiddenInstructionSuffixes(responseStylePrompt(prompt, true))).toBe("Fix the bug.");
   });
 
-  it("omits empty guidance and preserves native slash commands", () => {
-    expect(threadInstructionsPrompt("Fix it.", " \n", "")).toBe("Fix it.");
+  it("includes default TypeScript validation without custom instructions", () => {
+    const prompt = threadInstructionsPrompt("Fix it.", " \n", "");
+    expect(prompt).toContain("If the project uses TypeScript, always typecheck and compile");
+    expect(prompt).toContain("https://github.com/pingdotgg/ts-rust");
+    expect(prompt).toContain("tsc-rs --noEmit -p <tsconfig>");
+    expect(prompt).toContain("tsc-rs -b <build-tsconfig>");
+    expect(prompt).not.toContain("Global instructions:");
+    expect(prompt).not.toContain("Project instructions:");
+    expect(stripHiddenInstructionSuffixes(prompt)).toBe("Fix it.");
+    expect(stripHiddenInstructionSuffixes(responseStylePrompt(prompt, false))).toBe("Fix it.");
+  });
+
+  it("preserves native slash commands", () => {
     expect(threadInstructionsPrompt(" /compact", "Use plain English.", "Run tests.")).toBe(
       " /compact",
     );
-    expect(threadInstructionsPrompt("Fix it.", "", "Run tests.")).not.toContain(
-      "Global instructions:",
-    );
+    expect(threadInstructionsPrompt("/model next", "", "")).toBe("/model next");
   });
 });
