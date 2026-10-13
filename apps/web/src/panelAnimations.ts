@@ -31,14 +31,62 @@ export function usePanelNavigationSuppression(navigationKey: string): boolean {
   return suppressed;
 }
 
+/** True while the current navigation's restored state paints; see usePanelNavigationSuppression. */
+export function usePanelAnimationSuppressed(): boolean {
+  return useContext(PanelAnimationSuppressionContext);
+}
+
+/**
+ * Latches at mount whether an enter animation may play. Something a thread
+ * switch or route load mounts is restored state and appears still; something
+ * that mounts later appeared in front of the user.
+ */
+export function useMountEnterAllowed(): boolean {
+  const suppressed = usePanelAnimationSuppressed();
+  const [allowed] = useState(!suppressed);
+  return allowed;
+}
+
 export function usePanelAnimationSettings(): {
   active: boolean;
   durationMs: PanelAnimationDurationMs;
 } {
   const durationMs = useClientSettings((settings) => settings.panelAnimationDurationMs);
   const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const suppressed = useContext(PanelAnimationSuppressionContext);
+  const suppressed = usePanelAnimationSuppressed();
   return { active: durationMs > 0 && !prefersReducedMotion && !suppressed, durationMs };
+}
+
+/**
+ * Holds a newly mounted panel visually closed for two frames so its enter
+ * transition starts after the mount work instead of being eaten by it: heavy
+ * surfaces (diff, terminal, browser) otherwise block the main thread through
+ * most of the slide, which reads as the panel snapping open. Only the slide
+ * waits; the panel is open (focusable, not inert) from its first frame. A
+ * panel shown without motion (restored by navigation, reduced motion) is never
+ * held, and reopening one that is still closing reverses in place.
+ */
+export function usePanelEnterHold(open: boolean, present: boolean, animated: boolean): boolean {
+  const [entered, setEntered] = useState(open && !animated);
+  if (!present && entered) setEntered(false);
+  if (present && open && !animated && !entered) setEntered(true);
+  const holding = present && open && animated && !entered;
+
+  useEffect(() => {
+    if (!holding) return;
+    // The first frame paints the closed panel after React's mount work; the
+    // second gives follow-up effect renders their own frame before motion.
+    let innerFrame = 0;
+    const outerFrame = window.requestAnimationFrame(() => {
+      innerFrame = window.requestAnimationFrame(() => setEntered(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(outerFrame);
+      window.cancelAnimationFrame(innerFrame);
+    };
+  }, [holding]);
+
+  return holding;
 }
 
 /** Keeps closing panel content mounted until its opt-in transition ends. */

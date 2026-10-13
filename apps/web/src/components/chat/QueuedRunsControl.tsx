@@ -21,6 +21,7 @@ import { useAssetUrls } from "../../assets/assetUrls";
 import { threadEnvironment } from "../../state/threads";
 import { useThreadProjection } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { usePanelAnimationSuppressed } from "../../panelAnimations";
 import { isImageAttachment, type ChatMessage } from "../../types";
 import { cn } from "~/lib/utils";
 import { ComposerBanner } from "./ComposerBanner";
@@ -71,6 +72,9 @@ export function QueuedRunsControl({
   const promote = useAtomCommand(threadEnvironment.promoteQueuedRun);
   const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun);
   const [expanded, setExpanded] = useState(true);
+  // Expanding unfolds the list only after the user toggles it; mounts show it still.
+  const [listToggled, setListToggled] = useState(false);
+  const navigationSuppressed = usePanelAnimationSuppressed();
   const queueListId = useId();
   const [busyRunId, setBusyRunId] = useState<RunId | null>(null);
   // Live drag-reorder state: the dragged run and the queue index the row
@@ -164,6 +168,14 @@ export function QueuedRunsControl({
       pending: true,
     })),
   ];
+  // The strip rises when the first message is queued in front of the user. A
+  // remount (thread switch, notices docking around it) or a route load shows
+  // an existing queue still.
+  const queueVisible = items.length > 0;
+  const [queueEntry, setQueueEntry] = useState(() => ({ visible: queueVisible, enter: false }));
+  if (queueEntry.visible !== queueVisible) {
+    setQueueEntry({ visible: queueVisible, enter: queueVisible && !navigationSuppressed });
+  }
 
   const move = async (runId: RunId, beforeRunId: RunId | null) => {
     setBusyRunId(runId);
@@ -217,6 +229,7 @@ export function QueuedRunsControl({
       const latest = queued.at(-1);
       if (!latest || props.editingRunId !== null || busyRunId !== null) return false;
       if (!repeat) {
+        setListToggled(true);
         setExpanded(true);
         props.onEditQueuedRun({
           runId: latest.run.id,
@@ -250,6 +263,7 @@ export function QueuedRunsControl({
         aria-label={`${items.length} queued message${items.length === 1 ? "" : "s"}`}
         aria-live="polite"
         data-chat-composer-collapsed-controls="true"
+        data-composer-queue={queueEntry.enter ? "enter" : ""}
         className="relative z-0"
       >
         <ComposerBanner.Row
@@ -258,7 +272,10 @@ export function QueuedRunsControl({
           aria-expanded={expanded}
           aria-controls={queueListId}
           onPointerDown={(event) => event.preventDefault()}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => {
+            setListToggled(true);
+            setExpanded((value) => !value);
+          }}
         >
           <ComposerBanner.Icon>
             <ListOrderedIcon />
@@ -269,7 +286,10 @@ export function QueuedRunsControl({
             <ComposerBanner.ToggleIcon expanded={expanded} />
           </ComposerBanner.Actions>
         </ComposerBanner.Row>
-        <ComposerBanner.Scroll className={cn("max-h-32", !expanded && "hidden")}>
+        <ComposerBanner.Scroll
+          className={cn("max-h-32", !expanded && "hidden")}
+          data-composer-queue-list={listToggled ? "enter" : ""}
+        >
           <ComposerBanner.Children render={<ol />} id={queueListId}>
             {items.map((item) => {
               const previewText = replaceComposerContextReferences(item.text, (reference) =>
@@ -285,6 +305,8 @@ export function QueuedRunsControl({
                   render={<li />}
                   key={item.key}
                   aria-current={isEditing ? "true" : undefined}
+                  // Rows queued from this client fade in; the confirmed row that replaces one stays still.
+                  data-queued-row-pending={item.pending ? "" : undefined}
                   className={cn(
                     "relative rounded-sm",
                     isEditing && "bg-accent text-accent-foreground",

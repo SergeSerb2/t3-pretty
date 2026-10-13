@@ -11,12 +11,14 @@ const Sheet = SheetPrimitive.Root;
 const SheetPortal = SheetPrimitive.Portal;
 
 // Sheets are docked panels, not dialogs: their layer (--z-sheet) sits under dialogs that open
-// from inside them and under anything the app floats above panels.
+// from inside them and under anything the app floats above panels. The backdrop only dims, like
+// dialogs: a full-window backdrop blur re-samples everything behind it (a streaming thread) on
+// every frame.
 function SheetBackdrop({ className, ...props }: SheetPrimitive.Backdrop.Props) {
   return (
     <SheetPrimitive.Backdrop
       className={cn(
-        "fixed inset-0 z-(--z-sheet) bg-background/60 backdrop-blur-xs transition-all duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0",
+        "fixed inset-0 z-(--z-sheet) bg-background/60 transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0",
         className,
       )}
       data-slot="sheet-backdrop"

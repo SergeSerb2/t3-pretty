@@ -9,6 +9,7 @@ import {
 import { InfoIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
+import { useMountEnterAllowed } from "../../panelAnimations";
 import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -114,13 +115,7 @@ export function ComposerBannerStack({ className, items, attachedAbove }: Compose
   };
 
   return (
-    <div
-      className={cn(
-        "mount-rise-in group/banner-stack chat-composer-drawer-slot motion-reduce:animate-none! motion-reduce:transition-none!",
-        className,
-      )}
-      data-composer-banner-drawer="true"
-    >
+    <BannerStackDrawer className={className}>
       <div
         className={cn(
           "relative flex flex-col",
@@ -160,12 +155,16 @@ export function ComposerBannerStack({ className, items, attachedAbove }: Compose
               )}
             >
               <div className="min-h-0 overflow-hidden">
+                {/* The list only slides; each glass notice fades itself, because
+                    opacity (or will-change: opacity) on the list would make it the
+                    backdrop root and drop their blur. */}
                 <div
                   className={cn(
-                    "invisible pointer-events-none space-y-2 pb-2 opacity-0",
-                    "translate-y-1 transform-gpu transition-[opacity,transform] duration-150 ease-out will-change-[opacity,transform] motion-reduce:transition-none!",
-                    "group-hover/banner-stack:visible group-hover/banner-stack:pointer-events-auto group-hover/banner-stack:translate-y-0 group-hover/banner-stack:opacity-100",
-                    "group-focus-within/banner-stack:visible group-focus-within/banner-stack:pointer-events-auto group-focus-within/banner-stack:translate-y-0 group-focus-within/banner-stack:opacity-100",
+                    "invisible pointer-events-none space-y-2 pb-2",
+                    "translate-y-1 transition-[translate,visibility] duration-150 ease-out motion-reduce:transition-none!",
+                    "[&>*>*]:opacity-0 [&>*>*]:transition-opacity [&>*>*]:duration-150 [&>*>*]:ease-out motion-reduce:[&>*>*]:transition-none!",
+                    "group-hover/banner-stack:visible group-hover/banner-stack:pointer-events-auto group-hover/banner-stack:translate-y-0 group-hover/banner-stack:[&>*>*]:opacity-100",
+                    "group-focus-within/banner-stack:visible group-focus-within/banner-stack:pointer-events-auto group-focus-within/banner-stack:translate-y-0 group-focus-within/banner-stack:[&>*>*]:opacity-100",
                   )}
                 >
                   {stackedItems.map((item) => (
@@ -214,6 +213,29 @@ export function ComposerBannerStack({ className, items, attachedAbove }: Compose
           />
         </div>
       </div>
+    </BannerStackDrawer>
+  );
+}
+
+/** Rises out of the composer when notices appear in place, never when navigation mounts it. */
+function BannerStackDrawer({
+  className,
+  children,
+}: {
+  readonly className: string | undefined;
+  readonly children: ReactNode;
+}) {
+  const rise = useMountEnterAllowed();
+  return (
+    <div
+      className={cn(
+        rise ? "mount-rise-in group/banner-stack" : "group/banner-stack",
+        "chat-composer-drawer-slot motion-reduce:animate-none! motion-reduce:transition-none!",
+        className,
+      )}
+      data-composer-banner-drawer="true"
+    >
+      {children}
     </div>
   );
 }
@@ -302,6 +324,8 @@ function ComposerBannerStackAlert({
   readonly onDismissRequest: () => void;
 }) {
   const dismissOnly = item.onDismiss && !item.actions;
+  // The front notice fades in when it arrives or takes over the front in place.
+  const enter = useMountEnterAllowed();
 
   return (
     <Alert
@@ -313,6 +337,7 @@ function ComposerBannerStackAlert({
         item.className,
       )}
       data-variant={item.variant}
+      data-composer-notice-enter={attached && enter ? "" : undefined}
     >
       <ComposerBanner.Row layout="wrap-actions">
         <ComposerBanner.Icon className="h-(--composer-banner-icon-column) self-start">
