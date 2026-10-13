@@ -88,3 +88,20 @@ export function resolveThreadFeedLiveFollow(
       return current;
   }
 }
+
+/**
+ * Whether the reader has actually left the live edge, which is what the
+ * scroll-to-end control shows for. Follow pauses the moment any drag begins,
+ * so a small drag or bounce at the end must not count until the list reports
+ * it is no longer at the end.
+ */
+export function resolveThreadFeedAwayFromEnd(
+  current: boolean,
+  following: boolean,
+  event: ThreadFeedLiveFollowEvent,
+): boolean {
+  if (following) {
+    return false;
+  }
+  return "isAtEnd" in event ? !event.isAtEnd : current;
+}

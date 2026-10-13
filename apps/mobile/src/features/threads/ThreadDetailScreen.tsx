@@ -71,6 +71,7 @@ import {
 } from "react-native";
 import {
   KeyboardController,
+  KeyboardEvents,
   KeyboardStickyView,
   useKeyboardState,
 } from "react-native-keyboard-controller";
@@ -377,8 +378,15 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     [navigation, props.environmentId, props.selectedThread.id],
   );
   const insets = useSafeAreaInsets();
-  const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
-  const liveKeyboardHeight = useKeyboardState((state) => state.height);
+  // Only Android reads live keyboard visibility and height (the safe-area and
+  // sticky-view quarantine below). iOS selects constants, so a keyboard show
+  // or hide does not re-render this whole screen.
+  const isKeyboardVisible = useKeyboardState(
+    (state) => Platform.OS === "android" && state.isVisible,
+  );
+  const liveKeyboardHeight = useKeyboardState((state) =>
+    Platform.OS === "android" ? state.height : 0,
+  );
   // Android can swallow the IME hide callbacks when the app is backgrounded
   // mid keyboard-hide (the reported repro: send — which blurs and starts the
   // hide — then Home within a second). The keyboard library's height AND
@@ -461,7 +469,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   );
   const [anchorMessageId, setAnchorMessageId] = useState<MessageId | null>(null);
   const [submittedMessageId, setSubmittedMessageId] = useState<MessageId | null>(null);
-  const [endFollowEnabled, setEndFollowEnabled] = useState(true);
+  const [awayFromEnd, setAwayFromEnd] = useState(false);
   // Android keys the safe-area padding on keyboard visibility (#5988): the
   // back gesture closes the keyboard while the editor stays focused, and a
   // focus-keyed inset would leave the toolbar under the gesture bar. iOS must
@@ -689,12 +697,27 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   // stays compact over the transcript. Before the first open the reserve is
   // an estimate; once a real height is known the card corrects once,
   // discretely.
-  const [lastKnownKeyboardHeight, setLastKnownKeyboardHeight] = useState(0);
+  const [lastKnownKeyboardHeight, setLastKnownKeyboardHeight] = useState(() =>
+    Math.max(0, KeyboardController.state().height),
+  );
   useEffect(() => {
     if (liveKeyboardHeight > 0 && liveKeyboardHeight !== lastKnownKeyboardHeight) {
       setLastKnownKeyboardHeight(liveKeyboardHeight);
     }
   }, [lastKnownKeyboardHeight, liveKeyboardHeight]);
+  // iOS learns the height from the show event itself; an unchanged height is
+  // a no-op state update, so repeat opens cost nothing.
+  useEffect(() => {
+    if (Platform.OS !== "ios") {
+      return;
+    }
+    const subscription = KeyboardEvents.addListener("keyboardWillShow", (event) => {
+      if (event.height > 0) {
+        setLastKnownKeyboardHeight(event.height);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
   const pendingUserInputMaxHeight = derivePendingUserInputMaxHeight({
     windowHeight,
     keyboardHeight:
@@ -719,6 +742,9 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     composerOverlayRef,
     Math.max(0, estimatedOverlayHeight - nativeInsetOvercount),
     -nativeInsetOvercount,
+    // Glide the feed's end inset with the composer's own height morph so
+    // pinned content rides the card instead of snapping ahead of it.
+    Platform.OS === "ios" ? COMPOSER_TRANSITION_DURATION_MS : 0,
   );
   // The expanded questionnaire is an absolute overlay on iOS, so it never
   // changes the measured overlay height (that constancy is what keeps the
@@ -766,8 +792,12 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     [userInputCoverageApplies],
   );
   const { freeze, scrollMessageToEnd } = useKeyboardScrollToEnd({ listRef });
+  // Only the deferred re-pin reads follow state, so it lives in a ref: the
+  // latch flips on every drag and must not re-render this screen.
   const endFollowEnabledRef = useRef(true);
-  endFollowEnabledRef.current = endFollowEnabled;
+  const handleEndFollowEnabledChange = useCallback((enabled: boolean) => {
+    endFollowEnabledRef.current = enabled;
+  }, []);
   const overlayRepinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousWorkingControlStateRef = useRef({
     threadKey: selectedThreadKey,
@@ -962,7 +992,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     setAnchorMessageId(null);
     setSubmittedMessageId(null);
     lastScrolledSubmittedMessageIdRef.current = null;
-    setEndFollowEnabled(true);
+    endFollowEnabledRef.current = true;
+    setAwayFromEnd(false);
     freeze.set(false);
   }, [freeze, selectedThreadKey]);
 
@@ -1105,7 +1136,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     });
   }, [freeze, scrollMessageToEnd]);
 
-  const showScrollToEndButton = contentPresentationKind === "ready" && !endFollowEnabled;
+  const showScrollToEndButton = contentPresentationKind === "ready" && awayFromEnd;
   const { themeAppearance } = useAppearancePreferences();
   const sceneryChrome = useSceneryChromeActive();
   const isDarkMode = themeAppearance === "dark";
@@ -1207,7 +1238,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               layoutVariant={layoutVariant}
               usesAutomaticContentInsets={props.usesAutomaticContentInsets}
               onHeaderMaterialVisibilityChange={props.onHeaderMaterialVisibilityChange}
-              onEndFollowEnabledChange={setEndFollowEnabled}
+              onEndFollowEnabledChange={handleEndFollowEnabledChange}
+              onAwayFromEndChange={setAwayFromEnd}
               skills={selectedProviderSkills}
               onUseArtifactTemplate={handleUseArtifactTemplate}
             />
