@@ -1899,6 +1899,7 @@ describe("PreviewManager", () => {
               setAudioMuted: vi.fn(),
               isCurrentlyAudible: () => false,
               on: vi.fn(),
+              once: vi.fn(),
               off: vi.fn(),
               ipc: { on: vi.fn(), off: vi.fn() },
               send: webviewSend,
@@ -1925,6 +1926,9 @@ describe("PreviewManager", () => {
           }),
         );
         yield* manager.createTab("tab_scheme");
+        // Guests get the opaque base when they attach to the window; registration
+        // only opens CDP when the tab needs it (fork keeps CDP lazy).
+        yield* manager.prepareWebview(first.wc);
         yield* manager.registerWebview("tab_scheme", 42);
         yield* Effect.yieldNow;
 
@@ -1947,6 +1951,7 @@ describe("PreviewManager", () => {
 
         const replacement = makeWebContents(43);
         fromId.mockReturnValue(replacement.wc);
+        yield* manager.prepareWebview(replacement.wc);
         yield* manager.registerWebview("tab_scheme", 43);
         yield* Effect.yieldNow;
 
@@ -6114,28 +6119,37 @@ describe("PreviewManager", () => {
           controller = state.controller;
           return takeover ? Deferred.succeed(takeover, undefined).pipe(Effect.asVoid) : Effect.void;
         });
+        const willDownloadListeners = () =>
+          previewSession.on.mock.calls
+            .filter(([event]) => event === "will-download")
+            .map(
+              ([, listener]) =>
+                listener as (
+                  event: unknown,
+                  item: {
+                    getFilename: () => string;
+                    getStartTime: () => number;
+                    setSavePath: (path: string) => void;
+                  },
+                  source: Electron.WebContents,
+                ) => void,
+            );
         yield* manager.getBrowserSession();
+        const installs = willDownloadListeners();
+        expect(installs.length).toBeGreaterThan(0);
+        // Asking for the session again must not stack another handler.
         yield* manager.getBrowserSession();
-        const installs = previewSession.on.mock.calls.filter(
-          ([event]) => event === "will-download",
-        );
-        expect(installs).toHaveLength(1);
-        const willDownload = installs[0]![1] as (
-          event: unknown,
-          item: {
-            getFilename: () => string;
-            getStartTime: () => number;
-            setSavePath: (path: string) => void;
-          },
-          source: Electron.WebContents,
-        ) => void;
+        expect(willDownloadListeners()).toHaveLength(installs.length);
+        // Electron emits to every listener: server-tab placement and the
+        // agent-driven artifact handler share the session.
         const download = () => {
           const setSavePath = vi.fn();
-          willDownload(
-            {},
-            { getFilename: () => "chart.png", getStartTime: () => 1_790_844_530.5, setSavePath },
-            wc,
-          );
+          const item = {
+            getFilename: () => "chart.png",
+            getStartTime: () => 1_790_844_530.5,
+            setSavePath,
+          };
+          for (const willDownload of installs) willDownload({}, item, wc);
           return setSavePath;
         };
         yield* manager.createTab("tab_1");
