@@ -10,15 +10,7 @@ import {
   View,
   type TextInputInstance,
 } from "react-native";
-import Animated, {
-  FadeInDown,
-  FadeOut,
-  ReduceMotion,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  ZoomIn,
-} from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
@@ -27,7 +19,7 @@ import { AppText as Text } from "../../components/AppText";
 import { MintGlassButton } from "../../components/MintGlassButton";
 import { PulseRing } from "../../components/PulseRing";
 import { cn } from "../../lib/cn";
-import { MOTION_SETTLE_SPRING } from "../../lib/motion";
+import { enterFadeDown, enterPop, exitFade, MOTION_TIMING } from "../../lib/motion";
 import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
@@ -48,14 +40,6 @@ const ACCESSIBLE_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   month: "long",
   day: "numeric",
 });
-
-// Entrances that land with a little bounce; Reduce Motion turns them into cuts.
-const glanceEnter = FadeInDown.springify()
-  .damping(15)
-  .stiffness(220)
-  .reduceMotion(ReduceMotion.System);
-const glanceExit = FadeOut.duration(90).reduceMotion(ReduceMotion.System);
-const orbEnter = ZoomIn.springify().damping(9).stiffness(260).reduceMotion(ReduceMotion.System);
 
 /**
  * iPhone Home replaces the native title bar, search row and glance card with
@@ -109,7 +93,7 @@ export function HomeTopBar(props: {
   const actionsWidth = actionCount * ACTION_SIZE + (actionCount - 1) * ACTION_GAP;
   const progress = useSharedValue(0);
   useEffect(() => {
-    progress.set(withSpring(searching ? 1 : 0, MOTION_SETTLE_SPRING));
+    progress.set(withTiming(searching ? 1 : 0, MOTION_TIMING));
   }, [progress, searching]);
   // The pill grows into the room the buttons give up; the buttons keep
   // their size and slide off the trailing edge as they fade.
@@ -117,7 +101,7 @@ export function HomeTopBar(props: {
     marginLeft: Math.max(0, 1 - progress.value) * ACTION_GAP,
     width: Math.max(0, 1 - progress.value) * actionsWidth,
     opacity: Math.max(0, 1 - progress.value * 1.6),
-    transform: [{ translateX: progress.value * 28 }],
+    transform: [{ translateX: progress.value * 8 }],
   }));
   const glanceStyle = useAnimatedStyle(() => ({ opacity: Math.max(0, 1 - progress.value * 2) }));
 
@@ -182,7 +166,7 @@ export function HomeTopBar(props: {
               {!searching && status === null && props.summary.tone === "working" ? (
                 <PulseRing color={tone.dot} radius={ORB_SIZE / 2} />
               ) : null}
-              <Animated.View key={orbKey} entering={orbEnter}>
+              <Animated.View key={orbKey} entering={enterPop}>
                 {!searching && status?.showsProgress ? (
                   <ActivityIndicator size="small" colorClassName="accent-adaptive-amber-700-300" />
                 ) : (
@@ -239,8 +223,8 @@ export function HomeTopBar(props: {
               >
                 <Animated.View
                   key={headline}
-                  entering={glanceEnter}
-                  exiting={glanceExit}
+                  entering={enterFadeDown}
+                  exiting={exitFade}
                   className="min-w-0 shrink flex-row items-baseline gap-1.5"
                 >
                   <Text
@@ -263,7 +247,7 @@ export function HomeTopBar(props: {
           </View>
 
           {searching ? (
-            <Animated.View entering={orbEnter}>
+            <Animated.View entering={enterPop} exiting={exitFade}>
               <Pressable
                 accessibilityLabel="Clear search"
                 accessibilityRole="button"

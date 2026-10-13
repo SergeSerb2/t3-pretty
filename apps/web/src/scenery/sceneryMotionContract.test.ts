@@ -64,7 +64,7 @@ describe("row arrival contract with the messages timeline", () => {
     expect(motionDriverSource).toContain("firstPaintForThread");
     expect(motionDriverSource).toContain("ENTER_CLEAR_MS");
     expect(motionStylesSource).toContain(
-      "animation: scenery-row-rise 340ms var(--sc-ease-out) both",
+      "animation: scenery-row-rise 220ms var(--sc-ease-out) both",
     );
   });
 
