@@ -43,7 +43,6 @@ import {
   createLinkedPullRequestSummaryAtomFamily,
   createPullRequestEnvironmentAtoms,
   createPullRequestStackAtomFamily,
-  LINKED_PULL_REQUEST_IDLE_TTL_MS,
 } from "./pullRequests.ts";
 import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
 import { executeAtomQuery } from "./runtime.ts";
@@ -58,7 +57,7 @@ const trustedRouting = {
 };
 
 describe("pull-request environment atoms", () => {
-  it("releases idle conversation and diff payloads before the generic query TTL", () => {
+  it("retains conversation and diff payloads for the generic query TTL", () => {
     const runtime = Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
       EnvironmentRegistry.EnvironmentRegistry | PullRequestDiffLoader.PullRequestDiffLoader,
       never
@@ -71,12 +70,8 @@ describe("pull-request environment atoms", () => {
       number: 42,
     };
 
-    expect(atoms.activity({ environmentId, input: reference }).idleTTL).toBe(
-      LINKED_PULL_REQUEST_IDLE_TTL_MS,
-    );
-    expect(atoms.diff({ environmentId, input: reference }).idleTTL).toBe(
-      LINKED_PULL_REQUEST_IDLE_TTL_MS,
-    );
+    expect(atoms.activity({ environmentId, input: reference }).idleTTL).toBe(5 * 60_000);
+    expect(atoms.diff({ environmentId, input: reference }).idleTTL).toBe(5 * 60_000);
   });
 });
 

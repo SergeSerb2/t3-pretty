@@ -12,6 +12,7 @@ import {
   retainVisibleTimeline,
 } from "@t3tools/shared/orchestrationV2BoundedSnapshot";
 import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Scope from "effect/Scope";
@@ -360,6 +361,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       ),
     );
 
+  let activeHistoryRequestId: Deferred.Deferred<void> | undefined;
   const setThread = Effect.fn("EnvironmentThreadState.setThread")(function* (
     thread: OrchestrationV2ThreadProjection,
     options?: {
@@ -376,7 +378,12 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     // Atomic with concurrent history meta updates: never get-then-set the whole
     // state when only the projection changes. Bounded installs pass history so
     // projection + cursor persist together in one enqueue.
+    let replacedHistoryRequest: Deferred.Deferred<void> | undefined;
     const next = yield* SubscriptionRef.updateAndGet(state, (previous) => {
+      if (options?.history !== undefined || options?.resetHistory === true) {
+        replacedHistoryRequest = activeHistoryRequestId;
+        activeHistoryRequestId = undefined;
+      }
       const history =
         options?.history !== undefined
           ? options.history
@@ -396,6 +403,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         history,
       };
     });
+    if (replacedHistoryRequest !== undefined) {
+      yield* Deferred.succeed(replacedHistoryRequest, undefined);
+    }
     // Active projections can update many times per second and retain large tool
     // payloads. Persist once the run settles so cache encoding stays off the
     // streaming path. Progressive meta rides along when the window is incomplete.
@@ -414,6 +424,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   });
 
   const setDeleted = Effect.fn("EnvironmentThreadState.setDeleted")(function* () {
+    const historyRequest = activeHistoryRequestId;
+    activeHistoryRequestId = undefined;
+    if (historyRequest !== undefined) yield* Deferred.succeed(historyRequest, undefined);
     yield* Ref.set(awaitingCompletion, false);
     yield* SubscriptionRef.set(state, {
       data: Option.none(),
@@ -644,6 +657,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     // The HTTP load resumes the caller's original interruption behavior.
     return Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
+        const requestId = yield* Deferred.make<void>();
         // Claim the cursor and set loading in one state write. Concurrent callers
         // must not both observe loading=false while a live projection write waits.
         const claimed = yield* SubscriptionRef.modify(
@@ -663,6 +677,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               return [{ _tag: "noop" }, current];
             }
             if (current.history.loading) return [{ _tag: "busy" }, current];
+            activeHistoryRequestId = requestId;
             return [
               current.history.historyCursor,
               { ...current, history: { ...current.history, loading: true, error: null } },
@@ -672,6 +687,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         if (typeof claimed !== "string") return claimed;
         // Completions/failures must no-op after a snapshot replaces this cursor.
         const requestCursor = claimed;
+        // A bounded reset can reuse its cursor. The operation identity also
+        // keeps an older response or cancellation out of a replacement load.
+        const isCurrentRequest = (history: ThreadHistoryMeta) =>
+          activeHistoryRequestId === requestId &&
+          isActiveHistoryRequestCursor(requestCursor, history);
 
         const failLoad = (message: string) =>
           SubscriptionRef.modify(
@@ -682,7 +702,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               ThreadHistoryController.ThreadHistoryLoadEarlierResult,
               EnvironmentThreadState,
             ] =>
-              isActiveHistoryRequestCursor(requestCursor, latest.history)
+              isCurrentRequest(latest.history)
                 ? [
                     { _tag: "error", message },
                     {
@@ -726,8 +746,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                   ThreadHistoryController.ThreadHistoryLoadEarlierResult,
                   EnvironmentThreadState,
                 ] => {
-                  if (!isActiveHistoryRequestCursor(requestCursor, latest.history))
-                    return [{ _tag: "noop" }, latest];
+                  if (!isCurrentRequest(latest.history)) return [{ _tag: "noop" }, latest];
                   if (Option.isNone(latest.data) || latest.status === "deleted")
                     return [{ _tag: "noop" }, { ...latest, history: EMPTY_THREAD_HISTORY_META }];
                   return [
@@ -756,12 +775,25 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
 
         // On Effect interruption only: clear loading when this request cursor is
         // still active. Never mutate stream status/error from the interrupt path.
-        return yield* restore(runLoad).pipe(
+        return yield* restore(
+          Effect.raceFirst(
+            runLoad,
+            Deferred.await(requestId).pipe(
+              Effect.as({
+                _tag: "noop",
+              } satisfies ThreadHistoryController.ThreadHistoryLoadEarlierResult),
+            ),
+          ),
+        ).pipe(
           Effect.onInterrupt(() =>
-            SubscriptionRef.update(state, (latest) => ({
-              ...latest,
-              history: clearActiveHistoryLoading(requestCursor, latest.history),
-            })),
+            SubscriptionRef.update(state, (latest) =>
+              isCurrentRequest(latest.history)
+                ? {
+                    ...latest,
+                    history: clearActiveHistoryLoading(requestCursor, latest.history),
+                  }
+                : latest,
+            ),
           ),
         );
       }),

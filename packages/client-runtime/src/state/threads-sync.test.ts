@@ -1048,6 +1048,105 @@ describe("EnvironmentThreads", () => {
       }),
   );
 
+  it.effect.each(["cancel", "complete", "fail"] as const)(
+    "does not let an older history load %s affect a replacement request for the same cursor",
+    (outcome) =>
+      Effect.gen(function* () {
+        const started = yield* Queue.unbounded<number>();
+        const releaseFirst = yield* Deferred.make<void>();
+        let requests = 0;
+        const harness = yield* makeHarness({
+          cached: BASE_PROJECTION,
+          cachedHistory: { historyCursor: "same-cursor", hasMoreHistory: true },
+          historyHttpClient: HttpClient.make((request) => {
+            const index = ++requests;
+            return Queue.offer(started, index).pipe(
+              Effect.andThen(index === 1 ? Deferred.await(releaseFirst) : Effect.never),
+              Effect.as(
+                HttpClientResponse.fromWeb(
+                  request,
+                  outcome === "fail"
+                    ? new Response("Unavailable", { status: 503 })
+                    : Response.json({
+                        snapshotSequence: CACHED_SNAPSHOT_SEQUENCE,
+                        items: [],
+                        nextCursor: null,
+                        hasMoreHistory: false,
+                      }),
+                ),
+              ),
+            );
+          }),
+        });
+        const first = yield* harness.loadEarlier().pipe(Effect.forkScoped);
+        expect(yield* Queue.take(started)).toBe(1);
+        yield* awaitThreadState(harness.observed, (state) => state.history.loading);
+        yield* Queue.offer(harness.inputs, {
+          ...snapshot(BASE_PROJECTION, CACHED_SNAPSHOT_SEQUENCE),
+          historyCursor: "same-cursor",
+          hasMoreHistory: true,
+          latestLocalTurnOrdinal: 1,
+        });
+        yield* awaitThreadState(harness.observed, (state) => !state.history.loading);
+
+        const second = yield* harness.loadEarlier().pipe(Effect.forkScoped);
+        expect(yield* Queue.take(started)).toBe(2);
+        if (outcome === "cancel") yield* Fiber.interrupt(first);
+        else {
+          yield* Deferred.succeed(releaseFirst, undefined);
+          expect(yield* Fiber.join(first)).toEqual({ _tag: "noop" });
+        }
+        expect((yield* SubscriptionRef.get(harness.threadState)).history).toMatchObject({
+          historyCursor: "same-cursor",
+          hasMoreHistory: true,
+          loading: true,
+          error: null,
+        });
+        expect(yield* harness.loadEarlier()).toEqual({ _tag: "busy" });
+        expect(requests).toBe(2);
+        yield* Fiber.interrupt(second);
+      }),
+  );
+
+  it.effect("stops an obsolete history download when a snapshot replaces its window", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const interrupted = yield* Ref.make(false);
+      const harness = yield* makeHarness({
+        cached: BASE_PROJECTION,
+        cachedHistory: { historyCursor: "obsolete-cursor", hasMoreHistory: true },
+        historyHttpClient: HttpClient.make(() =>
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.onInterrupt(() => Ref.set(interrupted, true)),
+          ),
+        ),
+      });
+      const loading = yield* harness.loadEarlier().pipe(Effect.forkScoped);
+      yield* Deferred.await(started);
+      yield* awaitThreadState(harness.observed, (state) => state.history.loading);
+      yield* Queue.offer(harness.inputs, {
+        ...snapshot(BASE_PROJECTION, CACHED_SNAPSHOT_SEQUENCE + 1),
+        historyCursor: "fresh-cursor",
+        hasMoreHistory: true,
+        latestLocalTurnOrdinal: 1,
+      });
+      yield* awaitThreadState(
+        harness.observed,
+        (state) => state.history.historyCursor === "fresh-cursor",
+      );
+      yield* TestClock.adjust("0 millis");
+
+      expect(yield* Ref.get(interrupted)).toBe(true);
+      expect(yield* Fiber.join(loading)).toEqual({ _tag: "noop" });
+      expect((yield* SubscriptionRef.get(harness.threadState)).history).toMatchObject({
+        historyCursor: "fresh-cursor",
+        loading: false,
+        error: null,
+      });
+    }),
+  );
+
   it.effect("cancels an earlier-history HTTP load when its caller is interrupted", () =>
     Effect.gen(function* () {
       const requestStarted = yield* Deferred.make<void>();

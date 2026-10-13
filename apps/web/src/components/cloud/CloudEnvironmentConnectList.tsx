@@ -98,6 +98,9 @@ export function CloudEnvironmentConnectRows({
   };
 }) {
   const environmentsState = useRelayEnvironmentDiscovery();
+  const discoveryBlocked =
+    Option.isSome(environmentsState.error) &&
+    environmentsState.error.value._tag === "ConnectionBlockedError";
   const registerEnvironment = useAtomCommand(environmentCatalog.register, {
     reportFailure: false,
   });
@@ -105,7 +108,7 @@ export function CloudEnvironmentConnectRows({
     reportFailure: false,
   });
   const refreshDiscoveryWhenIdle = useEffectEvent(async () => {
-    if (environmentsState.refreshing || environmentsState.offline) return;
+    if (environmentsState.refreshing || environmentsState.offline || discoveryBlocked) return;
     await refreshRelayEnvironments();
   });
   const connectRelayEnvironment = useCallback(
@@ -250,7 +253,10 @@ export function CloudEnvironmentConnectRows({
 
   // Poll only until a machine appears.
   const shouldRefreshWhileEmpty =
-    refreshWhileEmpty && visibleEnvironments.length === 0 && !environmentsState.offline;
+    refreshWhileEmpty &&
+    visibleEnvironments.length === 0 &&
+    !environmentsState.offline &&
+    !discoveryBlocked;
 
   useEffect(() => {
     if (!shouldRefreshWhileEmpty) return;

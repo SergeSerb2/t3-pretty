@@ -60,14 +60,20 @@ function status(
 const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
   const networkStatus = yield* SubscriptionRef.make<NetworkStatus>("online");
   const listCalls = yield* Ref.make(0);
+  const interruptedListCalls = yield* Ref.make(0);
   const statusCalls = yield* Ref.make(0);
+  const interruptedStatusCalls = yield* Ref.make(0);
   const listedEnvironments =
     yield* Ref.make<ReadonlyArray<RelayClientEnvironmentRecord>>(environments);
   const listFailure = yield* Ref.make<ManagedRelay.ManagedRelayClientError | null>(null);
   const listBarrier = yield* Ref.make<Deferred.Deferred<void> | null>(null);
   const firstListCall = yield* Deferred.make<void>();
+  const blockedListCall = yield* Deferred.make<void>();
   const secondListCall = yield* Deferred.make<void>();
   const clerkToken = yield* Ref.make<string | null>("clerk-token");
+  const tokenBarrier = yield* Ref.make<Deferred.Deferred<void> | null>(null);
+  const blockedTokenRead = yield* Deferred.make<void>();
+  const interruptedTokenReads = yield* Ref.make(0);
   const sessionIdentity = { accountId: "account-1" };
   const wakeups = yield* SubscriptionRef.make<{
     readonly sequence: number;
@@ -109,14 +115,16 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
         }
         const barrier = yield* Ref.get(listBarrier);
         if (barrier !== null) {
+          yield* Deferred.succeed(blockedListCall, undefined);
           yield* Deferred.await(barrier);
         }
         return yield* Ref.get(listedEnvironments);
-      }),
+      }).pipe(Effect.onInterrupt(() => Ref.update(interruptedListCalls, (count) => count + 1))),
     getEnvironmentStatus: ({ environmentId }) =>
       Ref.update(statusCalls, (current) => current + 1).pipe(
         Effect.andThen(Ref.get(statusRequests)),
         Effect.flatMap((requests) => Deferred.await(requests.get(environmentId)!)),
+        Effect.onInterrupt(() => Ref.update(interruptedStatusCalls, (count) => count + 1)),
       ),
     listDevices: () => Effect.die("unused"),
     createEnvironmentLinkChallenge: () => Effect.die("unused"),
@@ -147,15 +155,24 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
                 token === null ? Option.none() : Option.some(sessionIdentity),
               ),
             ),
-            clerkToken: Ref.get(clerkToken).pipe(
-              Effect.filterOrFail(
-                (token) => token !== null,
-                () =>
-                  new ConnectionBlockedError({
-                    reason: "authentication",
-                    detail: "Signed out.",
-                  }),
-              ),
+            clerkToken: Effect.gen(function* () {
+              const barrier = yield* Ref.get(tokenBarrier);
+              if (barrier !== null) {
+                yield* Deferred.succeed(blockedTokenRead, undefined);
+                yield* Deferred.await(barrier);
+              }
+              return yield* Ref.get(clerkToken).pipe(
+                Effect.filterOrFail(
+                  (token) => token !== null,
+                  () =>
+                    new ConnectionBlockedError({
+                      reason: "authentication",
+                      detail: "Signed out.",
+                    }),
+                ),
+              );
+            }).pipe(
+              Effect.onInterrupt(() => Ref.update(interruptedTokenReads, (count) => count + 1)),
             ),
           }),
         ),
@@ -176,12 +193,18 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
   return {
     layer,
     listCalls,
+    interruptedListCalls,
     statusCalls,
+    interruptedStatusCalls,
     listedEnvironments,
     listFailure,
     listBarrier,
     firstListCall,
+    blockedListCall,
     clerkToken,
+    tokenBarrier,
+    blockedTokenRead,
+    interruptedTokenReads,
     networkStatus,
     secondListCall,
     statusRequests,
@@ -314,6 +337,48 @@ describe("RelayEnvironmentDiscovery", () => {
           expect((yield* SubscriptionRef.get(discovery.state)).offline).toBe(false);
         }).pipe(Effect.provide(harness.layer));
       }),
+  );
+
+  it.effect("observes another offline transition while recovery status probes are pending", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* Effect.gen(function* () {
+        const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+        for (const environment of environments) {
+          const requests = yield* Ref.get(harness.statusRequests);
+          yield* Deferred.succeed(
+            requests.get(environment.environmentId)!,
+            status(environment, "online"),
+          );
+        }
+        yield* discovery.refresh;
+        yield* Effect.yieldNow;
+
+        for (const environment of environments) {
+          const request = yield* Deferred.make<
+            RelayEnvironmentStatusResponse,
+            ManagedRelay.ManagedRelayClientError
+          >();
+          yield* Ref.update(harness.statusRequests, (requests) =>
+            new Map(requests).set(environment.environmentId, request),
+          );
+        }
+        yield* SubscriptionRef.set(harness.networkStatus, "offline");
+        yield* SubscriptionRef.changes(discovery.state).pipe(
+          Stream.filter((state) => state.offline),
+          Stream.runHead,
+        );
+        yield* SubscriptionRef.set(harness.networkStatus, "online");
+        yield* Deferred.await(harness.secondListCall);
+        yield* SubscriptionRef.set(harness.networkStatus, "offline");
+        yield* TestClock.adjust("0 millis");
+
+        const offline = yield* SubscriptionRef.get(discovery.state);
+        expect(offline.offline).toBe(true);
+        expect(offline.refreshing).toBe(false);
+        expect(offline.environments.size).toBe(2);
+      }).pipe(Effect.provide(harness.layer));
+    }),
   );
 
   it.effect("publishes listing failures without rejecting the refresh command", () =>
@@ -804,6 +869,196 @@ describe("RelayEnvironmentDiscovery", () => {
 
         expect((yield* SubscriptionRef.get(discovery.state)).environments.size).toBe(0);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("does not start more status probes after an account change invalidates the sweep", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const manyEnvironments = Array.from({ length: 8 }, (_, index) => ({
+        ...environments[0]!,
+        environmentId: EnvironmentId.make(`environment-${index + 1}`),
+      }));
+      yield* Ref.set(harness.listedEnvironments, manyEnvironments);
+      for (const environment of manyEnvironments) {
+        const request = yield* Deferred.make<
+          RelayEnvironmentStatusResponse,
+          ManagedRelay.ManagedRelayClientError
+        >();
+        yield* Ref.update(harness.statusRequests, (requests) =>
+          new Map(requests).set(environment.environmentId, request),
+        );
+      }
+      yield* Effect.gen(function* () {
+        const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+        const refreshing = yield* Effect.forkChild(discovery.refresh);
+        yield* SubscriptionRef.changes(discovery.state).pipe(
+          Stream.filter((state) => state.environments.size === manyEnvironments.length),
+          Stream.runHead,
+        );
+        yield* TestClock.adjust("0 millis");
+        expect(yield* Ref.get(harness.statusCalls)).toBe(6);
+
+        yield* Ref.set(harness.clerkToken, null);
+        yield* harness.wake("credentials-changed");
+        yield* SubscriptionRef.changes(discovery.state).pipe(
+          Stream.filter((state) => state.environments.size === 0),
+          Stream.runHead,
+        );
+        const requests = yield* Ref.get(harness.statusRequests);
+        for (const environment of manyEnvironments.slice(0, 6)) {
+          yield* Deferred.succeed(
+            requests.get(environment.environmentId)!,
+            status(environment, "online"),
+          );
+        }
+        yield* TestClock.adjust("0 millis");
+
+        expect(yield* Ref.get(harness.statusCalls)).toBe(6);
+        yield* Fiber.join(refreshing);
+        expect((yield* SubscriptionRef.get(discovery.state)).environments.size).toBe(0);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("starts the new account refresh without waiting for obsolete status requests", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* Effect.gen(function* () {
+        const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+        const refreshing = yield* Effect.forkChild(discovery.refresh);
+        yield* SubscriptionRef.changes(discovery.state).pipe(
+          Stream.filter((state) => state.environments.size === environments.length),
+          Stream.runHead,
+        );
+        yield* TestClock.adjust("0 millis");
+        expect(yield* Ref.get(harness.statusCalls)).toBe(2);
+
+        for (const environment of environments) {
+          const request = yield* Deferred.make<
+            RelayEnvironmentStatusResponse,
+            ManagedRelay.ManagedRelayClientError
+          >();
+          yield* Deferred.succeed(request, status(environment, "online"));
+          yield* Ref.update(harness.statusRequests, (requests) =>
+            new Map(requests).set(environment.environmentId, request),
+          );
+        }
+        yield* Ref.set(harness.clerkToken, "replacement-token");
+        yield* harness.wake("credentials-changed");
+        yield* TestClock.adjust("0 millis");
+
+        expect(yield* Ref.get(harness.listCalls)).toBe(2);
+        expect(yield* Ref.get(harness.interruptedStatusCalls)).toBe(2);
+        yield* Fiber.join(refreshing);
+        const current = yield* SubscriptionRef.get(discovery.state);
+        expect(current.refreshing).toBe(false);
+        expect([...current.environments.values()].map((entry) => entry.availability)).toEqual([
+          "online",
+          "online",
+        ]);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect(
+    "starts the new account refresh without waiting for an obsolete membership request",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness();
+        const barrier = yield* Deferred.make<void>();
+        yield* Ref.set(harness.listBarrier, barrier);
+        yield* Effect.gen(function* () {
+          const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+          const requests = yield* Ref.get(harness.statusRequests);
+          for (const environment of environments) {
+            yield* Deferred.succeed(
+              requests.get(environment.environmentId)!,
+              status(environment, "online"),
+            );
+          }
+          const refreshing = yield* Effect.forkChild(discovery.refreshCatalog);
+          yield* Deferred.await(harness.blockedListCall);
+
+          yield* Ref.set(harness.listBarrier, null);
+          yield* Ref.set(harness.clerkToken, "replacement-token");
+          yield* harness.wake("credentials-changed");
+          yield* TestClock.adjust("0 millis");
+
+          expect(yield* Ref.get(harness.listCalls)).toBe(2);
+          expect(yield* Ref.get(harness.interruptedListCalls)).toBe(1);
+          yield* Fiber.join(refreshing);
+          const current = yield* SubscriptionRef.get(discovery.state);
+          expect(current.refreshing).toBe(false);
+          expect(current.loaded).toBe(true);
+          expect(current.environments.size).toBe(2);
+        }).pipe(Effect.provide(harness.layer));
+      }),
+  );
+
+  it.effect(
+    "starts the new account refresh without waiting for an obsolete session token read",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness();
+        const barrier = yield* Deferred.make<void>();
+        yield* Ref.set(harness.tokenBarrier, barrier);
+        yield* Effect.gen(function* () {
+          const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+          const requests = yield* Ref.get(harness.statusRequests);
+          for (const environment of environments) {
+            yield* Deferred.succeed(
+              requests.get(environment.environmentId)!,
+              status(environment, "online"),
+            );
+          }
+          const refreshing = yield* Effect.forkChild(discovery.refreshCatalog);
+          yield* Deferred.await(harness.blockedTokenRead);
+
+          yield* Ref.set(harness.tokenBarrier, null);
+          yield* Ref.set(harness.clerkToken, "replacement-token");
+          yield* harness.wake("credentials-changed");
+          yield* TestClock.adjust("0 millis");
+
+          expect(yield* Ref.get(harness.listCalls)).toBe(1);
+          expect(yield* Ref.get(harness.interruptedTokenReads)).toBe(1);
+          yield* Fiber.join(refreshing);
+          const current = yield* SubscriptionRef.get(discovery.state);
+          expect(current.refreshing).toBe(false);
+          expect(current.loaded).toBe(true);
+        }).pipe(Effect.provide(harness.layer));
+      }),
+  );
+
+  it.effect("settles a stalled session token read and permits a later refresh", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* Effect.gen(function* () {
+        const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+        yield* discovery.refreshCatalog;
+        const barrier = yield* Deferred.make<void>();
+        yield* Ref.set(harness.tokenBarrier, barrier);
+        const refreshing = yield* Effect.forkChild(discovery.refreshCatalog);
+        yield* Deferred.await(harness.blockedTokenRead);
+        yield* TestClock.adjust("30 seconds");
+
+        const stalled = yield* SubscriptionRef.get(discovery.state);
+        expect(stalled.refreshing).toBe(false);
+        expect(stalled.environments.size).toBe(2);
+        expect(Option.getOrThrow(stalled.error)).toMatchObject({
+          _tag: "ConnectionTransientError",
+          reason: "timeout",
+        });
+        expect(yield* Ref.get(harness.interruptedTokenReads)).toBe(1);
+        yield* Fiber.join(refreshing);
+
+        yield* Ref.set(harness.tokenBarrier, null);
+        yield* discovery.refreshCatalog;
+        const recovered = yield* SubscriptionRef.get(discovery.state);
+        expect(recovered.refreshing).toBe(false);
+        expect(Option.isNone(recovered.error)).toBe(true);
+        expect(yield* Ref.get(harness.listCalls)).toBe(2);
+      }).pipe(Effect.provide(harness.layer));
     }),
   );
 });

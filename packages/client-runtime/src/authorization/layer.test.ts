@@ -830,14 +830,10 @@ describe("RemoteEnvironmentAuthorization", () => {
     }),
   );
 
-  it.effect("removes a newly refreshed token when websocket ticket authorization fails", () =>
+  it.effect("removes a newly refreshed token when websocket ticket authentication rejects it", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
-        responses: [
-          Response.json(DESCRIPTOR),
-          accessToken("unusable-access-token"),
-          new Response("endpoint unavailable", { status: 503 }),
-        ],
+        responses: [Response.json(DESCRIPTOR), accessToken("unusable-access-token"), authInvalid()],
       });
 
       yield* Effect.gen(function* () {
@@ -850,6 +846,48 @@ describe("RemoteEnvironmentAuthorization", () => {
       expect((yield* Ref.get(harness.tokens)).has(ENVIRONMENT_ID)).toBe(false);
       expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
       expect(harness.fetch.calls).toHaveLength(3);
+    }),
+  );
+
+  it.effect("retries a transient ticket failure without repeating the fresh token exchange", () =>
+    Effect.gen(function* () {
+      let exchanges = 0;
+      let ticketRequests = 0;
+      const harness = yield* makeHarness({
+        responses: [],
+        fetchFn: (request) => {
+          const url = String(request);
+          if (url.endsWith("/.well-known/t3/environment"))
+            return Promise.resolve(Response.json(DESCRIPTOR));
+          if (url.endsWith("/oauth/token"))
+            return Promise.resolve(accessToken(`fresh-token-${++exchanges}`));
+          ticketRequests += 1;
+          return Promise.resolve(
+            ticketRequests === 1
+              ? new Response("endpoint unavailable", { status: 503 })
+              : websocketTicket("retry-ticket"),
+          );
+        },
+      });
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        const failure = yield* remote
+          .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+          .pipe(Effect.flip);
+        expect(failure).toMatchObject({
+          _tag: "ConnectionTransientError",
+          reason: "remote-unavailable",
+        });
+
+        const authorized = yield* remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID });
+        expect(authorized.socketUrl).toContain("wsTicket=retry-ticket");
+        expect(authorized.httpAuthorization).toMatchObject({ accessToken: "fresh-token-1" });
+      }).pipe(Effect.provide(harness.layer));
+
+      expect(exchanges).toBe(1);
+      expect(ticketRequests).toBe(2);
+      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+      expect(harness.fetch.calls).toHaveLength(4);
     }),
   );
 

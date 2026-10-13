@@ -1,5 +1,8 @@
 import { RELAY_TUNNEL_RELEASED_MESSAGE, type Discovery } from "@t3tools/client-runtime/relay";
-import { ConnectionTransientError } from "@t3tools/client-runtime/connection";
+import {
+  ConnectionBlockedError,
+  ConnectionTransientError,
+} from "@t3tools/client-runtime/connection";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { EnvironmentId, ORCHESTRATION_PROTOCOL_VERSION } from "@t3tools/contracts";
 import * as Option from "effect/Option";
@@ -202,6 +205,27 @@ describe("cloud environment offline reasons", () => {
 });
 
 describe("cloud onboarding discovery", () => {
+  it("pauses empty-list polling after authentication is blocked and permits an explicit retry", async () => {
+    discovery.refresh.mockImplementation(async () => {
+      publish({
+        ...discovery.state!,
+        loaded: false,
+        refreshing: false,
+        error: Option.some(
+          new ConnectionBlockedError({ reason: "authentication", detail: "Sign in again." }),
+        ),
+      });
+      return AsyncResult.success(undefined);
+    });
+    await mount();
+    await advance(15_000);
+    await act(async () => browserWindow.dispatchEvent(new Event("focus")));
+    expect(discovery.refresh).toHaveBeenCalledTimes(1);
+
+    await act(async () => renderer!.root.findByType("button").props.onClick());
+    expect(discovery.refresh).toHaveBeenCalledTimes(2);
+  });
+
   it("waits for authoritative membership before automatically connecting retained rows", async () => {
     discovery.state = {
       environments: linkedMachines,

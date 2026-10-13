@@ -587,8 +587,9 @@ export const make = Effect.gen(function* () {
       Effect.result,
     );
     if (Result.isFailure(socket)) {
-      // A direct address that refuses the socket says nothing about the token.
-      if (endpoint === undefined || socket.failure._tag === "ConnectionBlockedError") {
+      // Ticket outages and proof/configuration failures do not invalidate the
+      // token just exchanged. Keep it for HTTP requests and the next attempt.
+      if (socket.failure._tag === "EnvironmentAuthInvalidError") {
         yield* tokenLock.withPermits(1)(
           removeRejectedToken(input.expectedEnvironmentId, selected.token.accessToken),
         );

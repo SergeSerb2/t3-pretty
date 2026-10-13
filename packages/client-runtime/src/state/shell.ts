@@ -184,6 +184,9 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     status: "synchronizing" as const,
     error: Option.none(),
   }));
+  const setConnecting = SubscriptionRef.update(state, (current) =>
+    Option.isSome(current.error) ? current : { ...current, status: "synchronizing" as const },
+  );
   const setReady = SubscriptionRef.update(state, (current) =>
     current.status === "live" || Option.isSome(current.error)
       ? current
@@ -219,52 +222,60 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   const applyItems = Effect.fn("EnvironmentShellState.applyItems")(function* (
     items: ReadonlyArray<OrchestrationV2ShellStreamItem>,
   ) {
-    const initial = yield* SubscriptionRef.get(state);
-    let waiting = yield* Ref.get(awaitingCompletion);
-    let next = initial;
-    let receivedSnapshot = false;
-    for (const item of items) {
-      if (item.kind === "synchronized") {
-        waiting = false;
-        if (Option.isSome(next.snapshot) && Option.isNone(next.error)) {
-          next = { ...next, status: "live", error: Option.none() };
+    const awaiting = yield* Ref.get(awaitingCompletion);
+    // Failure/status writers use the state semaphore too. Reduce against its
+    // current value so a batch cannot overwrite a concurrently reported error.
+    const applied = yield* SubscriptionRef.modifyEffect(state, (initial) =>
+      Effect.gen(function* () {
+        let waiting = awaiting;
+        let next = initial;
+        let receivedSnapshot = false;
+        for (const item of items) {
+          if (item.kind === "synchronized") {
+            waiting = false;
+            if (Option.isSome(next.snapshot) && Option.isNone(next.error)) {
+              next = { ...next, status: "live", error: Option.none() };
+            }
+            continue;
+          }
+          const nextSnapshot =
+            item.kind === "snapshot"
+              ? mergeShellSnapshotProjects(
+                  Option.getOrNull(next.snapshot),
+                  item.snapshot,
+                  item.resolvedRepositoryIdentityRoots === undefined
+                    ? undefined
+                    : {
+                        resolvedRepositoryIdentityRoots: item.resolvedRepositoryIdentityRoots,
+                      },
+                )
+              : Option.match(next.snapshot, {
+                  onNone: () => null,
+                  onSome: (snapshot) =>
+                    item.sequence > snapshot.snapshotSequence
+                      ? applyShellStreamEvent(snapshot, item)
+                      : snapshot,
+                });
+          if (nextSnapshot === null) continue;
+          receivedSnapshot ||= item.kind === "snapshot";
+          next = {
+            snapshot: Option.some(nextSnapshot),
+            // Buffered values can arrive after this attempt has already failed.
+            // Only the next subscription attempt clears its error.
+            status: Option.isSome(next.error) ? "cached" : waiting ? "synchronizing" : "live",
+            error: next.error,
+          };
         }
-        continue;
-      }
-      const nextSnapshot =
-        item.kind === "snapshot"
-          ? mergeShellSnapshotProjects(
-              Option.getOrNull(next.snapshot),
-              item.snapshot,
-              item.resolvedRepositoryIdentityRoots === undefined
-                ? undefined
-                : {
-                    resolvedRepositoryIdentityRoots: item.resolvedRepositoryIdentityRoots,
-                  },
-            )
-          : Option.match(next.snapshot, {
-              onNone: () => null,
-              onSome: (snapshot) =>
-                item.sequence > snapshot.snapshotSequence
-                  ? applyShellStreamEvent(snapshot, item)
-                  : snapshot,
-            });
-      if (nextSnapshot === null) continue;
-      receivedSnapshot ||= item.kind === "snapshot";
-      next = {
-        snapshot: Option.some(nextSnapshot),
-        // Buffered values can arrive after this attempt has already failed.
-        // Only the next subscription attempt clears its error.
-        status: Option.isSome(next.error) ? "cached" : waiting ? "synchronizing" : "live",
-        error: next.error,
-      };
-    }
+        // A painted snapshot must already be visible to the disconnect flush.
+        if (next !== initial && Option.isSome(next.snapshot)) {
+          yield* Ref.set(latestLiveSnapshot, next.snapshot);
+        }
+        return [{ initial, next, waiting, receivedSnapshot }, next] as const;
+      }),
+    );
+    const { initial, next, waiting, receivedSnapshot } = applied;
     yield* Ref.set(awaitingCompletion, waiting);
     if (next === initial) return;
-    if (Option.isSome(next.snapshot)) {
-      yield* Ref.set(latestLiveSnapshot, next.snapshot);
-    }
-    yield* SubscriptionRef.set(state, next);
     if (receivedSnapshot) {
       const session = yield* Ref.get(activeSubscriptionSession);
       if (session !== null) {
@@ -423,6 +434,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         };
       }),
       {
+        onDefect: (cause) => setStreamError(Cause.squash(cause)),
         onExpectedFailure: (cause) => setStreamError(Cause.squash(cause)),
         retryExpectedFailureAfter: "250 millis",
         resubscribe: foregroundResubscriptions,
@@ -433,7 +445,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     Stream.runForEach((connectionState) => {
       switch (connectionProjectionPhase(connectionState)) {
         case "synchronizing":
-          return setSynchronizing;
+          return setConnecting;
         case "disconnected":
           return setDisconnected;
         case "ready":

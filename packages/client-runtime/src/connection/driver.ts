@@ -121,10 +121,16 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
     );
     if (result._tag === "Failure") {
       if (result.failure._tag === "ConnectionTransientError") transient ??= result.failure;
-      else blocked ??= result.failure;
+      else if (
+        blocked === undefined ||
+        (blocked.reason === "unsupported" && result.failure.reason !== "unsupported")
+      )
+        blocked = result.failure;
     }
     return result;
   });
+  // A preview and an installed server can share an environment ID while
+  // serving different protocols. Keep trying after one rejects this client.
   const selectRoute = Effect.gen(function* () {
     const silent: Array<ConnectionRoute> = [];
     for (const [index, route] of routes.entries()) {
@@ -135,13 +141,10 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
       }
       const result = yield* attempt(route);
       if (result._tag === "Success") return result.success;
-      // An incompatible server is the same server on every route.
-      if (result.failure.reason === "unsupported") return yield* result.failure;
     }
     for (const route of silent) {
       const result = yield* attempt(route);
       if (result._tag === "Success") return result.success;
-      if (result.failure.reason === "unsupported") return yield* result.failure;
     }
     return yield* (
       transient ??
@@ -218,6 +221,12 @@ export const make = Effect.gen(function* () {
             )
           : Effect.succeed(false),
       ),
+      // Background route checks have no supervisor setup timeout around them.
+      // A stalled authorization must release the worker for the next check.
+      Effect.timeoutOrElse({
+        duration: CONNECTION_ESTABLISHMENT_TIMEOUT,
+        orElse: () => Effect.succeed(false),
+      }),
       Effect.withSpan("ConnectionDriver.preflight"),
     );
 
