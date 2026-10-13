@@ -1,10 +1,7 @@
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 /**
- * Settings › Instructions — view and edit the markdown guidance files coding
- * agents load: global per-provider files (`~/.codex/AGENTS.md`,
- * `~/.claude/CLAUDE.md`, …) and per-project files (`AGENTS.md`, `CLAUDE.md`,
- * `CLAUDE.local.md`). File discovery and path resolution live server-side —
- * this panel only ever addresses files by server-minted ids.
+ * T3 prompt guidance and the native instruction files providers load. File
+ * discovery and path resolution live server-side; editors use server-minted ids.
  */
 import type { EditorView } from "@codemirror/view";
 import {
@@ -66,6 +63,8 @@ import { getDriverOption } from "./providerDriverMeta";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
+import { SettingsScopeProvider, useSettingsScope } from "./SettingsScopeContext";
+import { ThreadInstructionsEditor } from "./ThreadInstructionsEditor";
 import "./agentInstructions.css";
 
 const STARTER_TEMPLATE = `# Instructions
@@ -94,28 +93,41 @@ interface OpenTarget {
 
 export function AgentInstructionsSettingsPanel() {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const projectGroups = useSettingsProjectGroups();
-  const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
+  const { search, selectScope, target } = useSettingsScope();
+  const allProjectGroups = useSettingsProjectGroups();
+  const projectGroups = useMemo(
+    () =>
+      allProjectGroups.filter(
+        (group) =>
+          search.machine === undefined ||
+          group.memberProjects.some((member) => member.environmentId === search.machine),
+      ),
+    [allProjectGroups, search.machine],
+  );
   const selectedProject = useMemo(
     () =>
-      projectGroups.find((group) => group.projectKey === selectedProjectKey) ??
+      projectGroups.find((group) => group.projectKey === search.project) ??
       projectGroups[0] ??
       null,
-    [projectGroups, selectedProjectKey],
+    [projectGroups, search.project],
   );
+  const environmentId =
+    target?.environmentId ?? (search.machine === undefined ? primaryEnvironmentId : null);
+  const selectedMember =
+    selectedProject?.memberProjects.find(
+      (member) => member.environmentId === (search.machine ?? selectedProject.environmentId),
+    ) ?? null;
 
   const globalListAtom =
-    primaryEnvironmentId === null
-      ? null
-      : agentInstructionsEnvironment.list({ environmentId: primaryEnvironmentId, input: {} });
+    environmentId === null ? null : agentInstructionsEnvironment.list({ environmentId, input: {} });
   const globalList = useEnvironmentQuery(globalListAtom);
 
   const projectListAtom =
-    selectedProject === null
+    selectedMember === null
       ? null
       : agentInstructionsEnvironment.list({
-          environmentId: selectedProject.environmentId,
-          input: { projectCwd: selectedProject.workspaceRoot },
+          environmentId: selectedMember.environmentId,
+          input: { projectCwd: selectedMember.workspaceRoot },
         });
   const projectList = useEnvironmentQuery(projectListAtom);
 
@@ -149,49 +161,33 @@ export function AgentInstructionsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection
-        {...searchableSetting("agent-instructions-global")}
-        title="Global instructions"
-        icon={<GlobeIcon className="size-4.5 text-muted-foreground" />}
-      >
-        <p className="px-3 pb-2 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
-          Standing guidance each provider loads for every thread, in every project. Stored in the
-          provider&rsquo;s own home directory, so the same rules apply outside T3 Code too.
-        </p>
-        {primaryEnvironmentId === null ? (
-          <InstructionListHint>
-            Connect an environment to manage global instructions.
-          </InstructionListHint>
-        ) : globalList.error !== null ? (
-          <InstructionListHint tone="error">{globalList.error}</InstructionListHint>
-        ) : globalList.data === null ? (
-          <InstructionListSkeleton rows={5} />
-        ) : (
-          globalFiles.map((file) => (
-            <InstructionFileRow
-              key={file.id}
-              file={file}
-              onOpen={() =>
-                setOpenTarget({
-                  file,
-                  environmentId: primaryEnvironmentId,
-                  contextLabel: "Global",
-                })
-              }
-            />
-          ))
-        )}
-      </SettingsSection>
+      <SettingsScopeProvider search={{ machine: search.machine }} onChange={selectScope}>
+        <SettingsSection
+          {...searchableSetting("agent-instructions-global")}
+          title="Global instructions"
+          icon={<GlobeIcon className="size-4.5 text-muted-foreground" />}
+        >
+          <ThreadInstructionsEditor
+            setting="globalThreadInstructions"
+            label="Global instructions"
+            description="Guidance for every prompt in all projects on the selected environments. Sent to all providers and hidden from chat."
+            placeholder="Keep answers short. Explain changes in plain language. Run the relevant tests."
+          />
+        </SettingsSection>
+      </SettingsScopeProvider>
 
       <SettingsSection
         {...searchableSetting("agent-instructions-project")}
         title="Project instructions"
         icon={<FolderIcon className="size-4.5 text-muted-foreground" />}
         headerAction={
-          projectGroups.length > 1 && selectedProject !== null ? (
+          selectedProject !== null ? (
             <Select
               value={selectedProject.projectKey}
-              onValueChange={(value) => setSelectedProjectKey(value as string)}
+              onValueChange={(value) => {
+                if (typeof value === "string")
+                  selectScope({ machine: search.machine, project: value });
+              }}
             >
               <SelectTrigger className="w-56" aria-label="Project">
                 <SelectValue>{selectedProject.displayName}</SelectValue>
@@ -207,34 +203,86 @@ export function AgentInstructionsSettingsPanel() {
           ) : null
         }
       >
-        <p className="px-3 pb-2 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
-          Rules that live at the project root and steer agents only in that workspace. Committed
-          files travel with the repository; local files stay on this machine.
-        </p>
         {selectedProject === null ? (
           <InstructionListHint>
             Add a project to manage per-project instructions.
           </InstructionListHint>
-        ) : projectList.error !== null ? (
-          <InstructionListHint tone="error">{projectList.error}</InstructionListHint>
-        ) : projectList.data === null ? (
-          <InstructionListSkeleton rows={3} />
         ) : (
-          projectFiles.map((file) => (
-            <InstructionFileRow
-              key={file.id}
-              file={file}
-              onOpen={() =>
-                setOpenTarget({
-                  file,
-                  environmentId: selectedProject.environmentId,
-                  projectCwd: selectedProject.workspaceRoot,
-                  contextLabel: selectedProject.displayName,
-                })
-              }
+          <SettingsScopeProvider
+            search={{ machine: search.machine, project: selectedProject.projectKey }}
+            onChange={selectScope}
+          >
+            <ThreadInstructionsEditor
+              setting="projectThreadInstructions"
+              label="Project instructions"
+              description="Extra guidance for this project, sent alongside your global instructions. Hidden from chat."
+              placeholder="Use this project's test command. Follow its naming and code style."
             />
-          ))
+          </SettingsScopeProvider>
         )}
+        <details className="mx-3 mb-3 rounded-lg border border-border/50 sm:mx-4">
+          <summary className="cursor-pointer px-3 py-2.5 text-sm text-muted-foreground">
+            Project instruction files
+          </summary>
+          <p className="px-3 pb-2 text-xs text-muted-foreground">
+            Files in the project root. Committed files travel with the repository.
+          </p>
+          {projectList.error !== null ? (
+            <InstructionListHint tone="error">{projectList.error}</InstructionListHint>
+          ) : selectedMember === null ? null : projectList.data === null ? (
+            <InstructionListSkeleton rows={3} />
+          ) : (
+            projectFiles.map((file) => (
+              <InstructionFileRow
+                key={file.id}
+                file={file}
+                onOpen={() =>
+                  setOpenTarget({
+                    file,
+                    environmentId: selectedMember.environmentId,
+                    projectCwd: selectedMember.workspaceRoot,
+                    contextLabel: selectedProject?.displayName ?? "Project",
+                  })
+                }
+              />
+            ))
+          )}
+        </details>
+      </SettingsSection>
+
+      <SettingsSection
+        {...searchableSetting("agent-instructions-provider")}
+        title="Provider instructions"
+        icon={<FileTextIcon className="size-4.5 text-muted-foreground" />}
+      >
+        <details className="mx-3 mb-3 rounded-lg border border-border/50 sm:mx-4">
+          <summary className="cursor-pointer px-3 py-2.5 text-sm text-muted-foreground">
+            Provider instruction files
+            {globalFiles.some((file) => file.exists)
+              ? ` · ${globalFiles.filter((file) => file.exists).length} configured`
+              : ""}
+          </summary>
+          <p className="px-3 pb-2 text-xs text-muted-foreground">
+            Each provider's own guidance. These files also apply outside T3 Pretty.
+          </p>
+          {environmentId === null ? (
+            <InstructionListHint>
+              Connect an environment to manage provider files.
+            </InstructionListHint>
+          ) : globalList.error !== null ? (
+            <InstructionListHint tone="error">{globalList.error}</InstructionListHint>
+          ) : globalList.data === null ? (
+            <InstructionListSkeleton rows={5} />
+          ) : (
+            globalFiles.map((file) => (
+              <InstructionFileRow
+                key={file.id}
+                file={file}
+                onOpen={() => setOpenTarget({ file, environmentId, contextLabel: "Provider" })}
+              />
+            ))
+          )}
+        </details>
       </SettingsSection>
     </SettingsPageContainer>
   );
@@ -274,7 +322,13 @@ function InstructionListSkeleton({ rows }: { rows: number }) {
 function InstructionFileIcon({ file }: { file: AgentInstructionFile }) {
   const driverOption = getDriverOption(file.driver);
   if (driverOption !== undefined) {
-    return <ProviderInstanceIcon displayName={driverOption.label} driverKind={driverOption.driverKind} className="size-4.5" />;
+    return (
+      <ProviderInstanceIcon
+        displayName={driverOption.label}
+        driverKind={driverOption.driverKind}
+        className="size-4.5"
+      />
+    );
   }
   if (file.fileName.startsWith("CLAUDE")) {
     return <ClaudeAI className="size-4.5" />;

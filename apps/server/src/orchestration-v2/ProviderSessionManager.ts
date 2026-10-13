@@ -41,6 +41,7 @@ import {
 } from "../observability/Metrics.ts";
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import { responseStylePrompt } from "../provider/ResponseStyleInstructions.ts";
+import { threadInstructionsPrompt } from "../provider/ThreadInstructions.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ServerSettings from "../serverSettings.ts";
@@ -360,7 +361,7 @@ export const layerWithOptions = (
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
-      const responseStyleMessage = Effect.fn("ProviderSessionManagerV2.responseStyleMessage")(
+      const instructionMessage = Effect.fn("ProviderSessionManagerV2.instructionMessage")(
         function* (threadId: ThreadId, text: string) {
           if (text.trimStart().startsWith("/")) return text;
           if (Option.isNone(serverSettings)) return responseStylePrompt(text, true);
@@ -368,12 +369,20 @@ export const layerWithOptions = (
             const settings = yield* serverSettings.value.getSettings;
             const thread = yield* projectionStore.getThread(threadId);
             const effective = resolveProjectSettings(settings, thread.projectId).settings;
-            return responseStylePrompt(text, effective.clearAgentResponses);
+            return responseStylePrompt(
+              threadInstructionsPrompt(
+                text,
+                settings.globalThreadInstructions,
+                effective.projectThreadInstructions,
+              ),
+              effective.clearAgentResponses,
+            );
           }).pipe(
             Effect.catch((cause) =>
-              Effect.logWarning("Failed to read response style setting", { threadId, cause }).pipe(
-                Effect.as(text),
-              ),
+              Effect.logWarning("Failed to read thread instruction settings", {
+                threadId,
+                cause,
+              }).pipe(Effect.as(text)),
             ),
           );
         },
@@ -1848,7 +1857,7 @@ export const layerWithOptions = (
                     ),
                   ),
                   () =>
-                    responseStyleMessage(input.threadId, input.message.text).pipe(
+                    instructionMessage(input.threadId, input.message.text).pipe(
                       Effect.flatMap((text) =>
                         runtime
                           .startTurn({ ...input, message: { ...input.message, text } })
@@ -1868,7 +1877,7 @@ export const layerWithOptions = (
           steerTurn: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
               Effect.andThen(
-                responseStyleMessage(input.threadId, input.message.text).pipe(
+                instructionMessage(input.threadId, input.message.text).pipe(
                   Effect.flatMap((text) =>
                     runtime
                       .steerTurn({ ...input, message: { ...input.message, text } })
