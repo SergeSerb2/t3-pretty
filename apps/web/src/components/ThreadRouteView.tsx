@@ -204,7 +204,9 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   }
 
   return (
-    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
+    // overflow-clip, not overflow-hidden: a scrollport here lets Chromium trap
+    // the chrome glass's backdrop-filter, so it randomly paints solid.
+    <SidebarInset className="h-svh min-h-0 overflow-clip overscroll-y-none md:h-dvh">
       {view}
     </SidebarInset>
   );
