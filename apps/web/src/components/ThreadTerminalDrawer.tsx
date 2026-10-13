@@ -296,6 +296,8 @@ export function terminalThemeFromApp(mountElement?: HTMLElement | null): Ghostty
     ),
     palette: TERMINAL_PALETTES[isDark ? "dark" : "light"],
     selectionBackground: terminalSelection,
+    // Under World Scenery the drawer's glass plate shows through the cells.
+    transparentBackground: document.documentElement.hasAttribute("data-scenery-on"),
   };
 }
 
@@ -998,7 +1000,7 @@ export function TerminalViewport({
       });
       themeObserver.observe(document.documentElement, {
         attributes: true,
-        attributeFilter: ["class", "style"],
+        attributeFilter: ["class", "style", "data-scenery-on"],
       });
       setupCleanups.push(() => themeObserver.disconnect());
 

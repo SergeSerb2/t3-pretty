@@ -56,7 +56,7 @@ describe("terminalThemeFromApp", () => {
   });
 
   it("uses terminal colors inherited by the mount instead of a light document theme", () => {
-    const root = { classList: { contains: () => false } };
+    const root = { classList: { contains: () => false }, hasAttribute: () => false };
     const body = {};
     const drawer = {};
     let canvasColor = "#000";
@@ -113,6 +113,7 @@ describe("terminalThemeFromApp", () => {
     expect(theme.background).toEqual({ r: 0, g: 0, b: 0 });
     expect(theme.foreground).toEqual({ r: 255, g: 255, b: 255 });
     expect(theme.cursor).toEqual({ r: 221, g: 221, b: 221 });
+    expect(theme.transparentBackground).toBe(false);
   });
 });
 
