@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { View } from "react-native";
 import { parseMarkdownWithOptions } from "react-native-nitro-markdown/headless";
+import { decodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 
 import {
   nativeMarkdownWithHtml,
@@ -61,6 +62,13 @@ export function SelectableMarkdownText({
     () => ({ onLinkPress, onLinkLongPress }),
     [onLinkPress, onLinkLongPress],
   );
+  const contextClipboard = useMemo(
+    () => ({
+      fragment: contextClipboardFragment ?? "",
+      records: decodeComposerContextFragment(contextClipboardFragment)?.records ?? [],
+    }),
+    [contextClipboardFragment],
+  );
   const chunks = useMemo(() => {
     const parsedDocument = nativeMarkdownWithAuthoredWindowsPaths(
       nativeMarkdownWithHtml(
@@ -91,45 +99,45 @@ export function SelectableMarkdownText({
   );
 
   return (
-    <MarkdownContextClipboardContext.Provider value={contextClipboardFragment ?? ""}>
+    <MarkdownContextClipboardContext.Provider value={contextClipboard}>
       <MarkdownImageRendererContext.Provider value={renderImage ?? null}>
         <MarkdownLinkCallbacksContext.Provider value={linkCallbacks}>
           <MarkdownFileContextMenuContext.Provider value={fileContextMenuHandlers}>
-          {/* A percentage width here creates a cyclic intrinsic measurement inside
+            {/* A percentage width here creates a cyclic intrinsic measurement inside
           shrink-to-fit containers such as user-message bubbles. Yoga then gives
           the native text node an unbounded second pass and the parent only clips
           the resulting single-line width instead of reflowing it. */}
-          <View style={{ flexShrink: 1, minWidth: 0, marginTop, marginBottom }}>
-            {chunks.map((chunk, index) => {
-              const content =
-                chunk.kind === "rich" ? (
-                  <NativeMarkdownBlock
-                    node={chunk.node}
-                    skills={skills}
-                    textStyle={textStyle}
-                    highlightCode={highlightCode}
-                    highlightCodeEnabled={highlightCodeEnabled}
-                    onLinkPress={onLinkPress}
-                  />
-                ) : (
-                  <NativeMarkdownSelectableText
-                    runs={chunk.runs}
-                    textStyle={textStyle}
-                    onLinkPress={onLinkPress}
-                    onLinkLongPress={onLinkLongPress}
-                  />
-                );
+            <View style={{ flexShrink: 1, minWidth: 0, marginTop, marginBottom }}>
+              {chunks.map((chunk, index) => {
+                const content =
+                  chunk.kind === "rich" ? (
+                    <NativeMarkdownBlock
+                      node={chunk.node}
+                      skills={skills}
+                      textStyle={textStyle}
+                      highlightCode={highlightCode}
+                      highlightCodeEnabled={highlightCodeEnabled}
+                      onLinkPress={onLinkPress}
+                    />
+                  ) : (
+                    <NativeMarkdownSelectableText
+                      runs={chunk.runs}
+                      textStyle={textStyle}
+                      onLinkPress={onLinkPress}
+                      onLinkLongPress={onLinkLongPress}
+                    />
+                  );
 
-              return (
-                <View
-                  key={chunk.key}
-                  style={{ paddingTop: nativeMarkdownChunkSpacing(chunks[index - 1], chunk) }}
-                >
-                  {content}
-                </View>
-              );
-            })}
-          </View>
+                return (
+                  <View
+                    key={chunk.key}
+                    style={{ paddingTop: nativeMarkdownChunkSpacing(chunks[index - 1], chunk) }}
+                  >
+                    {content}
+                  </View>
+                );
+              })}
+            </View>
           </MarkdownFileContextMenuContext.Provider>
         </MarkdownLinkCallbacksContext.Provider>
       </MarkdownImageRendererContext.Provider>

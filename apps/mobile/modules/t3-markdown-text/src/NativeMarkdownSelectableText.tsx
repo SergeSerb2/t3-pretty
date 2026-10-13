@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo } from "react";
-import { decodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
+import type { decodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import {
   findNodeHandle,
   Image,
@@ -29,7 +29,10 @@ import {
 import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import { contextChipPresentation } from "./nativeMarkdownText";
 
-export const MarkdownContextClipboardContext = createContext("");
+export const MarkdownContextClipboardContext = createContext<{
+  readonly fragment: string;
+  readonly records: NonNullable<ReturnType<typeof decodeComposerContextFragment>>["records"];
+}>({ fragment: "", records: [] });
 
 export interface MarkdownFileContextMenuHandlers {
   readonly fileContextMenu: (href: string) => MarkdownFileContextMenu | undefined;
@@ -212,10 +215,8 @@ export function NativeMarkdownSelectableText(props: {
   const onLinkLongPress = props.onLinkLongPress ?? linkCallbacks.onLinkLongPress;
   const colorScheme = useColorScheme();
   const menu = useContext(MarkdownFileContextMenuContext);
-  const contextClipboardFragment = useContext(MarkdownContextClipboardContext);
-  const contextRecords = useMemo(
-    () => decodeComposerContextFragment(contextClipboardFragment)?.records ?? [],
-    [contextClipboardFragment],
+  const { fragment: contextClipboardFragment, records: contextRecords } = useContext(
+    MarkdownContextClipboardContext,
   );
   const containsInlineIcon = props.runs.some(
     (run) =>

@@ -1,0 +1,13 @@
+diff --git a/build/ExpoConfigLoader.js b/build/ExpoConfigLoader.js
+index b668a96..d85d4ad 100644
+--- a/build/ExpoConfigLoader.js
++++ b/build/ExpoConfigLoader.js
+@@ -163,7 +163,7 @@ function installModuleCaptureHook() {
+             filename,
+             content
+         });
+-        return originalCompile.call(this, content, filename);
++        return originalCompile.apply(this, arguments);
+     };
+     return {
+         getCapturedModules: ()=>capturedModules,

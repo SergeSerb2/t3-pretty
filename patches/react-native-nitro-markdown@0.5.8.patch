@@ -68,3 +68,19 @@ diff --git a/cpp/md4c/md4c.c b/cpp/md4c/md4c.c
          right_boundary_ok = TRUE;
      } else {
          MD_MARK* right_mark;
+diff --git a/cpp/core/MD4CParser.cpp b/cpp/core/MD4CParser.cpp
+--- a/cpp/core/MD4CParser.cpp
++++ b/cpp/core/MD4CParser.cpp
+@@ -541,3 +541,11 @@
+     impl_->flushText();
+-    return impl_->root;
++    // The headless bridge keeps its parser for the app lifetime. Return sole
++    // ownership of this completed tree instead of retaining another native AST
++    // after the bridge has serialized it and the caller releases its result.
++    auto completed = std::move(impl_->root);
++    while (!impl_->nodeStack.empty()) impl_->nodeStack.pop();
++    std::string{}.swap(impl_->currentText);
++    impl_->inputText = nullptr;
++    impl_->inputTextSize = 0;
++    return completed;
+ }

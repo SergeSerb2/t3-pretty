@@ -20,7 +20,6 @@ import {
   type ReactNode,
 } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { unified } from "unified";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 type Listener = (event: { readonly data: { readonly closing: boolean } }) => void;
@@ -48,7 +47,11 @@ const harness = vi.hoisted(() => ({
   appState: "active",
   appListeners: new Set<() => void>(),
   nativeRenders: 0,
-  nativeMarkdown: "",
+  nativeParses: 0,
+  nativeDocument: "",
+  nativeConfigurations: [] as string[],
+  nativeChipIds: [] as string[],
+  nativePresses: [] as Array<() => void>,
 }));
 vi.mock("@react-navigation/native", () => ({ useNavigation: () => useContext(Navigation) }));
 vi.mock("../../state/threads", () => ({
@@ -63,11 +66,48 @@ vi.mock("../../state/use-thread-selection", () => ({
   useThreadSelection: () => ({ selectedThreadDetailRef: null }),
 }));
 vi.mock("react-native", () => ({
-  Platform: { OS: "ios" },
-  StyleSheet: { hairlineWidth: 1 },
+  Platform: {
+    OS: "ios",
+    select: (values: { ios?: unknown; default?: unknown }) => values.ios ?? values.default,
+  },
+  StyleSheet: {
+    hairlineWidth: 1,
+    create: (value: unknown) => value,
+    flatten: (value: unknown) => Object.assign({}, ...[value].flat(Infinity).filter(Boolean)),
+  },
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ActionSheetIOS: {},
-  Share: {},
+  Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Pressable: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  Image: Object.assign(() => null, { resolveAssetSource: (value: unknown) => value }),
+  useColorScheme: () => "light",
+  findNodeHandle: () => null,
+  Linking: { openURL: () => undefined },
+  codegenNativeComponent:
+    (name: string) =>
+    ({
+      children,
+      text,
+      contextClipboardConfig,
+      nativeID,
+      onPress,
+    }: {
+      children?: ReactNode;
+      text?: string;
+      contextClipboardConfig?: string;
+      nativeID?: string;
+      onPress?: () => void;
+    }) => {
+      if (name === "T3MarkdownText") {
+        harness.nativeRenders++;
+        if (contextClipboardConfig) harness.nativeConfigurations.push(contextClipboardConfig);
+      }
+      if (nativeID?.startsWith("t3-chip:")) {
+        harness.nativeChipIds.push(nativeID);
+        if (onPress) harness.nativePresses.push(onPress);
+      }
+      return <span>{text ?? children}</span>;
+    },
   AppState: {
     get currentState() {
       return harness.appState;
@@ -78,29 +118,70 @@ vi.mock("react-native", () => ({
     },
   },
 }));
-vi.mock("react-native-enriched-markdown", () => ({
-  EnrichedMarkdownText: ({ markdown }: { readonly markdown: string }) => {
-    harness.nativeRenders++;
-    harness.nativeMarkdown = markdown;
-    return null;
+vi.mock(
+  "react-native-nitro-markdown/headless",
+  () => import("../../../node_modules/react-native-nitro-markdown/src/headless.ts"),
+);
+vi.mock("react-native-nitro-modules", () => ({
+  NitroModules: {
+    createHybridObject: () => ({
+      // The native boundary supplies one code block or paragraph for this
+      // workload. Headless JSON decoding and the owned renderer stay real.
+      parseWithOptions: (markdown: string) => {
+        harness.nativeParses++;
+        if (harness.nativeDocument) return harness.nativeDocument;
+        const code = markdown.startsWith("```tsx\n");
+        return JSON.stringify({
+          type: "document",
+          children: [
+            code
+              ? {
+                  type: "code_block",
+                  language: "tsx",
+                  content: markdown.slice(7),
+                  beg: 0,
+                  end: markdown.length,
+                }
+              : {
+                  type: "paragraph",
+                  beg: 0,
+                  end: markdown.length,
+                  children: [{ type: "text", content: markdown, beg: 0, end: markdown.length }],
+                },
+          ],
+        });
+      },
+    }),
   },
 }));
-vi.mock("../settings/appearance/AppearancePreferencesProvider", () => ({
-  useAppearancePreferences: () => ({ themeAppearance: "light" }),
+vi.mock("expo", () => ({ requireOptionalNativeModule: () => null }));
+vi.mock("expo-symbols", () => ({ SymbolView: () => null }));
+vi.mock("expo-clipboard", () => ({ setStringAsync: () => Promise.resolve() }));
+vi.mock("expo-haptics", () => ({
+  impactAsync: () => Promise.resolve(),
+  ImpactFeedbackStyle: { Light: "light" },
 }));
-vi.mock("../../components/AndroidAnchoredMenu", () => ({ AndroidAnchoredMenu: () => null }));
-vi.mock("../../native/useEnrichedLinkVariants", () => ({
-  useEnrichedLinkVariants: () => ({ linkVariants: {}, linkPillContent: {} }),
+vi.mock("../../../modules/t3-markdown-text/src/markdownFileIcons", () => ({
+  markdownFileIconSource: () => null,
+  markdownIconAssetUri: () => undefined,
 }));
-vi.mock("../../lib/copyTextWithHaptic", () => ({ copyTextWithHaptic: () => undefined }));
+vi.mock("../../../modules/t3-markdown-text/src/markdownLinkIcons", () => ({
+  markdownLinkIconSource: () => null,
+}));
+vi.mock("../../lib/showMarkdownLinkActions", () => ({
+  showMarkdownLinkActionSheet: () => undefined,
+}));
+vi.mock("../review/shikiReviewHighlighter", () => ({
+  highlightCodeSnippet: () => Promise.resolve([]),
+}));
 
 import { useThreadProjection, useThreadVisibleTurnItems } from "../../state/use-thread-detail";
-import { MobileEnrichedMarkdownText } from "../../native/EnrichedMarkdownText";
+import { SelectableMarkdownText } from "../../native/SelectableMarkdownText.ios";
 import type { NativeMarkdownTextStyle } from "../../native/SelectableMarkdownText.types";
 import { useStackRouteVisible } from "../../native/use-stack-route-visible";
 import { NativeWorkspaceTabActivityContext } from "../../native/v5-workspace-context";
-import * as document from "../../lib/markdownDocument";
 import * as activity from "../../lib/threadActivity";
+import * as contextClipboard from "@t3tools/shared/composerContextClipboard";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { visibleUserMessageIds } from "../../state/acknowledged-thread-messages.logic";
 import { useThreadFeedPresentation } from "../../state/use-thread-feed-presentation";
@@ -127,8 +208,7 @@ const style: NativeMarkdownTextStyle = {
   headingFontFamily: "sans",
   boldFontFamily: "sans",
 };
-const largeBody =
-  "```tsx\n" + 'const component = <Widget label="example" />;\n'.repeat(2500) + "```\n";
+const largeBody = "```tsx\n" + 'const component = <Widget label="example" />;\n'.repeat(2500);
 const EMPTY_MESSAGES: readonly QueuedThreadMessage[] = [];
 function items(
   id: string,
@@ -210,7 +290,9 @@ function DetailProbe(props: {
     },
     [],
   );
-  return <MobileEnrichedMarkdownText markdown={props.text} textStyle={style} />;
+  return (
+    <SelectableMarkdownText markdown={props.text} textStyle={style} highlightCodeEnabled={false} />
+  );
 }
 function ThreadProbe(props: { readonly id: string }) {
   const visible = useStackRouteVisible();
@@ -308,6 +390,11 @@ beforeEach(() => {
   unmounts = 0;
   harness.appState = "active";
   harness.nativeRenders = 0;
+  harness.nativeParses = 0;
+  harness.nativeDocument = "";
+  harness.nativeConfigurations.length = 0;
+  harness.nativeChipIds.length = 0;
+  harness.nativePresses.length = 0;
   harness.atomFor = (id, kind) => fixtures.get(id)![kind];
 });
 afterEach(() => {
@@ -320,16 +407,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("does not repeat real Markdown parsing and native prop work for three retained hidden streams", () => {
+it("does not repeat owned-renderer native parser calls and native prop work for three retained hidden streams", async () => {
   const ids = ["active", "hidden-1", "hidden-2", "hidden-3"];
   mount(ids, { body: largeBody });
+  await act(async () => undefined);
   for (const id of ids.slice(1)) transition(id, "transitionEnd", true);
-  const parser = vi.spyOn(document, "markdownWithHtml");
+  const parsesBefore = harness.nativeParses;
   const builder = vi.spyOn(activity, "buildThreadFeed");
   const before = harness.nativeRenders;
   const beforeCommits = commits.get("active")!;
   stream(ids, 20, largeBody);
-  expect(parser).toHaveBeenCalledTimes(20);
+  expect(harness.nativeParses - parsesBefore).toBe(20);
   expect(harness.nativeRenders - before).toBe(20);
   expect(builder).toHaveBeenCalledTimes(20);
   expect(commits.get("active")! - beforeCommits).toBe(20);
@@ -338,123 +426,124 @@ it("does not repeat real Markdown parsing and native prop work for three retaine
   expect(unmounts).toBe(0);
 });
 
-it("does not build a redundant JavaScript Markdown AST for a large visible TSX stream", () => {
-  mount(["visible"], { body: largeBody });
-  const processor = Object.getPrototypeOf(unified()) as ReturnType<typeof unified>;
-  const astParser = vi.spyOn(processor, "parse");
-  stream(["visible"], 20, largeBody);
-  expect(astParser.mock.calls.length).toBe(0);
-  expect(harness.nativeMarkdown).toBe(largeBody + "update 20");
+it("decodes a large user context once for an owned-renderer table", () => {
+  harness.nativeDocument = JSON.stringify({
+    type: "document",
+    children: [
+      {
+        type: "table",
+        children: Array.from({ length: 10 }, (_, row) => ({
+          type: "table_row",
+          children: Array.from({ length: 10 }, (_, column) => ({
+            type: "table_cell",
+            children: [{ type: "text", content: `cell ${row}:${column}` }],
+          })),
+        })),
+      },
+    ],
+  });
+  const fragment = JSON.stringify({
+    version: 1,
+    source: { environmentId },
+    records: Array.from({ length: 16 }, (_, index) => ({
+      version: 1,
+      contextId: `terminal-${index}`,
+      kind: "terminal",
+      label: "Terminal",
+      terminalId: "terminal",
+      terminalLabel: "Terminal",
+      lineStart: 0,
+      lineEnd: 100,
+      text: "x".repeat(64000),
+    })),
+  });
+  expect(contextClipboard.decodeComposerContextFragment(fragment)?.records).toHaveLength(16);
+  const decode = vi.spyOn(contextClipboard, "decodeComposerContextFragment");
+  const start = performance.now();
+  act(() =>
+    root.render(
+      <SelectableMarkdownText
+        markdown="context table"
+        textStyle={style}
+        contextClipboardFragment={fragment}
+        highlightCodeEnabled={false}
+      />,
+    ),
+  );
+  const elapsed = performance.now() - start;
+  console.info(
+    `context table: cells=100 fragmentChars=${fragment.length} decodes=${decode.mock.calls.length} ms=${elapsed.toFixed(2)}`,
+  );
+  expect(decode).toHaveBeenCalledTimes(1);
 });
 
-it.each([
-  { name: "backtick fence", body: '```tsx\n<img src="literal.png">\n```\n', parse: false },
-  {
-    name: "tilde fence with a longer closing",
-    body: '~~~tsx\n<img src="literal.png">\n~~~~\n',
-    parse: false,
-  },
-  {
-    name: "multiline CRLF code",
-    body: 'Before\r\n\r\n```tsx\r\n<img\r\n src="literal.png">\r\n```\r\n',
-    parse: false,
-  },
-  { name: "incomplete streaming fence", body: '```tsx\n<img src="literal.png">\n', parse: false },
-  {
-    name: "shorter closing stays in code",
-    body: '````tsx\n<img src="literal.png">\n```\n<img src="still-code.png">\n',
-    parse: false,
-  },
-  {
-    name: "mismatched closing stays in code",
-    body: '```tsx\n<img src="literal.png">\n~~~\n<img src="still-code.png">\n',
-    parse: false,
-  },
-  {
-    name: "HTML-like code fence info",
-    body: "```tsx <Widget>\nconst value = 1;\n```\n",
-    parse: false,
-  },
-  {
-    name: "HTML after a longer closing",
-    body: '```tsx\n<img src="literal.png">\n````\n\n<img src="outside.png">\n',
-    parse: true,
-    converted: "outside.png",
-  },
-  {
-    name: "three-space closing exposes HTML",
-    body: '```tsx\n<img src="literal.png">\n   ```\n\n<img src="outside.png">\n',
-    parse: true,
-    converted: "outside.png",
-  },
-  {
-    name: "indented opening fence",
-    body: '  ```tsx\n  <img src="literal.png">\n  ```\n',
-    parse: true,
-  },
-  { name: "blockquote fence", body: '> ```tsx\n> <img src="literal.png">\n> ```\n', parse: true },
-  {
-    name: "list nested fence",
-    body: '- Example\n\n  ```tsx\n  <img src="literal.png">\n  ```\n',
-    parse: true,
-  },
-  {
-    name: "reference destination resembles a fence",
-    body: '[ref]:\n```tsx\n\n<img src="outside.png">\n',
-    parse: true,
-  },
-  {
-    name: "reference title contains a fence line",
-    body: '[ref]: /foo "title\n```tsx\nend"\n\n<img src="outside.png">\n',
-    parse: true,
-  },
-  {
-    name: "invalid backtick info",
-    body: '```tsx `bad`\n<img src="outside.png">\n',
-    parse: true,
-    converted: "outside.png",
-  },
-  { name: "inline code", body: 'Use `<img src="literal.png">` here.\n', parse: true },
-  {
-    name: "reference before real HTML",
-    body: '[ref]: /foo\n\n```tsx\n<img src="literal.png">\n```\n\n<img src="outside.png">\n',
-    parse: true,
-    converted: "outside.png",
-  },
-  {
-    name: "multiline real HTML",
-    body: '```tsx\nconst value = 1;\n```\n\n<img\n src="outside.png">\n',
-    parse: true,
-    converted: "outside.png",
-  },
-  {
-    name: "control prefix before a fence",
-    body: '\u0000```tsx\n<img src="outside.png">\n',
-    parse: true,
-    converted: "outside.png",
-  },
-])(
-  "preserves native Markdown output and parser fallback for $name",
-  ({ body, parse, converted }) => {
-    const processor = Object.getPrototypeOf(unified()) as ReturnType<typeof unified>;
-    const astParser = vi.spyOn(processor, "parse");
-    mount(["visible"], { body });
-    if (parse) expect(astParser).toHaveBeenCalledTimes(1);
-    else expect(astParser.mock.calls.length).toBe(0);
-    if (converted) {
-      expect(harness.nativeMarkdown).toContain(`![](<${converted}>)`);
-      expect(harness.nativeMarkdown).not.toContain(`<img src="${converted}">`);
-    } else expect(harness.nativeMarkdown).toBe(body + "update 0");
-  },
-);
-
-it("falls back for BOM/control normalization before deciding whether HTML is inside a fence", () => {
-  const processor = Object.getPrototypeOf(unified()) as ReturnType<typeof unified>;
-  const astParser = vi.spyOn(processor, "parse");
-  const body = "\ufeff```\n~~~~\n[ref]:\n```tsx\n```\n> prose\n</details>\n```\r";
-  mount(["visible"], { body });
-  expect(astParser).toHaveBeenCalledTimes(1);
-  expect(harness.nativeMarkdown).not.toContain("</details>");
+it("shares current context records while preserving native copy ranges and link actions", () => {
+  const href = "t3-context://v1/file/file-0";
+  harness.nativeDocument = JSON.stringify({
+    type: "document",
+    children: [
+      {
+        type: "paragraph",
+        children: [{ type: "link", href, children: [{ type: "text", content: "Attachment" }] }],
+      },
+    ],
+  });
+  const fragment = (mimeType?: string) =>
+    JSON.stringify({
+      version: 1,
+      source: { environmentId },
+      records: mimeType
+        ? [
+            {
+              version: 1,
+              contextId: "file-0",
+              kind: "file",
+              label: "Attachment",
+              attachmentId: "attachment-0",
+              name: "attachment.bin",
+              mimeType,
+              sizeBytes: 10,
+            },
+          ]
+        : [],
+    });
+  const decode = vi.spyOn(contextClipboard, "decodeComposerContextFragment");
+  const open = vi.fn();
+  function renderContext(value?: string, textStyle = style) {
+    harness.nativeConfigurations.length = 0;
+    harness.nativeChipIds.length = 0;
+    harness.nativePresses.length = 0;
+    act(() =>
+      root.render(
+        <SelectableMarkdownText
+          markdown="context link"
+          textStyle={textStyle}
+          contextClipboardFragment={value}
+          onLinkPress={open}
+          highlightCodeEnabled={false}
+        />,
+      ),
+    );
+    const config = JSON.parse(harness.nativeConfigurations.at(-1)!);
+    expect(config.fragment).toBe(value ?? "");
+    expect(config.ranges).toEqual([{ start: 0, end: 1, text: `[Attachment](${href})` }]);
+    return JSON.parse(harness.nativeChipIds.at(-1)!.slice("t3-chip:".length));
+  }
+  const file = fragment("text/plain");
+  expect(renderContext(file)).toMatchObject({ accent: "#0090cd", fontSize: expect.closeTo(11.2) });
+  expect(renderContext(file, { ...style, fontSize: 20 })).toMatchObject({
+    accent: "#0090cd",
+    fontSize: 16,
+  });
+  expect(decode).toHaveBeenCalledTimes(1);
+  expect(renderContext(fragment("video/mp4"))).toMatchObject({ accent: "#d06217" });
+  expect(decode).toHaveBeenCalledTimes(2);
+  expect(renderContext(fragment())).toMatchObject({ accent: "#0090cd" });
+  expect(renderContext("{invalid")).toMatchObject({ accent: "#0090cd" });
+  expect(renderContext()).toMatchObject({ accent: "#0090cd" });
+  expect(decode).toHaveBeenCalledTimes(5);
+  act(() => harness.nativePresses.at(-1)!());
+  expect(open).toHaveBeenCalledExactlyOnceWith(href);
 });
 
 it("keeps the first hide render live, then resumes latest content at interactive reveal start with local state intact", () => {
