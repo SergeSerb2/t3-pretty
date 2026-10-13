@@ -34,6 +34,9 @@ const harness = vi.hoisted(() => {
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => harness.navigation,
 }));
+vi.mock("react-native", () => ({
+  AppState: { currentState: "active", addEventListener: () => ({ remove: () => undefined }) },
+}));
 
 import { useAtomValueWhileVisible, useHomeRouteVisible } from "./home-route-visibility";
 

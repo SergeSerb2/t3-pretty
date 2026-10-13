@@ -123,9 +123,38 @@ export function markdownHtmlContent(content: string): string {
   });
 }
 
+const HTML_CANDIDATE = /<(?:!--|\/?[a-z])/i;
+
+function needsHtmlConversion(markdown: string): boolean {
+  if (!HTML_CANDIDATE.test(markdown)) return false;
+  // The parser normalizes BOM/control input before recognizing blocks.
+  // oxlint-disable-next-line no-control-regex -- Control normalization makes fence recognition ambiguous.
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufeff]/.test(markdown)) return true;
+  let closingFence: RegExp | null = null;
+  for (const line of markdown.split(/\r\n?|\n/)) {
+    if (closingFence) {
+      if (closingFence.test(line)) closingFence = null;
+      continue;
+    }
+    // A container or reference definition can change how later fence lines
+    // parse. Only unmistakable top-level fences bypass the Markdown parser.
+    if (/^(?:[ \t]+(?:`{3,}|~{3,})|[ \t]*(?:>|[-+*](?:[ \t]|$)|\d+[.)](?:[ \t]|$)|\[))/.test(line))
+      return true;
+    const opening = /^(`{3,}|~{3,})(.*)$/.exec(line);
+    if (opening) {
+      const fence = opening[1]!;
+      if (fence[0] === "`" && opening[2]!.includes("`")) return true;
+      closingFence = new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[ \\t]*$`);
+      continue;
+    }
+    if (HTML_CANDIDATE.test(line)) return true;
+  }
+  return false;
+}
+
 /** Convert parsed HTML fragments only, preserving Markdown code and source around them. */
 export function markdownWithHtml(markdown: string): string {
-  if (!/<(?:!--|\/?[a-z])/i.test(markdown)) return markdown;
+  if (!needsHtmlConversion(markdown)) return markdown;
   const edits: Array<{ start: number; end: number; content: string }> = [];
   const visit = (node: MarkdownNode) => {
     if (node.type === "html") {
