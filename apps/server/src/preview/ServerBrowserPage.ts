@@ -204,15 +204,21 @@ export const snapshot = async (input: {
       "The page changed while capturing its snapshot. Take another snapshot.",
     );
   }
-  // Rewriting refs lengthens the text, so cap it again for the contract bound.
-  const accessibilityTree = tree
-    .slice(0, MAX_VISIBLE_TEXT_LENGTH)
-    .replace(/\[ref=((?:f\d+)?e\d+)\]/g, (_match, nativeRef: string) => {
-      const ref = `t3-${generation}-${nativeRef}`;
-      state.refs.set(ref, nativeRef);
-      return `[ref=${ref}]`;
-    })
-    .slice(0, MAX_VISIBLE_TEXT_LENGTH);
+  // Rewriting refs lengthens the text, so cut at a line boundary under the contract
+  // cap afterwards and register only the refs the agent can actually see.
+  const rewritten = tree.replace(
+    /\[ref=((?:f\d+)?e\d+)\]/g,
+    (_match, nativeRef: string) => `[ref=t3-${generation}-${nativeRef}]`,
+  );
+  const accessibilityTree =
+    rewritten.length <= MAX_VISIBLE_TEXT_LENGTH
+      ? rewritten
+      : rewritten.slice(0, rewritten.lastIndexOf("\n", MAX_VISIBLE_TEXT_LENGTH) + 1);
+  for (const [, ref, nativeRef] of accessibilityTree.matchAll(
+    /\[ref=(t3-\d+-((?:f\d+)?e\d+))\]/g,
+  )) {
+    state.refs.set(ref!, nativeRef!);
+  }
   return {
     ...page,
     accessibilityTree,
