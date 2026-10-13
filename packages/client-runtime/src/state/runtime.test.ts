@@ -1178,6 +1178,8 @@ describe("createEnvironmentQueryAtomFamily", () => {
 
   const makeQueryHarness = Effect.fn("TestRuntime.makeQueryHarness")(function* (
     staleTimeMs: number,
+    refreshIntervalMs?: number,
+    idleTtlMs?: number,
   ) {
     const executions = yield* Ref.make(0);
     const state = yield* SubscriptionRef.make<SupervisorConnectionState>(connectedState(1));
@@ -1212,6 +1214,8 @@ describe("createEnvironmentQueryAtomFamily", () => {
     const queryAtom = createEnvironmentQueryAtomFamily(runtime, {
       label: "test.query",
       staleTimeMs,
+      ...(refreshIntervalMs === undefined ? {} : { refreshIntervalMs }),
+      ...(idleTtlMs === undefined ? {} : { idleTtlMs }),
       execute: (_input: string) => Ref.updateAndGet(executions, (count) => count + 1),
     });
     return {
@@ -1219,6 +1223,7 @@ describe("createEnvironmentQueryAtomFamily", () => {
       state,
       wakeups,
       testClock,
+      queryFamily: queryAtom,
       atom: queryAtom({ environmentId: TARGET.environmentId, input: "key" }),
     };
   });
@@ -1235,6 +1240,105 @@ describe("createEnvironmentQueryAtomFamily", () => {
     }
     return yield* Ref.get(executions);
   });
+
+  it.effect.each(["reconnect", "foreground"] as const)(
+    "defers an unused query's %s refresh until it is read again",
+    (reason) =>
+      Effect.gen(function* () {
+        const harness = yield* makeQueryHarness(0);
+        const registry = AtomRegistry.make();
+        yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+        const unmount = registry.mount(harness.atom);
+        yield* readEnvironmentQuery(registry, harness.atom);
+        for (let step = 0; step < 100; step += 1) yield* Effect.yieldNow;
+        const baseline = yield* Ref.get(harness.executions);
+        unmount();
+
+        if (reason === "reconnect") {
+          yield* SubscriptionRef.set(harness.state, connectedState(2));
+        } else {
+          yield* Queue.offer(harness.wakeups, "application-active-reconnect");
+          for (let step = 0; step < 100; step += 1) yield* Effect.yieldNow;
+          yield* harness.testClock.adjust("3500 millis");
+        }
+        expect(yield* settleExecutions(harness.executions, baseline)).toBe(baseline);
+
+        const remount = registry.mount(harness.atom);
+        expect(yield* readEnvironmentQuery(registry, harness.atom)).toBe(baseline + 1);
+        expect(yield* Ref.get(harness.executions)).toBe(baseline + 1);
+        remount();
+      }),
+  );
+
+  it.effect("stops polling an unused cached query and catches up on its next read", () =>
+    Effect.gen(function* () {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      yield* Effect.addFinalizer(() => Effect.sync(() => vi.useRealTimers()));
+      const harness = yield* makeQueryHarness(0, 1_000);
+      const registry = AtomRegistry.make();
+      yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+      const unmount = registry.mount(harness.atom);
+      yield* readEnvironmentQuery(registry, harness.atom);
+      yield* Effect.promise(() => vi.advanceTimersByTimeAsync(1_000));
+      const baseline = yield* Ref.get(harness.executions);
+      expect(baseline).toBeGreaterThanOrEqual(2);
+      unmount();
+
+      yield* Effect.promise(() => vi.advanceTimersByTimeAsync(5_000));
+      expect(yield* Ref.get(harness.executions)).toBe(baseline);
+
+      const remount = registry.mount(harness.atom);
+      expect(yield* readEnvironmentQuery(registry, harness.atom)).toBe(baseline + 1);
+      yield* Effect.promise(() => vi.advanceTimersByTimeAsync(1_000));
+      expect(yield* Ref.get(harness.executions)).toBe(baseline + 2);
+      remount();
+    }),
+  );
+
+  it.effect.each([undefined, 10_000])(
+    "revalidates an expired cached view after its outer query node is swept (interval: %s)",
+    (refreshIntervalMs) =>
+      Effect.gen(function* () {
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+        yield* Effect.addFinalizer(() => Effect.sync(() => vi.useRealTimers()));
+        const harness = yield* makeQueryHarness(100, refreshIntervalMs, 1_000);
+        const sibling = harness.queryFamily({
+          environmentId: TARGET.environmentId,
+          input: "sibling",
+        });
+        // Asset collections and cached views retain derived atoms above their queries.
+        const collection = Atom.make((get) => [get(harness.atom), get(sibling)]).pipe(
+          Atom.setIdleTTL(1_000),
+        );
+        const view = Atom.make((get) => get(collection)).pipe(Atom.setIdleTTL(1_000));
+        const registry = AtomRegistry.make({ timeoutResolution: 100 });
+        yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+        // Keep the family's shared connection snapshot stable while the other view is closed.
+        const unmountSibling = registry.mount(sibling);
+        const unmountView = registry.mount(view);
+        yield* readEnvironmentQuery(registry, harness.atom);
+        yield* readEnvironmentQuery(registry, sibling);
+        for (let step = 0; step < 100; step += 1) yield* Effect.yieldNow;
+        const baseline = yield* Ref.get(harness.executions);
+        expect(baseline).toBe(2);
+        unmountView();
+        yield* Effect.promise(() => vi.advanceTimersByTimeAsync(1_300));
+        expect(yield* Ref.get(harness.executions)).toBe(baseline);
+
+        // The outer node expired, but its SWR data still lives on a later TTL.
+        const remountView = registry.mount(view);
+        yield* readEnvironmentQuery(registry, harness.atom);
+        for (let step = 0; step < 100; step += 1) yield* Effect.yieldNow;
+        expect(yield* Ref.get(harness.executions)).toBe(baseline + 1);
+        expect(registry.get(harness.atom)).toMatchObject({
+          _tag: "Success",
+          value: baseline + 1,
+          waiting: false,
+        });
+        remountView();
+        unmountSibling();
+      }),
+  );
 
   it.effect("does not refetch a fresh query when the connection generation bumps", () =>
     Effect.gen(function* () {

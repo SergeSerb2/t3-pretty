@@ -1,7 +1,11 @@
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
+import { HttpClient, HttpClientResponse } from "effect/http";
 
 import { PrimaryConnectionTarget, type PreparedConnection } from "../connection/model.ts";
 import * as RpcHttp from "../rpc/http.ts";
@@ -120,6 +124,33 @@ const boundedBody = (compact: boolean) => ({
 });
 
 describe("boundedThreadSnapshotLoader", () => {
+  it.effect("keeps a slow bounded HTTP snapshot instead of starting a socket fallback", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const client = HttpClient.make((request) =>
+        Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.as(HttpClientResponse.fromWeb(request, Response.json(boundedBody(true)))),
+        ),
+      );
+      const loader = yield* ThreadSnapshotLoader.ThreadSnapshotLoader.pipe(
+        Effect.provide(
+          Layer.provide(
+            BoundedThreadSnapshotHttp.layer,
+            Layer.succeed(HttpClient.HttpClient, client),
+          ),
+        ),
+      );
+      const loading = yield* loader.load(PREPARED, THREAD_ID).pipe(Effect.forkScoped);
+      yield* Deferred.await(started);
+      yield* TestClock.adjust("7 seconds");
+      yield* Deferred.succeed(release, undefined);
+
+      expect((yield* Fiber.join(loading))._tag).toBe("present");
+    }),
+  );
+
   it.effect.each([
     ["an older server that ignores the opt-in", false],
     ["a server that sends compact turnItems", true],

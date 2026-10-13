@@ -340,10 +340,22 @@ export function staticClientAssetCacheControl(relativePath: string): string {
 
 export function acceptsBrotliEncoding(acceptEncoding: string | undefined): boolean {
   if (!acceptEncoding) return false;
-  return acceptEncoding.split(",").some((part) => {
-    const token = part.trim().split(";")[0]?.trim().toLowerCase();
-    return token === "br";
-  });
+  let brotliQuality: number | undefined;
+  let wildcardQuality = 0;
+  for (const part of acceptEncoding.toLowerCase().split(",")) {
+    const [token, ...parameters] = part.split(";").map((value) => value.trim());
+    if (token !== "br" && token !== "*") continue;
+    const weight = parameters.find((value) => /^q\s*=/.test(value));
+    const match = weight?.match(/^q\s*=\s*(0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/);
+    const quality = weight === undefined ? 1 : match ? Number(match[1]) : 0;
+    if (token === "br") {
+      brotliQuality = Math.max(brotliQuality ?? 0, quality);
+    } else {
+      wildcardQuality = Math.max(wildcardQuality, quality);
+    }
+  }
+  // An explicit exclusion takes precedence over a wildcard, regardless of order.
+  return (brotliQuality ?? wildcardQuality) > 0;
 }
 
 export function shouldEnablePermessageDeflate(input: {

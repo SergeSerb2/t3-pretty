@@ -26,7 +26,9 @@ export function createRelayEnvironmentDiscoveryAtoms<R, E>(
   ).pipe(Atom.withLabel("relay-environment-discovery-value"));
   const refresh = createRuntimeCommand(runtime, {
     label: "relay-environment-discovery:refresh",
-    concurrency: { mode: "singleFlight", key: () => "refresh" },
+    // A link or unlink must refresh after an older list completes. Concurrent
+    // callers share one queued rerun instead of joining that older result.
+    concurrency: { mode: "latest", key: () => "refresh" },
     execute: (_input: void) =>
       RelayEnvironmentDiscovery.RelayEnvironmentDiscovery.pipe(
         Effect.flatMap((discovery) => discovery.refresh),

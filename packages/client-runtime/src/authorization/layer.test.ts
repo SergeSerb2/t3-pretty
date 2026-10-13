@@ -2,6 +2,7 @@ import {
   AuthAdministrativeScopes,
   AuthStandardClientScopes,
   EnvironmentId,
+  ORCHESTRATION_PROTOCOL_VERSION,
 } from "@t3tools/contracts";
 import {
   RelayEnvironmentConnectScope,
@@ -24,6 +25,10 @@ import * as RpcHttp from "../rpc/http.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as RemoteEnvironmentAuthorization from "./service.ts";
 import * as TokenStore from "./tokenStore.ts";
+import * as ConnectionResolver from "../connection/resolver.ts";
+import * as ConnectionProfileStore from "../connection/profileStore.ts";
+import * as ConnectionCredentialStore from "../connection/credentialStore.ts";
+import { PrimaryConnectionTarget } from "../connection/model.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 const ENDPOINT = {
@@ -52,11 +57,12 @@ const BOOTSTRAP: RelayEnvironmentConnectResponse = {
 
 type RecordedResponse = Response | ((init: RequestInit) => Response);
 
-function recordedFetch(responses: ReadonlyArray<RecordedResponse>) {
+function recordedFetch(responses: ReadonlyArray<RecordedResponse>, respond?: typeof fetch) {
   const calls: Array<readonly [RequestInfo | URL, RequestInit]> = [];
   let responseIndex = 0;
   const fetchFn = ((input, init) => {
     calls.push([input, init ?? {}]);
+    if (respond !== undefined) return respond(input, init);
     const response = responses[responseIndex++];
     return response === undefined
       ? Promise.reject(new Error(`Unexpected fetch call to ${String(input)}`))
@@ -116,6 +122,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   readonly beforeBootstrap?: Effect.Effect<void, ManagedRelay.ManagedRelayClientError>;
   readonly beforePut?: Effect.Effect<void>;
   readonly clerkToken?: ClientCapabilities.CloudSession["Service"]["clerkToken"];
+  readonly fetchFn?: typeof fetch;
 }) {
   const tokens = yield* Ref.make(
     new Map(
@@ -140,7 +147,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
       readonly accessToken?: string;
     }>
   >([]);
-  const fetch = recordedFetch(input.responses);
+  const fetch = recordedFetch(input.responses, input.fetchFn);
 
   const tokenStore = TokenStore.RemoteDpopAccessTokenStore.of({
     get: (environmentId) =>
@@ -235,6 +242,74 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
 });
 
 describe("RemoteEnvironmentAuthorization", () => {
+  it.effect("shares only a freshly fetched descriptor with connection preparation", () =>
+    Effect.gen(function* () {
+      let protocolVersion = ORCHESTRATION_PROTOCOL_VERSION;
+      const harness = yield* makeHarness({
+        responses: [],
+        fetchFn: (url) =>
+          Promise.resolve(
+            String(url).endsWith("/.well-known/t3/environment")
+              ? Response.json({ ...DESCRIPTOR, orchestrationProtocolVersion: protocolVersion })
+              : websocketTicket("fresh-ticket"),
+          ),
+      });
+      const layer = ConnectionResolver.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            harness.layer,
+            RpcHttp.layerRemoteHttpClient(harness.fetch.fetchFn),
+            Layer.succeed(ConnectionProfileStore.ConnectionProfileStore, {
+              get: () => Effect.succeedNone,
+              put: () => Effect.void,
+              remove: () => Effect.void,
+            }),
+            Layer.succeed(ConnectionCredentialStore.ConnectionCredentialStore, {
+              get: () => Effect.succeedNone,
+              put: () => Effect.void,
+              remove: () => Effect.void,
+            }),
+            Layer.succeed(ClientCapabilities.PrimaryEnvironmentAuth, {
+              bearerToken: Effect.succeedSome("desktop-bearer"),
+            }),
+            Layer.succeed(ClientCapabilities.ClientPresentation, { metadata: {} }),
+            Layer.succeed(ClientCapabilities.SshEnvironmentGateway, {
+              provision: () => Effect.die("unused"),
+              prepare: () => Effect.die("unused"),
+              disconnect: () => Effect.void,
+            }),
+          ),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const resolver = yield* ConnectionResolver.ConnectionResolver;
+        const target = new PrimaryConnectionTarget({
+          environmentId: ENVIRONMENT_ID,
+          label: DESCRIPTOR.label,
+          ...ENDPOINT,
+        });
+        const entry = { target, profile: Option.none(), enabled: true };
+        const descriptorCalls = () =>
+          harness.fetch.calls.filter(([url]) =>
+            String(url).endsWith("/.well-known/t3/environment"),
+          );
+
+        const prepared = yield* resolver.prepare(entry);
+        expect(prepared.socketUrl).toContain(
+          `orchestrationProtocol=${ORCHESTRATION_PROTOCOL_VERSION}`,
+        );
+        expect(descriptorCalls()).toHaveLength(1);
+        expect(prepared).not.toHaveProperty("freshlyFetchedDescriptor");
+
+        // The authorization cache cannot hide a host update from the next attempt.
+        protocolVersion += 1;
+        const error = yield* resolver.prepare(entry).pipe(Effect.flip);
+        expect(error).toMatchObject({ reason: "unsupported" });
+        expect(descriptorCalls()).toHaveLength(2);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
   it.effect("reuses a validated bearer descriptor while issuing fresh websocket tickets", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
@@ -755,14 +830,10 @@ describe("RemoteEnvironmentAuthorization", () => {
     }),
   );
 
-  it.effect("removes a newly refreshed token when websocket ticket authorization fails", () =>
+  it.effect("removes a newly refreshed token when websocket ticket authentication rejects it", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
-        responses: [
-          Response.json(DESCRIPTOR),
-          accessToken("unusable-access-token"),
-          new Response("endpoint unavailable", { status: 503 }),
-        ],
+        responses: [Response.json(DESCRIPTOR), accessToken("unusable-access-token"), authInvalid()],
       });
 
       yield* Effect.gen(function* () {
@@ -775,6 +846,48 @@ describe("RemoteEnvironmentAuthorization", () => {
       expect((yield* Ref.get(harness.tokens)).has(ENVIRONMENT_ID)).toBe(false);
       expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
       expect(harness.fetch.calls).toHaveLength(3);
+    }),
+  );
+
+  it.effect("retries a transient ticket failure without repeating the fresh token exchange", () =>
+    Effect.gen(function* () {
+      let exchanges = 0;
+      let ticketRequests = 0;
+      const harness = yield* makeHarness({
+        responses: [],
+        fetchFn: (request) => {
+          const url = String(request);
+          if (url.endsWith("/.well-known/t3/environment"))
+            return Promise.resolve(Response.json(DESCRIPTOR));
+          if (url.endsWith("/oauth/token"))
+            return Promise.resolve(accessToken(`fresh-token-${++exchanges}`));
+          ticketRequests += 1;
+          return Promise.resolve(
+            ticketRequests === 1
+              ? new Response("endpoint unavailable", { status: 503 })
+              : websocketTicket("retry-ticket"),
+          );
+        },
+      });
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        const failure = yield* remote
+          .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+          .pipe(Effect.flip);
+        expect(failure).toMatchObject({
+          _tag: "ConnectionTransientError",
+          reason: "remote-unavailable",
+        });
+
+        const authorized = yield* remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID });
+        expect(authorized.socketUrl).toContain("wsTicket=retry-ticket");
+        expect(authorized.httpAuthorization).toMatchObject({ accessToken: "fresh-token-1" });
+      }).pipe(Effect.provide(harness.layer));
+
+      expect(exchanges).toBe(1);
+      expect(ticketRequests).toBe(2);
+      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+      expect(harness.fetch.calls).toHaveLength(4);
     }),
   );
 

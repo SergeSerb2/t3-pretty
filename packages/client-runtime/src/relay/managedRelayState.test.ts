@@ -1,4 +1,4 @@
-import { AUTH_CREDENTIAL_MAX_LENGTH, EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@t3tools/contracts";
 import {
   RelayAuthInvalidError,
   type RelayClientDeviceRecord,
@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { afterEach, vi } from "vite-plus/test";
 
@@ -134,6 +135,135 @@ describe("createManagedRelayQueryManager", () => {
         environmentId: environment.environmentId,
       });
     }),
+  );
+
+  it.effect(
+    "settles deregistration when its session token read stalls and permits a refreshed session",
+    () =>
+      Effect.gen(function* () {
+        const unlinkEnvironment = vi.fn(() => Effect.succeed({ ok: true }));
+        const readClerkToken = vi.fn(() => new Promise<string>(() => undefined));
+        setManagedRelaySession(registry, { accountId: "account-1", readClerkToken });
+        const input = { accountId: "account-1", environmentId: environment.environmentId };
+        const deregistration = yield* deregisterManagedRelayEnvironment(registry, input).pipe(
+          Effect.provideService(
+            ManagedRelay.ManagedRelayClient,
+            createClient({ unlinkEnvironment }),
+          ),
+          Effect.flip,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+        expect(readClerkToken).toHaveBeenCalledTimes(1);
+        yield* TestClock.adjust("30 seconds");
+
+        expect(deregistration.pollUnsafe()).toBeDefined();
+        expect(yield* Fiber.join(deregistration)).toBeInstanceOf(ManagedRelaySessionError);
+        expect(unlinkEnvironment).not.toHaveBeenCalled();
+
+        setManagedRelaySession(registry, {
+          accountId: "account-1",
+          readClerkToken: () => Promise.resolve("refreshed-token"),
+        });
+        yield* deregisterManagedRelayEnvironment(registry, input).pipe(
+          Effect.provideService(
+            ManagedRelay.ManagedRelayClient,
+            createClient({ unlinkEnvironment }),
+          ),
+        );
+        expect(unlinkEnvironment).toHaveBeenCalledExactlyOnceWith({
+          clerkToken: "refreshed-token",
+          environmentId: environment.environmentId,
+        });
+      }),
+  );
+
+  it.effect("retries an unchanged session token reader after a stalled read times out", () =>
+    Effect.gen(function* () {
+      const unlinkEnvironment = vi.fn(() => Effect.succeed({ ok: true }));
+      const readClerkToken = vi
+        .fn<() => Promise<string | null>>()
+        .mockImplementationOnce(() => new Promise<string>(() => undefined))
+        .mockResolvedValue("retry-token");
+      setManagedRelaySession(registry, { accountId: "account-1", readClerkToken });
+      const input = { accountId: "account-1", environmentId: environment.environmentId };
+      const provide = Effect.provideService(
+        ManagedRelay.ManagedRelayClient,
+        createClient({ unlinkEnvironment }),
+      );
+      const first = yield* deregisterManagedRelayEnvironment(registry, input).pipe(
+        provide,
+        Effect.flip,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("30 seconds");
+      expect(yield* Fiber.join(first)).toBeInstanceOf(ManagedRelaySessionError);
+      const retry = yield* deregisterManagedRelayEnvironment(registry, input).pipe(
+        provide,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+
+      expect(readClerkToken).toHaveBeenCalledTimes(2);
+      yield* Fiber.join(retry);
+      expect(unlinkEnvironment).toHaveBeenCalledExactlyOnceWith({
+        clerkToken: "retry-token",
+        environmentId: environment.environmentId,
+      });
+    }),
+  );
+
+  it.effect.each(["token", "empty"] as const)(
+    "coalesces retry reads and keeps their cached token after a late abandoned %s response",
+    (lateResponse) =>
+      Effect.gen(function* () {
+        let resolveFirst!: (token: string | null) => void;
+        let resolveRetry!: (token: string | null) => void;
+        const readClerkToken = vi
+          .fn<() => Promise<string | null>>()
+          .mockImplementationOnce(
+            () =>
+              new Promise((resolve) => {
+                resolveFirst = resolve;
+              }),
+          )
+          .mockImplementationOnce(
+            () =>
+              new Promise((resolve) => {
+                resolveRetry = resolve;
+              }),
+          )
+          .mockResolvedValue("unexpected-token-read");
+        setManagedRelaySession(registry, { accountId: "account-1", readClerkToken });
+        const first = yield* deregisterManagedRelayEnvironment(registry, {
+          accountId: "account-1",
+          environmentId: environment.environmentId,
+        }).pipe(
+          Effect.provideService(ManagedRelay.ManagedRelayClient, createClient()),
+          Effect.flip,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("30 seconds");
+        expect(yield* Fiber.join(first)).toBeInstanceOf(ManagedRelaySessionError);
+
+        const session = registry.get(managedRelaySessionAtom)!;
+        const retries = yield* Effect.all([session.readClerkToken(), session.readClerkToken()], {
+          concurrency: "unbounded",
+        }).pipe(Effect.forkChild);
+        yield* Effect.yieldNow;
+        expect(readClerkToken).toHaveBeenCalledTimes(2);
+        const retryToken = clerkToken(120);
+        resolveRetry(retryToken);
+        expect(yield* Fiber.join(retries)).toEqual([retryToken, retryToken]);
+
+        resolveFirst(lateResponse === "token" ? clerkToken(180) : null);
+        // Run the abandoned Promise's completion before reading the cache.
+        yield* Effect.promise(() => Promise.resolve());
+        expect(yield* session.readClerkToken()).toBe(retryToken);
+        expect(readClerkToken).toHaveBeenCalledTimes(2);
+      }),
   );
 
   it.effect("rejects deregistration after the account changes", () =>

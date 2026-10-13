@@ -5,6 +5,7 @@ import {
   type EnvironmentCloudLinkStateResult,
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
+import * as Option from "effect/Option";
 import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -23,11 +24,20 @@ const testState = vi.hoisted(() => ({
 }));
 
 vi.mock("@clerk/react", () => ({
-  useAuth: () => ({ getToken: testState.getToken, isSignedIn: true }),
+  useAuth: () => ({ getToken: testState.getToken, isSignedIn: true, userId: "account-1" }),
 }));
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: testState.toast } }));
 vi.mock("../state/relay", () => ({
   relayEnvironmentDiscovery: { refresh: testState.refreshDiscovery },
+}));
+vi.mock("../state/environments", () => ({
+  useRelayEnvironmentDiscovery: () => ({
+    environments: new Map(),
+    loaded: false,
+    refreshing: false,
+    offline: false,
+    error: Option.none(),
+  }),
 }));
 vi.mock("../state/session", () => ({
   readEnvironmentScope: (_environmentId: string, scope: string) => testState.scopes.has(scope),
@@ -48,7 +58,10 @@ vi.mock("./primaryCloudLinkState", () => ({
     refresh: testState.refreshLink,
   }),
 }));
-vi.mock("./publicConfig", () => ({ resolveRelayClerkTokenOptions: () => ({}) }));
+vi.mock("./publicConfig", () => ({
+  resolveRelayClerkTokenOptions: () => ({}),
+  resolveCloudPublicConfig: () => ({ relayUrl: "https://relay.example.com" }),
+}));
 
 import { useCloudLinkController, type CloudLinkDesiredState } from "./useCloudLinkController";
 
