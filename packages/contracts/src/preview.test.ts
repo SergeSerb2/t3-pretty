@@ -379,6 +379,29 @@ describe("PreviewAutomationError", () => {
       expect(error.message).toBe("Preview automation type requires an editable focused element.");
     }
   });
+
+  it("reports the environment host's long first-open budget", () => {
+    // The broker allows 660s for the first server-browser open; its failure
+    // must still be constructible or the caller waits out the whole budget.
+    const error = decodeAutomationError({
+      _tag: "PreviewAutomationControlInterruptedError",
+      operation: "open",
+      environmentId: "environment-1",
+      threadId: "thread-1",
+      providerSessionId: "provider-session-1",
+      providerInstanceId: "codex",
+      clientId: "server-browser",
+      connectionId: "connection-1",
+      requestId: "request-1",
+      timeoutMs: 660_000,
+      remoteTag: "PreviewAutomationControlInterruptedError",
+      remoteMessageLength: 12,
+      cause: {},
+      reason: "dialogPending",
+    });
+
+    expect(error._tag).toBe("PreviewAutomationControlInterruptedError");
+  });
 });
 
 describe("PreviewAutomationStatus", () => {
