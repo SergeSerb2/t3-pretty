@@ -40,8 +40,7 @@ export type ContextMenuActionEvent = {
 };
 
 /**
- * `onTextLayout` is not offered: the native view reports plain line strings
- * while the React Native Text fallback reports measured `TextLayoutLine`s.
+ * `onTextLayout` is not offered by the native selectable text view.
  */
 export type MarkdownTextPrimitiveProps = Omit<TextProps, "onTextLayout"> & {
   nativeTextRef?: Ref<TextInstance>;

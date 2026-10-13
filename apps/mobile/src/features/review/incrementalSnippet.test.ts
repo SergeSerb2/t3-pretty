@@ -2,7 +2,7 @@ import { createHighlighterCore } from "@shikijs/core";
 import { createJavaScriptRegexEngine } from "@shikijs/engine-javascript";
 import typescript from "@shikijs/langs/typescript";
 import dark from "@shikijs/themes/github-dark-default";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { createIncrementalSnippet } from "./incrementalSnippet";
 import { highlightCodeSnippet } from "./shikiReviewHighlighter";
@@ -17,6 +17,29 @@ const rendered = (lines: ReturnType<typeof highlighter.codeToTokensBase>) =>
 const options = { lang: "typescript", theme: "github-dark-default" };
 
 describe("incremental snippet highlighting", () => {
+  it("stops an abandoned large snippet at the next batch and keeps the session usable", async () => {
+    const highlight = createIncrementalSnippet(highlighter, options.lang, options.theme);
+    const controller = new AbortController();
+    const canceled = new Error("Code block unmounted");
+    const schedule = globalThis.setTimeout;
+    const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, delay) => {
+      controller.abort(canceled);
+      return schedule(callback, delay);
+    });
+    try {
+      await expect(highlight("const n = 1;\n".repeat(410), controller.signal)).rejects.toBe(
+        canceled,
+      );
+      expect(timer).toHaveBeenCalledTimes(1);
+    } finally {
+      timer.mockRestore();
+    }
+    const next = "const next = 2;\n";
+    expect(rendered(await highlight(next))).toEqual(
+      rendered(highlighter.codeToTokensBase(next, options)),
+    );
+  });
+
   it("matches full highlighting through partial lines, multiline syntax, edits and truncation", async () => {
     const highlight = createIncrementalSnippet(highlighter, options.lang, options.theme);
     const source = "/* comment\nstill comment */\nconst text = `first\nsecond ${42}`;\n";

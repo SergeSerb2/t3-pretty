@@ -1047,10 +1047,6 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   "!**/*.d.mts",
   "!**/*.d.cts",
   "!**/node_modules/**/{README,README.*,CHANGELOG,CHANGELOG.*,readme,readme.*}",
-  // Playwright's injected script is lifted into the desktop bundle at build
-  // time (apps/desktop/scripts/build-playwright-injected.mjs); the package is a
-  // devDependency, so this only guards a stray hoisted copy.
-  "!**/node_modules/playwright-core/**",
   // Effect ships unused OpenAPI UIs that are never imported.
   "!**/node_modules/effect/**/httpApiScalar.js",
   "!**/node_modules/effect/**/HttpApiScalar.js",

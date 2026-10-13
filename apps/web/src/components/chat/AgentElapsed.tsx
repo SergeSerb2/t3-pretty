@@ -2,6 +2,7 @@ import type { RuntimeSubagent } from "@t3tools/client-runtime/state/subagentRunt
 import { isOrchestrationV2WorkActive } from "@t3tools/contracts";
 import { deriveSubagentElapsedMs } from "@t3tools/shared/orchestrationTiming";
 import { useEffect, useRef } from "react";
+import { subscribeSecondTick } from "../../lib/secondTicker";
 
 function formatElapsedSeconds(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
@@ -58,10 +59,8 @@ export function AgentElapsed({
         if (textRef.current.textContent !== text) textRef.current.textContent = text;
       }
     };
+    if (live) return subscribeSecondTick(update);
     update();
-    if (!live) return;
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
   }, [live, startedAt, completedAt, agent.status, format]);
 
   const elapsedMs = deriveSubagentElapsedMs(agent, 0);

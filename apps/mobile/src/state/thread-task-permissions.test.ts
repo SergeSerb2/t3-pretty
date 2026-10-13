@@ -1,4 +1,8 @@
-import { AuthOrchestrationOperateScope, RuntimeRequestId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  DEFAULT_SERVER_SETTINGS,
+  RuntimeRequestId,
+} from "@t3tools/contracts";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import { AsyncResult, type Atom } from "effect/reactivity";
@@ -71,6 +75,7 @@ vi.mock("./use-thread-selection", () => ({
     selectedEnvironmentRuntime: {
       connectionState: state.connectionState,
       serverConfig: {
+        settings: DEFAULT_SERVER_SETTINGS,
         providers: [{ instanceId: "codex", driver: "codex" }],
         environment: { capabilities: {} },
       },

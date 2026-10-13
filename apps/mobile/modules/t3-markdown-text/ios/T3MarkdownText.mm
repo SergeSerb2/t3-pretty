@@ -159,9 +159,11 @@ static void T3MarkdownTextApplyAttachments(
     NSDictionary *chip = T3ContextChipPayload(imageUri);
     if (chip != nil) {
       CGSize size = CGSizeMake(attachmentRange.chipWidth, attachmentRange.chipHeight);
-      attachment.bounds = T3ContextChipBounds(runAttributes[NSFontAttributeName], size);
       NSString *iconUri = [chip[@"iconUri"] isKindOfClass:NSString.class] ? chip[@"iconUri"] : nil;
-      attachment.image = T3ContextChipImage(chip, size, iconUri ? images[iconUri] : nil);
+      attachment = [[T3ContextChipAttachment alloc]
+          initWithPayload:chip
+          bounds:T3ContextChipBounds(runAttributes[NSFontAttributeName], size)
+          fileIcon:iconUri ? images[iconUri] : nil];
     }
     const NSRange range = NSMakeRange(
         attachmentRange.location,
@@ -381,9 +383,20 @@ T3MarkdownOutsideTapCoordinatorForWindow(UIWindow *window)
   _outsideTapWindow = nil;
   _state.reset();
 
+  // Recycled views keep their props for the next update's diff. Release the
+  // message context without changing that style baseline or shared shadow props.
+  const auto &viewProps = *std::static_pointer_cast<const T3MarkdownTextProps>(_props);
+  if (!viewProps.contextClipboardConfig.empty()) {
+    auto recycledProps = std::make_shared<T3MarkdownTextProps>(viewProps);
+    std::string().swap(recycledProps->contextClipboardConfig);
+    _props = recycledProps;
+  }
+  _textView.contextClipboardConfig = nil;
+
   // Reset the frame to zero so that when it properly lays out on the next use
   _textView.frame = CGRectZero;
   _textView.attributedText = nil;
+  _textView.accessibilityLabel = nil;
   _contextAccessibilityElements = nil;
   _textLayoutNeedsUpdate = YES;
 }
@@ -406,8 +419,6 @@ T3MarkdownOutsideTapCoordinatorForWindow(UIWindow *window)
   if (!_state) {
     return;
   }
-
-  const auto &props = *std::static_pointer_cast<T3MarkdownTextProps const>(_props);
 
   const auto attrString = _state->getData().attributedString;
   NSMutableAttributedString *convertedAttrString =
@@ -518,28 +529,6 @@ T3MarkdownOutsideTapCoordinatorForWindow(UIWindow *window)
     [accessibleElements addObject:element];
   }
   _contextAccessibilityElements = accessibleElements;
-
-  __block std::vector<std::string> lines;
-  const int maxLines = props.numberOfLines;
-  [_textView.layoutManager enumerateLineFragmentsForGlyphRange:NSMakeRange(0, convertedAttrString.string.length) usingBlock:^(CGRect rect,
-                                                                                              CGRect usedRect,
-                                                                                              NSTextContainer * _Nonnull textContainer,
-                                                                                              NSRange glyphRange,
-                                                                                              BOOL * _Nonnull stop) {
-    const auto charRange = [self->_textView.layoutManager characterRangeForGlyphRange:glyphRange actualGlyphRange:nil];
-    const auto line = [self->_textView.text substringWithRange:charRange];
-    lines.push_back(line.UTF8String);
-    // enumerateLineFragments overshoots maximumNumberOfLines by one on iOS
-    // 18, so cap explicitly.
-    if (maxLines > 0 && lines.size() >= (size_t)maxLines) {
-      *stop = YES;
-    }
-  }];
-
-  if (_eventEmitter != nullptr) {
-    std::dynamic_pointer_cast<const facebook::react::T3MarkdownTextEventEmitter>(_eventEmitter)
-    ->onTextLayout(facebook::react::T3MarkdownTextEventEmitter::OnTextLayout{static_cast<int>(self.tag), lines});
-  };
 }
 
 - (void)loadAttachmentImages:(const std::vector<T3MarkdownTextAttachmentRange> &)attachmentRanges

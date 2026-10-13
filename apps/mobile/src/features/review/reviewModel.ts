@@ -416,6 +416,7 @@ export function buildReviewSectionItems(input: {
   readonly turnDiffById: Readonly<Record<string, string | undefined>>;
   readonly loadingTurnIds: Readonly<Record<string, boolean | undefined>>;
   readonly loadingGitSections: boolean;
+  readonly selectedSectionId?: string | null;
 }): ReadonlyArray<ReviewSectionItem> {
   const turnItems = getReadyReviewCheckpoints(input.checkpoints).map<ReviewSectionItem>(
     (checkpoint) => {
@@ -459,7 +460,25 @@ export function buildReviewSectionItems(input: {
         ]
       : gitItems;
 
-  return [...turnItems, ...visibleGitItems];
+  // Selection outlives raw diff payloads. Its absence is authoritative only
+  // after sources load, so keep the selected working-tree place on reopen.
+  const pendingWorkingTree =
+    input.loadingGitSections &&
+    input.selectedSectionId === "git:working-tree" &&
+    !gitItems.some((item) => item.id === "git:working-tree")
+      ? [
+          {
+            id: "git:working-tree",
+            kind: "working-tree",
+            title: "Uncommitted",
+            subtitle: null,
+            diff: null,
+            isLoading: true,
+          } satisfies ReviewSectionItem,
+        ]
+      : [];
+
+  return [...turnItems, ...visibleGitItems, ...pendingWorkingTree];
 }
 
 /** Prefers Changes, then the first section (a turn when the project is not a git repo). */

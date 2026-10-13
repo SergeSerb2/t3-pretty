@@ -348,9 +348,9 @@ const main = Command.make(
             [
               "xcodebuild",
               "-workspace",
-              path.join(mobile, "ios/T3CodeDev.xcworkspace"),
+              path.join(mobile, "ios/T3PrettyDev.xcworkspace"),
               "-scheme",
-              "T3CodeDev",
+              "T3PrettyDev",
               "-configuration",
               "Debug",
               "-destination",
@@ -367,7 +367,7 @@ const main = Command.make(
               "simctl",
               "install",
               device,
-              path.join(output, "Build/Products/Debug-iphonesimulator/T3CodeDev.app"),
+              path.join(output, "Build/Products/Debug-iphonesimulator/T3PrettyDev.app"),
             ],
             true,
           );

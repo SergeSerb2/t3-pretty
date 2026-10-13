@@ -4110,6 +4110,115 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("releases closed tab action history before the tab is recreated", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const sendCommand = vi.fn(async (method: string) =>
+          method === "Runtime.evaluate"
+            ? { result: { value: { interactiveElements: [] } } }
+            : undefined,
+        );
+        fromId.mockReturnValue(
+          makeTestPreviewWebContents(
+            async () =>
+              ({
+                toPNG: () => Buffer.from("png"),
+                getSize: () => ({ width: 100, height: 50 }),
+              }) as never,
+            42,
+            undefined,
+            {
+              debugger: {
+                isAttached: () => false,
+                attach: vi.fn(),
+                sendCommand,
+                on: vi.fn(),
+                off: vi.fn(),
+              },
+            },
+          ),
+        );
+        yield* manager.createTab("tab_recreated");
+        yield* manager.registerWebview("tab_recreated", 42);
+        yield* manager.automationEvaluate("tab_recreated", { expression: "null" });
+        const before = yield* manager.automationSnapshot("tab_recreated");
+        expect(before.actionTimeline.map((entry) => entry.action)).toEqual([
+          "evaluate",
+          "snapshot",
+        ]);
+
+        yield* manager.closeTab("tab_recreated");
+        yield* manager.createTab("tab_recreated");
+        yield* manager.registerWebview("tab_recreated", 42);
+        const after = yield* manager.automationSnapshot("tab_recreated");
+
+        expect(after.actionTimeline.map((entry) => entry.action)).toEqual(["snapshot"]);
+      }),
+    ),
+  );
+
+  effectIt.effect(
+    "bounds preview diagnostic values from oversized console and network events",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const messages = captureDebuggerMessages();
+          const sendCommand = vi.fn(async (method: string) =>
+            method === "Runtime.evaluate"
+              ? { result: { value: { interactiveElements: [] } } }
+              : undefined,
+          );
+          fromId.mockReturnValue(
+            makeTestPreviewWebContents(
+              async () =>
+                ({
+                  toPNG: () => Buffer.from("png"),
+                  getSize: () => ({ width: 100, height: 50 }),
+                }) as never,
+              42,
+              undefined,
+              {
+                debugger: {
+                  isAttached: () => false,
+                  attach: vi.fn(),
+                  sendCommand,
+                  on: messages.on,
+                  off: vi.fn(),
+                },
+              },
+            ),
+          );
+          yield* manager.createTab("tab_large_diagnostics");
+          yield* manager.registerWebview("tab_large_diagnostics", 42);
+          yield* manager.automationEvaluate("tab_large_diagnostics", { expression: "null" });
+          const large = "x".repeat(2 * 1024 * 1024);
+          messages.emit("Runtime.consoleAPICalled", {
+            type: "log",
+            args: [{ value: large }, { description: large }],
+          });
+          messages.emit("Log.entryAdded", { entry: { text: large } });
+          messages.emit("Runtime.exceptionThrown", { exceptionDetails: { text: large } });
+          messages.emit("Network.requestWillBeSent", {
+            requestId: "request-large",
+            request: { url: `https://example.com/${large}`, method: "GET" },
+          });
+          yield* Effect.yieldNow;
+          messages.emit("Network.loadingFailed", { requestId: "request-large", errorText: large });
+          yield* Effect.yieldNow;
+          const snapshot = yield* manager.automationSnapshot("tab_large_diagnostics");
+
+          expect(snapshot.consoleEntries).toHaveLength(3);
+          for (const entry of snapshot.consoleEntries) {
+            expect(entry.text.length).toBeLessThanOrEqual(16_384);
+            expect(entry.text).toContain("[truncated]");
+          }
+          expect(snapshot.networkEntries).toHaveLength(1);
+          expect(snapshot.networkEntries[0]!.url.length).toBeLessThanOrEqual(4_096);
+          expect(snapshot.networkEntries[0]!.errorText!.length).toBeLessThanOrEqual(16_384);
+        }),
+      ),
+  );
+
   effectIt.effect("shares background frame capture between recording and picture-in-picture", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -4406,6 +4515,53 @@ describe("PreviewManager", () => {
         yield* manager.closePictureInPicture("tab_cold_capture");
       }),
     ),
+  );
+
+  effectIt.effect(
+    "bounds a stalled picture-in-picture capture without overlapping native work",
+    () => {
+      const image = {
+        toJPEG: () => Buffer.from("late-native-frame"),
+        getSize: () => ({ width: 1280, height: 720 }),
+      };
+      const physicalCapture = Promise.withResolvers<typeof image>();
+      return withManager((manager) =>
+        Effect.gen(function* () {
+          const started = yield* Deferred.make<void>();
+          const capturePage = vi.fn(() => {
+            Deferred.doneUnsafe(started, Effect.void);
+            return physicalCapture.promise;
+          });
+          fromId.mockReturnValue(makeTestPreviewWebContents(capturePage));
+          const { pictureInPictureWindow, send } = makeTestPictureInPictureWindow();
+          browserWindowConstructor.mockImplementation(function () {
+            return pictureInPictureWindow;
+          });
+          yield* manager.createTab("tab_stalled_native_capture");
+          yield* manager.registerWebview("tab_stalled_native_capture", 42);
+          const open = yield* manager
+            .openPictureInPicture("tab_stalled_native_capture")
+            .pipe(Effect.forkChild);
+          yield* Deferred.await(started);
+          yield* TestClock.adjust(1_000);
+
+          expect(pictureInPictureWindow.showInactive).toHaveBeenCalledOnce();
+          yield* Fiber.join(open);
+          yield* TestClock.adjust(5_000);
+          expect(capturePage).toHaveBeenCalledOnce();
+          expect(send).not.toHaveBeenCalled();
+
+          physicalCapture.resolve(image);
+          yield* Effect.promise(() => physicalCapture.promise);
+          yield* TestClock.adjust(1_100);
+          expect(send).toHaveBeenCalledWith(
+            "desktop:preview-pip-frame",
+            expect.objectContaining({ data: Buffer.from("late-native-frame") }),
+          );
+          yield* manager.closePictureInPicture("tab_stalled_native_capture");
+        }).pipe(Effect.ensuring(Effect.sync(() => physicalCapture.resolve(image)))),
+      );
+    },
   );
 
   effectIt.effect("drops empty frames before picture-in-picture delivery", () =>

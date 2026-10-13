@@ -48,6 +48,11 @@ import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
+  completeEditContextMenuRequest,
+  resetEditContextMenuWaitersForTests,
+} from "./editContextMenu.ts";
+import {
+  EDIT_CONTEXT_MENU_CHANNEL,
   MENU_ACTION_CHANNEL,
   SNAP_SHOT_EVENT_CHANNEL,
   TRACKPAD_SCROLL_END_CHANNEL,
@@ -528,6 +533,63 @@ const captureOne = DesktopSnapShotId.make("11111111-1111-4111-8111-111111111111"
 const captureTwo = DesktopSnapShotId.make("22222222-2222-4222-8222-222222222222");
 
 describe("DesktopWindow", () => {
+  it.effect.each(["destroyed", "render-process-gone", "main-navigation", "subframe-navigation"])(
+    "cleans up renderer edit menus across %s",
+    (boundary) =>
+      Effect.gen(function* () {
+        const eventName = boundary.endsWith("navigation") ? "did-start-navigation" : boundary;
+        const host = makeFakeBrowserWindow();
+        const events = new NodeEvents.EventEmitter();
+        Object.assign(host.window.webContents, {
+          on: (name: string, listener: (...args: readonly unknown[]) => void) =>
+            events.on(name, listener),
+          once: (name: string, listener: (...args: readonly unknown[]) => void) =>
+            events.once(name, listener),
+          removeListener: (name: string, listener: (...args: readonly unknown[]) => void) =>
+            events.removeListener(name, listener),
+        });
+        const menus = yield* Queue.unbounded<{ readonly requestId: string }>();
+        host.send.mockImplementation((channel, payload) => {
+          if (channel === EDIT_CONTEXT_MENU_CHANNEL) Queue.offerUnsafe(menus, payload);
+        });
+        const layer = makeTestLayer({
+          window: host.window,
+          createCount: yield* Ref.make(0),
+          mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+        });
+
+        yield* Effect.gen(function* () {
+          const desktopWindow = yield* DesktopWindow.DesktopWindow;
+          yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+          const baseline = events.listenerCount(eventName);
+          events.emit(
+            "context-menu",
+            { preventDefault() {} },
+            {
+              isEditable: true,
+              misspelledWord: "",
+              dictionarySuggestions: [],
+              linkURL: "",
+              mediaType: "none",
+              x: 0,
+              y: 0,
+              editFlags: { canCut: false, canCopy: true, canPaste: true, canSelectAll: true },
+            },
+          );
+          const { requestId } = yield* Queue.take(menus);
+          if (boundary === "subframe-navigation") {
+            events.emit(eventName, { isMainFrame: false });
+            assert.isTrue(completeEditContextMenuRequest(requestId, null));
+            assert.equal(events.listenerCount(eventName), baseline);
+            return;
+          }
+          events.emit(eventName, { isMainFrame: true }, { reason: "clean-exit", exitCode: 0 });
+          assert.isFalse(completeEditContextMenuRequest(requestId, null));
+          assert.equal(events.listenerCount("destroyed"), 0);
+        }).pipe(Effect.provide(layer));
+      }).pipe(Effect.ensuring(Effect.sync(resetEditContextMenuWaitersForTests))),
+  );
+
   it.effect("shows native context menus for browser guests and sign-in popups", () =>
     Effect.gen(function* () {
       const host = makeFakeBrowserWindow();

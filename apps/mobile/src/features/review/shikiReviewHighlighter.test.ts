@@ -8,6 +8,47 @@ import {
 } from "./shikiReviewHighlighter";
 
 describe("highlightSourceFile", () => {
+  it("does not tokenize an already canceled file request", async () => {
+    const controller = new AbortController();
+    const canceled = new Error("Closed file");
+    controller.abort(canceled);
+    await expect(
+      highlightSourceFile({
+        path: "closed.ts",
+        contents: "const value = 1;",
+        theme: "light",
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(canceled);
+  });
+
+  it("stops large-file tokenization at the next yield after cancellation", async () => {
+    await highlightSourceFile({ path: "warm.ts", contents: "const value = 1;", theme: "light" });
+    const controller = new AbortController();
+    const canceled = new Error("Closed while highlighting");
+    const schedule = globalThis.setTimeout;
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => (now += 20));
+    const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, delay) => {
+      controller.abort(canceled);
+      return schedule(callback, delay);
+    });
+    try {
+      await expect(
+        highlightSourceFile({
+          path: "large.ts",
+          contents: "const value = 1;\n".repeat(1_000),
+          theme: "light",
+          signal: controller.signal,
+        }),
+      ).rejects.toBe(canceled);
+      expect(timer).toHaveBeenCalledTimes(1);
+    } finally {
+      clock.mockRestore();
+      timer.mockRestore();
+    }
+  });
+
   it("preserves one highlighted token row per source line without trailing newlines", async () => {
     const lines = [
       'const items = ["a"];',

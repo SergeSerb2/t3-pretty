@@ -7,13 +7,21 @@ import {
   ThreadId,
   RunId,
   type AuthSessionState,
+  type ReviewDiffPreviewResult,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   session: null as Pick<AuthSessionState, "authenticated" | "scopes"> | null,
   sessionError: null as string | null,
   sessionAtom: {},
+  previewAtom: {},
+  preview: {
+    data: null as ReviewDiffPreviewResult | null,
+    error: null as string | null,
+    isPending: false,
+  },
   effects: [] as Array<() => void>,
   checkpoints: [] as ReadonlyArray<ThreadCheckpointSummary>,
 }));
@@ -42,18 +50,21 @@ vi.mock("../../state/use-selected-thread-worktree", () => ({
   useSelectedThreadWorktree: () => ({ selectedThreadCwd: "/repo" }),
 }));
 vi.mock("../../state/query", () => ({
-  useEnvironmentQuery: (atom: unknown) => ({
-    data: atom === state.sessionAtom ? state.session : null,
-    error: atom === state.sessionAtom ? state.sessionError : null,
-    isPending: atom === state.sessionAtom && state.session === null,
-    refresh: vi.fn(),
-  }),
+  useEnvironmentQuery: (atom: unknown) =>
+    atom === state.previewAtom
+      ? { ...state.preview, refresh: vi.fn() }
+      : {
+          data: atom === state.sessionAtom ? state.session : null,
+          error: atom === state.sessionAtom ? state.sessionError : null,
+          isPending: atom === state.sessionAtom && state.session === null,
+          refresh: vi.fn(),
+        },
 }));
 vi.mock("../../state/queries", () => ({
   useCheckpointDiff: () => ({ data: null, error: null, isPending: false, refresh: vi.fn() }),
 }));
 vi.mock("../../state/review", () => ({
-  reviewEnvironment: { diffPreview: vi.fn() },
+  reviewEnvironment: { diffPreview: vi.fn(() => state.previewAtom) },
 }));
 vi.mock("./reviewState", () => ({
   setReviewAsyncError: vi.fn(),
@@ -68,9 +79,11 @@ import { useReviewSections } from "./useReviewSections";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(setReviewSelectedSectionId).mockReset();
   state.effects = [];
   state.session = { authenticated: true, scopes: [AuthFilesystemReadScope] };
   state.sessionError = null;
+  state.preview = { data: null, error: null, isPending: false };
   state.checkpoints = [
     {
       runId: RunId.make("turn-1"),
@@ -207,4 +220,65 @@ it("keeps a cached checkpoint available when the filesystem access check fails",
   const checkpoint = renderSections(makeInput());
   expect(checkpoint.selectedSection?.diff).toBe(checkpointDiff);
   expect(checkpoint.error).toBeNull();
+});
+
+it.each(["working-tree", "branch-range"] as const)(
+  "keeps the %s selection when expired review payloads reload on reopen",
+  (kind) => {
+    const input = makeInput(makeReviewCache(kind));
+    expect(renderSections(input).selectedSection?.id).toBe(`git:${kind}`);
+    vi.mocked(setReviewSelectedSectionId).mockImplementation((_threadKey, selectedSectionId) => {
+      input.reviewCache = { ...input.reviewCache, selectedSectionId };
+    });
+
+    // Raw Git and turn payloads expired while selection still remains cached.
+    input.reviewCache = { ...input.reviewCache, gitSections: [], turnDiffById: {} };
+    state.preview.isPending = true;
+    const pending = renderSections(input);
+    expect(pending.selectedSection).toEqual(
+      expect.objectContaining({ id: `git:${kind}`, diff: null, isLoading: true }),
+    );
+    expect(setReviewSelectedSectionId).not.toHaveBeenCalled();
+
+    state.preview = {
+      data: {
+        cwd: "/repo",
+        generatedAt: DateTime.makeUnsafe("2026-10-13T00:00:00Z"),
+        sources: [
+          ...makeReviewCache("branch-range").gitSections,
+          ...makeReviewCache("working-tree").gitSections,
+        ],
+      },
+      isPending: false,
+      error: null,
+    };
+    const loaded = renderSections(input);
+    expect(loaded.selectedSection).toEqual(
+      expect.objectContaining({ id: `git:${kind}`, diff: localDiff, isLoading: false }),
+    );
+    expect(setReviewSelectedSectionId).not.toHaveBeenCalled();
+  },
+);
+
+it("validates a retained Git selection after fresh sources finish loading", () => {
+  const input = makeInput({ ...makeReviewCache(), gitSections: [] });
+  vi.mocked(setReviewSelectedSectionId).mockImplementation((_threadKey, selectedSectionId) => {
+    input.reviewCache = { ...input.reviewCache, selectedSectionId };
+  });
+  state.preview.isPending = true;
+  renderSections(input);
+  expect(setReviewSelectedSectionId).not.toHaveBeenCalled();
+
+  state.preview = {
+    data: {
+      cwd: "/repo",
+      generatedAt: DateTime.makeUnsafe("2026-10-13T00:00:00Z"),
+      sources: makeReviewCache("branch-range").gitSections,
+    },
+    isPending: false,
+    error: null,
+  };
+  renderSections(input);
+  expect(setReviewSelectedSectionId).toHaveBeenCalledWith("environment:thread", "git:branch-range");
+  expect(renderSections(input).selectedSection?.id).toBe("git:branch-range");
 });

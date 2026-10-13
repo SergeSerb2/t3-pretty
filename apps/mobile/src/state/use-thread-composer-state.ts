@@ -55,16 +55,14 @@ import {
 } from "../lib/composerImages";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
-import { buildThreadFeed } from "../lib/threadActivity";
 import { acknowledgedThreadMessagesAtom } from "./acknowledged-thread-messages";
 import {
   pruneTimelineAcknowledgments,
   visibleUserMessageIds,
 } from "./acknowledged-thread-messages.logic";
-import { appendPendingThreadMessages } from "../features/threads/pending-thread-feed";
 import { threadAllowsProviderSwitch } from "./thread-provider-switching";
 import { appAtomRegistry } from "../state/atom-registry";
-import { pendingThreadCreationMessage } from "./pending-thread-creation";
+import { useThreadFeedPresentation } from "./use-thread-feed-presentation";
 import {
   composerAttachmentUploadBlockReason,
   composerAttachmentUploadsAtom,
@@ -184,7 +182,7 @@ export function useThreadDraftForThread(input: {
   };
 }
 
-export function useThreadComposerState() {
+export function useThreadComposerState(options: { readonly visible?: boolean } = {}) {
   const {
     selectedThread: selectedThreadShell,
     selectedThreadCreation,
@@ -269,36 +267,17 @@ export function useThreadComposerState() {
   // detail is usually present but empty during a worktree checkout, so this
   // cannot be an either/or with the loaded messages.
   const pendingCreationMessage = selectedThreadCreation?.message ?? null;
-  const selectedThreadFeed = useMemo(() => {
-    const pendingCreation =
-      pendingCreationMessage !== null &&
-      !selectedThreadEchoedMessageIds.has(pendingCreationMessage.messageId)
-        ? [pendingThreadCreationMessage(pendingCreationMessage)]
-        : [];
-    const feed = buildThreadFeed(selectedThreadVisibleTurnItems, {
-      anchoredMessages: pendingCreation,
-      attempts: selectedThreadAttempts,
-      nodes: selectedThreadNodes,
-    });
-    const pendingAcknowledgments = acknowledgedMessages.filter(
-      (message) =>
-        scopedThreadKey(message.environmentId, message.threadId) === selectedThreadKey &&
-        !selectedThreadQueuedMessages.some((queued) => queued.messageId === message.messageId),
-    );
-    if (pendingAcknowledgments.length === 0) return feed;
-    return appendPendingThreadMessages(feed, feed, pendingAcknowledgments).map((entry) =>
-      entry.pendingMessage ? { ...entry, acknowledged: true } : entry,
-    );
-  }, [
-    selectedThreadEchoedMessageIds,
-    selectedThreadAttempts,
-    selectedThreadNodes,
-    selectedThreadVisibleTurnItems,
+  const selectedThreadFeed = useThreadFeedPresentation({
+    visible: options.visible ?? true,
+    threadKey: selectedThreadKey,
+    visibleTurnItems: selectedThreadVisibleTurnItems,
+    echoedMessageIds: selectedThreadEchoedMessageIds,
+    attempts: selectedThreadAttempts,
+    nodes: selectedThreadNodes,
     pendingCreationMessage,
-    selectedThreadKey,
-    selectedThreadQueuedMessages,
+    queuedMessages: selectedThreadQueuedMessages,
     acknowledgedMessages,
-  ]);
+  });
   useEffect(() => {
     const current = appAtomRegistry.get(acknowledgedThreadMessagesAtom);
     const retained = pruneTimelineAcknowledgments(

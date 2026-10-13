@@ -1,12 +1,14 @@
 // @effect-diagnostics nodeBuiltinImport:off - Tests use Node's glob matcher to verify electron-builder exclusions.
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
+import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
 import { DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS } from "@t3tools/contracts";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { extractFile } from "@electron/asar";
+import { createPackageWithOptions, extractAll, extractFile } from "@electron/asar";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as FileSystem from "effect/FileSystem";
@@ -757,7 +759,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "!**/*.d.mts",
       "!**/*.d.cts",
       "!**/node_modules/**/{README,README.*,CHANGELOG,CHANGELOG.*,readme,readme.*}",
-      "!**/node_modules/playwright-core/**",
       "!**/node_modules/effect/**/httpApiScalar.js",
       "!**/node_modules/effect/**/HttpApiScalar.js",
       "!**/node_modules/effect/**/httpApiSwagger.js",
@@ -781,6 +782,91 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       },
     ]);
   });
+
+  it.effect.each(["mac", "linux"] as const)(
+    "keeps the server's Playwright runtime loadable after %s ASAR packaging",
+    (platform) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-playwright-package-" });
+          const stage = NodePath.join(root, "stage");
+          const filtered = NodePath.join(root, "filtered");
+          const extracted = NodePath.join(root, "extracted");
+          const serverRequire = NodeModule.createRequire(
+            NodeURL.fileURLToPath(new URL("../apps/server/package.json", import.meta.url)),
+          );
+          const desktopRequire = NodeModule.createRequire(
+            NodeURL.fileURLToPath(new URL("../apps/desktop/package.json", import.meta.url)),
+          );
+          const builderRequire = NodeModule.createRequire(
+            desktopRequire.resolve("electron-builder/package.json"),
+          );
+          const { getNodeModuleFileMatcher } = builderRequire(
+            "app-builder-lib/out/fileMatcher.js",
+          ) as {
+            readonly getNodeModuleFileMatcher: (
+              from: string,
+              to: string,
+              expand: (pattern: string) => string,
+              platformOptions: object,
+              packager: {
+                readonly config: { readonly files: ReadonlyArray<string> };
+                readonly debugLogger: { readonly isEnabled: boolean };
+              },
+            ) => { readonly createFilter: () => (file: string, stat: NodeFS.Stats) => boolean };
+          };
+          const packageSource = NodePath.dirname(
+            NodeFS.realpathSync(serverRequire.resolve("playwright-core/package.json")),
+          );
+          const packageStage = NodePath.join(stage, "node_modules/playwright-core");
+          yield* fs.copy(packageSource, packageStage);
+          const filter = getNodeModuleFileMatcher(
+            stage,
+            filtered,
+            (pattern) => pattern,
+            {},
+            {
+              config: {
+                files: [
+                  ...DESKTOP_FILE_EXCLUSIONS,
+                  ...(platform === "mac" ? MAC_FILE_EXCLUSIONS : LINUX_FILE_EXCLUSIONS),
+                ],
+              },
+              debugLogger: { isEnabled: false },
+            },
+          ).createFilter();
+          yield* fs.makeDirectory(NodePath.join(filtered, "node_modules"), { recursive: true });
+          NodeFS.cpSync(packageStage, NodePath.join(filtered, "node_modules/playwright-core"), {
+            recursive: true,
+            filter: (file) => filter(file, NodeFS.statSync(file)),
+          });
+          const archive = NodePath.join(root, "app.asar");
+          yield* Effect.promise(() => createPackageWithOptions(filtered, archive, {}));
+          // The packaged self-check uses an isolated ASAR extraction too. This
+          // exercises Playwright's file-backed JS and browser metadata together.
+          extractAll(archive, extracted);
+          const packagedRequire = NodeModule.createRequire(
+            NodePath.join(extracted, "apps/server/dist/probe.mjs"),
+          );
+          const loaded = packagedRequire("playwright-core") as {
+            readonly chromium: { readonly executablePath: () => string };
+          };
+          assert.isTrue(
+            packagedRequire
+              .resolve("playwright-core")
+              .startsWith(`${NodeFS.realpathSync(extracted)}${NodePath.sep}`),
+          );
+          assert.isString(loaded.chromium.executablePath());
+          for (const file of ["browsers.json", "lib/coreBundle.js", "lib/utilsBundle.js"]) {
+            assert.isAbove(
+              extractFile(archive, NodePath.join("node_modules/playwright-core", file)).byteLength,
+              0,
+            );
+          }
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
+  );
 
   it.effect("applies platform-specific packaging to the build config", () =>
     Effect.gen(function* () {

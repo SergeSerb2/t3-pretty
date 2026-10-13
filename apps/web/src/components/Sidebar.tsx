@@ -1,5 +1,6 @@
 import { ChevronDownIcon } from "lucide-react";
 import { ChevronRightIcon } from "lucide-react";
+import { subscribeSecondTick } from "../lib/secondTicker";
 import { resolveSidebarThreadTopStatus } from "./Sidebar.logic";
 import { resolveThreadStatusPill } from "./Sidebar.logic";
 import { sortStoredThreadsForSidebar } from "./Sidebar.logic";
@@ -420,17 +421,25 @@ function SidebarThreadTopStatusMark(props: {
   );
 }
 
-// Self-ticking so only this span re-renders each second, not the whole row.
+// Tick this span through the shared clock without committing the sidebar row.
 function WorkingDuration(props: { startedAt: string | null }) {
   const startedMs = props.startedAt !== null ? Date.parse(props.startedAt) : Number.NaN;
-  const [, setTick] = useState(0);
+  const textRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (Number.isNaN(startedMs)) return;
-    const id = window.setInterval(() => setTick((tick) => tick + 1), 1_000);
-    return () => window.clearInterval(id);
+    return subscribeSecondTick(() => {
+      const text = formatWorkingDurationLabel(Date.now() - startedMs);
+      if (textRef.current && textRef.current.textContent !== text) {
+        textRef.current.textContent = text;
+      }
+    });
   }, [startedMs]);
   if (Number.isNaN(startedMs)) return null;
-  return <span className="tabular-nums">{formatWorkingDurationLabel(Date.now() - startedMs)}</span>;
+  return (
+    <span ref={textRef} className="tabular-nums">
+      {formatWorkingDurationLabel(Date.now() - startedMs)}
+    </span>
+  );
 }
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, ProviderInstanceEntry> = new Map();

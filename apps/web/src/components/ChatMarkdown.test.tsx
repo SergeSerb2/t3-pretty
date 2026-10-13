@@ -13,6 +13,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
+import * as DiffRendering from "../lib/diffRendering";
 import { GitHubIcon } from "./Icons";
 import { Button } from "./ui/button";
 import { setMarkdownTaskChecked } from "./files/filePreviewMode";
@@ -277,6 +278,43 @@ describe("ChatMarkdown favicon privacy", () => {
 });
 
 describe("ChatMarkdown streaming", () => {
+  it("does not hash growing code for the settled-code cache until streaming ends", async () => {
+    const highlighter = await getSyntaxHighlighterPromise("text");
+    const hash = vi.spyOn(DiffRendering, "fnv1a32");
+    const highlight = vi.spyOn(highlighter, "codeToHast");
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    let renderer: ReactTestRenderer | undefined;
+    const code = `cache-free-stream-${"x".repeat(65_536)}`;
+    let text = "";
+    try {
+      for (let index = 0; index < 5; index++) {
+        text = `\`\`\`text\n${code}${index}`;
+        await act(async () => {
+          const message = <ChatMarkdown cwd="/tmp/project" text={text} isStreaming />;
+          if (renderer) renderer.update(message);
+          else renderer = create(message);
+        });
+      }
+      expect(hash.mock.calls.length).toBe(0);
+      text += "\n```";
+      await act(async () => {
+        renderer!.update(<ChatMarkdown cwd="/tmp/project" text={text} />);
+      });
+      expect(hash).toHaveBeenCalled();
+      const completedHighlightCalls = highlight.mock.calls.length;
+      await act(async () => renderer!.unmount());
+      await act(async () => {
+        renderer = create(<ChatMarkdown cwd="/tmp/project" text={text} />);
+      });
+      // Finishing still populates the cache for a later non-streaming renderer.
+      expect(highlight).toHaveBeenCalledTimes(completedHighlightCalls);
+    } finally {
+      await act(async () => renderer?.unmount());
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    }
+  });
+
   it("runs only a complete single-line shell block after a click", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const onRunShellCommand = vi.fn();

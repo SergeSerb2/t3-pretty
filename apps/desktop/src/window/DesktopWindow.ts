@@ -715,19 +715,43 @@ export const make = Effect.gen(function* () {
 
         void runPromise(
           Effect.callback<string | null>((resume) => {
+            const ownerContents = ownerWindow.webContents;
+            const cancel = () => {
+              completeEditContextMenuRequest(requestId, null);
+            };
+            const onNavigation = (
+              event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>,
+            ) => {
+              if (event.isMainFrame) cancel();
+            };
+            const cleanup = () => {
+              ownerContents.removeListener("destroyed", cancel);
+              ownerContents.removeListener("render-process-gone", cancel);
+              ownerContents.removeListener("did-start-navigation", onNavigation);
+            };
             registerEditContextMenuWaiter(requestId, (itemId) => {
+              cleanup();
               resume(Effect.succeed(itemId));
             });
-            if (ownerWindow.isDestroyed() || ownerWindow.webContents.isDestroyed()) {
-              completeEditContextMenuRequest(requestId, null);
+            if (ownerWindow.isDestroyed() || ownerContents.isDestroyed()) {
+              cancel();
               return;
             }
-            ownerWindow.webContents.send(EDIT_CONTEXT_MENU_CHANNEL, {
+            ownerContents.once("destroyed", cancel);
+            ownerContents.once("render-process-gone", cancel);
+            ownerContents.on("did-start-navigation", onNavigation);
+            ownerContents.send(EDIT_CONTEXT_MENU_CHANNEL, {
               requestId,
               items,
               position: { x: params.x, y: params.y, motion: "instant" },
             });
+            return Effect.sync(cancel);
           }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                completeEditContextMenuRequest(requestId, null);
+              }),
+            ),
             Effect.flatMap((itemId) => {
               const command = resolveEditContextMenuCommand({
                 actionId: itemId,

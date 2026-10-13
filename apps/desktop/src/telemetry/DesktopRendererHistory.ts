@@ -80,8 +80,9 @@ interface RendererRecord {
 const MESSAGE_MAX = 1_024;
 const STACK_MAX = 2_048;
 
+// Even an already bounded substring can pin a larger source while disk IO stalls.
 const boundText = (value: string, max: number): string =>
-  value.length <= max ? value : value.slice(0, max);
+  Buffer.from(value.slice(0, max), "utf16le").toString("utf16le");
 
 function parseConsoleMessageArgs(args: ReadonlyArray<unknown>): {
   readonly level: string;
@@ -154,8 +155,24 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
     ),
   );
 
+  // Error logs share the bounded incident queue. A guest's console burst must
+  // not fork an independent logger fiber for every event it produces.
   const writeRecord = (record: RendererRecord) =>
-    writer.writeText(`${JSON.stringify(record)}\n`).pipe(Effect.ignore);
+    writer.writeText(`${JSON.stringify(record)}\n`).pipe(
+      Effect.ignore,
+      Effect.andThen(
+        record.message === undefined
+          ? Effect.void
+          : Effect.logError("Renderer error").pipe(
+              Effect.annotateLogs({
+                event: record.event,
+                surface: record.surface,
+                webContentsId: record.webContentsId,
+                message: record.message,
+              }),
+            ),
+      ),
+    );
   const writerFiber = yield* Effect.forever(
     Effect.uninterruptibleMask((restore) =>
       restore(Queue.take(records)).pipe(Effect.flatMap(writeRecord)),
@@ -236,16 +253,6 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
     extras: { readonly message: string; readonly stack?: string },
   ) => {
     record(renderer, event, extras);
-    runFork(
-      Effect.logError("Renderer error").pipe(
-        Effect.annotateLogs({
-          event,
-          surface: renderer.identity.surface,
-          webContentsId: renderer.webContents.id,
-          message: boundText(extras.message, MESSAGE_MAX),
-        }),
-      ),
-    );
   };
 
   const register = (webContents: Electron.WebContents, identity: RendererIdentity) =>
@@ -378,14 +385,6 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
             [...active.values()][0])
           : active.get(input.webContentsId);
       if (renderer === undefined) {
-        runFork(
-          Effect.logError("Renderer error").pipe(
-            Effect.annotateLogs({
-              event: input.event,
-              message: boundText(input.message, MESSAGE_MAX),
-            }),
-          ),
-        );
         Queue.offerUnsafe(records, {
           version: 1,
           mainPid: process.pid,

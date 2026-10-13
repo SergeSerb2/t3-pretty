@@ -97,11 +97,13 @@ const makeEnvironmentQueryHarness = Effect.fn("TestEnvironmentQuery.makeHarness"
     idleTtlMs,
     persistence,
     initialState,
+    staleTimeMs = 60_000,
   }: {
     readonly refreshTrigger?: Atom.Atom<unknown>;
     readonly idleTtlMs?: number;
     readonly persistence?: QueryPersistence<A>;
     readonly initialState?: SupervisorConnectionState;
+    readonly staleTimeMs?: number;
   } = {},
 ) {
   const supervisorState = yield* SubscriptionRef.make(initialState ?? queryConnectionState());
@@ -127,7 +129,7 @@ const makeEnvironmentQueryHarness = Effect.fn("TestEnvironmentQuery.makeHarness"
   const runtime = Atom.runtime(Layer.succeed(EnvironmentRegistry, environmentRegistry));
   const family = createEnvironmentQueryAtomFamily(runtime, {
     label: "test.environment-query",
-    staleTimeMs: 60_000,
+    staleTimeMs,
     ...(persistence === undefined ? {} : { persistence }),
     execute: () => execute,
     ...(refreshTrigger === undefined ? {} : { refreshTrigger: () => refreshTrigger }),
@@ -716,6 +718,33 @@ describe("environment query lifecycle", () => {
     ),
   );
 
+  it.effect.each(["success", "failure"] as const)(
+    "does not refetch a zero-stale-time query when its request completes with %s",
+    (outcome) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          let executions = 0;
+          const harness = yield* makeEnvironmentQueryHarness(
+            Effect.suspend(() => {
+              executions += 1;
+              return outcome === "success"
+                ? Effect.succeed("settled")
+                : Effect.fail(new TestQueryError({ message: "failed" }));
+            }),
+            { staleTimeMs: 0 },
+          );
+          const registry = yield* mountEnvironmentQuery(harness.atom);
+          yield* Effect.result(readEnvironmentQuery(registry, harness.atom));
+          for (let step = 0; step < 100; step += 1) yield* Effect.yieldNow;
+          expect(executions).toBe(1);
+          expect(registry.get(harness.atom)).toMatchObject({
+            _tag: outcome === "success" ? "Success" : "Failure",
+            waiting: false,
+          });
+        }),
+      ),
+  );
+
   it.effect("refreshes on its trigger while read, and once on its next read when idle", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -793,7 +822,7 @@ describe("environment query lifecycle", () => {
         vi.advanceTimersByTime(500);
         registry.set(trigger, 1);
         yield* Effect.yieldNow;
-        // Sweeps the query node but not the data it read, whose idle TTL started with the trigger.
+        // Sweep the public query lifetime after it missed the idle trigger change.
         vi.advanceTimersByTime(700);
         expect(executions).toBe(1);
 
@@ -1266,6 +1295,35 @@ describe("createEnvironmentQueryAtomFamily", () => {
         const remount = registry.mount(harness.atom);
         expect(yield* readEnvironmentQuery(registry, harness.atom)).toBe(baseline + 1);
         expect(yield* Ref.get(harness.executions)).toBe(baseline + 1);
+        remount();
+      }),
+  );
+
+  it.effect.each(["reconnect", "foreground"] as const)(
+    "keeps an unused query's fresh result through %s and a return",
+    (reason) =>
+      Effect.gen(function* () {
+        const harness = yield* makeQueryHarness(60_000);
+        const registry = AtomRegistry.make();
+        yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+        const unmount = registry.mount(harness.atom);
+        yield* readEnvironmentQuery(registry, harness.atom);
+        for (let step = 0; step < 100; step += 1) yield* Effect.yieldNow;
+        const baseline = yield* Ref.get(harness.executions);
+        unmount();
+
+        if (reason === "reconnect") {
+          yield* SubscriptionRef.set(harness.state, connectedState(2));
+        } else {
+          yield* Queue.offer(harness.wakeups, "application-active-reconnect");
+          for (let step = 0; step < 100; step += 1) yield* Effect.yieldNow;
+          yield* harness.testClock.adjust("3500 millis");
+        }
+        expect(yield* settleExecutions(harness.executions, baseline)).toBe(baseline);
+
+        const remount = registry.mount(harness.atom);
+        expect(yield* readEnvironmentQuery(registry, harness.atom)).toBe(baseline);
+        expect(yield* Ref.get(harness.executions)).toBe(baseline);
         remount();
       }),
   );

@@ -119,6 +119,24 @@ const writeObservabilitySettings = Effect.fn(function* (
 });
 
 describe("DesktopObservability", () => {
+  it.each([16, 2 * 1024 * 1024])(
+    "copies retained Node Buffer output without pinning its %i-byte backing allocation",
+    (size) => {
+      const source = Buffer.alloc(size, 7);
+      const session = DesktopObservability.appendBoundedOutputChunk(
+        { runId: "buffer-output", startDetails: "pid=123", chunks: [], byteLength: 0 },
+        "stdout",
+        source,
+      );
+      const retained = session.chunks[0]!.chunk;
+      assert.notStrictEqual(retained.buffer, source.buffer);
+      assert.equal(retained.buffer.byteLength, Math.min(size, 1024 * 1024));
+      source.fill(9);
+      assert.equal(retained[0], 7);
+      assert.equal(retained.at(-1), 7);
+    },
+  );
+
   it("advances a retained output offset instead of repeatedly copying a full head chunk", () => {
     const maxBufferedBytes = 1024 * 1024;
     const initial = DesktopObservability.appendBoundedOutputChunk(

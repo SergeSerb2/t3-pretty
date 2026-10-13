@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import { AppState } from "react-native";
 
 import { getCachedNativeReviewDiffData } from "./nativeReviewDiffAdapter";
 import type { ReviewSectionItem } from "./reviewModel";
@@ -15,33 +16,15 @@ interface IdleDeadlineLike {
 }
 
 type IdleCallback = (deadline: IdleDeadlineLike) => void;
-const MAX_PREWARMED_REVIEW_SECTIONS = 2;
-
 export const REVIEW_DIFF_PREWARM_MAX_SECTIONS = 4;
 export const REVIEW_DIFF_PREWARM_MAX_CHARACTERS = 1_000_000;
 
-/** Keep idle prewarming bounded so large reviews cannot become a background parse job. */
-export function selectReviewDiffPrewarmSections(
-  sections: ReadonlyArray<ReviewSectionItem>,
-  selectedSectionId: string | null,
-): ReadonlyArray<ReviewSectionItem> {
-  const selected: ReviewSectionItem[] = [];
-  let characters = 0;
-  for (const section of sections) {
-    if (selected.length >= REVIEW_DIFF_PREWARM_MAX_SECTIONS) break;
-    if (section.id === selectedSectionId || section.diff === null) continue;
-    const size = section.diff.length;
-    if (
-      size > REVIEW_DIFF_PREWARM_MAX_CHARACTERS ||
-      characters + size > REVIEW_DIFF_PREWARM_MAX_CHARACTERS
-    ) {
-      continue;
-    }
-    selected.push(section);
-    characters += size;
-  }
-  return selected;
+function subscribeAppState(onChange: () => void) {
+  const subscription = AppState.addEventListener("change", onChange);
+  return () => subscription.remove();
 }
+
+const getAppIsActive = () => AppState.currentState === "active";
 
 function scheduleIdle(callback: IdleCallback): number {
   if (typeof globalThis.requestIdleCallback === "function") {
@@ -67,7 +50,7 @@ export function prewarmReviewDiffSection(input: {
   readonly section: ReviewSectionItem;
 }): void {
   const { section, threadKey } = input;
-  if (section.diff === null || section.diff.length > MAX_CACHED_REVIEW_SOURCE_CHARACTERS) {
+  if (section.diff === null || section.diff.length > REVIEW_DIFF_PREWARM_MAX_CHARACTERS) {
     return;
   }
 
@@ -79,7 +62,7 @@ export function prewarmReviewDiffSection(input: {
   getCachedNativeReviewDiffData({ parsedDiff, comments: [] });
 }
 
-/** Selects nearby loaded sections that fit in the cache with the selected section. */
+/** Bounds speculative parsing, while reserving the selected section's cache budget. */
 export function getReviewDiffPrewarmSections(input: {
   readonly threadKey: string;
   readonly sections: ReadonlyArray<ReviewSectionItem>;
@@ -102,9 +85,13 @@ export function getReviewDiffPrewarmSections(input: {
   }
 
   const pendingSections: ReviewSectionItem[] = [];
+  let prewarmCharacterCount = 0;
   for (let distance = 1; distance < sections.length; distance += 1) {
     for (const index of [selectedIndex - distance, selectedIndex + distance]) {
-      if (pendingSections.length >= MAX_CACHED_REVIEW_DIFFS - 1) {
+      if (
+        pendingSections.length >=
+        Math.min(REVIEW_DIFF_PREWARM_MAX_SECTIONS, MAX_CACHED_REVIEW_DIFFS - 1)
+      ) {
         return pendingSections;
       }
       const section = sections[index];
@@ -116,10 +103,14 @@ export function getReviewDiffPrewarmSections(input: {
         sectionId: section.id,
         diff: section.diff,
       });
-      if (sourceCharacterCount + sectionCharacterCount > MAX_CACHED_REVIEW_SOURCE_CHARACTERS) {
+      if (
+        prewarmCharacterCount + section.diff.length > REVIEW_DIFF_PREWARM_MAX_CHARACTERS ||
+        sourceCharacterCount + sectionCharacterCount > MAX_CACHED_REVIEW_SOURCE_CHARACTERS
+      ) {
         continue;
       }
       pendingSections.push(section);
+      prewarmCharacterCount += section.diff.length;
       sourceCharacterCount += sectionCharacterCount;
     }
   }
@@ -135,9 +126,10 @@ export function useReviewDiffPrewarming(input: {
 }): void {
   const { sections, selectedSectionId, threadKey } = input;
   const enabled = input.enabled ?? true;
+  const appIsActive = useSyncExternalStore(subscribeAppState, getAppIsActive);
 
   useEffect(() => {
-    if (!enabled || !threadKey) {
+    if (!enabled || !appIsActive || !threadKey) {
       return;
     }
 
@@ -156,7 +148,7 @@ export function useReviewDiffPrewarming(input: {
 
     const scheduleNext = () => {
       idleHandle = scheduleIdle(() => {
-        if (cancelled) {
+        if (cancelled || !getAppIsActive()) {
           return;
         }
 
@@ -180,5 +172,5 @@ export function useReviewDiffPrewarming(input: {
         cancelIdle(idleHandle);
       }
     };
-  }, [enabled, sections, selectedSectionId, threadKey]);
+  }, [enabled, appIsActive, sections, selectedSectionId, threadKey]);
 }

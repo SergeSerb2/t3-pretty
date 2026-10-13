@@ -21,7 +21,7 @@ function makeApi(input: {
   readonly attached?: boolean;
   readonly activated?: boolean;
 }) {
-  return {
+  const api = {
     getCurrentThreadId: vi.fn(() => input.currentThreadId ?? 10),
     getForegroundWindow: vi.fn(() => input.foregroundWindow ?? 99n),
     getWindowClassName: vi.fn(() => "Chrome_WidgetWin_1"),
@@ -34,24 +34,38 @@ function makeApi(input: {
     getWindowRect: vi.fn(() => undefined),
     getProcessImagePath: vi.fn(() => ""),
     isKeyDown: vi.fn(() => false),
-    attachThreadInput: vi.fn((_source, _target, attach) =>
+    attachThreadInput: vi.fn((_source: number, _target: number, attach: boolean) =>
       attach ? (input.attached ?? true) : true,
     ),
     setForegroundWindow: vi.fn(() => input.activated ?? true),
-  } satisfies WindowsForegroundApi;
+  };
+  return api satisfies WindowsForegroundApi;
 }
 
 describe("Windows foreground activation", () => {
+  it("does not wait for an unresponsive foreground app's input queue", () => {
+    const api = makeApi({});
+    let sharedInputQueue = false;
+    api.attachThreadInput.mockImplementation((_source, _target, attach) => {
+      sharedInputQueue = attach;
+      return true;
+    });
+    api.setForegroundWindow.mockImplementation(() => {
+      if (sharedInputQueue) throw new Error("The foreground app is not processing WM_ACTIVATE");
+      return true;
+    });
+
+    assert.isTrue(activateWindowsForegroundWithApi(nativeHandle(41n), api));
+    assert.lengthOf(api.attachThreadInput.mock.calls, 0);
+  });
+
   it.each([4, 8])("activates a %i-byte native window handle", (bytes) => {
     const api = makeApi({});
     const handle = nativeHandle(41n, bytes);
 
     assert.isTrue(activateWindowsForegroundWithApi(handle, api));
 
-    assert.deepEqual(api.attachThreadInput.mock.calls, [
-      [10, 20, true],
-      [10, 20, false],
-    ]);
+    assert.lengthOf(api.attachThreadInput.mock.calls, 0);
     assert.deepEqual(api.setForegroundWindow.mock.calls, [[41n]]);
   });
 
@@ -79,18 +93,15 @@ describe("Windows foreground activation", () => {
 
     assert.isFalse(activateWindowsForegroundWithApi(nativeHandle(41n), api));
 
-    assert.deepEqual(api.attachThreadInput.mock.calls, [
-      [10, 20, true],
-      [10, 20, false],
-    ]);
+    assert.lengthOf(api.attachThreadInput.mock.calls, 0);
   });
 
-  it("still asks Windows directly when the input queues cannot be attached", () => {
+  it("still asks Windows directly without an input queue attachment", () => {
     const api = makeApi({ attached: false });
 
     assert.isTrue(activateWindowsForegroundWithApi(nativeHandle(41n), api));
 
-    assert.deepEqual(api.attachThreadInput.mock.calls, [[10, 20, true]]);
+    assert.lengthOf(api.attachThreadInput.mock.calls, 0);
     assert.deepEqual(api.setForegroundWindow.mock.calls, [[41n]]);
   });
 

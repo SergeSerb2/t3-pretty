@@ -275,6 +275,80 @@ describe("applyOrchestrationV2ProjectionEvent", () => {
     expect(next?.visibleTurnItems.map((row) => row.position)).toEqual([0, 1]);
   });
 
+  it("moves an existing item when its authoritative ordinal changes", () => {
+    const items = [commandItem("first", "first", 1), commandItem("second", "second", 2)];
+    const projection = {
+      ...emptyProjection,
+      runs: [run],
+      turnItems: items,
+      visibleTurnItems: items.map((item, position) => ({
+        item,
+        position,
+        visibility: "local" as const,
+        sourceThreadId: threadId,
+        sourceItemId: item.id,
+      })),
+    };
+    const payload = commandItem("second", "reordered", 0);
+    const next = applyOrchestrationV2ProjectionEvent(projection, {
+      id: "reorder-item",
+      type: "turn-item.updated",
+      threadId,
+      occurredAt: now,
+      payload,
+    } as OrchestrationV2DomainEvent);
+
+    expect(next?.visibleTurnItems.map((row) => row.item.id)).toEqual([payload.id, items[0]!.id]);
+    expect(next?.visibleTurnItems.map((row) => row.position)).toEqual([0, 1]);
+    expect(next?.visibleTurnItems[0]?.item).toBe(payload);
+    expect(projection.visibleTurnItems.map((row) => row.position)).toEqual([0, 1]);
+  });
+
+  it("sorts an inherited item when an update makes it local", () => {
+    const inherited = {
+      ...commandItem("inherited", "context", 1),
+      threadId: ThreadId.make("context-thread"),
+    };
+    const local = commandItem("local", "local", 0);
+    const projection = {
+      ...emptyProjection,
+      runs: [run],
+      turnItems: [local],
+      visibleTurnItems: [
+        {
+          item: inherited,
+          position: 0,
+          visibility: "inherited" as const,
+          sourceThreadId: inherited.threadId,
+          sourceItemId: inherited.id,
+        },
+        {
+          item: local,
+          position: 1,
+          visibility: "local" as const,
+          sourceThreadId: threadId,
+          sourceItemId: local.id,
+        },
+      ],
+    };
+    const payload = commandItem("inherited", "now local", 1);
+    const next = applyOrchestrationV2ProjectionEvent(projection, {
+      id: "localize-item",
+      type: "turn-item.updated",
+      threadId,
+      occurredAt: now,
+      payload,
+    } as OrchestrationV2DomainEvent);
+
+    expect(next?.visibleTurnItems.map((row) => row.item.id)).toEqual([local.id, payload.id]);
+    expect(next?.visibleTurnItems.map((row) => row.position)).toEqual([0, 1]);
+    expect(next?.visibleTurnItems[1]).toMatchObject({
+      visibility: "local",
+      sourceThreadId: threadId,
+      item: payload,
+    });
+  });
+
   describe("partial timeline", () => {
     const queuedRunId = RunId.make("run-queued");
     const steerRunId = RunId.make("run-steer");
@@ -442,6 +516,7 @@ describe("applyOrchestrationV2ProjectionEvent", () => {
 
 it("does not scan every row against every run for a streaming item update", () => {
   let runReads = 0;
+  let ordinalReads = 0;
   const runs = Array.from({ length: 100 }, (_, index) => ({
     ...run,
     get id() {
@@ -449,9 +524,13 @@ it("does not scan every row against every run for a streaming item update", () =
       return RunId.make(`run-${index}`);
     },
   }));
-  const items = Array.from({ length: 1000 }, (_, index) =>
-    commandItem(`item-${index}`, "before", index),
-  );
+  const items = Array.from({ length: 1000 }, (_, index) => ({
+    ...commandItem(`item-${index}`, "before", index),
+    get ordinal() {
+      ordinalReads++;
+      return index;
+    },
+  }));
   const projection = {
     ...emptyProjection,
     runs,
@@ -475,4 +554,5 @@ it("does not scan every row against every run for a streaming item update", () =
   expect(next?.visibleTurnItems.at(-1)?.item).toBe(payload);
   expect(next?.visibleTurnItems[0]).toBe(projection.visibleTurnItems[0]);
   expect(runReads).toBeLessThanOrEqual(100);
+  expect(ordinalReads).toBeLessThanOrEqual(1);
 });

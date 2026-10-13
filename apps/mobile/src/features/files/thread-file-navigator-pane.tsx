@@ -25,6 +25,7 @@ import { FileTreeBrowser } from "./FileTreeBrowser";
 import { useFileTreeEntries } from "./useFileTreeEntries";
 import { preloadWorkspaceFileContents } from "./preload-workspace-file";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
+import { useInspectorVisibility } from "../layout/inspector-visibility";
 
 export function ThreadFileNavigatorPane(props: {
   readonly cwd: string;
@@ -39,6 +40,7 @@ export function ThreadFileNavigatorPane(props: {
     setSearchQueryState(limitMobileSearchQuery(query, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH));
   }, []);
   const { toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
+  const inspectorVisible = useInspectorVisibility();
   const { themeAppearance: highlightTheme } = useAppearancePreferences();
   const theme = useUniwindTheme();
   const foregroundColor = theme["--color-foreground"];
@@ -59,6 +61,7 @@ export function ThreadFileNavigatorPane(props: {
     environmentId: props.environmentId,
     cwd: canReadFiles ? props.cwd : null,
     searchQuery,
+    enabled: inspectorVisible,
   });
   const handlePreviewFile = useCallback(
     (relativePath: string) => {

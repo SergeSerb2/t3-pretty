@@ -2,6 +2,7 @@
 import { act, useEffect, useLayoutEffect, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import * as DateTime from "effect/DateTime";
 
 const harness = vi.hoisted(() => {
   const listeners = new Set<() => void>();
@@ -41,6 +42,7 @@ vi.mock("react-native", () => ({
 }));
 
 import { useVisibleSecondClock } from "./use-visible-second-clock";
+import { useSubagentElapsed } from "./use-subagent-elapsed";
 
 const START_MS = Date.UTC(2026, 9, 3, 12, 0, 0);
 let root: Root | null = null;
@@ -195,5 +197,49 @@ describe("useVisibleSecondClock", () => {
     root = null;
     expect(vi.getTimerCount()).toBe(0);
     expect(harness.appStateListeners.size).toBe(0);
+  });
+});
+
+describe("agent sheet elapsed labels", () => {
+  const labels: (string | null)[] = [];
+  function AgentProbe() {
+    const label = useSubagentElapsed(
+      { status: "running", startedAt: DateTime.makeUnsafe(START_MS), completedAt: null },
+      true,
+    );
+    useEffect(() => {
+      labels.push(label);
+    });
+    return null;
+  }
+  function mountAgent() {
+    labels.length = 0;
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    root = createRoot(document.createElement("div"));
+    act(() => root!.render(<AgentProbe />));
+  }
+
+  it("stops ticking when the app backgrounds and catches up on return", () => {
+    mountAgent();
+    advance(5_000);
+    expect(labels.at(-1)).toBe("5.0s");
+    act(() => harness.setAppState("background"));
+    const paused = labels.length;
+    advance(60_000);
+    expect(labels.length).toBe(paused);
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => harness.setAppState("active"));
+    expect(labels.at(-1)).toBe("1m 5s");
+  });
+
+  it("does not tick for an agent sheet covered by another route", () => {
+    mountAgent();
+    act(() => harness.setFocused(false));
+    const paused = labels.length;
+    advance(60_000);
+    expect(labels.length).toBe(paused);
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => harness.setFocused(true));
+    expect(labels.at(-1)).toBe("1m");
   });
 });

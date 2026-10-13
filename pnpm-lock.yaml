@@ -146,6 +146,7 @@ patchedDependencies:
   '@clerk/expo@4.6.8': b8b22ab733de5bea846ad9e88046c10582352fe9ad86f314f368b2a823f0f281
   '@effect/platform-node-shared@4.0.2': 4efe73732a53b7d7bdbd9a9263eed06310fc387f870ef4a5e66429e9d1fd7cd9
   '@effect/vitest@4.0.2': 595b7d26fb635caba9c3d39fcb189bb78a000192f8d3b60ead7174b310d1ade9
+  '@expo/fingerprint@0.21.2': 05e55f25c8c733246d85f243303ab12d0f897dd34c8d04390dc5bd82226a22a0
   '@expo/metro-config@58.0.6': 90fa980e8b6480631fb2fbb04559834e3c612db40c550cd828f11be297d8d760
   '@ff-labs/fff-node@0.11.0': 8956d6ed6938a1bce69b2d0b067ff258dd9ca753c5bbe7006f7b68f760ea3ad2
   '@legendapp/list@3.3.5': 1d18e20816fe3d0ca8c5181d9160938b3d2a686e9b06d2217b62be169b400dbb
@@ -167,7 +168,7 @@ patchedDependencies:
   node-pty@1.2.0-beta.15: f2fe901c61cde17986240002d05c172d5d0272d83ffaab8d0ebeb922763be414
   react-native-gesture-handler@3.2.1: 3037216c0dd1b14e8877441bde1a7404d1c6e9c09f835bd184c3cdba4aa066ad
   react-native-keyboard-controller@1.22.6: 6e448411781347cd0b87868ee279117514a399801c18f233ddca4fa3935be75d
-  react-native-nitro-markdown@0.5.8: 642b47830730acff3761fe29cf54271d18b493c0070c750097850b7ea032e00c
+  react-native-nitro-markdown@0.5.8: 9c1b095a37d6ea746f6d3b9990f6257194f1224230a5aff3cea69ca955aa9222
   react-native-nitro-modules@0.35.9: daf4a639ce3f951af630a3711e4082d58e3a11e5a79f45efb0b59925327ebde2
   react-native-webview@14.0.1: 81caa279ec3dc1f81209062133b66e8f824e13f106cca57f1fa732a72c2ab378
 
@@ -371,7 +372,7 @@ importers:
         version: link:../../packages/contracts
       '@t3tools/mobile-markdown-text':
         specifier: file:./modules/t3-markdown-text
-        version: file:apps/mobile/modules/t3-markdown-text(afae94297d61d3a65abc2214f9b05422)
+        version: file:apps/mobile/modules/t3-markdown-text(c710e907393f2d583dc21e058f4a3c1f)
       '@t3tools/mobile-review-diff-native':
         specifier: file:./modules/t3-review-diff
         version: file:apps/mobile/modules/t3-review-diff
@@ -548,7 +549,7 @@ importers:
         version: 1.22.6(patch_hash=6e448411781347cd0b87868ee279117514a399801c18f233ddca4fa3935be75d)(react-native-reanimated@4.7.0(react-native-worklets@0.13.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
       react-native-nitro-markdown:
         specifier: ^0.5.0
-        version: 0.5.8(patch_hash=642b47830730acff3761fe29cf54271d18b493c0070c750097850b7ea032e00c)(react-native-nitro-modules@0.35.9(patch_hash=daf4a639ce3f951af630a3711e4082d58e3a11e5a79f45efb0b59925327ebde2)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native-svg@15.15.5(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
+        version: 0.5.8(patch_hash=9c1b095a37d6ea746f6d3b9990f6257194f1224230a5aff3cea69ca955aa9222)(react-native-nitro-modules@0.35.9(patch_hash=daf4a639ce3f951af630a3711e4082d58e3a11e5a79f45efb0b59925327ebde2)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native-svg@15.15.5(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
       react-native-nitro-modules:
         specifier: 0.35.9
         version: 0.35.9(patch_hash=daf4a639ce3f951af630a3711e4082d58e3a11e5a79f45efb0b59925327ebde2)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
@@ -14921,7 +14922,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@expo/fingerprint@0.21.2':
+  '@expo/fingerprint@0.21.2(patch_hash=05e55f25c8c733246d85f243303ab12d0f897dd34c8d04390dc5bd82226a22a0)':
     dependencies:
       '@expo/env': 2.5.1
       '@expo/spawn-async': 1.8.0
@@ -16972,7 +16973,7 @@ snapshots:
     dependencies:
       defer-to-connect: 2.0.1
 
-  '@t3tools/mobile-markdown-text@file:apps/mobile/modules/t3-markdown-text(afae94297d61d3a65abc2214f9b05422)':
+  '@t3tools/mobile-markdown-text@file:apps/mobile/modules/t3-markdown-text(c710e907393f2d583dc21e058f4a3c1f)':
     dependencies:
       '@t3tools/client-runtime': link:packages/client-runtime
       '@t3tools/shared': link:packages/shared
@@ -16983,7 +16984,7 @@ snapshots:
       expo-symbols: 58.0.3(expo-font@58.0.5(expo@58.0.2)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(expo@58.0.2)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
       react: 19.3.0
       react-native: 0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6)
-      react-native-nitro-markdown: 0.5.8(patch_hash=642b47830730acff3761fe29cf54271d18b493c0070c750097850b7ea032e00c)(react-native-nitro-modules@0.35.9(patch_hash=daf4a639ce3f951af630a3711e4082d58e3a11e5a79f45efb0b59925327ebde2)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native-svg@15.15.5(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
+      react-native-nitro-markdown: 0.5.8(patch_hash=9c1b095a37d6ea746f6d3b9990f6257194f1224230a5aff3cea69ca955aa9222)(react-native-nitro-modules@0.35.9(patch_hash=daf4a639ce3f951af630a3711e4082d58e3a11e5a79f45efb0b59925327ebde2)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native-svg@15.15.5(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
 
   '@t3tools/mobile-review-diff-native@file:apps/mobile/modules/t3-review-diff': {}
 
@@ -20053,7 +20054,7 @@ snapshots:
       '@expo/config': 58.0.1(typescript@7.0.2)
       '@expo/config-plugins': 58.0.4(typescript@7.0.2)
       '@expo/devtools': 58.0.2(expo@58.0.2)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
-      '@expo/fingerprint': 0.21.2
+      '@expo/fingerprint': 0.21.2(patch_hash=05e55f25c8c733246d85f243303ab12d0f897dd34c8d04390dc5bd82226a22a0)
       '@expo/local-build-cache-provider': 58.0.1(typescript@7.0.2)
       '@expo/log-box': 58.0.8(@expo/dom-webview@58.0.2)(expo@58.0.2)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
       '@expo/log-box-utils': 58.0.1
@@ -22703,7 +22704,7 @@ snapshots:
       react-native-is-edge-to-edge: 1.3.1(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
       react-native-reanimated: 4.7.0(react-native-worklets@0.13.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
 
-  react-native-nitro-markdown@0.5.8(patch_hash=642b47830730acff3761fe29cf54271d18b493c0070c750097850b7ea032e00c)(react-native-nitro-modules@0.35.9(patch_hash=daf4a639ce3f951af630a3711e4082d58e3a11e5a79f45efb0b59925327ebde2)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native-svg@15.15.5(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0):
+  react-native-nitro-markdown@0.5.8(patch_hash=9c1b095a37d6ea746f6d3b9990f6257194f1224230a5aff3cea69ca955aa9222)(react-native-nitro-modules@0.35.9(patch_hash=daf4a639ce3f951af630a3711e4082d58e3a11e5a79f45efb0b59925327ebde2)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native-svg@15.15.5(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0):
     dependencies:
       react: 19.3.0
       react-native: 0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6)

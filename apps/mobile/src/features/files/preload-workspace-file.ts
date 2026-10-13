@@ -17,6 +17,17 @@ import type { ReviewDiffTheme } from "../review/shikiReviewHighlighter";
 const inFlightPreloads = new Map<string, Promise<void>>();
 const MAX_IN_FLIGHT_PRELOADS = 4;
 const MAX_HIGHLIGHT_PRELOAD_CHARACTERS = 256 * 1024;
+const MAX_SOURCE_PRELOAD_LINES = 2_000;
+
+function shouldPrepareSourcePreload(contents: string): boolean {
+  if (contents.length > MAX_HIGHLIGHT_PRELOAD_CHARACTERS) return false;
+  const newlines = /\r\n?|\n/g;
+  let lines = 1;
+  while (newlines.exec(contents) !== null) {
+    if (++lines > MAX_SOURCE_PRELOAD_LINES) return false;
+  }
+  return true;
+}
 
 function preloadKey(input: {
   readonly cwd: string;
@@ -63,22 +74,23 @@ export function preloadWorkspaceFileContents(input: {
       return;
     }
 
+    // Rows and their JSON can dwarf the original text. Bound speculative work
+    // before constructing them; the visible file surface still opens every file.
+    if (!shouldPrepareSourcePreload(result.value.contents)) return;
     const document = prepareSourceFileDocument(result.value.contents);
-    if (document.contents.length <= MAX_HIGHLIGHT_PRELOAD_CHARACTERS) {
-      await executeAtomQuery(
-        appAtomRegistry,
-        sourceHighlightAtom({
-          path: input.relativePath,
-          contents: document.contents,
-          theme: input.theme,
-        }),
-        {
-          label: "workspace source highlight preload",
-          reportDefect: false,
-          reportFailure: false,
-        },
-      );
-    }
+    await executeAtomQuery(
+      appAtomRegistry,
+      sourceHighlightAtom({
+        path: input.relativePath,
+        contents: document.contents,
+        theme: input.theme,
+      }),
+      {
+        label: "workspace source highlight preload",
+        reportDefect: false,
+        reportFailure: false,
+      },
+    );
   })()
     .catch(() => {
       // Preloading is opportunistic. The authoritative file surface owns
