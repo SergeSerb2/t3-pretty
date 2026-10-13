@@ -96,7 +96,10 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
+import { Image as ExpoImage } from "expo-image";
+import { useResolveClassNames } from "uniwind";
 import { useFilePreviewGallery, FilePreviewGallery } from "../../components/FilePreviewGallery";
+import { assetImageSource } from "../../lib/assetImageSource";
 import { composerImageGallery } from "../../lib/composerImageGallery";
 import { messageImageGallery } from "./messageImageGallery";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
@@ -486,6 +489,7 @@ function MessageAttachmentImage(props: {
   const uri = useAssetUrl(props.environmentId, resource);
   const refreshAssetUrl = useRefreshAssetUrl(props.environmentId, resource);
   const retriedImage = useRef(false);
+  const imageStyle = useResolveClassNames(props.className);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [localPreviewFailed, setLocalPreviewFailed] = useState(false);
   // The confirmed message reuses this element (same row and position keys), so
@@ -535,13 +539,14 @@ function MessageAttachmentImage(props: {
           );
         }}
       >
-        {uri === null ? (
+        {uri === null || resource === null ? (
           <View className={props.className} />
         ) : (
-          <Image
-            source={{ uri }}
-            className={props.className}
-            resizeMode="cover"
+          <ExpoImage
+            source={assetImageSource(props.environmentId, resource, uri)}
+            cachePolicy="memory-disk"
+            style={imageStyle}
+            contentFit="cover"
             onLoad={() => {
               retriedImage.current = false;
               setRemoteLoaded(true);
@@ -556,10 +561,10 @@ function MessageAttachmentImage(props: {
         {/* Stays mounted across the pending → confirmed handoff, so the picture
             never blanks while the server copy loads underneath it. */}
         {localPreviewUri === null ? null : (
-          <Image
+          <ExpoImage
             source={{ uri: localPreviewUri }}
             style={LOCAL_IMAGE_PREVIEW_STYLE}
-            resizeMode="cover"
+            contentFit="cover"
             onError={() => setLocalPreviewFailed(true)}
           />
         )}

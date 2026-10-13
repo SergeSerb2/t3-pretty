@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { useAssetUrl } from "../../state/assets";
+import { assetImageSource } from "../../lib/assetImageSource";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 
 /**
@@ -77,18 +78,14 @@ function QueuedEditAttachmentChip(props: {
   const { attachment } = props;
   const glass = useGlassChromeActive();
   const isImage = attachment.mimeType.startsWith("image/");
-  const url = useAssetUrl(
-    props.environmentId,
-    isImage
-      ? {
-          _tag: "attachment",
-          attachmentId: attachment.id,
-          fileName: attachment.name,
-          mimeType: attachment.mimeType,
-          disposition: "inline",
-        }
-      : null,
-  );
+  const resource = {
+    _tag: "attachment",
+    attachmentId: attachment.id,
+    fileName: attachment.name,
+    mimeType: attachment.mimeType,
+    disposition: "inline",
+  } as const;
+  const url = useAssetUrl(props.environmentId, isImage ? resource : null);
 
   return (
     // Inside the frosted composer the chip is a tint, not a second plate.
@@ -102,7 +99,8 @@ function QueuedEditAttachmentChip(props: {
     >
       {isImage && url !== null ? (
         <Image
-          source={{ uri: url }}
+          source={assetImageSource(props.environmentId, resource, url)}
+          cachePolicy="memory-disk"
           contentFit="cover"
           style={{ width: 24, height: 24, borderRadius: 6 }}
           accessibilityIgnoresInvertColors
