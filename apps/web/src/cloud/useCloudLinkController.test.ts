@@ -61,6 +61,7 @@ vi.mock("../state/environments", () => ({
 vi.mock("../state/relay", () => ({
   relayEnvironmentDiscovery: { refresh: atoms.refresh },
 }));
+vi.mock("../state/session", () => ({ readEnvironmentScope: () => true }));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (atom: symbol) => {
     if (atom === atoms.link) return commands.link;
@@ -78,6 +79,7 @@ vi.mock("./linkEnvironmentAtoms", () => ({
   updatePrimaryEnvironmentPreferences: atoms.preferences,
 }));
 vi.mock("./primaryCloudLinkState", () => ({
+  readCachedPrimaryCloudLinkState: () => primaryLinkState.data,
   usePrimaryCloudLinkState: () => primaryLinkState,
 }));
 vi.mock("./publicConfig", () => ({

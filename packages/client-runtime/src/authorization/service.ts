@@ -53,6 +53,8 @@ export interface AuthorizedRemoteEnvironment {
   readonly httpBaseUrl: string;
   readonly socketUrl: string;
   readonly httpAuthorization: PreparedHttpAuthorization;
+  /** Reusable for protocol negotiation only when fetched during this authorization attempt. */
+  readonly freshlyFetchedDescriptor?: ExecutionEnvironmentDescriptor;
 }
 
 export interface AuthorizedRemoteHttpEnvironment {
@@ -194,7 +196,10 @@ export const make = Effect.gen(function* () {
           return next;
         });
       }
-      return descriptor;
+      return {
+        descriptor,
+        freshlyFetchedDescriptor: canReuseDescriptor ? undefined : descriptor,
+      };
     },
   );
 
@@ -208,7 +213,7 @@ export const make = Effect.gen(function* () {
       readonly bearerToken: string;
       readonly connectionMethod: ClientConnectionMethod;
     }) {
-      const descriptor = yield* verifyDirectEndpoint(input);
+      const { descriptor, freshlyFetchedDescriptor } = yield* verifyDirectEndpoint(input);
       const socketUrl = yield* resolveRemoteWebSocketConnectionUrl({
         wsBaseUrl: input.wsBaseUrl,
         httpBaseUrl: input.httpBaseUrl,
@@ -224,6 +229,7 @@ export const make = Effect.gen(function* () {
         label: descriptor.label,
         httpBaseUrl: input.httpBaseUrl,
         socketUrl,
+        ...(freshlyFetchedDescriptor === undefined ? {} : { freshlyFetchedDescriptor }),
         httpAuthorization: {
           _tag: "Bearer" as const,
           token: input.bearerToken,
@@ -512,16 +518,18 @@ export const make = Effect.gen(function* () {
     input: Parameters<RemoteEnvironmentAuthorization["Service"]["authorizeDpop"]>[0],
   ) {
     const endpoint = input.directEndpoint;
-    if (endpoint !== undefined) {
-      yield* verifyDirectEndpoint({
-        expectedEnvironmentId: input.expectedEnvironmentId,
-        httpBaseUrl: endpoint.httpBaseUrl,
-        connectionMethod: "direct",
-      });
-    }
+    const freshlyFetchedDescriptor =
+      endpoint === undefined
+        ? undefined
+        : (yield* verifyDirectEndpoint({
+            expectedEnvironmentId: input.expectedEnvironmentId,
+            httpBaseUrl: endpoint.httpBaseUrl,
+            connectionMethod: "direct",
+          })).freshlyFetchedDescriptor;
     const authorized = (token: TokenStore.RemoteDpopAccessToken, socketUrl: string) => ({
       ...httpAuthorization(token, endpoint?.httpBaseUrl),
       socketUrl,
+      ...(freshlyFetchedDescriptor === undefined ? {} : { freshlyFetchedDescriptor }),
     });
     let selected = yield* getDpopToken(input);
     if (selected.fromCache) {
@@ -579,8 +587,9 @@ export const make = Effect.gen(function* () {
       Effect.result,
     );
     if (Result.isFailure(socket)) {
-      // A direct address that refuses the socket says nothing about the token.
-      if (endpoint === undefined || socket.failure._tag === "ConnectionBlockedError") {
+      // Ticket outages and proof/configuration failures do not invalidate the
+      // token just exchanged. Keep it for HTTP requests and the next attempt.
+      if (socket.failure._tag === "EnvironmentAuthInvalidError") {
         yield* tokenLock.withPermits(1)(
           removeRejectedToken(input.expectedEnvironmentId, selected.token.accessToken),
         );

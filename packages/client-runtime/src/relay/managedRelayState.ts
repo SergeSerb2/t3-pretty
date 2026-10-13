@@ -25,6 +25,7 @@ import { relayProtectedErrorMessage } from "./errorPresentation.ts";
 const DEFAULT_STALE_TIME_MS = 15_000;
 const DEFAULT_IDLE_TTL_MS = 5 * 60_000;
 const CLERK_TOKEN_EXPIRY_SKEW_MS = 5_000;
+const CLERK_TOKEN_READ_TIMEOUT_MS = 30_000;
 const isManagedRelayRequestFailedError = Schema.is(ManagedRelay.ManagedRelayRequestFailedError);
 
 export interface ManagedRelaySession {
@@ -78,7 +79,10 @@ const managedRelaySessionControls = new WeakMap<ManagedRelaySession, ManagedRela
 
 export function createManagedRelaySession(input: ManagedRelaySessionInput): ManagedRelaySession {
   let cachedToken: { readonly token: string; readonly expiresAtMillis: number } | null = null;
-  let pendingToken: Promise<string | null> | null = null;
+  let pendingToken: {
+    readonly operation: Promise<string | null>;
+    readonly expiresAtMillis: number;
+  } | null = null;
   let readClerkToken = input.readClerkToken;
   let tokenProviderGeneration = 0;
 
@@ -86,13 +90,18 @@ export function createManagedRelaySession(input: ManagedRelaySessionInput): Mana
     if (cachedToken && cachedToken.expiresAtMillis > nowMillis + CLERK_TOKEN_EXPIRY_SKEW_MS) {
       return cachedToken.token;
     }
-    if (pendingToken) {
-      return await pendingToken;
+    // An SDK read can outlive a timed-out caller. Retry after its shared
+    // budget expires instead of keeping the unchanged reader pinned to it.
+    if (pendingToken && pendingToken.expiresAtMillis > nowMillis) {
+      return await pendingToken.operation;
     }
 
     const operationGeneration = tokenProviderGeneration;
     const operation = readClerkToken().then((token) => {
-      if (operationGeneration !== tokenProviderGeneration) {
+      if (
+        operationGeneration !== tokenProviderGeneration ||
+        pendingToken?.operation !== operation
+      ) {
         return token;
       }
       if (!token) {
@@ -110,11 +119,11 @@ export function createManagedRelaySession(input: ManagedRelaySessionInput): Mana
       }
       return token;
     });
-    pendingToken = operation;
+    pendingToken = { operation, expiresAtMillis: nowMillis + CLERK_TOKEN_READ_TIMEOUT_MS };
     try {
       return await operation;
     } finally {
-      if (pendingToken === operation) {
+      if (pendingToken?.operation === operation) {
         pendingToken = null;
       }
     }
@@ -181,6 +190,15 @@ function readSessionClerkToken(
   session: ManagedRelaySession,
 ): Effect.Effect<string, ManagedRelaySessionError> {
   return session.readClerkToken().pipe(
+    Effect.timeoutOrElse({
+      duration: CLERK_TOKEN_READ_TIMEOUT_MS,
+      orElse: () =>
+        Effect.fail(
+          new ManagedRelaySessionError({
+            message: `${SURGE_CONNECT_NAME} session token request timed out.`,
+          }),
+        ),
+    }),
     Effect.flatMap((token) => {
       if (!token) {
         return Effect.fail(

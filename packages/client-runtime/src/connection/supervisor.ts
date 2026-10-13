@@ -138,7 +138,7 @@ type MonitorOutcome =
 
 type MonitorEvent =
   | { readonly _tag: "Signal"; readonly signal: SupervisorSignal }
-  | { readonly _tag: "Closed"; readonly error: ConnectionTransientError }
+  | { readonly _tag: "Closed"; readonly error: ConnectionAttemptError }
   | { readonly _tag: "ProbeSettled"; readonly exit: Exit.Exit<void, ConnectionAttemptError> }
   | { readonly _tag: "ReplacementDue" }
   | {
@@ -668,6 +668,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     }
   };
 
+  // Direct DPoP routes also hold the T3 Connect account's credential.
+  const usesCloudCredential = (lease: ConnectionDriver.EnvironmentConnectionLease) =>
+    lease.prepared.target._tag === "RelayConnectionTarget" ||
+    lease.prepared.httpAuthorization?._tag === "Dpop";
+
   const timedOutProbe = () =>
     Effect.fail(
       new ConnectionTransientError({
@@ -854,10 +859,8 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         inflight.leaseLost
           ? Effect.never
           : active.lease.session.closed.pipe(
-              Effect.catch((error: ConnectionAttemptError): Effect.Effect<MonitorEvent> =>
-                error._tag === "ConnectionTransientError"
-                  ? Effect.succeed({ _tag: "Closed", error })
-                  : Effect.die(new Error(`Unexpected ConnectionBlockedError in session.closed`)),
+              Effect.catch((error): Effect.Effect<MonitorEvent> =>
+                Effect.succeed({ _tag: "Closed", error }),
               ),
             ),
         probeFiber === null
@@ -906,6 +909,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       }
       switch (event._tag) {
         case "Closed": {
+          if (event.error._tag === "ConnectionBlockedError") {
+            yield* stopAll;
+            return yield* Effect.fail(withActiveSpan(event.error));
+          }
           if (inflight.replacement !== null) {
             yield* stopProbe;
             yield* markLeaseLost;
@@ -989,7 +996,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
               break;
             case "Wakeup":
               if (next.reason === "credentials-changed") {
-                if (target._tag === "RelayConnectionTarget") {
+                if (usesCloudCredential(active.lease)) {
                   yield* logManagedRelayAccountChange;
                   return yield* release;
                 }

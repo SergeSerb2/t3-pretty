@@ -191,7 +191,7 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
     reason: "application-active",
   });
   const closedSessions = yield* Ref.make<
-    ReadonlyArray<Deferred.Deferred<never, ConnectionTransientError>>
+    ReadonlyArray<Deferred.Deferred<never, ConnectionAttemptError>>
   >([]);
 
   const connectivity = Connectivity.Connectivity.of({
@@ -218,7 +218,7 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
     yield* reportProgress({ stage: "opening", prepared });
 
     const attempt = yield* Ref.updateAndGet(sessionCount, (count) => count + 1);
-    const closed = yield* Deferred.make<never, ConnectionTransientError>();
+    const closed = yield* Deferred.make<never, ConnectionAttemptError>();
     yield* Ref.update(closedSessions, (sessions) => [...sessions, closed]);
 
     const session = yield* Effect.acquireRelease(
@@ -290,7 +290,7 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
         reason,
       })),
     closeLatestSession: Effect.fn("TestConnectionHarness.closeLatestSession")(function* (
-      error = transient("Session closed."),
+      error: ConnectionAttemptError = transient("Session closed."),
     ) {
       const sessions = yield* Ref.get(closedSessions);
       const latest = sessions.at(-1);
@@ -1830,6 +1830,29 @@ describe("EnvironmentSupervisor", () => {
     }),
   );
 
+  it.effect("blocks a connected session whose config subscription loses permission", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+
+      const error = new ConnectionBlockedError({
+        reason: "permission",
+        detail: "The environment no longer permits this subscription.",
+      });
+      yield* harness.closeLatestSession(error);
+      const state = yield* eventuallyState(supervisor.state, (state) => state.phase === "blocked");
+
+      expect(state.lastFailure).toBe(error);
+      expect(state.retryAt).toBeNull();
+      expect(Option.isNone(yield* SubscriptionRef.get(supervisor.session))).toBe(true);
+      expect(yield* Ref.get(harness.sessionCount)).toBe(1);
+      expect(yield* Ref.get(harness.releaseCount)).toBe(1);
+    }),
+  );
+
   it.effect("keeps a healthy relay session when its HTTP access token expires", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
@@ -2407,6 +2430,92 @@ describe("EnvironmentSupervisor routes", () => {
         phase: "connected",
         generation: 1,
       });
+    }),
+  );
+
+  it.effect("reconnects the active relay fallback when the T3 Connect account changes", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          Effect.succeed(route.target._tag === "BearerConnectionTarget" ? "silent" : "unchecked"),
+        prepare: (_attempt, target) => Effect.succeed(preparedFor(target)),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      yield* harness.wake("credentials-changed");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 2,
+      );
+
+      expect(yield* Ref.get(harness.sessionCount)).toBe(2);
+      yield* eventuallyCount(harness.releaseCount, 1);
+    }),
+  );
+
+  it.effect("keeps an independent bearer fallback when the T3 Connect account changes", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          Effect.succeed(route.target._tag === "RelayConnectionTarget" ? "unchecked" : "answered"),
+        prepare: (_attempt, target) =>
+          target._tag === "RelayConnectionTarget"
+            ? Effect.fail(blocked("Sign in to T3 Connect."))
+            : Effect.succeed({
+                ...preparedFor(target),
+                httpAuthorization: { _tag: "Bearer", token: "independent-bearer" },
+              }),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(
+        { ...RELAY_ENTRY, alternateRoutes: [LAN_ROUTE] },
+        { initiallyDesired: true },
+      ).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      yield* harness.wake("credentials-changed");
+      // Drain the supervisor's signal path before checking that it kept the lease.
+      yield* harness.wake("application-active-probe");
+      for (let step = 0; step < 30; step += 1) yield* Effect.yieldNow;
+
+      expect(yield* Ref.get(harness.sessionCount)).toBe(1);
+      expect(yield* Ref.get(harness.releaseCount)).toBe(0);
+      expect(yield* SubscriptionRef.get(supervisor.state)).toMatchObject({
+        phase: "connected",
+        generation: 1,
+      });
+    }),
+  );
+
+  it.effect("reconnects a direct DPoP session when the T3 Connect account changes", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        checkRoute: () => Effect.succeed("answered"),
+        prepare: (_attempt, target) =>
+          Effect.succeed({
+            ...preparedFor(target),
+            httpAuthorization: {
+              _tag: "Dpop",
+              accessToken: "cloud-account-token",
+              expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+            },
+          }),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      yield* harness.wake("credentials-changed");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 2,
+      );
+
+      expect(yield* Ref.get(harness.sessionCount)).toBe(2);
+      yield* eventuallyCount(harness.releaseCount, 1);
     }),
   );
 

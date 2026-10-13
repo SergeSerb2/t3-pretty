@@ -6,6 +6,7 @@ import * as Option from "effect/Option";
 import { RelayConnectionTarget, type PreparedConnection } from "../connection/model.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import { remoteHttpClientLayer } from "../rpc/http.ts";
+import { RemoteEnvironmentAuthorization } from "../authorization/service.ts";
 import { fetchEnvironmentThreadSnapshot } from "./threadSnapshotHttp.ts";
 
 describe("fetchEnvironmentThreadSnapshot", () => {
@@ -42,11 +43,27 @@ describe("fetchEnvironmentThreadSnapshot", () => {
         requestedUrl = String(request);
         return Promise.resolve(new Response(null, { status: 503 }));
       }) satisfies typeof fetch;
+      const remoteAuthorization = RemoteEnvironmentAuthorization.of({
+        authorizeBearer: () => Effect.die("unused"),
+        authorizeDpop: () => Effect.die("unused"),
+        authorizeDpopHttp: () =>
+          Effect.succeed({
+            environmentId,
+            label: prepared.label,
+            httpBaseUrl: prepared.httpBaseUrl,
+            httpAuthorization: {
+              _tag: "Dpop",
+              accessToken: "access-token",
+              expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+            },
+          }),
+      });
 
       yield* fetchEnvironmentThreadSnapshot({
         prepared,
         threadId: ThreadId.make("thread/with space"),
         signer: Option.some(signer),
+        remoteAuthorization: Option.some(remoteAuthorization),
       }).pipe(Effect.exit, Effect.provide(remoteHttpClientLayer(fetchFn)));
 
       const expectedUrl =

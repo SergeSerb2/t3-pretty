@@ -1,8 +1,13 @@
 import type { RefObject } from "react";
 import { Pressable, TextInput, type TextInputInstance, View } from "react-native";
+import Animated from "react-native-reanimated";
+
+import { enterPop, exitFade } from "../lib/motion";
 
 import { SymbolView } from "./AppSymbol";
 import { useAndroidControlSizing } from "./useAndroidControlSizing";
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function MaterialSearchField({
   inputRef,
@@ -52,7 +57,9 @@ export function MaterialSearchField({
         onChangeText={onChangeText}
       />
       {value.length > 0 ? (
-        <Pressable
+        <AnimatedPressable
+          entering={enterPop}
+          exiting={exitFade}
           accessibilityLabel={clearAccessibilityLabel}
           accessibilityRole="button"
           hitSlop={10}
@@ -66,7 +73,7 @@ export function MaterialSearchField({
             size={mediumIconSize}
             tintColorClassName="accent-foreground-muted"
           />
-        </Pressable>
+        </AnimatedPressable>
       ) : null}
     </View>
   );

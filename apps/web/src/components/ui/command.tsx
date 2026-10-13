@@ -29,7 +29,11 @@ function CommandDialogTrigger(props: CommandDialogPrimitive.Trigger.Props) {
 function CommandDialogBackdrop({ className, ...props }: CommandDialogPrimitive.Backdrop.Props) {
   return (
     <CommandDialogPrimitive.Backdrop
-      className={cn(DIALOG_BACKDROP_CLASS, className)}
+      className={cn(
+        DIALOG_BACKDROP_CLASS,
+        "duration-150 data-ending-style:duration-100",
+        className,
+      )}
       data-slot="command-dialog-backdrop"
       {...props}
     />
@@ -64,7 +68,7 @@ function CommandDialogPopup({
         <CommandDialogPrimitive.Popup
           className={cn(
             DIALOG_POPUP_CLASS,
-            "pointer-events-auto max-h-105 max-w-xl text-foreground",
+            "pointer-events-auto max-h-105 max-w-xl text-foreground duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] data-ending-style:duration-100 data-ending-style:scale-[0.99] data-starting-style:scale-[0.99] motion-reduce:transition-opacity",
             className,
           )}
           data-slot="command-dialog-popup"

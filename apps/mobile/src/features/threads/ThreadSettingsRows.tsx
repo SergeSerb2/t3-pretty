@@ -12,7 +12,7 @@ import {
 } from "./ThreadSettingsRows.shared";
 
 /**
- * On glass the mark fades in when the selection moves onto this row. Rows are
+ * On glass the mark fades and grows slightly when selection moves onto this row. Rows are
  * recycled list cells, so a cell rebinding to another `identity` (or mounting)
  * shows its mark without replaying the fade.
  */
@@ -27,7 +27,10 @@ function SelectedCheckmark(props: { readonly selected: boolean; readonly identit
     opacity.set(0);
     opacity.set(withTiming(1, MOTION_TIMING));
   }, [opacity, props.identity, props.selected]);
-  const fadeStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  const fadeStyle = useAnimatedStyle(() => ({
+    opacity: opacity.get(),
+    transform: [{ scale: 0.97 + opacity.get() * 0.03 }],
+  }));
   if (!props.selected) return null;
   const mark = (
     <SymbolView
