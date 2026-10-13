@@ -4492,11 +4492,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   });
 
   const captureAutomationSnapshot = Effect.fn("PreviewManager.captureAutomationSnapshot")(
-    function* (tabId: string, wc: Electron.WebContents, send: SendCommand) {
-      yield* Effect.all([send("Runtime.enable"), send("Accessibility.enable")], {
-        concurrency: 2,
-        discard: true,
-      });
+    function* (
+      tabId: string,
+      wc: Electron.WebContents,
+      send: SendCommand,
+      sendCleanup: SendCommand,
+    ) {
+      yield* send("Runtime.enable");
       const page = yield* evaluateWithDebugger<{
         url: string;
         title: string;
@@ -4560,7 +4562,15 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         true,
       );
       const [accessibility, sourceImage, diagnostics, timelines] = yield* Effect.all([
-        send("Accessibility.getFullAXTree", { depth: MAX_ACCESSIBILITY_TREE_DEPTH }),
+        // The AX tree is only maintained while enabled; keep that scoped to the
+        // snapshot so idle guests never pay for it. The disable must run even
+        // after human input bumps the control epoch mid-snapshot.
+        send("Accessibility.enable").pipe(
+          Effect.andThen(
+            send("Accessibility.getFullAXTree", { depth: MAX_ACCESSIBILITY_TREE_DEPTH }),
+          ),
+          Effect.ensuring(sendCleanup("Accessibility.disable").pipe(Effect.ignore)),
+        ),
         capturePageWithRetry(
           {
             operation: "automationSnapshot.capturePage",
@@ -4600,8 +4610,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
   ) {
     const wc = yield* requireWebContents(tabId);
-    return yield* withControlSession(tabId, wc, "snapshot", (send) =>
-      captureAutomationSnapshot(tabId, wc, send),
+    return yield* withControlSession(tabId, wc, "snapshot", (send, sendCleanup) =>
+      captureAutomationSnapshot(tabId, wc, send, sendCleanup),
     );
   });
 
