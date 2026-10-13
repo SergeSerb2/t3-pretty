@@ -26,7 +26,8 @@ const required = [
   {
     file: "apps/server/src/server.ts",
     needle: "ServerBrowserStream.routeLayer",
-    message: "makeRoutesLayer must keep ServerBrowserStream.routeLayer next to the WebSocket route.",
+    message:
+      "makeRoutesLayer must keep ServerBrowserStream.routeLayer next to the WebSocket route.",
   },
   {
     file: "apps/server/src/server.ts",
@@ -38,6 +39,12 @@ const required = [
     needle: "Layer.provide(WebhookRoute.layer.pipe(Layer.provide(RelayDeliveryProof.layer)))",
     message:
       "HttpApiBuilder.layer(EnvironmentHttpApi) must provide the webhooks group. Omitting it hangs route construction the same way a missing ServerBrowser does.",
+  },
+  {
+    file: "apps/server/src/server.ts",
+    needle: "HomeSuggestions.layerStarted.pipe(",
+    message:
+      "The runtime must use HomeSuggestions.layerStarted. Plain HomeSuggestions.layer never loads the saved batch or schedules ticks, and the 2735 sync silently reverted it once.",
   },
 ];
 
