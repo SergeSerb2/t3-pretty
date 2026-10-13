@@ -15,6 +15,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderSessionId,
+  ServerSettingsError,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -689,6 +690,7 @@ it.effect(
         assert.include(initialText, "Visualize the response when");
         assert.include(initialText, "Do not change code, commands, paths, identifiers");
         assert.include(initialText, "Global instructions:\nUse metric units.");
+        assert.include(initialText, "tsc-rs --noEmit");
         assert.notInclude(initialText, "Project instructions:");
         assert.equal(stripHiddenInstructionSuffixes(initialText), message.text);
         assert.equal(message.text, "Explain the result.");
@@ -703,6 +705,7 @@ it.effect(
         assert.include(disabledText, "Stop applying the earlier");
         assert.notInclude(disabledText, "ASD-STE100");
         assert.include(disabledText, "Global instructions:\nUse plain English.");
+        assert.include(disabledText, "tsc-rs --noEmit");
         assert.notInclude(disabledText, "Use metric units.");
 
         yield* runtime.startTurn({ ...startInput, runOrdinal: 2, providerTurnOrdinal: 2 });
@@ -733,7 +736,10 @@ it.effect(
         yield* settings.updateSettings({ clearAgentResponses: true, globalThreadInstructions: "" });
         yield* runtime.steerTurn(steerInput);
         assert.include((yield* Ref.get(state)).steeredTexts[3]!, "ASD-STE100");
-        assert.notInclude((yield* Ref.get(state)).steeredTexts[3]!, "t3_thread_instructions");
+        const defaultText = (yield* Ref.get(state)).steeredTexts[3]!;
+        assert.include(defaultText, "tsc-rs --noEmit");
+        assert.notInclude(defaultText, "Global instructions:");
+        assert.equal(stripHiddenInstructionSuffixes(defaultText), message.text);
 
         yield* runtime.startTurn({ ...startInput, message: { ...message, text: "/compact" } });
         assert.equal((yield* Ref.get(state)).startedTexts[2], "/compact");
@@ -746,6 +752,75 @@ it.effect(
             settingsLayer,
             layerTest({ state, idleTimeoutMs: 30_000, serverSettingsLayer: settingsLayer }),
           ),
+        ),
+      );
+    }),
+);
+
+it.effect.each(["missing", "unreadable"] as const)(
+  "ProviderSessionManagerV2 delivers default TypeScript guidance with %s settings",
+  (settingsState) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const serverSettingsLayer =
+        settingsState === "missing"
+          ? undefined
+          : Layer.effect(
+              ServerSettings.ServerSettingsService,
+              Effect.map(ServerSettings.ServerSettingsService, (settings) => ({
+                ...settings,
+                getSettings: Effect.fail(
+                  new ServerSettingsError({ settingsPath: "<memory>", operation: "read-file" }),
+                ),
+              })),
+            ).pipe(Layer.provide(ServerSettings.layerTest()));
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make(`thread-instructions-${settingsState}`);
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        const runtime = yield* manager.open({
+          threadId,
+          providerSessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const message = {
+          createdBy: "user" as const,
+          creationSource: "mobile" as const,
+          messageId: yield* idAllocator.allocate.message({ threadId, ordinal: 1 }),
+          text: "Fix the TypeScript error.",
+          attachments: [],
+        };
+        yield* runtime.steerTurn({
+          threadId,
+          runId: idAllocator.derive.run({ threadId, ordinal: 1 }),
+          providerThread: makeProviderThread({ idAllocator, threadId, providerSessionId, now }),
+          providerTurnId: idAllocator.derive.providerTurn({
+            driver: CODEX_DRIVER,
+            nativeTurnId: "instructions-fallback-turn",
+          }),
+          message,
+        });
+        const text = (yield* Ref.get(state)).steeredTexts[0]!;
+        assert.include(text, "tsc-rs --noEmit");
+        assert.equal(stripHiddenInstructionSuffixes(text), message.text);
+        assert.equal(message.text, "Fix the TypeScript error.");
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 30_000,
+            ...(serverSettingsLayer === undefined ? {} : { serverSettingsLayer }),
+          }),
         ),
       );
     }),
