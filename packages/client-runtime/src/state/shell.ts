@@ -185,7 +185,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     error: Option.none(),
   }));
   const setReady = SubscriptionRef.update(state, (current) =>
-    current.status === "live"
+    current.status === "live" || Option.isSome(current.error)
       ? current
       : {
           ...current,
@@ -226,7 +226,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     for (const item of items) {
       if (item.kind === "synchronized") {
         waiting = false;
-        if (Option.isSome(next.snapshot)) {
+        if (Option.isSome(next.snapshot) && Option.isNone(next.error)) {
           next = { ...next, status: "live", error: Option.none() };
         }
         continue;
@@ -253,8 +253,10 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       receivedSnapshot ||= item.kind === "snapshot";
       next = {
         snapshot: Option.some(nextSnapshot),
-        status: waiting ? "synchronizing" : "live",
-        error: Option.none(),
+        // Buffered values can arrive after this attempt has already failed.
+        // Only the next subscription attempt clears its error.
+        status: Option.isSome(next.error) ? "cached" : waiting ? "synchronizing" : "live",
+        error: next.error,
       };
     }
     yield* Ref.set(awaitingCompletion, waiting);

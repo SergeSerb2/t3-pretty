@@ -15,8 +15,9 @@ import {
 } from "./environmentHttpAuth.ts";
 import * as ThreadSnapshotLoader from "./threadSnapshotHttp.ts";
 
-// Same cold-open budget as the full snapshot path; bounded payloads should fit.
-const DEFAULT_BOUNDED_THREAD_SNAPSHOT_TIMEOUT_MS = 6_000;
+// Use the full snapshot's cold-open budget. A shorter deadline discards a
+// healthy slow request and makes the socket rebuild and resend its snapshot.
+const DEFAULT_BOUNDED_THREAD_SNAPSHOT_TIMEOUT_MS = 20_000;
 
 /**
  * Load a bounded recent-window thread snapshot over HTTP. Opts into compact

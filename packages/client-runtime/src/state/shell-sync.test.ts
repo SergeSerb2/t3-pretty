@@ -66,6 +66,83 @@ function session(client: WsRpcProtocolClient): RpcSession.RpcSession {
 }
 
 describe("environment shell synchronization", () => {
+  it.effect("keeps a failed subscription cached when its completion marker was buffered", () =>
+    Effect.gen(function* () {
+      let subscriptions = 0;
+      const client = {
+        [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: () =>
+          Stream.make(
+            { kind: "snapshot" as const, snapshot: LIVE_SHELL_SNAPSHOT },
+            { kind: "synchronized" as const },
+          ).pipe(
+            Stream.concat(
+              ++subscriptions === 1
+                ? Stream.fail(new Error("Shell stream unavailable"))
+                : Stream.never,
+            ),
+          ),
+      } as unknown as WsRpcProtocolClient;
+      const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+        target: TARGET,
+        state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
+        session: yield* SubscriptionRef.make(Option.some(session(client))),
+        prepared: yield* SubscriptionRef.make(Option.some(PREPARED)),
+        connect: Effect.void,
+        disconnect: Effect.void,
+        retryNow: Effect.void,
+      });
+      const cache = Persistence.EnvironmentCacheStore.of({
+        loadShell: () => Effect.succeedSome(LIVE_SHELL_SNAPSHOT),
+        saveShell: () => Effect.void,
+        loadThread: () => Effect.succeedNone,
+        saveThread: () => Effect.void,
+        removeThread: () => Effect.void,
+        loadServerConfig: () => Effect.succeedNone,
+        saveServerConfig: () => Effect.void,
+        loadVcsRefs: () => Effect.succeedNone,
+        saveVcsRefs: () => Effect.void,
+        removeVcsRefs: () => Effect.void,
+        clearVcsRefs: () => Effect.void,
+        clear: () => Effect.void,
+      });
+      const shellState = yield* makeEnvironmentShellState().pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.provideService(Persistence.EnvironmentCacheStore, cache),
+        Effect.provideService(
+          ShellSnapshotLoader.ShellSnapshotLoader,
+          ShellSnapshotLoader.ShellSnapshotLoader.of({ load: () => Effect.succeedNone }),
+        ),
+      );
+      yield* SubscriptionRef.changes(shellState).pipe(
+        Stream.filter((state) => Option.isSome(state.error)),
+        Stream.runHead,
+      );
+      // Drain buffered delivery while leaving the retry delay unadvanced.
+      yield* TestClock.adjust("0 millis");
+      const failed = yield* SubscriptionRef.get(shellState);
+      expect(failed.status).toBe("cached");
+      expect(Option.isSome(failed.error)).toBe(true);
+
+      yield* SubscriptionRef.set(supervisor.state, {
+        ...AVAILABLE_CONNECTION_STATE,
+        desired: true,
+        phase: "connected" as const,
+      });
+      yield* TestClock.adjust("0 millis");
+      expect((yield* SubscriptionRef.get(shellState)).status).toBe("cached");
+      expect(Option.isSome((yield* SubscriptionRef.get(shellState)).error)).toBe(true);
+
+      yield* TestClock.adjust("250 millis");
+      const recovered = yield* SubscriptionRef.changes(shellState).pipe(
+        Stream.filter((state) => state.status === "live"),
+        Stream.runHead,
+        Effect.map(Option.getOrThrow),
+      );
+      expect(subscriptions).toBe(2);
+      expect(Option.isNone(recovered.error)).toBe(true);
+    }),
+  );
+
   it.effect("publishes live state before persistence and preserves it when ready", () =>
     Effect.gen(function* () {
       const events = yield* Queue.unbounded<OrchestrationV2ShellStreamItem>();

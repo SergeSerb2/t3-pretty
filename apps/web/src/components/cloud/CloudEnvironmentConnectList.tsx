@@ -208,7 +208,15 @@ export function CloudEnvironmentConnectRows({
   );
   const selectNewComputers = useEffectEvent(() => {
     const seen = selection?.autoSelectedComputers;
-    if (!selection || !seen) return;
+    if (
+      !selection ||
+      !seen ||
+      !environmentsState.loaded ||
+      environmentsState.refreshing ||
+      environmentsState.offline ||
+      Option.isSome(environmentsState.error)
+    )
+      return;
     for (const { environment, status, availability } of visibleEnvironments) {
       const id = environment.environmentId;
       if (availability === "checking") continue;
@@ -232,9 +240,15 @@ export function CloudEnvironmentConnectRows({
   });
   useEffect(() => {
     selectNewComputers();
-  }, [environmentsState.environments]);
+  }, [
+    environmentsState.environments,
+    environmentsState.loaded,
+    environmentsState.refreshing,
+    environmentsState.offline,
+    environmentsState.error,
+  ]);
 
-  // Discovery clears its list on refresh, so poll only until a machine appears.
+  // Poll only until a machine appears.
   const shouldRefreshWhileEmpty =
     refreshWhileEmpty && visibleEnvironments.length === 0 && !environmentsState.offline;
 

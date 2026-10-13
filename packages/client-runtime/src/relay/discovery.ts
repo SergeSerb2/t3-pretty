@@ -131,6 +131,8 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
   const accountGeneration = yield* Ref.make(0);
   const activeAccountId = yield* Ref.make<Option.Option<string>>(Option.none());
   const refreshGeneration = yield* Ref.make(0);
+  const catalogRevision = yield* Ref.make(0);
+  const catalogGeneration = yield* Ref.make(-1);
   const offlineReportFingerprints = yield* Ref.make<ReadonlyMap<string, string>>(new Map());
 
   const clearOfflineReport = Effect.fn("RelayEnvironmentDiscovery.clearOfflineReport")(function* (
@@ -219,7 +221,7 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
     }));
   });
 
-  const refreshDiscovery = (refreshStatuses: boolean) =>
+  const runRefreshDiscovery = (refreshStatuses: boolean, requestedRevision: number) =>
     refreshLock.withPermits(1)(
       Effect.gen(function* () {
         yield* Ref.set(hasRefreshed, true);
@@ -232,6 +234,15 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
           return;
         }
         let generation = yield* Ref.get(accountGeneration);
+        const listedRevision = yield* Ref.get(catalogRevision);
+        const currentDiscovery = yield* SubscriptionRef.get(state);
+        const shareCatalog =
+          !refreshStatuses &&
+          listedRevision > requestedRevision &&
+          (yield* Ref.get(catalogGeneration)) === generation &&
+          currentDiscovery.loaded &&
+          !currentDiscovery.offline &&
+          Option.isNone(currentDiscovery.error);
         yield* Ref.set(refreshGeneration, generation);
         yield* SubscriptionRef.update(state, (current) => ({
           ...current,
@@ -274,9 +285,17 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
         ) {
           generation = yield* Ref.updateAndGet(accountGeneration, (current) => current + 1);
           yield* Ref.set(refreshGeneration, generation);
+          yield* Ref.set(offlineReportFingerprints, new Map());
+          yield* SubscriptionRef.set(state, {
+            ...EMPTY_RELAY_ENVIRONMENT_DISCOVERY_STATE,
+            refreshing: true,
+          });
         }
         yield* Ref.set(activeAccountId, accountId);
 
+        if (shareCatalog && (yield* Ref.get(catalogGeneration)) === generation) {
+          return;
+        }
         const environments = yield* relay
           .listEnvironments({ clerkToken })
           .pipe(Effect.mapError(mapManagedRelayError));
@@ -322,6 +341,8 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
           ),
           loaded: true,
         }));
+        yield* Ref.update(catalogRevision, (revision) => revision + 1);
+        yield* Ref.set(catalogGeneration, generation);
 
         if (refreshStatuses) {
           yield* Effect.forEach(
@@ -349,13 +370,34 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
             }
             yield* SubscriptionRef.update(state, (current) => ({
               ...current,
-              environments: new Map(),
-              loaded: false,
+              ...(error._tag === "ConnectionTransientError"
+                ? {}
+                : { environments: new Map(), loaded: false }),
               refreshing: false,
               error: Option.some(error),
             }));
           }),
         ),
+        Effect.ensuring(
+          Effect.gen(function* () {
+            if ((yield* Ref.get(accountGeneration)) !== (yield* Ref.get(refreshGeneration))) {
+              return;
+            }
+            yield* SubscriptionRef.update(state, (current) =>
+              current.refreshing ? { ...current, refreshing: false } : current,
+            );
+          }),
+        ),
+      ),
+    );
+
+  // Membership-only polls share a listing that completes after they start.
+  // Full refreshes always re-list: a link/unlink can finish while a prior
+  // membership read is still pending, making that read too old to reuse.
+  const refreshDiscovery = (refreshStatuses: boolean) =>
+    Ref.get(catalogRevision).pipe(
+      Effect.flatMap((requestedRevision) =>
+        runRefreshDiscovery(refreshStatuses, requestedRevision),
       ),
     );
 
