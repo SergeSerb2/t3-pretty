@@ -60,12 +60,16 @@ export function buildCancelQueuedRunCommand(input: {
   };
 }
 
-/** Find the insertion anchor using the rows' original, untransformed layout. */
+/**
+ * Find the insertion anchor using the rows' original, untransformed layout.
+ * A worklet: the drag handle resolves it on the UI thread on every move.
+ */
 export function resolveQueueDragBeforeRunId(
   rows: ReadonlyArray<{ id: RunId; y?: number; height?: number }>,
   runId: RunId,
   translationY: number,
 ): RunId | null | undefined {
+  "worklet";
   const sourceIndex = rows.findIndex((row) => row.id === runId);
   const source = rows[sourceIndex];
   if (!source || rows.some((row) => row.y === undefined || row.height === undefined)) return;

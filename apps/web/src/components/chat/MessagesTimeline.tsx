@@ -194,8 +194,9 @@ import {
 import { MessageCopyButton } from "./MessageCopyButton";
 import { promptLinkFor } from "../promptLinks/copyPromptLink";
 import { PierreEntryIcon } from "./PierreEntryIcon";
-import { SlidingActivity } from "./SlidingActivity";
+import { SlidingActivity, type SlidingActivityHandoff } from "./SlidingActivity";
 import { ActivityLabel } from "./ActivityLabel";
+import { useHeldFlag } from "./useHeldFlag";
 import { inferEntryKindFromPath } from "../../pierre-icons";
 import { WorkspaceEntryIcon, WorkspaceEntryTooltip } from "./WorkspaceEntryIcon";
 import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
@@ -210,6 +211,7 @@ import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRowsWithState,
   type MessagesTimelineRowsProjection,
+  LIVE_ACTIVITY_ROW_ID,
   liveWorkEntryLabel,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
@@ -290,7 +292,7 @@ import {
   formatDayAwareTimestamp,
   formatUpcomingTimestamp,
 } from "../../timestampFormat";
-import { FetchedToolOutput, V2ItemInspector } from "./V2ItemInspector";
+import { FetchedToolOutput, TurnItemDetailPrefetch, V2ItemInspector } from "./V2ItemInspector";
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { Collapsible, CollapsibleTrigger, CollapsiblePanel } from "../ui/collapsible";
 import {
@@ -456,6 +458,9 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH = {
   ...TIMELINE_MAINTAIN_SCROLL_AT_END,
   animated: true,
 } as const satisfies MaintainScrollAtEndOptions;
+// The last paragraph usually lands in the commit that ends the turn, so the
+// smooth variant outlasts isWorking long enough to glide to it.
+const TIMELINE_SMOOTH_FOLLOW_HOLD_MS = 1000;
 
 // ---------------------------------------------------------------------------
 // Props (public API)
@@ -684,6 +689,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   // The list stays mounted across thread switches. Its first end pins on the
   // new thread must snap, not glide, even if that thread is mid-turn.
   const [settlingListIdentity, setSettlingListIdentity] = useState<string | null>(listIdentityKey);
+  const smoothFollow = useHeldFlag(isWorking, TIMELINE_SMOOTH_FOLLOW_HOLD_MS, listIdentityKey);
   let paintedExpandedRunIds = expandedRunIds;
   let paintedExpandedWorkGroupIds = expandedWorkGroupIds;
   let paintedExpandedAttemptIds = expandedAttemptIds;
@@ -1721,7 +1727,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
                 fullscreenAppRowId !== null ||
                 disclosureToggleSettling
                   ? false
-                  : isWorking && !prefersReducedMotion && settlingListIdentity === null
+                  : smoothFollow && !prefersReducedMotion && settlingListIdentity === null
                     ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
                     : TIMELINE_MAINTAIN_SCROLL_AT_END
               }
@@ -1756,7 +1762,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
                 onManualNavigation();
                 void listRef.current?.scrollToIndex({
                   index: item.rowIndex,
-                  animated: true,
+                  animated: !prefersReducedMotion,
                   viewOffset: 24,
                 });
               }}
@@ -1801,6 +1807,8 @@ function keyExtractor(item: MessagesTimelineRow) {
 }
 
 function getItemType(item: MessagesTimelineRow) {
+  // Thinking and the current tool are one live row, so they share a type.
+  if (item.id === LIVE_ACTIVITY_ROW_ID) return "live-activity";
   return item.kind === "message" ? `message:${item.message.role}` : item.kind;
 }
 
@@ -2198,9 +2206,10 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
               displayLabel={row.displayLabel}
             />
           ) : null}
-          {row.kind === "work-live" ? <LiveWorkEntryTimelineRow row={row} /> : null}
+          {row.kind === "work-live" || row.kind === "thinking" ? (
+            <LiveActivityTimelineRow row={row} />
+          ) : null}
           {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
-          {row.kind === "thinking" ? <ThinkingTimelineRow row={row} /> : null}
         </WorkLogBlock>
       ) : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
@@ -3947,12 +3956,54 @@ function CompactingLabel() {
   );
 }
 
-function ThinkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "thinking" }> }) {
+type LiveTimelineRow = Extract<TimelineRow, { kind: "thinking" | "work-live" }>;
+type LiveActivityHandoffRef = React.RefObject<SlidingActivityHandoff | null>;
+
+/**
+ * Thinking and the current tool share the live row id. The handoff outlives
+ * the swap between their trees, so Thinking slides into the first tool call
+ * like one tool slides into the next. A new thread starts with none.
+ */
+function LiveActivityTimelineRow({ row }: { row: LiveTimelineRow }) {
+  const { routeThreadKey } = use(TimelineRowCtx);
+  return <LiveActivityHandoffRow key={routeThreadKey} row={row} />;
+}
+
+function LiveActivityHandoffRow({ row }: { row: LiveTimelineRow }) {
+  const handoffRef = useRef<SlidingActivityHandoff | null>(null);
+  return row.kind === "thinking" ? (
+    <ThinkingTimelineRow row={row} handoffRef={handoffRef} />
+  ) : (
+    <LiveWorkEntryTimelineRow row={row} handoffRef={handoffRef} />
+  );
+}
+
+function ThinkingTimelineRow({
+  row,
+  handoffRef,
+}: {
+  row: Extract<TimelineRow, { kind: "thinking" }>;
+  handoffRef: LiveActivityHandoffRef;
+}) {
   const ctx = use(TimelineRowCtx);
   const { isCompacting, isPreparingWorktree } = use(TimelineRowActivityCtx);
-  // Reserve the activity row during setup so the handoff keeps the same height.
-  if (isPreparingWorktree || isCompacting) return <WorkLogRow label="" />;
-  const activity = <LiveActivityRow label="Thinking" iconName="brain" active shimmer />;
+  if (isPreparingWorktree || isCompacting) {
+    // Reserve the activity row during setup so the handoff keeps the same height.
+    return (
+      <SlidingActivity activityKey={null} text="" handoffRef={handoffRef}>
+        <WorkLogRow label="" />
+      </SlidingActivity>
+    );
+  }
+  const activity = (
+    <SlidingActivity
+      activityKey={row.expanded ? null : "thinking"}
+      text="Thinking"
+      handoffRef={handoffRef}
+    >
+      <LiveActivityRow label="Thinking" iconName="brain" active shimmer />
+    </SlidingActivity>
+  );
   const { groupId } = row;
   if (groupId === undefined) return activity;
   return (
@@ -4128,7 +4179,13 @@ function ThreadReadLabel({
   );
 }
 
-function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "work-live" }> }) {
+function LiveWorkEntryTimelineRow({
+  row,
+  handoffRef,
+}: {
+  row: Extract<TimelineRow, { kind: "work-live" }>;
+  handoffRef: LiveActivityHandoffRef;
+}) {
   const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
   const threadTarget = useThreadReadTarget(row.entry, ctx.activeThreadEnvironmentId);
@@ -4185,9 +4242,9 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
         />
       ) : null}
       <SlidingActivity
-        key={ctx.routeThreadKey}
         activityKey={row.active && !row.expanded ? workEntryHandoffKey(row.entry) : null}
         text={threadLabel?.text ?? label}
+        handoffRef={handoffRef}
       >
         <LiveActivityRow
           activityKey={row.active && !row.expanded ? workEntryHandoffKey(row.entry) : null}
@@ -5608,6 +5665,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     }
     setExpanded(next);
   };
+  // Pressing a row starts the fetch its details need, so the click that
+  // follows usually opens to the final output in one step.
+  const [detailPressed, setDetailPressed] = useState(false);
   const failureItem = workEntry.projectedItem?.item;
   if (failureItem?.type === "error" && failureItem.status === "failed") {
     const warning = failureItem.failure.class === "usage_limit";
@@ -5760,6 +5820,14 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               workEntry.questionAnswer ||
               turnItemHasDetail(workEntry.projectedItem.item),
             );
+  const prefetchItem =
+    canExpandProjectedItem &&
+    !isReasoning &&
+    !workEntry.questionAnswer &&
+    workEntry.projectedItem !== undefined &&
+    turnItemNeedsDetailFetch(workEntry.projectedItem.item)
+      ? workEntry.projectedItem
+      : null;
   // Reserve destructive row styling for severe failures, not routine tool errors.
   const iconWrapperClass = cn(
     "flex size-4 items-center justify-center",
@@ -5800,6 +5868,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             toggleExpanded();
           }
         },
+        ...(prefetchItem ? { onPointerDown: () => setDetailPressed(true) } : {}),
       }
     : {};
 
@@ -5918,6 +5987,12 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         </>
       }
     >
+      {detailPressed && prefetchItem ? (
+        <TurnItemDetailPrefetch
+          projectedItem={prefetchItem}
+          environmentId={ctx.activeThreadEnvironmentId}
+        />
+      ) : null}
       {expanded && viewedImage && threadRef ? (
         <WorkLogDetails kind="media">
           <ChatMarkdownAssetImage

@@ -164,14 +164,18 @@ function ComboboxPopup({
         side={side}
         sideOffset={sideOffset}
       >
+        {/* The glass wrapper owns the look, so it carries the menu's open and close
+            motion off the popup's starting and ending states. Base UI unmounts
+            once the popup's own transitions finish, so the popup fades on the
+            same exit beat to hold the wrapper's exit. */}
         <span
           className={cn(
-            "dropdown-glass relative flex max-h-full min-w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) rounded-lg shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] transition-[scale,opacity] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
+            "dropdown-glass relative flex max-h-full min-w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) rounded-lg shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] transition-[scale,opacity] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] has-[>[data-ending-style]]:opacity-0 has-[>[data-ending-style]]:duration-100 has-[>[data-starting-style]]:opacity-0 motion-safe:has-[>[data-ending-style]]:scale-[0.99] motion-safe:has-[>[data-starting-style]]:scale-[0.99] motion-reduce:transition-opacity dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
             className,
           )}
         >
           <ComboboxPrimitive.Popup
-            className="flex min-w-0 max-h-[min(var(--available-height),23rem)] flex-1 flex-col overflow-hidden text-foreground"
+            className="flex min-w-0 max-h-[min(var(--available-height),23rem)] flex-1 flex-col overflow-hidden text-foreground transition-opacity duration-100 data-ending-style:opacity-0"
             data-slot="combobox-popup"
             {...props}
           >

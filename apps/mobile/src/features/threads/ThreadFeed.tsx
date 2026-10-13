@@ -105,12 +105,20 @@ import { flattenThemeColor, themeColorWithAlpha } from "../../lib/mobileTheme";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { PresentationSource } from "../../components/NativePresentation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeIn, FadeInUp, type SharedValue } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInUp,
+  type SharedValue,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { useFontFamily } from "../../lib/useFontFamily";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
+import { MOTION_TIMING } from "../../lib/motion";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { downloadAndShareAttachment } from "../../lib/attachmentDownload";
 import { hasWideMarkdownBlock } from "../../lib/wideMarkdownBlocks";
@@ -180,6 +188,7 @@ import {
 } from "../../lib/threadActivity";
 import type { ThreadContentPresentation } from "./threadContentPresentation";
 import {
+  resolveThreadFeedAwayFromEnd,
   resolveThreadFeedLiveFollow,
   type ThreadFeedLiveFollowEvent,
   type ThreadWorkGroupScrollPosition,
@@ -268,6 +277,9 @@ const THREAD_FEED_DISCLOSURE_ENTER_TRANSITION = FadeIn.delay(
 // remounts rows when they scroll back into view, and replaying an entrance for
 // old content would be its own kind of jank.
 const FRESH_ENTRY_WINDOW_MS = 3_000;
+// Past LegendList's longest reveal hold (40 frames at 60 Hz) so the fallback
+// only fires when onLoad never does.
+const THREAD_FEED_REVEAL_FALLBACK_MS = 800;
 function isFreshTimestamp(input: string): boolean {
   const timestamp = Date.parse(input);
   return Number.isFinite(timestamp) && Date.now() - timestamp < FRESH_ENTRY_WINDOW_MS;
@@ -312,6 +324,8 @@ export interface ThreadFeedProps {
   readonly usesAutomaticContentInsets?: boolean;
   readonly onHeaderMaterialVisibilityChange?: (visible: boolean) => void;
   readonly onEndFollowEnabledChange?: (enabled: boolean) => void;
+  /** The reader has left the live edge with follow paused; drives the scroll-to-end control. */
+  readonly onAwayFromEndChange?: (away: boolean) => void;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
 }
@@ -439,30 +453,53 @@ function AssistantForkButton(props: {
   );
 }
 
+// Matches the rounded-[14px] frames user-bubble images use.
+const LOCAL_IMAGE_PREVIEW_STYLE = [StyleSheet.absoluteFill, { borderRadius: 14 }];
+
 function MessageAttachmentImage(props: {
   readonly environmentId: EnvironmentId;
-  readonly attachmentId: string;
+  /** Null while a sent picture has not reached the server yet. */
+  readonly attachmentId: string | null;
   readonly name: string;
   readonly mimeType: string;
   readonly className: string;
+  /** Local bytes from the send, layered over the frame until the server copy has loaded. */
+  readonly localPreviewUri?: string | undefined;
+  /** Opens the local bytes while there is no server copy to open. */
+  readonly onPressLocalPreview?: () => void;
   readonly onPressPreview: (source: FilePreviewSource) => void;
 }) {
   const withGallery = useFilePreviewGallery();
   const sourceIdentifier = useId();
   const resource = useMemo(
-    () => ({
-      _tag: "attachment" as const,
-      attachmentId: props.attachmentId,
-      fileName: props.name,
-      mimeType: props.mimeType,
-    }),
+    () =>
+      props.attachmentId === null
+        ? null
+        : {
+            _tag: "attachment" as const,
+            attachmentId: props.attachmentId,
+            fileName: props.name,
+            mimeType: props.mimeType,
+          },
     [props.attachmentId, props.name, props.mimeType],
   );
   const uri = useAssetUrl(props.environmentId, resource);
   const refreshAssetUrl = useRefreshAssetUrl(props.environmentId, resource);
   const retriedImage = useRef(false);
+  const [remoteLoaded, setRemoteLoaded] = useState(false);
+  const [localPreviewFailed, setLocalPreviewFailed] = useState(false);
+  // The confirmed message reuses this element (same row and position keys), so
+  // the send's local bytes carry over until the server copy has loaded.
+  const [retainedLocalPreviewUri, setRetainedLocalPreviewUri] = useState(props.localPreviewUri);
+  if (props.localPreviewUri !== undefined && props.localPreviewUri !== retainedLocalPreviewUri) {
+    setRetainedLocalPreviewUri(props.localPreviewUri);
+  }
+  const localPreviewUri =
+    retainedLocalPreviewUri !== undefined && !localPreviewFailed && !remoteLoaded
+      ? retainedLocalPreviewUri
+      : null;
 
-  if (uri === null) {
+  if (uri === null && localPreviewUri === null) {
     return (
       <View className={`${props.className} items-center justify-center`}>
         <AppActivityIndicator />
@@ -475,7 +512,11 @@ function MessageAttachmentImage(props: {
       <Pressable
         accessibilityRole="imagebutton"
         accessibilityLabel={`Open ${props.name}`}
-        onPress={() =>
+        onPress={() => {
+          if (resource === null) {
+            props.onPressLocalPreview?.();
+            return;
+          }
           // The viewer mints its own URL from the resource so the image survives a refresh.
           props.onPressPreview(
             withGallery({
@@ -491,22 +532,37 @@ function MessageAttachmentImage(props: {
                 resource,
               },
             }),
-          )
-        }
+          );
+        }}
       >
-        <Image
-          source={{ uri }}
-          className={props.className}
-          resizeMode="cover"
-          onLoad={() => {
-            retriedImage.current = false;
-          }}
-          onError={() => {
-            if (retriedImage.current) return;
-            retriedImage.current = true;
-            void refreshAssetUrl();
-          }}
-        />
+        {uri === null ? (
+          <View className={props.className} />
+        ) : (
+          <Image
+            source={{ uri }}
+            className={props.className}
+            resizeMode="cover"
+            onLoad={() => {
+              retriedImage.current = false;
+              setRemoteLoaded(true);
+            }}
+            onError={() => {
+              if (retriedImage.current) return;
+              retriedImage.current = true;
+              void refreshAssetUrl();
+            }}
+          />
+        )}
+        {/* Stays mounted across the pending → confirmed handoff, so the picture
+            never blanks while the server copy loads underneath it. */}
+        {localPreviewUri === null ? null : (
+          <Image
+            source={{ uri: localPreviewUri }}
+            style={LOCAL_IMAGE_PREVIEW_STYLE}
+            resizeMode="cover"
+            onError={() => setLocalPreviewFailed(true)}
+          />
+        )}
       </Pressable>
     </PresentationSource>
   );
@@ -1211,9 +1267,20 @@ function renderFeedEntry(
             : [],
         ),
       );
-      const visibleAttachments = attachments.filter(
-        (attachment) => isImageAttachment(attachment) || !inlineAttachmentIds.has(attachment.id),
+      const visibleAttachments = attachments.flatMap((attachment, index) =>
+        isImageAttachment(attachment) || !inlineAttachmentIds.has(attachment.id)
+          ? [{ attachment, index }]
+          : [],
       );
+      const pendingAttachments = entry.pendingMessage?.attachments ?? [];
+      // Pending and confirmed pictures share one frame and one element per
+      // position, so the server's echo neither resizes nor reloads them.
+      const attachmentRowClassName = inlineAttachmentIds.size
+        ? "flex-row flex-wrap gap-2"
+        : "gap-2";
+      const imageFrameClassName = inlineAttachmentIds.size
+        ? "h-24 w-24 rounded-[14px] bg-user-bubble-foreground/15"
+        : "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15";
       return (
         <Animated.View
           className="mb-5 items-end"
@@ -1253,56 +1320,46 @@ function renderFeedEntry(
                   : null),
             }}
           >
-            {entry.pendingMessage?.attachments.map((attachment) =>
-              attachment.type === "image" && attachment.uploadedAttachmentId ? (
-                <MessageAttachmentImage
-                  key={attachment.id}
-                  environmentId={props.environmentId}
-                  attachmentId={attachment.uploadedAttachmentId}
-                  name={attachment.name}
-                  mimeType={attachment.mimeType}
-                  className="h-[140px] w-[180px] rounded-[14px]"
-                  onPressPreview={props.onPressPreview}
-                />
-              ) : attachment.type === "image" ? (
-                <Pressable
-                  key={attachment.id}
-                  accessibilityRole="imagebutton"
-                  accessibilityLabel={`Open ${attachment.name}`}
-                  onPress={() =>
-                    props.onPressPreview({
-                      kind: "image",
-                      name: attachment.name,
-                      uri: attachment.dataUrl ?? attachment.previewUri,
-                      gallery: composerImageGallery(entry.pendingMessage?.attachments ?? []),
-                    })
-                  }
-                >
-                  <Image
-                    source={{ uri: attachment.previewUri }}
-                    style={{ width: 180, height: 140, borderRadius: 14 }}
-                  />
-                </Pressable>
-              ) : (
-                <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
-              ),
-            )}
             {/* An empty container still takes a gap, which pads every attachment-free bubble. */}
-            {visibleAttachments.length > 0 ? (
-              <View className={inlineAttachmentIds.size ? "flex-row flex-wrap gap-2" : "gap-2"}>
-                {visibleAttachments.map((attachment) => {
+            {pendingAttachments.length > 0 ? (
+              <View className={attachmentRowClassName}>
+                {pendingAttachments.map((attachment, index) =>
+                  attachment.type === "image" ? (
+                    <MessageAttachmentImage
+                      // oxlint-disable-next-line react/no-array-index-key -- Position is what the confirmed message's picture shares.
+                      key={`image:${index}`}
+                      environmentId={props.environmentId}
+                      attachmentId={attachment.uploadedAttachmentId ?? null}
+                      name={attachment.name}
+                      mimeType={attachment.mimeType}
+                      className={imageFrameClassName}
+                      localPreviewUri={attachment.previewUri}
+                      onPressLocalPreview={() =>
+                        props.onPressPreview({
+                          kind: "image",
+                          name: attachment.name,
+                          uri: attachment.dataUrl ?? attachment.previewUri,
+                          gallery: composerImageGallery(pendingAttachments),
+                        })
+                      }
+                      onPressPreview={props.onPressPreview}
+                    />
+                  ) : (
+                    <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
+                  ),
+                )}
+              </View>
+            ) : visibleAttachments.length > 0 ? (
+              <View className={attachmentRowClassName}>
+                {visibleAttachments.map(({ attachment, index }) => {
                   return isImageAttachment(attachment) ? (
                     <MessageAttachmentImage
-                      key={attachment.id}
+                      key={`image:${index}`}
                       environmentId={props.environmentId}
                       attachmentId={attachment.id}
                       name={attachment.name}
                       mimeType={attachment.mimeType}
-                      className={
-                        inlineAttachmentIds.size
-                          ? "h-24 w-24 rounded-[14px] bg-user-bubble-foreground/15"
-                          : "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
-                      }
+                      className={imageFrameClassName}
                       onPressPreview={props.onPressPreview}
                     />
                   ) : isFileAttachment(attachment) ? (
@@ -1776,11 +1833,22 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     },
     [props.onEndFollowEnabledChange],
   );
+  // Follow pauses on every drag, even one that never leaves the end. The
+  // scroll-to-end control waits for the list to actually leave it, so a small
+  // drag or bounce at the live edge does not flash it in and out.
+  const awayFromEndRef = useRef(false);
+  const onAwayFromEndChange = props.onAwayFromEndChange;
   const transitionEndFollow = useCallback(
     (event: ThreadFeedLiveFollowEvent) => {
-      setEndFollow(resolveThreadFeedLiveFollow(endFollowEnabledRef.current, event));
+      const following = resolveThreadFeedLiveFollow(endFollowEnabledRef.current, event);
+      setEndFollow(following);
+      const awayFromEnd = resolveThreadFeedAwayFromEnd(awayFromEndRef.current, following, event);
+      if (awayFromEndRef.current !== awayFromEnd) {
+        awayFromEndRef.current = awayFromEnd;
+        onAwayFromEndChange?.(awayFromEnd);
+      }
     },
-    [setEndFollow],
+    [onAwayFromEndChange, setEndFollow],
   );
   const [interactionState, setInteractionState] = useState<{
     readonly copiedRowId: string | null;
@@ -2281,6 +2349,31 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.listRef.current?.reportContentInset({ bottom });
     }
   }, [listMountKey, props.contentInsetEndAdjustment, props.listRef]);
+  // A fresh mount keeps its rows at opacity 0 while LegendList settles the end
+  // position, then reveals them in one frame, often mid-push. Fade each mount
+  // in from onLoad instead; data updates on a mounted list never fade.
+  const listRevealOpacity = useSharedValue(0);
+  const revealedListMountKeyRef = useRef<string | null>(null);
+  const revealList = useCallback(
+    (mountKey: string) => {
+      if (revealedListMountKeyRef.current === mountKey) {
+        return;
+      }
+      revealedListMountKeyRef.current = mountKey;
+      listRevealOpacity.set(withTiming(1, MOTION_TIMING));
+    },
+    [listRevealOpacity],
+  );
+  useLayoutEffect(() => {
+    if (revealedListMountKeyRef.current === listMountKey) {
+      return;
+    }
+    listRevealOpacity.set(0);
+    const fallback = setTimeout(() => revealList(listMountKey), THREAD_FEED_REVEAL_FALLBACK_MS);
+    return () => clearTimeout(fallback);
+  }, [listMountKey, listRevealOpacity, revealList]);
+  const handleListLoad = useCallback(() => revealList(listMountKey), [listMountKey, revealList]);
+  const listRevealStyle = useAnimatedStyle(() => ({ opacity: listRevealOpacity.get() }));
 
   const anchoredEndSpace = useMemo(
     () =>
@@ -2666,7 +2759,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   return (
     <PresentationSource identifier={fileShareSourceIdentifier} style={{ flex: 1 }}>
       <View className="flex-1" onLayout={handleViewportLayout}>
-        <View className="flex-1">
+        <Animated.View className="flex-1" style={listRevealStyle}>
           <KeyboardAwareLegendList
             ref={props.listRef}
             // The empty↔filled key remounts the list when messages first
@@ -2785,6 +2878,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             // overflow the viewport (the padding clamps to zero).
             alignItemsAtEnd
             initialScrollAtEnd
+            onLoad={handleListLoad}
             onScroll={handleScroll}
             onScrollBeginDrag={handleScrollBeginDrag}
             onScrollEndDrag={handleScrollEndDrag}
@@ -2808,7 +2902,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               paddingRight: contentHorizontalPadding + contentRightInset,
             }}
           />
-        </View>
+        </Animated.View>
         {presentedFeed.length === 0 &&
         !props.worktreeSetup &&
         props.activeWorkStartedAt === null &&

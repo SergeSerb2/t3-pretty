@@ -49,6 +49,7 @@ import {
   ENTER_CLEAR_MS,
   ENTER_DELAY_PROP,
   enterDelayMs,
+  rowBoundsSeenContent,
   shouldAnimateRowArrival,
   shouldDeferThreadSeed,
   SILENT_WINDOW_MS,
@@ -218,12 +219,14 @@ export function SceneryMotion() {
       const intentRowTop = intent
         ? (document.querySelector(rowIdSelector(intent.rowId))?.getBoundingClientRect().top ?? null)
         : null;
-      const rows: Array<{ wrapper: HTMLElement; id: string; top: number }> = [];
+      const rows: Array<{ wrapper: HTMLElement; id: string; kind: string | null; top: number }> =
+        [];
       for (const wrapper of wrappers) {
-        const id = wrapper
-          .querySelector("[data-timeline-row-id]")
-          ?.getAttribute("data-timeline-row-id");
-        if (id) rows.push({ wrapper, id, top: wrapper.getBoundingClientRect().top });
+        const row = wrapper.querySelector(ROW_ID_SELECTOR);
+        const id = row?.getAttribute("data-timeline-row-id");
+        if (!row || !id) continue;
+        const kind = row.getAttribute("data-timeline-row-kind");
+        rows.push({ wrapper, id, kind, top: wrapper.getBoundingClientRect().top });
       }
       const boundaryTop =
         intent && intentRowTop !== null ? revealBoundaryTop(rows, intent, intentRowTop) : null;
@@ -240,7 +243,7 @@ export function SceneryMotion() {
       const unseen: Array<{ wrapper: HTMLElement; id: string; top: number }> = [];
       const revealed: Array<{ wrapper: HTMLElement; top: number }> = [];
       const observed = rows.length;
-      for (const { wrapper, id, top } of rows) {
+      for (const { wrapper, id, kind, top } of rows) {
         if (
           intent &&
           intentRowTop !== null &&
@@ -255,7 +258,7 @@ export function SceneryMotion() {
           continue;
         }
         if (seenRowIds.has(id)) {
-          maxSeenTop = Math.max(maxSeenTop, top);
+          if (rowBoundsSeenContent(kind)) maxSeenTop = Math.max(maxSeenTop, top);
         } else {
           unseen.push({ wrapper, id, top });
         }

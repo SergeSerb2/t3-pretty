@@ -24,6 +24,17 @@ export function shouldDeferThreadSeed(firstPaintForThread: boolean, wrapperCount
   return firstPaintForThread && wrapperCount === 0;
 }
 
+/**
+ * The live tail (thinking, the current tool, the working header) stays
+ * mounted while a turn inserts rows above it. Its top would mark every row
+ * the turn adds as history, so it never bounds the seen content.
+ */
+const LIVE_ROW_KINDS: ReadonlySet<string> = new Set(["thinking", "work-live", "working"]);
+
+export function rowBoundsSeenContent(kind: string | null): boolean {
+  return kind === null || !LIVE_ROW_KINDS.has(kind);
+}
+
 export function shouldAnimateRowArrival(input: {
   readonly firstPaintForThread: boolean;
   readonly silentWindowActive: boolean;

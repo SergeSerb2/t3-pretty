@@ -31,6 +31,8 @@ import {
  */
 export const MarkdownImageAvailableWidthContext = createContext(0);
 
+const IMAGE_FADE_IN = { duration: 150, skipOnCacheHit: "memory" } as const;
+
 export function ThreadMarkdownImageView(props: {
   readonly uri: string | null;
   readonly sourceKey: string;
@@ -173,12 +175,14 @@ function ThreadMarkdownImageRequest(props: {
           contentFit="contain"
           cachePolicy="memory-disk"
           accessible={false}
+          // Fade a fresh decode in; rows remounting on scroll show cached images at once.
+          transition={IMAGE_FADE_IN}
           onLoad={(event) => {
             setLoaded(true);
             props.onLoad(event.source);
           }}
           onError={props.onError}
-          style={{ width: "100%", height: "100%", opacity: loaded ? 1 : 0 }}
+          style={{ width: "100%", height: "100%" }}
         />
       )}
       {loaded ? null : (

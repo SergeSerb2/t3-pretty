@@ -261,10 +261,14 @@ export function ShimmeringWorkContent(props: {
     return () => subscription.remove();
   }, []);
 
+  // Keyed on whether the sweep should run, not on the width: a live label
+  // changes every tool call, and restarting the loop on each one stutters.
+  // The sweep style picks up the new width on its next frame.
+  const shimmerRunning = contentWidth > 0 && !reducedMotion && appIsActive && screenIsFocused;
   useEffect(() => {
     cancelAnimation(progress);
     progress.value = 0;
-    if (contentWidth <= 0 || reducedMotion || !appIsActive || !screenIsFocused) return;
+    if (!shimmerRunning) return;
 
     progress.value = withRepeat(
       withSequence(
@@ -284,7 +288,7 @@ export function ShimmeringWorkContent(props: {
       ReduceMotion.Never,
     );
     return () => cancelAnimation(progress);
-  }, [appIsActive, contentWidth, progress, reducedMotion, screenIsFocused]);
+  }, [progress, shimmerRunning]);
 
   const sweepStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: -SHIMMER_WIDTH + progress.value * (contentWidth + SHIMMER_WIDTH) }],
@@ -311,7 +315,7 @@ export function ShimmeringWorkContent(props: {
         toolIcon={props.toolIcon}
         onTextLayout={(event) => setTextWidth(event.nativeEvent.lines[0]?.width ?? 0)}
       />
-      {!reducedMotion && appIsActive && screenIsFocused && contentWidth > 0 ? (
+      {shimmerRunning ? (
         <Animated.View
           className="absolute inset-y-0 left-0 overflow-hidden"
           pointerEvents="none"

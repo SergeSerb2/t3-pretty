@@ -82,6 +82,7 @@ import { isDesktopLocalConnectionTarget, isWslConnectionTarget } from "../connec
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { isElectron } from "../env";
 import { useTerminalFocus } from "../hooks/useTerminalFocus";
+import { useStatusPulse } from "../hooks/useStatusPulse";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { releaseProjectDraftUploads } from "../lib/composerDraftUploads";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -1389,6 +1390,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       visibleProjectThreads,
     };
   }, [projectThreads, threadLastVisitedAts, threadSortOrder]);
+  useStatusPulse(!projectExpanded && projectStatus?.pulse === true);
   const pinnedCollapsedThread = useMemo(() => {
     const activeThreadKey = activeRouteThreadKey ?? undefined;
     if (!activeThreadKey || projectExpanded) {
@@ -2475,7 +2477,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                 <span className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover/project-header:opacity-0">
                   <span
                     className={`size-[9px] rounded-full ${projectStatus.dotClass} ${
-                      projectStatus.pulse ? "animate-status-pulse" : ""
+                      projectStatus.pulse ? "status-pulse" : ""
                     }`}
                   />
                 </span>

@@ -1,8 +1,8 @@
-import { act } from "react";
+import { act, createRef, type ReactElement } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { SlidingActivity } from "./SlidingActivity";
+import { SlidingActivity, type SlidingActivityHandoff } from "./SlidingActivity";
 
 let reducedMotion = false;
 vi.mock("../../hooks/useMediaQuery", () => ({ useMediaQuery: () => reducedMotion }));
@@ -33,12 +33,15 @@ const animate = vi.fn((_frames: Keyframe[], _options: KeyframeAnimationOptions) 
 });
 
 async function render(activityKey: string | null, label: string) {
+  await renderContent(
+    <SlidingActivity activityKey={activityKey} text={label}>
+      <span>{label}</span>
+    </SlidingActivity>,
+  );
+}
+
+async function renderContent(content: ReactElement) {
   await act(() => {
-    const content = (
-      <SlidingActivity activityKey={activityKey} text={label}>
-        <span>{label}</span>
-      </SlidingActivity>
-    );
     if (renderer) renderer.update(content);
     else {
       renderer = create(content, {
@@ -96,6 +99,22 @@ describe("SlidingActivity", () => {
     expect(animations).toHaveLength(0);
     await render("call-2", "Reading file");
     expect(labels()).toEqual(["Ran command", "Reading file"]);
+    await act(() => animations[1]!.finish());
+    expect(labels()).toEqual(["Reading file"]);
+  });
+
+  it("slides out what a replaced slot showed when both share a handoff", async () => {
+    const handoffRef = createRef<SlidingActivityHandoff>();
+    const slot = (activityKey: string, label: string) => (
+      <SlidingActivity activityKey={activityKey} text={label} handoffRef={handoffRef}>
+        <span>{label}</span>
+      </SlidingActivity>
+    );
+    await renderContent(slot("thinking", "Thinking"));
+    expect(animations).toHaveLength(0);
+    // A different wrapper remounts the slot, as Thinking does when the first tool starts.
+    await renderContent(<div>{slot("call-1", "Reading file")}</div>);
+    expect(labels()).toEqual(["Thinking", "Reading file"]);
     await act(() => animations[1]!.finish());
     expect(labels()).toEqual(["Reading file"]);
   });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   enterDelayMs,
+  rowBoundsSeenContent,
   shouldAnimateRowArrival,
   shouldDeferThreadSeed,
   STAGGER_CAP,
@@ -52,6 +53,27 @@ describe("shouldAnimateRowArrival", () => {
         maxSeenTop: 400,
       }),
     ).toBe(false);
+  });
+});
+
+describe("rowBoundsSeenContent", () => {
+  it("lets rows a turn inserts above the live tail arrive", () => {
+    const rows = [
+      { kind: "message", top: 200 },
+      { kind: "work-live", top: 520 },
+      { kind: "thinking", top: 560 },
+    ];
+    const maxSeenTop = Math.max(
+      ...rows.filter((row) => rowBoundsSeenContent(row.kind)).map((row) => row.top),
+    );
+    expect(shouldAnimateRowArrival({ ...visibleArrival, top: 480, maxSeenTop })).toBe(true);
+    expect(rowBoundsSeenContent("working")).toBe(false);
+  });
+
+  it("keeps settled rows as the bound for history", () => {
+    for (const kind of ["message", "work", "work-toggle", "turn-fold", null]) {
+      expect(rowBoundsSeenContent(kind)).toBe(true);
+    }
   });
 });
 

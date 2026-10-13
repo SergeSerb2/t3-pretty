@@ -156,6 +156,7 @@ import { useSidebarProjectFolders } from "../hooks/useSidebarProjectFolders";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
+import { useStatusPulse } from "../hooks/useStatusPulse";
 import {
   useEnvironmentIdentities,
   useConnectedEnvironmentIds,
@@ -268,7 +269,6 @@ import {
   prStatusIndicator,
   resolveThreadPullRequestBadge,
   terminalStatusFromRunningIds,
-  synchronizeTerminalPulse,
   type TerminalStatusIndicator,
   useLinkedThreadPullRequest,
   ThreadSearchPullRequestNumber,
@@ -1341,6 +1341,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     threadId: thread.id,
   });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
+  useStatusPulse(terminalStatus?.pulse === true);
   const terminalProcessCount = runningTerminalIds.length;
   // Unsent composer text on this thread. The open thread shows its own
   // composer, so the marker only decorates rows you have navigated away from.
@@ -1828,10 +1829,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       data-testid={`sidebar-terminal-status-${thread.id}`}
       className={cn("inline-flex shrink-0 items-center justify-center", terminalStatus.colorClass)}
     >
-      <TerminalIcon
-        className={cn("size-3.5", terminalStatus.pulse && "motion-safe:animate-status-pulse")}
-        onAnimationStart={synchronizeTerminalPulse}
-      />
+      <TerminalIcon className={cn("size-3.5", terminalStatus.pulse && "status-pulse")} />
     </span>
   ) : null;
   // Same pen the new-thread draft rows lead with, so both kinds of unsent

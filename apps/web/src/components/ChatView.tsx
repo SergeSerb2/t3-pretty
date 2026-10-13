@@ -359,7 +359,7 @@ import {
   useEnvironmentSettings,
 } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
-import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
+import { usePanelAnimationSettings, usePanelEnterHold, usePanelPresence } from "../panelAnimations";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useRemoveClonedProject } from "../hooks/useRemoveClonedProject";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
@@ -662,6 +662,7 @@ import { useAssetUrls } from "../assets/assetUrls";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 import { recallableComposerPrompt } from "./chat/composerPromptHistory";
 import { observeResize } from "~/lib/observeResize";
+import { StatusPulseDot } from "../hooks/useStatusPulse";
 
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_MODELS: ServerProvider["models"] = [];
@@ -732,6 +733,11 @@ function useDraftHeroLayoutTransition(
     }
     const handoff = handoffRef.current ?? null;
     const stateChangedInPlace = previousStateRef.current !== isDraftHeroState;
+    // The navigation that mounted this view lifts its panel-motion suppression
+    // a couple of frames later and re-runs this effect; let a glide finish.
+    if (!stateChangedInPlace && isDraftHeroAnimationPlaying(animationRef.current)) {
+      return;
+    }
     const shouldGlideHandoff = shouldGlideDraftHeroHandoff({
       isDraftHero: isDraftHeroState,
       handoff,
@@ -754,10 +760,14 @@ function useDraftHeroLayoutTransition(
     const previousComposerRect = stateChangedInPlace
       ? previousComposerRectRef.current
       : (handoff?.rect ?? null);
+    // Navigation suppression keeps state a route restores still, but the
+    // handoff glide is that navigation's own continuity, and the incoming view
+    // mounts inside the suppressed frame; gating it there would drop it.
+    const motionEnabled = stateChangedInPlace ? animationsActive : animationDurationMs > 0;
     let handoffGlideStarted = false;
     if (
       stateChanged &&
-      animationsActive &&
+      motionEnabled &&
       !prefersReducedMotion &&
       !mobileComposerTransitionActive &&
       transitionGroup &&
@@ -2525,6 +2535,11 @@ export default function ChatView(props: ChatViewProps) {
     panelAnimationDurationMs,
   );
   const rightPanelPresent = rightPanelPresence.present;
+  const inlineRightPanelEnterHeld = usePanelEnterHold(
+    rightPanelOpen && activeThreadRef !== null,
+    rightPanelPresent && !shouldUsePlanSidebarSheet,
+    panelAnimationsActive,
+  );
   const rightPanelControlsInPanel =
     shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
   const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
@@ -7099,7 +7114,7 @@ export default function ChatView(props: ChatViewProps) {
         scrollNode.addEventListener("scrollend", finishAnimatedPositioning, { once: true });
         void list.scrollToIndex({
           index: anchorIndex,
-          animated: true,
+          animated: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
           viewPosition: 0,
           viewOffset: CHAT_LIST_ANCHOR_OFFSET,
         });
@@ -8017,15 +8032,7 @@ export default function ChatView(props: ChatViewProps) {
       priority: "activity",
       // A dev server can run for hours after the agent is done, so only work
       // that will wake the agent pulses.
-      icon: (
-        <span
-          className={cn(
-            "size-1.5 rounded-full bg-foreground",
-            presentation.waiting && "animate-status-pulse",
-          )}
-          aria-hidden="true"
-        />
-      ),
+      icon: <StatusPulseDot active={presentation.waiting} className="size-1.5 bg-foreground" />,
       title: presentation.title,
       // A single named item is already in the title.
       description:
@@ -11898,6 +11905,7 @@ export default function ChatView(props: ChatViewProps) {
     <div
       ref={setWorkspaceLayoutElement}
       className="relative flex min-h-0 min-w-0 flex-1 overflow-clip bg-background"
+      data-right-panel-entering={inlineRightPanelEnterHeld ? "" : undefined}
     >
       <Dialog
         open={
@@ -12168,7 +12176,7 @@ export default function ChatView(props: ChatViewProps) {
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => {
                       composerRef.current?.restoreAfterTimelineReachedEnd();
-                      scrollToEnd(true);
+                      scrollToEnd(!window.matchMedia("(prefers-reduced-motion: reduce)").matches);
                     }}
                     className="pointer-events-auto"
                     size="xs"
