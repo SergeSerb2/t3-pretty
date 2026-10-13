@@ -104,6 +104,49 @@ const checkout = resolveSettingsScope(
 );
 
 describe("scoped settings targets", () => {
+  it("saves global guidance across connected environments and project additions only on project members", () => {
+    const globalPlan = planScopedSettingsPatch(all, environments, {
+      globalThreadInstructions: "Use plain English.",
+    });
+    expect(globalPlan.serverWrites.map(({ environmentId }) => environmentId)).toEqual([
+      laptop.environmentId,
+      server.environmentId,
+    ]);
+    const projectPlan = planScopedSettingsPatch(project, environments, {
+      projectThreadInstructions: "Run unit tests.",
+    });
+    const saved = environments.map((entry) => {
+      if (entry.serverConfig === null) return entry;
+      const patch = projectPlan.serverWrites.find(
+        ({ environmentId }) => environmentId === entry.environmentId,
+      )?.patch;
+      return patch === undefined
+        ? entry
+        : {
+            ...entry,
+            serverConfig: {
+              ...entry.serverConfig,
+              settings: applyServerSettingsPatch(entry.serverConfig.settings, patch),
+            },
+          };
+    });
+    const projectTargets = resolveScopedSettingsTargets(project, saved);
+    expect(projectTargets.map(({ settings }) => settings.projectThreadInstructions)).toEqual([
+      "Run unit tests.",
+      "Run unit tests.",
+    ]);
+    expect(
+      resolveScopedSettingsTargets(all, saved).every(
+        ({ settings }) => settings.projectThreadInstructions === "",
+      ),
+    ).toBe(true);
+    expect(
+      planScopedSettingsPatch(project, environments, {
+        globalThreadInstructions: "Project cannot replace global guidance.",
+      }).serverWrites,
+    ).toEqual([]);
+  });
+
   it("uses the named environment even when a different primary is available", () => {
     const selected = selectScopedSettingsEnvironments(named, environments, laptop.environmentId);
     expect(selected.environments).toEqual([server]);

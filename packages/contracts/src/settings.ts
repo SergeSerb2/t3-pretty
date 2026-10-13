@@ -1080,6 +1080,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "continueThreadsAfterServerUpdate",
   "responseStreamingMode",
   "clearAgentResponses",
+  "projectThreadInstructions",
 ] as const;
 export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTING_KEYS)[number];
 
@@ -1128,6 +1129,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   clearAgentResponses: Schema.optionalKey(Schema.Boolean),
+  projectThreadInstructions: Schema.optionalKey(TrimmedString),
   providerInstances: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, ProjectProviderInstanceOverride),
   ),
@@ -1193,6 +1195,8 @@ export const StorageCleanupSettings = Schema.Struct({
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
 export const ServerSettings = Schema.Struct({
+  globalThreadInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  projectThreadInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   // Null means no client has migrated this preference yet; an empty value is
   // authoritative so another device cannot resurrect cleared preferences.
   favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
@@ -1667,6 +1671,8 @@ const ModelSelectionPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  globalThreadInstructions: Schema.optionalKey(TrimmedString),
+  projectThreadInstructions: Schema.optionalKey(TrimmedString),
   apps: Schema.optionalKey(AppsSettings),
   automations: Schema.optionalKey(AutomationsSettings),
   setModelFavorites: Schema.optionalKey(

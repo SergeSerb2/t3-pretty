@@ -880,11 +880,19 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "agent-instructions-global",
     title: "Global agent instructions",
     to: "/settings/instructions",
+    searchTerms: ["custom guidance all prompts hidden threads global instructions"],
   },
   {
     id: "agent-instructions-project",
     title: "Project agent instructions",
     to: "/settings/instructions",
+    searchTerms: ["custom guidance project prompts hidden instructions"],
+  },
+  {
+    id: "agent-instructions-provider",
+    title: "Provider instruction files",
+    to: "/settings/instructions",
+    searchTerms: ["AGENTS.md CLAUDE.md codex claude cursor provider instructions"],
   },
   {
     id: "subagents-enabled",

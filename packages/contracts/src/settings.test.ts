@@ -23,6 +23,31 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("thread instructions settings", () => {
+  it("keeps existing installations free of custom guidance", () => {
+    expect(decodeServerSettings({}).globalThreadInstructions).toBe("");
+    expect(decodeServerSettings({}).projectThreadInstructions).toBe("");
+  });
+
+  it("round-trips global guidance and project additions, including clearing them", () => {
+    const input = {
+      globalThreadInstructions: "Use plain English.",
+      projectSettingsOverrides: { project: { projectThreadInstructions: "Run unit tests." } },
+    };
+    expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
+    expect(decodeServerSettingsPatch(input)).toEqual(input);
+    expect(
+      decodeServerSettingsPatch({
+        globalThreadInstructions: "",
+        projectSettingsOverrides: { project: { projectThreadInstructions: "" } },
+      }),
+    ).toEqual({
+      globalThreadInstructions: "",
+      projectSettingsOverrides: { project: { projectThreadInstructions: "" } },
+    });
+  });
+});
+
 describe("ServerSettings response streaming", () => {
   it("defaults to paragraph buffering", () => {
     expect(decodeServerSettings({}).responseStreamingMode).toBe("paragraph");

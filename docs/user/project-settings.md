@@ -46,6 +46,18 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
+## Custom instructions
+
+On web or desktop, open **Settings → Instructions** to save guidance for your agents.
+Global instructions apply to all projects on the selected connected environments.
+Project instructions add guidance for one project. Both are sent with each prompt,
+including prompts from mobile, and stay hidden in chat. Clear the text and save to
+stop adding it to future prompts. Native slash commands do not receive this guidance.
+
+Provider instruction files and project files such as `AGENTS.md` remain available
+on the same page. Those files follow the provider's own rules and can also apply
+outside T3 Pretty.
+
 ## Worktree branch names
 
 In **Settings → Source Control → Worktree branch naming**, choose a static prefix,

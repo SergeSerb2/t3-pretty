@@ -41,6 +41,7 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
@@ -616,7 +617,7 @@ function makeBrowserAccessProject(projectId: ProjectId): Project {
 }
 
 it.effect(
-  "ProviderSessionManagerV2 refreshes hidden response guidance on starts and steering",
+  "ProviderSessionManagerV2 refreshes hidden response and custom instructions on starts and steering",
   () =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
@@ -630,6 +631,7 @@ it.effect(
         const now = yield* DateTime.now;
         const projectId = ProjectId.make("project-response-style");
         const threadId = ThreadId.make("thread-response-style");
+        yield* settings.updateSettings({ globalThreadInstructions: "Use metric units." });
         const providerSessionId = yield* idAllocator.allocate.providerSession({
           providerInstanceId: modelSelection.instanceId,
           threadId,
@@ -686,32 +688,52 @@ it.effect(
         assert.include(initialText, "ASD-STE100");
         assert.include(initialText, "Visualize the response when");
         assert.include(initialText, "Do not change code, commands, paths, identifiers");
+        assert.include(initialText, "Global instructions:\nUse metric units.");
+        assert.notInclude(initialText, "Project instructions:");
+        assert.equal(stripHiddenInstructionSuffixes(initialText), message.text);
         assert.equal(message.text, "Explain the result.");
 
-        yield* settings.updateSettings({ clearAgentResponses: false });
+        yield* settings.updateSettings({
+          clearAgentResponses: false,
+          globalThreadInstructions: "Use plain English.",
+        });
         yield* runtime.steerTurn(steerInput);
         const disabledText = (yield* Ref.get(state)).steeredTexts[0]!;
         assert.include(disabledText, "setting is off");
         assert.include(disabledText, "Stop applying the earlier");
         assert.notInclude(disabledText, "ASD-STE100");
+        assert.include(disabledText, "Global instructions:\nUse plain English.");
+        assert.notInclude(disabledText, "Use metric units.");
 
         yield* runtime.startTurn({ ...startInput, runOrdinal: 2, providerTurnOrdinal: 2 });
         assert.include((yield* Ref.get(state)).startedTexts[1]!, "setting is off");
         assert.equal((yield* Ref.get(state)).openCount, 1);
 
         yield* settings.updateSettings({
-          projectSettingsOverrides: { [projectId]: { clearAgentResponses: true } },
+          projectSettingsOverrides: {
+            [projectId]: {
+              clearAgentResponses: true,
+              projectThreadInstructions: "Run the unit tests.",
+            },
+          },
         });
         yield* runtime.steerTurn(steerInput);
         assert.include((yield* Ref.get(state)).steeredTexts[1]!, "ASD-STE100");
+        assert.include((yield* Ref.get(state)).steeredTexts[1]!, "Use plain English.");
+        assert.include(
+          (yield* Ref.get(state)).steeredTexts[1]!,
+          "Project instructions:\nRun the unit tests.",
+        );
 
         yield* settings.updateSettings({ projectSettingsOverrides: { [projectId]: null } });
         yield* runtime.steerTurn(steerInput);
         assert.include((yield* Ref.get(state)).steeredTexts[2]!, "setting is off");
+        assert.notInclude((yield* Ref.get(state)).steeredTexts[2]!, "Project instructions:");
 
-        yield* settings.updateSettings({ clearAgentResponses: true });
+        yield* settings.updateSettings({ clearAgentResponses: true, globalThreadInstructions: "" });
         yield* runtime.steerTurn(steerInput);
         assert.include((yield* Ref.get(state)).steeredTexts[3]!, "ASD-STE100");
+        assert.notInclude((yield* Ref.get(state)).steeredTexts[3]!, "t3_thread_instructions");
 
         yield* runtime.startTurn({ ...startInput, message: { ...message, text: "/compact" } });
         assert.equal((yield* Ref.get(state)).startedTexts[2], "/compact");

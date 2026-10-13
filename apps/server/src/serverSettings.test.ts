@@ -144,6 +144,33 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       yield* sql`ALTER TABLE projection_projects_divergent RENAME TO projection_projects`;
     }).pipe(Effect.provide(layerServerSettings())),
   );
+  it.effect("persists custom thread instructions and clearing project guidance", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const projectId = ProjectId.make("instructions-project");
+      yield* service.updateSettings({
+        globalThreadInstructions: "Use plain English.",
+        projectSettingsOverrides: { [projectId]: { projectThreadInstructions: "Run unit tests." } },
+      });
+      const saved = yield* decodeServerSettingsJson(yield* fs.readFileString(config.settingsPath));
+      assert.equal(saved.globalThreadInstructions, "Use plain English.");
+      assert.equal(
+        saved.projectSettingsOverrides[projectId]?.projectThreadInstructions,
+        "Run unit tests.",
+      );
+      yield* service.updateSettings({
+        projectSettingsOverrides: { [projectId]: { projectThreadInstructions: "" } },
+      });
+      const cleared = yield* decodeServerSettingsJson(
+        yield* fs.readFileString(config.settingsPath),
+      );
+      assert.equal(cleared.globalThreadInstructions, "Use plain English.");
+      assert.equal(cleared.projectSettingsOverrides[projectId]?.projectThreadInstructions, "");
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("saves a home suggestions model that keeps the default provider instance", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
