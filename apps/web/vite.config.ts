@@ -61,6 +61,11 @@ const configuredHostedAppUrl = (() => {
   }
   return undefined;
 })();
+// Desktop packaging sets T3CODE_WEB_SOURCEMAP=0: AppImage/DMG/NSIS
+// payloads exclude `*.map`. The React compiler stays on for every
+// production build so packaged desktop matches hosted web.
+// Worker-count limits live in the process env (rolldown reads them
+// when the native binding loads).
 const sourcemapEnv = process.env.T3CODE_WEB_SOURCEMAP?.trim().toLowerCase();
 
 // Vite 8.1's experimental bundled dev mode: serves rolldown-bundled chunks in
@@ -321,6 +326,9 @@ export default defineConfig(() => {
       emptyOutDir: true,
       manifest: true,
       sourcemap: buildSourcemap,
+      // Gzip size reporting holds every emitted chunk. Skip it when the
+      // packaged-web path already turned sourcemaps off for memory.
+      reportCompressedSize: buildSourcemap !== false,
     },
     test: {
       projects: [defineProject(unitTestProject)],

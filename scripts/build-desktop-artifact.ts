@@ -2636,6 +2636,53 @@ export function applyElectronBuilderIsolationEnv(
   };
 }
 
+function defaultEnvValue(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+}
+
+const PACKAGING_SEMI_SPACE_FLAG = "--max-semi-space-size=16";
+
+function withPackagingNodeOptions(env: NodeJS.ProcessEnv): string {
+  const existing = env.NODE_OPTIONS?.trim() ?? "";
+  if (/(?:^|\s)--max-semi-space-size(?:=|\s)/.test(existing)) {
+    return existing;
+  }
+  return existing ? `${existing} ${PACKAGING_SEMI_SPACE_FLAG}` : PACKAGING_SEMI_SPACE_FLAG;
+}
+
+/**
+ * JS env for `vp run build:desktop` during packaging.
+ *
+ * Hosted linux-small is 2 vCPU / 4 GB. The Vite production build of
+ * `apps/web` peaks near that ceiling during "rendering chunks":
+ *
+ * - sourcemaps: packaged payloads exclude `*.map` (`DESKTOP_FILE_EXCLUSIONS`);
+ *   the web maps alone were ~50 MB of unused app.asar.
+ * - Rolldown's tokio pool defaults to 1.5× physical CPUs and holds
+ *   parallel React-compiler Babel transforms plus chunk minify. Pinning
+ *   `ROLLDOWN_WORKER_THREADS=1` and `ROLLDOWN_MAX_BLOCKING_THREADS=1`
+ *   dropped peak tree RSS from ~3440 MB to ~3090 MB with the compiler
+ *   still on. `--max-semi-space-size=16` on the JS build only took that
+ *   to ~3004 MB; raising `--max-old-space-size` made the peak worse.
+ *   `RAYON_NUM_THREADS=1` matches the linux-appimage job (oxc minify).
+ *
+ * The React compiler stays on so packaged desktop matches hosted web.
+ * Explicit env values still win. Do not raise `NODE_OPTIONS` heap on
+ * the whole AppImage job: a larger V8 heap plus rustc / electron-builder
+ * is what SIGKILLs the rest of the step.
+ */
+export function applyDesktopArtifactJsBuildEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    T3CODE_WEB_SOURCEMAP: defaultEnvValue(env.T3CODE_WEB_SOURCEMAP, "0"),
+    ROLLDOWN_WORKER_THREADS: defaultEnvValue(env.ROLLDOWN_WORKER_THREADS, "1"),
+    ROLLDOWN_MAX_BLOCKING_THREADS: defaultEnvValue(env.ROLLDOWN_MAX_BLOCKING_THREADS, "1"),
+    RAYON_NUM_THREADS: defaultEnvValue(env.RAYON_NUM_THREADS, "1"),
+    NODE_OPTIONS: withPackagingNodeOptions(env),
+  };
+}
+
 export const removeStaleElectronBuilderToolsetLock = Effect.fn(
   "removeStaleElectronBuilderToolsetLock",
 )(function* (tmpDir: string, staleMs = ELECTRON_BUILDER_TOOLSET_LOCK_STALE_MS) {
@@ -4265,6 +4312,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
         cwd: repoRoot,
         shell: spawnCommand.shell,
+        env: applyDesktopArtifactJsBuildEnv(process.env),
       }),
       { label: "vp run build:desktop", verbose: options.verbose },
     );

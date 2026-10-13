@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - Tests use Node's glob matcher to verify electron-builder exclusions.
 import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import { DESKTOP_LOCAL_BEARER_TOKEN_TIMEOUT_MS } from "@t3tools/contracts";
@@ -70,6 +71,7 @@ import {
   resolveElectronBuilderToolsetLockPaths,
   resolveHostTempDirectory,
   applyElectronBuilderIsolationEnv,
+  applyDesktopArtifactJsBuildEnv,
   isElectronBuilderToolsetLockStale,
   removeStaleElectronBuilderToolsetLock,
   withDesktopPackagingTarget,
@@ -2711,6 +2713,56 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.isTrue(
       isElectronBuilderToolsetLockStale(1_000, 1_000 + ELECTRON_BUILDER_TOOLSET_LOCK_STALE_MS),
     );
+  });
+
+  it("runs packaged JS builds without unused web sourcemaps or extra rolldown workers", () => {
+    const jsBuildEnv = applyDesktopArtifactJsBuildEnv({
+      PATH: "/usr/bin",
+      T3CODE_WEB_SOURCEMAP: undefined,
+      T3CODE_WEB_REACT_COMPILER: undefined,
+      ROLLDOWN_WORKER_THREADS: undefined,
+      ROLLDOWN_MAX_BLOCKING_THREADS: undefined,
+      RAYON_NUM_THREADS: undefined,
+    });
+    assert.equal(jsBuildEnv.T3CODE_WEB_SOURCEMAP, "0");
+    assert.equal(jsBuildEnv.ROLLDOWN_WORKER_THREADS, "1");
+    assert.equal(jsBuildEnv.ROLLDOWN_MAX_BLOCKING_THREADS, "1");
+    assert.equal(jsBuildEnv.RAYON_NUM_THREADS, "1");
+    assert.equal(jsBuildEnv.NODE_OPTIONS, "--max-semi-space-size=16");
+    assert.equal(jsBuildEnv.T3CODE_WEB_REACT_COMPILER, undefined);
+    assert.equal(jsBuildEnv.PATH, "/usr/bin");
+    assert.equal(
+      applyDesktopArtifactJsBuildEnv({ T3CODE_WEB_SOURCEMAP: "hidden" }).T3CODE_WEB_SOURCEMAP,
+      "hidden",
+    );
+    assert.equal(
+      applyDesktopArtifactJsBuildEnv({ T3CODE_WEB_SOURCEMAP: " 1 " }).T3CODE_WEB_SOURCEMAP,
+      "1",
+    );
+    assert.equal(
+      applyDesktopArtifactJsBuildEnv({ ROLLDOWN_WORKER_THREADS: "4" }).ROLLDOWN_WORKER_THREADS,
+      "4",
+    );
+    assert.equal(
+      applyDesktopArtifactJsBuildEnv({ NODE_OPTIONS: "--enable-source-maps" }).NODE_OPTIONS,
+      "--enable-source-maps --max-semi-space-size=16",
+    );
+    assert.equal(
+      applyDesktopArtifactJsBuildEnv({ NODE_OPTIONS: "--max-semi-space-size=8" }).NODE_OPTIONS,
+      "--max-semi-space-size=8",
+    );
+    const source = NodeFS.readFileSync(
+      new URL("./build-desktop-artifact.ts", import.meta.url),
+      "utf8",
+    );
+    assert.include(source, "env: applyDesktopArtifactJsBuildEnv(process.env)");
+    assert.notInclude(source, 'T3CODE_WEB_REACT_COMPILER: reactCompiler ? reactCompiler : "0"');
+    const viteConfig = NodeFS.readFileSync(
+      new URL("../apps/web/vite.config.ts", import.meta.url),
+      "utf8",
+    );
+    assert.include(viteConfig, "presets: [reactCompilerPreset()]");
+    assert.notInclude(viteConfig, "enableReactCompiler");
   });
 
   it("reuses the signed zip .app when packaging the macOS dmg", () => {

@@ -675,6 +675,12 @@ ${setup}
     assert.include(linux, "T3CODE_RELEASE_S3_BUCKET");
     assert.include(linux, "T3CODE_RELEASE_S3_ENDPOINT");
     assert.include(linux, "refusing to guess an upload target");
+    assert.include(linux, 'T3CODE_WEB_SOURCEMAP="${T3CODE_WEB_SOURCEMAP:-0}"');
+    assert.include(linux, 'ROLLDOWN_WORKER_THREADS="${ROLLDOWN_WORKER_THREADS:-1}"');
+    assert.include(linux, 'ROLLDOWN_MAX_BLOCKING_THREADS="${ROLLDOWN_MAX_BLOCKING_THREADS:-1}"');
+    assert.include(linux, 'RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-1}"');
+    assert.notInclude(linux, "T3CODE_WEB_REACT_COMPILER");
+    assert.notInclude(linux, "max-old-space-size");
     assert.isBelow(
       linux.indexOf("Hosted linux-small has no file-store fallback"),
       linux.indexOf("rustup toolchain install"),

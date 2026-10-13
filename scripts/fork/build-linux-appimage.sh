@@ -19,6 +19,15 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 # No NODE_OPTIONS heap override: linux-small is a tight memory class, and a
 # multi-GiB V8 heap plus rustc and electron-builder gets SIGKILLed. Node's
 # default heap leaves headroom; an OOM still fails the job via set -e.
+# Packaged AppImage excludes `*.map` (DESKTOP_FILE_EXCLUSIONS). Generating
+# unused web sourcemaps plus rolldown's default tokio/rayon worker counts
+# is the Vite "rendering chunks" RSS spike that SIGKILLs hosted linux-small
+# (2 vCPU / 4 GB; BK #3430/#3451/#3473). Keep the React compiler on so
+# packaged desktop matches hosted web.
+export T3CODE_WEB_SOURCEMAP="${T3CODE_WEB_SOURCEMAP:-0}"
+export ROLLDOWN_WORKER_THREADS="${ROLLDOWN_WORKER_THREADS:-1}"
+export ROLLDOWN_MAX_BLOCKING_THREADS="${ROLLDOWN_MAX_BLOCKING_THREADS:-1}"
+export RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-1}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "build-linux-appimage.sh must run on Linux." >&2
