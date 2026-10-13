@@ -76,6 +76,7 @@ import { resolveInitialServerAuthGateState } from "../environments/primary";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { useHostedPromptLinkLanding } from "../components/promptLinks/HostedPromptLinkLanding";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
+import { resolveWorkspaceGlassBlurPx, WINDOWS_GLASS_BLUR_CAP_PX } from "../lib/glassAppearance";
 import { useAtomValue } from "@effect/atom-react";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
 import {
@@ -325,15 +326,23 @@ function GlassAppearanceSync() {
 
   useEffect(() => {
     const style = document.documentElement.style;
+    // Windows desktop caps the effective blur radii (see glassAppearance):
+    // the D3D11 backdrop path re-filters glass on every frame under it.
+    const isWindowsDesktop = isElectron && window.desktopBridge?.getClientPlatform?.() === "win32";
     style.setProperty("--glass-opacity", `${glassOpacity}%`);
     if (glassOpacity === 100) {
       style.setProperty("--glass-blur", "0px");
+    } else if (isWindowsDesktop) {
+      style.setProperty("--glass-blur", `${WINDOWS_GLASS_BLUR_CAP_PX}px`);
     } else {
       style.removeProperty("--glass-blur");
     }
     // Inline on <html> so a scenery stylesheet rule cannot pin the plate.
     style.setProperty("--workspace-glass-opacity", `${chromeGlassOpacity}%`);
-    style.setProperty("--workspace-glass-blur", `${chromeGlassBlur}px`);
+    style.setProperty(
+      "--workspace-glass-blur",
+      `${resolveWorkspaceGlassBlurPx(chromeGlassBlur, isWindowsDesktop)}px`,
+    );
   }, [chromeGlassBlur, chromeGlassOpacity, glassOpacity]);
 
   return null;

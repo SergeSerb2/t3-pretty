@@ -41,6 +41,23 @@ ipcRenderer.on(IpcChannels.WINDOW_ACTIVE_STATE_CHANNEL, (_event, active) => {
   }
 });
 
+// Branding, system locale, and the local-environment toggle cannot change
+// underneath a running window (the toggle only moves through the setter
+// below), and fullscreen state is pushed on every transition. Read each
+// value with sendSync at most once and serve repeats from these caches:
+// a synchronous IPC round trip blocks the renderer until the main process
+// answers, so calling one from connection code that re-runs while the main
+// process is busy booting the backend freezes the window.
+let appBrandingCache: { readonly value: ReturnType<DesktopBridge["getAppBranding"]> } | undefined;
+let systemLocaleCache: { readonly value: string | null } | undefined;
+let localEnvironmentEnabledCache: boolean | undefined;
+let windowFullscreenStateCache: boolean | undefined;
+ipcRenderer.on(IpcChannels.WINDOW_FULLSCREEN_STATE_CHANNEL, (_event, fullscreen) => {
+  if (typeof fullscreen === "boolean") {
+    windowFullscreenStateCache = fullscreen;
+  }
+});
+
 // Runs before any app script reads localStorage. See DesktopLegacyLocalStorage.
 try {
   const legacyItems: unknown = ipcRenderer.sendSync(IpcChannels.TAKE_LEGACY_LOCAL_STORAGE_CHANNEL);
@@ -94,11 +111,16 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
 
 contextBridge.exposeInMainWorld("desktopBridge", {
   getAppBranding: () => {
-    const result = ipcRenderer.sendSync(IpcChannels.GET_APP_BRANDING_CHANNEL);
-    if (typeof result !== "object" || result === null) {
-      return null;
+    if (appBrandingCache === undefined) {
+      const result = ipcRenderer.sendSync(IpcChannels.GET_APP_BRANDING_CHANNEL);
+      appBrandingCache = {
+        value:
+          typeof result === "object" && result !== null
+            ? (result as ReturnType<DesktopBridge["getAppBranding"]>)
+            : null,
+      };
     }
-    return result as ReturnType<DesktopBridge["getAppBranding"]>;
+    return appBrandingCache.value;
   },
   getClientPlatform: () => clientPlatform,
   setNotificationBadge: (badge) =>
@@ -114,8 +136,11 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return () => ipcRenderer.removeListener(IpcChannels.TRACKPAD_SCROLL_END_CHANNEL, handler);
   },
   getSystemLocale: () => {
-    const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LOCALE_CHANNEL);
-    return typeof result === "string" ? result : null;
+    if (systemLocaleCache === undefined) {
+      const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LOCALE_CHANNEL);
+      systemLocaleCache = { value: typeof result === "string" ? result : null };
+    }
+    return systemLocaleCache.value;
   },
   startDictation: (input) => ipcRenderer.invoke(IpcChannels.START_DICTATION_CHANNEL, input ?? {}),
   stopDictation: () => ipcRenderer.invoke(IpcChannels.STOP_DICTATION_CHANNEL),
@@ -158,10 +183,17 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   getLocalEnvironmentBearerToken: () =>
     ipcRenderer.invoke(IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL),
-  getLocalEnvironmentEnabled: () =>
-    ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL) !== false,
-  setLocalEnvironmentEnabled: (enabled) =>
-    ipcRenderer.invoke(IpcChannels.SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL, enabled),
+  getLocalEnvironmentEnabled: () => {
+    if (localEnvironmentEnabledCache === undefined) {
+      localEnvironmentEnabledCache =
+        ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL) !== false;
+    }
+    return localEnvironmentEnabledCache;
+  },
+  setLocalEnvironmentEnabled: async (enabled) => {
+    await ipcRenderer.invoke(IpcChannels.SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL, enabled);
+    localEnvironmentEnabledCache = enabled;
+  },
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>
     ipcRenderer.invoke(IpcChannels.SET_CLIENT_SETTINGS_CHANNEL, settings),
@@ -317,8 +349,13 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.QUIT_SHORTCUT_CHANNEL, wrappedListener);
     };
   },
-  getWindowFullscreenState: () =>
-    ipcRenderer.sendSync(IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL) === true,
+  getWindowFullscreenState: () => {
+    if (windowFullscreenStateCache === undefined) {
+      windowFullscreenStateCache =
+        ipcRenderer.sendSync(IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL) === true;
+    }
+    return windowFullscreenStateCache;
+  },
   setWindowButtonVisibility: (visible) =>
     ipcRenderer.invoke(IpcChannels.SET_WINDOW_BUTTON_VISIBILITY_CHANNEL, visible),
   onWindowFullscreenStateChange: (listener) => {

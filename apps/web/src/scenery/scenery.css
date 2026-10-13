@@ -733,6 +733,28 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
   color: var(--code-foreground) !important;
 }
 
+/* Inactive Windows windows keep compositing (native occlusion detection
+   is off there), so scenery plates go solid while the window is in the
+   background instead of re-filtering the photo for streamed output.
+   Same solid fill as the no-backdrop-filter fallback below. */
+html.electron-windows[data-window-inactive][data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  :is(
+    .right-panel-inline-body,
+    .right-panel-sheet,
+    [data-right-panel][data-preview-panel-mode="sidebar"],
+    [data-terminal-owner="drawer"],
+    [data-pull-requests-panel],
+    [data-changed-files-header],
+    [data-proposed-plan-card]
+  ),
+html.electron-windows[data-window-inactive][data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  [data-right-panel]
+  [data-pull-request-summary-heading].bg-background {
+  background-color: var(--scenery-chrome-fill-solid);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* ------------------------------------------------------------ fallbacks -- */
 
 /* No backdrop-filter support: chrome must go near-opaque or it is unreadable

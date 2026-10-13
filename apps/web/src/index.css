@@ -832,6 +832,33 @@ html[data-window-interacting] .chat-composer-context-strip::before {
   backdrop-filter: none;
 }
 
+/* Windows desktop disables Chromium's native occlusion detection for
+   stability, so a covered window keeps compositing at full rate while
+   agents stream underneath its glass. An inactive Windows window drops
+   the same transient glass as a resizing one; the workspace plate is
+   exempt for the same reason as above, and macOS keeps its frost
+   because AppKit occlusion stops the repaints this guards against. */
+html.electron-windows[data-window-inactive] :is(.surface-glass, .alert-glass) {
+  background: var(--background) !important;
+}
+
+html.electron-windows[data-window-inactive] :is(.dialog-glass, .dropdown-glass) {
+  background: var(--popover) !important;
+}
+
+html.electron-windows[data-window-inactive] .chat-composer-glass-shell::before,
+html.electron-windows[data-window-inactive] .chat-composer-context-strip::before {
+  background: var(--chat-composer-glass-surface) !important;
+}
+
+html.electron-windows[data-window-inactive]
+  :is(.surface-glass, .dialog-glass, .dropdown-glass, .alert-glass),
+html.electron-windows[data-window-inactive] .chat-composer-glass-shell::before,
+html.electron-windows[data-window-inactive] .chat-composer-context-strip::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* AppKit inactive-window convention: when the desktop window is not key, the
    window chrome recedes so a background T3 window stops competing with the
    one the user is in. Whole chrome containers (not individual buttons, whose
