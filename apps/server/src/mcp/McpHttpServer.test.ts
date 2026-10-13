@@ -6,6 +6,14 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentId,
   OrchestratorMcpFailure,
+  PREVIEW_AUTOMATION_DIAGNOSTIC_LEVEL_MAX_LENGTH,
+  PREVIEW_AUTOMATION_DIAGNOSTIC_SOURCE_MAX_LENGTH,
+  PREVIEW_AUTOMATION_DIAGNOSTIC_TEXT_MAX_LENGTH,
+  PREVIEW_AUTOMATION_ELEMENT_NAME_MAX_LENGTH,
+  PREVIEW_AUTOMATION_NETWORK_METHOD_MAX_LENGTH,
+  PREVIEW_AUTOMATION_PAGE_TITLE_MAX_LENGTH,
+  PREVIEW_AUTOMATION_REQUEST_ID_MAX_LENGTH,
+  PREVIEW_AUTOMATION_VISIBLE_TEXT_MAX_LENGTH,
   PreviewTabId,
   ProviderInstanceId,
   ThreadId,
@@ -36,6 +44,7 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 
+const TIMESTAMP = "2026-01-01T00:00:00.000Z";
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
 const tabId = PreviewTabId.make("tab-mcp-test");
@@ -92,7 +101,7 @@ const snapshotResult = {
   loading: false,
   visibleText: "Example",
   interactiveElements: [],
-  accessibilityTree: {},
+  accessibilityTree: { nodes: [] },
   consoleEntries: [],
   networkEntries: [],
   actionTimeline: [],
@@ -279,7 +288,7 @@ it.effect.each([
             height: 10,
           },
         ],
-        accessibilityTree: { role: "document", name: "Example" },
+        accessibilityTree: { nodes: [{ role: "document", name: "Example" }] },
         consoleEntries: [],
         networkEntries: [],
         actionTimeline: [],
@@ -526,8 +535,9 @@ it.effect("returns server ARIA refs to agents in text and structured results", (
 it.effect("bounds large ARIA trees without dropping every server locator", () =>
   Effect.scoped(
     Effect.gen(function* () {
+      // Within the 20,000-character contract cap, but well over the byte ceiling in CJK.
       const accessibilityTree = Array.from(
-        { length: 2_000 },
+        { length: 450 },
         (_, index) => `- button "删除 ${index}" [ref=t3-snapshot-e${index}]`,
       ).join("\n");
       yield* serveSnapshots("mcp-large-server-refs", { ...snapshotResult, accessibilityTree });
@@ -562,18 +572,18 @@ it.effect("keeps the snapshot text under the agent's output ceiling", () =>
       });
       const oversized = {
         ...snapshotResult,
-        visibleText: pageText,
+        visibleText: pageText.slice(0, PREVIEW_AUTOMATION_VISIBLE_TEXT_MAX_LENGTH),
         interactiveElements: [
-          element(pageText, 1),
-          element(pageText, 2),
-          element(pageText, 3),
+          element(pageText.slice(0, PREVIEW_AUTOMATION_ELEMENT_NAME_MAX_LENGTH), 1),
+          element(pageText.slice(0, PREVIEW_AUTOMATION_ELEMENT_NAME_MAX_LENGTH), 2),
+          element(pageText.slice(0, PREVIEW_AUTOMATION_ELEMENT_NAME_MAX_LENGTH), 3),
           element("Continue", 4),
         ],
         accessibilityTree: { nodes: Array.from({ length: 2_000 }, (_, i) => ({ nodeId: `${i}` })) },
         consoleEntries: Array.from({ length: 100 }, (_, i) => ({
           level: "log",
           text: `entry ${i}`,
-          timestamp: "t",
+          timestamp: TIMESTAMP,
         })),
       };
       yield* serveSnapshots("mcp-bounded-client", oversized);
@@ -619,9 +629,15 @@ it.effect("bounds the snapshot text even when nothing but logs and the title are
     Effect.gen(function* () {
       const oversized = {
         ...snapshotResult,
-        title: "t".repeat(70_000),
+        title: "t".repeat(PREVIEW_AUTOMATION_PAGE_TITLE_MAX_LENGTH),
         interactiveElements: [],
-        consoleEntries: [{ level: "log", text: "x".repeat(70_000), timestamp: "t" }],
+        consoleEntries: [
+          {
+            level: "log",
+            text: "x".repeat(PREVIEW_AUTOMATION_DIAGNOSTIC_TEXT_MAX_LENGTH),
+            timestamp: TIMESTAMP,
+          },
+        ],
       };
       yield* serveSnapshots("mcp-bounded-logs-client", oversized);
 
@@ -636,11 +652,11 @@ it.effect("bounds the snapshot text even when nothing but logs and the title are
         readonly title: string;
         readonly consoleEntries: ReadonlyArray<{ readonly text: string }>;
       };
-      expect(parsed.title.length).toBe(2_049);
+      // The contract caps titles at 512 characters, under the 2,048 output cap.
+      expect(parsed.title.length).toBe(PREVIEW_AUTOMATION_PAGE_TITLE_MAX_LENGTH);
       expect(parsed.consoleEntries[0]?.text.length).toBe(501);
       const notice = snapshot.content[2];
       const noticeText = notice?.type === "text" ? notice.text : "";
-      expect(noticeText).toContain("url or title after 2048 characters");
       expect(noticeText).toContain("console entries text after 500 characters");
     }),
   ).pipe(Effect.provide(layerTest)),
@@ -702,25 +718,25 @@ it.effect("sheds log entries before locators when every list is full", () =>
           height: 10,
         })),
         consoleEntries: Array.from({ length: 200 }, () => ({
-          level: long,
+          level: "l".repeat(PREVIEW_AUTOMATION_DIAGNOSTIC_LEVEL_MAX_LENGTH),
           text: long,
-          timestamp: long,
-          source: long,
+          timestamp: TIMESTAMP,
+          source: "s".repeat(PREVIEW_AUTOMATION_DIAGNOSTIC_SOURCE_MAX_LENGTH),
         })),
         networkEntries: Array.from({ length: 200 }, () => ({
           url: long,
-          method: long,
+          method: "M".repeat(PREVIEW_AUTOMATION_NETWORK_METHOD_MAX_LENGTH),
           status: 200,
           failed: false,
           errorText: long,
-          timestamp: long,
+          timestamp: TIMESTAMP,
         })),
         actionTimeline: Array.from({ length: 200 }, () => ({
-          id: long,
-          action: long,
+          id: "i".repeat(PREVIEW_AUTOMATION_REQUEST_ID_MAX_LENGTH),
+          action: "a".repeat(PREVIEW_AUTOMATION_REQUEST_ID_MAX_LENGTH),
           status: "succeeded",
-          startedAt: long,
-          completedAt: long,
+          startedAt: TIMESTAMP,
+          completedAt: TIMESTAMP,
           error: long,
         })),
       };

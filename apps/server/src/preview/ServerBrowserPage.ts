@@ -204,18 +204,18 @@ export const snapshot = async (input: {
       "The page changed while capturing its snapshot. Take another snapshot.",
     );
   }
+  // Rewriting refs lengthens the text, so cap it again for the contract bound.
   const accessibilityTree = tree
     .slice(0, MAX_VISIBLE_TEXT_LENGTH)
     .replace(/\[ref=((?:f\d+)?e\d+)\]/g, (_match, nativeRef: string) => {
       const ref = `t3-${generation}-${nativeRef}`;
       state.refs.set(ref, nativeRef);
       return `[ref=${ref}]`;
-    });
+    })
+    .slice(0, MAX_VISIBLE_TEXT_LENGTH);
   return {
     ...page,
-    // Playwright's aria snapshot is a string; MCP still serves that form. The
-    // contract type is the desktop node tree, so the string is asserted here.
-    accessibilityTree: accessibilityTree as unknown as PreviewAutomationSnapshot["accessibilityTree"],
+    accessibilityTree,
     consoleEntries: [...input.consoleEntries],
     networkEntries: [...input.networkEntries],
     actionTimeline: [...input.actionTimeline],

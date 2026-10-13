@@ -4298,8 +4298,10 @@ describe("PreviewManager", () => {
           "Accessibility.disable",
         ]);
         expect(sendCommand).toHaveBeenCalledWith("Accessibility.getFullAXTree", { depth: 12 });
-        expect(snapshot.accessibilityTree.nodes).toHaveLength(2_048);
-        expect(snapshot.accessibilityTree.t3TruncatedNodeCount).toBe(52);
+        const tree = snapshot.accessibilityTree;
+        if (typeof tree === "string") throw new Error("expected the desktop node tree");
+        expect(tree.nodes).toHaveLength(2_048);
+        expect(tree.t3TruncatedNodeCount).toBe(52);
       }),
     ),
   );
