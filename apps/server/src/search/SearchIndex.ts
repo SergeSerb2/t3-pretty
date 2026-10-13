@@ -89,6 +89,15 @@ interface MessageRow {
 
 const makeSearchIndex = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  // Public writes run in one SQL transaction each (see the returned shape).
+  // Live projection events reindex inside their apply transaction, and the
+  // first-boot backfill now runs after activation, so the two can meet on
+  // the same thread. The single SQLite connection serializes transactions,
+  // and each operation re-derives entries from the projection state inside
+  // its transaction, so whichever runs second wins with fresh data instead
+  // of interleaving statements. The backfill transacts per thread, never
+  // for the whole scan, so live events are not queued behind it. A second
+  // in-process lock would deadlock against the connection lock instead.
 
   const decrementTerms = (terms: Iterable<string>) =>
     Effect.forEach(
@@ -178,9 +187,12 @@ const makeSearchIndex = Effect.gen(function* () {
         return;
       }
       if (message.role === "assistant") {
+        // Scope by thread so SQLite uses the (thread_id, ordinal) index
+        // instead of scanning every turn item for each assistant message.
         const canonicalRows = yield* sql`
           SELECT 1 AS one FROM orchestration_v2_projection_turn_items
-          WHERE type = 'assistant_message' AND json_extract(payload_json, '$.messageId') = ${message.messageId}
+          WHERE thread_id = ${message.threadId}
+            AND type = 'assistant_message' AND json_extract(payload_json, '$.messageId') = ${message.messageId}
           LIMIT 1
         `;
         if (canonicalRows.length === 0) {
@@ -287,7 +299,16 @@ const makeSearchIndex = Effect.gen(function* () {
       );
       yield* Effect.forEach(
         threadIds,
-        (threadId) => reindexThread({ threadId: ThreadId.make(threadId) }),
+        (threadId) =>
+          sql
+            .withTransaction(reindexThread({ threadId: ThreadId.make(threadId) }))
+            .pipe(
+              Effect.mapError((error) =>
+                isPersistenceError(error)
+                  ? error
+                  : toPersistenceSqlError("SearchIndex.backfillFromProjection:query")(error),
+              ),
+            ),
         { concurrency: 1, discard: true },
       );
     }).pipe(
@@ -335,12 +356,28 @@ const makeSearchIndex = Effect.gen(function* () {
       ON CONFLICT(projector) DO NOTHING`;
   }).pipe(Effect.mapError(toPersistenceSqlError("SearchIndex.bootstrap:query")));
 
+  const inTransaction =
+    (operation: string) =>
+    <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      sql
+        .withTransaction(effect)
+        .pipe(
+          Effect.mapError((error) =>
+            isPersistenceError(error) ? error : toPersistenceSqlError(operation)(error),
+          ),
+        );
+
   return {
-    reindexMessage,
-    reindexThread,
+    reindexMessage: (input) =>
+      reindexMessage(input).pipe(inTransaction("SearchIndex.reindexMessage:transaction")),
+    reindexThread: (input) =>
+      reindexThread(input).pipe(inTransaction("SearchIndex.reindexThread:transaction")),
     backfillFromProjection,
     bootstrapIfNeeded,
-    reindexCanonicalAssistants,
+    reindexCanonicalAssistants: (input) =>
+      reindexCanonicalAssistants(input).pipe(
+        inTransaction("SearchIndex.reindexCanonicalAssistants:transaction"),
+      ),
   } satisfies SearchIndexShape;
 });
 

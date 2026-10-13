@@ -672,6 +672,42 @@ it.layer(makeTestLayer("t3-thread-search-backfill-"))("ThreadSearch", (it) => {
       assert.equal(marker[0]?.n, 0);
     }),
   );
+
+  it.effect("keeps term counts exact when a backfill overlaps a live reindex", () =>
+    Effect.gen(function* () {
+      const searchIndex = yield* SearchIndex;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* appendProject("project-1");
+      yield* appendThread("thread-1", "project-1");
+      yield* appendMessage({
+        eventId: "evt-m-overlap",
+        threadId: "thread-1",
+        messageId: "message-overlap",
+        role: "user",
+        text: "overlapzebra shared words",
+      });
+
+      // The deferred startup backfill and a live projection reindex can now
+      // run at the same time; serialized per-thread transactions must keep
+      // one doc and a doc_freq of 1, not a double-counted term.
+      yield* Effect.all(
+        [
+          searchIndex.backfillFromProjection(),
+          searchIndex.reindexThread({ threadId: ThreadId.make("thread-1") }),
+        ],
+        { concurrency: "unbounded" },
+      );
+
+      assert.equal((yield* search("overlapzebra")).matches.length, 1);
+      const docs = yield* sql<{ readonly n: number }>`SELECT COUNT(*) AS n FROM search_index_docs
+        WHERE message_id = 'message-overlap'`;
+      assert.equal(docs[0]?.n, 1);
+      const term = yield* sql<{ readonly n: number }>`SELECT doc_freq AS n
+        FROM search_index_terms WHERE term = 'overlapzebra'`;
+      assert.equal(term[0]?.n, 1);
+    }),
+  );
 });
 
 it.layer(makeTestLayer("t3-thread-search-supersede-"))("ThreadSearch", (it) => {

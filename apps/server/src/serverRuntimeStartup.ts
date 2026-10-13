@@ -17,6 +17,7 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -347,6 +348,14 @@ const maybeOpenBrowser = (target: string) =>
 
 const runStartupPhase = <A, E, R>(phase: string, effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
+    Effect.timed,
+    Effect.tap(([duration]) =>
+      Effect.logDebug("startup phase completed", {
+        phase,
+        durationMs: Math.round(Duration.toMillis(duration)),
+      }),
+    ),
+    Effect.map(([, value]) => value),
     Effect.annotateSpans({ "startup.phase": phase }),
     Effect.withSpan(`server.startup.${phase}`),
   );
@@ -463,34 +472,38 @@ const make = (options?: StartupOptions) =>
     );
 
     const startup = Effect.gen(function* () {
-      yield* Effect.logDebug("startup phase: starting keybindings runtime");
-      yield* runStartupPhase(
-        "keybindings.start",
-        keybindings.start.pipe(
-          Effect.catch((error) =>
-            Effect.logWarning("failed to start keybindings runtime", {
-              path: error.configPath,
-              detail: error.detail,
-              cause: error.cause,
-            }),
+      // Both runtimes only read their own state-directory files, so start
+      // them together instead of paying two cold disk reads in sequence.
+      yield* Effect.all(
+        [
+          runStartupPhase(
+            "keybindings.start",
+            keybindings.start.pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("failed to start keybindings runtime", {
+                  path: error.configPath,
+                  detail: error.detail,
+                  cause: error.cause,
+                }),
+              ),
+            ),
           ),
-        ),
-      );
-
-      yield* Effect.logDebug("startup phase: starting server settings runtime");
-      yield* runStartupPhase(
-        "settings.start",
-        serverSettings.start.pipe(
-          Effect.catch((error) =>
-            Effect.logWarning("failed to start server settings runtime", {
-              path: error.settingsPath,
-              operation: error.operation,
-              providerInstanceId: error.providerInstanceId,
-              environmentVariable: error.environmentVariable,
-              cause: error.cause,
-            }),
+          runStartupPhase(
+            "settings.start",
+            serverSettings.start.pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("failed to start server settings runtime", {
+                  path: error.settingsPath,
+                  operation: error.operation,
+                  providerInstanceId: error.providerInstanceId,
+                  environmentVariable: error.environmentVariable,
+                  cause: error.cause,
+                }),
+              ),
+            ),
           ),
-        ),
+        ],
+        { concurrency: "unbounded", discard: true },
       );
 
       const welcomeBase = yield* resolveWelcomeBase;
@@ -515,7 +528,6 @@ const make = (options?: StartupOptions) =>
                 ? Effect.void
                 : Effect.logInfo("Imported legacy v1 thread shells", summary),
             ),
-            Effect.andThen(searchIndex.bootstrapIfNeeded),
           ),
         ),
         recover: runStartupPhase("orchestration-v2.recovery", providerRuntimeRecovery.recover),
@@ -579,6 +591,20 @@ const make = (options?: StartupOptions) =>
             )
           : importPendingTranscripts
       ).pipe(forkParked);
+
+      // The one-time search backfill rescans every projected message, which
+      // can take minutes on a large database. No command waits on it: live
+      // events keep new messages searchable from activation, historical
+      // results fill in as the scan lands, and the bootstrap marker is only
+      // written after a full pass, so an interrupted scan retries next boot.
+      yield* runStartupPhase("search-index.bootstrap", searchIndex.bootstrapIfNeeded).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("search index bootstrap failed; historical search stays partial", {
+            cause: Cause.pretty(cause),
+          }),
+        ),
+        forkParked,
+      );
 
       yield* forkParked(
         Effect.gen(function* () {
