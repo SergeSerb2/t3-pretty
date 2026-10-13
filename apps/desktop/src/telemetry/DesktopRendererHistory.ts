@@ -80,9 +80,9 @@ interface RendererRecord {
 const MESSAGE_MAX = 1_024;
 const STACK_MAX = 2_048;
 
-// A substring can pin the full console message while queued behind disk IO.
+// Even an already bounded substring can pin a larger source while disk IO stalls.
 const boundText = (value: string, max: number): string =>
-  value.length <= max ? value : Buffer.from(value.slice(0, max), "utf16le").toString("utf16le");
+  Buffer.from(value.slice(0, max), "utf16le").toString("utf16le");
 
 function parseConsoleMessageArgs(args: ReadonlyArray<unknown>): {
   readonly level: string;

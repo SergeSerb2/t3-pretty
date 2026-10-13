@@ -6,6 +6,26 @@ import { expect, it } from "vite-plus/test";
 
 import { diagnosticConsoleText } from "./DiagnosticText.ts";
 
+it.each([
+  ["console-full-budget", 16_384],
+  ["console-overflow-prefix", 16_384],
+  ["console-short-prefix", 2_048],
+  ["console-earlier-prefix", 16_384],
+  ["bound-short-prefix", 2_048],
+] as const)("releases a larger source behind a bounded %s string", async (mode, outputLength) => {
+  const fixture = NodeURL.fileURLToPath(
+    new URL("./testkit/DiagnosticTextRetention.fixture.mjs", import.meta.url),
+  );
+  const { stdout } = await NodeUtil.promisify(NodeChildProcess.execFile)(process.execPath, [
+    "--expose-gc",
+    fixture,
+    mode,
+  ]);
+  const result = JSON.parse(stdout) as { outputLength: number; retainedBytes: number };
+  expect(result.outputLength).toBe(outputLength);
+  expect(result.retainedBytes).toBeLessThan(8 * 1024 * 1024);
+});
+
 it("bounds temporary allocations before joining an oversized later console argument", async () => {
   const fixture = NodeURL.fileURLToPath(
     new URL("./testkit/DiagnosticTextAllocation.fixture.mjs", import.meta.url),

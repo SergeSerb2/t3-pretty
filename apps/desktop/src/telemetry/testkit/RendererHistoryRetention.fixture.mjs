@@ -6,6 +6,9 @@ import * as Path from "effect/Path";
 import { DesktopEnvironment } from "../../app/DesktopEnvironment.ts";
 import * as DesktopRendererHistory from "../DesktopRendererHistory.ts";
 
+const mode = process.argv[2] ?? "oversized";
+const payloadBytes = mode === "bounded" ? 64 * 1024 * 1024 : 16 * 1024 * 1024;
+const payloadCount = mode === "bounded" ? 1 : 6;
 const releaseWriter = Promise.withResolvers();
 const writerStarted = Promise.withResolvers();
 const historyLayer = DesktopRendererHistory.layer.pipe(
@@ -27,9 +30,19 @@ const historyLayer = DesktopRendererHistory.layer.pipe(
 );
 
 async function enqueue(history, index) {
-  const message = `${index}:` + "x".repeat(16 * 1024 * 1024);
+  const message = `${index}:` + "x".repeat(payloadBytes);
   message.charCodeAt(message.length - 1);
-  await Effect.runPromise(history.recordError({ event: "window-error", message }));
+  await Effect.runPromise(
+    history.recordError(
+      mode === "bounded"
+        ? {
+            event: "window-error",
+            message: message.slice(0, 1_024),
+            stack: message.slice(1_024, 3_072),
+          }
+        : { event: "window-error", message },
+    ),
+  );
 }
 
 await Effect.runPromise(
@@ -40,13 +53,15 @@ await Effect.runPromise(
     yield* Effect.promise(async () => {
       global.gc();
       const baseline = process.memoryUsage().heapUsed;
-      for (let index = 0; index < 6; index++) await enqueue(history, index);
+      for (let index = 0; index < payloadCount; index++) await enqueue(history, index);
       for (let index = 0; index < 3; index++) {
         await new Promise(setImmediate);
         global.gc();
       }
       const retainedBytes = process.memoryUsage().heapUsed - baseline;
-      console.log(JSON.stringify({ queuedPayloadBytes: 6 * 16 * 1024 * 1024, retainedBytes }));
+      console.log(
+        JSON.stringify({ queuedPayloadBytes: payloadCount * payloadBytes, retainedBytes }),
+      );
     }).pipe(Effect.ensuring(Effect.sync(() => releaseWriter.resolve())));
   }).pipe(
     Effect.provide(historyLayer),
