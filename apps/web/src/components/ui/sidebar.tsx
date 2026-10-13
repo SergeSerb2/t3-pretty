@@ -404,6 +404,7 @@ function Sidebar({
         className="group peer hidden text-sidebar-foreground md:block"
         data-collapsed={iconCollapsed ? "" : undefined}
         data-collapsible={state === "collapsed" && collapsible === "offcanvas" ? collapsible : ""}
+        data-icon-collapsible={collapsible === "icon" ? "" : undefined}
         data-opening={pinOpening ? "" : undefined}
         data-opening-ready={pinOpeningReady ? "" : undefined}
         data-peeking={peeking && iconCollapsed ? "" : undefined}
@@ -416,6 +417,13 @@ function Sidebar({
           {
             "--sidebar-peek-duration": `${SIDEBAR_PEEK_ANIMATION_MS}ms`,
             "--sidebar-peek-ease": SIDEBAR_PEEK_EASE,
+            // Visible strip in icon mode. The peek reveal translates the
+            // full-width shell by the difference (see index.css), so it
+            // never animates width.
+            "--sidebar-collapsed-width":
+              variant === "floating" || variant === "inset"
+                ? "calc(var(--sidebar-width-icon) + 1rem + 2px)"
+                : "var(--sidebar-width-icon)",
           } as React.CSSProperties
         }
       >
@@ -435,17 +443,22 @@ function Sidebar({
         <div
           className={cn(
             "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
-            "motion-safe:transition-[width,box-shadow] motion-safe:duration-(--sidebar-peek-duration) motion-safe:ease-(--sidebar-peek-ease) group-data-collapsed:duration-(--sidebar-peek-duration)!",
-            "[[data-panel-animations=true]_&]:transition-[left,right,width,box-shadow] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
+            // Icon-mode reveal is transform-only in index.css: the shell
+            // slides out from the docked edge while the inner tree
+            // counter-slides, so content stays seated and no frame lays
+            // out or repaints a width, shadow, or backdrop resize.
+            "[[data-panel-animations=true]_&]:transition-[left,right,width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
               : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
             variant === "floating" || variant === "inset"
-              ? "p-2 group-data-collapsed:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
-              : "group-data-collapsed:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
-            // Stay above the chat through the close width animation; the gap
-            // never leaves icon width, so nothing in the page reflows.
-            "group-data-present:z-40 group-data-collapsed:group-data-peeking:w-(--sidebar-width)! group-data-present:shadow-[12px_0_40px_rgba(0,0,0,0.12)]",
+              ? "p-2"
+              : "group-data-[side=left]:border-r group-data-[side=right]:border-l",
+            // Stay above the chat through the close reveal; the gap never
+            // leaves icon width, so nothing in the page reflows. The shadow
+            // is not transitioned: it rides the shell transform and only
+            // repaints when the flyout mounts or leaves.
+            "group-data-present:z-40 group-data-present:shadow-[12px_0_40px_rgba(0,0,0,0.12)]",
             className,
           )}
           data-slot="sidebar-container"
@@ -471,7 +484,7 @@ function Sidebar({
               {children}
             </div>
           </div>
-          {/* The container width is still animating when the pointer reaches the
+          {/* The reveal edge is still traveling when the pointer reaches the
               titlebar. This strip is the not-yet-revealed band, so moving up
               toward the traffic lights does not count as leaving. */}
           <div aria-hidden data-sidebar-peek-hover-bridge="" />

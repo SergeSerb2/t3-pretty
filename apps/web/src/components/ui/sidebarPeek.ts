@@ -6,10 +6,10 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-export const SIDEBAR_PEEK_OPEN_DELAY_MS = 120;
-export const SIDEBAR_PEEK_CLOSE_DELAY_MS = 240;
-/** Width, label, and pane motion share this duration so a reverse hover can interrupt mid-flight. */
-export const SIDEBAR_PEEK_ANIMATION_MS = 280;
+export const SIDEBAR_PEEK_OPEN_DELAY_MS = 60;
+export const SIDEBAR_PEEK_CLOSE_DELAY_MS = 120;
+/** Reveal, label, and pane motion share this duration so a reverse hover can interrupt mid-flight. */
+export const SIDEBAR_PEEK_ANIMATION_MS = 180;
 export const SIDEBAR_PEEK_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 export type SidebarPeekEvent = "pointer-enter" | "pointer-leave" | "peek-now" | "hide-now";

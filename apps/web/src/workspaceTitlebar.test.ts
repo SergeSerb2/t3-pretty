@@ -166,8 +166,8 @@ describe("macOS traffic lights vs collapsed sidebar", () => {
     expect(css).toContain("html[data-macos-traffic-lights]");
     expect(css).toContain("var(--desktop-window-controls-inset, 90px)");
     expect(css).toContain("[data-sidebar-control]");
-    expect(css).toContain("translate var(--sidebar-peek-duration, 280ms)");
-    expect(css).toContain("opacity var(--sidebar-peek-duration, 280ms)");
+    expect(css).toContain("translate var(--sidebar-peek-duration, 180ms)");
+    expect(css).toContain("opacity var(--sidebar-peek-duration, 180ms)");
   });
 
   it("keeps collapsed-sidebar hover alive through the traffic-light band", () => {
