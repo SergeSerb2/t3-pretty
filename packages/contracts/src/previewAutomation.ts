@@ -791,12 +791,17 @@ export const PreviewAutomationSnapshot = Schema.Struct({
   interactiveElements: Schema.Array(PreviewAutomationElement).check(
     Schema.isMaxLength(PREVIEW_AUTOMATION_INTERACTIVE_ELEMENTS_MAX_ITEMS),
   ),
-  accessibilityTree: Schema.Struct({
-    nodes: Schema.Array(Schema.Unknown).check(
-      Schema.isMaxLength(PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES),
-    ),
-    t3TruncatedNodeCount: Schema.optional(NonNegativeInt),
-  }),
+  // Desktop previews send a node tree; server-runtime previews send Playwright's
+  // ARIA snapshot text with `[ref=…]` locators.
+  accessibilityTree: Schema.Union([
+    Schema.String.check(Schema.isMaxLength(PREVIEW_AUTOMATION_VISIBLE_TEXT_MAX_LENGTH)),
+    Schema.Struct({
+      nodes: Schema.Array(Schema.Unknown).check(
+        Schema.isMaxLength(PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES),
+      ),
+      t3TruncatedNodeCount: Schema.optional(NonNegativeInt),
+    }),
+  ]),
   consoleEntries: Schema.Array(PreviewAutomationConsoleEntry).check(
     Schema.isMaxLength(PREVIEW_AUTOMATION_DIAGNOSTIC_ENTRIES_MAX_ITEMS),
   ),

@@ -175,6 +175,13 @@ export const captureViewport = async (
   return data;
 };
 
+/** Keeps whole lines within `max` characters; a first line longer than `max` is cut hard. */
+export const capAtLineBoundary = (text: string, max: number): string => {
+  if (text.length <= max) return text;
+  const lineEnd = text.lastIndexOf("\n", max - 1) + 1;
+  return text.slice(0, lineEnd > 0 ? lineEnd : max);
+};
+
 export const snapshot = async (input: {
   readonly page: Page;
   readonly cdp: CDPSession;
@@ -204,18 +211,26 @@ export const snapshot = async (input: {
       "The page changed while capturing its snapshot. Take another snapshot.",
     );
   }
-  const accessibilityTree = tree
-    .slice(0, MAX_VISIBLE_TEXT_LENGTH)
-    .replace(/\[ref=((?:f\d+)?e\d+)\]/g, (_match, nativeRef: string) => {
-      const ref = `t3-${generation}-${nativeRef}`;
-      state.refs.set(ref, nativeRef);
-      return `[ref=${ref}]`;
-    });
+  // Rewriting refs lengthens the text, so cap it afterwards and register only
+  // the refs whose closing bracket survived the cut.
+  let rewritten = "";
+  let consumed = 0;
+  const rewrittenRefs: Array<{ ref: string; nativeRef: string; end: number }> = [];
+  for (const match of tree.matchAll(/\[ref=((?:f\d+)?e\d+)\]/g)) {
+    const [token, nativeRef = ""] = match;
+    const ref = `t3-${generation}-${nativeRef}`;
+    rewritten += `${tree.slice(consumed, match.index)}[ref=${ref}]`;
+    rewrittenRefs.push({ ref, nativeRef, end: rewritten.length });
+    consumed = match.index + token.length;
+  }
+  rewritten += tree.slice(consumed);
+  const accessibilityTree = capAtLineBoundary(rewritten, MAX_VISIBLE_TEXT_LENGTH);
+  for (const { ref, nativeRef, end } of rewrittenRefs) {
+    if (end <= accessibilityTree.length) state.refs.set(ref, nativeRef);
+  }
   return {
     ...page,
-    // Playwright's aria snapshot is a string; MCP still serves that form. The
-    // contract type is the desktop node tree, so the string is asserted here.
-    accessibilityTree: accessibilityTree as unknown as PreviewAutomationSnapshot["accessibilityTree"],
+    accessibilityTree,
     consoleEntries: [...input.consoleEntries],
     networkEntries: [...input.networkEntries],
     actionTimeline: [...input.actionTimeline],

@@ -600,7 +600,7 @@ const DEFAULT_ANNOTATION_THEME: DesktopPreviewAnnotationTheme = {
 
 export function boundAccessibilityTree(
   value: unknown,
-): PreviewAutomationSnapshot["accessibilityTree"] {
+): Extract<PreviewAutomationSnapshot["accessibilityTree"], { readonly nodes: unknown }> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return { nodes: [] };
   const tree = value as Record<string, unknown>;
   const nodes = tree["nodes"];

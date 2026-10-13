@@ -319,3 +319,13 @@ describe("server browser drag", () => {
     }
   });
 });
+
+it("caps ARIA text at a line boundary within the limit", () => {
+  expect(ServerBrowserPage.capAtLineBoundary("ab\ncd\n", 10)).toBe("ab\ncd\n");
+  expect(ServerBrowserPage.capAtLineBoundary("ab\ncd\nef", 6)).toBe("ab\ncd\n");
+  // A newline exactly at the limit index would make the slice one too long.
+  expect(ServerBrowserPage.capAtLineBoundary("abcde\nf", 5)).toBe("abcde");
+  expect(ServerBrowserPage.capAtLineBoundary("abcd\nfgh", 5)).toBe("abcd\n");
+  // One long line still yields text instead of an empty tree.
+  expect(ServerBrowserPage.capAtLineBoundary("abcdefgh", 5)).toBe("abcde");
+});
