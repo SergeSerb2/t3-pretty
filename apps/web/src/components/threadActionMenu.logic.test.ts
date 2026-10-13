@@ -27,7 +27,6 @@ const baseState: ThreadActionMenuState = {
     storage: false,
     pinning: true,
     titleRegeneration: true,
-    projectTransfer: false,
   },
   snoozePresets: [
     { id: "hour", label: "In 1 hour", whenLabel: "3:00 PM", snoozedUntil: "2026-08-07T15:00:00Z" },
@@ -125,12 +124,7 @@ describe("buildThreadActionMenuItems", () => {
     const denied = buildThreadActionMenuItems({ ...baseState, canOperate: false, branch: "main" });
     expect(
       denied.filter((item) => item.separator !== true && !item.disabled).map((item) => item.id),
-    ).toEqual([
-      "new-thread-on-branch",
-      "mark-unread",
-      "copy",
-      "project-settings",
-    ]);
+    ).toEqual(["new-thread-on-branch", "mark-unread", "copy", "project-settings"]);
     for (const surface of ["sidebar", "header"] as const) {
       const allowed = buildThreadActionMenuItems({ ...baseState, surface, canOperate: true });
       expect(allowed.every((item) => !item.disabled)).toBe(true);
@@ -148,7 +142,6 @@ describe("buildThreadActionMenuItems", () => {
           storage: false,
           pinning: false,
           titleRegeneration: false,
-          projectTransfer: false,
         },
       }),
     ).toEqual(["rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
@@ -167,23 +160,6 @@ describe("buildThreadActionMenuItems", () => {
       separator: true,
     });
     expect(items[copyIndex + 3]?.id).toBe("archive");
-  });
-
-  it("offers transfer only when the environment supports it", () => {
-    expect(
-      visibleIds({
-        ...baseState,
-        supports: { ...baseState.supports, projectTransfer: true },
-      }),
-    ).toContain("transfer");
-    expect(visibleIds(baseState)).not.toContain("transfer");
-    expect(
-      buildThreadActionMenuItems({
-        ...baseState,
-        isRunning: true,
-        supports: { ...baseState.supports, projectTransfer: true },
-      }).find((item) => item.id === "transfer"),
-    ).toMatchObject({ disabled: true });
   });
 
   it("offers project filtering only for surfaces with a scoped thread list", () => {
@@ -361,7 +337,6 @@ describe("buildThreadActionMenuItems", () => {
           storage: false,
           pinning: false,
           titleRegeneration: false,
-          projectTransfer: false,
         },
       }),
     ).toContain("archive");

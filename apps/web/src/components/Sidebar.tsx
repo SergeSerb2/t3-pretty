@@ -2888,11 +2888,8 @@ export default function Sidebar() {
   const projectScopeKey = useMemo(() => {
     if (
       !clientSettingsHydrated ||
-      resolveSidebarProjectScope(
-        persistedProjectScopeKey,
-        projectGroups,
-        projectFolders.settings,
-      )?.kind === "folder"
+      resolveSidebarProjectScope(persistedProjectScopeKey, projectGroups, projectFolders.settings)
+        ?.kind === "folder"
     ) {
       return persistedProjectScopeKey;
     }
@@ -5150,7 +5147,6 @@ export default function Sidebar() {
                 storage: supportsStorage,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
-                projectTransfer: false,
               },
               snoozePresets,
             }),
