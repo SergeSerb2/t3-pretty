@@ -383,7 +383,7 @@ describe("PreviewAutomationError", () => {
   it("reports the environment host's long first-open budget", () => {
     // The broker allows 660s for the first server-browser open; its failure
     // must still be constructible or the caller waits out the whole budget.
-    const error = decodeAutomationError({
+    const failedOpen = {
       _tag: "PreviewAutomationControlInterruptedError",
       operation: "open",
       environmentId: "environment-1",
@@ -398,9 +398,12 @@ describe("PreviewAutomationError", () => {
       remoteMessageLength: 12,
       cause: {},
       reason: "dialogPending",
-    });
+    };
+    const error = decodeAutomationError(failedOpen);
 
     expect(error._tag).toBe("PreviewAutomationControlInterruptedError");
+    expect(error).toMatchObject({ timeoutMs: 660_000 });
+    expect(() => decodeAutomationError({ ...failedOpen, timeoutMs: 660_001 })).toThrow();
   });
 });
 
