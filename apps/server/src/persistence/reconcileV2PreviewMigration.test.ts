@@ -82,6 +82,10 @@ describe("T3 Pretty migration history", () => {
         ([, name]) => name === "PullRequestReviewGuides",
       );
       assert.strictEqual(pullRequestReviewGuidesMigrations.length, 1);
+      const threadFailureLookupIndexMigrations = migrationManifest.filter(
+        ([, name]) => name === "ThreadFailureLookupIndex",
+      );
+      assert.strictEqual(threadFailureLookupIndexMigrations.length, 1);
       assert.deepStrictEqual(yield* runMigrations(), [
         [70, "ScheduledTaskWebhooks"],
         [71, "WebhookRelayDeliveries"],
@@ -89,6 +93,7 @@ describe("T3 Pretty migration history", () => {
         ...mcpAppModelContextMigrations,
         ...threadSnapshotWindowIndexesMigrations,
         ...pullRequestReviewGuidesMigrations,
+        ...threadFailureLookupIndexMigrations,
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),

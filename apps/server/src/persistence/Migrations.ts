@@ -90,6 +90,7 @@ import Migration0068 from "./Migrations/056_RemoveRedundantProjectionIndexes.ts"
 import Migration0073 from "./Migrations/059_McpAppModelContext.ts";
 import Migration0074 from "./Migrations/060_ThreadSnapshotWindowIndexes.ts";
 import Migration0075 from "./Migrations/061_PullRequestReviewGuides.ts";
+import Migration0076 from "./Migrations/062_ThreadFailureLookupIndex.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -179,6 +180,7 @@ export const migrationEntries = [
   [73, "McpAppModelContext", Migration0073],
   [74, "ThreadSnapshotWindowIndexes", Migration0074],
   [75, "PullRequestReviewGuides", Migration0075],
+  [76, "ThreadFailureLookupIndex", Migration0076],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
