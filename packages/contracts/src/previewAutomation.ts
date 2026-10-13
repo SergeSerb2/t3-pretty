@@ -54,6 +54,12 @@ const PreviewAutomationRequestId = TrimmedNonEmptyString.check(
 const PreviewAutomationTimeoutMs = Schema.Int.check(Schema.isGreaterThan(0)).check(
   Schema.isLessThanOrEqualTo(60_000),
 );
+// The budget an error reports. The broker gives the in-process environment
+// host's first open up to eleven minutes to install Chromium, so errors must
+// accept more than the routed-request maximum or the failure cannot be built.
+const PreviewAutomationErrorTimeoutMs = Schema.Int.check(Schema.isGreaterThan(0)).check(
+  Schema.isLessThanOrEqualTo(660_000),
+);
 const URL_GUIDANCE =
   "Absolute http(s) URL or a schemeless host such as t3.chat or localhost:5173. Schemeless public hosts use https; loopback hosts use http.";
 const PROFILE_GUIDANCE =
@@ -982,7 +988,7 @@ const PreviewAutomationRequestErrorFields = {
   connectionId: PreviewAutomationConnectionId,
   requestId: PreviewAutomationRequestId,
   tabId: Schema.optional(PreviewTabId),
-  timeoutMs: PreviewAutomationTimeoutMs,
+  timeoutMs: PreviewAutomationErrorTimeoutMs,
 };
 
 const PreviewAutomationRemoteDiagnosticFields = {
@@ -1011,7 +1017,7 @@ export class PreviewAutomationNoAvailableHostError extends Schema.TaggedError<Pr
     connectionId: Schema.optional(PreviewAutomationConnectionId),
     requestId: Schema.optional(PreviewAutomationRequestId),
     tabId: Schema.optional(PreviewTabId),
-    timeoutMs: Schema.optional(PreviewAutomationTimeoutMs),
+    timeoutMs: Schema.optional(PreviewAutomationErrorTimeoutMs),
     ...PreviewAutomationOptionalRemoteDiagnosticFields,
   },
 ) {
