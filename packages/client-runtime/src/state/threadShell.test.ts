@@ -6,10 +6,11 @@ import {
   type OrchestrationV2ShellSnapshot,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { Atom, AtomRegistry } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
-import { PrimaryConnectionTarget } from "../connection/model.ts";
+import { AVAILABLE_CONNECTION_STATE, PrimaryConnectionTarget } from "../connection/model.ts";
+import type { SupervisorConnectionState } from "../connection/model.ts";
 import { v2Now, v2ShellSnapshot, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
 import { applyShellStreamEvent } from "./shellReducer.ts";
 import { createEnvironmentThreadShellAtoms } from "./threadShell.ts";
@@ -19,6 +20,14 @@ const remoteEnvironmentId = EnvironmentId.make("remote-environment-v2");
 const otherProjectId = ProjectId.make("other-project");
 
 function makeHarness(environmentIds: ReadonlyArray<EnvironmentId> = [environmentId]) {
+  const stateAtom = Atom.family((_environmentId: EnvironmentId) =>
+    Atom.make<AsyncResult.AsyncResult<SupervisorConnectionState, Error>>(
+      AsyncResult.success<SupervisorConnectionState>({
+        ...AVAILABLE_CONNECTION_STATE,
+        phase: "connected",
+      }),
+    ),
+  );
   const snapshotAtom = Atom.family((_environmentId: EnvironmentId) =>
     Atom.make<OrchestrationV2ShellSnapshot | null>(v2ShellSnapshot),
   );
@@ -44,11 +53,85 @@ function makeHarness(environmentIds: ReadonlyArray<EnvironmentId> = [environment
     registry: AtomRegistry.make(),
     snapshotAtom,
     catalogValueAtom,
-    threads: createEnvironmentThreadShellAtoms({ catalogValueAtom, snapshotAtom }),
+    stateAtom,
+    threads: createEnvironmentThreadShellAtoms({ catalogValueAtom, snapshotAtom, stateAtom }),
   };
 }
 
 describe("v2 thread shell lists", () => {
+  it("hides cached threads when connection status is missing or fails with a stale success", () => {
+    const { registry, threads, stateAtom } = makeHarness();
+    const dispose = registry.mount(threads.threadShellsAtom);
+    try {
+      const connected = registry.get(stateAtom(environmentId));
+      expect(registry.get(threads.threadShellsAtom)).toHaveLength(1);
+      registry.set(stateAtom(environmentId), AsyncResult.initial());
+      expect(registry.get(threads.threadShellsAtom)).toEqual([]);
+      registry.set(
+        stateAtom(environmentId),
+        AsyncResult.failWithPrevious(new Error("Connection unavailable"), {
+          previous: Option.some(connected),
+        }),
+      );
+      expect(registry.get(threads.threadShellsAtom)).toEqual([]);
+    } finally {
+      dispose();
+      registry.dispose();
+    }
+  });
+
+  it.each(["available", "offline", "connecting", "backoff", "blocked"] as const)(
+    "hides cached remote threads while %s and restores them on reconnect",
+    (phase) => {
+      const { registry, threads, stateAtom, snapshotAtom } = makeHarness([
+        environmentId,
+        remoteEnvironmentId,
+      ]);
+      const projectRefs = [environmentId, remoteEnvironmentId].map((environmentId) => ({
+        environmentId,
+        projectId: v2ThreadShell.projectId,
+      }));
+      const lists = [
+        threads.threadShellsAtom,
+        threads.allThreadShellsAtom,
+        threads.navigationThreadShellsAtom,
+        threads.threadShellsForProjectRefsAtom(projectRefs),
+      ];
+      const disposes = lists.map((atom) => registry.mount(atom));
+      const remoteRefs = threads.environmentThreadRefsAtom(remoteEnvironmentId);
+      disposes.push(registry.mount(threads.threadRefsAtom), registry.mount(remoteRefs));
+      const ref = { environmentId: remoteEnvironmentId, threadId: v2ThreadShell.id };
+      try {
+        const before = lists.map((atom) => registry.get(atom));
+        const cached = registry.get(threads.threadShellAtom(ref));
+        expect(before.every((list) => list.length === 2)).toBe(true);
+        registry.set(
+          stateAtom(remoteEnvironmentId),
+          AsyncResult.success({ ...AVAILABLE_CONNECTION_STATE, phase }),
+        );
+        for (const atom of lists) {
+          expect(registry.get(atom).map((thread) => thread.environmentId)).toEqual([environmentId]);
+        }
+        expect(registry.get(threads.threadRefsAtom)).toEqual([
+          { environmentId, threadId: v2ThreadShell.id },
+        ]);
+        expect(registry.get(remoteRefs)).toEqual([]);
+        // Hiding a list must not delete the snapshot or break an open thread's identity.
+        expect(registry.get(snapshotAtom(remoteEnvironmentId))).toBe(v2ShellSnapshot);
+        expect(registry.get(threads.threadShellAtom(ref))).toBe(cached);
+        registry.set(
+          stateAtom(remoteEnvironmentId),
+          AsyncResult.success({ ...AVAILABLE_CONNECTION_STATE, phase: "connected" }),
+        );
+        lists.forEach((atom, index) => expect(registry.get(atom)).toEqual(before[index]));
+        expect(registry.get(remoteRefs)).toEqual([ref]);
+      } finally {
+        disposes.forEach((dispose) => dispose());
+        registry.dispose();
+      }
+    },
+  );
+
   it("preserves ordered reference arrays when a middle thread changes", () => {
     const { registry, threads, snapshotAtom } = makeHarness();
     const snapshot = {
