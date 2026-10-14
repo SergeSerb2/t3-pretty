@@ -76,7 +76,6 @@ import { GitOverviewSheet } from "./features/threads/git/GitOverviewSheet";
 import { ThreadAgentsSheet } from "./features/threads/ThreadAgentsSheet";
 import { ThreadQueueSheet } from "./features/threads/ThreadQueueControl";
 import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";
-import { ThreadLeaveGesture } from "./features/threads/ThreadLeaveGesture";
 import { ThreadRenameSheet } from "./features/threads/ThreadRenameSheet";
 import { McpAppFullscreenScreen } from "./features/threads/McpAppFullscreenScreen";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
@@ -908,7 +907,6 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ThreadRouteScreen,
       linking: THREAD_LINKING_PREFIX,
       options: GLASS_HEADER_OPTIONS,
-      layout: ({ children }) => <ThreadLeaveGesture>{children}</ThreadLeaveGesture>,
     }),
     ThreadTerminal: createNativeStackScreen({
       screen: ThreadTerminalRouteScreen,

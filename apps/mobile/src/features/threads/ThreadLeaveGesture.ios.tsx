@@ -1,10 +1,19 @@
 import { useIsFocused, useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
-import { useCallback, useEffect, type ReactNode } from "react";
-import { View } from "react-native";
+import {
+  createContext,
+  use,
+  useCallback,
+  useEffect,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
+import { ScrollView, View } from "react-native";
 import {
   GestureDetector,
+  useNativeGesture,
   usePanGesture,
+  type PanGesture,
   type PanGestureActiveEvent,
 } from "react-native-gesture-handler";
 import Animated, {
@@ -21,7 +30,25 @@ import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useWorkspaceListNavigation } from "../workspace/useAndroidWorkspaceNavigation";
 import { shouldLeaveThreadOnSwipe, THREAD_LEAVE_SWIPE_DISTANCE } from "./thread-leave-swipe";
 
-/** Allows intentional right swipes across the thread content. */
+const ThreadLeaveGestureContext = createContext<PanGesture | null>(null);
+
+/** Horizontal code and table scrolling takes priority over leaving the thread. */
+export function ThreadLeaveGestureScrollView(props: ComponentProps<typeof ScrollView>) {
+  const leaveGesture = use(ThreadLeaveGestureContext);
+  const scrollGesture = useNativeGesture({
+    enabled: leaveGesture !== null,
+    block: leaveGesture ?? undefined,
+    disallowInterruption: true,
+  });
+  if (leaveGesture === null) return <ScrollView {...props} />;
+  return (
+    <GestureDetector gesture={scrollGesture}>
+      <ScrollView {...props} />
+    </GestureDetector>
+  );
+}
+
+/** Allows intentional right swipes across the conversation, outside the composer. */
 export function ThreadLeaveGesture(props: { readonly children: ReactNode }) {
   const navigation = useNavigation();
   const focused = useIsFocused();
@@ -86,24 +113,26 @@ export function ThreadLeaveGesture(props: { readonly children: ReactNode }) {
   }));
 
   return (
-    <GestureDetector gesture={gesture}>
-      <View collapsable={false} style={{ flex: 1 }}>
-        <Animated.View style={[{ flex: 1 }, contentStyle]}>{props.children}</Animated.View>
-        <Animated.View
-          pointerEvents="none"
-          accessibilityElementsHidden
-          style={[{ position: "absolute", top: "50%", left: 12, marginTop: -22 }, cueStyle]}
-        >
-          <View className="h-11 w-11 items-center justify-center rounded-full border border-border bg-card shadow-sm">
-            <SymbolView
-              name="chevron.left"
-              size={20}
-              weight="semibold"
-              tintColorClassName="accent-foreground"
-            />
-          </View>
-        </Animated.View>
-      </View>
-    </GestureDetector>
+    <ThreadLeaveGestureContext value={gesture}>
+      <GestureDetector gesture={gesture}>
+        <View collapsable={false} style={{ flex: 1 }}>
+          <Animated.View style={[{ flex: 1 }, contentStyle]}>{props.children}</Animated.View>
+          <Animated.View
+            pointerEvents="none"
+            accessibilityElementsHidden
+            style={[{ position: "absolute", top: "50%", left: 12, marginTop: -22 }, cueStyle]}
+          >
+            <View className="h-11 w-11 items-center justify-center rounded-full border border-border bg-card shadow-sm">
+              <SymbolView
+                name="chevron.left"
+                size={20}
+                weight="semibold"
+                tintColorClassName="accent-foreground"
+              />
+            </View>
+          </Animated.View>
+        </View>
+      </GestureDetector>
+    </ThreadLeaveGestureContext>
   );
 }

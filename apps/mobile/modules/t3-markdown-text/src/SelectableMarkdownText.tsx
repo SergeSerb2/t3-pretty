@@ -24,6 +24,8 @@ import type {
   SelectableMarkdownTextProps,
 } from "./SelectableMarkdownText.types";
 
+export { MarkdownScrollViewRendererContext } from "./NativeMarkdownBlock";
+
 const EMPTY_SKILLS: ReadonlyArray<SelectableMarkdownSkill> = [];
 
 export type {
