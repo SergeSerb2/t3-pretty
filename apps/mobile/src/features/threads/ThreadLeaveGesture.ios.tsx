@@ -8,7 +8,7 @@ import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useWorkspaceListNavigation } from "../workspace/useAndroidWorkspaceNavigation";
 import { shouldLeaveThreadOnSwipe } from "./thread-leave-swipe";
 
-/** Reserve the right edge for leaving so feed and composer drags keep their own gestures. */
+/** Reserve the left edge for leaving so feed and composer drags keep their own gestures. */
 export function ThreadLeaveGesture(props: { readonly children: ReactNode }) {
   const navigation = useNavigation();
   const focused = useIsFocused();
@@ -19,9 +19,9 @@ export function ThreadLeaveGesture(props: { readonly children: ReactNode }) {
   }, [layout.usesSplitView, navigation, returnToList]);
   const gesture = usePanGesture({
     enabled: focused && !layout.usesSplitView,
-    hitSlop: { right: 0, width: 32 },
-    activeOffsetX: -20,
-    failOffsetX: 12,
+    hitSlop: { left: 0, width: 32 },
+    activeOffsetX: 20,
+    failOffsetX: -12,
     failOffsetY: [-12, 12],
     maxPointers: 1,
     onDeactivate: (event) => {
