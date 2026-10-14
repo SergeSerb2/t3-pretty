@@ -65,7 +65,9 @@ export const EXPECTED_RESTART_RETRY_MAX_DELAY_MS = 8_000;
 const establishmentTimeout = Duration.fromInputUnsafe(
   ConnectionDriver.CONNECTION_ESTABLISHMENT_TIMEOUT,
 );
-const synchronizationTimeout = Duration.fromInputUnsafe("75 seconds");
+const synchronizationTimeout = Duration.fromInputUnsafe(
+  ConnectionDriver.CONNECTION_SYNCHRONIZATION_TIMEOUT,
+);
 const CONNECTION_PROBE_TIMEOUT = "15 seconds";
 // Mobile resumes, explicit retries, and offline events want a fast answer:
 // the user is waiting, or the network may be gone.
@@ -779,11 +781,13 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
 
     const startReplacement = Effect.fnUntraced(function* (reason: "wake" | "route") {
       const scope = yield* Scope.fork(attemptScope);
+      const synchronizedRoutes = yield* Ref.make(0);
       const fiber = yield* establishTracedConnection(
         1,
         replacementGeneration,
         null,
         Option.none(),
+        synchronizedRoutes,
         true,
       ).pipe(
         Scope.provide(scope),

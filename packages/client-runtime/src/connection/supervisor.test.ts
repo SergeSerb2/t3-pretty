@@ -3,6 +3,7 @@ import { RelayClientTracer } from "@t3tools/shared/relayTracing";
 import { describe, expect, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -2241,7 +2242,7 @@ describe("EnvironmentSupervisor routes", () => {
         );
         expect(yield* Ref.get(harness.prepareCount)).toBe(2);
         expect(yield* Ref.get(harness.releaseCount)).toBe(1);
-      }).pipe(Effect.provide(TestClock.layer())),
+      }),
   );
 
   it.effect("still tries a silent LAN route after the T3 Connect route fails", () =>
@@ -2586,7 +2587,12 @@ describe("EnvironmentSupervisor routes", () => {
         initiallyDesired: true,
       }).pipe(Effect.provide(harness.dependencies));
       yield* awaitState(supervisor.state, (state) => state.stage === "synchronizing");
-      yield* TestClock.adjust("15 seconds");
+      yield* TestClock.adjust(
+        Duration.sum(
+          Duration.fromInputUnsafe(ConnectionDriver.CONNECTION_ESTABLISHMENT_TIMEOUT),
+          Duration.fromInputUnsafe(ConnectionDriver.CONNECTION_SYNCHRONIZATION_TIMEOUT),
+        ),
+      );
       yield* awaitState(supervisor.state, (state) => state.phase === "connected");
       expect(Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target._tag).toBe(
         "RelayConnectionTarget",

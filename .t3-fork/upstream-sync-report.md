@@ -118,3 +118,13 @@
 - `packages/shared/src/nodeSqliteClient.ts` — The upstream semaphore-only acquirer and transactionAcquirer bodies are replaced by the fork's shared acquisition helpers. Reason: The raw acquisition bodies would bypass T3 Pretty's failed-COMMIT cleanup and connection-rejection safeguards. Their routing and locking behavior is retained through helpers using the corresponding connection and semaphore.
 - `.github/workflows/*` — parent workflow changes are omitted; T3 Pretty keeps its Origin/Buildkite release and sync automation from fork `main`.
 - `packages/shared/src/nodeSqliteClient.ts` — the checkpointed resolution used `Fiber.getCurrent()` without importing `Fiber`. The import from `effect/Fiber` was added so the parent's SafeIntegers routing compiles. The fork's failed-COMMIT acquisition helpers remain.
+
+## Post-merge repairs
+
+- typecheck / supervisor tests after merging `v0.0.46-nightly.20261014.3105`:
+  - `startReplacement` now allocates `synchronizedRoutes` and passes `quiet=true` as the sixth argument. The checkpoint left `true` in the `synchronizedRoutes` slot, which failed typecheck (`boolean` vs `Ref<number>`).
+  - Pretty still fails over to the next route when a preferred route stalls, but the per-route cap in `connectOverRoutes` is now setup (15s) plus one snapshot (75s). The previous 15s-only cap contradicted the parent's new snapshot budget and hung the new TestClock test that spends 50s then 40s in `ready`.
+  - `CONNECTION_SYNCHRONIZATION_TIMEOUT` is exported from the driver and shared with the supervisor.
+  - The fork stall-failover test advances that combined budget instead of 15s.
+  - The parent's snapshot-budget test uses the default Effect TestClock rather than a nested `TestClock.layer()`, so `timeoutOrElse` and forked route checks schedule.
+  - The `t3 server` live-server CLI test now mocks `fetch` so Pretty's origin probe sees a T3 identity. A closed `127.0.0.1:3773` is stale and would otherwise start a real server in the test.

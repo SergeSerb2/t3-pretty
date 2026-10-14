@@ -1,4 +1,5 @@
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -41,6 +42,8 @@ export type RouteCheck = "answered" | "silent" | "unchecked";
 /** How long a direct route has to answer before it counts as unreachable from here. */
 const ROUTE_CHECK_TIMEOUT_MS = 2_500;
 export const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
+/** Extra time a route that reached synchronizing may spend on the first snapshot. */
+export const CONNECTION_SYNCHRONIZATION_TIMEOUT = "75 seconds";
 
 export class ConnectionDriver extends Context.Service<
   ConnectionDriver,
@@ -96,6 +99,8 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
   let transient: ConnectionAttemptError | undefined;
   let blocked: ConnectionAttemptError | undefined;
   // Each route gets its own scope so a half-open session closes before the next try.
+  // A hung preferred route must not hide a working fallback, but the cap is
+  // setup plus one snapshot so a cold server can still finish before we move on.
   const attempt = Effect.fnUntraced(function* (route: ConnectionRoute) {
     const routeScope = yield* Scope.fork(attemptScope);
     const connecting = connectRoute(route);
@@ -104,7 +109,10 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
         ? connecting
         : connecting.pipe(
             Effect.timeoutOrElse({
-              duration: CONNECTION_ESTABLISHMENT_TIMEOUT,
+              duration: Duration.sum(
+                Duration.fromInputUnsafe(CONNECTION_ESTABLISHMENT_TIMEOUT),
+                Duration.fromInputUnsafe(CONNECTION_SYNCHRONIZATION_TIMEOUT),
+              ),
               orElse: () =>
                 Effect.fail(
                   new ConnectionTransientError({
