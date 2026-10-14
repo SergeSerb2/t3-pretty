@@ -249,7 +249,7 @@ const upsertAnonymousId = Effect.gen(function* () {
   }
 
   const anonymousId = yield* Crypto.Crypto.pipe(
-    Effect.flatMap((crypto) => crypto.randomUUIDv4),
+    Effect.flatMap((crypto) => crypto.randomUUIDv4()),
     Effect.mapError(
       (cause) =>
         new TelemetryAnonymousIdGenerationError({

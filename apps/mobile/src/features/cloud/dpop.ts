@@ -333,7 +333,7 @@ export function createDpopProof(input: {
     });
     const nowMs = yield* Clock.currentTimeMillis;
     const jti = yield* Crypto.Crypto.pipe(
-      Effect.flatMap((crypto) => crypto.randomUUIDv4),
+      Effect.flatMap((crypto) => crypto.randomUUIDv4()),
       Effect.mapError(cloudDpopError("Could not generate DPoP proof identifier.")),
     );
     const header = yield* encodeDpopJwtHeaderJson({

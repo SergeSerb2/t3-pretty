@@ -16,7 +16,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { Command } from "effect/cli";
-import { describe, expect } from "vite-plus/test";
+import { describe, expect, vi } from "vite-plus/test";
 
 import { makeCli } from "../binCli.ts";
 import { PersistedServerRuntimeState } from "../serverRuntimeState.ts";
@@ -176,6 +176,17 @@ describe("t3 server command safety", () => {
         });
         yield* Effect.promise(() => NodeFSP.mkdir(stateDir, { recursive: true }));
         yield* Effect.promise(() => NodeFSP.writeFile(statePath, record));
+        // A live PID plus a T3 identity at the recorded origin is what blocks
+        // a second start. Without this answer the probe treats port 3773 as stale
+        // and the CLI would try to start a real server.
+        yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            vi.spyOn(globalThis, "fetch").mockImplementation(
+              async () => new Response(JSON.stringify({ environmentId: "env-test" })),
+            ),
+          ),
+          (spy) => Effect.sync(() => spy.mockRestore()),
+        );
         const newDirectory = NodePath.join(root, "new-project");
         const platform = yield* HostProcess.Platform;
         for (const args of [

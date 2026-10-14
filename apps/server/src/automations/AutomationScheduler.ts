@@ -159,7 +159,7 @@ const make = Effect.gen(function* () {
   const pullRequests = yield* PullRequestService.PullRequestService;
   const crypto = yield* Crypto.Crypto;
 
-  const uuid = crypto.randomUUIDv4.pipe(Effect.orDie);
+  const uuid = crypto.randomUUIDv4().pipe(Effect.orDie);
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const settings = settingsService.getSettings.pipe(
     Effect.orElseSucceed(() => DEFAULT_SERVER_SETTINGS),

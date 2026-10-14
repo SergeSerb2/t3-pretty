@@ -104,7 +104,7 @@ const make = Effect.gen(function* () {
   const secretPathFor = (name: string) =>
     path.join(serverConfig.secretsDir, `${ServerSettings.globalEnvironmentSecretName(name)}.bin`);
 
-  const uuid = crypto.randomUUIDv4.pipe(Effect.orDie);
+  const uuid = crypto.randomUUIDv4().pipe(Effect.orDie);
 
   const questionFor = (input: SecretRequestInput): OrchestrationV2UserInputQuestion => ({
     id: input.name,

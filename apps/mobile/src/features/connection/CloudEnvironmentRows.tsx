@@ -2,10 +2,7 @@ import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import { useAuth } from "@clerk/expo";
 import { SymbolView } from "../../components/AppSymbol";
-import {
-  connectionStatusText,
-  type EnvironmentConnectionPhase,
-} from "@t3tools/client-runtime/connection";
+import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import {
   type EnvironmentId,
   type EnvironmentMachineKind,
@@ -30,6 +27,7 @@ import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { GroupedCard } from "../scenery/GroupedCard";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
+import { environmentStatusText } from "./environmentStatusText";
 import { type RelayEnvironmentView, useConnectionController } from "./useConnectionController";
 
 interface CloudEnvironmentRowsProps {
@@ -392,7 +390,7 @@ function CloudEnvironmentRowShell(props: {
   const shouldPulse = isRetrying;
   const statusText =
     props.statusText ??
-    connectionStatusText({
+    environmentStatusText({
       phase: props.connectionState,
       error: props.connectionError,
       traceId: props.connectionErrorTraceId,

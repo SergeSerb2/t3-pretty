@@ -456,11 +456,14 @@ export const make = Effect.gen(function* () {
       ...(input?.label ? { label: input.label } : {}),
       ...(input?.proofKeyThumbprint ? { proofKeyThumbprint: input.proofKeyThumbprint } : {}),
     }).pipe(Effect.mapError((cause) => new PairingCredentialInputValidationError({ cause })));
-    const id = yield* crypto.randomUUIDv4.pipe(
-      Effect.mapError(
-        (cause) => new PairingCredentialRandomGenerationError({ operation: "generate-id", cause }),
-      ),
-    );
+    const id = yield* crypto
+      .randomUUIDv4()
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new PairingCredentialRandomGenerationError({ operation: "generate-id", cause }),
+        ),
+      );
     const credential = yield* generatePairingToken;
     const isDevStartupToken = config.devUrl !== undefined && input?.purpose === "startup";
     const ttl =

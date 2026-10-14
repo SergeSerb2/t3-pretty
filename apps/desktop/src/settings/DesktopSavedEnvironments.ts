@@ -404,7 +404,7 @@ export const make = Effect.gen(function* () {
   const mutationSemaphore = yield* Semaphore.make(1);
 
   const writeDocument = (document: SavedEnvironmentRegistryDocument) =>
-    crypto.randomUUIDv4.pipe(
+    crypto.randomUUIDv4().pipe(
       Effect.map((uuid) => uuid.replace(/-/g, "")),
       Effect.mapError(
         (cause) =>

@@ -200,12 +200,12 @@ const dispatchFailure =
 
 const commandId = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
-  return CommandId.make(`server:mcp-automation:${yield* crypto.randomUUIDv4.pipe(Effect.orDie)}`);
+  return CommandId.make(`server:mcp-automation:${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`);
 });
 
 const randomId = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
-  return yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+  return yield* crypto.randomUUIDv4().pipe(Effect.orDie);
 });
 
 /** Shell plus the preview an agent needs to confirm the schedule it just saved. */

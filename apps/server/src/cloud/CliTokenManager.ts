@@ -49,6 +49,10 @@ const DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 const DEVICE_AUTHORIZATION_DEFAULT_INTERVAL = Duration.seconds(5);
 // RFC 8628 §3.5: a slow_down response means "add 5 seconds to the interval".
 const DEVICE_AUTHORIZATION_SLOW_DOWN_INCREMENT = Duration.seconds(5);
+// Bounds one token or device-authorization request, including reading the
+// body. A stalled refresh holds the manager's semaphore and blocks every
+// other credential call.
+const OAUTH_REQUEST_TIMEOUT = Duration.seconds(10);
 const boldTerminalText = (value: string): string => `\u001b[1m${value}\u001b[22m`;
 
 function formatLoopbackAuthorizationPrompt(authorizationUrl: string): string {
@@ -355,16 +359,15 @@ const exchangeToken = Effect.fn("cloud.cli_token.exchange")(function* (
   params: Record<string, string>,
 ) {
   const httpClient = yield* HttpClient.HttpClient;
-  return yield* Effect.gen(function* () {
-    const response = yield* HttpClientRequest.post(metadata.tokenEndpoint).pipe(
-      HttpClientRequest.bodyUrlParams(params),
-      httpClient.execute,
-      // HTTP failures retain the request, whose form body can contain an authorization code or
-      // refresh token. Collapse them to a stable diagnostic before the error leaves this boundary.
-      Effect.mapError(() => new CloudCliTokenExchangeFailure({ reason: "request-failed" })),
-    );
-    return yield* readTokenResponse(response, params);
-  }).pipe(
+  return yield* HttpClientRequest.post(metadata.tokenEndpoint).pipe(
+    HttpClientRequest.bodyUrlParams(params),
+    httpClient.execute,
+    // HTTP failures retain the request, whose form body can contain an authorization code or
+    // refresh token. Collapse them to a stable diagnostic before the error leaves this boundary.
+    Effect.mapError(() => new CloudCliTokenExchangeFailure({ reason: "request-failed" })),
+    Effect.flatMap((response) => readTokenResponse(response, params)),
+    // Enforce both deadlines so the shared OAuth timeout cannot relax Pretty's exchange cap.
+    Effect.timeout(OAUTH_REQUEST_TIMEOUT),
     Effect.timeout(CLOUD_CLI_TOKEN_EXCHANGE_TIMEOUT),
     Effect.catchTag("TimeoutError", () =>
       Effect.fail(new CloudCliTokenExchangeFailure({ reason: "timeout" })),
@@ -468,6 +471,7 @@ export const deviceAuthorizationLogin = Effect.fn("cloud.cli_token.device_author
       }),
       httpClient.execute,
       Effect.flatMap(HttpClientResponse.schemaBodyJson(DeviceAuthorizationResponse)),
+      Effect.timeout(OAUTH_REQUEST_TIMEOUT),
     );
     // Clerk's advertised lifetime and interval are authoritative.
     const expiresIn = Duration.seconds(authorization.expires_in);

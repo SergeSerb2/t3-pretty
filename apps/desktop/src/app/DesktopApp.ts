@@ -46,7 +46,7 @@ export const DESKTOP_FATAL_STARTUP_MESSAGE_MAX_LENGTH = 4_096;
 export const DESKTOP_FATAL_STARTUP_DETAIL_MAX_LENGTH = 64 * 1_024;
 
 const makeDesktopRunId = Crypto.Crypto.pipe(
-  Effect.flatMap((crypto) => crypto.randomUUIDv4),
+  Effect.flatMap((crypto) => crypto.randomUUIDv4()),
   Effect.map((value) => value.replaceAll("-", "").slice(0, 12)),
 );
 

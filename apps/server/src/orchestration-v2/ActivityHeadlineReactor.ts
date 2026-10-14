@@ -157,7 +157,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const commandId = yield* crypto.randomUUIDv4.pipe(
+    const commandId = yield* crypto.randomUUIDv4().pipe(
       Effect.map((uuid) => CommandId.make(`server:activity-headline:${uuid}`)),
     );
     yield* projection
@@ -199,7 +199,7 @@ const make = Effect.gen(function* () {
         if (event.type !== "turn-item.updated") return Effect.void;
         const item = event.payload;
         if (item.type === "todo_list" && item.runId !== null) {
-          return crypto.randomUUIDv4.pipe(Effect.orDie, Effect.flatMap((id) => projection.dispatch({ type: "thread.metadata.update", commandId: CommandId.make(`server:plan-progress:${id}`), threadId: event.threadId, expectedRunId: item.runId!, planProgress: progressForTodoList(item) })), Effect.ignore);
+          return crypto.randomUUIDv4().pipe(Effect.orDie, Effect.flatMap((id) => projection.dispatch({ type: "thread.metadata.update", commandId: CommandId.make(`server:plan-progress:${id}`), threadId: event.threadId, expectedRunId: item.runId!, planProgress: progressForTodoList(item) })), Effect.ignore);
         }
         const job = headlineJobForTurnItem(item);
         return job === null ? Effect.void : worker.enqueue(event.threadId, job);

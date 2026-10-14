@@ -267,6 +267,7 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { settleAndAdvance } from "../settleAndAdvance";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useTeslaTouchUi } from "../teslaTouchUi";
@@ -8514,6 +8515,8 @@ export default function ChatView(props: ChatViewProps) {
           void handleUnsettleActiveThread();
           return;
         }
+        // Same as the sidebar Settle button: settle, then open the next thread.
+        if (settleAndAdvance(activeThreadRef)) return;
 
         void settleThread(activeThreadRef).then((result) => {
           if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
