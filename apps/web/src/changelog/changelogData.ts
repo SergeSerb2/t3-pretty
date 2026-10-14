@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261014.3105003545",
+    date: "2026-10-14",
+    items: [
+      {
+        kind: "fixed",
+        title: "Use right swipe to leave iOS threads",
+      },
+      {
+        kind: "new",
+        title: "Redesign the car display for Tesla's touchscreen",
+      },
+      {
+        kind: "improved",
+        title: "Make the collapsed sidebar peek glide on transforms",
+      },
+      {
+        kind: "new",
+        title: "A left swipe to leave iOS threads",
+      },
+      {
+        kind: "fixed",
+        title: "Remove duplicate iOS bottom buttons",
+      },
+      {
+        kind: "improved",
+        title: "Reduce desktop stalls and memory retention",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261014.3093003541",
     date: "2026-10-14",
     items: [
