@@ -6,6 +6,10 @@ describe("shouldLeaveThreadOnSwipe", () => {
   it.each([
     ["a steady right swipe", 120, 8, 0, false, true],
     ["a short right flick", 30, 4, 900, false, true],
+    ["a slow swipe at the distance threshold", 80, 4, 0, false, true],
+    ["a slow drag below the distance threshold", 79, 4, 100, false, false],
+    ["a flick at the activation threshold", 20, 4, 600, false, true],
+    ["a flick below the activation threshold", 19, 4, 900, false, false],
     ["a short slow drag", 30, 4, 100, false, false],
     ["a left swipe", -120, 8, -900, false, false],
     ["a vertical scroll", 30, 120, 900, false, false],

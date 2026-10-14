@@ -1,7 +1,15 @@
 import { SymbolView } from "expo-symbols";
 import { githubAlert } from "./githubAlert";
-import { createContext, memo, useContext, useMemo } from "react";
-import { Image, Platform, ScrollView, Text, useColorScheme, View } from "react-native";
+import { createContext, memo, useContext, useMemo, type ReactNode } from "react";
+import {
+  Image,
+  Platform,
+  ScrollView,
+  Text,
+  useColorScheme,
+  View,
+  type ScrollViewProps,
+} from "react-native";
 import type { MarkdownNode } from "react-native-nitro-markdown/headless";
 
 import { CopyTextButton } from "./CopyTextButton";
@@ -26,6 +34,16 @@ import {
 
 /** Set by SelectableMarkdownText so images anywhere in the block tree can use it. */
 export const MarkdownImageRendererContext = createContext<MarkdownImageRenderer | null>(null);
+
+/** Lets the host compose horizontal code and table scrolling with its navigation gestures. */
+export const MarkdownScrollViewRendererContext = createContext<
+  ((props: ScrollViewProps) => ReactNode) | null
+>(null);
+
+function HorizontalMarkdownScrollView(props: ScrollViewProps) {
+  const renderScrollView = useContext(MarkdownScrollViewRendererContext);
+  return renderScrollView ? renderScrollView(props) : <ScrollView {...props} />;
+}
 
 const MONO_FONT_FAMILY = Platform.select({
   ios: "ui-monospace",
@@ -236,7 +254,7 @@ function NativeCodeBlock(props: {
           iconSize={14}
         />
       </View>
-      <ScrollView
+      <HorizontalMarkdownScrollView
         horizontal
         bounces={false}
         nestedScrollEnabled={Platform.OS === "android"}
@@ -248,7 +266,7 @@ function NativeCodeBlock(props: {
           highlighted={highlighted}
           textStyle={props.textStyle}
         />
-      </ScrollView>
+      </HorizontalMarkdownScrollView>
     </View>
   );
 }
@@ -276,7 +294,7 @@ function NativeTable(props: {
 }) {
   const rows = collectTableRows(props.node);
   return (
-    <ScrollView
+    <HorizontalMarkdownScrollView
       horizontal
       bounces={false}
       nestedScrollEnabled={Platform.OS === "android"}
@@ -324,7 +342,7 @@ function NativeTable(props: {
           </View>
         ))}
       </View>
-    </ScrollView>
+    </HorizontalMarkdownScrollView>
   );
 }
 
