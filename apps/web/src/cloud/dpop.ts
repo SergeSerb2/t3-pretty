@@ -353,7 +353,7 @@ export function createBrowserDpopProof(input: {
       return yield* Effect.fail(dpopError("DPoP access token is invalid."));
     }
     const jti = yield* Crypto.Crypto.pipe(
-      Effect.flatMap((crypto) => crypto.randomUUIDv4),
+      Effect.flatMap((crypto) => crypto.randomUUIDv4()),
       Effect.mapError((cause) => dpopError("Could not generate DPoP proof identifier.", cause)),
     );
     const proof = yield* Effect.tryPromise({

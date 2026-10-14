@@ -16,7 +16,6 @@ import {
   mergeProcesses,
   processIdentityKey,
   type ProcessState,
-  type TelemetryCounters,
 } from "./Model.ts";
 
 const MAX_HISTORY_WINDOW_MS = 60 * 60_000;
@@ -236,8 +235,8 @@ export function buildResourceTelemetryHistory(
   const aggregateSamples: AggregateSample[] = [];
   const legacyBackendAggregateSamples: AggregateSample[] = [];
   const processSamples: ProcessSample[] = [];
-  let previous: ReadonlyMap<string, ProcessState> = new Map();
-  let counters: TelemetryCounters = emptyTelemetryCounters();
+  const previous = new Map<string, ProcessState>();
+  const counters = emptyTelemetryCounters();
   let previousSnapshotAtMs: number | undefined;
 
   for (const snapshot of snapshots) {
@@ -285,9 +284,12 @@ export function buildResourceTelemetryHistory(
       previous,
       counters,
       updatePrevious: true,
+      accumulateCounters: false,
     });
-    previous = new Map([...previous, ...merged.previous]);
-    counters = merged.counters;
+    // Keep absent identities' baselines without copying every exited process on each sample.
+    for (const [identityKey, state] of merged.previous) {
+      previous.set(identityKey, state);
+    }
     if (snapshot.sampledAtUnixMs < windowStartMs) {
       continue;
     }

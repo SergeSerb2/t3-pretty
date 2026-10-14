@@ -245,7 +245,7 @@ const make = Effect.gen(function* () {
     if (!imported) {
       return;
     }
-    const commandId = yield* crypto.randomUUIDv4.pipe(
+    const commandId = yield* crypto.randomUUIDv4().pipe(
       Effect.map((uuid) => CommandId.make(`server:project-icon:${uuid}`)),
     );
     const updated = yield* projects

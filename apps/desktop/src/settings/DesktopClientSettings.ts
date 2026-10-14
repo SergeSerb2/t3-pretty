@@ -222,7 +222,7 @@ export const make = Effect.gen(function* () {
     ),
     set: (settings) =>
       writeSemaphore.withPermits(1)(
-        crypto.randomUUIDv4.pipe(
+        crypto.randomUUIDv4().pipe(
           Effect.map((uuid) => uuid.replace(/-/g, "")),
           Effect.mapError(
             (cause) =>

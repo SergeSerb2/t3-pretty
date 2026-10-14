@@ -421,7 +421,7 @@ export const make = Effect.gen(function* () {
         previousTitles: state.previousTitles,
         modelSelection: current.homeSuggestionsModelSelection,
       });
-      const batchId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+      const batchId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
       const suggestions = mapGeneratedSuggestions({
         generated: generated.suggestions,
         projectsByKey: digest.projectsByKey,

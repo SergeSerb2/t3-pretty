@@ -280,7 +280,7 @@ export const make = Effect.gen(function* () {
       Effect.flatMap((secretPath) =>
         validateSecretValue(name, value).pipe(
           Effect.andThen(
-            crypto.randomUUIDv4.pipe(
+            crypto.randomUUIDv4().pipe(
               Effect.mapError(
                 (cause) =>
                   new SecretStoreTemporaryPathError({

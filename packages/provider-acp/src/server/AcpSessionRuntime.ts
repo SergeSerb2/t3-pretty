@@ -158,6 +158,12 @@ export interface AcpSessionRuntimeOptions {
   readonly onTermination?: (error: EffectAcpErrors.AcpError) => Effect.Effect<void>;
   readonly onOutgoingResponseFailure?: EffectAcpClient.AcpClientOptions["onOutgoingResponseFailure"];
   readonly onOutgoingResponse?: EffectAcpClient.AcpClientOptions["onOutgoingResponse"];
+  /**
+   * Model ids the user configured for this instance. The model config option
+   * accepts them even when the agent does not advertise them, and the agent
+   * validates them instead.
+   */
+  readonly customModels?: ReadonlyArray<string>;
 }
 
 export interface AcpSessionRequestLogEvent {
@@ -1400,7 +1406,7 @@ export const make = (
     // Recently shown tool calls. A late update to a finished call is not a new
     // boundary in the answer, although its progress state is gone.
     const shownToolCallIds = new Set<string>();
-    const assistantItemRuntimeId = yield* crypto.randomUUIDv4.pipe(
+    const assistantItemRuntimeId = yield* crypto.randomUUIDv4().pipe(
       Effect.mapError(
         (cause) =>
           new EffectAcpErrors.AcpTransportError({
@@ -1982,6 +1988,9 @@ export const make = (
           });
         }
         if (sessionConfigOptionIncludesValue(configOption, value)) {
+          return;
+        }
+        if (configOption.category === "model" && options.customModels?.includes(value)) {
           return;
         }
         const allowed = summarizeSessionConfigOptionValuesForError(configOption);

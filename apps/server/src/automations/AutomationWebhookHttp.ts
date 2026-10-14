@@ -104,11 +104,11 @@ export const layer = Layer.unwrap(
         const deliveryId = (
           request.headers["x-github-delivery"] ??
           request.headers["x-request-id"] ??
-          (yield* crypto.randomUUIDv4.pipe(Effect.orDie))
+          (yield* crypto.randomUUIDv4().pipe(Effect.orDie))
         )
           .trim()
           .slice(0, 200);
-        const runId = AutomationRunId.make(yield* crypto.randomUUIDv4.pipe(Effect.orDie));
+        const runId = AutomationRunId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie));
         const dispatched = yield* engine
           .dispatch({
             type: "automation.run.request",

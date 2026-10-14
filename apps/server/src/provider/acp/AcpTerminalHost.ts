@@ -358,7 +358,7 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
           Effect.forkIn(sessionScope),
         );
 
-        const terminalId = yield* crypto.randomUUIDv4.pipe(
+        const terminalId = yield* crypto.randomUUIDv4().pipe(
           Effect.mapError(
             (cause) =>
               new EffectAcpErrors.AcpTransportError({

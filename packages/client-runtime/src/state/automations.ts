@@ -317,7 +317,7 @@ export type RunAutomationNowInput = {
 };
 
 const randomUuid = Crypto.Crypto.pipe(
-  Effect.flatMap((crypto) => crypto.randomUUIDv4),
+  Effect.flatMap((crypto) => crypto.randomUUIDv4()),
   Effect.orDie,
 );
 

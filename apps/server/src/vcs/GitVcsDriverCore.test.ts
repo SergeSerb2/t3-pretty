@@ -825,7 +825,7 @@ it.effect("keeps a prunable worktree visible when prune does not succeed", () =>
         pathService.normalize(pathService.resolve(missingWorktreePath)),
       );
     }),
-  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  ).pipe(Effect.provide(layerServerConfig.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
 it.effect("keeps a locked missing worktree visible so the branch is not treated as free", () =>
@@ -865,7 +865,7 @@ it.effect("keeps a locked missing worktree visible so the branch is not treated 
         pathService.normalize(pathService.resolve(missingWorktreePath)),
       );
     }),
-  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  ).pipe(Effect.provide(layerServerConfig.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
 it.effect("prunes a worktree entry whose directory is gone so git releases its branch", () =>
@@ -884,7 +884,7 @@ it.effect("prunes a worktree entry whose directory is gone so git releases its b
     assert.equal(refs.refs.find((ref) => ref.name === "feature/gone")?.worktreePath, null);
     // Unpruned, git answers "cannot force update the branch ... used by worktree".
     yield* git(cwd, ["branch", "--force", "feature/gone", "HEAD"]);
-  }).pipe(Effect.provide(TestLayer)),
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("prunes a gone worktree before adding another checkout of the same branch", () =>
@@ -909,7 +909,7 @@ it.effect("prunes a gone worktree before adding another checkout of the same bra
     assert.equal(created.worktree.path, nextPath);
     assert.equal(created.worktree.refName, "feature/gone");
     assert.equal(yield* git(nextPath, ["branch", "--show-current"]), "feature/gone");
-  }).pipe(Effect.provide(TestLayer)),
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("prunes a gone worktree when createWorktree runs from a linked worktree", () =>
@@ -935,7 +935,58 @@ it.effect("prunes a gone worktree when createWorktree runs from a linked worktre
     assert.equal(created.worktree.path, nextPath);
     assert.equal(created.worktree.refName, "feature/gone");
     assert.equal(yield* git(nextPath, ["branch", "--show-current"]), "feature/gone");
-  }).pipe(Effect.provide(TestLayer)),
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("reads worktrees from git that rejects worktree list -z", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+      // Git before 2.36 has no `worktree list -z` and exits with a usage error.
+      const oldGitSpawner = ChildProcessSpawner.make((command) =>
+        Effect.gen(function* () {
+          if (!ChildProcess.isStandardCommand(command)) {
+            return yield* Effect.die("expected a standard Git command");
+          }
+          if (command.args.includes("worktree") && command.args.includes("-z")) {
+            return ChildProcessSpawner.makeHandle({
+              pid: ChildProcessSpawner.ProcessId(1),
+              exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(129)),
+              isRunning: Effect.succeed(false),
+              kill: () => Effect.void,
+              unref: Effect.succeed(Effect.void),
+              stdin: Sink.drain,
+              stdout: Stream.empty,
+              stderr: Stream.encodeText(Stream.make("error: unknown switch `z'")),
+              all: Stream.empty,
+              getInputFd: () => Sink.drain,
+              getOutputFd: () => Stream.empty,
+            });
+          }
+          return yield* delegate.spawn(command);
+        }),
+      );
+      const driver = yield* makeGitVcsDriverCore().pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, oldGitSpawner),
+      );
+      const cwd = yield* makeTmpDir();
+      yield* initRepoWithCommit(cwd).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, driver));
+      const worktreePath = NodeFS.realpathSync.native(yield* makeTmpDir());
+      yield* git(cwd, ["worktree", "add", "-b", "feature/old-git", worktreePath]).pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
+      );
+
+      const refs = yield* driver.listRefs({ cwd, refresh: true });
+      const listedPath = refs.refs.find((ref) => ref.name === "feature/old-git")?.worktreePath;
+      assert.equal(listedPath && NodeFS.realpathSync.native(listedPath), worktreePath);
+
+      const paths = yield* driver.listWorktreePaths(cwd);
+      assert.include(
+        paths.map((listed) => NodeFS.realpathSync.native(listed)),
+        worktreePath,
+      );
+    }),
+  ).pipe(Effect.provide(layerServerConfig.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
 it.effect("refreshes the current branch after an external checkout", () =>

@@ -431,7 +431,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     const queue = yield* Queue.dropping<PreviewAutomationStreamEvent, Cause.Done>(
       PREVIEW_AUTOMATION_MAX_PENDING_REQUESTS_PER_CLIENT,
     );
-    const connectionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+    const connectionId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
     yield* Queue.offer(queue, { type: "connected", connectionId });
     const connection: ClientConnection = {
       clientId,

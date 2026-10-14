@@ -344,7 +344,7 @@ const make = Effect.gen(function* () {
     // One id per request, so a request that reached the environment before a
     // timeout and is later delivered from the inbox runs only once.
     yield* Effect.annotateCurrentSpan({ "relay.hook.body_bytes": body.success.byteLength });
-    const deliveryId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+    const deliveryId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
     // Proves to the environment that this delivery id, receive time and
     // trace context came from the relay. Signed once here and stored with a
     // held request, so the inbox never needs the signing key.
@@ -353,7 +353,7 @@ const make = Effect.gen(function* () {
       deliveryId,
       receivedAt,
       hookId: parsed.hookId,
-      jti: yield* crypto.randomUUIDv4.pipe(Effect.orDie),
+      jti: yield* crypto.randomUUIDv4().pipe(Effect.orDie),
     });
     const deliveryQuery = new URLSearchParams(parsed.search);
     const hasHoldProof = deliveryQuery.has(RELAY_HOOK_HOLD_PROOF_PARAM);
