@@ -13,6 +13,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { type ComponentProps, useCallback, useRef, useState } from "react";
 import { Platform, Pressable, type TextLayoutEvent, View } from "react-native";
+import { hapticThud } from "../../lib/haptics";
 
 import { AppText as Text } from "../../components/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
@@ -303,7 +304,10 @@ function ConnectedCloudEnvironmentRow(props: {
       accessibilityRole={props.onOpen ? "button" : undefined}
       accessibilityLabel={props.onOpen ? `Manage ${props.environment.environmentLabel}` : undefined}
       onPress={props.onOpen}
-      onLongPress={props.onRemove}
+      onLongPress={() => {
+        hapticThud();
+        props.onRemove();
+      }}
     >
       <CloudEnvironmentRowShell
         opensDetails={props.onOpen !== undefined}

@@ -3,7 +3,8 @@ import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useAuth } from "@clerk/expo";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform, Pressable, RefreshControl } from "react-native";
+import { Platform, Pressable } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { reportAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
@@ -148,7 +149,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
         }}
         refreshControl={
           Platform.OS === "ios" ? (
-            <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+            <AppRefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
           ) : undefined
         }
       >

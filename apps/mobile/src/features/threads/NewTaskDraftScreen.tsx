@@ -26,6 +26,7 @@ import {
 } from "react-native-keyboard-controller";
 import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { hapticError, hapticSuccess, hapticTap } from "../../lib/haptics";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useFontFamily } from "../../lib/useFontFamily";
 import {
@@ -1192,7 +1193,10 @@ export function NewTaskDraftScreen(props: {
         : []),
     ];
     if (problems.length > 0) {
+      hapticError();
       Alert.alert("Could not attach photo or video", problems.join("\n\n"));
+    } else if (result.attachments.length > 0) {
+      hapticTap();
     }
   }
 
@@ -1225,7 +1229,10 @@ export function NewTaskDraftScreen(props: {
         : []),
     ];
     if (problems.length > 0) {
+      hapticError();
       Alert.alert("Could not attach file", problems.join("\n\n"));
+    } else if (result.files.length > 0) {
+      hapticTap();
     }
   }
 
@@ -1478,6 +1485,7 @@ export function NewTaskDraftScreen(props: {
     try {
       await enqueueThreadOutboxMessage(message);
     } catch (error) {
+      hapticError();
       Alert.alert(
         "Could not queue task",
         error instanceof Error ? error.message : "The task could not be saved to the outbox.",
@@ -1500,6 +1508,7 @@ export function NewTaskDraftScreen(props: {
         deferAttachmentCleanup: true,
       });
     }
+    hapticSuccess();
     setSubmitNavigationAction(
       queuesInsteadOfStarting
         ? CommonActions.goBack()

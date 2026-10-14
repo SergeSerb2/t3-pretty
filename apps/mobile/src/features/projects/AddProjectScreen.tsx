@@ -66,20 +66,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  Platform,
-  Alert,
-  Pressable,
-  StyleSheet,
-  View,
-  type ViewProps,
-} from "react-native";
+import { Platform, Alert, Pressable, StyleSheet, View, type ViewProps } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Order from "effect/Order";
 import { AsyncResult } from "effect/reactivity";
 import { cn } from "../../lib/cn";
+import { hapticSuccess } from "../../lib/haptics";
 import { GLASS_CARD_RADIUS } from "../../lib/layoutMetrics";
 import { useProjects, useServerConfigs, waitForProject } from "../../state/entities";
 import { filesystemEnvironment } from "../../state/filesystem";
@@ -792,6 +786,7 @@ function openNewTaskDraft(
     draftId?: string;
   },
 ) {
+  hapticSuccess();
   navigation.dispatch(
     CommonActions.reset({ index: 0, routes: [{ name: "NewTaskDraft", params }] }),
   );
@@ -867,6 +862,7 @@ function useCreateProject(environment: EnvironmentOption | null) {
       if (AsyncResult.isFailure(result) || !isScreenActive()) {
         return result;
       }
+      hapticSuccess();
       navigation.dispatch(
         CommonActions.reset({
           index: 0,

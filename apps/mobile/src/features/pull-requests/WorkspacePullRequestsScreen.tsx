@@ -8,11 +8,11 @@ import {
   Keyboard,
   Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   View,
   type ScrollViewProps,
 } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 import { ScrollViewMarker } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -212,7 +212,7 @@ export function WorkspacePullRequestsScreen() {
         onEndReachedThreshold={0.5}
         onViewableItemsChanged={result.onViewableItemsChanged}
         refreshControl={
-          <RefreshControl
+          <AppRefreshControl
             refreshing={result.refreshing}
             onRefresh={() => void result.onRefresh()}
             // Place the 60pt native refresh control in the revealed pull-down space.

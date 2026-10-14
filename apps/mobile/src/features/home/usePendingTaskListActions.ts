@@ -1,6 +1,7 @@
 import { useNavigation } from "@react-navigation/native";
 import { useCallback } from "react";
 import { Alert } from "react-native";
+import { hapticThud } from "../../lib/haptics";
 
 import { removeThreadOutboxMessage } from "../../state/thread-outbox-removal";
 import { clearComposerDraftContent } from "../../state/use-composer-drafts";
@@ -37,6 +38,7 @@ export function usePendingTaskListActions(): {
           text: "Discard",
           style: "destructive",
           onPress: () => {
+            hapticThud();
             // Same reset a submit performs: the next task in this project
             // re-resolves project defaults instead of inheriting the pick.
             clearComposerDraftContent(pendingTask.draftKey, {
@@ -57,6 +59,7 @@ export function usePendingTaskListActions(): {
           text: "Delete",
           style: "destructive",
           onPress: () => {
+            hapticThud();
             // Release the edit lock only after removal succeeds, and only if
             // it is held for THIS task — clearing it up front (or for another
             // task) would let the drain deliver a mid-edit payload.

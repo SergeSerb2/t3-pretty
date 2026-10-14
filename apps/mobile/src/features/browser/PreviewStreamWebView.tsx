@@ -21,6 +21,7 @@ import {
 import { ActivityIndicator, Alert, Platform, Pressable, TextInput, View } from "react-native";
 import { WebView } from "react-native-webview";
 import * as Clipboard from "expo-clipboard";
+import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 
 import { AppText } from "../../components/AppText";
 import { downloadAndShareAttachment } from "../../lib/attachmentDownload";
@@ -516,7 +517,7 @@ function PreviewStreamDocumentView({
               accessibilityLabel={`Copy ${hostSetup.command}`}
               className="w-full flex-row items-center gap-2 rounded-xl border border-secondary-border bg-secondary px-4 py-3"
               onPress={() => {
-                void Clipboard.setStringAsync(hostSetup.command).catch(() => undefined);
+                copyTextWithHaptic(hostSetup.command);
               }}
             >
               <AppText selectable className="flex-1 font-mono text-sm text-secondary-foreground">

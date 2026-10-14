@@ -22,6 +22,7 @@ import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { ControlPill } from "../../components/ControlPill";
 import { cn } from "../../lib/cn";
+import { hapticSelection, hapticTap } from "../../lib/haptics";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
@@ -321,13 +322,14 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                             ? "border-chrome-glass-border bg-foreground/5"
                             : "border-border bg-input",
                       )}
-                      onPress={() =>
+                      onPress={() => {
+                        hapticSelection();
                         props.onSelectOption(
                           props.pendingUserInput.requestId,
                           question,
                           optionValue,
-                        )
-                      }
+                        );
+                      }}
                     >
                       <View className="min-w-0 flex-1 gap-0.5">
                         <Text
@@ -377,7 +379,10 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
           accessibilityRole="button"
           className="items-center justify-center rounded-2xl px-4 py-2.5 active:opacity-70"
           disabled={isResponding}
-          onPress={() => void props.onDismiss()}
+          onPress={() => {
+            hapticTap();
+            void props.onDismiss();
+          }}
         >
           <Text className="font-t3-bold text-sm text-foreground-muted">
             Dismiss without answering

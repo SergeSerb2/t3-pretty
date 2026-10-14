@@ -16,6 +16,7 @@ import { Pressable, View, type ColorValue } from "react-native";
 
 import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { hapticTap } from "../../lib/haptics";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { RequestActionButton } from "./RequestActionButton";
@@ -160,7 +161,10 @@ function PendingSecretRequestForm(props: {
           disabled={submitting}
           hitSlop={8}
           className="px-1 py-1 active:opacity-60 disabled:opacity-50"
-          onPress={() => void send({ type: "decline" })}
+          onPress={() => {
+            hapticTap();
+            void send({ type: "decline" });
+          }}
         >
           <Text className="font-sans text-xs text-foreground-muted">Decline</Text>
         </Pressable>

@@ -115,6 +115,7 @@ import { enqueueThreadOutboxMessage } from "./thread-outbox";
 import { dispatchingQueuedMessageIdAtom, useThreadOutboxMessages } from "./use-thread-outbox";
 import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
+import { hapticError, hapticTap, hapticWarning } from "../lib/haptics";
 
 const EMPTY_QUEUE_WORKFLOW_ATOM = Atom.make<null>(null).pipe(
   Atom.withLabel("mobile-thread-queue-workflow:empty"),
@@ -614,6 +615,7 @@ export function useThreadComposerState(options: { readonly visible?: boolean } =
       // would enqueue a message that outbox recovery rejects forever, so block
       // here until the user removes attachments.
       if (attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
+        hapticWarning();
         Alert.alert(
           "Too many attachments",
           `Remove attachments until there are at most ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}.`,
@@ -623,6 +625,7 @@ export function useThreadComposerState(options: { readonly visible?: boolean } =
 
       const contextBlockReason = composerContextSendBlockReason(draft.context);
       if (contextBlockReason) {
+        hapticWarning();
         Alert.alert("Too much context", contextBlockReason);
         return null;
       }
@@ -638,6 +641,7 @@ export function useThreadComposerState(options: { readonly visible?: boolean } =
           modelSelection,
           thread.projectId,
         );
+        hapticWarning();
         Alert.alert(title, detail);
         return null;
       }
@@ -652,6 +656,7 @@ export function useThreadComposerState(options: { readonly visible?: boolean } =
         if (!readEnvironmentScope(selectedThreadShell.environmentId, AuthOrchestrationOperateScope))
           return null;
         if (thread.activeProviderThreadId === null) {
+          hapticWarning();
           Alert.alert("Start a Codex thread first", "Send a message before you submit feedback.");
           return null;
         }
@@ -736,6 +741,7 @@ export function useThreadComposerState(options: { readonly visible?: boolean } =
         createdAt: metadata.createdAt,
       });
       clearComposerDraftContent(threadKey, { deferAttachmentCleanup: true });
+      hapticTap();
       enqueuePromise.then(
         () => scheduleUnusedComposerAttachmentCleanup(attachments),
         (error: unknown) => {
@@ -810,7 +816,10 @@ export function useThreadComposerState(options: { readonly visible?: boolean } =
         : []),
     ];
     if (problems.length > 0) {
+      hapticError();
       Alert.alert("Could not attach photo or video", problems.join("\n\n"));
+    } else if (result.attachments.length > 0) {
+      hapticTap();
     }
   }, [composerDrafts, selectedEnvironmentRuntime?.serverConfig, selectedThreadShell]);
 
@@ -846,7 +855,10 @@ export function useThreadComposerState(options: { readonly visible?: boolean } =
         : []),
     ];
     if (problems.length > 0) {
+      hapticError();
       Alert.alert("Could not attach file", problems.join("\n\n"));
+    } else if (result.files.length > 0) {
+      hapticTap();
     }
   }, [composerDrafts, selectedEnvironmentRuntime?.serverConfig, selectedThreadShell]);
 

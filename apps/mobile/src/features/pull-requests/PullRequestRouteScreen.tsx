@@ -18,7 +18,7 @@ import {
   PR_POSITION_LAYOUT,
 } from "./pullRequestAnimations";
 import { openOnProviderLabel } from "./pullRequestActions";
-import * as Clipboard from "expo-clipboard";
+import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { ControlPillMenu } from "../../components/ControlPillMenu";
 import { MaterialIconButton } from "../../components/MaterialIconButton";
 import { MaterialButton } from "../../components/MaterialButton";
@@ -46,12 +46,12 @@ import {
   Linking,
   Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   type ScrollViewProps,
   StyleSheet,
   View,
 } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 import { NativeScrollViewMarker as ScrollViewMarker } from "../../native/NativeScrollViewMarker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -204,7 +204,7 @@ function PullRequestIdentity(props: {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Copy base branch ${pr.baseBranch}`}
-          onPress={() => void Clipboard.setStringAsync(pr.baseBranch)}
+          onPress={() => copyTextWithHaptic(pr.baseBranch)}
           className="min-w-0 shrink active:opacity-70"
           hitSlop={8}
         >
@@ -216,7 +216,7 @@ function PullRequestIdentity(props: {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Copy head branch ${pr.headBranch}`}
-          onPress={() => void Clipboard.setStringAsync(pr.headBranch)}
+          onPress={() => copyTextWithHaptic(pr.headBranch)}
           className="min-w-0 shrink active:opacity-70"
           hitSlop={8}
         >
@@ -500,7 +500,7 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
                   }
                   contentInsetStartAdjustment={Platform.OS === "ios" ? insets.top : 0}
                   refreshControl={
-                    <RefreshControl
+                    <AppRefreshControl
                       refreshing={section === tab && pullRefresh.refreshing}
                       onRefresh={refresh}
                     />
@@ -959,7 +959,7 @@ export function PullRequestFileRouteScreen({
                     mode: nativeEvent.event === "submit-review" ? "review" : "comment",
                   });
                 else if (nativeEvent.event === "comment") commentOnLine();
-                else void Clipboard.setStringAsync(selectedRow?.content ?? "");
+                else copyTextWithHaptic(selectedRow?.content ?? "");
               }}
             >
               <View pointerEvents="none">
@@ -1019,7 +1019,7 @@ export function PullRequestFileRouteScreen({
           {selectedRow && selectedFile ? (
             <NativeHeaderToolbar.MenuAction
               icon="document.on.document"
-              onPress={() => void Clipboard.setStringAsync(selectedRow.content ?? "")}
+              onPress={() => copyTextWithHaptic(selectedRow.content ?? "")}
             >
               <NativeHeaderToolbar.Label>Copy line</NativeHeaderToolbar.Label>
             </NativeHeaderToolbar.MenuAction>
