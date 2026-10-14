@@ -6,14 +6,8 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { useIsFocused } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
@@ -225,7 +219,7 @@ export function SettingsEnvironmentStorageRouteScreen() {
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentInset={{ bottom: Math.max(insets.bottom, 18) }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
+        refreshControl={<AppRefreshControl refreshing={refreshing} onRefresh={refresh} />}
         showsVerticalScrollIndicator={false}
         className="flex-1"
         contentContainerClassName="gap-6 px-5 pt-4 pb-[18px]"

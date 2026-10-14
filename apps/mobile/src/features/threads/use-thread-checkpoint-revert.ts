@@ -1,10 +1,10 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Haptics from "expo-haptics";
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
 
 import { showConfirmDialog } from "../../components/ConfirmDialogHost";
+import { hapticError, hapticSuccess, hapticTap } from "../../lib/haptics";
 import { useThreadShell } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -47,13 +47,16 @@ export function useThreadCheckpointRevert(threadRef: ScopedThreadRef | null): {
         return;
       }
       setRevertingTurnCount(turnCount);
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      hapticTap();
       try {
         const result = await revertMutation({
           environmentId: threadRef.environmentId,
           input: { threadId: threadRef.threadId, turnCount },
         });
-        if (result._tag === "Failure") {
+        if (result._tag === "Success") {
+          hapticSuccess();
+        } else {
+          hapticError();
           const error = Cause.squash(result.cause);
           Alert.alert(
             "Could not revert checkpoint",

@@ -23,12 +23,12 @@ import {
   FlatList,
   Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   type NativeSyntheticEvent,
   StyleSheet,
   View,
 } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 
@@ -823,7 +823,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                 // the raw fallback (and empty states) need an explicit control —
                 // iOS has no other refresh affordance here (the explicit
                 // "Refresh current diff" menu is Android-only).
-                <RefreshControl
+                <AppRefreshControl
                   refreshing={isPullRefreshing || isSelectedSectionPending || areFilePatchesPending}
                   onRefresh={() => void handlePullToRefresh()}
                 />

@@ -9,6 +9,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { AppText as Text } from "./AppText";
 import { cn } from "../lib/cn";
+import { hapticSelection } from "../lib/haptics";
 import { MaterialSegmentedControl } from "./MaterialSegmentedControl";
 import type { SegmentedControlProps } from "./SegmentedControl.types";
 
@@ -67,7 +68,10 @@ export function SegmentedControl<Value extends number | string>(
             accessibilityRole={Platform.OS === "ios" ? "button" : (props.role ?? "button")}
             accessibilityLabel={option.accessibilityLabel ?? option.label}
             accessibilityState={{ selected: active }}
-            onPress={() => props.onSelect(option.value)}
+            onPress={() => {
+              if (!active) hapticSelection();
+              props.onSelect(option.value);
+            }}
             className={cn(
               "flex-1 items-center justify-center rounded-full",
               compact ? "h-9" : "h-11",

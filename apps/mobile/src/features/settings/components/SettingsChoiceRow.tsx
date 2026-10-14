@@ -4,6 +4,7 @@ import { AppText as Text } from "../../../components/AppText";
 import { SymbolView } from "../../../components/AppSymbol";
 import { RowPressable } from "../../../components/RowPressable";
 import { useGlassChromeActive } from "../../scenery/SceneryProvider";
+import { hapticSelection } from "../../../lib/haptics";
 
 export function SettingsChoiceRow(props: {
   readonly label: string;
@@ -14,6 +15,10 @@ export function SettingsChoiceRow(props: {
   readonly onPress: () => void;
 }) {
   const glass = useGlassChromeActive();
+  const onPress = () => {
+    if (!props.selected) hapticSelection();
+    props.onPress();
+  };
   const content = (
     <>
       <View className="min-w-0 flex-1 gap-1">
@@ -43,7 +48,7 @@ export function SettingsChoiceRow(props: {
         }
         disabled={props.disabled}
         interactionClassName={glass ? "bg-foreground/[0.06]" : "bg-subtle"}
-        onPress={props.onPress}
+        onPress={onPress}
       >
         {content}
       </RowPressable>
@@ -59,7 +64,7 @@ export function SettingsChoiceRow(props: {
           : "flex-row items-center gap-4 p-4 active:opacity-70"
       }
       disabled={props.disabled}
-      onPress={props.onPress}
+      onPress={onPress}
     >
       {content}
     </Pressable>

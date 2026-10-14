@@ -29,6 +29,7 @@ vi.mock("../../components/MaterialButton", () => ({ MaterialButton: "MaterialBut
 vi.mock("../../components/ScreenScrollView", () => ({ ScreenScrollView: "ScrollView" }));
 vi.mock("../settings/components/SettingsScreen", () => ({ SettingsScreen: "SettingsScreen" }));
 vi.mock("../../components/ThemedSwitch", () => ({ ThemedSwitch: "Switch" }));
+vi.mock("../../lib/haptics", () => ({ hapticSuccess: vi.fn() }));
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
   ActivityIndicator: "ActivityIndicator",

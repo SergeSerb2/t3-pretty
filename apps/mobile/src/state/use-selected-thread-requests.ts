@@ -30,6 +30,8 @@ import { Atom } from "effect/reactivity";
 
 import { threadEnvironment } from "../state/threads";
 import { scopedRequestKey } from "../lib/scopedEntities";
+import { hapticError, hapticWarning } from "../lib/haptics";
+import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import {
   buildPendingUserInputAnswers,
   setPendingUserInputCustomAnswer,
@@ -267,6 +269,7 @@ export function useSelectedThreadRequests() {
         },
       });
       setRespondingApprovalId((current) => (current === requestId ? null : current));
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) hapticError();
       return result;
     },
     [activePendingApprovals, respondToApproval, selectedThreadShell],
@@ -311,6 +314,7 @@ export function useSelectedThreadRequests() {
             attachment.uploadEnvironmentId !== selectedThreadShell.environmentId,
         )
       ) {
+        hapticWarning();
         Alert.alert(
           "Attachments are not ready",
           "Wait for uploads to finish, or retry failed uploads.",
@@ -345,6 +349,7 @@ export function useSelectedThreadRequests() {
     setRespondingUserInputId((current) =>
       current === activePendingUserInput.requestId ? null : current,
     );
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) hapticError();
     return result;
   }, [
     activePendingUserInput,
@@ -374,6 +379,7 @@ export function useSelectedThreadRequests() {
     setRespondingUserInputId((current) =>
       current === activePendingUserInput.requestId ? null : current,
     );
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) hapticError();
     return result;
   }, [activePendingUserInput, dismissUserInput, selectedThreadShell]);
 
@@ -390,6 +396,7 @@ export function useSelectedThreadRequests() {
         input: { threadId: selectedThreadShell.id, requestId, response },
       });
       setRespondingSecretRequestId((current) => (current === requestId ? null : current));
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) hapticError();
       return result;
     },
     [respondToSecretRequest, selectedThreadShell],

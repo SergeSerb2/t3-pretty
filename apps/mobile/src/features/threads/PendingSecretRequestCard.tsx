@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { enterFade, exitFade } from "../../lib/motion";
+import { hapticTap } from "../../lib/haptics";
 import type { PendingSecretRequest } from "../../lib/threadActivity";
 import { useGlassChromeActive } from "../scenery/SceneryProvider";
 import { ComposerStackCard } from "./composer-stack-card";
@@ -29,6 +30,7 @@ export function PendingSecretRequestCard(props: PendingSecretRequestCardProps) {
   const canSubmit = trimmed.length > 0 && !isResponding;
   const submit = () => {
     if (!canSubmit) return;
+    hapticTap();
     void props.onRespond(props.request.requestId, { kind: "provided", value: trimmed });
   };
   // Opaque (or frosted over scenery) for the same reason as PendingUserInputCard:
@@ -78,7 +80,10 @@ export function PendingSecretRequestCard(props: PendingSecretRequestCardProps) {
         <Pressable
           className="items-center justify-center rounded-[14px] bg-subtle-strong px-3.5 py-3"
           disabled={isResponding}
-          onPress={() => void props.onRespond(props.request.requestId, { kind: "declined" })}
+          onPress={() => {
+            hapticTap();
+            void props.onRespond(props.request.requestId, { kind: "declined" });
+          }}
         >
           <Text className="font-t3-bold text-sm text-foreground">Decline</Text>
         </Pressable>

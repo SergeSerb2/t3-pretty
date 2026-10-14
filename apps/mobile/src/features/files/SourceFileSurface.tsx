@@ -5,12 +5,12 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Platform,
-  RefreshControl,
   ScrollView,
   Text as NativeText,
   useWindowDimensions,
   View,
 } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/AppText";
 import { LoadingStrip } from "../../components/LoadingStrip";
@@ -260,7 +260,7 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
   } | null>(null);
   const { isPullRefreshing, handlePullToRefresh } = useSourceFileRefresh(props.onRefresh);
   const refreshControl = props.onRefresh ? (
-    <RefreshControl refreshing={isPullRefreshing} onRefresh={() => void handlePullToRefresh()} />
+    <AppRefreshControl refreshing={isPullRefreshing} onRefresh={() => void handlePullToRefresh()} />
   ) : undefined;
 
   useEffect(() => {

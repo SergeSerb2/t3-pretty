@@ -2,7 +2,7 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, PullRequestAction } from "@t3tools/contracts";
-import * as Clipboard from "expo-clipboard";
+import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { Atom } from "effect/reactivity";
 import { use, useCallback, useMemo, useRef, useState } from "react";
 import { Alert, Linking, Platform, Share } from "react-native";
@@ -121,7 +121,7 @@ export function usePullRequestListActions(
         return;
       }
       if (action === "copy") {
-        void Clipboard.setStringAsync(entry.url);
+        copyTextWithHaptic(entry.url);
         return;
       }
       if (action === "provider") {

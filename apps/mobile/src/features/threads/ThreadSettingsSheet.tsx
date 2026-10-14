@@ -38,15 +38,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  Alert,
-  Platform,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  TextInput,
-  View,
-} from "react-native";
+import { Alert, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -1042,7 +1035,6 @@ function ThreadSettingsThreadSections(props: {
         <ThreadCheckpointsSection threadRef={session.checkpointsThreadRef} />
       ) : null}
     </>
-
   );
 }
 
@@ -1261,7 +1253,7 @@ function ThreadSettingsCatalog() {
       recycleItems
       refreshControl={
         session.environmentId ? (
-          <RefreshControl refreshing={isRefreshingProviders} onRefresh={refreshProviders} />
+          <AppRefreshControl refreshing={isRefreshingProviders} onRefresh={refreshProviders} />
         ) : undefined
       }
       onLoad={() => setAnimationsReady(true)}

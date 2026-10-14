@@ -3,13 +3,14 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ThreadFeedEntry } from "../../lib/threadActivity";
 
 const harness = vi.hoisted(() => ({
   appState: "active",
   tabActive: true,
   haptic: vi.fn(),
+  warning: vi.fn(),
   visit: vi.fn(),
 }));
 vi.mock("react-native", () => ({
@@ -20,21 +21,28 @@ vi.mock("react-native", () => ({
   },
 }));
 vi.mock("expo-haptics", () => ({ selectionAsync: harness.haptic }));
+vi.mock("../../lib/haptics", () => ({
+  hapticError: vi.fn(),
+  hapticSuccess: vi.fn(),
+  hapticWarning: harness.warning,
+}));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => harness.visit }));
 vi.mock("../../state/threads", () => ({ threadEnvironment: { visit: "visit" } }));
 
-import { useThreadScreenEffects } from "./use-thread-screen-effects";
+import { threadMomentHaptic, useThreadScreenEffects } from "./use-thread-screen-effects";
 import { NativeWorkspaceTabActivityContext } from "../../native/v5-workspace-context";
 
 const environmentId = EnvironmentId.make("screen-effects-environment");
 const threadId = ThreadId.make("screen-effects-thread");
-function thread(updatedAt: string, completed = false) {
-  // This hook only reads visited-watermark fields from the thread shell.
+function thread(updatedAt: string, completed = false, needsInput = false) {
+  // This hook only reads visited-watermark, run, and pending-request fields.
   return {
     id: threadId,
     updatedAt,
     lastVisitedAt: "2026-10-13T00:00:00.000Z",
     latestRun: { completedAt: completed ? updatedAt : null },
+    hasPendingApprovals: needsInput,
+    hasPendingUserInput: false,
   } as EnvironmentThreadShell;
 }
 function feed(length: number): readonly ThreadFeedEntry[] {
@@ -65,10 +73,11 @@ function Probe(props: {
   readonly textLength: number;
   readonly updatedAt: string;
   readonly completed: boolean;
+  readonly needsInput: boolean;
 }) {
   useThreadScreenEffects({
     environmentId: props.environmentId,
-    selectedThread: thread(props.updatedAt, props.completed),
+    selectedThread: thread(props.updatedAt, props.completed, props.needsInput),
     feed: feed(props.textLength),
     visible: props.visible,
   });
@@ -81,6 +90,7 @@ function render(
     readonly length?: number;
     readonly updatedAt?: string;
     readonly completed?: boolean;
+    readonly needsInput?: boolean;
   } = {},
 ) {
   act(() =>
@@ -94,6 +104,7 @@ function render(
           textLength={input.length ?? 1}
           updatedAt={input.updatedAt ?? "2026-10-13T00:00:00.000Z"}
           completed={input.completed ?? false}
+          needsInput={input.needsInput ?? false}
         />
       </NativeWorkspaceTabActivityContext>,
     ),
@@ -105,6 +116,7 @@ beforeEach(() => {
   harness.appState = "active";
   harness.tabActive = true;
   harness.haptic.mockReset().mockResolvedValue(undefined);
+  harness.warning.mockReset();
   harness.visit.mockReset().mockResolvedValue(undefined);
   root = createRoot(document.createElement("div"));
 });
@@ -193,3 +205,41 @@ it.each(["app", "tab"])(
     expect(harness.visit).toHaveBeenCalledTimes(1);
   },
 );
+
+it("asks for attention on a new request but not on one that follows an answer", () => {
+  render();
+  render({ needsInput: true });
+  expect(harness.warning).toHaveBeenCalledTimes(1);
+  render({ needsInput: false });
+  render({ needsInput: true });
+  expect(harness.warning).toHaveBeenCalledTimes(1);
+  render({ needsInput: false });
+  act(() => vi.advanceTimersByTime(2_000));
+  render({ needsInput: true });
+  expect(harness.warning).toHaveBeenCalledTimes(2);
+});
+
+describe("threadMomentHaptic", () => {
+  const moment = (status: string | null, needsInput = false, runId: string | null = "run-1") => ({
+    runId,
+    status,
+    needsInput,
+  });
+
+  it("marks the watched turn settling with its outcome", () => {
+    expect(threadMomentHaptic(moment("running"), moment("completed"))).toBe("success");
+    expect(threadMomentHaptic(moment("starting"), moment("failed"))).toBe("error");
+  });
+
+  it("stays quiet for interrupts, already settled runs, and a different run", () => {
+    expect(threadMomentHaptic(moment("running"), moment("interrupted"))).toBeNull();
+    expect(threadMomentHaptic(moment("completed"), moment("completed"))).toBeNull();
+    expect(threadMomentHaptic(moment("running"), moment("completed", false, "run-2"))).toBeNull();
+    expect(threadMomentHaptic(moment(null, false, null), moment("completed"))).toBeNull();
+  });
+
+  it("asks for attention once when the agent starts waiting on the user", () => {
+    expect(threadMomentHaptic(moment("running"), moment("waiting", true))).toBe("warning");
+    expect(threadMomentHaptic(moment("waiting", true), moment("waiting", true))).toBeNull();
+  });
+});

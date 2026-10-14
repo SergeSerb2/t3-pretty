@@ -37,6 +37,7 @@ import { RowPressable } from "../../components/RowPressable";
 import { SheetSurface } from "../../components/SheetSurface";
 import { StatusPill } from "../../components/StatusPill";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
+import { hapticError, hapticTap } from "../../lib/haptics";
 import { cn } from "../../lib/cn";
 import { nativeGlassHeaderOverlapInset } from "../../lib/layoutMetrics";
 import { relativeTime } from "../../lib/time";
@@ -243,6 +244,7 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
   const runNowDisabled = pending || automation === null || automation.activeRun !== null;
   const handleRunNow = useCallback(async () => {
     if (automation === null) return;
+    hapticTap();
     setPending(true);
     setActionError(null);
     const result = await runNow({
@@ -251,6 +253,7 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
     });
     setPending(false);
     if (AsyncResult.isFailure(result) && !isAtomCommandInterrupted(result)) {
+      hapticError();
       setActionError(
         automationCommandErrorMessage(
           squashAtomCommandFailure(result),
@@ -270,6 +273,7 @@ export function AutomationDetailScreen(props: AutomationDetailScreenProps) {
       });
       setPending(false);
       if (AsyncResult.isFailure(result) && !isAtomCommandInterrupted(result)) {
+        hapticError();
         setActionError(
           automationCommandErrorMessage(
             squashAtomCommandFailure(result),
