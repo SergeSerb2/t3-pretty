@@ -239,6 +239,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     acceptsBoundedSnapshots: canLoadHistory,
   };
   if (resumeCache?.owner === owner) resumeCache.snapshot = committed;
+  let retainForResume = true;
   const awaitingCompletion = yield* Ref.make(false);
   const applyLock = yield* Semaphore.make(1);
   // Save only completed data/cursor updates. A canceled scope must not cache
@@ -254,7 +255,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         committed.persisted &&
         matchesThreadSnapshot(committed, Option.getOrNull(current.data), sequence, current.history),
     };
-    if (resumeCache?.owner === owner) resumeCache.snapshot = committed;
+    if (resumeCache?.owner === owner)
+      resumeCache.snapshot = retainForResume ? committed : undefined;
   });
   const persistence = yield* Queue.sliding<OrchestrationV2ThreadDetailSnapshot>(1);
 
@@ -918,8 +920,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               break;
             }
             case "missing": {
-              // Definitive HTTP 404: clear any stale cache and do not open or
-              // retry a socket subscription for this attempt.
+              // A 404 can precede creation. Stop this attempt, but recheck on a
+              // later visit rather than retaining it like a thread.deleted event.
+              retainForResume = false;
               yield* setDeleted();
               return yield* Effect.never;
             }

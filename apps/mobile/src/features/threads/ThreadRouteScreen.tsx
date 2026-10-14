@@ -52,7 +52,7 @@ import {
 import { useKnownTerminalSessions } from "../../state/use-terminal-session";
 import { uuidv4 } from "../../lib/uuid";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
-import { useSelectedThreadDetailState, useThreadDetail } from "../../state/use-thread-detail";
+import { useSelectedThreadDetailState } from "../../state/use-thread-detail";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { GitActionProgressOverlay } from "./GitActionProgressOverlay";
 import {
@@ -238,15 +238,9 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
     selectedThread === null
       ? null
       : scopedThreadKey(selectedThread.environmentId, selectedThread.id);
+  // Selection defers detail until a queued creation reaches the server. A raw
+  // route subscription would bypass that guard and cache an early 404 as deleted.
   const selectedThreadDetailState = useSelectedThreadDetailState();
-  const routeThreadDetailState = useThreadDetail({
-    environmentId,
-    threadId: threadIdRaw ? ThreadId.make(threadIdRaw) : null,
-  });
-  const threadDetailState =
-    selectedThread !== null && selectedThreadKey === routeThreadKey
-      ? selectedThreadDetailState
-      : routeThreadDetailState;
   useThreadPromptLink(params, routeThreadKey);
 
   if (environmentId === null || threadIdRaw === null) {
@@ -268,9 +262,9 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
     shellStatus: routeEnvironmentShellState.status,
     shellHasError: routeEnvironmentShellState.hasError,
     hasShellSnapshot: routeEnvironmentShellState.hasSnapshot,
-    detailStatus: threadDetailState.status,
-    detailHasError: Option.isSome(threadDetailState.error),
-    hasDetail: Option.isSome(threadDetailState.data),
+    detailStatus: selectedThreadDetailState.status,
+    detailHasError: Option.isSome(selectedThreadDetailState.error),
+    hasDetail: Option.isSome(selectedThreadDetailState.data),
   });
 
   if (stillHydrating) {
@@ -1055,8 +1049,8 @@ function ThreadRouteContent(
   }
 
   // A queued creation renders as ready content: its prompt is the whole
-  // conversation until the server creates the thread. The subscription's
-  // not-found error for that window is expected, not a load failure.
+  // conversation until the server creates the thread. Selection holds back
+  // detail subscriptions until that thread exists on the server.
   const contentPresentation =
     creationState !== null
       ? { kind: "ready" as const }

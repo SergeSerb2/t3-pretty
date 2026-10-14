@@ -2268,6 +2268,38 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("reloads a thread on a later visit after an early HTTP miss", () =>
+    Effect.gen(function* () {
+      const resumeCache: NonNullable<Parameters<typeof makeEnvironmentThreadState>[1]> = {
+        snapshot: undefined,
+        owner: undefined,
+      };
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const first = yield* makeHarness({ resumeCache, httpSnapshot: { _tag: "missing" } });
+          yield* awaitThreadState(first.observed, (value) => value.status === "deleted");
+          expect(yield* Ref.get(first.subscriptionCount)).toBe(0);
+        }),
+      );
+
+      // Creation can finish after the first detail request returned 404.
+      const reopened = yield* makeHarness({
+        resumeCache,
+        httpSnapshot: {
+          _tag: "present",
+          snapshot: { snapshotSequence: 7, projection: BASE_PROJECTION },
+        },
+      });
+      const state = yield* awaitThreadState(
+        reopened.observed,
+        (value) => value.status === "deleted" || value.status === "live",
+      );
+      expect(state.status).toBe("live");
+      expect(Option.getOrThrow(state.data)).toEqual(BASE_PROJECTION);
+      expect(yield* Ref.get(reopened.loaderCalls)).toBe(1);
+    }),
+  );
+
   it.effect("falls back to the socket when the HTTP snapshot is only unavailable", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
