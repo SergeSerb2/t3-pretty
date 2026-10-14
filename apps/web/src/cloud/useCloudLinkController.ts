@@ -1,6 +1,13 @@
+import { useAtomValue } from "@effect/atom-react";
 import { useAuth } from "@clerk/react";
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
-import { EnvironmentId, AuthRelayReadScope, AuthRelayWriteScope } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  AuthRelayReadScope,
+  AuthRelayWriteScope,
+  type EnvironmentCloudLinkStateResult,
+} from "@t3tools/contracts";
+import type { RelayManagedEndpointProviderKind } from "@t3tools/contracts/relay";
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -33,6 +40,26 @@ export interface CloudLinkDesiredState {
 }
 
 /**
+ * Whether the link has a working managed tunnel. The local tunnel config can
+ * outlive a relay link that drifted to publish-only, and clients then get
+ * `endpoint_provider_not_managed`. So when relay discovery has this
+ * environment's record, it must also say managed. Older environment servers
+ * predate managedTunnelActive; for them a link always implies a tunnel. A link
+ * the relay rejected (usually after a Deregister) gives no access at all.
+ */
+function isManagedTunnelActive(
+  linkState: EnvironmentCloudLinkStateResult,
+  relayProviderKind: RelayManagedEndpointProviderKind | undefined,
+) {
+  const localManagedTunnel = linkState.managedTunnelActive ?? linkState.linked;
+  return (
+    linkState.linkRevoked !== true &&
+    localManagedTunnel &&
+    (relayProviderKind === undefined || relayProviderKind === "cloudflare_tunnel")
+  );
+}
+
+/**
  * Drives the primary environment's Surge Connect link. Surge Connect (managed
  * tunnel) and agent-activity publishing are independent capabilities backed by
  * a single relay link, so consumers express the full desired state and
@@ -59,6 +86,11 @@ export function useCloudLinkController() {
   );
   const primaryCloudLinkState = usePrimaryCloudLinkState();
   const relayDiscovery = useRelayEnvironmentDiscovery();
+  const relayEnvironments = useAtomValue(relayEnvironmentDiscovery.stateValueAtom).environments;
+  const primaryEnvironmentId = primaryCloudLinkState.target?.environmentId;
+  const relayProviderKind = primaryEnvironmentId
+    ? relayEnvironments.get(primaryEnvironmentId)?.environment.endpoint.providerKind
+    : undefined;
   const [operationError, setOperationError] = useState<string | null>(null);
 
   const reportUpdateFailure = (cause: unknown) => {
@@ -87,12 +119,17 @@ export function useCloudLinkController() {
   };
 
   const storedLinkState = primaryCloudLinkState.data;
+  const linkData = storedLinkState;
   const storedLinked = storedLinkState?.linked ?? false;
-  const linked = isCloudLinkOnConfiguredRelayForAccount(
-    storedLinkState,
-    resolveCloudPublicConfig().relayUrl,
-    isSignedIn ? userId : null,
-  );
+  // A revoked link reads as off; turning it on links again.
+  const linkRevoked = linkData?.linkRevoked ?? false;
+  const linked =
+    !linkRevoked &&
+    isCloudLinkOnConfiguredRelayForAccount(
+      storedLinkState,
+      resolveCloudPublicConfig().relayUrl,
+      isSignedIn ? userId : null,
+    );
   // Older environment servers predate the managedTunnelActive field; for them a
   // link always implies a managed tunnel, so fall back to `linked`. A link to a
   // different relay is not active for this build and must be replaced before
@@ -108,7 +145,17 @@ export function useCloudLinkController() {
     linked &&
     isRelayEnvironmentMissing(relayDiscovery, primaryCloudLinkState.target?.environmentId ?? null);
   const activeLink = linked && !relayMembershipMissing;
-  const managedTunnelActive = activeLink && storedManagedTunnelActive;
+  const managedTunnelActive =
+    activeLink &&
+    storedManagedTunnelActive &&
+    (relayProviderKind === undefined || relayProviderKind === "cloudflare_tunnel");
+  // Local state says managed but the relay holds a publish-only link. Turning
+  // Surge Connect on relinks as managed, which repairs it. Detect this drift
+  // independently of the configured-relay, account, and membership gates.
+  const managedTunnelOutOfSync =
+    linkData !== null &&
+    !isManagedTunnelActive(linkData, relayProviderKind) &&
+    isManagedTunnelActive(linkData, undefined);
   const publishAgentActivity = activeLink && storedPublishAgentActivity;
   const holdWebhooksWhileOffline =
     activeLink && (storedLinkState?.holdWebhooksWhileOffline ?? false);
@@ -183,7 +230,7 @@ export function useCloudLinkController() {
         resolveCloudPublicConfig().relayUrl,
         isSignedIn ? userId : null,
       );
-      const currentManagedTunnel = currentLinkState.managedTunnelActive ?? currentLinkState.linked;
+      const currentManagedTunnel = isManagedTunnelActive(currentLinkState, relayProviderKind);
       const currentRelayMembershipMissing =
         currentLinked && isRelayEnvironmentMissing(relayDiscovery, target.environmentId);
       // Forks and self-hosted builds can change relay deployments while a host
@@ -203,6 +250,7 @@ export function useCloudLinkController() {
       if (
         !currentLinked ||
         currentRelayMembershipMissing ||
+        currentLinkState.linkRevoked === true ||
         currentManagedTunnel !== desired.managedTunnel
       ) {
         const linkResult = await linkPrimaryEnvironment({
@@ -255,7 +303,9 @@ export function useCloudLinkController() {
     storedPublishAgentActivity,
     linked,
     relayMembershipMissing,
+    linkRevoked,
     managedTunnelActive,
+    managedTunnelOutOfSync,
     publishAgentActivity,
     holdWebhooksWhileOffline,
     operationError,
