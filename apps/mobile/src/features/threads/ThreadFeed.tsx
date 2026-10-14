@@ -42,6 +42,7 @@ import {
 } from "@t3tools/shared/composerContextReferences";
 import { ComposerContextSheet } from "../../components/ComposerContextSheet";
 import { writeComposerContextClipboard } from "../../lib/composerContextClipboard";
+import { hapticThud } from "../../lib/haptics";
 import {
   codexArtifactTemplatePresentationLabel,
   type CodexArtifactTemplate,
@@ -726,7 +727,10 @@ function MessageAttachmentFile(props: {
               : "min-w-0 flex-row items-center gap-3 rounded-xl border border-border bg-card p-3 active:bg-subtle"
           }
           style={glass ? GLASS_FEED_CARD_BORDER : undefined}
-          onLongPress={() => shareFile(sourceIdentifier)}
+          onLongPress={() => {
+            hapticThud();
+            shareFile(sourceIdentifier);
+          }}
           onPress={() =>
             isPdf
               ? props.onPressPreview({

@@ -15,12 +15,12 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
@@ -806,7 +806,7 @@ export function PullRequestsScreen(props: {
           </>
         }
         refreshControl={
-          <RefreshControl
+          <AppRefreshControl
             onRefresh={props.onRefresh}
             refreshing={props.refreshing && !props.firstLoad}
             tintColorClassName="accent-icon"

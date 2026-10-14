@@ -7,7 +7,8 @@ import type { MenuAction } from "@react-native-menu/menu";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
 import { type ReactNode, useRef, useState } from "react";
-import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 
 import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { SymbolView } from "../../components/AppSymbol";
@@ -135,7 +136,7 @@ export function T3ConnectProfilePage() {
       contentContainerClassName="pb-8"
       contentInsetAdjustmentBehavior="automatic"
       refreshControl={
-        <RefreshControl
+        <AppRefreshControl
           refreshing={environmentsState.isPending && environmentsState.data !== null}
           onRefresh={environmentsState.refresh}
         />

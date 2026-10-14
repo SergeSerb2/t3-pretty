@@ -27,7 +27,8 @@ import {
   makeWindow,
 } from "@t3tools/shared/usageFormat";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, Platform, Pressable, RefreshControl, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, View } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 import Animated, {
   FadeIn,
   ReduceMotion,
@@ -277,7 +278,7 @@ export function UsageRouteScreen() {
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         refreshControl={
           showingLimits || canReadDiagnostics ? (
-            <RefreshControl
+            <AppRefreshControl
               refreshing={showingLimits ? limits.refreshing : refreshingUsage}
               onRefresh={showingLimits ? () => void limits.refresh() : refreshWindow}
             />

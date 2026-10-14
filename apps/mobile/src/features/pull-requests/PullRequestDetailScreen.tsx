@@ -15,11 +15,11 @@ import {
   Alert,
   Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   View,
 } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { MenuAction } from "@react-native-menu/menu";
@@ -32,6 +32,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { GlassBackdrop } from "../../components/GlassBackdrop";
 import { RowPressable } from "../../components/RowPressable";
 import { SheetSurface } from "../../components/SheetSurface";
+import { hapticError, hapticSuccess } from "../../lib/haptics";
 import { cn } from "../../lib/cn";
 import { nativeGlassHeaderOverlapInset } from "../../lib/layoutMetrics";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
@@ -224,12 +225,14 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
           input: { ...reference, action, ...(mergeMethod ? { mergeMethod } : {}) },
         });
         if (AsyncResult.isFailure(result)) {
+          hapticError();
           Alert.alert(
             ACTION_FAILURE_LABELS[action],
             readableFailure(squashAtomCommandFailure(result), ACTION_FAILURE_HINTS[action]),
           );
           return;
         }
+        hapticSuccess();
         Alert.alert(ACTION_SUCCESS_LABELS[action]);
         await refresh("all");
       } finally {
@@ -667,7 +670,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
               contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
               contentInsetAdjustmentBehavior="automatic"
               refreshControl={
-                <RefreshControl
+                <AppRefreshControl
                   refreshing={detailQuery.isPending && detail !== null}
                   onRefresh={() => void refresh()}
                   tintColorClassName="accent-icon"

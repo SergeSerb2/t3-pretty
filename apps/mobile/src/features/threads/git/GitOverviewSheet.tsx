@@ -19,7 +19,8 @@ import {
 } from "@react-navigation/native";
 import { SymbolView } from "../../../components/AppSymbol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
+import { AppRefreshControl } from "../../../components/AppRefreshControl";
 
 import { Screen, ScreenStack, ScreenStackHeaderConfig } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -314,7 +315,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
       }}
       refreshControl={
         Platform.OS === "ios" || isInspector ? (
-          <RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />
+          <AppRefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />
         ) : undefined
       }
     >

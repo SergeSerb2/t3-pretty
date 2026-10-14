@@ -3,6 +3,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, type ColorValue } from "react-native";
 
 import { tryCopyTextWithHaptic } from "../lib/copyTextWithHaptic";
+import { hapticTap } from "../lib/haptics";
 
 const COPY_FEEDBACK_DURATION_MS = 1200;
 
@@ -42,8 +43,10 @@ export const CopyTextButton = memo(function CopyTextButton(props: {
       onLongPress={props.onLongPress}
       onPress={async () => {
         try {
-          if (props.onCopy) await props.onCopy();
-          else if (!(await tryCopyTextWithHaptic(props.text))) {
+          if (props.onCopy) {
+            await props.onCopy();
+            hapticTap();
+          } else if (!(await tryCopyTextWithHaptic(props.text))) {
             // A refused clipboard write is the common failure, and silence reads as success.
             Alert.alert("Could not copy", "Try again.");
             return;

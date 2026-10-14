@@ -24,6 +24,7 @@ import { AppState, Platform } from "react-native";
 import { AsyncResult } from "effect/reactivity";
 import { useSharedValue } from "react-native-reanimated";
 
+import { hapticError, hapticSuccess, hapticTap } from "../../lib/haptics";
 import {
   microphoneOrder,
   preferredMicrophoneInput,
@@ -35,6 +36,7 @@ import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";
 import {
   VOICE_RECORDING_LIMIT_SECONDS,
   voiceInputBlocksSubmission,
+  type VoiceInputPhase,
   type VoiceInputState,
 } from "@t3tools/client-runtime/voice-input";
 import { createLazyVoiceRecorder, type LazyVoiceRecorder } from "./lazyVoiceRecorder";
@@ -83,6 +85,18 @@ async function configureVoiceRecordingAudio(): Promise<void> {
     }
     throw error;
   }
+}
+
+/**
+ * One haptic per dictation milestone. iOS mutes haptics while the recording
+ * session is active, so the start tap lands while preparing and the stop is
+ * confirmed when the transcript lands.
+ */
+function playVoiceInputHaptic(previous: VoiceInputPhase, next: VoiceInputPhase) {
+  if (previous === next) return;
+  if (next === "preparing") hapticTap();
+  else if (next === "error") hapticError();
+  else if (previous === "transcribing" && next === "idle") hapticSuccess();
 }
 
 const VoiceInputContext = createContext<ReturnType<typeof useVoiceInputRuntime> | null>(null);
@@ -155,6 +169,7 @@ function useVoiceInputRuntime() {
       },
     });
     recorderRef.current = recorder;
+    let lastPhase: VoiceInputPhase = "idle";
     sessionRef.current = new VoiceInputSession({
       recorder,
       getTranscriber: getLocalVoiceTranscriber,
@@ -165,12 +180,15 @@ function useVoiceInputRuntime() {
       configureRecording: configureVoiceRecordingAudio,
       releaseRecording: releaseVoiceRecordingAudio,
       deleteRecording: (uri) => new File(uri).delete(),
-      onStateChange: (nextState) =>
+      onStateChange: (nextState) => {
+        playVoiceInputHaptic(lastPhase, nextState.phase);
+        lastPhase = nextState.phase;
         setState({
           state: nextState,
           ownerKey: sessionRef.current?.ownerKey ?? null,
           label: sessionRef.current?.label ?? null,
-        }),
+        });
+      },
     });
   }
 

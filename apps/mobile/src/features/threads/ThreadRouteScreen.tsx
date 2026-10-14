@@ -1,6 +1,7 @@
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
+import { hapticThud } from "../../lib/haptics";
 import { useWorktreeSetup } from "./use-worktree-setup";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import { ScreenHeader } from "../../components/ScreenHeader";
@@ -684,6 +685,7 @@ function ThreadRouteContent(
     ) {
       return;
     }
+    hapticThud();
     return interruptThreadTurn({
       environmentId: selectedThread.environmentId,
       input: {
@@ -962,6 +964,7 @@ function ThreadRouteContent(
   const cancelWorktreeSetup = useAtomCommand(vcsEnvironment.cancelWorktreeSetup);
   const handleCancelWorktreeSetup = useCallback(() => {
     if (!selectedThread) return;
+    hapticThud();
     void cancelWorktreeSetup({
       environmentId: selectedThread.environmentId,
       input: { threadId: selectedThread.id },

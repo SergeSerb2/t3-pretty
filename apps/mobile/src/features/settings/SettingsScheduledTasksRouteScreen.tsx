@@ -54,6 +54,13 @@ import { webhookAddress } from "@t3tools/client-runtime/webhook-address";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { usePreparedConnection } from "../../state/session";
 import { buildModelOptions } from "../../lib/modelOptions";
+import {
+  hapticError,
+  hapticSelection,
+  hapticSuccess,
+  hapticTap,
+  hapticThud,
+} from "../../lib/haptics";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useProjects, useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
@@ -609,6 +616,7 @@ function TaskForm({
 
   const failure = (title: string, result: AtomCommandResult<unknown, unknown>) => {
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      hapticError();
       Alert.alert(title, String(squashAtomCommandFailure(result)));
     }
   };
@@ -692,6 +700,7 @@ function TaskForm({
       failure("Could not save task", result);
       return;
     }
+    hapticSuccess();
     onSaved();
   };
 
@@ -1161,12 +1170,16 @@ function EnvironmentTasks({
   });
   const failure = (title: string, result: AtomCommandResult<unknown, unknown>) => {
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      hapticError();
       Alert.alert(title, String(squashAtomCommandFailure(result)));
     }
   };
 
   const act = async (task: ScheduledTask, action: "run" | "toggle" | "delete") => {
     if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return;
+    if (action === "delete") hapticThud();
+    else if (action === "toggle") hapticSelection();
+    else hapticTap();
     const result =
       action === "run"
         ? await runNow({ environmentId, input: { id: task.id } })

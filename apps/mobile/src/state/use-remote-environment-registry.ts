@@ -10,6 +10,7 @@ import { useConnectionController } from "../features/connection/useConnectionCon
 import { environmentPresentations } from "./presentation";
 import { useWorkspaceConnectionState, useWorkspaceEnvironments } from "./workspace";
 import type { SavedRemoteConnection } from "../lib/connection";
+import { hapticTap, hapticThud } from "../lib/haptics";
 import { appAtomRegistry } from "./atom-registry";
 import type { ConnectedEnvironmentSummary, EnvironmentRuntimeState } from "./remote-runtime-types";
 import { environmentSession } from "./session";
@@ -142,7 +143,10 @@ export function useRemoteConnections() {
   const onCancelConnectPress = cancelPairingConnection;
 
   const onReconnectEnvironment = useCallback(
-    (environmentId: EnvironmentId) => controller.retryEnvironment(environmentId),
+    (environmentId: EnvironmentId) => {
+      hapticTap();
+      return controller.retryEnvironment(environmentId);
+    },
     [controller],
   );
   const onSetEnvironmentEnabled = useCallback(
@@ -170,6 +174,7 @@ export function useRemoteConnections() {
         text: "Remove",
         style: "destructive",
         onPress: () => {
+          hapticThud();
           void controller.removeEnvironment(environmentId);
         },
       } as const;

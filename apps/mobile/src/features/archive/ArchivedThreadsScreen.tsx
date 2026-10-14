@@ -14,14 +14,8 @@ import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { SymbolView } from "../../components/AppSymbol";
 import { useCallback, useMemo, useRef, type ComponentProps } from "react";
-import {
-  Platform,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { AppRefreshControl } from "../../components/AppRefreshControl";
 import { GestureDetector, useNativeGesture } from "react-native-gesture-handler";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
@@ -498,7 +492,7 @@ export function ArchivedThreadsScreen(props: {
             }
             onScrollBeginDrag={() => openSwipeableRef.current?.close()}
             refreshControl={
-              <RefreshControl
+              <AppRefreshControl
                 onRefresh={props.onRefresh}
                 refreshing={props.isLoading && !isInitialLoad}
                 tintColorClassName={String("accent-icon")}

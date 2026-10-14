@@ -18,6 +18,7 @@ import {
 import { resolveAutomatedReviewPresentation } from "@t3tools/shared/sourceControl";
 import { useNavigation } from "@react-navigation/native";
 import { Alert } from "react-native";
+import { hapticTap } from "../../lib/haptics";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { presentActionListMenu } from "../../components/AppMenuHost";
 import { useCallback, useMemo, useRef } from "react";
@@ -299,12 +300,21 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
 
       await onRunAction(input);
     },
-    [canWriteSourceControl, environmentId, gitStatus, isDefaultRef, onRunAction, navigation, threadId],
+    [
+      canWriteSourceControl,
+      environmentId,
+      gitStatus,
+      isDefaultRef,
+      onRunAction,
+      navigation,
+      threadId,
+    ],
   );
 
   const runQuickAction = useCallback(async () => {
     if (quickAction.disabled || actionPendingRef.current) return;
     actionPendingRef.current = true;
+    hapticTap();
     try {
       if (quickAction.kind === "open_pr") {
         await openExistingPr();
