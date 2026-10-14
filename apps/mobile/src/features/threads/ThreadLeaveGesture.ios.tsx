@@ -38,7 +38,6 @@ export function ThreadLeaveGestureScrollView(props: ComponentProps<typeof Scroll
   const scrollGesture = useNativeGesture({
     enabled: leaveGesture !== null,
     block: leaveGesture ?? undefined,
-    disallowInterruption: true,
   });
   if (leaveGesture === null) return <ScrollView {...props} />;
   return (
