@@ -15,8 +15,30 @@ describe("shouldLeaveThreadOnSwipe", () => {
     ["a cancelled long swipe", 120, 8, 900, true, false],
     ["a cancelled flick", 30, 4, 900, true, false],
   ])("handles %s", (_, translationX, translationY, velocityX, canceled, expected) => {
-    expect(shouldLeaveThreadOnSwipe({ canceled, translationX, translationY, velocityX })).toBe(
+    expect(
+      shouldLeaveThreadOnSwipe({ canceled, translationX, translationY, velocityX }, "release"),
+    ).toBe(expected);
+  });
+
+  it.each([
+    ["a slow deliberate drag at the commit point", 80, 8, 0, true],
+    ["a fast deliberate drag", 90, 8, 900, true],
+    ["a drag below the commit point", 79, 8, 100, false],
+    ["a short flick that has not finished", 30, 4, 900, false],
+    ["a vertical drag", 30, 120, 900, false],
+    ["a diagonal drag", 90, 60, 900, false],
+    ["a reversed drag", 90, 8, -300, false],
+    ["a left drag", -90, 8, -900, false],
+  ])("commits %s before release", (_, translationX, translationY, velocityX, expected) => {
+    expect(shouldLeaveThreadOnSwipe({ translationX, translationY, velocityX }, "drag")).toBe(
       expected,
     );
+  });
+
+  it("lets a short swipe cancel before it crosses the commit point", () => {
+    const swipe = { translationX: 30, translationY: 4, velocityX: 900 };
+    expect(shouldLeaveThreadOnSwipe(swipe, "drag")).toBe(false);
+    expect(shouldLeaveThreadOnSwipe({ ...swipe, canceled: true }, "release")).toBe(false);
+    expect(shouldLeaveThreadOnSwipe({ ...swipe, canceled: false }, "release")).toBe(true);
   });
 });
