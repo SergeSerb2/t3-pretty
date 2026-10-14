@@ -70,19 +70,10 @@ export function ThreadLeaveGesture(props: { readonly children: ReactNode }) {
     returnToList();
   }, [layout.usesSplitView, navigation, returnToList]);
 
-  const commitSwipe = () => {
-    "worklet";
-    if (committed.get()) return;
-    committed.set(true);
-    progress.set(withSpring(1, MOTION_PRESS_SPRING));
-    // Start the native pop now; never wait for the feedback animation to finish.
-    scheduleOnRN(leaveThread);
-  };
   const updateSwipe = (event: PanGestureActiveEvent) => {
     "worklet";
     if (committed.get()) return;
     progress.set(Math.max(0, Math.min(event.translationX / THREAD_LEAVE_SWIPE_DISTANCE, 1)));
-    if (shouldLeaveThreadOnSwipe(event, "drag")) commitSwipe();
   };
   const gesture = usePanGesture({
     enabled,
@@ -95,8 +86,14 @@ export function ThreadLeaveGesture(props: { readonly children: ReactNode }) {
     onDeactivate: (event) => {
       "worklet";
       if (committed.get()) return;
-      if (shouldLeaveThreadOnSwipe(event, "release")) commitSwipe();
-      else progress.set(withSpring(0, MOTION_PRESS_SPRING));
+      if (!shouldLeaveThreadOnSwipe(event)) {
+        progress.set(withSpring(0, MOTION_PRESS_SPRING));
+        return;
+      }
+      committed.set(true);
+      progress.set(withSpring(1, MOTION_PRESS_SPRING));
+      // Commit on release so a held drag can cancel or reverse. Do not wait for the spring.
+      scheduleOnRN(leaveThread);
     },
   });
 
