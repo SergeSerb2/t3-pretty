@@ -76,6 +76,8 @@ interface EnvironmentQueryAtomOptions<Input, A, E, R> extends Omit<
     readonly environmentId: EnvironmentIdType;
     readonly input: Input;
   }) => Atom.Atom<unknown> | undefined;
+  /** A value that can no longer change. It stops the interval and `refreshTrigger` re-reads. */
+  readonly isFinal?: (value: A) => boolean;
 }
 
 interface EnvironmentSubscriptionAtomOptions<Input, A, E, R> {
@@ -596,17 +598,17 @@ const FOREGROUND_REVALIDATION_SETTLE_MS = 3_500;
  * refreshes on its next read.
  */
 const refreshOnSignalsWhileRead =
-  (
+  <A>(
     signals: ReadonlyArray<{
       readonly atom: Atom.Atom<unknown>;
       readonly onChange?: () => void;
+      readonly refreshWhenFinal?: boolean;
     }>,
     staleTimeMs: number,
     readUnderAtom: Atom.Atom<{ signals: ReadonlyArray<unknown> | undefined }>,
+    isFinal: (result: AsyncResult.AsyncResult<A, unknown>) => boolean,
   ) =>
-  <A, E>(
-    self: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
-  ): Atom.Atom<AsyncResult.AsyncResult<A, E>> => {
+  <E>(self: Atom.Atom<AsyncResult.AsyncResult<A, E>>): Atom.Atom<AsyncResult.AsyncResult<A, E>> => {
     return Atom.transform(
       self,
       (get) => {
@@ -615,15 +617,19 @@ const refreshOnSignalsWhileRead =
         const firstRead = Option.isNone(get.self());
         const previous = readUnder.signals;
         let changed = false;
+        let shouldRefresh = false;
         if (previous !== undefined) {
           for (const [index, signal] of signals.entries()) {
             if (Object.is(previous[index], current[index])) continue;
             changed = true;
-            signal.onChange?.();
+            if (signal.refreshWhenFinal || !isFinal(get.once(self))) {
+              shouldRefresh = true;
+              signal.onChange?.();
+            }
           }
         }
         readUnder.signals = current;
-        if (changed) get.refresh(self);
+        if (shouldRefresh) get.refresh(self);
         // Keep a dependency edge so sweeping this node also releases the
         // source's spent idle TTL, rather than starting another TTL afterward.
         const result = get(self);
@@ -653,6 +659,27 @@ const refreshOnSignalsWhileRead =
       { initialValueTarget: self },
     );
   };
+
+/**
+ * `Atom.withRefresh`, except the timer stops once the value is final.
+ * A signal target invalidates the read boundary instead of polling an idle cached source.
+ */
+const refreshEveryUntilFinal =
+  <V>(intervalMs: number, isFinal: (value: V) => boolean, refreshSignal?: Atom.Atom<unknown>) =>
+  <A extends V>(self: Atom.Atom<A>): Atom.Atom<A> =>
+    Atom.transform(
+      self,
+      (get) => {
+        const value = get(self);
+        if (!isFinal(value)) {
+          // @effect-diagnostics-next-line globalTimers:off - Mirrors `Atom.withRefresh`, outside an Effect runtime.
+          const handle = setTimeout(() => get.refresh(refreshSignal ?? self), intervalMs);
+          get.addFinalizer(() => clearTimeout(handle));
+        }
+        return value;
+      },
+      { initialValueTarget: self },
+    );
 
 export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, ER>,
@@ -868,26 +895,35 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         }),
         Atom.setIdleTTL(idleTtlMs),
       );
+    const isFinal = (result: AsyncResult.AsyncResult<A, unknown>) =>
+      options.isFinal !== undefined && Option.exists(AsyncResult.value(result), options.isFinal);
     const intervalSignal =
       options.refreshIntervalMs === undefined
         ? undefined
         : Atom.make((get) => Option.getOrElse(get.self<number>(), () => 0) + 1).pipe(
-            Atom.withRefresh(options.refreshIntervalMs),
             Atom.setIdleTTL(idleTtlMs),
           );
     const refreshTrigger = options.refreshTrigger?.(target);
+    const intervalQuery =
+      options.refreshIntervalMs === undefined
+        ? queryAtom
+        : queryAtom.pipe(
+            refreshEveryUntilFinal(options.refreshIntervalMs, isFinal, intervalSignal),
+          );
     // Keep all invalidation signals at the outer read boundary. A subscription
     // held by SWR for cached data must not refetch an unused query on reconnect.
-    const labeled = queryAtom.pipe(
+    const labeled = intervalQuery.pipe(
       refreshOnSignalsWhileRead(
         [
-          { atom: connectionAtom(target.environmentId) },
+          { atom: connectionAtom(target.environmentId), refreshWhenFinal: true },
           ...(intervalSignal === undefined ? [] : [{ atom: intervalSignal }]),
           ...(refreshTrigger === undefined
             ? []
             : [
                 {
                   atom: refreshTrigger,
+                  // Explicit invalidation must still be able to replace final data.
+                  refreshWhenFinal: true,
                   onChange: () => {
                     skipStaleTime = true;
                   },
@@ -896,6 +932,7 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         ],
         staleTimeMs,
         queryStateAtom,
+        isFinal,
       ),
       Atom.setIdleTTL(idleTtlMs),
       Atom.withLabel(`${options.label}:${key}`),
@@ -1037,6 +1074,7 @@ export function createEnvironmentRpcQueryAtomFamily<
       readonly environmentId: EnvironmentIdType;
       readonly input: EnvironmentRpcInput<TTag>;
     }) => Atom.Atom<unknown> | undefined;
+    readonly isFinal?: (value: EnvironmentRpcSuccess<TTag>) => boolean;
   },
 ) {
   return createEnvironmentQueryAtomFamily(runtime, {
@@ -1048,6 +1086,7 @@ export function createEnvironmentRpcQueryAtomFamily<
       ? {}
       : { refreshIntervalMs: options.refreshIntervalMs }),
     ...(options.refreshTrigger === undefined ? {} : { refreshTrigger: options.refreshTrigger }),
+    ...(options.isFinal === undefined ? {} : { isFinal: options.isFinal }),
     execute: (
       input: EnvironmentRpcInput<TTag>,
       emit: (value: EnvironmentRpcSuccess<TTag>) => Effect.Effect<void>,
