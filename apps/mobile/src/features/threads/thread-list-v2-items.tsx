@@ -1752,7 +1752,17 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     );
 
   if (!canOperateThread) {
-    return glassCard ? <CardEntrance>{rowContent(() => {})}</CardEntrance> : rowContent(() => {});
+    // Read-only rows skip swipe actions, but still need the frame that clips
+    // the fill and keeps standalone cards and grouped shelves inset.
+    const row = (
+      <View>
+        <View style={rowAppearance.swipeContainerStyle}>{rowContent(() => {})}</View>
+        {rowAppearance.outlineStyle ? (
+          <View pointerEvents="none" style={rowAppearance.outlineStyle} />
+        ) : null}
+      </View>
+    );
+    return glassCard ? <CardEntrance>{row}</CardEntrance> : row;
   }
 
   const row = (
