@@ -8,6 +8,7 @@ import {
   makeArchivedThreadsEnvironmentKey,
   parseArchivedThreadsEnvironmentKey,
 } from "./archivedThreads.ts";
+import { v2Now, v2ShellSnapshot, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
 
 it("round-trips environment keys in sorted order", () => {
   const envA = EnvironmentId.make("env-a");
@@ -44,6 +45,7 @@ it("ignores malformed environment keys", () => {
 it("does not expose an archived snapshot failure message", () => {
   const environmentId = EnvironmentId.make("env-sensitive");
   const snapshotsAtom = createArchivedThreadSnapshotsAtomFamily<Error>({
+    isConnectedAtom: () => Atom.make(true),
     getSnapshotAtom: () =>
       Atom.make(
         AsyncResult.failure<OrchestrationV2ArchivedShellSnapshot, Error>(
@@ -61,4 +63,40 @@ it("does not expose an archived snapshot failure message", () => {
   });
 
   registry.dispose();
+});
+
+it("hides cached archives on disconnect and restores them on reconnect", () => {
+  const local = EnvironmentId.make("local");
+  const remote = EnvironmentId.make("remote");
+  const connectedAtom = Atom.family((_id: EnvironmentId) => Atom.make(true));
+  const snapshot = {
+    ...v2ShellSnapshot,
+    threads: [{ ...v2ThreadShell, archivedAt: v2Now }],
+  };
+  const snapshotAtom = Atom.family((_id: EnvironmentId) =>
+    Atom.make(AsyncResult.success(snapshot)),
+  );
+  const snapshotsAtom = createArchivedThreadSnapshotsAtomFamily({
+    isConnectedAtom: connectedAtom,
+    getSnapshotAtom: snapshotAtom,
+    labelPrefix: "test:archived-thread-snapshots",
+  })(makeArchivedThreadsEnvironmentKey([local, remote]));
+  const registry = AtomRegistry.make();
+  const dispose = registry.mount(snapshotsAtom);
+  try {
+    const before = registry.get(snapshotsAtom);
+    expect(before.snapshots.map((entry) => entry.environmentId)).toEqual([local, remote]);
+    registry.set(connectedAtom(remote), false);
+    expect(registry.get(snapshotsAtom)).toEqual({
+      snapshots: [{ environmentId: local, snapshot }],
+      error: null,
+      isLoading: false,
+    });
+    expect(registry.get(snapshotAtom(remote)).value).toBe(snapshot);
+    registry.set(connectedAtom(remote), true);
+    expect(registry.get(snapshotsAtom)).toEqual(before);
+  } finally {
+    dispose();
+    registry.dispose();
+  }
 });
