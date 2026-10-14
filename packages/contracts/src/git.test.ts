@@ -11,6 +11,7 @@ import {
   GitResolvePullRequestResult,
   VcsListRefsResult,
   VcsStatusResult,
+  VcsStatusLocalResult,
 } from "./git.ts";
 
 const decodeCreateWorktreeInput = Schema.decodeUnknownSync(VcsCreateWorktreeInput);
@@ -25,6 +26,7 @@ const decodeRunStackedActionResult = Schema.decodeUnknownSync(GitRunStackedActio
 const decodeResolvePullRequestResult = Schema.decodeUnknownSync(GitResolvePullRequestResult);
 const decodeVcsListRefsResult = Schema.decodeUnknownSync(VcsListRefsResult);
 const decodeVcsStatusResult = Schema.decodeUnknownSync(VcsStatusResult);
+const decodeVcsStatusLocalResult = Schema.decodeUnknownSync(VcsStatusLocalResult);
 
 function vcsStatusWithReview(automatedReview?: unknown) {
   return {
@@ -166,6 +168,70 @@ describe("GitRunStackedActionInput", () => {
 
     expect(parsed.actionId).toBe("action-1");
     expect(parsed.action).toBe("create_pr");
+  });
+
+  it("preserves leading and trailing whitespace in file paths", () => {
+    const parsed = decodeRunStackedActionInput({
+      actionId: "action-1",
+      cwd: "/repo",
+      action: "commit",
+      filePaths: [" leading.txt", "trailing.txt "],
+    });
+
+    expect(parsed.filePaths).toEqual([" leading.txt", "trailing.txt "]);
+  });
+
+  it("rejects an empty file path", () => {
+    expect(() =>
+      decodeRunStackedActionInput({
+        actionId: "action-1",
+        cwd: "/repo",
+        action: "commit",
+        filePaths: [""],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("VcsStatusLocalResult", () => {
+  it("preserves leading and trailing whitespace in working-tree paths", () => {
+    const parsed = decodeVcsStatusLocalResult({
+      isRepo: true,
+      hasPrimaryRemote: true,
+      isDefaultRef: false,
+      refName: "main",
+      hasWorkingTreeChanges: true,
+      workingTree: {
+        files: [
+          { path: " leading.txt", insertions: 1, deletions: 0 },
+          { path: "trailing.txt ", insertions: 0, deletions: 1 },
+        ],
+        insertions: 1,
+        deletions: 1,
+      },
+    });
+
+    expect(parsed.workingTree.files.map((file) => file.path)).toEqual([
+      " leading.txt",
+      "trailing.txt ",
+    ]);
+  });
+
+  it("rejects an empty working-tree path", () => {
+    expect(() =>
+      decodeVcsStatusLocalResult({
+        isRepo: true,
+        hasPrimaryRemote: true,
+        isDefaultRef: false,
+        refName: "main",
+        hasWorkingTreeChanges: true,
+        workingTree: {
+          files: [{ path: "", insertions: 0, deletions: 0 }],
+          insertions: 0,
+          deletions: 0,
+        },
+      }),
+    ).toThrow();
   });
 });
 
