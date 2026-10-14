@@ -10,8 +10,9 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import { isProviderNativeSubagentThread } from "@t3tools/contracts";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
+import type { SupervisorConnectionState } from "../connection/model.ts";
 import { isAutomationRunThread } from "./automations.ts";
 import type { EnvironmentThreadShell } from "./models.ts";
 import { presentThreadShell } from "./models.ts";
@@ -47,8 +48,11 @@ const isChildRunLive = (
       thread.status === "running" ||
       thread.status === "waiting";
 
-export function createEnvironmentThreadShellAtoms(input: {
+export function createEnvironmentThreadShellAtoms<E>(input: {
   readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
+  readonly stateAtom: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<AsyncResult.AsyncResult<SupervisorConnectionState, E>>;
   readonly snapshotAtom: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<OrchestrationV2ShellSnapshot | null>;
@@ -83,12 +87,22 @@ export function createEnvironmentThreadShellAtoms(input: {
     ).pipe(Atom.withLabel(`environment-threads:${environmentId}`)),
   );
 
+  // Keep cached snapshots for open threads and reconnects, but only list threads
+  // from environments the client can currently reach.
+  const environmentConnectedAtom = Atom.family((environmentId: EnvironmentId) =>
+    Atom.make((get) => {
+      const result = get(input.stateAtom(environmentId));
+      return AsyncResult.isSuccess(result) && result.value.phase === "connected";
+    }).pipe(Atom.withLabel(`environment-threads-connected:${environmentId}`)),
+  );
+
   // Automation run threads are hidden from every thread list once, here, so no
   // surface has to remember to filter. Point reads keep resolving them: the
   // automation page opens a run thread by id.
   const environmentThreadsAtom = Atom.family((environmentId: EnvironmentId) => {
     let previous: ReadonlyArray<OrchestrationV2ThreadShell> = EMPTY_THREADS;
     return Atom.make((get): ReadonlyArray<OrchestrationV2ThreadShell> => {
+      if (!get(environmentConnectedAtom(environmentId))) return EMPTY_THREADS;
       const threads = get(environmentAllThreadsAtom(environmentId));
       const automations =
         input.automationIndexAtom === undefined
@@ -295,6 +309,7 @@ export function createEnvironmentThreadShellAtoms(input: {
   const allThreadShellsAtom = Atom.make((get) => {
     const next: EnvironmentThreadShell[] = [];
     for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
+      if (!get(environmentConnectedAtom(environmentId))) continue;
       for (const thread of get(environmentAllThreadsAtom(environmentId))) {
         next.push(scopedThread(environmentId, thread));
       }
@@ -322,6 +337,7 @@ export function createEnvironmentThreadShellAtoms(input: {
   }).pipe(Atom.withLabel("environment-navigation-thread-shells"));
 
   return {
+    environmentConnectedAtom,
     environmentAllThreadsAtom,
     environmentThreadsAtom,
     environmentThreadIndexAtom,

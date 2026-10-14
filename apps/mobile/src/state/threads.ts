@@ -13,8 +13,11 @@ import { AsyncResult, Atom } from "effect/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
+import { scopedThreadKey } from "../lib/scopedEntities";
 import { automationEnvironment } from "./automations";
+import { pendingThreadCreationOutcomesAtom } from "./pending-thread-creation";
 import { environmentSnapshotAtom } from "./shell";
+import { threadOutboxManager } from "./thread-outbox";
 
 // Keep back-navigation warm without retaining every opened thread's WebSocket
 // stream and full event history for the shared five-minute desktop TTL.
@@ -24,19 +27,49 @@ export const threadEnvironment = createThreadEnvironmentAtoms(
   connectionAtomRuntime,
   environmentSnapshotAtom,
 );
-export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
-export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
-  environmentThreads.stateAtom,
-  { idleTtlMs: MOBILE_THREAD_STATE_IDLE_TTL_MS },
-);
+const liveEnvironmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
 export const environmentThreadShells = createEnvironmentThreadShellAtoms({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
+  stateAtom: environmentCatalog.stateAtom,
   snapshotAtom: threadEnvironment.snapshotAtom,
   automationIndexAtom: automationEnvironment.automationIndexAtom,
 });
 
-const EMPTY_THREAD_STATE_ATOM = Atom.make(AsyncResult.success(EMPTY_ENVIRONMENT_THREAD_STATE)).pipe(
+const EMPTY_THREAD_STATE = AsyncResult.success(EMPTY_ENVIRONMENT_THREAD_STATE);
+const EMPTY_THREAD_STATE_ATOM = Atom.make(EMPTY_THREAD_STATE).pipe(
   Atom.withLabel("mobile-environment-thread:empty"),
+);
+
+const threadStateAtomFamily = Atom.family((environmentId: EnvironmentId) =>
+  Atom.family((threadId: ThreadId) =>
+    Atom.make((get) => {
+      const key = scopedThreadKey(environmentId, threadId);
+      const queued = get(threadOutboxManager.queuedMessagesByThreadKeyAtom)[key];
+      const outcome = get(pendingThreadCreationOutcomesAtom)[key];
+      // Every detail selector can mount the stream, including model, queue,
+      // and agent badges. Hold all of them until this local creation exists.
+      if (
+        outcome?.kind !== "delivered" &&
+        (outcome?.kind === "failed" || queued?.some((message) => message.creation !== undefined)) &&
+        get(environmentThreadShells.threadShellAtom({ environmentId, threadId })) === null
+      ) {
+        return EMPTY_THREAD_STATE;
+      }
+      return get(liveEnvironmentThreads.stateAtom(environmentId, threadId));
+    }).pipe(
+      Atom.setIdleTTL(0),
+      Atom.withLabel(`mobile-environment-thread:${environmentId}:${threadId}`),
+    ),
+  ),
+);
+
+export const environmentThreads = {
+  stateAtom: (environmentId: EnvironmentId, threadId: ThreadId) =>
+    threadStateAtomFamily(environmentId)(threadId),
+};
+export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
+  environmentThreads.stateAtom,
+  { idleTtlMs: MOBILE_THREAD_STATE_IDLE_TTL_MS },
 );
 
 export function useEnvironmentThread(

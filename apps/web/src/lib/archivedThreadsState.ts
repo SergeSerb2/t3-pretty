@@ -9,6 +9,7 @@ import { useCallback, useMemo } from "react";
 
 import { orchestrationEnvironment } from "../state/orchestration";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentThreadShells } from "../state/threads";
 
 function archivedSnapshotAtom(environmentId: EnvironmentId) {
   return orchestrationEnvironment.archivedShellSnapshot({
@@ -18,6 +19,7 @@ function archivedSnapshotAtom(environmentId: EnvironmentId) {
 }
 
 const archivedSnapshotsAtom = createArchivedThreadSnapshotsAtomFamily({
+  isConnectedAtom: environmentThreadShells.environmentConnectedAtom,
   getSnapshotAtom: archivedSnapshotAtom,
   labelPrefix: "web:archived-thread-snapshots",
 });

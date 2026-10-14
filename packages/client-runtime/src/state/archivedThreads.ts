@@ -38,6 +38,7 @@ export function parseArchivedThreadsEnvironmentKey(key: string): ReadonlyArray<E
 }
 
 export function createArchivedThreadSnapshotsAtomFamily<E>(options: {
+  readonly isConnectedAtom: (environmentId: EnvironmentId) => Atom.Atom<boolean>;
   readonly getSnapshotAtom: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<AsyncResult.AsyncResult<OrchestrationV2ArchivedShellSnapshot, E>>;
@@ -50,6 +51,7 @@ export function createArchivedThreadSnapshotsAtomFamily<E>(options: {
       let isLoading = false;
 
       for (const environmentId of parseArchivedThreadsEnvironmentKey(environmentKey)) {
+        if (!get(options.isConnectedAtom(environmentId))) continue;
         const result = get(options.getSnapshotAtom(environmentId));
         isLoading ||= result.waiting;
 
