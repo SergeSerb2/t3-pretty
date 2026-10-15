@@ -188,6 +188,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "circle.fill": IconCircleFilled,
   "circle.inset.filled": IconCircleDot,
   "circle.lefthalf.filled": IconCircleHalf2,
+  "circle.dashed.inset.filled": IconCircleDot,
   clock: IconClock,
   timer: IconClock,
   ticket: IconTicket,

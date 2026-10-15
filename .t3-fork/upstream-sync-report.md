@@ -1,51 +1,54 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.46-nightly.20261014.3132`
-- Previously integrated parent nightly: `v0.0.46-nightly.20261014.3118`
+- Parent nightly: `v0.0.46-nightly.20261015.3145`
+- Previously integrated parent nightly: `v0.0.46-nightly.20261014.3132`
 - Conflict resolver: `gpt-6.1-sol` with `xhigh` reasoning
-- 2 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `apps/mobile/src/features/pull-requests/PullRequestsScreen.tsx` — kept the fork side wholesale as a fork-side fallback resolution
-- `apps/mobile/src/features/threads/threadListV2.ts` — Retain backgroundLiveness in the status resolver’s input contract, keeping background working and monitoring statuses reachable.
-- `apps/mobile/src/features/threads/threadListV2.ts` — Retain pullRequests in the status resolver’s input contract, preserving the merged-PR Done status and its existing precedence.
-- `apps/server/src/provider/Drivers/ClaudeHome.ts` — The shared claude:portable-transcripts continuation group remains exported, preserving cross-account and cross-instance continuation rather than partitioning threads by config directory.
-- `apps/server/src/provider/Drivers/ClaudeHome.ts` — importClaudeSessionTranscript remains unchanged and exported: it copies the latest session transcript between config directories using the CLI-written project slug.
-- `apps/server/src/provider/Drivers/ClaudeHome.ts` — Optional subagent/tool-result sidecars are replaced rather than merged, including removal of stale target sidecars when the source has none. The same logic supports switching back to a previously used account without reviving stale data.
-- `apps/server/src/provider/Drivers/ClaudeHome.ts` — Same-directory and missing-transcript no-op behavior remains intact.
-- `apps/web/src/components/ChatMarkdown.tsx` — Mermaid framing and wrapping remain controlled by each block's diagram argument, so the Suspense diagram placeholder retains diagram presentation with wrapping disabled even when deferred showDiagram differs.
-- `apps/web/src/components/ChatMarkdown.tsx` — Preserve deferred diagram rendering, source/diagram toggling in both directions, and the existing Find source-reveal wiring.
-- `apps/web/src/components/ChatView.tsx` — Preserves T3 Pretty's removal of the useThreadActions import while retaining useAcknowledgeThreadWoke from its existing module.
-- `apps/web/src/components/Sidebar.logic.ts` — Retains optional backgroundLiveness input, keeping T3 Pretty's existing background working and monitoring status branches reachable without requiring callers to supply background liveness.
-- `apps/web/src/components/Sidebar.tsx` — kept the fork side wholesale as a fork-side fallback resolution
-- `apps/web/src/state/pullRequests.ts` — Retains useRetryInterruptedQuery, preserving the dependency for T3 Pretty’s interrupted pull-request query retry behavior rather than reverting to the base error-formatter import.
-- `packages/client-runtime/src/state/threadSettled.ts` — Retains Pretty's explicit distinction between snoozed classification and persisted lifecycle state, including the relationship to blocked work and effectiveSettled. No runtime or lifecycle logic is changed.
-- `packages/client-runtime/src/state/threadShell.ts` — Retains SupervisorConnectionState and the generic &lt;E&gt; factory signature, preserving Pretty’s typed connection-state atom contract supporting disconnected-environment thread filtering.
-- `packages/client-runtime/src/state/threadShell.ts` — Retains isAutomationRunThread for Pretty’s existing automation-run thread handling.
+- `apps/mobile/src/components/AppSymbol.tsx` — Preserves T3 Pretty's circle.lefthalf.filled → IconCircleHalf2 mapping and its half-filled-circle rendering on Android.
+- `apps/mobile/src/features/pull-requests/PullRequestRouteScreen.tsx` — Retains copyTextWithHaptic for the fork’s haptic-aware copy interactions instead of restoring direct expo-clipboard access.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Retained the monitoring status key and Monitoring label.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Retained foreground text and the adaptive zinc pill, consistent with the local pill-based status presentation contract.
+- `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts` — Retain MCP configuration generated from every entry in mcpSession.servers, preserving each server's name and URL rather than reverting to a single hard-coded t3-code endpoint.
+- `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts` — Retain the session Authorization header on every configured MCP server.
+- `apps/web/src/components/Sidebar.tsx` — Keep resolveSidebarThreadTopStatus authoritative for status visibility, labels, colors, and merged-pull-request, wake, and unread handling.
+- `apps/web/src/components/Sidebar.tsx` — Preserve the Goal label for working threads with an active goal.
+- `apps/web/src/components/Sidebar.tsx` — Keep the keyed in-place title/status transition hooks and existing shared-pulse and subscription-lease wiring intact; introduce no continuous label animation.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Preserve the exported pullRequestDiffIdentity helper and its additions/deletions/changedFiles identity, allowing existing consumers to avoid rebuilding the code tab for comment, check, or review-state updates alone.
+- `apps/web/src/components/settings/StorageSettings.tsx` — The StorageCleanupPolicySections component boundary, rather than reverting the fork's component split to the base StorageSettingsPanel declaration.
+- `apps/web/src/components/settings/StorageSettings.tsx` — Environment-specific pending storage actions carrying both inventory and action data.
+- `apps/web/src/components/settings/StorageSettings.tsx` — Storage refresh interaction, accessible label, pending-state disabling, and existing useStatusPulse wiring with the pulse class applied only while pending.
+- `apps/web/src/components/settings/StorageSettings.tsx` — Managed-worktree usage visualization and legend, including active, archived, and orphan categories, byte totals, tooltips, and clean/dirty/unknown indicators.
+- `apps/web/src/components/settings/StorageSettings.tsx` — Selectable storage device cards with selected-state styling, aria-pressed, selection handlers, connection-phase status indicators, and device-specific icons and descriptions.
+- `apps/web/src/components/settings/StorageSettings.tsx` — Surge Connect branding for relay connections and distinct primary, SSH, desktop-local, and remote device presentation.
+- `apps/web/src/lib/openPullRequestLink.test.ts` — Regression coverage for Origin pull-request URLs on cursor.com, www.cursor.com, and origin.cursor.com, canonicalized to origin.cursor.com.
+- `apps/web/src/lib/openPullRequestLink.test.ts` — Assertions preserving lowercase repository identity, the pull-request number, and support for the Origin /files suffix.
+- `apps/web/src/lib/openPullRequestLink.test.ts` — All three fork-added rejection cases for incomplete or unrelated Cursor URLs, protecting browser fallback rather than incorrectly claiming them as pull requests.
 
 ## Parent changes integrated at conflict boundaries
 
-- `apps/mobile/src/features/threads/threadListV2.ts` — Include pendingSubagentRequest in the status resolver’s input contract so the parent’s subagent approval and user-input status checks remain type-correct and take priority over runtime and background statuses.
-- `apps/server/src/provider/Drivers/ClaudeHome.ts` — Added hasClaudeManagedMcpConfig with upstream's macOS, Windows, and Linux managed-mcp.json paths, exposing the detection needed by callers handling incompatibility with --strict-mcp-config.
-- `apps/server/src/provider/Drivers/ClaudeHome.ts` — Preserved upstream's filesystem-error fallback to false when checking for managed MCP configuration.
-- `apps/web/src/components/ChatMarkdown.tsx` — Adopt the leadingActions-to-viewToggle API change, keeping the Mermaid toggle connected to the updated code-block actions toolbar.
-- `apps/web/src/components/ChatView.tsx` — Adds the parent's childThreadInputsTitle import from @t3tools/client-runtime/state/threads.
-- `apps/web/src/components/Sidebar.logic.ts` — Adds pendingSubagentRequest to the status resolver input type, supporting the existing subagent approval and user-input checks and their precedence over runtime and background statuses.
-- `apps/web/src/state/pullRequests.ts` — Adds the parent’s environmentThreadShells import from ./threads.
-- `packages/client-runtime/src/state/threadSettled.ts` — Documents that a blocked subagent, as well as the main agent, raises a snoozed thread's hand, matching the existing pendingSubagentRequest check.
-- `packages/client-runtime/src/state/threadShell.ts` — Adds PendingSubagentRequest to the model type imports.
-- `packages/client-runtime/src/state/threadShell.ts` — Adds live-subagent request classification, excluding auth-refresh requests, provider-native subagents, and ended runs while distinguishing user input from approvals.
-- `packages/client-runtime/src/state/threadShell.ts` — Adds ancestor request propagation with cycle protection, approval precedence, and shared empty-map reuse.
-- `packages/client-runtime/src/state/threadShell.ts` — Adds singular/plural child-input banner titles that distinguish input, approval, and mixed requests.
+- `apps/mobile/src/components/AppSymbol.tsx` — Adds the parent's circle.dashed.inset.filled → IconCircleDot mapping using the existing icon component.
+- `apps/mobile/src/features/pull-requests/PullRequestRouteScreen.tsx` — Adds canPerformPullRequestAction, PR_ACTION_ICONS, and PR_ACTION_LABELS imports for upstream action capability checks and shared action presentation, while retaining openOnProviderLabel.
+- `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts` — Use CODEX_T3_MCP_TOOL_TIMEOUT_SEC (65 minutes) instead of the previous 660-second timeout, allowing hour-long T3 wait tools to finish under their own timeout.
+- `apps/web/src/components/Sidebar.tsx` — Apply the parent's explicit waiting icon to resolved waiting statuses, retaining the fork's helper-derived label and styling and passing the icon through the existing status-change hook.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Add canDeletePullRequestBranch unchanged: deletion requires a non-open pull request, explicit deleteBranch capability, and delete-branch in both host capabilities and viewer permissions.
+- `apps/web/src/components/settings/StorageSettings.tsx` — Added environments to the useSettingsScope destructuring in the fork's cleanup-policy component, preserving the parent's scope API addition alongside connectedEnvironments, targets, target, and scope.
+- `apps/web/src/lib/openPullRequestLink.test.ts` — Removal from this file of the unchanged base parser tests for GitHub, GitHub Enterprise, GitLab, Bitbucket, Azure DevOps, generic suffix handling, and generic invalid references.
 
 ## Parent changes intentionally omitted
 
-- `apps/mobile/src/features/pull-requests/PullRequestsScreen.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: apps/mobile/src/features/pull-requests/PullRequestsScreen.tsx was not safe to resolve automatically: Cannot produce a coherent merge with high confidence from this excerpt. Supply the remainder of apps/mobile/src/features/pull-requests/PullRequestsScreen.tsx, the fork code that owns usePullRequestListControls and PR request-target construction, and the definitions of withoutScratchProjectScope and useProjects. That context is needed to apply the compatible scratch-scope fix consistently to requests, displayed selection, and restored filters without regressing Pretty’s native PR interface. No search-and-replace edits are proposed; the conflicts remain unresolved.
-- `apps/server/src/provider/Drivers/ClaudeHome.ts` — The home-directory-scoped makeClaudeContinuationGroupKey implementation present in THEIRS, unchanged from BASE, is not reinstated.. Reason: OURS deliberately replaced this partitioning with a shared portable-transcript continuation group. Restoring per-home grouping would regress the fork's ability to continue the same thread across Claude accounts; managed-MCP detection does not require it.
-- `apps/web/src/components/Sidebar.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: apps/web/src/components/Sidebar.tsx was not safe to resolve automatically: Cannot validate a coherent merge with high confidence. BASE imports legacyProjectCwdPreferenceKey; OURS retains it while adding project-folder helpers and resolveProjectExpanded; THEIRS removes it. Please provide the remaining project-expansion reads and toggle handlers in apps/web/src/components/Sidebar.tsx and the exports/implementations of legacyProjectCwdPreferenceKey and resolveProjectExpanded in apps/web/src/uiStateStore. The supplied edit removes all conflict markers provisionally, but must not be treated as safe or applied as a completed resolution without that context.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Replace the Waiting status icon from clock with circle.dashed.inset.filled.. Reason: T3 Pretty deliberately replaced this base entry with Monitoring and a themed pill. The supplied STATUS_BY_BADGE contract has pill fields, not icon fields. Restoring the parent's entry would remove the fork's Monitoring presentation; adding an unused icon would not integrate observable behavior.
+- `apps/web/src/lib/openPullRequestLink.test.ts` — Complete removal of the parseChangeRequestUrl test block.. Reason: A minimal Origin-only block remains because OURS added regression assertions absent from BASE, and the supplied context shows no equivalent replacement coverage for those fork-specific cases.
 
 ## Post-merge repairs
 
-- `shared-typecheck` failed after merging `v0.0.46-nightly.20261014.3132`; repaired with `gpt-6.1-sol`: Adapt T3 Pretty’s all-thread shell atom to the three-argument scopedThread API by subscribing to and forwarding pending subagent requests. This fixes the reported type error while preserving disconnected-environment filtering and access to automation run threads.
-  - edited `packages/client-runtime/src/state/threadShell.ts`
+- `shared-typecheck` failed after merging `v0.0.46-nightly.20261015.3145`; repaired with `gpt-6.1-sol`: Update both metadata-only orchestration test runtime types to include the API's newly required HttpClient service. Preserve all retention and shell-resume assertions, production behavior, and upstream additions.
+  - edited `packages/client-runtime/src/state/orchestration.test.ts`
+- `shared-typecheck` failed after merging `v0.0.46-nightly.20261015.3145`; repaired with `gpt-6.1-sol`: Correct the obsolete HTTP type import without changing runtime service requirements or any T3 Pretty retention and shell-resume tests. Leave non-error diagnostics untouched.
+  - edited `packages/client-runtime/src/state/orchestration.test.ts`
+- `server-typecheck` failed after merging `v0.0.46-nightly.20261015.3145`; repaired with `gpt-6.1-sol`: Fix TS1117 by removing the conflicting duplicate timeout entry from the Codex process-spawning fixture. Preserve T3 Pretty's 660-second timeout, upstream's MCP startup grace setting, and the complete test.
+  - edited `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts`
+  - omitted parent change: The 3,900-second tool_timeout_sec expectation in the Codex MCP process-spawning fixture.. Reason: It conflicts with T3 Pretty's authoritative 660-second timeout for the same server. Keep the Pretty value; the test and all other upstream configuration remain intact.
+- `mobile-typecheck` failed after merging `v0.0.46-nightly.20261015.3145`; repaired with `gpt-6.1-sol`: Add failure, guidance, and success messages for the new delete-branch action to resolve all three type errors. Existing action execution, T3 Pretty haptics, and refresh behavior remain unchanged.
+  - edited `apps/mobile/src/features/pull-requests/PullRequestDetailScreen.tsx`

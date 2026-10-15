@@ -3,6 +3,7 @@ import { EnvironmentId, ThreadId, type OrchestrationV2ShellSnapshot } from "@t3t
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
+import type { HttpClient } from "effect/http";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { nextShellResumeCache, SHELL_SNAPSHOT_IDLE_TTL_MS } from "./shell.ts";
@@ -15,7 +16,7 @@ import {
 describe("orchestration environment atoms", () => {
   it("releases an idle archived shell snapshot on the thread-detail retention window", () => {
     const runtime = Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
-      EnvironmentRegistry,
+      EnvironmentRegistry | HttpClient.HttpClient,
       never
     >;
     const atoms = createOrchestrationEnvironmentAtoms(runtime);
@@ -31,7 +32,7 @@ describe("orchestration environment atoms", () => {
 
   it("releases idle diff payloads before the generic query TTL", () => {
     const runtime = Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
-      EnvironmentRegistry,
+      EnvironmentRegistry | HttpClient.HttpClient,
       never
     >;
     const atoms = createOrchestrationEnvironmentAtoms(runtime);

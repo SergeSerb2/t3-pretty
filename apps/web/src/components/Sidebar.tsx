@@ -76,6 +76,7 @@ import {
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDashedIcon,
+  CircleDotDashedIcon,
   ClockIcon,
   EyeIcon,
   GitBranchIcon,
@@ -1436,7 +1437,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const topStatus =
     resolvedTopStatus && status === "working" && thread.goal?.status === "active"
       ? { ...resolvedTopStatus, label: "Goal" }
-      : resolvedTopStatus;
+      : resolvedTopStatus && status === "waiting"
+        ? { ...resolvedTopStatus, icon: "waiting" as const }
+        : resolvedTopStatus;
   const isWokeStatus = topStatus?.icon === "woke";
   // Fork motion: a keyed title or status animates only when it changed in place.
   const titleChanged = useInPlaceChange(thread.title, threadKey);
@@ -2316,6 +2319,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         >
                           {topStatus.icon === "working" ? (
                             <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
+                          ) : topStatus.icon === "waiting" ? (
+                            <CircleDotDashedIcon aria-hidden className="size-4 shrink-0" />
                           ) : topStatus.icon === "input" ? (
                             <MessageCircleQuestionIcon aria-hidden className="size-4 shrink-0" />
                           ) : topStatus.icon === "approval" ? (
@@ -2332,6 +2337,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           {status === "working" ? (
                             <span aria-hidden>
                               <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
+                            </span>
+                          ) : status === "waiting" ? (
+                            // Waiting starts when the turn ends and background
+                            // work keeps the thread held.
+                            <span aria-hidden>
+                              <WorkingDuration startedAt={thread.latestRun?.completedAt ?? null} />
                             </span>
                           ) : null}
                         </span>
