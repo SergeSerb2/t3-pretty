@@ -50,3 +50,5 @@
 - `server-typecheck` failed after merging `v0.0.46-nightly.20261015.3145`; repaired with `gpt-6.1-sol`: Fix TS1117 by removing the conflicting duplicate timeout entry from the Codex process-spawning fixture. Preserve T3 Pretty's 660-second timeout, upstream's MCP startup grace setting, and the complete test.
   - edited `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts`
   - omitted parent change: The 3,900-second tool_timeout_sec expectation in the Codex MCP process-spawning fixture.. Reason: It conflicts with T3 Pretty's authoritative 660-second timeout for the same server. Keep the Pretty value; the test and all other upstream configuration remain intact.
+- `mobile-typecheck` failed after merging `v0.0.46-nightly.20261015.3145`; repaired with `gpt-6.1-sol`: Add failure, guidance, and success messages for the new delete-branch action to resolve all three type errors. Existing action execution, T3 Pretty haptics, and refresh behavior remain unchanged.
+  - edited `apps/mobile/src/features/pull-requests/PullRequestDetailScreen.tsx`

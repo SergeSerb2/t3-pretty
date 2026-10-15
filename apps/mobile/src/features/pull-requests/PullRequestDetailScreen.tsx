@@ -227,13 +227,20 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
         if (AsyncResult.isFailure(result)) {
           hapticError();
           Alert.alert(
-            ACTION_FAILURE_LABELS[action],
-            readableFailure(squashAtomCommandFailure(result), ACTION_FAILURE_HINTS[action]),
+            action === "delete-branch"
+              ? "Could not delete this branch"
+              : ACTION_FAILURE_LABELS[action],
+            readableFailure(
+              squashAtomCommandFailure(result),
+              action === "delete-branch"
+                ? "Check that you have write access and that the branch is not protected."
+                : ACTION_FAILURE_HINTS[action],
+            ),
           );
           return;
         }
         hapticSuccess();
-        Alert.alert(ACTION_SUCCESS_LABELS[action]);
+        Alert.alert(action === "delete-branch" ? "Branch deleted" : ACTION_SUCCESS_LABELS[action]);
         await refresh("all");
       } finally {
         setActionPending(false);
