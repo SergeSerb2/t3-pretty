@@ -123,9 +123,13 @@ This fork lives on **Cursor Origin**. The git remote named `origin` is
 `https://origin.cursor.com/serbinenko/t3-pretty.git`. That is the only place
 commits and pull requests for T3 Pretty go.
 
-The GitHub copy (`SergeSerb2/t3-pretty`, and any local `github` remote) is
-retired. Do not push branches there for review. Do not open or babysit PRs
-with `gh pr`. Do not retarget `origin` at github.com.
+GitHub (`SergeSerb2/t3-pretty`, and any local `github` remote) contains only
+public stable snapshots cut manually by the maintainer. It is not a development
+mirror. Never sync Origin branches, internal tags, or upstream changes there.
+Use `scripts/fork/cut-public-release.mjs` only for an explicitly requested public
+cut. Do not push branches there for review or open PRs with `gh pr`. Keep
+`origin` pointed at Cursor Origin. See
+[public releases](docs/operations/public-release-and-github-mirror.md).
 
 - Never make a PR unless the developer explicitly asks you to do so.
 - Push the branch to the `origin` remote (`origin.cursor.com`), then open the

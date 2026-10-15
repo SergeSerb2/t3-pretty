@@ -32,8 +32,7 @@ concurrency:
 
 env:
   T3CODE_BUILD_FLAVOR: public
-  # Electron needs mutable latest metadata. The mirror only pushes git refs, which cannot create or
-  # promote a GitHub Release; this guarded workflow alone marks a public-v release latest.
+  # Only a manual stable cut can reach this workflow. This workflow alone marks a release latest.
   # Exact-version CLI commands use the immutable public-v tag instead.
   T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/SergeSerb2/t3-pretty/releases/latest/download/
   CI: true
@@ -46,6 +45,10 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.value }}
     steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: .t3-fork/public-release.json
+          sparse-checkout-cone-mode: false
       - name: Validate version and release target
         id: version
         env:
@@ -61,6 +64,18 @@ jobs:
           }
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
             echo "version must be numeric semver (for example 0.0.34)" >&2
+            exit 1
+          }
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const cut = JSON.parse(readFileSync('.t3-fork/public-release.json', 'utf8'));
+          if (cut.version !== process.env.VERSION || !/^[a-f0-9]{40}$/.test(cut.originCommit)) {
+            throw new Error('version must match a manually cut public source snapshot');
+          }
+          NODE
+          tag_sha="$(git ls-remote --exit-code origin "refs/tags/public-v${VERSION}" | cut -f1)"
+          [[ "$tag_sha" == "$GITHUB_SHA" ]] || {
+            echo "public-v${VERSION} must point to this exact source snapshot" >&2
             exit 1
           }
           if [[ "$PUBLISH_RELEASE" == "true" ]] &&
@@ -429,7 +444,7 @@ jobs:
           ((${#assets[@]} > 0))
           gh release create "public-v${VERSION}" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
+            --verify-tag \
             --title "T3 Pretty ${VERSION}" \
             --generate-notes \
             --latest
