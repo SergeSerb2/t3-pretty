@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261014.3118003565",
+    date: "2026-10-14",
+    items: [
+      {
+        kind: "fixed",
+        title: "Improve iOS thread exit swipes",
+      },
+      {
+        kind: "new",
+        title: "Haptics to key iOS interactions",
+      },
+      {
+        kind: "fixed",
+        title: "Preserve read-only thread card frames",
+      },
+      {
+        kind: "fixed",
+        title: "Hide threads from disconnected environments",
+      },
+      {
+        kind: "fixed",
+        title: "Wait for thread creation before loading detail",
+      },
+      {
+        kind: "fixed",
+        title: "Use right swipe to leave iOS threads",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261014.3118003562",
     date: "2026-10-14",
     items: [
