@@ -40,3 +40,8 @@
 
 - `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Replace the Waiting status icon from clock with circle.dashed.inset.filled.. Reason: T3 Pretty deliberately replaced this base entry with Monitoring and a themed pill. The supplied STATUS_BY_BADGE contract has pill fields, not icon fields. Restoring the parent's entry would remove the fork's Monitoring presentation; adding an unused icon would not integrate observable behavior.
 - `apps/web/src/lib/openPullRequestLink.test.ts` — Complete removal of the parseChangeRequestUrl test block.. Reason: A minimal Origin-only block remains because OURS added regression assertions absent from BASE, and the supplied context shows no equivalent replacement coverage for those fork-specific cases.
+
+## Post-merge repairs
+
+- `shared-typecheck` failed after merging `v0.0.46-nightly.20261015.3145`; repaired with `gpt-6.1-sol`: Update both metadata-only orchestration test runtime types to include the API's newly required HttpClient service. Preserve all retention and shell-resume assertions, production behavior, and upstream additions.
+  - edited `packages/client-runtime/src/state/orchestration.test.ts`
