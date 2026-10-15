@@ -47,3 +47,6 @@
   - edited `packages/client-runtime/src/state/orchestration.test.ts`
 - `shared-typecheck` failed after merging `v0.0.46-nightly.20261015.3145`; repaired with `gpt-6.1-sol`: Correct the obsolete HTTP type import without changing runtime service requirements or any T3 Pretty retention and shell-resume tests. Leave non-error diagnostics untouched.
   - edited `packages/client-runtime/src/state/orchestration.test.ts`
+- `server-typecheck` failed after merging `v0.0.46-nightly.20261015.3145`; repaired with `gpt-6.1-sol`: Fix TS1117 by removing the conflicting duplicate timeout entry from the Codex process-spawning fixture. Preserve T3 Pretty's 660-second timeout, upstream's MCP startup grace setting, and the complete test.
+  - edited `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts`
+  - omitted parent change: The 3,900-second tool_timeout_sec expectation in the Codex MCP process-spawning fixture.. Reason: It conflicts with T3 Pretty's authoritative 660-second timeout for the same server. Keep the Pretty value; the test and all other upstream configuration remain intact.
