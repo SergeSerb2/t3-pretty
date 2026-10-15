@@ -3,7 +3,7 @@ import { EnvironmentId, ThreadId, type OrchestrationV2ShellSnapshot } from "@t3t
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
-import type { HttpClient } from "effect/unstable/http";
+import type { HttpClient } from "effect/http";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { nextShellResumeCache, SHELL_SNAPSHOT_IDLE_TTL_MS } from "./shell.ts";

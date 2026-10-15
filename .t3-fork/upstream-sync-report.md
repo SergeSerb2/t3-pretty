@@ -45,3 +45,5 @@
 
 - `shared-typecheck` failed after merging `v0.0.46-nightly.20261015.3145`; repaired with `gpt-6.1-sol`: Update both metadata-only orchestration test runtime types to include the API's newly required HttpClient service. Preserve all retention and shell-resume assertions, production behavior, and upstream additions.
   - edited `packages/client-runtime/src/state/orchestration.test.ts`
+- `shared-typecheck` failed after merging `v0.0.46-nightly.20261015.3145`; repaired with `gpt-6.1-sol`: Correct the obsolete HTTP type import without changing runtime service requirements or any T3 Pretty retention and shell-resume tests. Leave non-error diagnostics untouched.
+  - edited `packages/client-runtime/src/state/orchestration.test.ts`
