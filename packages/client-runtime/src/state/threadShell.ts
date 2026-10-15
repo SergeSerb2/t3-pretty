@@ -395,8 +395,9 @@ export function createEnvironmentThreadShellAtoms<E>(input: {
     const next: EnvironmentThreadShell[] = [];
     for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       if (!get(environmentConnectedAtom(environmentId))) continue;
+      const subagentRequests = get(pendingSubagentRequestsAtom(environmentId));
       for (const thread of get(environmentAllThreadsAtom(environmentId))) {
-        next.push(scopedThread(environmentId, thread));
+        next.push(scopedThread(environmentId, thread, subagentRequests));
       }
     }
     if (arrayElementsEqual(previousAllThreadShells, next)) {
