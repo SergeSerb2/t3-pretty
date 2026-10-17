@@ -1,5 +1,6 @@
+import * as NodeModule from "node:module";
+
 import type * as Sentry from "@sentry/node";
-import { BinaryReader, WireType } from "@bufbuild/protobuf";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -17,6 +18,11 @@ import packageJson from "../../package.json" with { type: "json" };
 import { releaseHttpClientResponseBody } from "@t3tools/provider-core/server/releaseHttpClientResponseBody";
 import { type AgentObservation } from "./AgentObservation.ts";
 import type { DeliveryReceipt, DeliverySignal } from "./AgentMonitoringJournal.ts";
+
+// Protobuf is part of the file-backed Cursor runtime. SEA can only load it from disk via require.
+const { BinaryReader, WireType } = NodeModule.createRequire(import.meta.url)(
+  "@bufbuild/protobuf",
+) as typeof import("@bufbuild/protobuf");
 
 export interface DeliveryProgress {
   readonly receipts: ReadonlyArray<DeliveryReceipt>;

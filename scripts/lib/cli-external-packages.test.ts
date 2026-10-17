@@ -6,6 +6,8 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import ts from "typescript-legacy";
+import { build } from "vite-plus/pack";
 
 import serverPackageJson from "../../apps/server/package.json" with { type: "json" };
 
@@ -13,6 +15,7 @@ import { findEsmImportsOfExternalPackages } from "./cli-executable-imports.ts";
 
 import {
   isRuntimeExternalCliDependency,
+  isExternalCliDependency,
   findInlinedExternalPackages,
   selectCliRuntimeExternalDependencies,
   shouldBundleCliDependency,
@@ -31,6 +34,61 @@ const PackageManifest = Schema.Struct({
 type PackageManifest = typeof PackageManifest.Type;
 
 const decodeManifest = Schema.decodeUnknownSync(Schema.fromJsonString(PackageManifest));
+
+function findFileBackedRequires(source: string): ReadonlyArray<string> {
+  const module = ts.createSourceFile("bundle.mjs", source, ts.ScriptTarget.Latest, false);
+  const moduleNamespaces = new Set<string>();
+  const requireFactories = new Set<string>();
+  for (const statement of module.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      !["node:module", "module"].includes(statement.moduleSpecifier.text)
+    )
+      continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings)) moduleNamespaces.add(bindings.name.text);
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const binding of bindings.elements) {
+        if ((binding.propertyName ?? binding.name).text === "createRequire")
+          requireFactories.add(binding.name.text);
+      }
+    }
+  }
+  const createsRequire = (node: ts.Node): boolean =>
+    ts.isCallExpression(node) &&
+    ((ts.isIdentifier(node.expression) && requireFactories.has(node.expression.text)) ||
+      (ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === "createRequire" &&
+        ts.isIdentifier(node.expression.expression) &&
+        moduleNamespaces.has(node.expression.expression.text)));
+  const requireBindings = new Set<string>();
+  const findBindings = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      createsRequire(node.initializer)
+    )
+      requireBindings.add(node.name.text);
+    ts.forEachChild(node, findBindings);
+  };
+  findBindings(module);
+  const packages = new Set<string>();
+  const findCalls = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      node.arguments[0] &&
+      ts.isStringLiteral(node.arguments[0]) &&
+      (createsRequire(node.expression) ||
+        (ts.isIdentifier(node.expression) && requireBindings.has(node.expression.text)))
+    )
+      packages.add(node.arguments[0].text);
+    ts.forEachChild(node, findCalls);
+  };
+  findCalls(module);
+  return [...packages].sort();
+}
 
 describe("shouldBundleCliDependency", () => {
   it("bundles ordinary runtime dependencies", () => {
@@ -93,6 +151,7 @@ describe("selectCliRuntimeExternalDependencies", () => {
     assert.deepStrictEqual(
       Object.keys(selectCliRuntimeExternalDependencies(serverPackageJson.dependencies)).sort(),
       [
+        "@bufbuild/protobuf",
         "@cursor/sdk",
         "@ff-labs/fff-node",
         "@napi-rs/keyring",
@@ -301,6 +360,47 @@ describe("findInlinedExternalPackages", () => {
 // `node dist/bin.mjs` path, then fails inside the executable, so the scan
 // reads the emitted module graph instead.
 describe("findEsmImportsOfExternalPackages", () => {
+  it("keeps monitoring and image previews loadable inside a single-executable", async () => {
+    const output = await build({
+      config: false,
+      cwd: NodeURL.fileURLToPath(new URL("../../apps/server", import.meta.url)),
+      entry: ["src/observability/AgentMonitoringExporter.ts", "src/assets/AttachmentPreview.ts"],
+      platform: "node",
+      format: "esm",
+      dts: false,
+      write: false,
+      clean: false,
+      logLevel: "silent",
+      deps: {
+        alwaysBundle: shouldBundleCliDependency,
+        neverBundle: (id) => isExternalCliDependency(id),
+        onlyBundle: false,
+      },
+    });
+    try {
+      const chunks = output.bundles.flatMap((bundle) => bundle.chunks);
+      const code = chunks.filter((chunk) => chunk.type === "chunk");
+      assert.ok(code.length > 0, "the runtime entry points must actually be bundled");
+      assert.deepStrictEqual(
+        [...new Set(code.flatMap((chunk) => findEsmImportsOfExternalPackages(chunk.code)))],
+        [],
+      );
+      const inlined = findInlinedExternalPackages(code.flatMap((chunk) => chunk.moduleIds));
+      assert.ok(inlined.moduleCount > 0, "the bundle must expose its inlined module metadata");
+      assert.ok(
+        inlined.inlinedPackages.includes("effect"),
+        "ordinary dependencies must be inlined",
+      );
+      assert.deepStrictEqual(inlined.inlined, [], "runtime-external packages must stay on disk");
+      const requires = new Set(code.flatMap((chunk) => findFileBackedRequires(chunk.code)));
+      for (const id of ["@bufbuild/protobuf", "sharp"]) {
+        assert.ok(requires.has(id), `${id} must remain reachable through a file-backed require`);
+      }
+    } finally {
+      for (const bundle of output.bundles) await bundle[Symbol.asyncDispose]();
+    }
+  });
+
   it("flags static and dynamic imports of file-backed packages", () => {
     const source = [
       'import { FileFinder } from "@ff-labs/fff-node";',

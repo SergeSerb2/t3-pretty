@@ -2,6 +2,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeCrypto from "node:crypto";
+import * as NodeModule from "node:module";
 
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -18,6 +19,9 @@ export const ATTACHMENT_FEED_PREVIEW_HEIGHT = 788;
 export const ATTACHMENT_FEED_PREVIEW_MAX_PENDING_JOBS = 32;
 export const ATTACHMENT_FEED_PREVIEW_MAX_CONCURRENT_JOBS = 2;
 export const ATTACHMENT_FEED_PREVIEW_MAX_INPUT_PIXELS = 40_000_000;
+
+// sharp needs its native files on disk. Keep loading lazy, including inside a Node SEA executable.
+const requireSharp = NodeModule.createRequire(import.meta.url);
 
 const previewJobs = new Map<string, Promise<string>>();
 const previewJobWaiters: Array<() => void> = [];
@@ -71,8 +75,7 @@ async function createAttachmentFeedPreview(input: {
   await NodeFSP.mkdir(NodePath.dirname(input.previewPath), { recursive: true });
   const temporaryPath = `${input.previewPath}.${process.pid}.${NodeCrypto.randomUUID()}.tmp`;
   try {
-    const sharpModule = await import("sharp");
-    const sharp = sharpModule.default ?? sharpModule;
+    const sharp = requireSharp("sharp") as typeof import("sharp").default;
     await sharp(input.sourcePath, {
       failOn: "error",
       limitInputPixels: ATTACHMENT_FEED_PREVIEW_MAX_INPUT_PIXELS,
